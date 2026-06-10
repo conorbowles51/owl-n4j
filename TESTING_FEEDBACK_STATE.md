@@ -32,17 +32,16 @@
 | user-bug-2 | bug | Make all users/accounts searchable by text (unicode) | Alex | 2026-06-09 18:50 | FIXED (client; backend follow-up) |
 | user-bug-3 | bug | Comms Timeline window needs to be bigger | Alex | 2026-06-09 18:56 | FIXED |
 | user-feature-4 | feature | Ability to export data to PDF | Alex | 2026-06-09 19:10 | FIXED |
-| user-bug-5 | bug | Cannot copy/paste in Comms Timeline | Alex | 2026-06-09 19:58 | NEW |
-| user-bug-6 | bug | Messages in Comms Timeline have duplicates | Alex | 2026-06-09 20:13 | NEW |
-| user-bug-7 | bug | Comms Timeline doesn't load all events (scroll won't continue) | Alex | 2026-06-09 20:14 | NEW |
-| user-bug-8 | bug | Comms Timeline not showing all comms already filtered (only one phone) | Alex | 2026-06-09 20:20 | NEW |
+| user-bug-5 | bug | Cannot copy/paste in Comms Timeline | Alex | 2026-06-09 19:58 | FIXED |
+| user-bug-6 | bug | Messages in Comms Timeline have duplicates | Alex | 2026-06-09 20:13 | FIXED |
+| user-bug-7 | bug | Comms Timeline doesn't load all events (scroll won't continue) | Alex | 2026-06-09 20:14 | FIXED |
+| user-bug-8 | bug | Comms Timeline not showing all comms already filtered (only one phone) | Alex | 2026-06-09 20:20 | DEFERRED (identity unification) |
 
-> user-bug-1..4 fixed on branch `feat/cellebrite-search-discovery` (round-2). Checklist `fix-*` items added for re-test. **user-bug-5..8 are NEW (filed 2026-06-09 ~20:00), not yet started** — all about the Comms cross-type Timeline flyover (`CommsCrossTypeTimeline`):
-> - **user-bug-5** — can't select/copy text in the comms timeline.
-> - **user-bug-6** — duplicate messages appear (relates to `dedup-collapse` FAIL — this is the repro I'd asked for: "some of the same messages appear multiple times").
-> - **user-bug-7** — infinite scroll stops; doesn't load all events (comment: "the scroll doesn't continue scrolling").
-> - **user-bug-8** — filtering by a contact shows only ONE phone's comms when multiple phones (P3, P4) have comms/calls with her — filter is dropping devices.
-> New comment on user-bug-7: Alex — "Comms Timeline doesn't load all events. the scroll doesn't continue scrolling".
+> Round-3 (Comms cross-type Timeline, branch `feat/cellebrite-search-discovery`):
+> - **user-bug-5 FIXED** — rows were `<button>` (browser `user-select:none`); changed to a `<div role=button>` with `select-text`; the click handler ignores clicks that finish a text selection so copying doesn't open the row.
+> - **user-bug-6 FIXED** — `get_cellebrite_comms_between` dedup now also collapses cross-device logical copies (same type+timestamp+sender+content captured on two phones), keeping one and recording the others on `also_on_reports`. Verified 8→0 logical dupes on a 2000-row page.
+> - **user-bug-7 FIXED** — the scrollTop-math loadMore stalled once a page loaded (no dep changed until you scrolled again). Replaced with an IntersectionObserver sentinel that re-fires as rows mount → chains pages until the cursor is null.
+> - **user-bug-8 DEFERRED** — ROOT CAUSE: identity fragmentation. "Kathy" is NOT one person — she's many separate nodes per app/device (`snapchat-…`, `instagram-mkkathiiaa`, `interactionc-…`, `mkkathiiaa`, each on a different report). Filtering by one key shows only that identity's comms (one phone). Proper fix = identity unification (link all of a person's identities, filter by the union). Workaround today: the Contacts Merge-Identities dialog. Needs a design call — NOT auto-fixed. (A secondary effect also exists: a chatty device can dominate the 2000-row cap; the Lanes view already seeds per-phone to mitigate.)
 
 ### user-bug-1 — phone's-perspective contact naming  *(status: TRIAGED)*
 Messages out of the owner's phone show the wrong name. Isolating C5/C6 should

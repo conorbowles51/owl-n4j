@@ -79,6 +79,7 @@ export default function CommsCrossTypeTimeline({
   // rows + a small overscan are mounted. Lets us bump limit from 300
   // to 2000 without DOM cost.
   const scrollRef = useRef(null);
+  const sentinelRef = useRef(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
 
@@ -277,15 +278,29 @@ export default function CommsCrossTypeTimeline({
       .finally(() => { loadingMoreRef.current = false; setLoadingMore(false); });
   };
 
-  // Pull the next page when the visible window nears the bottom of what's
-  // loaded. scrollTop is already tracked for virtualization, so this just
-  // watches it.
+  // Infinite scroll via an IntersectionObserver sentinel at the bottom of
+  // the loaded list. This replaced a scrollTop-math check that STALLED:
+  // once a page loaded, no dependency changed unless the user scrolled
+  // again, so the feed stopped before reaching the end (user-bug-7). The
+  // observer re-fires whenever the sentinel is visible — including right
+  // after new rows mount — so it chains pages until the cursor is null.
   useEffect(() => {
-    if (!expanded || !cursor || loadingMoreRef.current) return;
-    const nearBottom = (scrollTop + viewportH) >= (orderedItems.length * ROW_HEIGHT) - ROW_HEIGHT * 12;
-    if (nearBottom) loadMore();
+    if (!expanded || viewMode !== 'list' || !cursor) return undefined;
+    const root = scrollRef.current;
+    const sentinel = sentinelRef.current;
+    if (!root || !sentinel) return undefined;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting) && cursor && !loadingMoreRef.current) {
+          loadMore();
+        }
+      },
+      { root, rootMargin: `0px 0px ${ROW_HEIGHT * 12}px 0px`, threshold: 0 },
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollTop, viewportH, orderedItems.length, cursor, expanded]);
+  }, [expanded, viewMode, cursor, orderedItems.length, viewportH]);
 
   // Re-measure viewport on expand / data change
   useEffect(() => {
@@ -474,6 +489,8 @@ export default function CommsCrossTypeTimeline({
                 );
               })}
               <div style={{ height: bottomPad }} />
+              {/* Infinite-scroll trigger — observed by the effect above. */}
+              <div ref={sentinelRef} style={{ height: 1 }} />
             </div>
           )}
         </div>
@@ -504,11 +521,27 @@ function TimelineRow({ item, onClick, showPhoneChip = false }) {
   // Two-line layout. Phone chip on the FAR LEFT (user feedback: easier
   // to scan device column). Sender → recipient lives on line 2 so a
   // long body never elbows it off-screen.
+  //
+  // Rendered as a <div role=button>, NOT a <button>: native buttons set
+  // user-select:none, so the tester couldn't select/copy message text
+  // (user-bug-5). The click handler ignores clicks that end a text
+  // selection so copying doesn't also fire the row's open-detail action.
+  const handleClick = onClick
+    ? (e) => {
+        const sel = typeof window !== 'undefined' && window.getSelection
+          ? String(window.getSelection()) : '';
+        if (sel && sel.length > 0) return; // user was selecting text — don't navigate
+        onClick(e);
+      }
+    : undefined;
   return (
-    <button
-      onClick={onClick}
+    <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={handleClick}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter') onClick(e); } : undefined}
       style={{ height: ROW_HEIGHT }}
-      className="w-full text-left flex flex-col justify-center gap-0.5 px-4 border-b border-light-100 hover:bg-light-50"
+      className={`w-full text-left flex flex-col justify-center gap-0.5 px-4 border-b border-light-100 hover:bg-light-50 select-text ${onClick ? 'cursor-pointer' : ''}`}
     >
       <div className="flex items-center gap-2 min-w-0">
         {showPhoneChip && item.report_key ? (
@@ -549,6 +582,6 @@ function TimelineRow({ item, onClick, showPhoneChip = false }) {
           <span className="italic">{typeLabel}</span>
         </span>
       </div>
-    </button>
+    </div>
   );
 }

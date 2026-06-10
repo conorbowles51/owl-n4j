@@ -9798,19 +9798,39 @@ class Neo4jService:
         finally:
             session.close()
 
-        # Dedupe — the same message can be returned multiple times when a
-        # chat has many participants and the from/to filters overlap. Keep the
-        # first occurrence (keys in the Python dict preserve insertion order).
+        # Dedupe. Two passes in one loop:
+        #  (1) exact node id — the same node can be returned twice when a
+        #      chat has many participants and the from/to filters overlap.
+        #  (2) cross-device logical copies — the SAME message/email captured
+        #      on two phones arrives as DISTINCT nodes (different id) with
+        #      identical type+timestamp+sender+content. The tester reads those
+        #      as duplicates (user-bug-6). Collapse to one row and record the
+        #      other device(s) on `also_on_reports` so nothing is hidden.
+        #      Calls are left alone (no content to key a safe signature on).
         seen_ids = set()
+        seen_sigs: Dict[tuple, int] = {}
         deduped = []
         for it in items:
             key = it.get("id") or it.get("node_key")
-            if key is None:
-                deduped.append(it)
+            if key is not None:
+                if key in seen_ids:
+                    continue
+                seen_ids.add(key)
+            sig = None
+            t = it.get("type")
+            content = (it.get("body") or it.get("subject") or "").strip()
+            if t in ("message", "email") and it.get("timestamp") and content:
+                sig = (t, it.get("timestamp"), (it.get("sender") or {}).get("key"), content[:120])
+            if sig is not None and sig in seen_sigs:
+                kept = deduped[seen_sigs[sig]]
+                rk = it.get("report_key")
+                if rk and rk != kept.get("report_key"):
+                    also = kept.setdefault("also_on_reports", [])
+                    if rk not in also:
+                        also.append(rk)
                 continue
-            if key in seen_ids:
-                continue
-            seen_ids.add(key)
+            if sig is not None:
+                seen_sigs[sig] = len(deduped)
             deduped.append(it)
         items = deduped
 
