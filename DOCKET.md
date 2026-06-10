@@ -47,10 +47,12 @@
   Restart=on-failure — verified it respawns on kill and survives reboot). Runs `main:app`
   from the worktree. GCP firewall rule `allow-docket-8011` opens the port. 8 demo tickets
   preserved.
-- **Phase 1 COMPLETE.** **Phase 2 (autonomous agent) is LIVE in grooming mode** — the
-  `owl-docket-agent` service auto-picks queued tickets and runs real headless Claude for
-  Assessment + Planning (read-only), posting to the timeline with a live ticker, gated by
-  the hybrid grooming gate. Code-gen/PR is written but OFF (`DOCKET_AGENT_WRITES=0`).
+- **Phase 1 COMPLETE. Phase 2 + write autonomy are LIVE (`DOCKET_AGENT_WRITES=1`).**
+  The `owl-docket-agent` service auto-picks queued tickets and runs the FULL pipeline with
+  real headless Claude: assess → (grooming gate) → plan → implement → self-review → commit
+  → push branch → PR (compare URL). Never auto-merges. VERIFIED end-to-end live: DKT-15
+  went queued→pushed branch in ~48s autonomously. Pushed demo branches on origin:
+  `docket/DKT-14`, `docket/DKT-15` (unmerged; open or delete at will).
 - **Runs as root** (claude creds + GitHub push key + Neil B <thenofisamizdat@gmail.com>).
   Agent reads `DOCKET_MAIN_CHECKOUT` (default /home/conorbowles51/app_v2 = owl-n4j `main`)
   as the target repo. Manage: `systemctl status|restart|stop owl-docket-agent`;
