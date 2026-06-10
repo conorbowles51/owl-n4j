@@ -19,6 +19,11 @@
 
 ## ▶ STATUS / NEXT  (keep this block fresh — resume point for "Continue Docket")
 
+- **WHERE THIS LIVES (read first):** Docket now has its OWN git worktree at
+  **`/home/conorbowles51/app_v2-docket`** (branch `feat/docket`). Do all Docket work
+  THERE — NOT in `/home/conorbowles51/app_v2` (that's the prod checkout, kept on `main`).
+  This file is `app_v2-docket/DOCKET.md`. A durable systemd service **`owl-docket`** runs
+  it on `0.0.0.0:8011` (its own `data/docket.db`, shares the app_v2 venv + `.env`).
 - **Phase:** Phase 1 (Rails) — IN PROGRESS, on branch `feat/docket` (off `main`).
 - **Last completed:** Backend + standalone UI scaffolded & verified.
   - Backend: store/state-machine `backend/services/docket_storage.py`; API
@@ -36,9 +41,12 @@
   connected); drove the full flow over HTTP — `/docket` serves the bundle, login,
   create, submit→queued(#1), transition, comment, illegal-move 400, board grouping.
   Seeded 8 demo tickets spread across every lane (some with live activity tickers).
-  NOTE: no browser-driver tooling here, so the pixel render wasn't automated — view via
-  SSH tunnel to :8011 `/docket` (testers: alex/neil/conor/arturo, pw `testing`). The
-  `:8011` server + `data/docket.db` demo data are EPHEMERAL test artifacts.
+  NOTE: no browser-driver tooling here, so the pixel render wasn't automated.
+- **DURABLE WEB DEPLOY (done):** live at **http://34.139.254.219:8011/docket** (testers
+  alex/arturo/conor/neil, pw `testing`) via the `owl-docket` systemd service (enabled,
+  Restart=on-failure — verified it respawns on kill and survives reboot). Runs `main:app`
+  from the worktree. GCP firewall rule `allow-docket-8011` opens the port. 8 demo tickets
+  preserved.
 - **Next action:** (a) [done — see Live verification] ; (b) the
   **amend-on-fail** UX for resubmit (edit desc/test-instructions when bouncing from
   User Review); (c) migrate the **old hub** (checklist + feedback + discussion) in and
@@ -129,7 +137,8 @@ Discussion → [Submit for Processing] →
   - [x] Standalone React app shell + production-line board (`docket/`, served at /docket)
   - [~] Submit/resubmit flows — submit + fail→requeue work; amend-on-fail UX still TODO
   - [ ] Migrate old hub (checklist + feedback + discussion) in, retire vanilla-JS page
-  - [ ] Deploy wiring: build `docket/dist` in deploy.sh + nginx route for /docket
+  - [~] Deploy: DURABLE interim env live via `owl-docket` systemd service on :8011 (own
+        worktree + DB). Real deploy on the main origin (deploy.sh build step + route) still TODO.
 - [ ] **Phase 2 — Plumbing:** worktree-per-ticket + per-phase agent + `gh` PR + live
   progress/heartbeat + msmtp notifications.
 - [ ] **Phase 3 — Turn autonomy on** behind a flag, ticket-by-ticket with caps; open the
@@ -139,15 +148,24 @@ Discussion → [Submit for Processing] →
 
 ---
 
-## Early web access (TEST — not the real deploy)
+## Web access — DURABLE early-access env (`owl-docket` service)
 - **Live at:** http://34.139.254.219:8011/docket  (testers alex/arturo/conor/neil, pw `testing`).
-- Served by an ad-hoc `uvicorn main:app --host 0.0.0.0 --port 8011` (run as conorbowles51,
-  from the `feat/docket` checkout) — NOT a systemd service, so it won't survive a reboot or
-  a crash. data/docket.db holds 8 demo tickets.
-- **Firewall:** GCP rule `allow-docket-8011` (default network, 0.0.0.0/0, tcp:8011) — created
-  2026-06-10. To revert: `gcloud compute firewall-rules delete allow-docket-8011`.
-- TODO to make durable: wrap as a systemd unit (e.g. `owl-docket.service`), OR fold into the
-  real deploy on :8000. Until then treat :8011 as ephemeral.
+- **Isolation:** runs from its OWN git worktree `/home/conorbowles51/app_v2-docket` (branch
+  `feat/docket`), so prod (`/home/conorbowles51/app_v2`, kept on `main`) is untouched. Shares
+  the app_v2 venv + `.env` (read-only); has its OWN `data/docket.db` + `data/tmp`.
+- **Service:** `owl-docket.service` (`/etc/systemd/system/owl-docket.service`) — User
+  conorbowles51, `uvicorn main:app --host 0.0.0.0 --port 8011 --workers 1`, Restart=on-failure,
+  enabled (survives reboot). Manage: `sudo systemctl {status,restart,stop} owl-docket`;
+  logs: `journalctl -u owl-docket -f`.
+- **Firewall:** GCP rule `allow-docket-8011` (default network, 0.0.0.0/0, tcp:8011), 2026-06-10.
+  Revert: `gcloud compute firewall-rules delete allow-docket-8011`.
+- **Cost note:** this is a full `main:app` instance (Neo4j + embeddings load at startup,
+  ~2.4 GB RSS) — heavy for a ticket app. Box has no swap (see host-OOM memory). A lighter
+  Docket-only ASGI entrypoint is possible later but needs `routers/__init__` to stop eager-
+  loading the heavy stack. Acceptable for now.
+- **To retire / supersede:** `systemctl disable --now owl-docket`, delete the firewall rule,
+  `git worktree remove /home/conorbowles51/app_v2-docket` — once Docket folds into the real
+  deploy.
 
 ## Deploy notes (TODO — not yet wired)
 - **Build step:** deploy must run `cd docket && npm ci && npm run build` to produce
