@@ -47,14 +47,20 @@
   Restart=on-failure — verified it respawns on kill and survives reboot). Runs `main:app`
   from the worktree. GCP firewall rule `allow-docket-8011` opens the port. 8 demo tickets
   preserved.
-- **Phase 1 is essentially COMPLETE:** rails (store/state-machine/API), standalone app
-  (board + ticket detail + new ticket), submit + amend-on-fail resubmit, Checklist surface
-  + raise-ticket bridge, durable web deploy on :8011. Remaining Phase-1 tail = the REAL
-  deploy on the main origin (deploy.sh build step + route + data cutover + retire old page).
-- **Next action (pick one):** (A) **start Phase 2** — the autonomous agent: orchestrator
-  that picks the top queued ticket, runs per-phase in a worktree, posts assessment/plan/
-  activity, opens a PR via `gh`. THE headline feature. OR (B) finish the real-deploy tail so
-  it's served from the main origin with prod's existing hub data.
+- **Phase 1 COMPLETE.** **Phase 2 (autonomous agent) is LIVE in grooming mode** — the
+  `owl-docket-agent` service auto-picks queued tickets and runs real headless Claude for
+  Assessment + Planning (read-only), posting to the timeline with a live ticker, gated by
+  the hybrid grooming gate. Code-gen/PR is written but OFF (`DOCKET_AGENT_WRITES=0`).
+- **Runs as root** (claude creds + GitHub push key + Neil B <thenofisamizdat@gmail.com>).
+  Agent reads `DOCKET_MAIN_CHECKOUT` (default /home/conorbowles51/app_v2 = owl-n4j `main`)
+  as the target repo. Manage: `systemctl status|restart|stop owl-docket-agent`;
+  `journalctl -u owl-docket-agent -f`. Units version-controlled in `docket/deploy/`.
+- **Next action (pick one):** (A) **enable write autonomy** — set `DOCKET_AGENT_WRITES=1`
+  and test the implement→self-review→push→PR path on ONE low-risk ticket (the write paths
+  exist but are untested e2e; real PR-object creation still needs gh/PAT — currently pushes
+  a branch + posts a compare URL). (B) surface the agent's assessment/plan/effort nicely in
+  the ticket-detail UI (assessment & plan render as plain notes now). (C) wire msmtp so the
+  queued Needs-Info/PR notifications actually send. (D) real deploy on the main origin.
 - **Blocked on:** Nothing for Phases 1–early-2. SMTP credential pending for the email
   channel only (Neil is setting up a send-from address + app password later).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
@@ -148,10 +154,19 @@ Discussion → [Submit for Processing] →
         prod hub's accumulated feedback/user_items not yet migrated — do at cutover.
   - [~] Deploy: DURABLE interim env live via `owl-docket` systemd service on :8011 (own
         worktree + DB). Real deploy on the main origin (deploy.sh build step + route) still TODO.
-- [ ] **Phase 2 — Plumbing:** worktree-per-ticket + per-phase agent + `gh` PR + live
-  progress/heartbeat + msmtp notifications.
-- [ ] **Phase 3 — Turn autonomy on** behind a flag, ticket-by-ticket with caps; open the
-  throttle once it behaves.
+- [~] **Phase 2 — Plumbing:** orchestrator `backend/services/docket_agent.py` runs headless
+  Claude per phase (stream-json → live activity ticker), drives state transitions, posts
+  assessment/plan/notes to the timeline, with per-phase max-turns + budget caps + grooming
+  gate + stall-on-error. Runs as the `owl-docket-agent` systemd service (root → claude creds
+  + GitHub key + Neil B <thenofisamizdat@gmail.com> identity). VERIFIED live: vague P0 →
+  Needs Info (real clarifying question); clear P2 → assess+plan; auto-grooms queued tickets.
+  - [x] read-only phases (assessment + planning) — REAL, safe, live
+  - [x] worktree-per-ticket scaffolding + commit/push/PR code paths (written)
+  - [ ] msmtp delivery of the queued notifications (still needs the SMTP cred)
+  - [ ] real PR *object* creation (currently push branch + compare URL; needs gh/PAT)
+- [~] **Phase 3 — Turn autonomy on** behind `DOCKET_AGENT_WRITES`: 0 (default) = grooming
+  only (assess+plan, read-only); 1 = implement → self-review → push branch → PR. Flip when
+  ready to let it write code. Write-phase code paths exist but are UNTESTED end-to-end.
 - [ ] **Phase 4 — Coaching analytics:** clarity scoring at submit, "bounced & why",
   effort dashboards.
 
@@ -175,6 +190,29 @@ Discussion → [Submit for Processing] →
 - **To retire / supersede:** `systemctl disable --now owl-docket`, delete the firewall rule,
   `git worktree remove /home/conorbowles51/app_v2-docket` — once Docket folds into the real
   deploy.
+
+## Autonomous agent (Phase 2) — `owl-docket-agent`
+- **Code:** `backend/services/docket_agent.py`. Orchestrator OWNS transitions; invokes
+  headless `claude` once per phase (`claude -p --output-format stream-json --verbose
+  --max-turns N --max-budget-usd X --permission-mode … --model sonnet`), parses tool_use
+  events → `set_activity()` ticker, parses the final `result` for the phase content.
+- **Phases:** Assessment (read-only) → grooming gate → Planning (read-only) → [gated]
+  In Development → Self-Review → push branch + PR. Read-only phases disallow Edit/Write.
+- **Grooming gate (hybrid):** assess prompt ends with `VERDICT: PROCEED` or
+  `VERDICT: NEEDS_INFO || <question>`. Vague **P0/P1** → bounced to Needs Info + notify;
+  vague lower-priority → proceed best-effort with a recorded assumption note.
+- **Guardrails:** per-phase `--max-turns` + `--max-budget-usd`, subprocess timeout, any
+  failure → **Stalled** + notify. NEVER auto-merges (stops at PR).
+- **Autonomy flag:** `DOCKET_AGENT_WRITES` (service env). `0` = grooming only (LIVE now).
+  `1` = full implement→review→push→PR (paths written, **not yet tested e2e**). To enable:
+  edit `docket/deploy/owl-docket-agent.service` (or the installed unit), set `=1`,
+  `systemctl daemon-reload && restart owl-docket-agent`. Test on ONE low-risk ticket first.
+- **Other env:** `DOCKET_AGENT_MODEL` (sonnet), `DOCKET_MAIN_CHECKOUT` (target repo to work
+  in; default the owl-n4j `main` checkout), `DOCKET_WORKTREE_DIR`, `DOCKET_AGENT_POLL`.
+- **Known gaps:** real PR-object creation needs `gh`/PAT (currently push + compare URL);
+  notifications are queued in the DB but msmtp delivery isn't wired (needs SMTP cred);
+  tickets about Docket ITSELF need the target checkout pointed at the feat/docket worktree
+  (default targets owl-n4j main).
 
 ## Deploy notes (TODO — not yet wired)
 - **Build step:** deploy must run `cd docket && npm ci && npm run build` to produce

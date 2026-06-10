@@ -1,0 +1,24 @@
+[Unit]
+Description=Docket autonomous agent - orchestrator that works tickets off the queue
+After=network-online.target owl-docket.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as root: has claude creds (/root/.claude), the GitHub push key
+# (/root/.ssh), and the Neil B <thenofisamizdat@gmail.com> commit identity.
+User=root
+Group=root
+WorkingDirectory=/home/conorbowles51/app_v2-docket/backend
+Environment="HOME=/root"
+Environment="PATH=/root/.local/bin:/home/conorbowles51/app_v2/venv/bin:/usr/local/bin:/usr/bin:/bin"
+# Autonomy gate: 0 = grooming only (assess + plan, read-only). Set to 1 to let
+# the agent implement, self-review and open PRs.
+Environment="DOCKET_AGENT_WRITES=0"
+Environment="DOCKET_AGENT_MODEL=sonnet"
+ExecStart=/home/conorbowles51/app_v2/venv/bin/python -m services.docket_agent
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
