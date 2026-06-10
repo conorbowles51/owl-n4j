@@ -13,8 +13,14 @@
 > Status legend: `NEW` (just arrived) · `TRIAGED` (understood, planned) ·
 > `IN-PROGRESS` · `FIXED` (shipped) · `WONTFIX` · `NEEDS-INFO`.
 >
-> **Last synced:** 2026-06-09 20:30 UTC (by Claude)
+> **Last synced:** 2026-06-10 00:30 UTC (by Claude)
 > Feedback authors active so far: **Alex**. Logins: neil / alex / conor / arturo.
+>
+> ⚠️ **Incident 2026-06-10:** the hub's `/api/testing/checklist` was 500ing
+> (stylised-unicode/surrogate chars in a checklist string → UnicodeEncodeError),
+> so the catalogue looked wiped. **Tester feedback was never lost** (all 8 items +
+> 14 verdicts + 1 comment intact). Fixed (commit 797e620) + endpoints hardened
+> with ensure_ascii. Lesson: keep `testing_checklist.py` strings ASCII-only.
 
 ---
 
@@ -26,8 +32,17 @@
 | user-bug-2 | bug | Make all users/accounts searchable by text (unicode) | Alex | 2026-06-09 18:50 | FIXED (client; backend follow-up) |
 | user-bug-3 | bug | Comms Timeline window needs to be bigger | Alex | 2026-06-09 18:56 | FIXED |
 | user-feature-4 | feature | Ability to export data to PDF | Alex | 2026-06-09 19:10 | FIXED |
+| user-bug-5 | bug | Cannot copy/paste in Comms Timeline | Alex | 2026-06-09 19:58 | NEW |
+| user-bug-6 | bug | Messages in Comms Timeline have duplicates | Alex | 2026-06-09 20:13 | NEW |
+| user-bug-7 | bug | Comms Timeline doesn't load all events (scroll won't continue) | Alex | 2026-06-09 20:14 | NEW |
+| user-bug-8 | bug | Comms Timeline not showing all comms already filtered (only one phone) | Alex | 2026-06-09 20:20 | NEW |
 
-> All four fixed on branch `feat/cellebrite-search-discovery` (round-2 commit). Checklist items `fix-*` added for re-test. Backend restarted. See per-item notes in §D.
+> user-bug-1..4 fixed on branch `feat/cellebrite-search-discovery` (round-2). Checklist `fix-*` items added for re-test. **user-bug-5..8 are NEW (filed 2026-06-09 ~20:00), not yet started** — all about the Comms cross-type Timeline flyover (`CommsCrossTypeTimeline`):
+> - **user-bug-5** — can't select/copy text in the comms timeline.
+> - **user-bug-6** — duplicate messages appear (relates to `dedup-collapse` FAIL — this is the repro I'd asked for: "some of the same messages appear multiple times").
+> - **user-bug-7** — infinite scroll stops; doesn't load all events (comment: "the scroll doesn't continue scrolling").
+> - **user-bug-8** — filtering by a contact shows only ONE phone's comms when multiple phones (P3, P4) have comms/calls with her — filter is dropping devices.
+> New comment on user-bug-7: Alex — "Comms Timeline doesn't load all events. the scroll doesn't continue scrolling".
 
 ### user-bug-1 — phone's-perspective contact naming  *(status: TRIAGED)*
 Messages out of the owner's phone show the wrong name. Isolating C5/C6 should
