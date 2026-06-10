@@ -115,7 +115,11 @@ export default function CommsCrossTypeTimeline({
       endDate,
       hasAttachment: hasAttachmentOnly,
       expandIdentities,
-      limit: 2000,
+      // When a specific conversation is filtered (people picked), load the
+      // WHOLE thing — otherwise the newest-N window can be dominated by one
+      // phone's side and the other phone falls below it ("only one phone"
+      // shows). Unfiltered browsing keeps the lighter newest-N window.
+      limit: hasEntitySelection ? 50000 : 2000,
       sort: apiSort,
     }).then((data) => {
       if (!cancelled) {
@@ -265,7 +269,7 @@ export default function CommsCrossTypeTimeline({
     endDate,
     hasAttachment: hasAttachmentOnly,
     expandIdentities,
-    limit: 2000,
+    limit: hasEntitySelection ? 50000 : 2000,
     sort: sortMode === 'asc' ? 'asc' : 'desc',
   });
 

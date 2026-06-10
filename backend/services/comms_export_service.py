@@ -154,18 +154,24 @@ h1 { font-size: 18px; margin: 0 0 2px; color: #15324a; }
         padding: 8px 12px; margin: 0 0 14px; }
 .meta b { color: #15324a; }
 .counts span { display: inline-block; margin-right: 14px; }
-table { width: 100%; border-collapse: collapse; }
+/* table-layout: fixed is ESSENTIAL — without it a long "From → To" list (or any
+   nowrap cell) makes the column expand past its width and pushes the whole table
+   off the right edge of the page, clipping the Content column entirely. Fixed
+   layout pins each column to its width and the rest wraps inside the page box. */
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 th { text-align: left; background: #15324a; color: #fff; padding: 5px 7px;
      font-size: 10px; font-weight: 600; }
-td { padding: 5px 7px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+td { padding: 5px 7px; border-bottom: 1px solid #eef2f7; vertical-align: top;
+     overflow-wrap: anywhere; word-break: break-word; }
 tr:nth-child(even) td { background: #fafcff; }
-.tcol { white-space: nowrap; color: #5b6b7b; width: 120px; }
-.kcol { white-space: nowrap; width: 64px; text-transform: capitalize; color: #6b21a8; }
-.pcol { white-space: nowrap; width: 200px; }
+.tcol { white-space: nowrap; color: #5b6b7b; width: 88px; }
+.kcol { white-space: nowrap; width: 52px; text-transform: capitalize; color: #6b21a8; }
+/* participant lists wrap now (no nowrap) so multi-recipient rows stay on-page. */
+.pcol { width: 150px; color: #36506a; }
 /* pre-wrap: keep the message's own line breaks AND wrap long lines so a
    multi-line message reads the way it was sent, not as one run-on paragraph. */
-.body { word-break: break-word; white-space: pre-wrap; }
-.media { color: #6b21a8; font-size: 9.5px; white-space: nowrap; }
+.body { overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; }
+.media { color: #6b21a8; font-size: 9.5px; overflow-wrap: anywhere; }
 .thumbs { margin-top: 3px; }
 .thumb { height: 84px; max-width: 120px; object-fit: cover; border: 1px solid #dce6f0;
          border-radius: 4px; margin: 2px 4px 0 0; vertical-align: top; }
