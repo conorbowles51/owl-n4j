@@ -30,6 +30,7 @@ from routers.cellebrite import router as cellebrite_router
 from routers.triage import router as triage_router
 from routers.case_entities import router as case_entities_router
 from routers.testing import router as testing_router
+from routers.docket import router as docket_router
 
 __all__ = [
     "graph_router",
@@ -60,4 +61,5 @@ __all__ = [
     "triage_router",
     "case_entities_router",
     "testing_router",
+    "docket_router",
 ]

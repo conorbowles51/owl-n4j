@@ -21,14 +21,26 @@ from jose import JWTError, jwt
 
 from config import AUTH_SECRET_KEY, AUTH_ALGORITHM
 
-# The three testers. Same shared password ("testing") per the brief — but each
-# logs in under their own username so authorship of every note is attributable.
+# The testers. Same shared password ("testing") per the brief — but each logs in
+# under their own username so authorship of every note is attributable.
 _TESTERS = {
     "neil": "Neil",
     "alex": "Alex",
     "conor": "Conor",
+    "arturo": "Arturo",
 }
 _PASSWORD = "testing"
+
+# Per-tester email, used by Docket's notifier (Needs Info / PR ready / User
+# Review / Stalled). Fill these in as addresses become known; an empty string
+# just means "no email channel for this person yet" (in-app badge still fires).
+# TODO(neil): confirm/complete these once the send-from mailbox is set up.
+_EMAILS = {
+    "neil": "neil.byrne@udemy.com",
+    "alex": "",
+    "conor": "",
+    "arturo": "",
+}
 
 # Hash the password per-user at import so no plaintext sits in memory longer
 # than needed and the stored secret is a bcrypt digest.
@@ -88,3 +100,16 @@ def verify_token(token: str) -> Optional[dict]:
     if uname not in _TESTERS:
         return None
     return {"username": uname, "name": data.get("name") or _TESTERS[uname]}
+
+
+def tester_email(username: str) -> str:
+    """Email for a tester username, or '' if none on file."""
+    return _EMAILS.get((username or "").strip().lower(), "")
+
+
+def all_testers() -> list:
+    """[{username, name, email}] for every tester — used by Docket assignee pickers."""
+    return [
+        {"username": u, "name": n, "email": _EMAILS.get(u, "")}
+        for u, n in _TESTERS.items()
+    ]

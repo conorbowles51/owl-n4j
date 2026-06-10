@@ -20,16 +20,18 @@
 ## ▶ STATUS / NEXT  (keep this block fresh — resume point for "Continue Docket")
 
 - **Phase:** Phase 1 (Rails) — IN PROGRESS, on branch `feat/docket` (off `main`).
-- **Last completed:** Built + tested the SQLite ticket store & lifecycle state machine:
-  `backend/services/docket_storage.py`. Tables: tickets / ticket_events / notifications.
-  State machine enforces legal transitions (queue→…→done, self-review retry, PR bounce,
-  user-review fail→requeue w/ iteration bump, needs_info/stalled recovery). Queue orders
-  by priority then FIFO; activity ticker + work history + notification queue all working.
-  `data/docket.db*` is gitignored (runtime data).
-- **Next action:** Build the backend API surface `backend/routers/docket.py`
-  (`/api/tickets/*` — list/create/get/update/transition/comment/queue), reusing the
-  existing tester JWT auth (`services.testing_auth` — add `arturo` + `email` per tester).
-  Register it in `backend/main.py`. THEN scaffold the standalone React app shell + board.
+- **Last completed:** Backend complete + tested.
+  (1) Store/state-machine `backend/services/docket_storage.py` (tickets/ticket_events/
+  notifications; legal-transition enforcement; priority+FIFO queue; activity ticker).
+  (2) API `backend/routers/docket.py` → `/api/tickets/*` (meta, testers, list, queue,
+  board, create, get-detail, patch, submit, transition, comment), registered in
+  `routers/__init__.py` + `main.py`. (3) Auth extended in `services/testing_auth.py`:
+  added `arturo` + an `_EMAILS` map (neil filled, others TODO) + `tester_email()` /
+  `all_testers()` helpers. Verified via FastAPI TestClient: 401 gate, token attribution,
+  submit→queued, illegal-move 400, comments, timeline, board, testers list.
+- **Next action:** Scaffold the **standalone React app** (Vite) — app shell + the
+  production-line **board** that reads `/api/tickets/board`, reusing the tester login.
+  Decide where it builds to / how the backend serves its static bundle.
 - **Blocked on:** Nothing for Phases 1–early-2. SMTP credential pending for the email
   channel only (Neil is setting up a send-from address + app password later).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
@@ -110,7 +112,8 @@ Discussion → [Submit for Processing] →
 - [ ] **Phase 1 — Rails:** SQLite model + state machine + standalone app/board +
   submit/resubmit + migrate the old hub in.
   - [x] SQLite ticket store + lifecycle state machine (`backend/services/docket_storage.py`)
-  - [ ] API surface (`backend/routers/docket.py` → `/api/tickets/*`) + register in main.py
+  - [x] API surface (`backend/routers/docket.py` → `/api/tickets/*`) + register in main.py
+  - [x] Auth: add `arturo` + per-tester email + helpers (`services/testing_auth.py`)
   - [ ] Standalone React app shell + production-line board
   - [ ] Submit-for-processing / resubmit-with-amendment flows
   - [ ] Migrate old hub (checklist + feedback + discussion) in, retire vanilla-JS page
