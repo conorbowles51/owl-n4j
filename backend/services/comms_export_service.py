@@ -84,7 +84,9 @@ tr:nth-child(even) td { background: #fafcff; }
 .tcol { white-space: nowrap; color: #5b6b7b; width: 120px; }
 .kcol { white-space: nowrap; width: 64px; text-transform: capitalize; color: #6b21a8; }
 .pcol { white-space: nowrap; width: 200px; }
-.body { word-break: break-word; }
+/* pre-wrap: keep the message's own line breaks AND wrap long lines so a
+   multi-line message reads the way it was sent, not as one run-on paragraph. */
+.body { word-break: break-word; white-space: pre-wrap; }
 .owner { color: #0f7b3f; }
 .thread { margin: 0 0 16px; break-inside: avoid; }
 .thread h3 { font-size: 12px; margin: 14px 0 4px; color: #15324a;
