@@ -557,6 +557,49 @@ def _resolve_attachments(case_id: str, items: List[dict]) -> None:
         it["attachments"] = atts
 
 
+def _build_comms_thumbnails(items: List[dict], max_px: int = 130, max_thumbs: int = 600) -> dict:
+    """{evidence_id: base64 JPEG data-URI} for image attachments in the comms
+    items — read off disk and downscaled. Capped to bound PDF size/time;
+    unreadable/non-image files are skipped."""
+    import io
+    import base64
+    from pathlib import Path as _Path
+    try:
+        from PIL import Image
+    except Exception:
+        return {}
+    img_cats = {"image", "images"}
+    ev_ids: list = []
+    seen: set = set()
+    for it in items:
+        for a in (it.get("attachments") or []):
+            if not a or a.get("missing"):
+                continue
+            evid = a.get("evidence_id")
+            cat = str(a.get("category") or "").strip().lower()
+            if evid and evid not in seen and cat in img_cats:
+                seen.add(evid)
+                ev_ids.append(evid)
+    out: dict = {}
+    for evid in ev_ids:
+        if len(out) >= max_thumbs:
+            break
+        try:
+            rec = evidence_storage.get(evid)
+            sp = rec.get("stored_path") if rec else None
+            if not sp or not _Path(sp).exists():
+                continue
+            with Image.open(_Path(sp)) as im:
+                im = im.convert("RGB")
+                im.thumbnail((max_px, max_px))
+                buf = io.BytesIO()
+                im.save(buf, "JPEG", quality=72)
+            out[evid] = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+        except Exception:
+            continue
+    return out
+
+
 @router.get("/comms/entities")
 def get_comms_entities(
     case_id: str = Query(...),
@@ -750,6 +793,7 @@ def export_comms_pdf(
     end_date: Optional[str] = Query(None),
     mode: str = Query("timeline", regex="^(timeline|conversation)$"),
     expand_identities: bool = Query(False, description="Expand each person-key filter to the contact's full identity cluster."),
+    include_media: bool = Query(False, description="Embed image-attachment thumbnails in the PDF (audio/video shown as labels)."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -784,6 +828,17 @@ def export_comms_pdf(
     )
     items = result.get("items", [])
 
+    # Resolve attachments so the export shows what each message WAS (an image,
+    # a voice note, …) instead of a blank row, and so media-thumbnail embedding
+    # has evidence ids to work from.
+    _resolve_attachments(case_id, items)
+
+    # When requested, build small base64 thumbnails for image attachments and
+    # embed them in the PDF. Capped so a media-heavy export can't blow up.
+    thumbnails = None
+    if include_media:
+        thumbnails = _build_comms_thumbnails(items)
+
     # Resolve display names for the requested participants from the feed.
     want = set((pk or []) + (fk or []) + (tk or []))
     names: dict = {}
@@ -812,6 +867,7 @@ def export_comms_pdf(
         mode=mode,
         filters_description=filters_description,
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        thumbnails=thumbnails,
     )
 
     safe = "".join(c for c in (case_name or "case") if c.isalnum() or c in "-_") or "case"

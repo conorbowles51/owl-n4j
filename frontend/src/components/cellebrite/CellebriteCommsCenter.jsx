@@ -17,6 +17,7 @@ import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import { useCellebriteStatus } from './shared/CellebriteStatusBar';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import { consumeDiscoveryTarget } from '../../utils/commsHandoff';
+import { phoneFromKey } from './shared/PersonName';
 
 /**
  * Cellebrite Communication Center — the hybrid dashboard orchestrator.
@@ -41,23 +42,51 @@ function _ts(ts) {
   if (s.includes('.')) s = s.split('.')[0];
   return s.trim();
 }
+const _UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+const _NUMERIC_NAME_RE = /^[+(]?\d[\d\s().-]{5,}$/;
+// Name + number (the app's number-alongside-name rule); never a raw UUID/key.
 function _party(p) {
   if (!p) return '?';
-  return (p.name || p.key || '?') + (p.is_owner ? ' (owner)' : '');
+  const name = p.name;
+  const key = p.key || '';
+  const num = phoneFromKey(key) || '';
+  let label;
+  if (name && !_NUMERIC_NAME_RE.test(String(name).trim()) && !_UUID_RE.test(String(name))) label = name;
+  else if (num) label = '(unnamed)';
+  else if (key && !_UUID_RE.test(key) && !key.startsWith('phone-')) label = key;
+  else label = '(unnamed)';
+  return (label + (num ? ' ' + num : '')).trim() + (p.is_owner ? ' (owner)' : '');
 }
 function _recips(it) {
-  const ns = (it.recipients || []).map((r) => r && (r.name || r.key)).filter(Boolean);
-  return ns.length ? ns.join(', ') : '?';
+  const ls = (it.recipients || []).map(_party).filter((x) => x && x !== '?');
+  return ls.length ? ls.join(', ') : '?';
 }
+const _MEDIA_LBL = { image: 'Image', images: 'Image', audio: 'Voice note', video: 'Video', document: 'Document', documents: 'Document' };
+function _mediaTags(it) {
+  const tags = [];
+  for (const a of (it.attachments || [])) {
+    if (!a || a.missing) continue;
+    const cat = String(a.category || '').toLowerCase();
+    const lbl = _MEDIA_LBL[cat] || (a.category || 'Attachment');
+    tags.push('[' + lbl + (a.original_filename ? ': ' + a.original_filename : '') + ']');
+  }
+  if (!tags.length && (it.attachment_file_ids || []).length) {
+    tags.push(`[${it.attachment_file_ids.length} attachment${it.attachment_file_ids.length > 1 ? 's' : ''}]`);
+  }
+  return tags;
+}
+// Content + media labels so a media-only message isn't blank.
 function _content(it) {
+  let base;
   if (it.type === 'call') {
     const d = [it.direction, it.duration].filter(Boolean).join(' ');
-    return `[call${d ? ' ' + d : ''}]`;
+    base = `[call${d ? ' ' + d : ''}]`;
+  } else if (it.type === 'email') {
+    base = (it.subject ? `${it.subject} — ` : '') + (it.body || '');
+  } else {
+    base = it.body || '';
   }
-  if (it.type === 'email') {
-    return (it.subject ? `${it.subject} — ` : '') + (it.body || '');
-  }
-  return it.body || '';
+  return [base, ..._mediaTags(it)].filter(Boolean).join(' ').trim();
 }
 // Readable transcript, one line per comm, in chronological order.
 function commsToTranscript(items) {
@@ -641,6 +670,9 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     setThreadLimit((n) => n + THREADS_PAGE_STEP);
   }, []);
 
+  // Embed image thumbnails in the PDF (audio/video shown as labels).
+  const [pdfMedia, setPdfMedia] = useState(false);
+
   // Export the CURRENT filter (participants × types × date window × phones)
   // to PDF. Uses window.open so the browser's auth cookie carries through
   // (same mechanism as the financial PDF export). 'timeline' = flat
@@ -659,8 +691,9 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
     if (linkIdentities) params.set('expand_identities', 'true');
+    if (pdfMedia) params.set('include_media', 'true');
     window.open(`/api/cellebrite/comms/export/pdf?${params.toString()}`, '_blank');
-  }, [caseId, fromKeys, toKeys, participantKeys, activeTypes, selectedReportKeys, startDate, endDate, linkIdentities]);
+  }, [caseId, fromKeys, toKeys, participantKeys, activeTypes, selectedReportKeys, startDate, endDate, linkIdentities, pdfMedia]);
 
   // Copy the WHOLE filtered conversation (all selected people/identities ×
   // types × dates × phones), in chronological order, to the clipboard — so
@@ -1095,6 +1128,18 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         >
           <FileDown className="w-3 h-3" /> Conversation PDF
         </button>
+        <label
+          className="inline-flex items-center gap-1 cursor-pointer select-none text-light-600"
+          title="Embed image thumbnails in the PDF (audio/video shown as labels). Makes the PDF larger and slower to build."
+        >
+          <input
+            type="checkbox"
+            checked={pdfMedia}
+            onChange={(e) => setPdfMedia(e.target.checked)}
+            className="accent-owl-blue-600"
+          />
+          with media
+        </label>
         <div className="flex-1" />
         <label
           className="inline-flex items-center gap-1.5 cursor-pointer select-none text-light-600"

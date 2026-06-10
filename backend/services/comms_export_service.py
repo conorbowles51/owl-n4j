@@ -13,6 +13,7 @@ Attachments/media are NOT embedded (kept lightweight); a footer notes this.
 Names already arrive device-lens-resolved from get_cellebrite_comms_between.
 """
 
+import re
 from html import escape
 from typing import List, Optional, Dict, Any
 
@@ -38,31 +39,108 @@ def _fmt_ts(ts: Optional[str]) -> str:
     return s.strip()
 
 
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-")
+_NUMERIC_NAME_RE = re.compile(r"^[+(]?\d[\d\s().\-]{5,}$")
+_PHONE_KEY_RE = re.compile(r"^phone-(\d{7,15})$")
+
+
+def _phone_from_key(key) -> str:
+    m = _PHONE_KEY_RE.match(str(key or ""))
+    return "+" + m.group(1) if m else ""
+
+
 def _party(p: Optional[Dict[str, Any]]) -> str:
+    """Render a party as "Name +number" — the app's number-alongside-name rule.
+    Never prints a raw UUID/Neo4j key: when there's no human name we show
+    "(unnamed)" (+ the number if it's a phone identity), and an app handle
+    (snapchat/whatsapp username) is shown as-is."""
     if not p:
-        return "—"
-    name = p.get("name") or p.get("key") or "—"
-    return name + (" (owner)" if p.get("is_owner") else "")
+        return "?"
+    name = p.get("name")
+    key = p.get("key") or ""
+    num = _phone_from_key(key)
+    if name and not _NUMERIC_NAME_RE.match(str(name).strip()) and not _UUID_RE.match(str(name)):
+        label = str(name)
+    elif num:
+        label = "(unnamed)"
+    elif key and not _UUID_RE.match(key) and not key.startswith("phone-"):
+        label = str(key)  # app handle / email identity (name was junk/missing)
+    else:
+        label = "(unnamed)"
+    out = (label + (" " + num if num else "")).strip()
+    return out + (" (owner)" if p.get("is_owner") else "")
 
 
 def _recipients(item: Dict[str, Any]) -> str:
-    recs = item.get("recipients") or []
-    names = [r.get("name") or r.get("key") for r in recs if r]
-    names = [n for n in names if n]
-    return ", ".join(names) if names else "—"
+    recs = [r for r in (item.get("recipients") or []) if r]
+    labels = [_party(r) for r in recs]
+    labels = [x for x in labels if x and x != "?"]
+    return ", ".join(labels) if labels else "?"
+
+
+_MEDIA_LABEL = {
+    "image": "Image", "images": "Image",
+    "audio": "Voice note", "video": "Video",
+    "document": "Document", "documents": "Document", "text": "Document",
+    "application": "File", "archive": "File", "database": "File",
+}
+
+
+def _media_tags(item: Dict[str, Any]) -> list:
+    """Human labels for a message's attachments so media-only rows aren't blank
+    (e.g. "[Image: IMG-001.jpg]", "[Voice note]"). Uses the resolved
+    `attachments` (category + filename); falls back to a bare count."""
+    tags = []
+    for a in (item.get("attachments") or []):
+        if not a or a.get("missing"):
+            continue
+        cat = str(a.get("category") or "").strip().lower()
+        label = _MEDIA_LABEL.get(cat, (a.get("category") or "Attachment"))
+        fn = a.get("original_filename")
+        tags.append("[" + label + (": " + str(fn) if fn else "") + "]")
+    if not tags:
+        n = len(item.get("attachment_file_ids") or [])
+        if n:
+            tags.append(f"[{n} attachment{'s' if n != 1 else ''}]")
+    return tags
+
+
+def _thumbs_html(item: Dict[str, Any], thumbnails: Optional[Dict[str, str]]) -> str:
+    """<img> thumbnails for an item's image attachments, when a base64 data-URI
+    was supplied for that evidence_id (thumbnails={evidence_id: data_uri})."""
+    if not thumbnails:
+        return ""
+    imgs = []
+    for a in (item.get("attachments") or []):
+        if not a:
+            continue
+        uri = thumbnails.get(a.get("evidence_id"))
+        if uri:
+            alt = _esc(a.get("original_filename") or "image")
+            imgs.append(f"<img class='thumb' src='{uri}' alt='{alt}' />")
+    return f"<div class='thumbs'>{''.join(imgs)}</div>" if imgs else ""
 
 
 def _content(item: Dict[str, Any]) -> str:
+    """Escaped HTML for the message content + media labels (so a media-only
+    message still reads as e.g. "[Image: x.jpg]" rather than blank)."""
     t = item.get("type")
     if t == "call":
         dur = item.get("duration")
         d = item.get("direction") or "call"
-        return f"{d}{f' · {dur}s' if dur else ''}"
+        return _esc(f"{d}{f' · {dur}' if dur else ''}".strip()) or "call"
     if t == "email":
         subj = item.get("subject") or ""
         body = item.get("body") or ""
-        return (f"<b>{_esc(subj)}</b><br>" if subj else "") + _esc(body)
-    return _esc(item.get("body") or "")
+        html = (f"<b>{_esc(subj)}</b>" + ("<br>" if body else "")) if subj else ""
+        html += _esc(body)
+    else:
+        html = _esc(item.get("body") or "")
+    tags = _media_tags(item)
+    if tags:
+        tag_html = " ".join(f"<span class='media'>{_esc(x)}</span>" for x in tags)
+        html = (html + (" " if html else "") + tag_html).strip()
+    return html or "—"
 
 
 _CSS = """
@@ -87,6 +165,10 @@ tr:nth-child(even) td { background: #fafcff; }
 /* pre-wrap: keep the message's own line breaks AND wrap long lines so a
    multi-line message reads the way it was sent, not as one run-on paragraph. */
 .body { word-break: break-word; white-space: pre-wrap; }
+.media { color: #6b21a8; font-size: 9.5px; white-space: nowrap; }
+.thumbs { margin-top: 3px; }
+.thumb { height: 84px; max-width: 120px; object-fit: cover; border: 1px solid #dce6f0;
+         border-radius: 4px; margin: 2px 4px 0 0; vertical-align: top; }
 .owner { color: #0f7b3f; }
 .thread { margin: 0 0 16px; break-inside: avoid; }
 .thread h3 { font-size: 12px; margin: 14px 0 4px; color: #15324a;
@@ -108,8 +190,12 @@ def generate_comms_pdf(
     mode: str = "timeline",
     filters_description: str = "",
     generated_at: Optional[str] = None,
+    thumbnails: Optional[Dict[str, str]] = None,
 ) -> str:
-    """Return a self-contained HTML document for the filtered comms."""
+    """Return a self-contained HTML document for the filtered comms.
+
+    thumbnails: optional {evidence_id: data-URI} map; when given, image
+    attachments render as embedded thumbnails."""
     truncated = len(items) > MAX_ITEMS
     shown = items[:MAX_ITEMS]
 
@@ -167,7 +253,7 @@ def generate_comms_pdf(
                 body_parts.append(
                     f"<div class='msg'><div class='h'><span class='{cls.strip()}'>{_esc(who)}</span>"
                     f" → {_esc(_recipients(it))} · {_esc(_fmt_ts(it.get('timestamp')))}</div>"
-                    f"<div class='body'>{_content(it)}</div></div>"
+                    f"<div class='body'>{_content(it)}{_thumbs_html(it, thumbnails)}</div></div>"
                 )
             body_parts.append("</div>")
     else:
@@ -180,14 +266,19 @@ def generate_comms_pdf(
                 f"<td class='tcol'>{_esc(_fmt_ts(it.get('timestamp')))}</td>"
                 f"<td class='kcol'>{_esc(it.get('type'))}</td>"
                 f"<td class='pcol'>{_esc(_party(it.get('sender')))} → {_esc(_recipients(it))}</td>"
-                f"<td class='body'>{_content(it)}</td>"
+                f"<td class='body'>{_content(it)}{_thumbs_html(it, thumbnails)}</td>"
                 "</tr>"
             )
         body_parts.append("</tbody></table>")
 
+    media_note = (
+        "image thumbnails embedded; audio/video shown as labels"
+        if thumbnails else
+        "attachments shown as labels (enable 'with media' to embed image thumbnails)"
+    )
     foot = (
         f"<div class='foot'>Generated {_esc(generated_at or '')} · {len(shown):,} of {len(items):,} "
-        "communications rendered · attachments/media omitted (review them in the Comms Center) · "
+        f"communications rendered · {media_note} · "
         "Confidential — attorney work product.</div>"
     )
 
