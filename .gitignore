@@ -122,3 +122,8 @@ docker-compose.override.yml
 
 # Deploy logs
 deploy/logs/
+
+# Docket ticket store (runtime data, never commit)
+data/docket.db
+data/docket.db-wal
+data/docket.db-shm

@@ -19,13 +19,20 @@
 
 ## ▶ STATUS / NEXT  (keep this block fresh — resume point for "Continue Docket")
 
-- **Phase:** Design locked → not yet building.
-- **Last completed:** Named + branded the app "Docket"; created this living doc; wired the
-  "Continue Docket" resume protocol into memory.
-- **Next action:** On Neil's go-ahead, start **Phase 1 (Rails)** — begin with the SQLite
-  ticket model + state machine (see schema below), then the standalone app shell.
+- **Phase:** Phase 1 (Rails) — IN PROGRESS, on branch `feat/docket` (off `main`).
+- **Last completed:** Built + tested the SQLite ticket store & lifecycle state machine:
+  `backend/services/docket_storage.py`. Tables: tickets / ticket_events / notifications.
+  State machine enforces legal transitions (queue→…→done, self-review retry, PR bounce,
+  user-review fail→requeue w/ iteration bump, needs_info/stalled recovery). Queue orders
+  by priority then FIFO; activity ticker + work history + notification queue all working.
+  `data/docket.db*` is gitignored (runtime data).
+- **Next action:** Build the backend API surface `backend/routers/docket.py`
+  (`/api/tickets/*` — list/create/get/update/transition/comment/queue), reusing the
+  existing tester JWT auth (`services.testing_auth` — add `arturo` + `email` per tester).
+  Register it in `backend/main.py`. THEN scaffold the standalone React app shell + board.
 - **Blocked on:** Nothing for Phases 1–early-2. SMTP credential pending for the email
   channel only (Neil is setting up a send-from address + app password later).
+- **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
 - **Open product questions (settle in/before Phase 1):**
   - Priority scheme (P0–P3 vs Critical/High/Med/Low) + who can set/override it.
   - Make **acceptance criteria** a required submit field (quiet lever for better stories)?
@@ -102,6 +109,11 @@ Discussion → [Submit for Processing] →
 ## Build sequence (full autonomy, reached safely)
 - [ ] **Phase 1 — Rails:** SQLite model + state machine + standalone app/board +
   submit/resubmit + migrate the old hub in.
+  - [x] SQLite ticket store + lifecycle state machine (`backend/services/docket_storage.py`)
+  - [ ] API surface (`backend/routers/docket.py` → `/api/tickets/*`) + register in main.py
+  - [ ] Standalone React app shell + production-line board
+  - [ ] Submit-for-processing / resubmit-with-amendment flows
+  - [ ] Migrate old hub (checklist + feedback + discussion) in, retire vanilla-JS page
 - [ ] **Phase 2 — Plumbing:** worktree-per-ticket + per-phase agent + `gh` PR + live
   progress/heartbeat + msmtp notifications.
 - [ ] **Phase 3 — Turn autonomy on** behind a flag, ticket-by-ticket with caps; open the
