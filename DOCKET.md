@@ -139,6 +139,16 @@ Discussion → [Submit for Processing] →
 
 ---
 
+## Early web access (TEST — not the real deploy)
+- **Live at:** http://34.139.254.219:8011/docket  (testers alex/arturo/conor/neil, pw `testing`).
+- Served by an ad-hoc `uvicorn main:app --host 0.0.0.0 --port 8011` (run as conorbowles51,
+  from the `feat/docket` checkout) — NOT a systemd service, so it won't survive a reboot or
+  a crash. data/docket.db holds 8 demo tickets.
+- **Firewall:** GCP rule `allow-docket-8011` (default network, 0.0.0.0/0, tcp:8011) — created
+  2026-06-10. To revert: `gcloud compute firewall-rules delete allow-docket-8011`.
+- TODO to make durable: wrap as a systemd unit (e.g. `owl-docket.service`), OR fold into the
+  real deploy on :8000. Until then treat :8011 as ephemeral.
+
 ## Deploy notes (TODO — not yet wired)
 - **Build step:** deploy must run `cd docket && npm ci && npm run build` to produce
   `docket/dist`, which `backend/main.py` mounts at `/docket` (the mount is skipped if the
