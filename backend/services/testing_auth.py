@@ -2,8 +2,8 @@
 Testing-hub authentication — a small, self-contained login scoped ONLY to the
 QA testing hub.
 
-Deliberately separate from the main app's user accounts: these three testers
-(neil / alex / conor) get hub-only access so it's clear who wrote each note,
+Deliberately separate from the main app's user accounts: these testers
+(neil / alex / conor / arturo) get hub-only access so it's clear who wrote each note,
 and the hub isn't public — but logging in here grants NO access to the rest of
 the application (the token carries a `hub: "testing"` claim and the app's
 auth dependencies don't accept it).
@@ -21,12 +21,13 @@ from jose import JWTError, jwt
 
 from config import AUTH_SECRET_KEY, AUTH_ALGORITHM
 
-# The three testers. Same shared password ("testing") per the brief — but each
+# The testers. Same shared password ("testing") per the brief — but each
 # logs in under their own username so authorship of every note is attributable.
 _TESTERS = {
     "neil": "Neil",
     "alex": "Alex",
     "conor": "Conor",
+    "arturo": "Arturo",
 }
 _PASSWORD = "testing"
 

@@ -6,7 +6,7 @@ anything) the server Claude needs to know.
 
 ## What the hub is
 A login-gated QA page served by the **backend** that lists everything shipped
-in the Cellebrite work; testers (neil / alex / conor, password `testing`)
+in the Cellebrite work; testers (neil / alex / conor / arturo, password `testing`)
 record Pass/Fail/Blocked + notes per item. Feedback is saved to a JSON file on
 disk and attributed per tester.
 
@@ -53,7 +53,7 @@ The page is a **backend route**. Two ways to open it:
 > It's not required — option 1 already works everywhere.
 
 ## Logins
-- `neil` / `alex` / `conor`, all with password `testing`.
+- `neil` / `alex` / `conor` / `arturo`, all with password `testing`.
 - These are **hub-only** accounts (a separate, self-contained login). Signing in
   grants **no** access to the rest of the app — the token carries a
   `hub: "testing"` claim that the app's own auth rejects.

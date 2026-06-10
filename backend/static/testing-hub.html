@@ -99,6 +99,124 @@
   }
   .fb textarea:focus{outline:2px solid var(--owl-blue-50); border-color:var(--owl-blue)}
   .fb textarea.has{border-color:#b9c9d8; background:#fbfdff}
+  .fb-notes{flex:1; min-width:260px; display:flex; flex-direction:column; gap:8px}
+  .ta-field{display:flex; flex-direction:column; gap:3px}
+  .ta-label{font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em}
+  .ta-field textarea{
+    font:inherit; font-size:13px; min-height:36px; resize:vertical; padding:7px 9px;
+    border:1px solid var(--line); border-radius:8px; color:var(--ink); background:#fff; line-height:1.4;
+  }
+  .ta-field textarea:focus{outline:2px solid var(--owl-blue-50); border-color:var(--owl-blue)}
+  .ta-field textarea.has{border-color:#b9c9d8; background:#fbfdff}
+  /* item title is clickable (opens discussion) */
+  .item .title{cursor:pointer}
+  .item .title:hover{text-decoration:underline; text-decoration-color:#cdd7e1}
+  /* item footer: discussion link + last-activity date */
+  .item-foot{margin-top:9px; display:flex; gap:12px; align-items:center}
+  .disc-btn{
+    font:inherit; font-size:12.5px; padding:4px 10px; border:1px solid var(--line);
+    background:#fff; color:#3a4b5e; border-radius:99px; cursor:pointer; display:inline-flex; gap:6px; align-items:center;
+  }
+  .disc-btn:hover{background:#f5f8fb; border-color:#c7d2dd}
+  .disc-count{
+    font-size:11px; font-weight:600; min-width:18px; height:18px; padding:0 5px; border-radius:99px;
+    background:var(--owl-blue); color:#fff; display:inline-flex; align-items:center; justify-content:center;
+  }
+  .item-when{font-size:11.5px; color:#9aa7b4}
+  .repro-tag{color:#4b5a6b; font-style:italic}
+  .row-when{font-size:11px; color:#9aa7b4; margin-left:auto; white-space:nowrap}
+  /* focus / discussion drawer */
+  #focus{position:fixed; inset:0; z-index:80}
+  .focus-scrim{position:absolute; inset:0; background:rgba(15,23,32,.42)}
+  .focus-panel{
+    position:absolute; top:0; right:0; height:100%; width:min(560px,94vw);
+    background:#fff; box-shadow:-18px 0 50px rgba(0,0,0,.22); display:flex; flex-direction:column;
+    animation:slideIn .18s ease;
+  }
+  @keyframes slideIn{from{transform:translateX(24px); opacity:.6} to{transform:translateX(0); opacity:1}}
+  .focus-head{padding:18px 20px 14px; border-bottom:1px solid var(--line); position:relative}
+  .focus-close{
+    position:absolute; top:14px; right:16px; border:0; background:#eef1f5; color:#5a6a78;
+    width:30px; height:30px; border-radius:8px; font-size:15px; cursor:pointer;
+  }
+  .focus-close:hover{background:#e2e7ed}
+  .focus-title{font-size:16px; font-weight:600; color:var(--ink); padding-right:38px}
+  .focus-how{margin-top:5px; font-size:13px; color:var(--muted); line-height:1.45}
+  .focus-meta{margin-top:9px; display:flex; gap:8px; flex-wrap:wrap}
+  .focus-body{flex:1; overflow-y:auto; padding:16px 20px}
+  .focus-empty-sm{font-size:13px; color:#9aa7b4; padding:6px 0}
+  .focus-statuses{display:flex; flex-direction:column; gap:8px; margin-bottom:18px}
+  .fs-card{border:1px solid var(--line); border-radius:10px; padding:9px 11px; background:#fbfcfd}
+  .fs-head{display:flex; gap:8px; align-items:center}
+  .fs-head b{font-size:13px; color:#3a4b5e}
+  .fs-when{font-size:11px; color:#9aa7b4; margin-left:auto}
+  .fs-note{margin-top:6px; font-size:13px; color:var(--ink); white-space:pre-wrap; line-height:1.45}
+  .fs-repro{margin-top:6px; font-size:13px; color:var(--ink); white-space:pre-wrap; line-height:1.45;
+    background:#f4f8fb; border-left:3px solid #c7d8e6; padding:6px 9px; border-radius:0 6px 6px 0}
+  .fs-lab{display:block; font-size:10.5px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px}
+  .thread{display:flex; flex-direction:column; gap:10px}
+  .thread-head{font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; border-top:1px solid var(--line); padding-top:14px}
+  .cmt{border:1px solid var(--line); border-radius:10px; padding:9px 12px; background:#fff}
+  .cmt.mine{background:#f3f8fd; border-color:#cfe0ee}
+  .cmt-head{display:flex; gap:8px; align-items:baseline}
+  .cmt-head b{font-size:13px; color:#3a4b5e}
+  .cmt-when{font-size:11px; color:#9aa7b4; margin-left:auto}
+  .cmt-text{margin-top:4px; font-size:13.5px; color:var(--ink); white-space:pre-wrap; line-height:1.5}
+  .focus-compose{display:flex; gap:8px; padding:12px 20px; border-top:1px solid var(--line); align-items:flex-end}
+  .focus-compose textarea{
+    flex:1; font:inherit; font-size:13.5px; resize:vertical; min-height:38px; padding:8px 10px;
+    border:1px solid var(--line); border-radius:9px; color:var(--ink); line-height:1.4;
+  }
+  .focus-compose textarea:focus{outline:2px solid var(--owl-blue-50); border-color:var(--owl-blue)}
+  .focus-compose button{
+    font:inherit; font-size:13.5px; font-weight:600; padding:9px 18px; border:0; border-radius:9px;
+    background:var(--owl-blue); color:#fff; cursor:pointer;
+  }
+  .focus-compose button:hover{background:var(--owl-blue-700)}
+  /* create feature/bug bar + buttons */
+  .create-bar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 16px}
+  .create-bar-label{font-size:13px; color:var(--muted); margin-right:2px}
+  .create-btn{
+    font:inherit; font-size:13px; font-weight:600; padding:8px 14px; border-radius:9px; cursor:pointer;
+    border:1px solid var(--line); background:#fff;
+  }
+  .create-btn.feature{color:#6b21a8; border-color:#e6dcf6; background:#f7f3fc}
+  .create-btn.feature:hover{background:#f0e8fa}
+  .create-btn.bug{color:#b1442e; border-color:#f6d5cc; background:#fdf3f0}
+  .create-btn.bug:hover{background:#fbe8e2}
+  /* kind badges */
+  .tag.kind{font-weight:600}
+  .tag.kind.bug{background:#fdf0ec; color:#b1442e; border-color:#f6d2c8}
+  .tag.kind.feature{background:#f5f0fc; color:#6b21a8; border-color:#e6dcf6}
+  .meta .by{font-size:11.5px; color:#94a3b8}
+  .del-btn{
+    font:inherit; font-size:11.5px; color:#9aa7b4; background:transparent; border:0; cursor:pointer;
+    padding:2px 4px; margin-left:auto; text-decoration:underline; text-decoration-color:#d6dde4;
+  }
+  .del-btn:hover{color:var(--red)}
+  .item.user-item{border-left:3px solid #e2dcef}
+  .item.kind-bug{border-left-color:#f0c9bf}
+  /* create modal */
+  #createModal{position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center}
+  .cm-scrim{position:absolute; inset:0; background:rgba(15,23,32,.45)}
+  .cm-box{
+    position:relative; background:#fff; border-radius:14px; padding:24px 26px 22px; width:min(520px,94vw);
+    box-shadow:0 24px 64px rgba(0,0,0,.3); animation:slideIn .16s ease;
+  }
+  .cm-box h2{margin:0 0 3px; font-size:18px; color:var(--ink)}
+  .cm-sub{margin:0 0 16px; font-size:13px; color:var(--muted)}
+  .cm-box label{display:block; font-size:12px; font-weight:600; color:var(--muted); margin:12px 0 4px; text-transform:uppercase; letter-spacing:.03em}
+  .cm-box input, .cm-box textarea{
+    width:100%; font:inherit; font-size:14px; padding:9px 11px; border:1px solid var(--line);
+    border-radius:9px; color:var(--ink); box-sizing:border-box; line-height:1.4; resize:vertical;
+  }
+  .cm-box input:focus, .cm-box textarea:focus{outline:2px solid var(--owl-blue-50); border-color:var(--owl-blue)}
+  .cm-actions{margin-top:18px; display:flex; gap:10px; justify-content:flex-end}
+  .cm-cancel{font:inherit; font-size:13.5px; padding:9px 16px; border:1px solid var(--line); background:#fff; color:var(--muted); border-radius:9px; cursor:pointer}
+  .cm-cancel:hover{background:#f5f8fb}
+  .cm-create{font:inherit; font-size:13.5px; font-weight:600; padding:9px 20px; border:0; background:var(--owl-blue); color:#fff; border-radius:9px; cursor:pointer}
+  .cm-create:hover{background:var(--owl-blue-700)}
+  .cm-err{margin-top:10px; font-size:13px; color:var(--red); min-height:16px}
   /* other testers' input */
   .others{margin-top:9px; display:flex; flex-direction:column; gap:5px}
   .others .row{font-size:12.5px; color:var(--muted); display:flex; gap:8px; align-items:baseline}
@@ -151,7 +269,7 @@
     <p>Sign in so your notes are attributed to you.</p>
     <form id="loginForm">
       <label for="u">Username</label>
-      <input id="u" type="text" autocomplete="username" placeholder="neil / alex / conor" autofocus />
+      <input id="u" type="text" autocomplete="username" placeholder="neil / alex / conor / arturo" autofocus />
       <label for="p">Password</label>
       <input id="p" type="password" autocomplete="current-password" placeholder="password" />
       <button type="submit">Sign in</button>
@@ -191,13 +309,21 @@
 
     <div class="intro">
       <b>How to use this.</b> Each item says <i>what</i> the feature is and <i>how</i> to test it.
-      Set <b>Pass / Fail / Blocked</b> and add a note — both save automatically under your name.
-      You'll also see what other testers recorded, so it's clear who checked what.
+      Set <b>Pass / Fail / Blocked</b>, add a <b>note</b>, and — if something's broken — fill in
+      <b>Reproduction steps</b> so a dev can recreate it. Everything saves automatically under your name.
+      Click an item's title or <b>💬 Discussion</b> to open its thread and leave comments or updates;
+      each comment is dated and attributed. You'll also see what other testers recorded, so it's clear who checked what.
       Tags show confidence: <span class="tag data">data verified</span> = underlying logic already
       confirmed against the live case (mainly a visual check);
       <span class="tag ui">needs your eyes</span> = built &amp; compiles but the on-screen behaviour
       hasn't been exercised — please test it properly.
       Most features live in: <b>open a case → Open Workspace → Phone Reports → (device)</b>.
+    </div>
+
+    <div class="create-bar">
+      <span class="create-bar-label">Spotted something not on the list?</span>
+      <button type="button" class="create-btn feature" id="newFeatureBtn">✨ Create feature request</button>
+      <button type="button" class="create-btn bug" id="newBugBtn">🐞 Create bug</button>
     </div>
 
     <div id="loading">Loading checklist…</div>
@@ -209,6 +335,44 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Create item modal -->
+<div id="createModal" class="hidden">
+  <div class="cm-scrim" id="cmScrim"></div>
+  <div class="cm-box" role="dialog" aria-label="Create item">
+    <h2 id="cmTitle">New item</h2>
+    <p id="cmSub" class="cm-sub"></p>
+    <form id="createForm">
+      <label for="cmName">Title</label>
+      <input id="cmName" type="text" maxlength="300" placeholder="Short summary" autocomplete="off" />
+      <label for="cmBody" id="cmBodyLab">Description</label>
+      <textarea id="cmBody" rows="4" placeholder="What is it? For a bug, include steps to reproduce."></textarea>
+      <div class="cm-actions">
+        <button type="button" class="cm-cancel" id="cmCancel">Cancel</button>
+        <button type="submit" class="cm-create" id="cmCreate">Create</button>
+      </div>
+      <div class="cm-err" id="cmErr"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Focus / discussion drawer -->
+<div id="focus" class="hidden">
+  <div class="focus-scrim" id="focusScrim"></div>
+  <aside class="focus-panel" role="dialog" aria-label="Item discussion">
+    <div class="focus-head">
+      <button type="button" class="focus-close" id="focusClose" title="Close">✕</button>
+      <div class="focus-title" id="focusTitle"></div>
+      <div class="focus-how" id="focusHow"></div>
+      <div class="focus-meta" id="focusMeta"></div>
+    </div>
+    <div class="focus-body" id="focusBody"></div>
+    <form class="focus-compose" id="focusCompose">
+      <textarea id="commentInput" placeholder="Add a comment or update…" rows="2"></textarea>
+      <button type="submit" id="commentSend">Post</button>
+    </form>
+  </aside>
+</div>
+
 <script>
 (function () {
   const API = {
@@ -216,6 +380,8 @@
     me: '/api/testing/me',
     checklist: '/api/testing/checklist',
     feedback: '/api/testing/feedback',
+    comment: '/api/testing/comment',
+    item: '/api/testing/item',
   };
   const TOKEN_KEY = 'owl-testing-token';
 
@@ -235,17 +401,83 @@
     savestate: document.getElementById('savestate'),
     toast: document.getElementById('toast'),
     footer: document.getElementById('footer'),
+    focus: document.getElementById('focus'),
+    focusScrim: document.getElementById('focusScrim'),
+    focusClose: document.getElementById('focusClose'),
+    focusTitle: document.getElementById('focusTitle'),
+    focusHow: document.getElementById('focusHow'),
+    focusMeta: document.getElementById('focusMeta'),
+    focusBody: document.getElementById('focusBody'),
+    focusCompose: document.getElementById('focusCompose'),
+    commentInput: document.getElementById('commentInput'),
+    newFeatureBtn: document.getElementById('newFeatureBtn'),
+    newBugBtn: document.getElementById('newBugBtn'),
+    createModal: document.getElementById('createModal'),
+    cmScrim: document.getElementById('cmScrim'),
+    cmTitle: document.getElementById('cmTitle'),
+    cmSub: document.getElementById('cmSub'),
+    cmName: document.getElementById('cmName'),
+    cmBody: document.getElementById('cmBody'),
+    cmBodyLab: document.getElementById('cmBodyLab'),
+    createForm: document.getElementById('createForm'),
+    cmCancel: document.getElementById('cmCancel'),
+    cmErr: document.getElementById('cmErr'),
   };
 
   let token = localStorage.getItem(TOKEN_KEY) || null;
   let me = null;                 // { username, name }
-  let feedback = {};             // item_id -> { tester -> {status, note, updated_at} }
+  let feedback = {};             // item_id -> { tester -> {status, note, repro, updated_at} }
+  let comments = {};             // item_id -> [ {id, author, text, created_at}, ... ]
+  let userItems = [];            // tester-submitted feature requests / bugs
   let allItems = [];
+  let itemById = {};             // item_id -> item (for the focus view)
+  let focusId = null;            // currently-open item in the focus drawer
+  let createKind = 'feature';    // which kind the create modal is building
+  let lastSections = [];         // last-rendered checklist sections (for re-render w/o refetch)
 
   function authHeaders(extra) {
     const h = Object.assign({}, extra || {});
     if (token) h['Authorization'] = 'Bearer ' + token;
     return h;
+  }
+
+  // ---- date formatting ----
+  // Stored timestamps are UTC ISO strings; show them in the tester's local TZ.
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString(undefined, {
+      month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  }
+  // Compact "2d ago" style for at-a-glance recency.
+  function fmtAgo(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const secs = Math.max(0, (NOW() - d.getTime()) / 1000);
+    if (secs < 60) return 'just now';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return mins + 'm ago';
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + 'h ago';
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return days + 'd ago';
+    return fmtDate(iso);
+  }
+  function NOW() { return new Date().getTime(); }
+  // Most-recent activity timestamp across a tester record map.
+  function lastActivity(id) {
+    let latest = '';
+    const byTester = feedback[id] || {};
+    Object.keys(byTester).forEach(n => {
+      const u = (byTester[n] || {}).updated_at;
+      if (u && u > latest) latest = u;
+    });
+    (comments[id] || []).forEach(c => { if (c.created_at && c.created_at > latest) latest = c.created_at; });
+    return latest;
   }
 
   // ---- toast / save indicator ----
@@ -326,7 +558,12 @@
       ]);
       if (clRes.status === 401 || fbRes.status === 401) { els.logout.click(); return; }
       const cl = await clRes.json();
-      if (fbRes.ok) { const d = await fbRes.json(); feedback = (d && d.items) || {}; }
+      if (fbRes.ok) {
+        const d = await fbRes.json();
+        feedback = (d && d.items) || {};
+        comments = (d && d.comments) || {};
+        userItems = (d && d.user_items) || [];
+      }
       render(cl.sections || []);
     } catch (err) {
       els.loading.textContent = 'Could not load the checklist: ' + err.message;
@@ -340,11 +577,28 @@
   function myStatus(id) { return myRec(id).status || ''; }
 
   function render(sections) {
+    lastSections = sections;
     els.loading.style.display = 'none';
     els.sections.innerHTML = '';
     allItems = [];
+    itemById = {};
     let totalItems = 0;
-    sections.forEach(sec => {
+
+    // Tester-submitted feature requests / bugs lead the list (newest first).
+    const allSections = sections.slice();
+    if (userItems.length) {
+      const uiItems = userItems.slice().reverse().map(u => ({
+        id: u.id, t: u.title, how: u.body || '',
+        kind: u.kind, author: u.author, created_at: u.created_at,
+      }));
+      allSections.unshift({
+        h: 'Tester-submitted', _user: true,
+        d: 'Feature requests and bugs raised by the team — newest first.',
+        items: uiItems,
+      });
+    }
+
+    allSections.forEach(sec => {
       const s = document.createElement('section');
       const head = document.createElement('div');
       head.className = 'sec-head';
@@ -357,6 +611,7 @@
       (sec.items || []).forEach(it => {
         totalItems++;
         allItems.push(it);
+        itemById[it.id] = it;
         ul.appendChild(renderItem(it));
       });
       s.appendChild(ul);
@@ -365,7 +620,7 @@
     });
     els.footer.textContent =
       'Owl / Cellebrite QA — ' + totalItems + ' testable items across ' +
-      sections.length + ' areas. Status & notes save to the server under your name.';
+      allSections.length + ' areas. Status & notes save to the server under your name.';
     updateProgress();
   }
 
@@ -376,15 +631,32 @@
     const status = myStatus(it.id);
     if (status) li.classList.add('st-' + status);
 
+    if (it.kind) li.classList.add('user-item', 'kind-' + it.kind);
+
     const title = document.createElement('div');
     title.className = 'title'; title.textContent = it.t;
+    title.title = 'Open discussion';
+    title.addEventListener('click', () => openFocus(it.id));
     const how = document.createElement('div');
     how.className = 'how'; how.textContent = it.how;
     const meta = document.createElement('div');
     meta.className = 'meta';
-    meta.appendChild(tag(it.tag === 'data' ? 'data verified' : 'needs your eyes', it.tag));
-    if (it.pr) meta.appendChild(tag(it.pr, 'pr'));
-    if (it.ticket) meta.appendChild(tag(it.ticket, 'ticket'));
+    if (it.kind) {
+      // Tester-submitted item: kind badge + who/when (+ delete).
+      meta.appendChild(kindBadge(it.kind));
+      const by = document.createElement('span');
+      by.className = 'by'; by.textContent = 'by ' + it.author + ' · ' + fmtAgo(it.created_at);
+      by.title = fmtDate(it.created_at);
+      meta.appendChild(by);
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'del-btn'; del.textContent = 'Delete'; del.title = 'Remove this item';
+      del.addEventListener('click', (e) => { e.stopPropagation(); deleteUserItem(it.id, it.t); });
+      meta.appendChild(del);
+    } else {
+      meta.appendChild(tag(it.tag === 'data' ? 'data verified' : 'needs your eyes', it.tag));
+      if (it.pr) meta.appendChild(tag(it.pr, 'pr'));
+      if (it.ticket) meta.appendChild(tag(it.ticket, 'ticket'));
+    }
     li.appendChild(title); li.appendChild(how); li.appendChild(meta);
 
     if (it.note) {
@@ -411,23 +683,69 @@
     });
     row.appendChild(seg);
 
-    const ta = document.createElement('textarea');
-    ta.placeholder = 'Your notes / what went wrong / repro steps…';
-    ta.value = myRec(it.id).note || '';
-    if (ta.value) ta.classList.add('has');
-    let noteTimer = null;
-    ta.addEventListener('input', () => {
-      ta.classList.toggle('has', !!ta.value.trim());
-      clearTimeout(noteTimer);
-      setSaveState('typing…', '');
-      noteTimer = setTimeout(() => save(it.id, { note: ta.value }), 650);
-    });
-    row.appendChild(ta);
+    // Notes + reproduction steps, stacked.
+    const fields = document.createElement('div');
+    fields.className = 'fb-notes';
+
+    const ta = autoTextarea(
+      'Notes', 'Your notes / what you saw…',
+      myRec(it.id).note || '',
+      (val) => save(it.id, { note: val })
+    );
+    fields.appendChild(ta);
+
+    const repro = autoTextarea(
+      'Reproduction steps', 'Numbered steps to reproduce — what you did, expected vs. actual…',
+      myRec(it.id).repro || '',
+      (val) => save(it.id, { repro: val })
+    );
+    fields.appendChild(repro);
+
+    row.appendChild(fields);
     li.appendChild(row);
+
+    // Footer: discussion link + last activity date.
+    const foot = document.createElement('div');
+    foot.className = 'item-foot';
+    const disc = document.createElement('button');
+    disc.type = 'button'; disc.className = 'disc-btn';
+    disc.addEventListener('click', () => openFocus(it.id));
+    disc.innerHTML = '💬 Discussion';
+    const n = (comments[it.id] || []).length;
+    if (n) { const c = document.createElement('span'); c.className = 'disc-count'; c.textContent = n; disc.appendChild(c); }
+    foot.appendChild(disc);
+    const when = lastActivity(it.id);
+    if (when) {
+      const w = document.createElement('span');
+      w.className = 'item-when'; w.textContent = 'updated ' + fmtAgo(when); w.title = fmtDate(when);
+      foot.appendChild(w);
+    }
+    li.appendChild(foot);
 
     // Other testers' input (read-only)
     li.appendChild(renderOthers(it.id));
     return li;
+  }
+
+  // A labeled, auto-saving textarea. Debounces, then calls onSave(value).
+  function autoTextarea(label, placeholder, value, onSave) {
+    const wrap = document.createElement('label');
+    wrap.className = 'ta-field';
+    const lab = document.createElement('span');
+    lab.className = 'ta-label'; lab.textContent = label;
+    const ta = document.createElement('textarea');
+    ta.placeholder = placeholder;
+    ta.value = value || '';
+    if (ta.value) ta.classList.add('has');
+    let timer = null;
+    ta.addEventListener('input', () => {
+      ta.classList.toggle('has', !!ta.value.trim());
+      clearTimeout(timer);
+      setSaveState('typing…', '');
+      timer = setTimeout(() => onSave(ta.value), 650);
+    });
+    wrap.appendChild(lab); wrap.appendChild(ta);
+    return wrap;
   }
 
   function renderOthers(id) {
@@ -437,7 +755,7 @@
     Object.keys(byTester).forEach(name => {
       if (name === me.name) return;
       const rec = byTester[name] || {};
-      if (!rec.status && !rec.note) return;
+      if (!rec.status && !rec.note && !rec.repro) return;
       const r = document.createElement('div');
       r.className = 'row';
       const who = document.createElement('span');
@@ -452,6 +770,17 @@
         note.textContent = rec.note;
         r.appendChild(note);
       }
+      if (rec.repro) {
+        const rp = document.createElement('span');
+        rp.className = 'repro-tag'; rp.textContent = '↻ ' + rec.repro;
+        rp.title = 'Reproduction steps';
+        r.appendChild(rp);
+      }
+      if (rec.updated_at) {
+        const w = document.createElement('span');
+        w.className = 'row-when'; w.textContent = fmtAgo(rec.updated_at); w.title = fmtDate(rec.updated_at);
+        r.appendChild(w);
+      }
       wrap.appendChild(r);
     });
     return wrap;
@@ -460,6 +789,13 @@
   function tag(text, cls) {
     const s = document.createElement('span');
     s.className = 'tag ' + cls; s.textContent = text; return s;
+  }
+
+  function kindBadge(kind) {
+    const s = document.createElement('span');
+    s.className = 'tag kind ' + kind;
+    s.textContent = kind === 'bug' ? '🐞 Bug' : '✨ Feature request';
+    return s;
   }
 
   function setMyStatus(li, seg, id, status) {
@@ -488,12 +824,38 @@
       });
       if (res.status === 401) { els.logout.click(); return; }
       if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (data && data.record) feedback[id][me.name] = data.record;  // captures fresh updated_at
+      refreshItemFoot(id);
+      if (focusId === id) renderFocus();
       setSaveState('saved ✓', 'ok');
     } catch (err) {
       setSaveState('save failed', 'err');
       toast('Save failed: ' + err.message, true);
     }
   }
+
+  // Re-render an item's footer (discussion count + last-activity date) in place.
+  function refreshItemFoot(id) {
+    const li = els.sections.querySelector('li.item[data-id="' + cssEsc(id) + '"]');
+    if (!li) return;
+    const foot = li.querySelector('.item-foot');
+    if (!foot) return;
+    const n = (comments[id] || []).length;
+    let disc = '💬 Discussion';
+    if (n) disc += ' <span class="disc-count">' + n + '</span>';
+    const when = lastActivity(id);
+    foot.innerHTML =
+      '<button type="button" class="disc-btn">' + disc + '</button>' +
+      (when ? '<span class="item-when" title="' + escAttr(fmtDate(when)) + '">updated ' + escHtml(fmtAgo(when)) + '</span>' : '');
+    foot.querySelector('.disc-btn').addEventListener('click', () => openFocus(id));
+  }
+
+  function cssEsc(s) { return String(s).replace(/["\\]/g, '\\$&'); }
+  function escHtml(s) {
+    return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  }
+  function escAttr(s) { return escHtml(s).replace(/"/g, '&quot;'); }
 
   function updateSectionCount(head, ul) {
     const lis = [...ul.querySelectorAll('li.item')];
@@ -506,6 +868,224 @@
     els.fill.style.width = total ? (done / total * 100) + '%' : '0%';
     els.plabel.textContent = done + ' of ' + total + ' reviewed by you';
   }
+
+  // ---- focus / discussion drawer ----
+  function openFocus(id) {
+    focusId = id;
+    els.focus.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    renderFocus();
+    setTimeout(() => els.commentInput && els.commentInput.focus(), 60);
+  }
+  function closeFocus() {
+    focusId = null;
+    els.focus.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  function renderFocus() {
+    const it = itemById[focusId];
+    if (!it) { closeFocus(); return; }
+    els.focusTitle.textContent = it.t;
+    els.focusHow.textContent = it.how || '';
+    els.focusMeta.innerHTML = '';
+    if (it.kind) {
+      els.focusMeta.appendChild(kindBadge(it.kind));
+      const by = document.createElement('span');
+      by.className = 'by'; by.textContent = 'by ' + it.author + ' · ' + fmtAgo(it.created_at);
+      by.title = fmtDate(it.created_at);
+      els.focusMeta.appendChild(by);
+    } else {
+      els.focusMeta.appendChild(tag(it.tag === 'data' ? 'data verified' : 'needs your eyes', it.tag));
+      if (it.pr) els.focusMeta.appendChild(tag(it.pr, 'pr'));
+      if (it.ticket) els.focusMeta.appendChild(tag(it.ticket, 'ticket'));
+    }
+
+    const body = els.focusBody;
+    body.innerHTML = '';
+
+    // Status snapshot across testers.
+    const byTester = feedback[focusId] || {};
+    const testers = Object.keys(byTester).filter(n => byTester[n] && (byTester[n].status || byTester[n].note || byTester[n].repro));
+    const snap = document.createElement('div');
+    snap.className = 'focus-statuses';
+    if (testers.length) {
+      testers.forEach(name => {
+        const rec = byTester[name];
+        const card = document.createElement('div');
+        card.className = 'fs-card';
+        const st = rec.status || 'none';
+        card.innerHTML =
+          '<div class="fs-head"><b>' + escHtml(name) + '</b>' +
+          '<span class="pill ' + st + '">' + escHtml(rec.status || '—') + '</span>' +
+          (rec.updated_at ? '<span class="fs-when" title="' + escAttr(fmtDate(rec.updated_at)) + '">' + escHtml(fmtAgo(rec.updated_at)) + '</span>' : '') +
+          '</div>' +
+          (rec.note ? '<div class="fs-note">' + escHtml(rec.note) + '</div>' : '') +
+          (rec.repro ? '<div class="fs-repro"><span class="fs-lab">Reproduction steps</span>' + escHtml(rec.repro) + '</div>' : '');
+        snap.appendChild(card);
+      });
+    } else {
+      snap.innerHTML = '<div class="focus-empty-sm">No status or notes recorded yet.</div>';
+    }
+    body.appendChild(snap);
+
+    // Comment thread (chat history).
+    const thread = document.createElement('div');
+    thread.className = 'thread';
+    const head = document.createElement('div');
+    head.className = 'thread-head'; head.textContent = 'Discussion';
+    thread.appendChild(head);
+    const list = (comments[focusId] || []);
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'focus-empty-sm'; empty.textContent = 'No comments yet — start the thread below.';
+      thread.appendChild(empty);
+    } else {
+      list.forEach(c => {
+        const row = document.createElement('div');
+        row.className = 'cmt' + (c.author === me.name ? ' mine' : '');
+        row.innerHTML =
+          '<div class="cmt-head"><b>' + escHtml(c.author) + '</b>' +
+          '<span class="cmt-when" title="' + escAttr(fmtDate(c.created_at)) + '">' + escHtml(fmtAgo(c.created_at)) + '</span></div>' +
+          '<div class="cmt-text">' + escHtml(c.text) + '</div>';
+        thread.appendChild(row);
+      });
+    }
+    body.appendChild(thread);
+  }
+
+  async function postComment(text) {
+    const id = focusId;
+    if (!id || !text.trim()) return;
+    els.commentInput.value = '';
+    setSaveState('posting…', '');
+    try {
+      const res = await fetch(API.comment, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ item_id: id, text }),
+      });
+      if (res.status === 401) { els.logout.click(); return; }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (data && data.comment) {
+        comments[id] = comments[id] || [];
+        comments[id].push(data.comment);
+      }
+      if (focusId === id) renderFocus();
+      refreshItemFoot(id);
+      setSaveState('saved ✓', 'ok');
+      // keep newest comment in view
+      els.focusBody.scrollTop = els.focusBody.scrollHeight;
+    } catch (err) {
+      els.commentInput.value = text;  // restore so it isn't lost
+      setSaveState('post failed', 'err');
+      toast('Could not post comment: ' + err.message, true);
+    }
+  }
+
+  els.focusClose.addEventListener('click', closeFocus);
+  els.focusScrim.addEventListener('click', closeFocus);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && focusId) closeFocus();
+  });
+  els.focusCompose.addEventListener('submit', (e) => {
+    e.preventDefault();
+    postComment(els.commentInput.value);
+  });
+
+  // ---- create item (feature request / bug) ----
+  function openCreate(kind) {
+    createKind = kind;
+    els.cmErr.textContent = '';
+    els.cmName.value = ''; els.cmBody.value = '';
+    const isBug = kind === 'bug';
+    els.cmTitle.textContent = isBug ? '🐞 Create bug' : '✨ Create feature request';
+    els.cmSub.textContent = isBug
+      ? 'Report something that is broken or behaving wrong.'
+      : 'Suggest a new feature or an improvement.';
+    els.cmBodyLab.textContent = isBug ? 'Description + steps to reproduce' : 'Description';
+    els.cmBody.placeholder = isBug
+      ? 'What goes wrong? Include steps to reproduce, expected vs. actual.'
+      : 'What would you like, and why is it useful?';
+    els.createModal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => els.cmName.focus(), 60);
+  }
+  function closeCreate() {
+    els.createModal.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  async function submitCreate() {
+    const title = els.cmName.value.trim();
+    const body = els.cmBody.value.trim();
+    if (!title) { els.cmErr.textContent = 'A title is required.'; els.cmName.focus(); return; }
+    els.cmErr.textContent = '';
+    setSaveState('creating…', '');
+    try {
+      const res = await fetch(API.item, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ kind: createKind, title, body }),
+      });
+      if (res.status === 401) { els.logout.click(); return; }
+      if (!res.ok) {
+        let msg = 'HTTP ' + res.status;
+        try { const e = await res.json(); if (e.detail) msg = e.detail; } catch (_) {}
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      if (data && data.item) userItems.push(data.item);
+      closeCreate();
+      reloadKeepFocus();
+      setSaveState('saved ✓', 'ok');
+      toast((createKind === 'bug' ? 'Bug' : 'Feature request') + ' created');
+      // jump to it
+      if (data && data.item) setTimeout(() => openFocus(data.item.id), 80);
+    } catch (err) {
+      els.cmErr.textContent = 'Could not create: ' + err.message;
+      setSaveState('create failed', 'err');
+    }
+  }
+
+  async function deleteUserItem(id, title) {
+    if (!confirm('Delete "' + (title || 'this item') + '"? This removes its notes and comments too.')) return;
+    setSaveState('deleting…', '');
+    try {
+      const res = await fetch(API.item + '/' + encodeURIComponent(id), {
+        method: 'DELETE', headers: authHeaders(),
+      });
+      if (res.status === 401) { els.logout.click(); return; }
+      if (!res.ok && res.status !== 404) throw new Error('HTTP ' + res.status);
+      userItems = userItems.filter(u => u.id !== id);
+      delete feedback[id]; delete comments[id];
+      if (focusId === id) closeFocus();
+      render(lastSections);
+      setSaveState('saved ✓', 'ok');
+    } catch (err) {
+      setSaveState('delete failed', 'err');
+      toast('Could not delete: ' + err.message, true);
+    }
+  }
+
+  // Re-render from the last-known checklist without refetching.
+  function reloadKeepFocus() { render(lastSections); }
+
+  els.newFeatureBtn.addEventListener('click', () => openCreate('feature'));
+  els.newBugBtn.addEventListener('click', () => openCreate('bug'));
+  els.cmCancel.addEventListener('click', closeCreate);
+  els.cmScrim.addEventListener('click', closeCreate);
+  els.createForm.addEventListener('submit', (e) => { e.preventDefault(); submitCreate(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !els.createModal.classList.contains('hidden')) closeCreate();
+  });
+  els.commentInput.addEventListener('keydown', (e) => {
+    // Ctrl/Cmd+Enter posts (plain Enter keeps newlines for multi-line notes).
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault(); postComment(els.commentInput.value);
+    }
+  });
 
   init();
 })();
