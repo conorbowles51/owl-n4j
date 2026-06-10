@@ -732,6 +732,96 @@ def get_comms_between(
     return result
 
 
+@router.get("/comms/export/pdf")
+def export_comms_pdf(
+    case_id: str = Query(...),
+    case_name: str = Query("Case"),
+    from_keys: Optional[str] = Query(None),
+    to_keys: Optional[str] = Query(None),
+    participant_keys: Optional[str] = Query(None),
+    types: Optional[str] = Query(None, description="Comma-separated: message,call,email"),
+    report_keys: Optional[str] = Query(None),
+    source_apps: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    mode: str = Query("timeline", regex="^(timeline|conversation)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Export the filtered comms (between selected people, within a date range)
+    as a PDF — 'timeline' (flat chronological) or 'conversation' (thread-grouped).
+    Reuses get_cellebrite_comms_between (device-lens names already applied) +
+    the existing WeasyPrint renderer. Media is omitted to keep the file light."""
+    from fastapi import Response
+    from datetime import datetime
+    from services import comms_export_service
+    from services.financial_export_service import render_pdf
+
+    _require_case_access(case_id, current_user, db)
+
+    fk = _csv_param(from_keys)
+    tk = _csv_param(to_keys)
+    pk = _csv_param(participant_keys)
+    result = neo4j_service.get_cellebrite_comms_between(
+        case_id=case_id,
+        from_keys=fk,
+        to_keys=tk,
+        participant_keys=pk,
+        types=_csv_param(types),
+        report_keys=_csv_param(report_keys),
+        source_apps=_csv_param(source_apps),
+        start_date=start_date,
+        end_date=end_date,
+        limit=comms_export_service.MAX_ITEMS,
+        offset=0,
+        sort="asc",  # chronological reads best in a report
+    )
+    items = result.get("items", [])
+
+    # Resolve display names for the requested participants from the feed.
+    want = set((pk or []) + (fk or []) + (tk or []))
+    names: dict = {}
+    for it in items:
+        s = it.get("sender") or {}
+        if s.get("key") in want and s.get("key") not in names:
+            names[s["key"]] = s.get("name")
+        for r in (it.get("recipients") or []):
+            if r.get("key") in want and r.get("key") not in names:
+                names[r["key"]] = r.get("name")
+    participants = [{"key": k, "name": names.get(k) or k} for k in want]
+
+    desc_bits = []
+    if types:
+        desc_bits.append(f"types: {types}")
+    if source_apps:
+        desc_bits.append(f"apps: {source_apps}")
+    filters_description = "; ".join(desc_bits)
+
+    html = comms_export_service.generate_comms_pdf(
+        case_name=case_name,
+        items=items,
+        participants=participants,
+        start_date=start_date,
+        end_date=end_date,
+        mode=mode,
+        filters_description=filters_description,
+        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+    )
+
+    safe = "".join(c for c in (case_name or "case") if c.isalnum() or c in "-_") or "case"
+    try:
+        pdf_bytes = render_pdf(html)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="comms_{safe}_{mode}.pdf"'},
+        )
+    except Exception:
+        # WeasyPrint unavailable (missing system libs) — fall back to the
+        # printable HTML, same posture as the financial export.
+        return Response(content=html, media_type="text/html")
+
+
 @router.get("/comms/envelope")
 def get_comms_envelope(
     case_id: str = Query(...),

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, BookOpen, SlidersHorizontal, Activity, X } from 'lucide-react';
+import { Loader2, BookOpen, SlidersHorizontal, Activity, X, FileDown } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
@@ -563,6 +563,26 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     setThreadLimit((n) => n + THREADS_PAGE_STEP);
   }, []);
 
+  // Export the CURRENT filter (participants × types × date window × phones)
+  // to PDF. Uses window.open so the browser's auth cookie carries through
+  // (same mechanism as the financial PDF export). 'timeline' = flat
+  // chronological; 'conversation' = grouped by thread.
+  const handleExportPdf = useCallback((mode) => {
+    const params = new URLSearchParams();
+    params.set('case_id', caseId);
+    params.set('case_name', caseId);
+    params.set('mode', mode);
+    if (fromKeys.size > 0) params.set('from_keys', [...fromKeys].join(','));
+    if (toKeys.size > 0) params.set('to_keys', [...toKeys].join(','));
+    if (participantKeys.size > 0) params.set('participant_keys', [...participantKeys].join(','));
+    if (activeTypes.size > 0) params.set('types', [...activeTypes].join(','));
+    const rks = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
+    if (rks) params.set('report_keys', rks.join(','));
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    window.open(`/api/cellebrite/comms/export/pdf?${params.toString()}`, '_blank');
+  }, [caseId, fromKeys, toKeys, participantKeys, activeTypes, selectedReportKeys, startDate, endDate]);
+
   // ------------------------------------------------------------------
   // Deep message-body search (server-side full-text)
   //
@@ -910,6 +930,27 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         windowEnd={windowEnd}
         onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
       />
+
+      {/* Export the current filter to PDF (timeline or conversation). */}
+      <div className="flex items-center gap-2 px-3 py-1 border-b border-light-100 bg-light-50/60 text-[11px] flex-shrink-0">
+        <span className="text-light-500">Export current filter:</span>
+        <button
+          type="button"
+          onClick={() => handleExportPdf('timeline')}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-light-200 bg-white text-light-700 hover:border-owl-blue-400 hover:text-owl-blue-700"
+          title="Export every comm under the current filter as a chronological PDF"
+        >
+          <FileDown className="w-3 h-3" /> Timeline PDF
+        </button>
+        <button
+          type="button"
+          onClick={() => handleExportPdf('conversation')}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-light-200 bg-white text-light-700 hover:border-owl-blue-400 hover:text-owl-blue-700"
+          title="Export the conversation(s) grouped by thread as a PDF"
+        >
+          <FileDown className="w-3 h-3" /> Conversation PDF
+        </button>
+      </div>
 
       {/* Phase K4 (revised): cross-type timeline returns as a slide-
           in flyover from the bottom edge instead of an always-mounted

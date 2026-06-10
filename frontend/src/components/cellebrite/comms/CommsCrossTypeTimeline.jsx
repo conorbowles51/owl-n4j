@@ -306,7 +306,7 @@ export default function CommsCrossTypeTimeline({
   return (
     <div
       className="border-t-2 border-owl-blue-200 bg-white flex-shrink-0 flex flex-col"
-      style={{ height: expanded ? '33vh' : 'auto', minHeight: expanded ? '200px' : '32px' }}
+      style={{ height: expanded ? '100%' : 'auto', minHeight: expanded ? '200px' : '32px' }}
     >
       <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-light-700 border-b border-light-100 flex-shrink-0">
         <button

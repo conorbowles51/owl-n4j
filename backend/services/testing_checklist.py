@@ -291,6 +291,32 @@ CHECKLIST = [
              "tag": "ui", "pr": "pre-existing", "ticket": "(pre-existing)"},
         ],
     },
+    {
+        "h": "Your reported bugs — fixes to verify (round 2)",
+        "d": "Fixes for the bugs/requests Alex logged in the hub on 2026-06-09. Please re-test each and Pass/Fail.",
+        "items": [
+            {"id": "fix-phone-lens-names", "t": "Contacts show from the VIEWING phone's perspective",
+             "how": "Isolate C5 then C6 (phone selector) and open the Timeline / Comms. A number saved differently per phone should now show how THAT phone saved it (e.g. Pefro / Mry), not a single global 'Trabajo 444'. Applies to messages, calls and emails in the timeline, the event detail rail, and call/email threads. (Chat messages already did this.)",
+             "tag": "data", "pr": "fixes r2", "ticket": "user-bug-1",
+             "note": "Phase 1: device-lens names. The optional 'universal label alongside the device name' idea is a separate follow-up."},
+            {"id": "fix-unicode-search", "t": "Stylised-unicode names are searchable by plain text",
+             "how": "In the Comms/Contacts/Timeline search boxes, search a plain word (e.g. 'kathia') for a contact saved with fancy letters/emoji (e.g. 𝓚𝓪𝓽𝓱𝓲𝓪🎭). It should now match. Accents fold too (Día ↔ dia).",
+             "tag": "data", "pr": "fixes r2", "ticket": "user-bug-2",
+             "note": "Fixed for client-side filters. Backend Search & Discovery against stylised STORED names is a follow-up (needs a normalised index)."},
+            {"id": "fix-comms-timeline-window", "t": "Comms Timeline flyover fills its window (no white gap)",
+             "how": "Open the cross-type Timeline flyover in the Comms Center and drag it taller. The content should fill the panel — no empty white gap below.",
+             "tag": "ui", "pr": "fixes r2", "ticket": "user-bug-3"},
+            {"id": "fix-pdf-export", "t": "Export filtered comms to PDF",
+             "how": "In the Comms Center, set a filter (participants + date range), then click 'Timeline PDF' or 'Conversation PDF' under the toolbar. A PDF opens in a new tab. Timeline = chronological list; Conversation = grouped by thread. (Media is omitted; very large/unfiltered exports are capped at 2,000 items with a note.)",
+             "tag": "ui", "pr": "fixes r2", "ticket": "user-feature-4"},
+            {"id": "fix-events-time-hover", "t": "Full date & time on hover in the Events table",
+             "how": "In Location & Events, hover the time cell of a row — a tooltip shows the full date+time. (Timeline already had this.)",
+             "tag": "ui", "pr": "fixes r2", "ticket": "tl-time-hover"},
+            {"id": "fix-media-scroll", "t": "Smoother scrolling in media-heavy threads",
+             "how": "Open a thread with many images/voicenotes and scroll. Images now reserve space (less jank) and voicenotes don't all pre-fetch. Should feel smoother.",
+             "tag": "ui", "pr": "fixes r2", "ticket": "media-smooth-scroll"},
+        ],
+    },
 ]
 
 

@@ -9295,6 +9295,16 @@ class Neo4jService:
                 key_a = "-".join(parts[key_a_start:key_b_start])
                 key_b = "-".join(parts[key_b_start:])
 
+                # Device-lens names: this call/email thread belongs to one
+                # report; show each party as that phone saved them. (Chat
+                # threads already do this; calls/emails were the gap.)
+                _dcn = self.device_contact_names(case_id)
+
+                def _lens(key, fallback):
+                    if not key:
+                        return fallback
+                    return _dcn.get((key, report_key)) or fallback
+
                 if thread_type == "calls":
                     query = """
                         MATCH (a:Person {case_id: $case_id, key: $key_a})
@@ -9335,12 +9345,12 @@ class Neo4jService:
                             "attachment_file_ids": list(c.get("attachment_file_ids") or []),
                             "sender": {
                                 "key": src.get("key") if src else None,
-                                "name": src.get("name") if src else None,
+                                "name": _lens(src.get("key"), src.get("name")) if src else None,
                                 "is_owner": bool(src.get("is_phone_owner")) if src else False,
                             } if src else None,
                             "recipient": {
                                 "key": dst.get("key") if dst else None,
-                                "name": dst.get("name") if dst else None,
+                                "name": _lens(dst.get("key"), dst.get("name")) if dst else None,
                                 "is_owner": bool(dst.get("is_phone_owner")) if dst else False,
                             } if dst else None,
                         })
@@ -9384,12 +9394,12 @@ class Neo4jService:
                             "attachment_file_ids": list(e.get("attachment_file_ids") or []),
                             "sender": {
                                 "key": src.get("key") if src else None,
-                                "name": src.get("name") if src else None,
+                                "name": _lens(src.get("key"), src.get("name")) if src else None,
                                 "is_owner": bool(src.get("is_phone_owner")) if src else False,
                             } if src else None,
                             "recipient": {
                                 "key": dst.get("key") if dst else None,
-                                "name": dst.get("name") if dst else None,
+                                "name": _lens(dst.get("key"), dst.get("name")) if dst else None,
                                 "is_owner": bool(dst.get("is_phone_owner")) if dst else False,
                             } if dst else None,
                         })
@@ -9412,11 +9422,11 @@ class Neo4jService:
                     "thread": {
                         "thread_id": thread_id,
                         "thread_type": thread_type,
-                        "name": f"{a.get('name') or key_a} ↔ {b.get('name') or key_b}",
+                        "name": f"{_lens(key_a, a.get('name') or key_a)} ↔ {_lens(key_b, b.get('name') or key_b)}",
                         "source_app": "Calls" if thread_type == "calls" else "Email",
                         "participants": [
-                            {"key": key_a, "name": a.get("name") or key_a, "is_owner": bool(a.get("is_phone_owner"))},
-                            {"key": key_b, "name": b.get("name") or key_b, "is_owner": bool(b.get("is_phone_owner"))},
+                            {"key": key_a, "name": _lens(key_a, a.get("name") or key_a), "is_owner": bool(a.get("is_phone_owner"))},
+                            {"key": key_b, "name": _lens(key_b, b.get("name") or key_b), "is_owner": bool(b.get("is_phone_owner"))},
                         ],
                         "report_key": report_key,
                     },
@@ -10435,6 +10445,13 @@ class Neo4jService:
                 """
                 _add(cypher, base_params, "wifi", lambda rec: _project_event(rec["n"], "wifi"))
 
+            # Device-lens contact names: show each counterparty as the name
+            # the VIEWING phone saved them under (not one global label).
+            # Cached (120s TTL), so this is cheap. Threaded into the comms
+            # projections below. (Tester bug: isolating C5/C6 must show
+            # Pefro/Mry, not the globally-won "Trabajo 444".)
+            dcn = self.device_contact_names(case_id)
+
             if "call" in active:
                 extra = "" if not only_geolocated else \
                     "AND (n.latitude IS NOT NULL OR n.nearest_location_lat IS NOT NULL)"
@@ -10450,7 +10467,7 @@ class Neo4jService:
                     RETURN n, src, dst
                 """
                 _add(cypher, base_params, "call",
-                     lambda rec: _project_call(rec["n"], rec["src"], rec["dst"]))
+                     lambda rec: _project_call(rec["n"], rec["src"], rec["dst"], dcn))
 
             if "message" in active:
                 extra = "" if not only_geolocated else \
@@ -10467,7 +10484,7 @@ class Neo4jService:
                     RETURN n, sender, chat
                 """
                 _add(cypher, base_params, "message",
-                     lambda rec: _project_message(rec["n"], rec["sender"], rec["chat"]))
+                     lambda rec: _project_message(rec["n"], rec["sender"], rec["chat"], dcn))
 
             if "email" in active:
                 extra = "" if not only_geolocated else \
@@ -10484,7 +10501,7 @@ class Neo4jService:
                     RETURN n, src, dst
                 """
                 _add(cypher, base_params, "email",
-                     lambda rec: _project_email(rec["n"], rec["src"], rec["dst"]))
+                     lambda rec: _project_email(rec["n"], rec["src"], rec["dst"], dcn))
 
             if "power" in active or "device_event" in active:
                 # One query feeds two output types (power vs device_event are
@@ -11641,6 +11658,10 @@ class Neo4jService:
             thread_rows: List[dict] = []
             around_rows: List[dict] = []
 
+            # Device-lens contact names (cached) so the rail's related
+            # events name each counterparty as the viewing phone saved them.
+            dcn = self.device_contact_names(case_id)
+
             # ----------------- Thread branch -----------------
             # Only meaningful for messages with a parent thread node.
             # Returns siblings ordered chronologically; the UI can scroll
@@ -11662,7 +11683,7 @@ class Neo4jService:
                     thread_key=thread_key,
                     limit=int(limit),
                 ):
-                    proj = _project_message(row["n"], row.get("sender"), row.get("chat"))
+                    proj = _project_message(row["n"], row.get("sender"), row.get("chat"), dcn)
                     if proj:
                         thread_rows.append(proj)
 
@@ -11742,9 +11763,9 @@ class Neo4jService:
                     ):
                         kind = row["kind"]
                         if kind == "call":
-                            proj = _project_call(row["n"], row.get("src"), row.get("dst"))
+                            proj = _project_call(row["n"], row.get("src"), row.get("dst"), dcn)
                         elif kind == "message":
-                            proj = _project_message(row["n"], row.get("src"), row.get("chat"))
+                            proj = _project_message(row["n"], row.get("src"), row.get("chat"), dcn)
                         else:  # email
                             proj = _project_event(row["n"], "email")
                         if proj:
@@ -13297,7 +13318,23 @@ def _project_location_lean(rec) -> Optional[dict]:
     return row
 
 
-def _project_call(node, src, dst) -> Optional[dict]:
+def _device_lens_name(person, node, dcn) -> str:
+    """Resolve a counterpart's display name through the LENS of the device
+    being viewed: the name THAT phone saved this number under, falling back
+    to the global Person.name. `dcn` is device_contact_names: {(person_key,
+    report_key): saved_name}. When dcn is None the global name is kept (old
+    behaviour). This is why, viewing C5/C6, "Trabajo 444" shows as the name
+    those phones actually saved her under (Pefro / Mry). (Tester bug.)"""
+    p = dict(person)
+    key = p.get("key")
+    fallback = p.get("name") or key
+    if not dcn or not key:
+        return fallback
+    rk = (dict(node).get("cellebrite_report_key")) if node else None
+    return dcn.get((key, rk)) or fallback
+
+
+def _project_call(node, src, dst, dcn=None) -> Optional[dict]:
     row = _project_event(node, "call")
     if not row:
         return None
@@ -13311,11 +13348,11 @@ def _project_call(node, src, dst) -> Optional[dict]:
     counter_node = dst if (src is None or (src and dict(src).get("is_phone_owner"))) else src
     if counter_node:
         c = dict(counter_node)
-        row["counterpart"] = {"key": c.get("key"), "name": c.get("name") or c.get("key"), "phone_numbers": c.get("phone_numbers") or []}
+        row["counterpart"] = {"key": c.get("key"), "name": _device_lens_name(c, n, dcn), "phone_numbers": c.get("phone_numbers") or []}
     return row
 
 
-def _project_message(node, sender, chat) -> Optional[dict]:
+def _project_message(node, sender, chat, dcn=None) -> Optional[dict]:
     row = _project_event(node, "message")
     if not row:
         return None
@@ -13324,13 +13361,13 @@ def _project_message(node, sender, chat) -> Optional[dict]:
     row["summary"] = (n.get("body") or "")[:200]
     if sender:
         s = dict(sender)
-        row["counterpart"] = {"key": s.get("key"), "name": s.get("name") or s.get("key"), "phone_numbers": s.get("phone_numbers") or []}
+        row["counterpart"] = {"key": s.get("key"), "name": _device_lens_name(s, n, dcn), "phone_numbers": s.get("phone_numbers") or []}
     if chat:
         row["thread_id"] = dict(chat).get("key")
     return row
 
 
-def _project_email(node, src, dst) -> Optional[dict]:
+def _project_email(node, src, dst, dcn=None) -> Optional[dict]:
     row = _project_event(node, "email")
     if not row:
         return None
@@ -13340,7 +13377,7 @@ def _project_email(node, src, dst) -> Optional[dict]:
     counter_node = dst if (src is None or (src and dict(src).get("is_phone_owner"))) else src
     if counter_node:
         c = dict(counter_node)
-        row["counterpart"] = {"key": c.get("key"), "name": c.get("name") or c.get("key"), "phone_numbers": c.get("phone_numbers") or []}
+        row["counterpart"] = {"key": c.get("key"), "name": _device_lens_name(c, n, dcn), "phone_numbers": c.get("phone_numbers") or []}
     return row
 
 

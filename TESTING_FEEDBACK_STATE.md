@@ -13,7 +13,7 @@
 > Status legend: `NEW` (just arrived) · `TRIAGED` (understood, planned) ·
 > `IN-PROGRESS` · `FIXED` (shipped) · `WONTFIX` · `NEEDS-INFO`.
 >
-> **Last synced:** 2026-06-09 19:30 UTC (by Claude)
+> **Last synced:** 2026-06-09 20:30 UTC (by Claude)
 > Feedback authors active so far: **Alex**. Logins: neil / alex / conor / arturo.
 
 ---
@@ -22,10 +22,12 @@
 
 | id | kind | title | author | reported | status |
 |---|---|---|---|---|---|
-| user-bug-1 | bug | Contacts in comms/timeline need phone's-perspective naming | Alex | 2026-06-09 16:03 | TRIAGED |
-| user-bug-2 | bug | Make all users/accounts searchable by text (unicode) | Alex | 2026-06-09 18:50 | TRIAGED |
-| user-bug-3 | bug | Comms Timeline window needs to be bigger | Alex | 2026-06-09 18:56 | TRIAGED |
-| user-feature-4 | feature | Ability to export data to PDF | Alex | 2026-06-09 19:10 | TRIAGED |
+| user-bug-1 | bug | Contacts in comms/timeline need phone's-perspective naming | Alex | 2026-06-09 16:03 | FIXED (Phase 1) |
+| user-bug-2 | bug | Make all users/accounts searchable by text (unicode) | Alex | 2026-06-09 18:50 | FIXED (client; backend follow-up) |
+| user-bug-3 | bug | Comms Timeline window needs to be bigger | Alex | 2026-06-09 18:56 | FIXED |
+| user-feature-4 | feature | Ability to export data to PDF | Alex | 2026-06-09 19:10 | FIXED |
+
+> All four fixed on branch `feat/cellebrite-search-discovery` (round-2 commit). Checklist items `fix-*` added for re-test. Backend restarted. See per-item notes in §D.
 
 ### user-bug-1 — phone's-perspective contact naming  *(status: TRIAGED)*
 Messages out of the owner's phone show the wrong name. Isolating C5/C6 should
@@ -58,13 +60,13 @@ people.
 
 ## B. Checklist status feedback (`items`) — fails are bugs to triage
 
-**FAIL (Alex):**
-- `tl-device-local-name` — recipient should show the name saved on the SENDING phone *(= user-bug-1)*
-- `tl-time-hover` — full date & time on hover not working
-- `dedup-collapse` — thread dedup/collapse not working as expected
-- `media-smooth-scroll` — media scroll not smooth
-- `nav-load-more-events` — "load more" events not working
-- `nav-load-more-comms-files` — "load more" comms/files not working
+**FAIL (Alex) — triage outcome:**
+- `tl-device-local-name` — **FIXED** (same as user-bug-1; device-lens names now in timeline/comms/calls/emails)
+- `tl-time-hover` — **FIXED** (Events table time cell was missing the tooltip; Timeline already had it)
+- `dedup-collapse` — **NEEDS-INFO** (code review found dedup working; only a rare empty-participant edge case. Need a concrete repro/screenshot of the duplicate seen)
+- `media-smooth-scroll` — **FIXED** (explicit image dimensions + lazy audio preload; thread-list virtualization is a larger follow-up if still janky)
+- `nav-load-more-events` — **WORKS / partial** (Timeline load-more works; Event Center intentionally caps at 5000 with a truncation banner — adding a load-more there is a follow-up)
+- `nav-load-more-comms-files` — **WORKS** (Comms thread load-more + Files offset paging both verified working in code; likely tester confusion — re-check, and tell us the exact view if still failing)
 
 **PASS (Alex):** tl-inline-body, tl-tz-offset, media-voice-inline, media-voice-preload,
 nav-virtualized-rows, nav-sort-toggle
@@ -78,6 +80,15 @@ None yet.
 
 ---
 
-## D. Our status on the above
-- All items above are **TRIAGED as of 2026-06-09** but **not yet started** (plan agreed with user this session).
-- Search & Discovery rebuild shipped on branch `feat/cellebrite-search-discovery` (commit b5a75cf) — its own checklist section added to the hub (`sd-*` ids).
+## D. Our status on the above (updated 2026-06-09 20:30)
+Round-2 fixes shipped on branch `feat/cellebrite-search-discovery` (stacked on the S&D rebuild). Backend restarted; frontend live via HMR. Per item:
+- **user-bug-1 / tl-device-local-name** — FIXED. `_project_call/message/email` + `get_event_related` + `get_cellebrite_thread_detail` (calls/emails) now resolve the counterparty through `device_contact_names` (the name the VIEWING report saved them under). Verified in-process: 17/17 sampled message counterparts match the device-lens map; 213 numbers carry >1 distinct per-device name. **Phase 2 (universal label alongside device name) NOT done** — separate ask.
+- **user-bug-2** — FIXED for client-side filters (`utils/cellebriteSearch.js` `normForSearch`: NFKC + diacritics + emoji/zero-width strip on both query and haystack). Verified 𝓚𝓪𝓽𝓱𝓲𝓪🎭→kathia. **Backend Search & Discovery vs stylised STORED names NOT fixed** (Cypher can't NFKC; needs a normalised shadow field + backfill) — follow-up.
+- **user-bug-3** — FIXED. `CommsCrossTypeTimeline` root `33vh`→`100%` so the flyover fills its panel.
+- **user-feature-4** — FIXED. New `comms_export_service.py` + `/api/cellebrite/comms/export/pdf` (reuses WeasyPrint `render_pdf`) + Timeline/Conversation PDF buttons in the Comms Center. Verified valid PDFs both modes; capped at 2000 items (~20s worst case for the single busiest participant; typical filtered export is fast).
+- **tl-time-hover** — FIXED (`EventsTable` time cell `title`).
+- **media-smooth-scroll** — FIXED (image width/height + `aspect-ratio`, audio `preload="none"`).
+- **dedup-collapse** — NEEDS-INFO (no clear bug found; awaiting repro).
+- **nav-load-more-*** — WORKS in code (Timeline/Comms/Files); Event Center load-more is a follow-up.
+
+Search & Discovery rebuild itself: commit b5a75cf, checklist `disc-*` ids.

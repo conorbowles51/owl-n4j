@@ -48,11 +48,14 @@ export default function CommsAttachment({ attachment }) {
         onClick={() => setViewerOpen(true)}
         className="block overflow-hidden rounded border border-light-200 hover:border-owl-blue-400 transition-colors"
       >
-        <img src={url} alt={name} className="max-w-[240px] max-h-[240px] object-cover" loading="lazy" />
+        <img src={url} alt={name} className="max-w-[240px] max-h-[240px] object-cover"
+             loading="lazy" decoding="async" width="240" height="240" style={{ aspectRatio: '1 / 1' }} />
       </button>
     );
   } else if (kind === 'audio') {
-    media = <audio controls preload="metadata" src={url} className="max-w-[300px]" />;
+    // preload="none" (was "metadata"): a long thread of voicenotes otherwise
+    // fires dozens of header fetches on scroll. Metadata loads on play.
+    media = <audio controls preload="none" src={url} className="max-w-[300px]" />;
   } else if (kind === 'video') {
     const thumb = videoThumbUrl(attachment);
     media = (
@@ -62,7 +65,8 @@ export default function CommsAttachment({ attachment }) {
         title={name}
       >
         {thumb ? (
-          <img src={thumb} alt={name} className="max-w-[240px] max-h-[240px] object-cover" loading="lazy" />
+          <img src={thumb} alt={name} className="max-w-[240px] max-h-[240px] object-cover"
+               loading="lazy" decoding="async" width="240" height="240" style={{ aspectRatio: '1 / 1' }} />
         ) : (
           <div className="w-60 h-32 bg-light-100 flex items-center justify-center text-light-400">
             <Film className="w-8 h-8" />

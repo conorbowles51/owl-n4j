@@ -53,6 +53,30 @@ const KNOWN_OPERATORS = new Set([
 ]);
 
 /**
+ * Normalise text for search so plain ASCII matches "fancy" unicode:
+ *  - NFKC folds mathematical / styled letters to ASCII (𝓚𝓪𝓽𝓱𝓲𝓪 → Kathia)
+ *  - NFD + combining-mark strip folds diacritics (Día → dia)
+ *  - emoji / pictographs / variation selectors / zero-width chars dropped
+ *  - lower-cased
+ * Applied identically to BOTH the query and the searched text so a query
+ * for "kathia" matches a contact saved as "𝓚𝓪𝓽𝓱𝓲𝓪🎭". (Tester bug.)
+ */
+export function normForSearch(s) {
+  if (s == null) return '';
+  let out = String(s);
+  try { out = out.normalize('NFKC'); } catch { /* older engine */ }
+  try { out = out.normalize('NFD').replace(/[̀-ͯ]/g, ''); } catch { /* noop */ }
+  try {
+    out = out.replace(
+      /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}]/gu,
+      '',
+    );
+  } catch { /* no unicode-property support */ }
+  out = out.replace(/[︀-️​-‍⁠﻿]/g, '');
+  return out.toLowerCase();
+}
+
+/**
  * Tokenise a query string into:
  *   - terms      : free-text substrings to match anywhere
  *   - excludes   : substrings whose presence should disqualify a row
@@ -102,7 +126,7 @@ export function parseQuery(query) {
     );
     if (knownOpHere) {
       const op = opMatch[1].toLowerCase();
-      const val = stripQuotes(opMatch[2]).toLowerCase();
+      const val = normForSearch(stripQuotes(opMatch[2]));
       if (op === 'not') {
         if (val) result.excludes.push(val);
         continue;
@@ -132,7 +156,7 @@ export function parseQuery(query) {
       }
       continue;
     }
-    const cleaned = stripQuotes(t).toLowerCase();
+    const cleaned = normForSearch(stripQuotes(t));
     if (!cleaned) continue;
     (exclude ? result.excludes : result.terms).push(cleaned);
   }
@@ -329,7 +353,12 @@ export function buildHaystack(item, kind, reports = []) {
     parts.push(fields.place);
   }
 
-  return { full: parts.filter(Boolean).join(' '), fields };
+  // Normalise BOTH the blob and each scoped field so styled-unicode /
+  // accented stored text matches a plain-ASCII query (parseQuery folds the
+  // query the same way).
+  const foldedFields = {};
+  for (const k of Object.keys(fields)) foldedFields[k] = normForSearch(fields[k]);
+  return { full: normForSearch(parts.filter(Boolean).join(' ')), fields: foldedFields };
 }
 
 // ---------------------------------------------------------------------------

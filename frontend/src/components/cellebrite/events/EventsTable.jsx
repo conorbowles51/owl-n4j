@@ -305,7 +305,8 @@ const TableRow = React.memo(function TableRow({
       }}
       onClick={onClick}
     >
-      <div className="px-2 border-r border-light-100 text-light-700 tabular-nums truncate">
+      <div className="px-2 border-r border-light-100 text-light-700 tabular-nums truncate"
+           title={ev.timestamp ? formatTs(ev.timestamp) : ''}>
         {ev.timestamp ? formatTs(ev.timestamp) : '—'}
       </div>
       <div className="px-2 border-r border-light-100 flex items-center gap-1.5 truncate">
