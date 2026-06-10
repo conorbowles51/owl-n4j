@@ -2860,6 +2860,7 @@ export const cellebriteCommsAPI = {
     limit = 200,
     offset = 0,
     hasAttachment = false,
+    expandIdentities = false,
     signal = null,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
@@ -2873,6 +2874,7 @@ export const cellebriteCommsAPI = {
     if (endDate) params.append('end_date', endDate);
     if (search) params.append('search', search);
     if (hasAttachment) params.append('has_attachment', 'true');
+    if (expandIdentities) params.append('expand_identities', 'true');
     params.append('limit', String(limit));
     params.append('offset', String(offset));
     return fetchAPI(`/cellebrite/comms/threads?${params.toString()}`, signal ? { signal } : undefined);
@@ -2912,6 +2914,7 @@ export const cellebriteCommsAPI = {
     sort = 'desc',
     cursor = null,
     hasAttachment = false,
+    expandIdentities = false,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
@@ -2923,6 +2926,7 @@ export const cellebriteCommsAPI = {
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
     if (hasAttachment) params.append('has_attachment', 'true');
+    if (expandIdentities) params.append('expand_identities', 'true');
     params.append('limit', String(limit));
     // When a cursor is supplied, omit `offset` — the server engages
     // keyset pagination and offset becomes a no-op. Send it only for
@@ -2967,6 +2971,7 @@ export const cellebriteCommsAPI = {
     startDate = null,
     endDate = null,
     hasAttachment = false,
+    expandIdentities = false,
     signal = null,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
@@ -2979,6 +2984,7 @@ export const cellebriteCommsAPI = {
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
     if (hasAttachment) params.append('has_attachment', 'true');
+    if (expandIdentities) params.append('expand_identities', 'true');
     return fetchAPI(`/cellebrite/comms/envelope?${params.toString()}`, signal ? { signal } : undefined);
   },
 

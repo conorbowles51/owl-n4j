@@ -622,6 +622,7 @@ def get_comms_threads(
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     has_attachment: bool = Query(False),
+    expand_identities: bool = Query(False, description="Expand each person-key filter to the contact's full identity cluster (cross-identity filter)."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -641,6 +642,7 @@ def get_comms_threads(
         limit=limit,
         offset=offset,
         has_attachment=has_attachment,
+        expand_identities=expand_identities,
     )
     return result
 
@@ -707,6 +709,7 @@ def get_comms_between(
         ),
     ),
     has_attachment: bool = Query(False),
+    expand_identities: bool = Query(False, description="Expand each person-key filter to the contact's full identity cluster (cross-identity filter)."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -727,6 +730,7 @@ def get_comms_between(
         sort=sort,
         cursor=cursor,
         has_attachment=has_attachment,
+        expand_identities=expand_identities,
     )
     _resolve_attachments(case_id, result.get("items", []))
     return result
@@ -745,6 +749,7 @@ def export_comms_pdf(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     mode: str = Query("timeline", regex="^(timeline|conversation)$"),
+    expand_identities: bool = Query(False, description="Expand each person-key filter to the contact's full identity cluster."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -775,6 +780,7 @@ def export_comms_pdf(
         limit=comms_export_service.MAX_ITEMS,
         offset=0,
         sort="asc",  # chronological reads best in a report
+        expand_identities=expand_identities,
     )
     items = result.get("items", [])
 
@@ -837,6 +843,7 @@ def get_comms_envelope(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     has_attachment: bool = Query(False),
+    expand_identities: bool = Query(False, description="Expand each person-key filter to the contact's full identity cluster (cross-identity filter)."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -863,6 +870,7 @@ def get_comms_envelope(
         start_date=start_date,
         end_date=end_date,
         has_attachment=has_attachment,
+        expand_identities=expand_identities,
     )
 
 

@@ -8730,6 +8730,115 @@ class Neo4jService:
         self._dcn_cache = {"case_id": case_id, "t": now, "map": out}
         return out
 
+    def _identity_clusters(self, case_id: str) -> dict:
+        """{person_key: frozenset(all keys that are the SAME human)} — auto
+        entity-resolution so one person fragmented across apps/devices
+        (snapchat-X / instagram-Y / interactionc-Z / phone-N, each its own
+        Person node) can be filtered as one. Links identities that share a
+        strong identifier — a user_id / handle, a phone number, an email, or
+        one identity's key appearing as another's user_id — via union-find.
+
+        Guards against over-merging: an identifier shared by more than
+        `_PROMISCUOUS` persons (a service number, a newsletter address) is
+        treated as generic and NOT used to link. Name is deliberately NOT a
+        linking signal (too many false positives, e.g. "Mom"). Short TTL
+        cache; data only changes on ingest/backfill/merge.
+        """
+        import time as _time
+        import re as _re
+        from collections import defaultdict as _dd
+        cache = getattr(self, "_idcluster_cache", None)
+        now = _time.time()
+        if cache and cache.get("case_id") == case_id and now - cache["t"] < 120:
+            return cache["map"]
+
+        _PROMISCUOUS = 8
+
+        def _ids_for(key, uids, phones, emails):
+            ids = set()
+
+            def add(v):
+                if not v:
+                    return
+                s = str(v).strip().lower()
+                if not s:
+                    return
+                digits = _re.sub(r"\D", "", s)
+                # Phone-like (only phone chars, enough digits) → last 10 digits
+                # so +1/country-code variants of the same number collapse.
+                if len(digits) >= 7 and _re.fullmatch(r"[\d+()\-.\s]+", s):
+                    ids.add("num:" + digits[-10:])
+                else:
+                    ids.add("id:" + s)
+            add(key)
+            # A key like phone-1240… / interactionc-1655… embeds a number that
+            # another identity may carry as a plain phone value.
+            kd = _re.sub(r"\D", "", str(key or ""))
+            if len(kd) >= 10:
+                ids.add("num:" + kd[-10:])
+            for arr in (uids, phones, emails):
+                for v in (arr or []):
+                    add(v)
+            return ids
+
+        persons = []
+        index = _dd(set)
+        with self._driver.session() as s:
+            for r in s.run(
+                "MATCH (p:Person {case_id:$c, source_type:'cellebrite'}) "
+                "RETURN p.key AS key, p.user_ids AS uids, "
+                "p.phone_numbers AS phones, p.emails AS emails",
+                c=case_id,
+            ):
+                ids = _ids_for(r["key"], r["uids"], r["phones"], r["emails"])
+                persons.append(r["key"])
+                for i in ids:
+                    index[i].add(r["key"])
+
+        parent = {k: k for k in persons}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a, b):
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[ra] = rb
+
+        for i, ks in index.items():
+            if len(ks) > _PROMISCUOUS:
+                continue  # generic identifier — don't link on it
+            ks = list(ks)
+            for j in range(1, len(ks)):
+                union(ks[0], ks[j])
+
+        groups = _dd(set)
+        for k in persons:
+            groups[find(k)].add(k)
+        out = {}
+        for k in persons:
+            out[k] = frozenset(groups[find(k)])
+        self._idcluster_cache = {"case_id": case_id, "t": now, "map": out}
+        return out
+
+    def expand_identity_cluster(self, case_id: str, keys) -> list:
+        """Expand a set of person keys to include every linked identity of the
+        same human (see _identity_clusters). Returns the de-duplicated union,
+        sorted for stable params. Unknown keys pass through unchanged."""
+        if not keys:
+            return list(keys or [])
+        clusters = self._identity_clusters(case_id)
+        out = set()
+        for k in keys:
+            out.add(k)
+            cl = clusters.get(k)
+            if cl:
+                out.update(cl)
+        return sorted(out)
+
     def person_aliases(self, case_id: str) -> dict:
         """{person_key: [{"name": str, "report_keys": [str]}, ...]} — every
         distinct saved name an identity was stored under across devices (from
@@ -8785,6 +8894,7 @@ class Neo4jService:
         limit: int = 200,
         offset: int = 0,
         has_attachment: bool = False,
+        expand_identities: bool = False,
     ) -> list:
         """
         Get conversation threads — real chat threads + synthetic call/email threads per participant pair.
@@ -8795,7 +8905,14 @@ class Neo4jService:
         has_attachment: keep only threads that contain at least one
         attachment-bearing item. Filtered IN-QUERY (before the per-block cap)
         so it reaches past the cap rather than just hiding loaded rows.
+
+        expand_identities: expand each person-key filter to the person's full
+        identity cluster (cross-identity filter).
         """
+        if expand_identities:
+            participant_keys = self.expand_identity_cluster(case_id, participant_keys) if participant_keys else participant_keys
+            from_keys = self.expand_identity_cluster(case_id, from_keys) if from_keys else from_keys
+            to_keys = self.expand_identity_cluster(case_id, to_keys) if to_keys else to_keys
         active_types = set(thread_types) if thread_types else {"chat", "calls", "emails"}
         threads: list = []
 
@@ -9498,10 +9615,16 @@ class Neo4jService:
         sort: str = "desc",
         cursor: Optional[str] = None,
         has_attachment: bool = False,
+        expand_identities: bool = False,
     ) -> dict:
         """
         Get chronological cross-type comms where any from_keys participant
         communicated with any to_keys participant (AND semantics).
+
+        expand_identities: when True, each person-key filter is expanded to the
+        person's full identity cluster (see expand_identity_cluster), so
+        filtering by one of a contact's identities returns comms across ALL of
+        them (the cross-identity filter).
 
         types:  subset of ['message', 'call', 'email'] — includes all if None.
         sort:   'desc' (newest first) or 'asc' (oldest first). Drives both
@@ -9521,6 +9644,11 @@ class Neo4jService:
         per-type so a page that came from messages-only doesn't
         accidentally short-circuit calls/emails on the next page.
         """
+        if expand_identities:
+            from_keys = self.expand_identity_cluster(case_id, from_keys) if from_keys else from_keys
+            to_keys = self.expand_identity_cluster(case_id, to_keys) if to_keys else to_keys
+            participant_keys = self.expand_identity_cluster(case_id, participant_keys) if participant_keys else participant_keys
+
         active_types = set(types) if types else {"message", "call", "email"}
         sort_dir = "ASC" if (sort or "").lower() == "asc" else "DESC"
         reverse_sort = sort_dir == "DESC"
@@ -9893,6 +10021,7 @@ class Neo4jService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         has_attachment: bool = False,
+        expand_identities: bool = False,
     ) -> dict:
         """
         Cheap aggregation across the comms feed shape: total count,
@@ -9909,6 +10038,10 @@ class Neo4jService:
         so the envelope is always consistent with what the body fetch
         would return.
         """
+        if expand_identities:
+            from_keys = self.expand_identity_cluster(case_id, from_keys) if from_keys else from_keys
+            to_keys = self.expand_identity_cluster(case_id, to_keys) if to_keys else to_keys
+            participant_keys = self.expand_identity_cluster(case_id, participant_keys) if participant_keys else participant_keys
         active_types = set(types or ["message", "call", "email"])
 
         # Build shared params + per-type filter fragments. Date bounds

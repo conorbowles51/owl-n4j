@@ -39,6 +39,9 @@ export default function CommsCrossTypeTimeline({
   sourceApps,
   startDate,
   endDate,
+  // When true, person-key filters expand to each contact's full identity
+  // cluster server-side (cross-identity filter).
+  expandIdentities = false,
   onJumpToThread,
   // Optional rail-aware select handler. Fires alongside onJumpToThread
   // so a single row click both navigates to the parent thread (if the
@@ -111,6 +114,7 @@ export default function CommsCrossTypeTimeline({
       startDate,
       endDate,
       hasAttachment: hasAttachmentOnly,
+      expandIdentities,
       limit: 2000,
       sort: apiSort,
     }).then((data) => {
@@ -140,9 +144,10 @@ export default function CommsCrossTypeTimeline({
       startDate,
       endDate,
       hasAttachment: hasAttachmentOnly,
+      expandIdentities,
     }).then((env) => { if (!cancelled) setExactTotal(env?.total ?? null); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps, startDate, endDate, expanded, sortMode, hasAttachmentOnly]);
+  }, [caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps, startDate, endDate, expanded, sortMode, hasAttachmentOnly, expandIdentities]);
 
   // Per-phone seed for Lanes view.
   //
@@ -177,6 +182,7 @@ export default function CommsCrossTypeTimeline({
       startDate,
       endDate,
       hasAttachment: hasAttachmentOnly,
+      expandIdentities,
       limit: 400,
       sort: apiSort,
     };
@@ -207,7 +213,7 @@ export default function CommsCrossTypeTimeline({
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, expanded, viewMode, [...reportKeys].join(','), sortMode, hasAttachmentOnly]);
+  }, [caseId, expanded, viewMode, [...reportKeys].join(','), sortMode, hasAttachmentOnly, expandIdentities]);
 
   // Apply the has-attachment filter (client-side over loaded items) +
   // sort=type client-side (the backend doesn't bucket by type). For asc/desc
@@ -258,6 +264,7 @@ export default function CommsCrossTypeTimeline({
     startDate,
     endDate,
     hasAttachment: hasAttachmentOnly,
+    expandIdentities,
     limit: 2000,
     sort: sortMode === 'asc' ? 'asc' : 'desc',
   });

@@ -114,6 +114,19 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // "Has attachment" thread filter — client-side over the loaded threads,
   // gating on the thread-level has_attachments aggregate.
   const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
+  // Cross-identity filter: when on, a participant filter expands to that
+  // contact's full identity cluster server-side (e.g. their phone + snapchat
+  // + instagram + interactionc handles), so filtering one identity returns
+  // comms across all of them. Persisted per browser. Default ON.
+  const [linkIdentities, setLinkIdentities] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem('owl.comms.linkIdentities') !== '0';
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('owl.comms.linkIdentities', linkIdentities ? '1' : '0');
+    }
+  }, [linkIdentities]);
   // Scrubber-driven coarse window (Date | null). Maps to startDate/endDate
   // strings sent to the server-side filter.
   const [windowStart, setWindowStart] = useState(null);
@@ -428,6 +441,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       startDate: startDate || null,
       endDate: endDate || null,
       hasAttachment: hasAttachmentOnly,
+      expandIdentities: linkIdentities,
       limit: threadLimit,
       signal: controller.signal,
     };
@@ -489,7 +503,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       cancelled = true;
       controller.abort();
     };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, threadTypesParam, activeApps, startDate, endDate, reportsReady, hasAttachmentOnly, threadLimit]);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, threadTypesParam, activeApps, startDate, endDate, reportsReady, hasAttachmentOnly, threadLimit, linkIdentities]);
 
   // Reset the progressive window to the first page whenever a server-side
   // filter changes. Separate from the fetch effect so growing threadLimit
@@ -523,6 +537,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       startDate: startDate || null,
       endDate: endDate || null,
       hasAttachment: hasAttachmentOnly,
+      expandIdentities: linkIdentities,
       signal: controller.signal,
     }).then(env => {
       if (cancelled) return;
@@ -538,7 +553,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       cancelled = true;
       controller.abort();
     };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, activeTypes, activeApps, startDate, endDate, reportsReady, hasAttachmentOnly]);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, activeTypes, activeApps, startDate, endDate, reportsReady, hasAttachmentOnly, linkIdentities]);
 
   // Cellebrite sometimes ingests the same logical conversation twice
   // — e.g. once as a Chat node and once as a Conversation node, or once
@@ -580,8 +595,9 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     if (rks) params.set('report_keys', rks.join(','));
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
+    if (linkIdentities) params.set('expand_identities', 'true');
     window.open(`/api/cellebrite/comms/export/pdf?${params.toString()}`, '_blank');
-  }, [caseId, fromKeys, toKeys, participantKeys, activeTypes, selectedReportKeys, startDate, endDate]);
+  }, [caseId, fromKeys, toKeys, participantKeys, activeTypes, selectedReportKeys, startDate, endDate, linkIdentities]);
 
   // ------------------------------------------------------------------
   // Deep message-body search (server-side full-text)
@@ -800,6 +816,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       sourceApps={activeApps}
       startDate={startDate || null}
       endDate={endDate || null}
+      expandIdentities={linkIdentities}
       onItemSelect={handleItemSelect}
       onClose={() => setTimelineFlyoverOpen(false)}
       // Swim-lane drag-to-select → narrow the comms scrubber so the
@@ -950,6 +967,19 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         >
           <FileDown className="w-3 h-3" /> Conversation PDF
         </button>
+        <div className="flex-1" />
+        <label
+          className="inline-flex items-center gap-1.5 cursor-pointer select-none text-light-600"
+          title="When on, filtering by a contact also includes their other app/device identities that share a phone number, handle or email (one human seen across phone + Snapchat + Instagram, etc.). Identities linked only by name need a manual merge."
+        >
+          <input
+            type="checkbox"
+            checked={linkIdentities}
+            onChange={(e) => setLinkIdentities(e.target.checked)}
+            className="accent-owl-blue-600"
+          />
+          Link identities
+        </label>
       </div>
 
       {/* Phase K4 (revised): cross-type timeline returns as a slide-
@@ -1055,7 +1085,7 @@ function ModeToggleButton({
  */
 function CrossTypeTimelineFlyover({
   caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps,
-  startDate, endDate, onItemSelect, onClose, onApplyWindow,
+  startDate, endDate, expandIdentities, onItemSelect, onClose, onApplyWindow,
 }) {
   // Esc to dismiss.
   useEffect(() => {
@@ -1184,6 +1214,7 @@ function CrossTypeTimelineFlyover({
           sourceApps={sourceApps}
           startDate={startDate}
           endDate={endDate}
+          expandIdentities={expandIdentities}
           onItemSelect={onItemSelect}
           onApplyWindow={onApplyWindow}
         />
