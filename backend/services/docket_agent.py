@@ -41,6 +41,9 @@ from services import docket_storage as dk
 
 # --- config (env-overridable) ---
 WRITES_ENABLED = os.environ.get("DOCKET_AGENT_WRITES", "0") == "1"
+# Push gate: by default push when writes are on, but DOCKET_AGENT_PUSH=0 lets us
+# run the full implement+review locally and HOLD the push for manual inspection.
+PUSH_ENABLED = os.environ.get("DOCKET_AGENT_PUSH", "1" if WRITES_ENABLED else "0") == "1"
 MODEL = os.environ.get("DOCKET_AGENT_MODEL", "sonnet")
 MAIN_CHECKOUT = Path(os.environ.get("DOCKET_MAIN_CHECKOUT", "/home/conorbowles51/app_v2"))
 WORKTREE_DIR = Path(os.environ.get("DOCKET_WORKTREE_DIR", "/home/conorbowles51/docket-agent-wt"))
@@ -361,6 +364,15 @@ def process_ticket(t: dict) -> None:
         return _stall(tid, f"self-review failed (needs another pass): {fix[:160]}")
 
     # --- PR (push branch + record compare URL; never auto-merge) ---
+    if not PUSH_ENABLED:
+        dk.update_ticket(tid, branch=branch)
+        dk.add_event(tid, "note", actor="agent",
+                     summary=f"Local branch '{branch}' ready in {wt} — push is disabled "
+                             "(DOCKET_AGENT_PUSH=0). Inspect the diff, then push manually "
+                             "to open a PR.")
+        dk.transition(tid, "pr", actor="agent", summary="Local branch ready (push held for review)")
+        log(f"  → local branch ready (push held): {branch} @ {wt}")
+        return
     act("Pushing the branch + opening a PR")
     pushed = _git(wt, ["push", "-u", "origin", branch])
     if not pushed:

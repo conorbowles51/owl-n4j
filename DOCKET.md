@@ -165,8 +165,13 @@ Discussion → [Submit for Processing] →
   - [ ] msmtp delivery of the queued notifications (still needs the SMTP cred)
   - [ ] real PR *object* creation (currently push branch + compare URL; needs gh/PAT)
 - [~] **Phase 3 — Turn autonomy on** behind `DOCKET_AGENT_WRITES`: 0 (default) = grooming
-  only (assess+plan, read-only); 1 = implement → self-review → push branch → PR. Flip when
-  ready to let it write code. Write-phase code paths exist but are UNTESTED end-to-end.
+  only (assess+plan, read-only); 1 = implement → self-review → push branch → PR.
+  - [x] Write path VERIFIED supervised (DKT-14, WRITES=1 PUSH=0): agent implemented a clean
+        idiomatic diff (stacked `@router.get` alias), committed as Neil B
+        <thenofisamizdat@gmail.com>, self-reviewed vs acceptance criteria, held the push.
+  - [x] `DOCKET_AGENT_PUSH` gate (default = WRITES) to hold the push for manual inspection.
+  - [ ] Decide push policy / open the first real PR; then consider enabling writes on the
+        live service (currently still WRITES=0 = grooming only).
 - [ ] **Phase 4 — Coaching analytics:** clarity scoring at submit, "bounced & why",
   effort dashboards.
 
