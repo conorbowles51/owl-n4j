@@ -48,6 +48,8 @@ export const api = {
   submit: (id, body) => req(`/api/tickets/${id}/submit`, { method: 'POST', body: JSON.stringify(body || {}) }),
   transition: (id, to_status, summary) =>
     req(`/api/tickets/${id}/transition`, { method: 'POST', body: JSON.stringify({ to_status, summary: summary || '' }) }),
+  resubmit: (id, body) =>
+    req(`/api/tickets/${id}/resubmit`, { method: 'POST', body: JSON.stringify(body) }),
   comment: (id, text) =>
     req(`/api/tickets/${id}/comment`, { method: 'POST', body: JSON.stringify({ text }) }),
 }

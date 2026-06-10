@@ -5,6 +5,11 @@ import {
 } from 'lucide-react'
 import { api } from '../api.js'
 import { PRIORITY_BADGE, KIND_DOT, relTime } from '../ui.js'
+import AmendModal from './AmendModal.jsx'
+
+// Moving to "queued" from one of these is a resubmit — open the amend modal
+// instead of a bare transition, so the tester records what changed.
+const RESUBMIT_FROM = ['user_review', 'needs_info', 'stalled']
 
 const KIND_ICON = {
   transition: ArrowRight,
@@ -32,6 +37,7 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
   const [comment, setComment] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [amending, setAmending] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -111,12 +117,19 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
               {/* Lifecycle actions */}
               {nextMoves.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  {nextMoves.map((to) => (
-                    <button key={to} disabled={busy} onClick={() => move(to)}
-                      className="px-3 py-1.5 text-xs font-medium rounded-lg border border-indigo-300 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">
-                      {MOVE_LABEL[`${t.status}->${to}`] || (meta.status_meta[to]?.label) || to}
-                    </button>
-                  ))}
+                  {nextMoves.map((to) => {
+                    const resubmit = to === 'queued' && RESUBMIT_FROM.includes(t.status)
+                    return (
+                      <button key={to} disabled={busy}
+                        onClick={() => (resubmit ? setAmending(true) : move(to))}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border disabled:opacity-50 ${
+                          resubmit
+                            ? 'border-amber-300 text-amber-700 hover:bg-amber-50'
+                            : 'border-indigo-300 text-indigo-700 hover:bg-indigo-50'}`}>
+                        {MOVE_LABEL[`${t.status}->${to}`] || (meta.status_meta[to]?.label) || to}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
 
@@ -176,6 +189,14 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
           </>
         )}
       </div>
+
+      {amending && t && (
+        <AmendModal
+          ticket={t} meta={meta}
+          onClose={() => setAmending(false)}
+          onDone={async () => { setAmending(false); await load(); onChanged && onChanged() }}
+        />
+      )}
     </div>
   )
 }

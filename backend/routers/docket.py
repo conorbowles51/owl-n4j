@@ -208,6 +208,50 @@ def transition_ticket(ticket_id: int, body: TransitionIn,
     return {"ticket": _detail(ticket_id)}
 
 
+class ResubmitIn(BaseModel):
+    reason: str                                # required: what's still wrong / what changed
+    priority: Optional[str] = None
+    description: Optional[str] = None
+    acceptance_criteria: Optional[str] = None
+    test_instructions: Optional[str] = None
+
+
+@router.post("/{ticket_id}/resubmit")
+def resubmit(ticket_id: int, body: ResubmitIn, tester: dict = Depends(require_tester)):
+    """Amend the ask and put it back in the queue (the resubmit loop).
+
+    Used when a ticket fails User Review (or comes back as Needs Info / Stalled):
+    gather the reason + any edits to the ask, record them on the timeline, then
+    transition → queued. The state machine bumps `iteration` on the
+    user_review→queued bounce, so the board shows how many rounds it's taken.
+    """
+    if not body.reason.strip():
+        raise HTTPException(status_code=400, detail="a reason for resubmitting is required")
+    if not dk.get_ticket(ticket_id):
+        raise HTTPException(status_code=404, detail=f"ticket {ticket_id} not found")
+
+    # Apply any edits to the ask first.
+    edits = {k: v for k, v in {
+        "priority": body.priority,
+        "description": body.description,
+        "acceptance_criteria": body.acceptance_criteria,
+        "test_instructions": body.test_instructions,
+    }.items() if v is not None}
+    if edits:
+        dk.update_ticket(ticket_id, **edits)
+
+    # Record the resubmit reason on the timeline so the agent + everyone sees it.
+    dk.add_event(ticket_id, "comment", summary=f"Resubmitted: {body.reason.strip()}",
+                 actor=tester.get("name", ""))
+
+    try:
+        dk.transition(ticket_id, "queued", actor=tester.get("name", ""),
+                      summary="Resubmitted for processing")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ticket": _detail(ticket_id)}
+
+
 class CommentIn(BaseModel):
     text: str
 

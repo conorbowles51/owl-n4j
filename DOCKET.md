@@ -47,11 +47,10 @@
   Restart=on-failure — verified it respawns on kill and survives reboot). Runs `main:app`
   from the worktree. GCP firewall rule `allow-docket-8011` opens the port. 8 demo tickets
   preserved.
-- **Next action:** (a) [done — see Live verification] ; (b) the
-  **amend-on-fail** UX for resubmit (edit desc/test-instructions when bouncing from
-  User Review); (c) migrate the **old hub** (checklist + feedback + discussion) in and
-  retire `backend/static/testing-hub.html`; (d) deploy wiring (build step + nginx
-  `/docket` route) — see Deploy notes below.
+- **Next action:** migrate the **old hub** into Docket — the checklist/catalogue +
+  per-tester feedback (pass/fail/blocked + notes/repro) + discussion threads — as a second
+  surface in the standalone app, then retire `backend/static/testing-hub.html`. (Amend-on-
+  fail resubmit: DONE. Deploy wiring for the real origin: still TODO, see Deploy notes.)
 - **Blocked on:** Nothing for Phases 1–early-2. SMTP credential pending for the email
   channel only (Neil is setting up a send-from address + app password later).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
@@ -135,7 +134,8 @@ Discussion → [Submit for Processing] →
   - [x] API surface (`backend/routers/docket.py` → `/api/tickets/*`) + register in main.py
   - [x] Auth: add `arturo` + per-tester email + helpers (`services/testing_auth.py`)
   - [x] Standalone React app shell + production-line board (`docket/`, served at /docket)
-  - [~] Submit/resubmit flows — submit + fail→requeue work; amend-on-fail UX still TODO
+  - [x] Submit/resubmit flows — submit + amend-on-fail resubmit (reason + edits + priority,
+        iteration bump, reason recorded on timeline; `/api/tickets/{id}/resubmit` + AmendModal)
   - [ ] Migrate old hub (checklist + feedback + discussion) in, retire vanilla-JS page
   - [~] Deploy: DURABLE interim env live via `owl-docket` systemd service on :8011 (own
         worktree + DB). Real deploy on the main origin (deploy.sh build step + route) still TODO.
