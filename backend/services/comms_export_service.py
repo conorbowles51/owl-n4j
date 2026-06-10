@@ -14,8 +14,14 @@ Names already arrive device-lens-resolved from get_cellebrite_comms_between.
 """
 
 import re
+from datetime import datetime, timezone
 from html import escape
 from typing import List, Optional, Dict, Any
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None
 
 # Hard cap so a 70k-message thread can't blow up PDF render time / size.
 # WeasyPrint layout is ~10ms/row, so this also bounds request latency
@@ -27,9 +33,39 @@ def _esc(val) -> str:
     return escape("" if val is None else str(val))
 
 
-def _fmt_ts(ts: Optional[str]) -> str:
+def _parse_utc(ts) -> Optional[datetime]:
+    """Parse a stored timestamp (uniformly UTC) into an aware datetime.
+    Stored shapes vary: '...+00:00', '...Z', naive '...', with/without
+    fractional seconds. A naive value is treated as UTC."""
+    s = str(ts or "").strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        # Last-ditch: drop fractional seconds / trailing zone text.
+        core = s.replace("T", " ").split("+")[0].split(".")[0].strip()
+        try:
+            dt = datetime.strptime(core, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _fmt_ts(ts: Optional[str], zone=None) -> str:
+    """Format a UTC timestamp for display. With `zone` (a tzinfo) the instant is
+    converted into that zone (DST handled per-timestamp); without it the raw
+    UTC wall-clock is shown (trimmed)."""
     if not ts:
         return ""
+    if zone is not None:
+        dt = _parse_utc(ts)
+        if dt is not None:
+            return dt.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S")
     s = str(ts).replace("T", " ")
     # Trim trailing timezone / fractional seconds for readability.
     if "+" in s:
@@ -37,6 +73,34 @@ def _fmt_ts(ts: Optional[str]) -> str:
     if "." in s:
         s = s.split(".")[0]
     return s.strip()
+
+
+def _tz_banner(zone, tz_iana: str, tz_label: str, items: List[Dict[str, Any]]) -> str:
+    """Human label for the report's display zone, e.g.
+    "Device — America/New_York (EDT, UTC−04:00)" or "UTC". The abbreviation +
+    offset are computed for a representative message instant (DST varies across
+    a long export; per-message times are still each converted correctly)."""
+    if zone is None or (tz_iana or "UTC").upper() == "UTC":
+        return "UTC"
+    rep = None
+    for it in items:
+        rep = _parse_utc(it.get("timestamp"))
+        if rep is not None:
+            break
+    rep = (rep or datetime.now(timezone.utc)).astimezone(zone)
+    abbr = rep.tzname() or ""
+    off = rep.utcoffset()
+    off_txt = ""
+    if off is not None:
+        mins = int(off.total_seconds() // 60)
+        sign = "−" if mins < 0 else "+"
+        mins = abs(mins)
+        off_txt = f"UTC{sign}{mins // 60:02d}:{mins % 60:02d}"
+    detail = ", ".join(x for x in (abbr, off_txt) if x)
+    name = tz_iana or ""
+    parts = [p for p in (tz_label, name) if p]
+    base = " — ".join(dict.fromkeys(parts)) if parts else name
+    return f"{base} ({detail})" if detail else (base or "UTC")
 
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-")
@@ -153,6 +217,7 @@ h1 { font-size: 18px; margin: 0 0 2px; color: #15324a; }
 .meta { background: #f3f7fb; border: 1px solid #dce6f0; border-radius: 6px;
         padding: 8px 12px; margin: 0 0 14px; }
 .meta b { color: #15324a; }
+.tznote { color: #5b6b7b; font-weight: 400; font-size: 9.5px; }
 .counts span { display: inline-block; margin-right: 14px; }
 /* Timeline mode = stacked full-width records (no column table). Each record uses
    the whole page width so contacts and the message both wrap freely on A4. */
@@ -192,13 +257,32 @@ def generate_comms_pdf(
     filters_description: str = "",
     generated_at: Optional[str] = None,
     thumbnails: Optional[Dict[str, str]] = None,
+    tz: Optional[str] = None,
+    tz_label: Optional[str] = None,
 ) -> str:
     """Return a self-contained HTML document for the filtered comms — the WHOLE
     filtered conversation, never truncated.
 
     thumbnails: optional {evidence_id: data-URI} map; when given, image
-    attachments render as embedded thumbnails."""
+    attachments render as embedded thumbnails.
+    tz: IANA zone (e.g. 'America/New_York') the times are converted into — must
+    match the zone selected in the app; defaults to UTC. tz_label: the app's
+    friendly name for that zone (e.g. 'Device')."""
     shown = items  # render everything — no item cap
+
+    # Resolve the display zone (stored timestamps are UTC). The report converts
+    # every time into this zone and states it at the top, so the PDF matches the
+    # timezone the investigator selected in the app.
+    zone = None
+    if tz and ZoneInfo is not None and tz.upper() != "UTC":
+        try:
+            zone = ZoneInfo(tz)
+        except Exception:
+            zone = None
+    tz_text = _tz_banner(zone, tz or "UTC", tz_label or "", items)
+
+    def fmt_ts(ts):
+        return _fmt_ts(ts, zone)
 
     counts: Dict[str, int] = {}
     for it in items:
@@ -215,6 +299,7 @@ def generate_comms_pdf(
         "<div class='meta'>",
         f"<div><b>Participants:</b> {people}</div>",
     ]
+    head.append(f"<div><b>Timezone:</b> {_esc(tz_text)} <span class='tznote'>(all times shown in this zone)</span></div>")
     if date_range:
         head.append(f"<div><b>Date range:</b> {date_range}</div>")
     if filters_description:
@@ -248,7 +333,7 @@ def generate_comms_pdf(
                 cls = " owner" if (it.get("sender") or {}).get("is_owner") else ""
                 body_parts.append(
                     f"<div class='msg'><div class='h'><span class='{cls.strip()}'>{_esc(who)}</span>"
-                    f" → {_esc(_recipients(it))} · {_esc(_fmt_ts(it.get('timestamp')))}</div>"
+                    f" → {_esc(_recipients(it))} · {_esc(fmt_ts(it.get('timestamp')))}</div>"
                     f"<div class='body'>{_content(it)}{_thumbs_html(it, thumbnails)}</div></div>"
                 )
             body_parts.append("</div>")
@@ -264,7 +349,7 @@ def generate_comms_pdf(
             owner = " owner" if (it.get("sender") or {}).get("is_owner") else ""
             body_parts.append(
                 "<div class='rec'>"
-                f"<div class='rh'><span class='t'>{_esc(_fmt_ts(it.get('timestamp')))}</span>"
+                f"<div class='rh'><span class='t'>{_esc(fmt_ts(it.get('timestamp')))}</span>"
                 f"<span class='k'>{_esc(it.get('type'))}</span>"
                 f"<span class='ppl'><span class='{owner.strip()}'>{_esc(who)}</span>"
                 f" &rarr; {_esc(_recipients(it))}</span></div>"

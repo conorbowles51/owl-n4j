@@ -793,6 +793,8 @@ def export_comms_pdf(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     mode: str = Query("timeline", regex="^(timeline|conversation)$"),
+    tz: Optional[str] = Query(None, description="IANA zone to render times in (matches the app's TZ selector); defaults to UTC."),
+    tz_label: Optional[str] = Query(None, description="Friendly name of the selected zone, e.g. 'Device'."),
     expand_identities: bool = Query(False, description="Expand each person-key filter to the contact's full identity cluster."),
     include_media: bool = Query(False, description="Embed image-attachment thumbnails in the PDF (audio/video shown as labels)."),
     db: Session = Depends(get_db),
@@ -869,6 +871,8 @@ def export_comms_pdf(
         filters_description=filters_description,
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
         thumbnails=thumbnails,
+        tz=tz,
+        tz_label=tz_label,
     )
 
     safe = "".join(c for c in (case_name or "case") if c.isalnum() or c in "-_") or "case"

@@ -18,6 +18,8 @@ import { useCellebriteStatus } from './shared/CellebriteStatusBar';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import { consumeDiscoveryTarget } from '../../utils/commsHandoff';
 import { phoneFromKey } from './shared/PersonName';
+import { useCellebriteTime } from './shared/CellebriteTimezone';
+import { CB_ZONES, DEFAULT_TZ_ID } from './shared/cellebriteTime';
 
 /**
  * Cellebrite Communication Center — the hybrid dashboard orchestrator.
@@ -123,6 +125,7 @@ async function copyToClipboard(text) {
 
 export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [], isActive = true }) {
   const phoneCtx = usePhoneReports();
+  const { tzId } = useCellebriteTime();  // active TZ selector — carried into the PDF export
   const fallbackReports = useMemo(() => reportsProp || [], [reportsProp]);
   const fallbackSelection = useMemo(
     () => new Set(fallbackReports.map(r => r.report_key)),
@@ -692,8 +695,13 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     if (endDate) params.set('end_date', endDate);
     if (linkIdentities) params.set('expand_identities', 'true');
     if (pdfMedia) params.set('include_media', 'true');
+    // Render the PDF in the SAME timezone the investigator selected in the app
+    // (stored times are UTC; the app + the report must agree).
+    const zone = CB_ZONES[tzId] || CB_ZONES[DEFAULT_TZ_ID];
+    params.set('tz', zone.iana);
+    params.set('tz_label', zone.label);
     window.open(`/api/cellebrite/comms/export/pdf?${params.toString()}`, '_blank');
-  }, [caseId, fromKeys, toKeys, participantKeys, activeTypes, selectedReportKeys, startDate, endDate, linkIdentities, pdfMedia]);
+  }, [caseId, fromKeys, toKeys, participantKeys, activeTypes, selectedReportKeys, startDate, endDate, linkIdentities, pdfMedia, tzId]);
 
   // Copy the WHOLE filtered conversation (all selected people/identities ×
   // types × dates × phones), in chronological order, to the clipboard — so
