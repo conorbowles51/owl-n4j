@@ -52,4 +52,10 @@ export const api = {
     req(`/api/tickets/${id}/resubmit`, { method: 'POST', body: JSON.stringify(body) }),
   comment: (id, text) =>
     req(`/api/tickets/${id}/comment`, { method: 'POST', body: JSON.stringify({ text }) }),
+
+  // Migrated testing-hub checklist (per-tester pass/fail/blocked of shipped behaviours).
+  checklist: () => req('/api/testing/checklist'),
+  feedback: () => req('/api/testing/feedback'),
+  postFeedback: (item_id, status, note) =>
+    req('/api/testing/feedback', { method: 'POST', body: JSON.stringify({ item_id, status, note }) }),
 }

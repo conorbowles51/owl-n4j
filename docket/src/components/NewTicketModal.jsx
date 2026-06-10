@@ -4,12 +4,12 @@ import { api } from '../api.js'
 
 // Raise a new ticket. Acceptance criteria is a first-class field on purpose:
 // it's the quiet lever for "write better stories" — what 'done' looks like.
-export default function NewTicketModal({ meta, onClose, onCreated }) {
-  const [title, setTitle] = useState('')
-  const [type, setType] = useState('feature')
-  const [priority, setPriority] = useState(meta.default_priority || 'P2')
-  const [description, setDescription] = useState('')
-  const [acceptance, setAcceptance] = useState('')
+export default function NewTicketModal({ meta, onClose, onCreated, prefill }) {
+  const [title, setTitle] = useState(prefill?.title || '')
+  const [type, setType] = useState(prefill?.type || 'feature')
+  const [priority, setPriority] = useState(prefill?.priority || meta.default_priority || 'P2')
+  const [description, setDescription] = useState(prefill?.description || '')
+  const [acceptance, setAcceptance] = useState(prefill?.acceptance_criteria || '')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 

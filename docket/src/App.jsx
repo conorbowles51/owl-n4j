@@ -1,19 +1,22 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { ClipboardList, Plus, LogOut, RefreshCw } from 'lucide-react'
+import { ClipboardList, Plus, LogOut, RefreshCw, LayoutGrid, ListChecks } from 'lucide-react'
 import { api, getToken, getName, clearSession } from './api.js'
 import Login from './components/Login.jsx'
 import Board from './components/Board.jsx'
+import Checklist from './components/Checklist.jsx'
 import TicketDetail from './components/TicketDetail.jsx'
 import NewTicketModal from './components/NewTicketModal.jsx'
 
 export default function App() {
   const [authed, setAuthed] = useState(!!getToken())
   const [name, setName] = useState(getName())
+  const [view, setView] = useState('board') // 'board' | 'checklist'
   const [meta, setMeta] = useState(null)
   const [tickets, setTickets] = useState([])
   const [statusMeta, setStatusMeta] = useState({})
   const [openId, setOpenId] = useState(null)
   const [showNew, setShowNew] = useState(false)
+  const [newPrefill, setNewPrefill] = useState(null)
   const [err, setErr] = useState('')
 
   // Drop to login on any 401 from the API client.
@@ -34,28 +37,44 @@ export default function App() {
     }
   }, [])
 
-  // Load vocabulary once, then poll the board for live movement.
+  // Load vocabulary once, then poll the board for live movement (board view only).
   useEffect(() => {
     if (!authed) return
     let alive = true
     api.meta().then((m) => { if (alive) setMeta(m) }).catch((e) => setErr(e.message))
     loadBoard()
-    const iv = setInterval(loadBoard, 4000)
+    const iv = setInterval(() => { if (view === 'board') loadBoard() }, 4000)
     return () => { alive = false; clearInterval(iv) }
-  }, [authed, loadBoard])
+  }, [authed, loadBoard, view])
+
+  function openNewTicket(prefill = null) {
+    setNewPrefill(prefill)
+    setShowNew(true)
+  }
 
   if (!authed) {
     return <Login onAuthed={(n) => { setName(n); setAuthed(true) }} />
   }
+
+  const tab = (key, label, Icon) => (
+    <button onClick={() => setView(key)}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium ${
+        view === key ? 'bg-slate-100 text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
+      <Icon className="w-4 h-4" /> {label}
+    </button>
+  )
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-white border-b border-slate-200 px-4 py-2.5 flex items-center gap-3">
         <ClipboardList className="w-5 h-5 text-indigo-600" />
         <span className="font-semibold text-slate-800">Docket</span>
-        <span className="text-xs text-slate-400 hidden sm:inline">From ask to merge — in the open.</span>
+        <nav className="flex items-center gap-1 ml-3">
+          {tab('board', 'Board', LayoutGrid)}
+          {tab('checklist', 'Checklist', ListChecks)}
+        </nav>
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={() => setShowNew(true)}
+          <button onClick={() => openNewTicket()}
             className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium">
             <Plus className="w-4 h-4" /> New ticket
           </button>
@@ -73,10 +92,14 @@ export default function App() {
         </div>
       )}
 
-      <main className="flex-1 overflow-hidden">
-        {meta
-          ? <Board tickets={tickets} statusMeta={statusMeta} onOpen={setOpenId} />
-          : <div className="p-8 text-slate-400">Loading board…</div>}
+      <main className="flex-1 overflow-auto">
+        {!meta ? (
+          <div className="p-8 text-slate-400">Loading…</div>
+        ) : view === 'board' ? (
+          <Board tickets={tickets} statusMeta={statusMeta} onOpen={setOpenId} />
+        ) : (
+          <Checklist onRaiseTicket={openNewTicket} />
+        )}
       </main>
 
       {openId != null && meta && (
@@ -89,9 +112,9 @@ export default function App() {
 
       {showNew && meta && (
         <NewTicketModal
-          meta={meta}
-          onClose={() => setShowNew(false)}
-          onCreated={(t) => { setShowNew(false); loadBoard(); setOpenId(t.id) }}
+          meta={meta} prefill={newPrefill}
+          onClose={() => { setShowNew(false); setNewPrefill(null) }}
+          onCreated={(t) => { setShowNew(false); setNewPrefill(null); loadBoard(); setView('board'); setOpenId(t.id) }}
         />
       )}
     </div>

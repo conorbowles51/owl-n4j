@@ -47,10 +47,14 @@
   Restart=on-failure — verified it respawns on kill and survives reboot). Runs `main:app`
   from the worktree. GCP firewall rule `allow-docket-8011` opens the port. 8 demo tickets
   preserved.
-- **Next action:** migrate the **old hub** into Docket — the checklist/catalogue +
-  per-tester feedback (pass/fail/blocked + notes/repro) + discussion threads — as a second
-  surface in the standalone app, then retire `backend/static/testing-hub.html`. (Amend-on-
-  fail resubmit: DONE. Deploy wiring for the real origin: still TODO, see Deploy notes.)
+- **Phase 1 is essentially COMPLETE:** rails (store/state-machine/API), standalone app
+  (board + ticket detail + new ticket), submit + amend-on-fail resubmit, Checklist surface
+  + raise-ticket bridge, durable web deploy on :8011. Remaining Phase-1 tail = the REAL
+  deploy on the main origin (deploy.sh build step + route + data cutover + retire old page).
+- **Next action (pick one):** (A) **start Phase 2** — the autonomous agent: orchestrator
+  that picks the top queued ticket, runs per-phase in a worktree, posts assessment/plan/
+  activity, opens a PR via `gh`. THE headline feature. OR (B) finish the real-deploy tail so
+  it's served from the main origin with prod's existing hub data.
 - **Blocked on:** Nothing for Phases 1–early-2. SMTP credential pending for the email
   channel only (Neil is setting up a send-from address + app password later).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
@@ -136,7 +140,12 @@ Discussion → [Submit for Processing] →
   - [x] Standalone React app shell + production-line board (`docket/`, served at /docket)
   - [x] Submit/resubmit flows — submit + amend-on-fail resubmit (reason + edits + priority,
         iteration bump, reason recorded on timeline; `/api/tickets/{id}/resubmit` + AmendModal)
-  - [ ] Migrate old hub (checklist + feedback + discussion) in, retire vanilla-JS page
+  - [x] Migrate old hub: Checklist tab (catalogue + per-tester pass/fail/blocked + notes,
+        all-testers summary, "Raise ticket" bridge). Discussion + bug/feature submission are
+        covered by Docket tickets. Reuses `/api/testing/*`. NOTE: vanilla-JS `testing-hub.html`
+        not deleted yet (still serves prod testers on :8000/testing) — retire at real deploy.
+        NOTE: Docket's checklist writes the WORKTREE's own data/testing-feedback.json (fresh);
+        prod hub's accumulated feedback/user_items not yet migrated — do at cutover.
   - [~] Deploy: DURABLE interim env live via `owl-docket` systemd service on :8011 (own
         worktree + DB). Real deploy on the main origin (deploy.sh build step + route) still TODO.
 - [ ] **Phase 2 — Plumbing:** worktree-per-ticket + per-phase agent + `gh` PR + live
