@@ -114,13 +114,15 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // "Has attachment" thread filter — client-side over the loaded threads,
   // gating on the thread-level has_attachments aggregate.
   const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
-  // Cross-identity filter: when on, a participant filter expands to that
-  // contact's full identity cluster server-side (e.g. their phone + snapchat
-  // + instagram + interactionc handles), so filtering one identity returns
-  // comms across all of them. Persisted per browser. Default ON.
+  // Cross-identity filter: OPT-IN expansion. When on, a participant filter
+  // also pulls in that contact's other app/device identities that share a
+  // strong identifier. Default OFF — the per-device / contact-book
+  // perspective (each identity separate, named as THAT phone saved it) is
+  // the baseline and stays primary; linking is an explicit, reversible lens
+  // the investigator turns on. It never merges data or changes the names.
   const [linkIdentities, setLinkIdentities] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    return window.localStorage.getItem('owl.comms.linkIdentities') !== '0';
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('owl.comms.linkIdentities') === '1';
   });
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -970,7 +972,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         <div className="flex-1" />
         <label
           className="inline-flex items-center gap-1.5 cursor-pointer select-none text-light-600"
-          title="When on, filtering by a contact also includes their other app/device identities that share a phone number, handle or email (one human seen across phone + Snapchat + Instagram, etc.). Identities linked only by name need a manual merge."
+          title="OFF by default. When on, filtering by a contact ALSO pulls in their other app/device identities that share a number/handle/email (one human across phone + Snapchat + Instagram, etc.). It does NOT merge data or change names — every row still shows the contact as that phone saved it. Identities linked only by name need a manual merge."
         >
           <input
             type="checkbox"
