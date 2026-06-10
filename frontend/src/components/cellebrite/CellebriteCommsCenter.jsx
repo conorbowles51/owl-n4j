@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, BookOpen, SlidersHorizontal, Activity, X, FileDown } from 'lucide-react';
+import { Loader2, BookOpen, SlidersHorizontal, Activity, X, FileDown, Copy } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
@@ -30,6 +30,67 @@ import { consumeDiscoveryTarget } from '../../utils/commsHandoff';
 // (see threadLimit) so the merged/sorted/sliced list reaches progressively
 // further toward the true total without keyset/cursor pagination.
 const THREADS_PAGE_STEP = 300;
+
+// ---- Copy-to-clipboard helpers for the comms feed ----
+// Items come from /comms/between already named per-device (device-lens) and,
+// when Link-identities is on, spanning the contact's identity cluster.
+function _ts(ts) {
+  if (!ts) return '';
+  let s = String(ts).replace('T', ' ');
+  if (s.includes('+')) s = s.split('+')[0];
+  if (s.includes('.')) s = s.split('.')[0];
+  return s.trim();
+}
+function _party(p) {
+  if (!p) return '?';
+  return (p.name || p.key || '?') + (p.is_owner ? ' (owner)' : '');
+}
+function _recips(it) {
+  const ns = (it.recipients || []).map((r) => r && (r.name || r.key)).filter(Boolean);
+  return ns.length ? ns.join(', ') : '?';
+}
+function _content(it) {
+  if (it.type === 'call') {
+    const d = [it.direction, it.duration].filter(Boolean).join(' ');
+    return `[call${d ? ' ' + d : ''}]`;
+  }
+  if (it.type === 'email') {
+    return (it.subject ? `${it.subject} — ` : '') + (it.body || '');
+  }
+  return it.body || '';
+}
+// Readable transcript, one line per comm, in chronological order.
+function commsToTranscript(items) {
+  return items.map((it) => {
+    const app = it.source_app ? ` (${it.source_app})` : '';
+    return `[${_ts(it.timestamp)}] ${_party(it.sender)} -> ${_recips(it)}${app}: ${_content(it)}`.trimEnd();
+  }).join('\n');
+}
+// Tab-separated — pastes as a table into Word / Excel / Sheets.
+function commsToTSV(items) {
+  const esc = (v) => String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ').trim();
+  const head = ['Timestamp', 'Type', 'From', 'To', 'App', 'Content'].join('\t');
+  const rows = items.map((it) => [
+    _ts(it.timestamp), it.type || '', _party(it.sender), _recips(it),
+    it.source_app || '', _content(it),
+  ].map(esc).join('\t'));
+  return [head, ...rows].join('\n');
+}
+async function copyToClipboard(text) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  // Fallback for non-secure-context (http://<ip>) where the async API is blocked.
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try { document.execCommand('copy'); } finally { document.body.removeChild(ta); }
+}
 
 export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [], isActive = true }) {
   const phoneCtx = usePhoneReports();
@@ -601,6 +662,48 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     window.open(`/api/cellebrite/comms/export/pdf?${params.toString()}`, '_blank');
   }, [caseId, fromKeys, toKeys, participantKeys, activeTypes, selectedReportKeys, startDate, endDate, linkIdentities]);
 
+  // Copy the WHOLE filtered conversation (all selected people/identities ×
+  // types × dates × phones), in chronological order, to the clipboard — so
+  // it can be pasted straight into a report. This is the answer to "the
+  // timeline gave me the totality, I just wanted to copy-paste it in order":
+  // the feed is virtualized (off-screen rows aren't in the DOM, so you can't
+  // drag-select it), so we re-fetch the full set and serialise it ourselves.
+  // `asTable` → tab-separated (pastes as a table into Word/Excel); else a
+  // readable transcript. Honours the Link-identities expansion.
+  const [copyState, setCopyState] = useState('');
+  const handleCopyComms = useCallback(async (asTable) => {
+    setCopyState('copying');
+    try {
+      const data = await cellebriteCommsAPI.getBetween(caseId, {
+        fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
+        toKeys: toKeys.size > 0 ? [...toKeys] : null,
+        participantKeys: participantKeys.size > 0 ? [...participantKeys] : null,
+        types: activeTypes.size > 0 ? [...activeTypes] : null,
+        reportKeys: selectedReportKeys.size > 0 ? [...selectedReportKeys] : null,
+        sourceApps: activeApps.size > 0 ? [...activeApps] : null,
+        startDate: startDate || null,
+        endDate: endDate || null,
+        hasAttachment: hasAttachmentOnly,
+        expandIdentities: linkIdentities,
+        sort: 'asc',     // chronological reads best when pasted
+        limit: 2000,
+      });
+      const items = data?.items || [];
+      if (items.length === 0) { setCopyState('Nothing to copy'); }
+      else {
+        let text = asTable ? commsToTSV(items) : commsToTranscript(items);
+        if (typeof data.total === 'number' && data.total > items.length) {
+          text += `\n\n(showing the first ${items.length.toLocaleString()} of ${data.total.toLocaleString()} — narrow the date range or participants to copy the rest)`;
+        }
+        await copyToClipboard(text);
+        setCopyState(`Copied ${items.length.toLocaleString()}`);
+      }
+    } catch (e) {
+      setCopyState('Copy failed');
+    }
+    setTimeout(() => setCopyState(''), 2800);
+  }, [caseId, fromKeys, toKeys, participantKeys, activeTypes, selectedReportKeys, activeApps, startDate, endDate, hasAttachmentOnly, linkIdentities]);
+
   // ------------------------------------------------------------------
   // Deep message-body search (server-side full-text)
   //
@@ -950,9 +1053,32 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
       />
 
-      {/* Export the current filter to PDF (timeline or conversation). */}
+      {/* Export / copy the current filter (PDF, or clipboard in chronological order). */}
       <div className="flex items-center gap-2 px-3 py-1 border-b border-light-100 bg-light-50/60 text-[11px] flex-shrink-0">
-        <span className="text-light-500">Export current filter:</span>
+        <span className="text-light-500">Export / copy current filter:</span>
+        <button
+          type="button"
+          onClick={() => handleCopyComms(false)}
+          disabled={copyState === 'copying'}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-light-200 bg-white text-light-700 hover:border-owl-blue-400 hover:text-owl-blue-700 disabled:opacity-50"
+          title="Copy the WHOLE filtered conversation, in chronological order, to the clipboard as a readable transcript — paste it straight into a report. Works across the whole feed (not just the visible rows)."
+        >
+          <Copy className="w-3 h-3" /> Copy
+        </button>
+        <button
+          type="button"
+          onClick={() => handleCopyComms(true)}
+          disabled={copyState === 'copying'}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-light-200 bg-white text-light-700 hover:border-owl-blue-400 hover:text-owl-blue-700 disabled:opacity-50"
+          title="Copy as a table (tab-separated) — pastes as a table into Word / Excel / Sheets."
+        >
+          <Copy className="w-3 h-3" /> Copy table
+        </button>
+        {copyState && copyState !== 'copying' && (
+          <span className="text-owl-blue-700">{copyState}</span>
+        )}
+        {copyState === 'copying' && <Loader2 className="w-3 h-3 animate-spin text-light-400" />}
+        <span className="w-px h-3.5 bg-light-200 mx-0.5" />
         <button
           type="button"
           onClick={() => handleExportPdf('timeline')}

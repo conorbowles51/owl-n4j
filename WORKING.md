@@ -17,6 +17,16 @@
 > per-device names. (Cross-identity filter shipped 2026-06-10; default corrected
 > ON→OFF after user feedback.)
 
+## 2026-06-10 — COMMS COPY-TO-CLIPBOARD (Alex request) — ✅ DONE (UNCOMMITTED→committed), HMR live
+Alex: filtered to P3+P4 + a person's multiple identities (phone conv + weird-font Snapchat "Katia"), used the cross-type TIMELINE to get the totality merged in order, wanted to COPY-PASTE it into a report — couldn't. Root cause: the feed is VIRTUALIZED (off-screen rows not in DOM → drag-select can't grab the whole thing), and the row-level copy fix (user-bug-5) only covers visible rows.
+- **FIX (frontend-only, CellebriteCommsCenter):** "Copy" + "Copy table" buttons in the export row. Re-fetches the FULL filtered set via getBetween (sort=asc, limit 2000, honours Link-identities), serialises ALL items client-side → clipboard. Transcript = `[ts] Sender -> Recipients (App): body` (calls show direction+duration); table = TSV (pastes into Word/Excel). Secure-context clipboard API + textarea/execCommand fallback. "Copied N" feedback; ">2000" appends a narrow-the-filter note. Names are device-lens (per-phone perspective preserved). To get a person's TOTALITY across identities, select BOTH chips (or Link-identities if they share an id).
+- VERIFIED: build clean; transcript preview on real data reads correctly (Trabajo 444/Pefro/Lan Chita, app, content, call dir+dur). Hub checklist item `fix-comms-copy` added (78 items). 
+- Files: frontend CellebriteCommsCenter.jsx; backend services/testing_checklist.py.
+
+## 2026-06-10 — IDENTITY WORK: confirmed intact, nothing in flight (IDLE)
+User's "continue" was a CHECK that we hadn't rolled back prior identity work — not a request to build more. Confirmed: nothing rolled back. Conflation P2-P5/P4 live (ContactEntry per-device names, device-lens naming, Report tab, number-alongside-name); device-lens (_device_lens_name + device_contact_names) intact in 7 places; cross-identity "Link identities" filter is read-only + OPT-IN (default OFF), never merges data or changes per-device names. Per-device PERSPECTIVE is the baseline. [[feedback_cellebrite_perspective_primary]]
+- **No active task.** PARKED candidate (NOT started, only build if user asks): universal labels (bug-1 Phase 2) = optional investigator label shown ALONGSIDE the device name ("Gloria Lol [Mry]"), additive + perspective-safe.
+
 ## 2026-06-09 — SEARCH & DISCOVERY → FULL DETAILED SEARCH ENGINE (IN PROGRESS)
 User: the Cellebrite "Search & Discovery" tab is too shallow — "supposed to be a detailed search engine." Confirmed 4 problems + scope decision (Full detailed search engine + Both inline-detail AND deep-link).
 - **Goal:** (a) search ALL ~31 node types w/ distinct labelled categories (today only person/message/location/Other/file; "Other" lumps 9 types, ~20 types invisible); (b) expandable result rows + in-place detail panel; (c) deep-links that land on the EXACT record pre-filtered (thread_id/evidence_id/location/node id) — teach Files/Events/Comms tabs to consume a target id; (d) fix phantom "scoped to N phones" (= default all-selected, not a real scope → use phoneCtx.allSelected).
