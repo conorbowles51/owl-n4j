@@ -1,12 +1,19 @@
 # msmtp config for Docket notifications — copy to /etc/msmtprc (mode 600,
 # owned by root, since owl-docket-agent runs as root) and fill in the cred.
-# Gmail example (needs an app password: Google Account → Security → App passwords).
+#
+# LIVE SETUP (2026-06-11): Brevo SMTP relay (free tier, ~300 mails/day).
+# Get credentials at https://app.brevo.com/settings/keys/smtp —
+# "Login" is a generated id like 8xxxxx001@smtp-brevo.com (NOT your email);
+# generate an SMTP key for the password; "from" must be a Brevo-verified sender.
+# NOTE: a fresh dedicated Gmail account does NOT work for this — Google's bot
+# filter disabled one within minutes of automated sending from this box.
 #
 #   sudo cp docket/deploy/msmtprc.example /etc/msmtprc
 #   sudo chmod 600 /etc/msmtprc
 #   sudo nano /etc/msmtprc   # fill user/from/password
 #   echo "test" | msmtp -t you@example.com   # verify
 #
+# Keep DOCKET_MAIL_FROM on owl-docket-agent.service in sync with `from`.
 # The agent's drain_notifications() is a no-op until this file exists, so
 # queued notifications wait in the DB rather than getting lost.
 
@@ -17,10 +24,10 @@ tls_trust_file /etc/ssl/certs/ca-certificates.crt
 logfile        /var/log/msmtp.log
 
 account        docket
-host           smtp.gmail.com
+host           smtp-relay.brevo.com
 port           587
-from           CHANGEME@gmail.com
-user           CHANGEME@gmail.com
-password       CHANGEME-app-password
+from           CHANGEME-verified-sender@example.com
+user           CHANGEME-login@smtp-brevo.com
+password       CHANGEME-xsmtpsib-key
 
 account default : docket

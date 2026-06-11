@@ -68,15 +68,18 @@
   distribution, and a recent **"bounced & why"** feed. Verified live on :8011 (17 tickets).
 - **(D) DONE (2026-06-11):** board cards show agent effort (time + cost) — per-ticket
   rollup `effort_by_ticket()` merged into `/board`, Timer badge on `TicketCard`.
-- **(B) plumbing DONE, cred-gated (2026-06-11):** `create_pr()` opens REAL PR objects via
-  the GitHub API when `DOCKET_GITHUB_TOKEN` (or `GITHUB_TOKEN`/`GH_TOKEN`) is set on the
-  agent service — falls back to compare URL without it. `drain_notifications()` (called in
-  the agent loop) sends queued notifications via **msmtp** (binary installed); graceful
-  no-op until `/etc/msmtprc` exists (template: `docket/deploy/msmtprc.example`); recipients
-  with no email on file → 'skipped'. **Still waiting on Neil:** GitHub PAT + SMTP
-  app-password — both are drop-in (uncomment the env lines in the unit, daemon-reload,
-  restart). Emails ON FILE (2026-06-11): neil=neil.byrne@gmail.com,
-  alex=asolorzano@owlconsultancygroup.com, conor=conorbowles51@gmail.com; arturo pending.
+- **(B) EMAIL CHANNEL LIVE (2026-06-11):** `drain_notifications()` (agent loop) sends via
+  msmtp through the **Brevo SMTP relay** (`/etc/msmtprc`, login ae4cc9001@smtp-brevo.com,
+  sender/`DOCKET_MAIL_FROM` = `Docket <neil.byrne@gmail.com>`; free tier ~300/day).
+  History: a dedicated `docket.notification@gmail.com` was DISABLED by Google's bot filter
+  after 3 sends — don't retry the fresh-Gmail route (note in msmtprc.example). VERIFIED
+  end-to-end on DKT-30: pr_ready + user_review notifications delivered (also flushed Alex's
+  queued needs_info). New: `/transition`→user_review enqueues "ready for you to test" to
+  assignee (falls back creator). Failed sends stay status='failed' (manual requeue:
+  UPDATE notifications SET status='pending'). `create_pr()` for REAL PR objects still
+  cred-gated on a GitHub PAT (`DOCKET_GITHUB_TOKEN` in the unit) — compare URL meanwhile.
+  Emails ON FILE: neil=neil.byrne@gmail.com, alex=asolorzano@owlconsultancygroup.com,
+  conor=conorbowles51@gmail.com; arturo pending.
 - **(C) cutover prep DONE (2026-06-11):** deploy.sh builds the Docket UI (step 6b);
   `/testing` 307-redirects to `/docket` when the bundle exists (else serves the old page,
   so non-built checkouts don't break); `docket/deploy/migrate_user_items.py` migrates old
