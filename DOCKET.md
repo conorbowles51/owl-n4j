@@ -75,7 +75,8 @@
   no-op until `/etc/msmtprc` exists (template: `docket/deploy/msmtprc.example`); recipients
   with no email on file → 'skipped'. **Still waiting on Neil:** GitHub PAT + SMTP
   app-password — both are drop-in (uncomment the env lines in the unit, daemon-reload,
-  restart). Only neil has an email in `testing_auth._EMAILS`; add alex/conor/arturo's.
+  restart). Emails ON FILE (2026-06-11): neil=neil.byrne@gmail.com,
+  alex=asolorzano@owlconsultancygroup.com, conor=conorbowles51@gmail.com; arturo pending.
 - **(C) cutover prep DONE (2026-06-11):** deploy.sh builds the Docket UI (step 6b);
   `/testing` 307-redirects to `/docket` when the bundle exists (else serves the old page,
   so non-built checkouts don't break); `docket/deploy/migrate_user_items.py` migrates old
