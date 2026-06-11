@@ -92,8 +92,15 @@
   data/docket.db (it already holds the migrated items + agent history), repoint
   owl-docket-agent WorkingDirectory at the prod checkout, then retire owl-docket :8011 +
   the firewall rule.
-- **Blocked on:** Nothing for Phases 1–early-2. SMTP credential pending for the email
-  channel only (Neil is setting up a send-from address + app password later).
+- **(E) Enter-submit guard (2026-06-11):** pressing Enter in the New Ticket title input
+  no longer submits the form (it hops focus to Description). Motivated by real data: old-hub
+  item DKT-24 ("Comms Timeline doesn", empty body) was an accidental mid-typing submit by
+  Alex — not an escaping bug (the migration + storage paths were checked and are faithful;
+  a later apostrophe title survived fine). A system note was added to DKT-24's timeline
+  suggesting it's superseded by DKT-25. AmendModal audited — safe (textareas + required
+  reason). Live on :8011 (bundle rebuilt, served without restart).
+- **Blocked on / waiting for Neil:** prod cutover GO; GitHub PAT (`DOCKET_GITHUB_TOKEN`)
+  for real PR objects; arturo's notification email. SMTP is DONE (Brevo relay live).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
 - **Open product questions (settle in/before Phase 1):**
   - Priority scheme (P0–P3 vs Critical/High/Med/Low) + who can set/override it.

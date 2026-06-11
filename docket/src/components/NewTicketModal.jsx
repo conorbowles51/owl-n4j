@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import { api } from '../api.js'
 
@@ -16,6 +16,7 @@ export default function NewTicketModal({ meta, onClose, onCreated, prefill }) {
   const [clarity, setClarity] = useState(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const descRef = useRef(null)
 
   // Live clarity meter — debounced score of the in-progress ask.
   useEffect(() => {
@@ -63,6 +64,11 @@ export default function NewTicketModal({ meta, onClose, onCreated, prefill }) {
           className="w-full mb-3 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
           value={title} onChange={(e) => setTitle(e.target.value)} autoFocus
           placeholder="Short summary of the ask"
+          onKeyDown={(e) => {
+            // Enter mid-title must not submit a half-typed ticket (a real tester
+            // accident in the old hub) — hop to the description instead.
+            if (e.key === 'Enter') { e.preventDefault(); descRef.current?.focus() }
+          }}
         />
 
         <div className="flex gap-3 mb-3">
@@ -84,6 +90,7 @@ export default function NewTicketModal({ meta, onClose, onCreated, prefill }) {
 
         <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
         <textarea
+          ref={descRef}
           className="w-full mb-3 px-3 py-2 border border-slate-300 rounded-lg text-sm h-24 focus:outline-none focus:ring-2 focus:ring-indigo-300"
           value={description} onChange={(e) => setDescription(e.target.value)}
           placeholder="What's the problem / ask? Why does it matter?"
