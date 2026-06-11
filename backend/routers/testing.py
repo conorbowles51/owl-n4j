@@ -15,6 +15,7 @@ the public, and every note is attributed to whoever was logged in.
 
 Endpoints:
     GET    /testing                   → the hub page (login screen + app)
+    GET    /api/testing/ping          → unauthenticated health ping
     POST   /api/testing/login         → exchange username/password for a token
     GET    /api/testing/me            → who am I (token check)
     GET    /api/testing/checklist     → the checklist catalogue (auth required)
@@ -91,6 +92,11 @@ def testing_hub_page_via_api():
     page's /api/testing/* calls are same-origin from there.
     """
     return _serve_page()
+
+
+@router.get("/api/testing/ping")
+def ping():
+    return {"status": "ok"}
 
 
 # ---- login ----
