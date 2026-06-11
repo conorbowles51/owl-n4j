@@ -16,6 +16,12 @@ Environment="PATH=/root/.local/bin:/home/conorbowles51/app_v2/venv/bin:/usr/loca
 # the agent implement, self-review and open PRs.
 Environment="DOCKET_AGENT_WRITES=1"
 Environment="DOCKET_AGENT_MODEL=sonnet"
+# Real PR objects: set a GitHub token (repo scope) and the agent opens PRs via
+# the API instead of recording a compare URL. Uncomment when the PAT lands.
+#Environment="DOCKET_GITHUB_TOKEN=ghp_..."
+# Email notifications: drained via msmtp once /etc/msmtprc has the SMTP cred
+# (see msmtprc.example next to this unit). Sender identity:
+#Environment="DOCKET_MAIL_FROM=Docket <docket@example.com>"
 ExecStart=/home/conorbowles51/app_v2/venv/bin/python -m services.docket_agent
 Restart=on-failure
 RestartSec=10

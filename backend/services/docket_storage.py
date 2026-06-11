@@ -580,6 +580,36 @@ def queue_position(ticket_id: int) -> Optional[int]:
     return None
 
 
+def effort_by_ticket() -> Dict[int, Dict[str, Any]]:
+    """Per-ticket agent-effort rollup (seconds + cost) from event payloads, for
+    the board cards — part of making development cost legible at a glance."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT ticket_id, payload FROM ticket_events WHERE payload != ''"
+        ).fetchall()
+    finally:
+        conn.close()
+    out: Dict[int, Dict[str, Any]] = {}
+    for r in rows:
+        try:
+            p = json.loads(r["payload"])
+        except ValueError:
+            continue
+        if not isinstance(p, dict):
+            continue
+        secs, cost = p.get("duration_secs"), p.get("cost_usd")
+        if secs is None and cost is None:
+            continue
+        d = out.setdefault(r["ticket_id"], {"secs": 0.0, "cost": 0.0})
+        d["secs"] += float(secs or 0)
+        d["cost"] += float(cost or 0)
+    for d in out.values():
+        d["secs"] = round(d["secs"])
+        d["cost"] = round(d["cost"], 2)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Analytics (Phase 4 — coaching dashboard)
 # ---------------------------------------------------------------------------

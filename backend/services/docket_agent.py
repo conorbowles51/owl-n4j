@@ -32,12 +32,16 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from services import docket_storage as dk
+from services.testing_auth import tester_email
 
 # --- config (env-overridable) ---
 WRITES_ENABLED = os.environ.get("DOCKET_AGENT_WRITES", "0") == "1"
@@ -49,6 +53,12 @@ MAIN_CHECKOUT = Path(os.environ.get("DOCKET_MAIN_CHECKOUT", "/home/conorbowles51
 WORKTREE_DIR = Path(os.environ.get("DOCKET_WORKTREE_DIR", "/home/conorbowles51/docket-agent-wt"))
 REPO_SLUG = os.environ.get("DOCKET_REPO_SLUG", "conorbowles51/owl-n4j")
 POLL_SECS = int(os.environ.get("DOCKET_AGENT_POLL", "20"))
+# GitHub token for real PR-object creation; without one we fall back to pushing
+# the branch and recording a compare URL (Neil opens the PR by hand).
+GITHUB_TOKEN = (os.environ.get("DOCKET_GITHUB_TOKEN")
+                or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or "")
+# Email sender identity for msmtp-delivered notifications.
+MAIL_FROM = os.environ.get("DOCKET_MAIL_FROM", "Docket <docket@localhost>")
 
 READONLY_TOOLS = ["Read", "Grep", "Glob", "Bash(git log:*)", "Bash(git diff:*)",
                   "Bash(ls:*)", "Bash(cat:*)", "Bash(find:*)", "Bash(grep:*)"]
@@ -407,11 +417,21 @@ def process_ticket(t: dict) -> None:
     pushed = _git(wt, ["push", "-u", "origin", branch])
     if not pushed:
         return _stall(tid, "git push failed (check GitHub auth)")
-    pr_url = f"https://github.com/{REPO_SLUG}/compare/main...{branch}?expand=1"
+    ref = dk.get_ticket(tid)["ref"]
+    pr_url = create_pr(branch, f"{ref}: {t['title']}",
+                       f"{t.get('description', '')}\n\n**Acceptance criteria**\n"
+                       f"{t.get('acceptance_criteria', '') or '—'}\n\n"
+                       f"_Opened by the Docket agent for ticket {ref}. Never auto-merged —"
+                       f" this PR is the human gate._")
+    real_pr = bool(pr_url)
+    if not pr_url:  # no token / API failure → compare URL, Neil opens it by hand
+        pr_url = f"https://github.com/{REPO_SLUG}/compare/main...{branch}?expand=1"
     dk.update_ticket(tid, branch=branch, pr_url=pr_url)
-    dk.transition(tid, "pr", actor="agent", summary="Branch pushed; PR ready for review")
+    dk.transition(tid, "pr", actor="agent",
+                  summary="Branch pushed; PR opened" if real_pr
+                          else "Branch pushed; PR ready for review")
     dk.enqueue_notification(tid, "neil", "pr_ready",
-                            subject=f"Docket {dk.get_ticket(tid)['ref']}: PR ready",
+                            subject=f"Docket {ref}: PR ready",
                             body=pr_url)
     log(f"  → PR ready: {pr_url}")
 
@@ -422,6 +442,80 @@ def _git(cwd: Path, args: list) -> bool:
         log(f"  git {' '.join(args[:2])} failed: {r.stderr.strip()[:200]}")
         return False
     return True
+
+
+def create_pr(branch: str, title: str, body: str) -> str:
+    """Create a real PR object via the GitHub API when a token is configured.
+    Returns the PR html_url, or '' on any failure / no token (caller falls back
+    to the compare URL). 422 'already exists' resolves to the existing PR."""
+    if not GITHUB_TOKEN:
+        return ""
+    api = f"https://api.github.com/repos/{REPO_SLUG}/pulls"
+    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}",
+               "Accept": "application/vnd.github+json",
+               "Content-Type": "application/json"}
+    payload = json.dumps({"title": title, "head": branch, "base": "main",
+                          "body": body}).encode()
+    try:
+        req = urllib.request.Request(api, data=payload, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.load(resp).get("html_url", "")
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")[:300]
+        if e.code == 422 and "already exists" in detail:
+            try:  # find the existing open PR for this head
+                q = f"{api}?head={REPO_SLUG.split('/')[0]}:{branch}&state=open"
+                req = urllib.request.Request(q, headers=headers)
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    prs = json.load(resp)
+                    if prs:
+                        return prs[0].get("html_url", "")
+            except Exception:
+                pass
+        log(f"  PR creation failed ({e.code}): {detail}")
+    except Exception as e:
+        log(f"  PR creation failed: {e}")
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Notification delivery (msmtp) — drains the queue the storage layer fills.
+# Stays a graceful no-op until msmtp + an SMTP credential are configured, so
+# notifications simply wait in 'pending' rather than getting lost.
+# ---------------------------------------------------------------------------
+
+def _msmtp_ready() -> bool:
+    return bool(shutil.which("msmtp")) and (
+        Path("/etc/msmtprc").exists() or Path.home().joinpath(".msmtprc").exists())
+
+
+def _send_email(to_addr: str, subject: str, body: str) -> bool:
+    msg = (f"From: {MAIL_FROM}\nTo: {to_addr}\nSubject: {subject}\n"
+           f"Content-Type: text/plain; charset=utf-8\n\n{body}\n")
+    r = subprocess.run(["msmtp", to_addr], input=msg, capture_output=True,
+                       text=True, timeout=60)
+    if r.returncode != 0:
+        log(f"  msmtp failed: {r.stderr.strip()[:200]}")
+    return r.returncode == 0
+
+
+def drain_notifications() -> None:
+    """Send pending notifications via msmtp. Recipients without an email on
+    file are marked 'skipped' (the in-app badge still covers them)."""
+    pending = dk.pending_notifications()
+    if not pending:
+        return
+    if not _msmtp_ready():
+        return  # leave queued; they deliver once msmtp + the SMTP cred land
+    for n in pending:
+        addr = tester_email(n["recipient"])
+        if not addr:
+            dk.mark_notification(n["id"], "skipped")
+            continue
+        subject = n["subject"] or f"Docket: {n['event'].replace('_', ' ')}"
+        ok = _send_email(addr, subject, n["body"] or subject)
+        dk.mark_notification(n["id"], "sent" if ok else "failed")
+        log(f"  notification #{n['id']} → {n['recipient']}: {'sent' if ok else 'FAILED'}")
 
 
 # ---------------------------------------------------------------------------
@@ -450,6 +544,7 @@ def main() -> int:
         return 0
     while True:
         try:
+            drain_notifications()
             if not run_once():
                 time.sleep(POLL_SECS)
         except KeyboardInterrupt:

@@ -1,6 +1,6 @@
 import React from 'react'
-import { Bug, Sparkles, Activity, RefreshCw } from 'lucide-react'
-import { PRIORITY_BADGE, relTime, lineProgress } from '../ui.js'
+import { Bug, Sparkles, Activity, RefreshCw, Timer } from 'lucide-react'
+import { PRIORITY_BADGE, relTime, lineProgress, fmtDuration } from '../ui.js'
 
 // A single ticket card on the board. Shows the ref, type, priority, title, and
 // — the point of the whole thing — live signal: the agent's current activity,
@@ -48,6 +48,12 @@ export default function TicketCard({ ticket, onOpen }) {
       <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400">
         <span>{ticket.created_by || '—'}</span>
         <span className="flex items-center gap-2">
+          {ticket.effort && (
+            <span className="flex items-center gap-0.5 text-slate-500" title="agent effort so far (time · cost)">
+              <Timer className="w-2.5 h-2.5" />
+              {fmtDuration(ticket.effort.secs)} · ${ticket.effort.cost.toFixed(2)}
+            </span>
+          )}
           {ticket.iteration > 0 && (
             <span className="flex items-center gap-0.5 text-slate-500" title="re-submitted">
               <RefreshCw className="w-2.5 h-2.5" />×{ticket.iteration}

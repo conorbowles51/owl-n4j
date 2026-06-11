@@ -1,0 +1,26 @@
+# msmtp config for Docket notifications — copy to /etc/msmtprc (mode 600,
+# owned by root, since owl-docket-agent runs as root) and fill in the cred.
+# Gmail example (needs an app password: Google Account → Security → App passwords).
+#
+#   sudo cp docket/deploy/msmtprc.example /etc/msmtprc
+#   sudo chmod 600 /etc/msmtprc
+#   sudo nano /etc/msmtprc   # fill user/from/password
+#   echo "test" | msmtp -t you@example.com   # verify
+#
+# The agent's drain_notifications() is a no-op until this file exists, so
+# queued notifications wait in the DB rather than getting lost.
+
+defaults
+auth           on
+tls            on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile        /var/log/msmtp.log
+
+account        docket
+host           smtp.gmail.com
+port           587
+from           CHANGEME@gmail.com
+user           CHANGEME@gmail.com
+password       CHANGEME-app-password
+
+account default : docket

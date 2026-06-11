@@ -110,10 +110,12 @@ def get_board(tester: dict = Depends(require_tester)):
     """
     tickets = dk.list_tickets()
     positions = {t["id"]: t["position"] for t in dk.queue()}
+    efforts = dk.effort_by_ticket()
     for t in tickets:
         t["position"] = positions.get(t["id"])
         act = dk.current_activity(t["id"])
         t["current_activity"] = act["summary"] if act else ""
+        t["effort"] = efforts.get(t["id"])
     return {"tickets": tickets, "status_meta": dk.STATUS_META,
             "main_line": list(dk.MAIN_LINE)}
 
