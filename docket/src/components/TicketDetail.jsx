@@ -170,6 +170,13 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
               {/* Post-ship impact rating — feeds the profiles' impact dimension */}
               {t.status === 'done' && <ImpactPanel t={t} onRated={load} />}
 
+              {/* Real post-ship performance from platform telemetry */}
+              {t.perf && <PerfStrip perf={t.perf} />}
+
+              {/* Relatedness: is this a follow-up of shipped work / does shipped
+                  work have follow-ups against it? */}
+              <RelatedPanel t={t} onChanged={async () => { await load(); onChanged && onChanged() }} />
+
               {/* Lifecycle actions */}
               {nextMoves.length > 0 && t.status !== 'user_review' && (
                 <div className="flex flex-wrap gap-2">
@@ -253,6 +260,99 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
           onDone={async () => { setAmending(false); await load(); onChanged && onChanged() }}
         />
       )}
+    </div>
+  )
+}
+
+const PERF_CHIP = {
+  healthy: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  degraded: 'bg-rose-50 text-rose-700 border-rose-200',
+  watch: 'bg-amber-50 text-amber-700 border-amber-200',
+  no_traffic: 'bg-slate-50 text-slate-500 border-slate-200',
+}
+const PERF_LABEL = {
+  healthy: 'healthy', degraded: 'errors above baseline',
+  watch: 'platform errors since ship — unattributed', no_traffic: 'no traffic yet',
+}
+
+// Live platform telemetry for the routes this shipped ticket touched.
+function PerfStrip({ perf }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
+      <span className="font-semibold text-violet-700">In the platform</span>
+      <span className={`px-1.5 py-0.5 rounded border text-[11px] font-medium ${PERF_CHIP[perf.verdict] || ''}`}>
+        {PERF_LABEL[perf.verdict] || perf.verdict}
+      </span>
+      <span className="text-slate-700">{perf.hits} requests since ship</span>
+      {perf.hits > 0 && (
+        <>
+          <span className="text-slate-400">·</span>
+          <span className={perf.errors ? 'text-rose-600' : 'text-slate-700'}>
+            {perf.errors} errors ({Math.round(perf.err_rate * 100)}%)
+          </span>
+          {perf.avg_ms != null && (
+            <><span className="text-slate-400">·</span>
+              <span className="text-slate-700">{Math.round(perf.avg_ms)}ms avg</span></>
+          )}
+        </>
+      )}
+      <span className="w-full text-[10px] text-slate-400">
+        routes: {perf.routes.join(', ')}
+      </span>
+    </div>
+  )
+}
+
+// Relatedness links. Outgoing = this ticket may be a follow-up of shipped work
+// (suspected ones carry confirm/dismiss — confirming counts against the old
+// ticket's health). Incoming = follow-ups reported against THIS shipped ticket.
+function RelatedPanel({ t, onChanged }) {
+  const links = t.links || { out: [], in: [] }
+  const out = links.out.filter((l) => l.status !== 'dismissed')
+  const inn = links.in.filter((l) => l.status !== 'dismissed')
+  const [busy, setBusy] = useState(false)
+  if (out.length === 0 && inn.length === 0) return null
+
+  async function resolve(linkId, action) {
+    setBusy(true)
+    try { await api.resolveLink(t.id, linkId, action); onChanged && onChanged() }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-2">
+      <h3 className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Related shipped work</h3>
+      {out.map((l) => (
+        <div key={l.id} className="text-sm">
+          <span className="text-slate-700">
+            {l.status === 'confirmed' ? 'Follow-up of ' : 'Possibly related to '}
+            <span className="font-mono text-xs">{l.other_ref}</span> “{l.other_title}”
+          </span>
+          <span className="ml-1.5 text-[10px] uppercase text-slate-400">
+            {l.status === 'confirmed' ? `confirmed · ${l.source}` : `unconfirmed${l.score ? ` · ${Math.round(l.score * 100)}%` : ''}`}
+          </span>
+          {l.note && <div className="text-xs text-slate-500">{l.note}</div>}
+          {l.status === 'suspected' && (
+            <div className="flex gap-2 mt-1">
+              <button disabled={busy} onClick={() => resolve(l.id, 'confirm')}
+                className="px-2 py-1 text-[11px] font-medium rounded border border-rose-300 text-rose-700 hover:bg-rose-50 disabled:opacity-50">
+                Yes — {l.other_ref}'s fix didn't solve this
+              </button>
+              <button disabled={busy} onClick={() => resolve(l.id, 'dismiss')}
+                className="px-2 py-1 text-[11px] font-medium rounded border border-slate-300 text-slate-600 hover:bg-white disabled:opacity-50">
+                Not related
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+      {inn.map((l) => (
+        <div key={l.id} className="text-sm text-slate-700">
+          {l.status === 'confirmed'
+            ? <>⚠ Follow-up reported: <span className="font-mono text-xs">{l.other_ref}</span> “{l.other_title}” — counts against this ticket's post-ship health.</>
+            : <>Possible follow-up (unconfirmed): <span className="font-mono text-xs">{l.other_ref}</span> “{l.other_title}”</>}
+        </div>
+      ))}
     </div>
   )
 }

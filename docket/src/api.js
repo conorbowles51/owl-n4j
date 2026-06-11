@@ -59,6 +59,8 @@ export const api = {
   profiles: () => req('/api/tickets/profiles'),
   impact: (id, body) =>
     req(`/api/tickets/${id}/impact`, { method: 'POST', body: JSON.stringify(body) }),
+  resolveLink: (id, linkId, action) =>
+    req(`/api/tickets/${id}/links/${linkId}/resolve`, { method: 'POST', body: JSON.stringify({ action }) }),
 
   // Migrated testing-hub checklist (per-tester pass/fail/blocked of shipped behaviours).
   checklist: () => req('/api/testing/checklist'),

@@ -203,6 +203,27 @@ def _ctx(t: dict) -> str:
             f"ACCEPTANCE CRITERIA: {t.get('acceptance_criteria') or '(none)'}\n")
 
 
+def _shipped_ctx() -> str:
+    """Recently shipped tickets, so assessment can spot follow-ups: a new ask
+    that's really 'the old fix didn't stick' should be linked, not treated as
+    fresh work — it counts against the shipped ticket's post-ship health."""
+    try:
+        shipped = dk.shipped_tickets()
+    except Exception:
+        return ""
+    if not shipped:
+        return ""
+    lines = "\n".join(f"  {s['ref']}: {s['title']}" for s in shipped[-20:])
+    return (
+        "\nPREVIOUSLY SHIPPED TICKETS:\n" + lines + "\n"
+        "If this request is really a follow-up to one of those (the shipped "
+        "solution didn't fully solve it, regressed it, or missed the point), add "
+        "this line directly above the VERDICT line:\n"
+        "  RELATED: DKT-<n> || <one sentence: why it's a follow-up>\n"
+        "If none apply, omit the RELATED line entirely.\n"
+    )
+
+
 def assess_prompt(t: dict) -> str:
     return (
         "You are the assessment phase of an autonomous dev pipeline working on "
@@ -211,6 +232,7 @@ def assess_prompt(t: dict) -> str:
         "\nProduce a concise assessment (≈150-250 words) covering: what the change "
         "involves, the key files/areas it would touch, risks or unknowns, and "
         "whether the ask is clear enough to implement.\n"
+        + _shipped_ctx() +
         "End your message with EXACTLY ONE final line, either:\n"
         "  VERDICT: PROCEED\n"
         "or, if the request is too vague/ambiguous to implement well:\n"
@@ -264,7 +286,7 @@ import re as _re
 def _strip_control(text: str) -> str:
     """Remove the trailing machine-readable 'VERDICT:'/'REVIEW:' control line so
     the stored/displayed body is clean prose."""
-    return _re.sub(r"\n*\b(VERDICT|REVIEW)\s*:.*$", "", text or "",
+    return _re.sub(r"\n*\b(VERDICT|REVIEW|RELATED)\s*:.*$", "", text or "",
                    flags=_re.IGNORECASE | _re.DOTALL).strip()
 
 
@@ -326,6 +348,25 @@ def process_ticket(t: dict) -> None:
                  payload={"cost_usd": a["cost"], "turns": a["turns"], "duration_secs": a["duration"]})
     log(f"  assessment done (verdict={verdict or 'PROCEED'}, ${a['cost']:.3f}, {a['turns']} turns)")
 
+    # Follow-up detection: the agent explored the codebase, so its RELATED call
+    # is trusted (confirmed link) — the shipped ticket's fix didn't stick.
+    rel, rel_why = parse_verdict(a["text"], "RELATED")
+    rel_m = _re.search(r"(\d+)", rel or "")
+    if rel_m:
+        tgt = int(rel_m.group(1))
+        try:
+            if any(s["id"] == tgt for s in dk.shipped_tickets()):
+                ln = dk.add_link(tid, tgt, source="agent", status="confirmed",
+                                 note=(rel_why or "")[:300])
+                if ln:
+                    dk.add_event(tid, "note", actor="agent",
+                                 summary=f"Assessment links this to shipped DKT-{tgt}"
+                                         f"{': ' + rel_why if rel_why else ''} — counts "
+                                         f"against DKT-{tgt}'s post-ship health.")
+                    log(f"  related → DKT-{tgt} ({rel_why[:80] if rel_why else 'follow-up'})")
+        except Exception as e:
+            log(f"  (related-link failed: {e})")
+
     # Hybrid grooming gate: bounce vague P0/P1; best-effort the rest.
     if verdict == "NEEDS_INFO" and t["priority"] in ("P0", "P1"):
         q = questions or "The requester needs to clarify the ask before work can start."
@@ -378,6 +419,16 @@ def process_ticket(t: dict) -> None:
     _git(wt, ["commit", "-m", f"DKT-{tid}: {t['title']}\n\n"
               f"Autonomous Docket implementation.\n\n"
               "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"])
+
+    # Record what the change touched — the join key for post-ship telemetry.
+    try:
+        paths, routes = extract_touched(wt)
+        dk.update_ticket(tid, touched_paths=json.dumps(paths),
+                         touched_routes=json.dumps(routes))
+        if routes:
+            log(f"  touched routes: {', '.join(routes[:5])}")
+    except Exception as e:
+        log(f"  (touched extraction failed: {e})")
 
     # --- Self-Review (writes off, but may run tests) ---
     dk.transition(tid, "self_review", actor="agent")
@@ -434,6 +485,45 @@ def process_ticket(t: dict) -> None:
                             subject=f"Docket {ref}: PR ready",
                             body=pr_url)
     log(f"  → PR ready: {pr_url}")
+
+
+_ROUTE_DECOR_RE = _re.compile(
+    r'@(?:router|app)\.(?:get|post|put|patch|delete)\(\s*["\']([^"\']*)["\']')
+_PREFIX_RE = _re.compile(r'APIRouter\([^)]*prefix\s*=\s*["\']([^"\']+)["\']', _re.S)
+
+
+def extract_touched(wt: Path) -> tuple[list, list]:
+    """What the implementation touched: changed files, plus a best-effort list of
+    API route templates (from @router decorators in the changed hunks, resolved
+    against the file's APIRouter prefix). This is the join key that lets platform
+    telemetry measure the shipped feature's real traffic and error rate."""
+    r = subprocess.run(["git", "-C", str(wt), "diff", "--name-only", "main"],
+                       capture_output=True, text=True)
+    paths = [p for p in r.stdout.split() if p]
+    routes: set = set()
+    for p in paths:
+        if not (p.startswith("backend/") and p.endswith(".py")):
+            continue
+        f = wt / p
+        if not f.exists():
+            continue
+        src = f.read_text(errors="ignore")
+        m = _PREFIX_RE.search(src)
+        prefix = m.group(1) if m else ""
+        diff = subprocess.run(["git", "-C", str(wt), "diff", "-U2", "main", "--", p],
+                              capture_output=True, text=True).stdout
+        found = {prefix + dm.group(1)
+                 for dm in _ROUTE_DECOR_RE.finditer(diff) if prefix + dm.group(1)}
+        if not found:
+            # The change was inside a handler body (decorator outside the diff
+            # context). A bug anywhere in the file can break any of its routes,
+            # so attribute the whole file's routes — capped to stay sane.
+            found = {prefix + dm.group(1)
+                     for dm in _ROUTE_DECOR_RE.finditer(src) if prefix + dm.group(1)}
+            if len(found) > 12:
+                found = set()
+        routes |= found
+    return paths[:100], sorted(routes)[:50]
 
 
 def _git(cwd: Path, args: list) -> bool:

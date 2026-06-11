@@ -124,6 +124,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Per-route traffic/error telemetry (feeds Docket's shipped-ticket performance).
+# Guarded import: the app must boot even if telemetry is broken or absent.
+try:
+    from services import platform_telemetry
+    platform_telemetry.install(app)
+    print("[Telemetry] route traffic capture enabled (data/telemetry.db)")
+except Exception as _tel_err:  # pragma: no cover
+    print(f"[Telemetry] disabled: {_tel_err}")
+
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,

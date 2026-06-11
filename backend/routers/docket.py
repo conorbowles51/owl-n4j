@@ -169,6 +169,8 @@ def _detail(ticket_id: int) -> dict:
     act = dk.current_activity(ticket_id)
     t["current_activity"] = act["summary"] if act else ""
     t["position"] = dk.queue_position(ticket_id)
+    t["links"] = dk.links_for(ticket_id)
+    t["perf"] = dk.platform_performance(t) if t["status"] == "done" else None
     return t
 
 
@@ -292,6 +294,30 @@ def resubmit(ticket_id: int, body: ResubmitIn, tester: dict = Depends(require_te
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ticket": _detail(ticket_id)}
+
+
+class LinkResolveIn(BaseModel):
+    action: str   # 'confirm' (yes, the old fix didn't stick) | 'dismiss'
+
+
+@router.post("/{ticket_id}/links/{link_id}/resolve")
+def resolve_link(ticket_id: int, link_id: int, body: LinkResolveIn,
+                 tester: dict = Depends(require_tester)):
+    """Human verdict on a suspected relatedness link. Confirming means the
+    shipped ticket's solution wasn't satisfactory — it starts counting against
+    that ticket's post-ship health."""
+    if not dk.get_ticket(ticket_id):
+        raise HTTPException(status_code=404, detail=f"ticket {ticket_id} not found")
+    try:
+        ln = dk.resolve_link(link_id, body.action, actor=tester.get("name", ""))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if ln["status"] == "confirmed":
+        dk.add_event(ticket_id, "note", actor=tester.get("name", ""),
+                     summary=f"Confirmed as a follow-up of shipped "
+                             f"{dk.ticket_ref(ln['target_id'])} — its fix didn't "
+                             f"fully solve this.")
+    return {"link": ln, "ticket": _detail(ticket_id)}
 
 
 class ImpactIn(BaseModel):

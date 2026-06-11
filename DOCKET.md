@@ -117,8 +117,31 @@
   of fame. UI: `Profiles.jsx` (leaderboard → detail), ImpactPanel stars on Done
   tickets in TicketDetail. VERIFIED live on :8011 (profiles ranked, DKT-30 closed +
   rated ★5, non-done guard 400s, regression-linking + assists verified on a temp DB).
-  Possible Phase 6 (NOT started): real usage telemetry from the main app per shipped
-  feature — needs instrumentation in owl-n4j itself, not just Docket.
+- **Phase 6 (Platform telemetry + smart relatedness) DONE (2026-06-11, Neil's ask):**
+  shipped tickets are now measured AUTOMATICALLY (Neil: people won't hand-rate).
+  (a) `services/platform_telemetry.py` — middleware in main.py aggregates every request
+  as (day, route-template, method, status)→count+latency into `data/telemetry.db`
+  (in-memory buffer, additive upserts = multi-worker safe; ships to prod at cutover via
+  the same main.py). (b) Ticket→route join: agent records `touched_paths`/`touched_routes`
+  after the implement commit (diff hunks → @router decorators + APIRouter prefix; falls
+  back to the whole file's routes ≤12 when the change is inside a handler body);
+  `backfill_touched.py` backfilled DKT-14/15/17/30 from their branches.
+  (c) `platform_performance(t)`: traffic+5xx on touched routes since ship vs 7-day
+  baseline → healthy / degraded (errors≥3 AND rate>max(5%, 2×baseline) — counts as
+  unhealthy in the impact dim) / watch (platform-WIDE error spike post-ship, attributed
+  'degraded' only if it was the sole ship in the window) / no_traffic. (d) **Smart
+  relatedness** (`ticket_links` table): new tickets are checked against shipped work —
+  DKT-n mention → CONFIRMED link; lexical similarity (title-weighted cosine, ≥0.30) →
+  SUSPECTED (timeline note + confirm/dismiss buttons in the new "Related shipped work"
+  panel); the agent's assessment phase gets the shipped list and can emit
+  `RELATED: DKT-n || why` → CONFIRMED. Only CONFIRMED links + telemetry-degraded count
+  against the old ticket's post-ship health (suspected never penalises). (e) Profiles
+  gained a full **Ticket history & platform performance** table (every ask: clarity,
+  retries, cost, post-ship verdict chip + req/err + ★ + follow-up flags). VERIFIED:
+  temp-DB e2e (similarity 0.81 auto-suspect → human confirm → impact dim 0; 33% err
+  route → degraded) AND live (DKT-30 healthy with 5 real hits; DKT-24/25~DKT-8
+  suspected links from backfill). True per-feature USAGE analytics in the prod app
+  start flowing once telemetry reaches prod at cutover.
 - **Blocked on / waiting for Neil:** prod cutover GO; GitHub PAT (`DOCKET_GITHUB_TOKEN`)
   for real PR objects; arturo's notification email. SMTP is DONE (Brevo relay live).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.

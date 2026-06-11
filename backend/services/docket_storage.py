@@ -32,7 +32,7 @@ import json
 import re
 import sqlite3
 import statistics
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -209,6 +209,8 @@ CREATE TABLE IF NOT EXISTS tickets (
     worktree_path       TEXT NOT NULL DEFAULT '',
     pr_url              TEXT NOT NULL DEFAULT '',
     test_instructions   TEXT NOT NULL DEFAULT '',
+    touched_paths       TEXT NOT NULL DEFAULT '',   -- JSON list: files the implementation changed
+    touched_routes      TEXT NOT NULL DEFAULT '',   -- JSON list: API route templates it affected
     seed_user_item_id   TEXT NOT NULL DEFAULT '',   -- the old-hub user_item this was promoted from
     created_by          TEXT NOT NULL DEFAULT '',
     assignee            TEXT NOT NULL DEFAULT '',
@@ -246,6 +248,22 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_notif_pending ON notifications(status, id);
+
+CREATE TABLE IF NOT EXISTS ticket_links (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id  INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,  -- the NEW ticket (the complaint)
+    target_id  INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,  -- the shipped ticket being implicated
+    kind       TEXT NOT NULL DEFAULT 'regression',
+    source     TEXT NOT NULL DEFAULT 'similarity',  -- mention | similarity | agent | human
+    score      REAL,                                 -- similarity confidence (0-1) when source=similarity
+    status     TEXT NOT NULL DEFAULT 'suspected',    -- suspected | confirmed | dismissed
+    note       TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    resolved_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_links_pair ON ticket_links(ticket_id, target_id);
+CREATE INDEX IF NOT EXISTS idx_links_target ON ticket_links(target_id, status);
 """
 
 
@@ -257,7 +275,9 @@ def init_db() -> None:
         conn.executescript(_SCHEMA)
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(tickets)")}
         for col, ddl in (("clarity_score", "INTEGER NOT NULL DEFAULT 0"),
-                         ("clarity_level", "TEXT NOT NULL DEFAULT ''")):
+                         ("clarity_level", "TEXT NOT NULL DEFAULT ''"),
+                         ("touched_paths", "TEXT NOT NULL DEFAULT ''"),
+                         ("touched_routes", "TEXT NOT NULL DEFAULT ''")):
             if col not in cols:
                 conn.execute(f"ALTER TABLE tickets ADD COLUMN {col} {ddl}")
         conn.commit()
@@ -284,6 +304,11 @@ def _row_to_ticket(row: sqlite3.Row) -> Dict[str, Any]:
     meta = STATUS_META.get(d["status"], {})
     d["status_label"] = meta.get("label", d["status"])
     d["status_kind"] = meta.get("kind", "")
+    for col in ("touched_paths", "touched_routes"):
+        try:
+            d[col] = json.loads(d.get(col) or "[]")
+        except (ValueError, TypeError):
+            d[col] = []
     return d
 
 
@@ -342,9 +367,15 @@ def create_ticket(
         )
         conn.commit()
         row = conn.execute("SELECT * FROM tickets WHERE id=?", (tid,)).fetchone()
-        return _row_to_ticket(row)
+        ticket = _row_to_ticket(row)
     finally:
         conn.close()
+    # Relatedness pass: is this really a follow-up of something already shipped?
+    try:
+        detect_links(ticket)
+    except Exception:
+        pass  # linking is best-effort; never block ticket creation
+    return ticket
 
 
 def get_ticket(ticket_id: int) -> Optional[Dict[str, Any]]:
@@ -378,7 +409,7 @@ def list_tickets(status: Optional[str] = None) -> List[Dict[str, Any]]:
 _EDITABLE = {
     "title", "type", "description", "acceptance_criteria", "priority",
     "substage", "branch", "worktree_path", "pr_url", "test_instructions",
-    "assignee",
+    "assignee", "touched_paths", "touched_routes",
 }
 
 
@@ -719,6 +750,290 @@ def analytics() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Ticket relatedness (Phase 6) — "did an old fix actually stick?"
+#
+# A new ticket that's really a follow-up of something already shipped means the
+# shipped solution wasn't satisfactory — that should show up (and score) against
+# the old ticket automatically. Three detection sources, in increasing strength:
+#   similarity — lexical match at creation time → SUSPECTED (needs a human or
+#                the agent to confirm; never penalises on its own)
+#   mention    — the new ticket literally names DKT-<n> → CONFIRMED
+#   agent      — the assessment phase explores the codebase and flags the link
+#                (RELATED: DKT-n control line) → CONFIRMED
+#   human      — a tester confirms/dismisses a suspected link in the UI
+# Only CONFIRMED links count as regressions in the profile maths.
+# ---------------------------------------------------------------------------
+
+_STOPWORDS = {
+    "the", "a", "an", "in", "on", "at", "to", "of", "and", "or", "is", "are",
+    "was", "be", "been", "it", "its", "this", "that", "with", "for", "from",
+    "i", "my", "we", "our", "you", "your", "they", "there", "have", "has",
+    "do", "does", "did", "can", "cant", "cannot", "will", "would", "should",
+    "when", "what", "how", "why", "as", "by", "so", "if", "but", "also",
+    "please", "need", "needs", "want", "like", "get", "gets", "getting",
+    "app", "application", "ticket", "feature", "bug",
+}
+
+SIMILARITY_THRESHOLD = 0.30
+
+
+def _sim_terms(title: str, description: str = "", acceptance: str = "") -> Dict[str, float]:
+    """Term-frequency map of an ask, title tokens weighted 3× (titles carry the
+    most signal in short tickets)."""
+    terms: Dict[str, float] = {}
+    for text, w in ((title, 3.0), (description, 1.0), (acceptance, 1.0)):
+        for tok in re.findall(r"[a-z0-9]{2,}", (text or "").lower()):
+            if tok not in _STOPWORDS:
+                terms[tok] = terms.get(tok, 0.0) + w
+    return terms
+
+
+def _cosine(a: Dict[str, float], b: Dict[str, float]) -> float:
+    if not a or not b:
+        return 0.0
+    dot = sum(v * b[k] for k, v in a.items() if k in b)
+    na = sum(v * v for v in a.values()) ** 0.5
+    nb = sum(v * v for v in b.values()) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def shipped_tickets() -> List[Dict[str, Any]]:
+    """Tickets that have reached Done at some point (still-done OR reopened) —
+    the candidate set a new complaint could be a follow-up of."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """SELECT DISTINCT t.* FROM tickets t
+               JOIN ticket_events e ON e.ticket_id = t.id
+               WHERE e.kind='transition' AND e.phase='done'
+               ORDER BY t.id"""
+        ).fetchall()
+        return [_row_to_ticket(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def find_related_shipped(title: str, description: str = "",
+                         acceptance_criteria: str = "",
+                         exclude_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Shipped tickets lexically similar to the given ask, best first."""
+    probe = _sim_terms(title, description, acceptance_criteria)
+    out = []
+    for t in shipped_tickets():
+        if t["id"] == exclude_id:
+            continue
+        score = _cosine(probe, _sim_terms(t["title"], t["description"],
+                                          t["acceptance_criteria"]))
+        if score >= SIMILARITY_THRESHOLD:
+            out.append({"ticket": t, "score": round(score, 3)})
+    out.sort(key=lambda x: -x["score"])
+    return out
+
+
+def add_link(ticket_id: int, target_id: int, source: str,
+             status: str = "suspected", score: Optional[float] = None,
+             note: str = "") -> Optional[Dict[str, Any]]:
+    """Record that `ticket_id` (new complaint) implicates shipped `target_id`.
+    One link per pair; a confirmed link is never downgraded to suspected."""
+    if ticket_id == target_id:
+        return None
+    now = utcnow_iso()
+    conn = _connect()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM ticket_links WHERE ticket_id=? AND target_id=?",
+            (ticket_id, target_id)).fetchone()
+        if existing:
+            if existing["status"] in ("confirmed", "dismissed") or status != "confirmed":
+                return dict(existing)
+            conn.execute(
+                "UPDATE ticket_links SET status=?, source=?, note=? WHERE id=?",
+                (status, source, note[:500], existing["id"]))
+            conn.commit()
+            return dict(conn.execute("SELECT * FROM ticket_links WHERE id=?",
+                                     (existing["id"],)).fetchone())
+        cur = conn.execute(
+            """INSERT INTO ticket_links
+               (ticket_id, target_id, kind, source, score, status, note, created_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (ticket_id, target_id, "regression", source, score, status,
+             note[:500], now))
+        conn.commit()
+        return dict(conn.execute("SELECT * FROM ticket_links WHERE id=?",
+                                 (cur.lastrowid,)).fetchone())
+    finally:
+        conn.close()
+
+
+def resolve_link(link_id: int, action: str, actor: str = "") -> Dict[str, Any]:
+    """Human verdict on a suspected link: 'confirm' or 'dismiss'."""
+    if action not in ("confirm", "dismiss"):
+        raise ValueError("action must be 'confirm' or 'dismiss'")
+    status = "confirmed" if action == "confirm" else "dismissed"
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT * FROM ticket_links WHERE id=?", (link_id,)).fetchone()
+        if not row:
+            raise ValueError(f"link {link_id} not found")
+        conn.execute(
+            "UPDATE ticket_links SET status=?, source='human', resolved_by=? WHERE id=?",
+            (status, actor, link_id))
+        conn.commit()
+        return dict(conn.execute("SELECT * FROM ticket_links WHERE id=?",
+                                 (link_id,)).fetchone())
+    finally:
+        conn.close()
+
+
+def links_for(ticket_id: int) -> Dict[str, List[Dict[str, Any]]]:
+    """Links from a ticket's point of view: `out` = shipped tickets THIS one
+    implicates; `in` = later tickets implicating THIS shipped one."""
+    conn = _connect()
+    try:
+        out_rows = conn.execute(
+            """SELECT l.*, t.title AS other_title, t.status AS other_status
+               FROM ticket_links l JOIN tickets t ON t.id = l.target_id
+               WHERE l.ticket_id=? ORDER BY l.id""", (ticket_id,)).fetchall()
+        in_rows = conn.execute(
+            """SELECT l.*, t.title AS other_title, t.status AS other_status
+               FROM ticket_links l JOIN tickets t ON t.id = l.ticket_id
+               WHERE l.target_id=? ORDER BY l.id""", (ticket_id,)).fetchall()
+    finally:
+        conn.close()
+
+    def _fmt(rows, other_key):
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["other_ref"] = ticket_ref(d[other_key])
+            out.append(d)
+        return out
+
+    return {"out": _fmt(out_rows, "target_id"), "in": _fmt(in_rows, "ticket_id")}
+
+
+def detect_links(ticket: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Creation-time relatedness pass for a new ticket: explicit DKT-n mentions
+    become confirmed links; lexical similarity becomes suspected links (with a
+    timeline note inviting confirm/dismiss). Returns the links created."""
+    created = []
+    text = f'{ticket.get("title", "")} {ticket.get("description", "")}'
+    shipped_ids = {t["id"]: t for t in shipped_tickets()}
+
+    for m in _DKT_RE.finditer(text):
+        tgt = int(m.group(1))
+        if tgt in shipped_ids and tgt != ticket["id"]:
+            ln = add_link(ticket["id"], tgt, source="mention", status="confirmed",
+                          note="Named in the ticket text")
+            if ln:
+                created.append(ln)
+                add_event(ticket["id"], "note", actor="system",
+                          summary=f"Marked as a follow-up of shipped {ticket_ref(tgt)} "
+                                  f"(named in the text) — this counts against "
+                                  f"{ticket_ref(tgt)}'s post-ship health.")
+
+    linked = {ln["target_id"] for ln in created}
+    for rel in find_related_shipped(ticket.get("title", ""),
+                                    ticket.get("description", ""),
+                                    ticket.get("acceptance_criteria", ""),
+                                    exclude_id=ticket["id"])[:2]:
+        tgt = rel["ticket"]
+        if tgt["id"] in linked:
+            continue
+        ln = add_link(ticket["id"], tgt["id"], source="similarity",
+                      status="suspected", score=rel["score"])
+        if ln and ln["status"] == "suspected":
+            created.append(ln)
+            add_event(ticket["id"], "note", actor="system",
+                      summary=f"This looks related to shipped {tgt['ref']} "
+                              f"“{tgt['title'][:60]}” (similarity "
+                              f"{round(rel['score'] * 100)}%). If that fix didn't "
+                              f"fully solve it, confirm the link in the Related "
+                              f"panel — otherwise dismiss it.")
+    return created
+
+
+def platform_performance(ticket: Dict[str, Any],
+                         done_ts: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Real post-ship performance of a shipped ticket, from platform telemetry:
+    traffic + error rate on the routes the implementation touched, since the day
+    it shipped, against a 7-day pre-ship baseline. Returns None when the ticket
+    has no route map (nothing measurable) or never shipped."""
+    routes = ticket.get("touched_routes") or []
+    if isinstance(routes, str):
+        try:
+            routes = json.loads(routes or "[]")
+        except (ValueError, TypeError):
+            routes = []
+    if not routes:
+        return None
+    if done_ts is None:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                """SELECT ts FROM ticket_events
+                   WHERE ticket_id=? AND kind='transition' AND phase='done'
+                   ORDER BY id LIMIT 1""", (ticket["id"],)).fetchone()
+        finally:
+            conn.close()
+        done_ts = row["ts"] if row else None
+    if not done_ts:
+        return None
+
+    from services import platform_telemetry as tel
+    done_day = done_ts[:10]
+    since = tel.route_stats(routes, since_day=done_day)
+    try:
+        d0 = datetime.fromisoformat(done_ts)
+        base = tel.route_stats(routes,
+                               since_day=(d0 - timedelta(days=7)).strftime("%Y-%m-%d"),
+                               until_day=(d0 - timedelta(days=1)).strftime("%Y-%m-%d"))
+    except (ValueError, TypeError):
+        base = {"hits": 0, "errors": 0, "err_rate": 0.0, "avg_ms": None}
+
+    # 'degraded' needs real evidence: several 5xx AND a rate clearly above the
+    # pre-ship baseline — a single blip on a busy route shouldn't tank a score.
+    glob = None
+    if since["hits"] == 0:
+        verdict = "no_traffic"
+    elif since["errors"] >= 3 and since["err_rate"] > max(0.05, base["err_rate"] * 2):
+        verdict = "degraded"
+    else:
+        # Collateral damage: the feature's own routes look clean, but did the
+        # PLATFORM's error rate jump after this shipped? Attributable (degraded)
+        # only if nothing else shipped in the same window; otherwise 'watch'
+        # (surfaced for a human, no automatic score penalty).
+        g_since = tel.global_stats(since_day=done_day)
+        try:
+            d0 = datetime.fromisoformat(done_ts)
+            g_base = tel.global_stats(
+                since_day=(d0 - timedelta(days=7)).strftime("%Y-%m-%d"),
+                until_day=(d0 - timedelta(days=1)).strftime("%Y-%m-%d"))
+        except (ValueError, TypeError):
+            g_base = {"hits": 0, "errors": 0, "err_rate": 0.0}
+        spiked = (g_since["errors"] >= 3
+                  and g_since["err_rate"] > max(0.05, g_base["err_rate"] * 2))
+        if spiked:
+            conn = _connect()
+            try:
+                others = conn.execute(
+                    """SELECT COUNT(DISTINCT ticket_id) AS n FROM ticket_events
+                       WHERE kind='transition' AND phase='done'
+                         AND ts >= ? AND ticket_id != ?""",
+                    (done_ts, ticket["id"])).fetchone()["n"]
+            finally:
+                conn.close()
+            verdict = "degraded" if others == 0 else "watch"
+            glob = {"since": g_since, "baseline": g_base, "other_ships": others}
+        else:
+            verdict = "healthy"
+    return {"routes": routes, "since_day": done_day,
+            "hits": since["hits"], "errors": since["errors"],
+            "err_rate": since["err_rate"], "avg_ms": since["avg_ms"],
+            "baseline": base, "global": glob, "verdict": verdict}
+
+
+# ---------------------------------------------------------------------------
 # Tester profiles (Phase 5 — gamified coaching)
 #
 # Per-tester scorecards built from the same tickets + events the board uses.
@@ -839,17 +1154,29 @@ def profiles(testers: List[Dict[str, str]]) -> Dict[str, Any]:
             "ratings": ratings,
         }
 
-    # ---- regressions: a later bug ticket that names DKT-<n> after n shipped
+    # ---- regressions: CONFIRMED relatedness links against a shipped ticket
+    # (mention / agent / human-confirmed; suspected similarity never penalises).
+    conn = _connect()
+    try:
+        link_rows = [dict(r) for r in conn.execute("SELECT * FROM ticket_links")]
+    finally:
+        conn.close()
     regressions: Dict[int, List[str]] = {}
+    suspected: Dict[int, int] = {}
+    for ln in link_rows:
+        if ln["status"] == "confirmed":
+            regressions.setdefault(ln["target_id"], []).append(ticket_ref(ln["ticket_id"]))
+        elif ln["status"] == "suspected":
+            suspected[ln["target_id"]] = suspected.get(ln["target_id"], 0) + 1
+
+    # ---- real platform performance per shipped ticket (telemetry join)
+    perf: Dict[int, Optional[dict]] = {}
     for t in tickets:
-        if t["type"] != "bug":
-            continue
-        for m in _DKT_RE.finditer(f'{t["title"]} {t["description"]}'):
-            tgt = int(m.group(1))
-            f = facts.get(tgt)
-            if (tgt != t["id"] and f and f["done_ts"]
-                    and t["created_at"] > f["done_ts"]):
-                regressions.setdefault(tgt, []).append(ticket_ref(t["id"]))
+        if facts[t["id"]]["done_ts"]:
+            try:
+                perf[t["id"]] = platform_performance(t, facts[t["id"]]["done_ts"])
+            except Exception:
+                perf[t["id"]] = None
 
     # ---- review responsiveness: time from entering user_review to a human
     # moving it out (done / queued / discussion), credited to that human.
@@ -917,7 +1244,11 @@ def profiles(testers: List[Dict[str, str]]) -> Dict[str, Any]:
 
         all_ratings = [r["rating"] for t in mine
                        for r in facts[t["id"]]["ratings"].values()]
-        regressed = [t for t in done if regressions.get(t["id"])]
+        # Unhealthy = a confirmed follow-up exists OR telemetry shows the
+        # touched routes erroring above their pre-ship baseline.
+        regressed = [t for t in done
+                     if regressions.get(t["id"])
+                     or (perf.get(t["id"]) or {}).get("verdict") == "degraded"]
 
         rh = resp_hours.get(u, [])
         raw[u] = {
@@ -1053,9 +1384,31 @@ def profiles(testers: List[Dict[str, str]]) -> Dict[str, Any]:
                                    / len(facts[t["id"]]["ratings"]), 1)
                              if facts[t["id"]]["ratings"] else None),
               "rating_n": len(facts[t["id"]]["ratings"]),
-              "regressions": regressions.get(t["id"], [])}
+              "regressions": regressions.get(t["id"], []),
+              "suspected": suspected.get(t["id"], 0),
+              "perf": perf.get(t["id"])}
              for t in d["_done"]],
             key=lambda x: x["done_ts"] or "", reverse=True)
+
+        # Full ticket history with platform performance — the profile's record
+        # of every ask and how it actually fared once shipped.
+        history = sorted(
+            [{"ref": ticket_ref(t["id"]), "id": t["id"], "title": t["title"],
+              "type": t["type"], "status": t["status"],
+              "clarity": int(t.get("clarity_score") or 0) or None,
+              "iterations": int(t.get("iteration") or 0),
+              "bounced": facts[t["id"]]["bounced"],
+              "cost": round(facts[t["id"]]["cost"], 2) if facts[t["id"]]["has_eff"] else None,
+              "created_at": t["created_at"],
+              "done_ts": facts[t["id"]]["done_ts"],
+              "regressions": regressions.get(t["id"], []),
+              "suspected": suspected.get(t["id"], 0),
+              "rating_avg": (round(sum(r["rating"] for r in facts[t["id"]]["ratings"].values())
+                                   / len(facts[t["id"]]["ratings"]), 1)
+                             if facts[t["id"]]["ratings"] else None),
+              "perf": perf.get(t["id"]) if facts[t["id"]]["done_ts"] else None}
+             for t in d["_mine"]],
+            key=lambda x: x["created_at"], reverse=True)[:50]
 
         stats = {k: v for k, v in d.items() if not k.startswith("_") and k != "series"}
         out_profiles.append({
@@ -1066,6 +1419,7 @@ def profiles(testers: List[Dict[str, str]]) -> Dict[str, Any]:
             "assist_feed": sorted(assist_feed.get(u, []),
                                   key=lambda x: x["ts"], reverse=True)[:8],
             "shipped": shipped,
+            "history": history,
         })
 
     out_profiles.sort(key=lambda p: (p["score"] is None, -(p["score"] or 0)))

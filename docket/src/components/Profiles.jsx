@@ -253,56 +253,117 @@ function ProfileDetail({ p, weights, onBack, onOpenTicket }) {
               </ul>}
         </Card>
 
-        <Card title="Shipped & impact" icon={<Package className="w-4 h-4 text-violet-500" />}
-          hint="Your Done tickets: how they're rated, and whether they stayed healthy">
-          {p.shipped.length === 0 ? <Empty>Nothing shipped yet.</Empty> :
-            <ul className="space-y-2">
-              {p.shipped.map((t) => (
-                <li key={t.ref} className="text-sm">
-                  <button className="text-left hover:underline" onClick={() => onOpenTicket && onOpenTicket(t.id)}>
-                    <span className="font-mono text-[11px] text-slate-400 mr-1">{t.ref}</span>
-                    <span className="text-slate-700">{t.title}</span>
-                  </button>
-                  <div className="flex items-center gap-2 text-xs">
-                    {t.rating_avg != null
-                      ? <span className="text-amber-600 flex items-center gap-0.5">
-                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                          {t.rating_avg}/5 ({t.rating_n})
-                        </span>
-                      : <span className="text-slate-400 italic">unrated — open it and ask the team to rate it</span>}
-                    {t.regressions.length > 0
-                      ? <span className="flex items-center gap-0.5 text-rose-600">
-                          <AlertTriangle className="w-3 h-3" /> follow-up: {t.regressions.join(', ')}
-                        </span>
-                      : <span className="flex items-center gap-0.5 text-emerald-600"><Check className="w-3 h-3" /> healthy</span>}
-                  </div>
-                </li>
-              ))}
-            </ul>}
+        <Card title="Badges" hint="Earned in colour; the bar shows how close you are">
+          <div className="grid grid-cols-2 gap-2">
+            {p.badges.map((b) => (
+              <div key={b.id} title={b.hint || b.desc}
+                className={`rounded-lg border p-2.5 ${b.earned ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50 opacity-70'}`}>
+                <div className="text-xl mb-0.5">{b.emoji}</div>
+                <div className="text-xs font-semibold text-slate-700">{b.name}</div>
+                <div className="text-[10px] text-slate-500 leading-snug mb-1.5">{b.desc}</div>
+                {b.earned
+                  ? <div className="text-[10px] font-medium text-amber-700">Earned ✓</div>
+                  : <>
+                      <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-400" style={{ width: `${Math.round(b.progress * 100)}%` }} />
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{b.n}/{b.target}</div>
+                    </>}
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
 
-      {/* Badge gallery */}
-      <Card title="Badges" hint="Earned in colour; the bar shows how close you are">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {p.badges.map((b) => (
-            <div key={b.id} title={b.hint || b.desc}
-              className={`rounded-lg border p-2.5 ${b.earned ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50 opacity-70'}`}>
-              <div className="text-xl mb-0.5">{b.emoji}</div>
-              <div className="text-xs font-semibold text-slate-700">{b.name}</div>
-              <div className="text-[10px] text-slate-500 leading-snug mb-1.5">{b.desc}</div>
-              {b.earned
-                ? <div className="text-[10px] font-medium text-amber-700">Earned ✓</div>
-                : <>
-                    <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-indigo-400" style={{ width: `${Math.round(b.progress * 100)}%` }} />
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">{b.n}/{b.target}</div>
-                  </>}
-            </div>
-          ))}
-        </div>
+      {/* Full ticket history with real platform performance */}
+      <Card title="Ticket history & platform performance"
+        icon={<Package className="w-4 h-4 text-violet-500" />}
+        hint="Every ask you've raised — and, once shipped, how it's actually doing in the platform (traffic, errors, follow-ups)">
+        {p.history.length === 0 ? <Empty>No tickets yet.</Empty> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase text-slate-400">
+                  <th className="py-1 pr-2">Ticket</th>
+                  <th className="py-1 pr-2">Status</th>
+                  <th className="py-1 pr-2 text-right">Clarity</th>
+                  <th className="py-1 pr-2 text-right">Retries</th>
+                  <th className="py-1 pr-2 text-right">Cost</th>
+                  <th className="py-1">Post-ship</th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.history.map((h) => (
+                  <tr key={h.ref} className="border-t border-slate-100 align-top">
+                    <td className="py-1.5 pr-2 max-w-[18rem]">
+                      <button className="text-left hover:underline" onClick={() => onOpenTicket && onOpenTicket(h.id)}>
+                        <span className="font-mono text-[11px] text-slate-400 mr-1">{h.ref}</span>
+                        <span className="text-slate-700">{h.title}</span>
+                      </button>
+                    </td>
+                    <td className="py-1.5 pr-2 text-xs text-slate-500 whitespace-nowrap">{h.status.replace(/_/g, ' ')}</td>
+                    <td className={`py-1.5 pr-2 text-right tabular-nums ${h.clarity == null ? 'text-slate-300' : h.clarity >= 70 ? 'text-emerald-600' : h.clarity >= 40 ? 'text-amber-600' : 'text-rose-600'}`}>
+                      {h.clarity ?? '—'}
+                    </td>
+                    <td className={`py-1.5 pr-2 text-right tabular-nums ${h.iterations + h.bounced ? 'text-amber-600' : 'text-slate-400'}`}>
+                      {h.iterations + h.bounced || '—'}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums text-slate-500">
+                      {h.cost != null ? `$${h.cost.toFixed(2)}` : '—'}
+                    </td>
+                    <td className="py-1.5"><PostShip h={h} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
+    </div>
+  )
+}
+
+const PERF_CHIP = {
+  healthy: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  degraded: 'bg-rose-50 text-rose-700 border-rose-200',
+  watch: 'bg-amber-50 text-amber-700 border-amber-200',
+  no_traffic: 'bg-slate-50 text-slate-500 border-slate-200',
+}
+
+// The post-ship story of one history row: telemetry verdict + traffic, star
+// rating if anyone rated it, confirmed follow-ups (negative), unconfirmed count.
+function PostShip({ h }) {
+  if (!h.done_ts) return <span className="text-xs text-slate-300">—</span>
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      {h.perf
+        ? <>
+            <span className={`px-1.5 py-0.5 rounded border text-[10px] font-medium ${PERF_CHIP[h.perf.verdict] || ''}`}>
+              {h.perf.verdict === 'no_traffic' ? 'no traffic yet' : h.perf.verdict}
+            </span>
+            {h.perf.hits > 0 && (
+              <span className="text-slate-500">
+                {h.perf.hits} req · {h.perf.errors} err
+              </span>
+            )}
+          </>
+        : <span className="text-slate-400 italic">no route map</span>}
+      {h.rating_avg != null && (
+        <span className="text-amber-600 flex items-center gap-0.5">
+          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />{h.rating_avg}
+        </span>
+      )}
+      {h.regressions.length > 0 && (
+        <span className="flex items-center gap-0.5 text-rose-600">
+          <AlertTriangle className="w-3 h-3" />{h.regressions.join(', ')}
+        </span>
+      )}
+      {h.suspected > 0 && (
+        <span className="text-slate-400">{h.suspected} unconfirmed</span>
+      )}
+      {h.perf && h.perf.verdict === 'healthy' && h.regressions.length === 0 && (
+        <Check className="w-3 h-3 text-emerald-500" />
+      )}
     </div>
   )
 }
@@ -376,7 +437,7 @@ function HowScoring({ weights }) {
           <p><b>Helping others ({Math.round(weights.helpfulness * 100)}%)</b> — comments you leave on other people's tickets that are followed by the ticket moving forward.</p>
           <p><b>Review speed ({Math.round(weights.responsiveness * 100)}%)</b> — how quickly you test tickets that land in User Review for you.</p>
           <p><b>Lean asks ({Math.round(weights.efficiency * 100)}%)</b> — average agent cost of your tickets, anchored to the team's best. Clear, scoped asks burn fewer tokens.</p>
-          <p><b>Shipped impact ({Math.round(weights.impact * 100)}%)</b> — star-ratings the team gives your shipped tickets, plus whether they stayed healthy (no follow-up bug naming them).</p>
+          <p><b>Shipped impact ({Math.round(weights.impact * 100)}%)</b> — whether your shipped tickets stayed healthy in the real platform: no confirmed follow-up ticket against them, and no error-rate regression on the routes the change touched (measured automatically from live traffic). Star-ratings, when people leave them, count too.</p>
           <p className="text-slate-400">Dimensions with no data yet are skipped and the weights renormalise — nobody is penalised for being new.</p>
         </div>
       )}
