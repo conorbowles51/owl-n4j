@@ -81,7 +81,9 @@
   so non-built checkouts don't break); `docket/deploy/migrate_user_items.py` migrates old
   hub user_items + their comments → Discussion tickets (idempotent via seed_user_item_id;
   verified on a temp DB, then run for real → prod's 12 hub items are NOW live on :8011 as
-  DKT-18…29, all in Discussion). **Remaining for the real cutover (needs Neil's go):**
+  DKT-18…29, all in Discussion). **Cutover ON HOLD (Neil, 2026-06-11)** — testers stay on
+  :8011 for now. `feat/docket` IS pushed to origin (open a PR when ready:
+  https://github.com/conorbowles51/owl-n4j/pull/new/feat/docket). When Neil gives the go:
   land feat/docket on main (PR or merge), run deploy/deploy.sh on prod, copy/keep
   data/docket.db (it already holds the migrated items + agent history), repoint
   owl-docket-agent WorkingDirectory at the prod checkout, then retire owl-docket :8011 +
