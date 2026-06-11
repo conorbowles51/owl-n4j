@@ -99,6 +99,26 @@
   a later apostrophe title survived fine). A system note was added to DKT-24's timeline
   suggesting it's superseded by DKT-25. AmendModal audited — safe (textareas + required
   reason). Live on :8011 (bundle rebuilt, served without restart).
+- **Phase 5 (Tester profiles — gamified coaching) DONE (2026-06-11, Neil's ask):**
+  per-tester scorecards behind a new **Profiles** tab. Backend: `profiles()` in
+  docket_storage (+ `GET /api/tickets/profiles`), new `impact` event kind +
+  `POST /api/tickets/{id}/impact` (1-5 stars + note, Done tickets only, latest per
+  rater wins). Six transparent dimensions → weighted **Docket Score** (weights in
+  `SCORE_WEIGHTS`, returned by the API): clarity 30 / first-time-through 25 /
+  helpfulness 15 / responsiveness 10 / efficiency 10 / impact 10 — missing dims
+  renormalise so new testers aren't penalised. Computed from existing tickets+events:
+  FTT (no bounces/retries among shipped), assists (comment on someone else's ticket
+  that then moved to queued/done), review speed (time to act on user_review),
+  lean-asks (avg agent cost anchored to team best), impact (star ratings on their
+  shipped tickets + regression links = later bug ticket whose text names DKT-n).
+  8 badges with progress bars; per-tester best/worst ask showcases (strength chips vs
+  stored suggestions + downstream cost); personal "clarity pays" clear-vs-unclear cost
+  comparison; clarity sparkline + trend; assists feed; shipped-health list; team hall
+  of fame. UI: `Profiles.jsx` (leaderboard → detail), ImpactPanel stars on Done
+  tickets in TicketDetail. VERIFIED live on :8011 (profiles ranked, DKT-30 closed +
+  rated ★5, non-done guard 400s, regression-linking + assists verified on a temp DB).
+  Possible Phase 6 (NOT started): real usage telemetry from the main app per shipped
+  feature — needs instrumentation in owl-n4j itself, not just Docket.
 - **Blocked on / waiting for Neil:** prod cutover GO; GitHub PAT (`DOCKET_GITHUB_TOKEN`)
   for real PR objects; arturo's notification email. SMTP is DONE (Brevo relay live).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.

@@ -89,6 +89,16 @@ def get_analytics(tester: dict = Depends(require_tester)):
     return dk.analytics()
 
 
+@router.get("/profiles")
+def get_profiles(tester: dict = Depends(require_tester)):
+    """Gamified per-tester scorecards: Docket Score, dimensions, badges, best/
+    worst ask showcases, assists, and post-ship impact — plus a hall of fame."""
+    return dk.profiles([
+        {"username": t["username"], "name": t["name"]}
+        for t in testing_auth.all_testers()
+    ])
+
+
 class ClarityIn(BaseModel):
     title: str = ""
     description: str = ""
@@ -282,6 +292,33 @@ def resubmit(ticket_id: int, body: ResubmitIn, tester: dict = Depends(require_te
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ticket": _detail(ticket_id)}
+
+
+class ImpactIn(BaseModel):
+    rating: int            # 1 (not useful) … 5 (big win)
+    note: str = ""
+
+
+@router.post("/{ticket_id}/impact")
+def rate_impact(ticket_id: int, body: ImpactIn, tester: dict = Depends(require_tester)):
+    """Post-ship impact rating on a Done ticket (1-5 stars + optional note).
+    One rating per tester per ticket — re-rating replaces your earlier one
+    (the profile maths keeps only the latest per rater)."""
+    if not 1 <= body.rating <= 5:
+        raise HTTPException(status_code=400, detail="rating must be 1-5")
+    t = dk.get_ticket(ticket_id)
+    if not t:
+        raise HTTPException(status_code=404, detail=f"ticket {ticket_id} not found")
+    if t["status"] != "done":
+        raise HTTPException(status_code=400, detail="impact can only be rated on Done tickets")
+    note = body.note.strip()[:500]
+    stars = "★" * body.rating + "☆" * (5 - body.rating)
+    ev = dk.add_event(
+        ticket_id, "impact", actor=tester.get("name", ""),
+        summary=f"Rated impact {stars} ({body.rating}/5)" + (f" — {note}" if note else ""),
+        payload={"rating": body.rating, "note": note},
+    )
+    return {"event": ev}
 
 
 class CommentIn(BaseModel):

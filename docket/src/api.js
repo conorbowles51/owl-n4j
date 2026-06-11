@@ -53,9 +53,12 @@ export const api = {
   comment: (id, text) =>
     req(`/api/tickets/${id}/comment`, { method: 'POST', body: JSON.stringify({ text }) }),
 
-  // Coaching analytics + live clarity scoring.
+  // Coaching analytics + live clarity scoring + gamified tester profiles.
   analytics: () => req('/api/tickets/analytics'),
   clarity: (body) => req('/api/tickets/clarity', { method: 'POST', body: JSON.stringify(body) }),
+  profiles: () => req('/api/tickets/profiles'),
+  impact: (id, body) =>
+    req(`/api/tickets/${id}/impact`, { method: 'POST', body: JSON.stringify(body) }),
 
   // Migrated testing-hub checklist (per-tester pass/fail/blocked of shipped behaviours).
   checklist: () => req('/api/testing/checklist'),

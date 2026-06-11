@@ -31,6 +31,8 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import statistics
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -105,8 +107,10 @@ TRANSITIONS: Dict[str, set] = {
     "done":              {"queued"},  # reopen
 }
 
-# ticket_events.kind — what a timeline entry represents.
-EVENT_KINDS = ("transition", "activity", "assessment", "plan", "comment", "note")
+# ticket_events.kind — what a timeline entry represents. 'impact' is a
+# post-ship rating (1-5 + note) left on a Done ticket; latest per rater wins.
+EVENT_KINDS = ("transition", "activity", "assessment", "plan", "comment", "note",
+               "impact")
 
 VALID_NOTIFY_EVENTS = ("needs_info", "pr_ready", "user_review", "stalled", "failed")
 
@@ -712,6 +716,386 @@ def analytics() -> Dict[str, Any]:
         "per_author": per_author,
         "recently_bounced": bounced,
     }
+
+
+# ---------------------------------------------------------------------------
+# Tester profiles (Phase 5 — gamified coaching)
+#
+# Per-tester scorecards built from the same tickets + events the board uses.
+# Six dimensions roll up into one transparent "Docket Score"; the weights are
+# returned to the UI so the score is never a black box. The negative signals
+# (bounces, retries) live inside "first-time-through" so the framing stays
+# "ship it clean", not "you failed". Post-ship impact = human star-ratings on
+# Done tickets plus auto-detected regressions (a later bug ticket whose text
+# mentions DKT-<n> counts against ticket n's health).
+# ---------------------------------------------------------------------------
+
+SCORE_WEIGHTS = {
+    "clarity": 0.30,        # avg clarity of their asks (the coaching core)
+    "first_time": 0.25,     # % of shipped tickets with no bounces / retries
+    "helpfulness": 0.15,    # comments on OTHERS' tickets that got them moving
+    "responsiveness": 0.10, # how fast they test what's sent to them
+    "efficiency": 0.10,     # agent cost per ticket vs the team's best
+    "impact": 0.10,         # post-ship ratings + regression-free record
+}
+
+_DKT_RE = re.compile(r"\bDKT-(\d+)\b", re.I)
+
+
+def _norm_name(s: str) -> str:
+    return (s or "").strip().lower()
+
+
+def _ts_secs(iso: str) -> Optional[float]:
+    try:
+        return datetime.fromisoformat(iso).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _strengths(t: Dict[str, Any]) -> List[str]:
+    """What a well-written ask did right — chips for the 'best asks' showcase.
+    Mirrors the score_clarity components so praise matches the scoring."""
+    s = []
+    if len((t.get("acceptance_criteria") or "").strip()) >= 15:
+        s.append("acceptance criteria")
+    if len((t.get("description") or "").strip()) >= 120:
+        s.append("detailed description")
+    blob = ((t.get("description") or "") + " " + (t.get("acceptance_criteria") or "")).lower()
+    if ("/" in blob or re.search(r"\b(when|should|so that|step|expected|click|open|see|"
+                                 r"returns?|display|shows?)\b", blob) or re.search(r"\d", blob)):
+        s.append("concrete behaviour")
+    title = (t.get("title") or "").strip()
+    if len(title) >= 10 and not (set(title.lower().split()) & _VAGUE_WORDS):
+        s.append("specific title")
+    return s
+
+
+def profiles(testers: List[Dict[str, str]]) -> Dict[str, Any]:
+    """Full gamified scorecard for every tester, plus a team hall of fame.
+
+    `testers` = [{"username", "name"}, ...] from testing_auth (authorship in the
+    DB is by display name with inconsistent casing, so both forms alias to the
+    username here).
+    """
+    conn = _connect()
+    try:
+        tickets = [dict(r) for r in conn.execute("SELECT * FROM tickets ORDER BY id")]
+        events = [dict(r) for r in conn.execute("SELECT * FROM ticket_events ORDER BY id")]
+    finally:
+        conn.close()
+    for e in events:
+        p = e.get("payload")
+        if p:
+            try:
+                e["payload"] = json.loads(p)
+            except (ValueError, TypeError):
+                e["payload"] = None
+        else:
+            e["payload"] = None
+
+    tk = {t["id"]: t for t in tickets}
+    evs_by_ticket: Dict[int, List[dict]] = {}
+    for e in events:
+        evs_by_ticket.setdefault(e["ticket_id"], []).append(e)
+
+    alias: Dict[str, str] = {}
+    display: Dict[str, str] = {}
+    for tt in testers:
+        display[tt["username"]] = tt["name"]
+        for k in {_norm_name(tt["username"]), _norm_name(tt["name"])}:
+            if k:
+                alias[k] = tt["username"]
+
+    def owner(t: dict) -> Optional[str]:
+        return alias.get(_norm_name(t.get("created_by")))
+
+    # ---- per-ticket facts -------------------------------------------------
+    facts: Dict[int, dict] = {}
+    for t in tickets:
+        evs = evs_by_ticket.get(t["id"], [])
+        trans = [e for e in evs if e["kind"] == "transition"]
+        secs = cost = 0.0
+        has_eff = False
+        for e in evs:
+            p = e["payload"]
+            if isinstance(p, dict):
+                if p.get("duration_secs"):
+                    secs += float(p["duration_secs"]); has_eff = True
+                if p.get("cost_usd"):
+                    cost += float(p["cost_usd"]); has_eff = True
+        ratings: Dict[str, dict] = {}   # latest impact rating per rater
+        for e in evs:
+            p = e["payload"]
+            if e["kind"] == "impact" and isinstance(p, dict) and p.get("rating"):
+                ratings[_norm_name(e["actor"])] = {
+                    "rating": int(p["rating"]), "note": p.get("note", ""), "ts": e["ts"]}
+        facts[t["id"]] = {
+            "queued": any(e["phase"] == "queued" for e in trans),
+            "bounced": sum(1 for e in trans if e["phase"] == "needs_info"),
+            "changes": sum(1 for e in trans if e["phase"] == "changes_requested"),
+            "done_ts": next((e["ts"] for e in trans if e["phase"] == "done"), None),
+            "secs": secs, "cost": cost, "has_eff": has_eff,
+            "ratings": ratings,
+        }
+
+    # ---- regressions: a later bug ticket that names DKT-<n> after n shipped
+    regressions: Dict[int, List[str]] = {}
+    for t in tickets:
+        if t["type"] != "bug":
+            continue
+        for m in _DKT_RE.finditer(f'{t["title"]} {t["description"]}'):
+            tgt = int(m.group(1))
+            f = facts.get(tgt)
+            if (tgt != t["id"] and f and f["done_ts"]
+                    and t["created_at"] > f["done_ts"]):
+                regressions.setdefault(tgt, []).append(ticket_ref(t["id"]))
+
+    # ---- review responsiveness: time from entering user_review to a human
+    # moving it out (done / queued / discussion), credited to that human.
+    resp_hours: Dict[str, List[float]] = {}
+    for tid, evs in evs_by_ticket.items():
+        trans = [e for e in evs if e["kind"] == "transition"]
+        for prev, curr in zip(trans, trans[1:]):
+            if prev["phase"] == "user_review" and curr["phase"] in ("done", "queued", "discussion"):
+                who = alias.get(_norm_name(curr["actor"]))
+                a, b = _ts_secs(prev["ts"]), _ts_secs(curr["ts"])
+                if who and a and b and b >= a:
+                    resp_hours.setdefault(who, []).append((b - a) / 3600.0)
+
+    # ---- assists: comments on someone ELSE's ticket; "helped" = the ticket
+    # subsequently moved forward (queued or done after the comment).
+    comments_on_others: Dict[str, int] = {}
+    assists: Dict[str, int] = {}
+    assist_feed: Dict[str, List[dict]] = {}
+    for tid, evs in evs_by_ticket.items():
+        t = tk[tid]
+        t_owner = owner(t)
+        trans = [e for e in evs if e["kind"] == "transition"]
+        for e in evs:
+            if e["kind"] != "comment":
+                continue
+            who = alias.get(_norm_name(e["actor"]))
+            if not who or who == t_owner:
+                continue
+            helped = any(tr["id"] > e["id"] and tr["phase"] in ("queued", "done")
+                         for tr in trans)
+            comments_on_others[who] = comments_on_others.get(who, 0) + 1
+            if helped:
+                assists[who] = assists.get(who, 0) + 1
+            assist_feed.setdefault(who, []).append({
+                "ref": ticket_ref(tid), "title": t["title"], "ts": e["ts"],
+                "snippet": str(e["summary"])[:140], "helped": helped})
+
+    # ---- per-tester rollup --------------------------------------------------
+    raw: Dict[str, dict] = {}
+    for tt in testers:
+        u = tt["username"]
+        mine = [t for t in tickets if owner(t) == u]
+        scored = [t for t in mine if int(t.get("clarity_score") or 0) > 0]
+        done = [t for t in mine if facts[t["id"]]["done_ts"]]
+        processed = [t for t in mine if facts[t["id"]]["queued"]]
+        eff = [t for t in mine if facts[t["id"]]["has_eff"] and facts[t["id"]]["cost"] > 0]
+
+        ftt = [t for t in done
+               if int(t.get("iteration") or 0) == 0
+               and facts[t["id"]]["bounced"] == 0 and facts[t["id"]]["changes"] == 0]
+
+        series = [{"ref": ticket_ref(t["id"]), "score": int(t["clarity_score"])}
+                  for t in scored]
+        trend = None
+        if len(series) >= 6:
+            first3 = [p["score"] for p in series[:3]]
+            last3 = [p["score"] for p in series[-3:]]
+            trend = round(sum(last3) / 3 - sum(first3) / 3)
+
+        cycles = []
+        for t in done:
+            a, b = _ts_secs(t["created_at"]), _ts_secs(facts[t["id"]]["done_ts"])
+            if a and b and b >= a:
+                cycles.append(b - a)
+
+        all_ratings = [r["rating"] for t in mine
+                       for r in facts[t["id"]]["ratings"].values()]
+        regressed = [t for t in done if regressions.get(t["id"])]
+
+        rh = resp_hours.get(u, [])
+        raw[u] = {
+            "username": u, "name": display[u],
+            "tickets": len(mine), "processed": len(processed), "done": len(done),
+            "done_bugs": sum(1 for t in done if t["type"] == "bug"),
+            "n_scored": len(scored),
+            "avg_clarity": round(sum(int(t["clarity_score"]) for t in scored) / len(scored)) if scored else None,
+            "n_clear80": sum(1 for t in scored if int(t["clarity_score"]) >= 80),
+            "trend": trend, "series": series[-30:],
+            "ftt_count": len(ftt),
+            "ftt_rate": round(len(ftt) / len(done) * 100) if done else None,
+            "bounced": sum(facts[t["id"]]["bounced"] for t in mine),
+            "resubmits": sum(int(t.get("iteration") or 0) for t in mine),
+            "assists": assists.get(u, 0),
+            "comments_on_others": comments_on_others.get(u, 0),
+            "n_resp": len(rh),
+            "avg_resp_h": round(sum(rh) / len(rh), 1) if rh else None,
+            "n_eff": len(eff),
+            "avg_cost": round(sum(facts[t["id"]]["cost"] for t in eff) / len(eff), 2) if eff else None,
+            "avg_secs": round(sum(facts[t["id"]]["secs"] for t in eff) / len(eff)) if eff else None,
+            "avg_cycle_secs": round(sum(cycles) / len(cycles)) if cycles else None,
+            "rating_avg": round(sum(all_ratings) / len(all_ratings), 1) if all_ratings else None,
+            "rating_n": len(all_ratings),
+            "healthy_done": len(done) - len(regressed),
+            "regressed_done": len(regressed),
+            "_mine": mine, "_scored": scored, "_done": done, "_eff": eff,
+        }
+
+    # ---- team anchors for the relative dimensions ---------------------------
+    max_assists = max([d["assists"] for d in raw.values()] or [0])
+    costs = [d["avg_cost"] for d in raw.values() if d["avg_cost"]]
+    best_cost = min(costs) if costs else None
+    median_cost = round(statistics.median(costs), 2) if costs else None
+
+    # ---- dimensions + composite + badges ------------------------------------
+    out_profiles = []
+    for u, d in raw.items():
+        dims: Dict[str, Optional[int]] = {
+            "clarity": d["avg_clarity"],
+            "first_time": d["ftt_rate"],
+            "helpfulness": (min(100, round(100 * d["assists"] / max_assists))
+                            if max_assists and (d["assists"] or d["tickets"] or d["comments_on_others"]) else
+                            (0 if max_assists else None)),
+            "responsiveness": (max(0, round(100 * (1 - d["avg_resp_h"] / 72)))
+                               if d["avg_resp_h"] is not None else None),
+            "efficiency": (min(100, round(100 * best_cost / d["avg_cost"]))
+                           if d["avg_cost"] and best_cost else None),
+        }
+        impact_parts = []
+        if d["rating_avg"] is not None:
+            impact_parts.append((d["rating_avg"] - 1) / 4 * 100)
+        if d["done"]:
+            impact_parts.append(d["healthy_done"] / d["done"] * 100)
+        dims["impact"] = round(sum(impact_parts) / len(impact_parts)) if impact_parts else None
+
+        avail = {k: v for k, v in dims.items() if v is not None}
+        score = (round(sum(v * SCORE_WEIGHTS[k] for k, v in avail.items())
+                       / sum(SCORE_WEIGHTS[k] for k in avail)) if avail else None)
+
+        badges = []
+        def _badge(bid, name, emoji, desc, n, target, hint=""):
+            badges.append({"id": bid, "name": name, "emoji": emoji, "desc": desc,
+                           "earned": n >= target, "n": n, "target": target,
+                           "progress": min(1.0, n / target if target else 0.0),
+                           "hint": hint})
+        _badge("first_ship", "Shipped It", "🚀", "Got an ask all the way to Done",
+               d["done"], 1, "Take one ticket through user review")
+        _badge("crystal_clear", "Crystal Clear", "💎", "3 asks scored 80+ for clarity",
+               d["n_clear80"], 3, "Acceptance criteria + concrete detail push scores up")
+        _badge("one_shot", "One-Shot", "🎯", "3 tickets shipped with no bounces or retries",
+               d["ftt_count"], 3, "Clear asks sail through first time")
+        _badge("good_neighbour", "Good Neighbour", "🤝",
+               "Helped 5 of other people's tickets move forward",
+               d["assists"], 5, "Comment with repro steps or answers on others' tickets")
+        _badge("bug_spotter", "Bug Spotter", "🐛", "5 bug reports shipped",
+               d["done_bugs"], 5, "")
+        _badge("on_the_up", "On the Up", "📈", "Clarity trending up 10+ points",
+               1 if (d["trend"] is not None and d["trend"] >= 10) else 0, 1,
+               "Your last few asks vs your first few")
+        _badge("quick_draw", "Quick on the Draw", "⚡",
+               "Tests what's sent to you within a day (3+ reviews)",
+               1 if (d["n_resp"] >= 3 and d["avg_resp_h"] is not None
+                     and d["avg_resp_h"] < 24) else 0, 1, "")
+        _badge("lean_asker", "Lean Asker", "🪙",
+               "Average agent cost at or below the team median (3+ worked tickets)",
+               1 if (d["n_eff"] >= 3 and median_cost is not None
+                     and d["avg_cost"] is not None and d["avg_cost"] <= median_cost)
+               else 0, 1, "Clear, scoped asks burn fewer tokens")
+
+        # Showcases: best vs needs-work, each with the downstream story.
+        def _example(t, with_suggestions=False):
+            f = facts[t["id"]]
+            ex = {"ref": ticket_ref(t["id"]), "id": t["id"], "title": t["title"],
+                  "score": int(t["clarity_score"]), "status": t["status"],
+                  "iterations": int(t.get("iteration") or 0),
+                  "bounced": f["bounced"],
+                  "cost": round(f["cost"], 2) if f["has_eff"] else None,
+                  "secs": round(f["secs"]) if f["has_eff"] else None}
+            if with_suggestions:
+                ex["suggestions"] = score_clarity(
+                    t["title"], t["description"], t["acceptance_criteria"],
+                    t["type"])["suggestions"]
+            else:
+                ex["strengths"] = _strengths(t)
+            return ex
+
+        by_score = sorted(d["_scored"], key=lambda t: -int(t["clarity_score"]))
+        best = [_example(t) for t in by_score[:3] if int(t["clarity_score"]) >= 60]
+        best_ids = {e["id"] for e in best}
+        worst = [_example(t, with_suggestions=True)
+                 for t in reversed(by_score[-3:])
+                 if int(t["clarity_score"]) < 70 and t["id"] not in best_ids]
+
+        # Their tickets' clear-vs-unclear agent cost — the "clarity pays" stat.
+        clear = [t for t in d["_eff"] if int(t.get("clarity_score") or 0) >= 70]
+        unclear = [t for t in d["_eff"] if int(t.get("clarity_score") or 0) < 70]
+        cvu = None
+        if clear and unclear:
+            cvu = {
+                "clear": {"n": len(clear),
+                          "avg_cost": round(sum(facts[t["id"]]["cost"] for t in clear) / len(clear), 2),
+                          "avg_secs": round(sum(facts[t["id"]]["secs"] for t in clear) / len(clear))},
+                "unclear": {"n": len(unclear),
+                            "avg_cost": round(sum(facts[t["id"]]["cost"] for t in unclear) / len(unclear), 2),
+                            "avg_secs": round(sum(facts[t["id"]]["secs"] for t in unclear) / len(unclear))},
+            }
+
+        shipped = sorted(
+            [{"ref": ticket_ref(t["id"]), "id": t["id"], "title": t["title"],
+              "done_ts": facts[t["id"]]["done_ts"],
+              "rating_avg": (round(sum(r["rating"] for r in facts[t["id"]]["ratings"].values())
+                                   / len(facts[t["id"]]["ratings"]), 1)
+                             if facts[t["id"]]["ratings"] else None),
+              "rating_n": len(facts[t["id"]]["ratings"]),
+              "regressions": regressions.get(t["id"], [])}
+             for t in d["_done"]],
+            key=lambda x: x["done_ts"] or "", reverse=True)
+
+        stats = {k: v for k, v in d.items() if not k.startswith("_") and k != "series"}
+        out_profiles.append({
+            "username": u, "name": d["name"], "score": score, "dims": dims,
+            "badges": badges, "badges_earned": sum(1 for b in badges if b["earned"]),
+            "stats": stats, "clarity_series": d["series"],
+            "best": best, "worst": worst, "clear_vs_unclear": cvu,
+            "assist_feed": sorted(assist_feed.get(u, []),
+                                  key=lambda x: x["ts"], reverse=True)[:8],
+            "shipped": shipped,
+        })
+
+    out_profiles.sort(key=lambda p: (p["score"] is None, -(p["score"] or 0)))
+    rank = 0
+    for p in out_profiles:
+        if p["score"] is not None:
+            rank += 1
+            p["rank"] = rank
+        else:
+            p["rank"] = None
+
+    # ---- team hall of fame: what a good ask looks like ----------------------
+    candidates = [t for t in tickets
+                  if facts[t["id"]]["queued"] and int(t.get("clarity_score") or 0) > 0]
+    candidates.sort(key=lambda t: (-int(t["clarity_score"]),
+                                   int(t.get("iteration") or 0),
+                                   facts[t["id"]]["bounced"],
+                                   facts[t["id"]]["cost"]))
+    hall = [{"ref": ticket_ref(t["id"]), "id": t["id"], "title": t["title"],
+             "author": t.get("created_by") or "—",
+             "score": int(t["clarity_score"]), "status": t["status"],
+             "iterations": int(t.get("iteration") or 0),
+             "cost": round(facts[t["id"]]["cost"], 2) if facts[t["id"]]["has_eff"] else None,
+             "strengths": _strengths(t)}
+            for t in candidates[:3]]
+
+    return {"weights": SCORE_WEIGHTS, "profiles": out_profiles,
+            "hall_of_fame": hall,
+            "team": {"median_cost": median_cost, "best_cost": best_cost,
+                     "max_assists": max_assists}}
 
 
 # ---------------------------------------------------------------------------

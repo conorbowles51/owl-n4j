@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import {
   X, Bug, Sparkles, ArrowRight, Activity, ClipboardCheck,
-  ListChecks, MessageSquare, StickyNote, ExternalLink, RefreshCw, Check,
+  ListChecks, MessageSquare, StickyNote, ExternalLink, RefreshCw, Check, Star,
 } from 'lucide-react'
-import { api } from '../api.js'
+import { api, getName } from '../api.js'
 import { PRIORITY_BADGE, KIND_DOT, relTime, fmtDuration } from '../ui.js'
 import AmendModal from './AmendModal.jsx'
 import Markdown from './Markdown.jsx'
@@ -41,6 +41,7 @@ const KIND_ICON = {
   plan: ListChecks,
   comment: MessageSquare,
   note: StickyNote,
+  impact: Star,
 }
 
 // Friendlier labels for the lifecycle buttons, keyed by "from->to".
@@ -166,6 +167,9 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
                 </div>
               )}
 
+              {/* Post-ship impact rating — feeds the profiles' impact dimension */}
+              {t.status === 'done' && <ImpactPanel t={t} onRated={load} />}
+
               {/* Lifecycle actions */}
               {nextMoves.length > 0 && t.status !== 'user_review' && (
                 <div className="flex flex-wrap gap-2">
@@ -249,6 +253,79 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
           onDone={async () => { setAmending(false); await load(); onChanged && onChanged() }}
         />
       )}
+    </div>
+  )
+}
+
+// "How's this working out?" — 1-5 stars + optional note on a Done ticket.
+// Latest rating per tester wins; the profile maths aggregates them into the
+// creator's "shipped impact" dimension.
+function ImpactPanel({ t, onRated }) {
+  const me = (getName() || '').trim().toLowerCase()
+  const latest = {} // rater(normalised) -> {rating, note}
+  for (const ev of t.events || []) {
+    if (ev.kind === 'impact' && ev.payload && typeof ev.payload === 'object' && ev.payload.rating) {
+      latest[(ev.actor || '').trim().toLowerCase()] = ev.payload
+    }
+  }
+  const mine = latest[me]
+  const others = Object.entries(latest).filter(([who]) => who !== me)
+  const all = Object.values(latest).map((r) => r.rating)
+  const avg = all.length ? (all.reduce((a, b) => a + b, 0) / all.length).toFixed(1) : null
+
+  const [stars, setStars] = useState(mine?.rating || 0)
+  const [hover, setHover] = useState(0)
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function rate(n) {
+    setStars(n); setBusy(true); setErr('')
+    try {
+      await api.impact(t.id, { rating: n, note: note.trim() })
+      setNote('')
+      onRated && onRated()
+    } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Star className="w-4 h-4 text-violet-600" />
+        <h3 className="text-sm font-semibold text-violet-800">How's this working out?</h3>
+        {avg && <span className="ml-auto text-xs text-violet-700">team ★{avg} ({all.length})</span>}
+      </div>
+      <p className="text-xs text-violet-700 mb-2">
+        Rate the shipped result — it feeds the creator's impact score.
+        {mine && ' You can change your rating any time.'}
+      </p>
+      <div className="flex items-center gap-2">
+        <div className="flex" onMouseLeave={() => setHover(0)}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} disabled={busy} onClick={() => rate(n)} onMouseEnter={() => setHover(n)}
+              className="p-0.5 disabled:opacity-50" title={`${n}/5`}>
+              <Star className={`w-5 h-5 ${(hover || stars) >= n
+                ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />
+            </button>
+          ))}
+        </div>
+        <input
+          className="flex-1 px-2 py-1 border border-violet-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-violet-300"
+          value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="Optional note — sent with your next star click"
+        />
+      </div>
+      {others.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {others.map(([who, r]) => (
+            <span key={who} className="text-[10px] bg-white border border-violet-100 rounded px-1.5 py-0.5 text-slate-600"
+              title={r.note || ''}>
+              {who} ★{r.rating}
+            </span>
+          ))}
+        </div>
+      )}
+      {err && <div className="mt-2 text-xs text-red-600">{err}</div>}
     </div>
   )
 }
