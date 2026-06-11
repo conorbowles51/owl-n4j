@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import {
   X, Bug, Sparkles, ArrowRight, Activity, ClipboardCheck,
-  ListChecks, MessageSquare, StickyNote, ExternalLink, RefreshCw,
+  ListChecks, MessageSquare, StickyNote, ExternalLink, RefreshCw, Check,
 } from 'lucide-react'
 import { api } from '../api.js'
 import { PRIORITY_BADGE, KIND_DOT, relTime, fmtDuration } from '../ui.js'
@@ -138,8 +138,36 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
             <div className="p-4 space-y-4">
               {err && <div className="text-sm text-red-600">{err}</div>}
 
+              {/* User Review — the tester's turn */}
+              {t.status === 'user_review' && (
+                <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <ClipboardCheck className="w-4 h-4 text-emerald-700" />
+                    <h3 className="text-sm font-semibold text-emerald-800">Ready for you to test</h3>
+                  </div>
+                  <p className="text-xs text-emerald-700 mb-2">
+                    Follow the steps below. If it works, close it. If not, send it back with what's wrong.
+                  </p>
+                  <div className="bg-white rounded-lg border border-emerald-100 p-3 mb-3">
+                    {t.test_instructions
+                      ? <Markdown>{t.test_instructions}</Markdown>
+                      : <p className="text-sm text-slate-400 italic">No test instructions were provided.</p>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button disabled={busy} onClick={() => move('done')}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                      <Check className="w-4 h-4" /> It works — close
+                    </button>
+                    <button disabled={busy} onClick={() => setAmending(true)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 rounded-lg text-sm font-medium disabled:opacity-50">
+                      <X className="w-4 h-4" /> Needs more — send back
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Lifecycle actions */}
-              {nextMoves.length > 0 && (
+              {nextMoves.length > 0 && t.status !== 'user_review' && (
                 <div className="flex flex-wrap gap-2">
                   {nextMoves.map((to) => {
                     const resubmit = to === 'queued' && RESUBMIT_FROM.includes(t.status)
@@ -185,7 +213,7 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
 
               <Section title="Description" body={t.description} />
               <Section title="Acceptance criteria" body={t.acceptance_criteria} />
-              {t.test_instructions && <Section title="How to test" body={t.test_instructions} />}
+              {t.test_instructions && t.status !== 'user_review' && <Section title="How to test" body={t.test_instructions} />}
 
               {/* Timeline */}
               <div>

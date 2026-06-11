@@ -228,6 +228,16 @@ def implement_prompt(t: dict, plan: str) -> str:
     )
 
 
+def test_instructions_prompt(t: dict) -> str:
+    return (
+        "You are writing test instructions for a NON-TECHNICAL tester to verify the change "
+        "just implemented in this worktree. Look at the diff (`git diff main`) and the "
+        "acceptance criteria below, then write SHORT, numbered, plain-language steps: what to "
+        "do and exactly what they should see if it works. No code, no jargon, no file paths — "
+        "write it for someone who only uses the app's UI.\n\n" + _ctx(t)
+    )
+
+
 def review_prompt(t: dict) -> str:
     return (
         "You are the self-review phase. Review the uncommitted changes in this "
@@ -374,6 +384,14 @@ def process_ticket(t: dict) -> None:
         dk.transition(tid, "in_development", actor="agent",
                       summary="Self-review found issues, iterating")
         return _stall(tid, f"self-review failed (needs another pass): {fix[:160]}")
+
+    # --- Test instructions for the human reviewer (User Review phase) ---
+    act("Writing test instructions for the reviewer")
+    ti = run_claude(test_instructions_prompt(t), wt, allowed_tools=READONLY_TOOLS,
+                    disallowed_tools=["Edit", "Write"], permission_mode="default",
+                    max_turns=10, max_budget_usd=1.0, on_activity=act)
+    if not ti["is_error"] and ti["text"].strip():
+        dk.update_ticket(tid, test_instructions=_strip_control(ti["text"]))
 
     # --- PR (push branch + record compare URL; never auto-merge) ---
     if not PUSH_ENABLED:
