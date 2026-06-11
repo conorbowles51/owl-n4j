@@ -32,13 +32,12 @@ _TESTERS = {
 _PASSWORD = "testing"
 
 # Per-tester email, used by Docket's notifier (Needs Info / PR ready / User
-# Review / Stalled). Fill these in as addresses become known; an empty string
-# just means "no email channel for this person yet" (in-app badge still fires).
-# TODO(neil): confirm/complete these once the send-from mailbox is set up.
+# Review / Stalled). An empty string just means "no email channel for this
+# person yet" (in-app badge still fires).
 _EMAILS = {
-    "neil": "neil.byrne@udemy.com",
-    "alex": "",
-    "conor": "",
+    "neil": "neil.byrne@gmail.com",
+    "alex": "asolorzano@owlconsultancygroup.com",
+    "conor": "conorbowles51@gmail.com",
     "arturo": "",
 }
 
