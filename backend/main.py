@@ -123,6 +123,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Per-route traffic/error telemetry. Self-contained: aggregates per
+# (day, route, method, status) into data/telemetry.db. The standalone Docket
+# instance (:8011) reads this DB read-only to measure how shipped tickets
+# actually perform in the platform. Guarded so the app boots without it.
+try:
+    from services import platform_telemetry
+    platform_telemetry.install(app)
+    print("[Telemetry] route traffic capture enabled (data/telemetry.db)")
+except Exception as _tel_err:
+    print(f"[Telemetry] disabled: {_tel_err}")
+
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
