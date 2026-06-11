@@ -5,6 +5,7 @@ Main entry point for the API server.
 """
 
 import asyncio
+import subprocess
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,6 +41,18 @@ from routers import (
     case_entities_router,
     testing_router,
 )
+def _git_revision() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return "unknown"
+
+GIT_REVISION = _git_revision()
+
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
 from routers.snapshots import _cleanup_stale_chunks
@@ -191,6 +204,7 @@ async def health():
     return {
         "status": "ok",
         "neo4j": neo4j_status,
+        "revision": GIT_REVISION,
     }
 
 
