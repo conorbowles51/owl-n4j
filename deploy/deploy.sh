@@ -190,6 +190,17 @@ success "Frontend dependencies installed"
 cd "$PROJECT_DIR"
 
 # ============================================================
+# Step 6b: Build the Docket UI (ticket pipeline, served at /docket)
+# ============================================================
+step "Building Docket UI"
+
+cd "${PROJECT_DIR}/docket"
+$RUN_AS npm ci --silent 2>&1
+$RUN_AS npm run build 2>&1
+success "Docket UI built (backend mounts docket/dist at /docket)"
+cd "$PROJECT_DIR"
+
+# ============================================================
 # Step 7: Run database migrations
 # ============================================================
 step "Running database migrations"

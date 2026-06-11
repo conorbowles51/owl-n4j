@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
@@ -39,6 +39,10 @@ router = APIRouter(tags=["testing"])
 _security = HTTPBearer(auto_error=False)
 
 _PAGE = Path(__file__).resolve().parent.parent / "static" / "testing-hub.html"
+# Docket (the standalone ticket-pipeline app) SUBSUMES this vanilla hub. When its
+# bundle is built, /testing redirects there; without it we keep serving the old
+# page so nothing breaks in environments that haven't built Docket.
+_DOCKET_DIST = Path(__file__).resolve().parent.parent.parent / "docket" / "dist"
 
 
 # ---- auth dependency (hub-scoped) ----
@@ -77,7 +81,10 @@ def _serve_page():
 
 @router.get("/testing", include_in_schema=False)
 def testing_hub_page():
-    """Serve the hub page directly off the backend (e.g. :8000/testing)."""
+    """Docket subsumed the hub: redirect when its bundle exists, else serve the
+    old page (e.g. :8000/testing)."""
+    if _DOCKET_DIST.joinpath("index.html").exists():
+        return RedirectResponse("/docket", status_code=307)
     return _serve_page()
 
 

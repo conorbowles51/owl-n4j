@@ -66,9 +66,26 @@
   New **Analytics tab** (`GET /api/tickets/analytics`): throughput, agent effort (time+cost),
   quality (bounce rate / resubmits / failed-review), per-tester coaching table, clarity
   distribution, and a recent **"bounced & why"** feed. Verified live on :8011 (17 tickets).
-- **Next action (pick one):** (B) **Real PRs + notifications** — gh/PAT for real PR objects
-  + msmtp delivery (needs a GitHub token + the SMTP cred). (C) **Real deploy** on the main
-  origin (migrate hub data, retire the vanilla page). (D) board-card time/effort badge (small).
+- **(D) DONE (2026-06-11):** board cards show agent effort (time + cost) — per-ticket
+  rollup `effort_by_ticket()` merged into `/board`, Timer badge on `TicketCard`.
+- **(B) plumbing DONE, cred-gated (2026-06-11):** `create_pr()` opens REAL PR objects via
+  the GitHub API when `DOCKET_GITHUB_TOKEN` (or `GITHUB_TOKEN`/`GH_TOKEN`) is set on the
+  agent service — falls back to compare URL without it. `drain_notifications()` (called in
+  the agent loop) sends queued notifications via **msmtp** (binary installed); graceful
+  no-op until `/etc/msmtprc` exists (template: `docket/deploy/msmtprc.example`); recipients
+  with no email on file → 'skipped'. **Still waiting on Neil:** GitHub PAT + SMTP
+  app-password — both are drop-in (uncomment the env lines in the unit, daemon-reload,
+  restart). Only neil has an email in `testing_auth._EMAILS`; add alex/conor/arturo's.
+- **(C) cutover prep DONE (2026-06-11):** deploy.sh builds the Docket UI (step 6b);
+  `/testing` 307-redirects to `/docket` when the bundle exists (else serves the old page,
+  so non-built checkouts don't break); `docket/deploy/migrate_user_items.py` migrates old
+  hub user_items + their comments → Discussion tickets (idempotent via seed_user_item_id;
+  verified on a temp DB, then run for real → prod's 12 hub items are NOW live on :8011 as
+  DKT-18…29, all in Discussion). **Remaining for the real cutover (needs Neil's go):**
+  land feat/docket on main (PR or merge), run deploy/deploy.sh on prod, copy/keep
+  data/docket.db (it already holds the migrated items + agent history), repoint
+  owl-docket-agent WorkingDirectory at the prod checkout, then retire owl-docket :8011 +
+  the firewall rule.
 - **Blocked on:** Nothing for Phases 1–early-2. SMTP credential pending for the email
   channel only (Neil is setting up a send-from address + app password later).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
