@@ -101,6 +101,11 @@ def verify_token(token: str) -> Optional[dict]:
     return {"username": uname, "name": data.get("name") or _TESTERS[uname]}
 
 
+def verify_username(username: str) -> bool:
+    """True if this is a known tester username."""
+    return (username or "").strip().lower() in _TESTERS
+
+
 def tester_email(username: str) -> str:
     """Email for a tester username, or '' if none on file."""
     return _EMAILS.get((username or "").strip().lower(), "")

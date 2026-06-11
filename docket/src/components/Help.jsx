@@ -62,6 +62,16 @@ export default function Help() {
           Every tester records their own verdicts — you'll see dots showing how the others
           got on with the same item. An item counts as "passing" once anyone has passed it.
         </p>
+        <p className="mt-2">
+          Each item also shows <strong>what the feature is</strong>, the <strong>how-to-test</strong> recipe,
+          and an effort tag: <em>test properly</em> (new behaviour — exercise it for real) vs{' '}
+          <em>visual check</em> (the logic's already verified — just confirm it looks right).
+          Items can be <strong>assigned</strong> to a tester (default "anyone" — use the{' '}
+          <em>Mine</em> filter to see your list), and every item has a small{' '}
+          <strong>discussion thread</strong> for "is this actually broken?" triage before it
+          becomes a ticket. Use the filters at the top — <em>Needs my verdict</em> is your
+          to-do list.
+        </p>
         <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
           <p className="font-medium text-indigo-900 flex items-center gap-1.5">
             <Plus className="w-4 h-4" /> The bridge: "Raise ticket"

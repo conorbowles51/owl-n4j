@@ -62,4 +62,8 @@ export const api = {
   feedback: () => req('/api/testing/feedback'),
   postFeedback: (item_id, status, note) =>
     req('/api/testing/feedback', { method: 'POST', body: JSON.stringify({ item_id, status, note }) }),
+  assignItem: (item_id, assignee) =>
+    req('/api/testing/assign', { method: 'POST', body: JSON.stringify({ item_id, assignee }) }),
+  itemComment: (item_id, text) =>
+    req('/api/testing/item-comment', { method: 'POST', body: JSON.stringify({ item_id, text }) }),
 }

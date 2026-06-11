@@ -174,3 +174,38 @@ def clear_feedback(tester: dict = Depends(require_tester)):
     """Wipe all stored feedback (reset the board)."""
     fb.clear_all()
     return {"status": "cleared"}
+
+
+# ---- checklist assignments + per-item discussion ----
+
+class AssignIn(BaseModel):
+    item_id: str
+    assignee: str = ""   # username; "" clears back to 'anyone'
+
+
+@router.post("/api/testing/assign")
+def assign_item(body: AssignIn, tester: dict = Depends(require_tester)):
+    """Assign a checklist item to a tester (lightweight — anyone can set it)."""
+    if body.assignee and not testing_auth.verify_username(body.assignee):
+        raise HTTPException(status_code=400, detail=f"unknown tester '{body.assignee}'")
+    try:
+        assignments = fb.set_assignment(body.item_id, body.assignee)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"assignments": assignments}
+
+
+class ItemCommentIn(BaseModel):
+    item_id: str
+    text: str
+
+
+@router.post("/api/testing/item-comment")
+def add_item_comment(body: ItemCommentIn, tester: dict = Depends(require_tester)):
+    """Append to a checklist item's discussion thread (triage talk — 'is this
+    actually broken?'. Decisions about fixes belong on a ticket)."""
+    try:
+        comment = fb.add_item_comment(body.item_id, tester.get("name", ""), body.text)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"item_id": body.item_id, "comment": comment}

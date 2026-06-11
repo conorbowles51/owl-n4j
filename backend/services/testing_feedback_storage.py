@@ -20,7 +20,9 @@ Shape on disk (data/testing-feedback.json):
           ...
         },
         ...
-      }
+      },
+      "assignments":   { "<item_id>": "<username>" },          # who's on it ("" = anyone)
+      "item_comments": { "<item_id>": [ {author, text, created_at}, ... ] }
     }
 
 Single small file under an exclusive lock + atomic replace — same pattern as
@@ -44,18 +46,21 @@ VALID_STATUSES = {"", "pass", "fail", "blocked"}
 
 def _load() -> Dict[str, Any]:
     if not STORAGE_FILE.exists():
-        return {"items": {}}
+        return {"items": {}, "assignments": {}, "item_comments": {}}
     try:
         with open(STORAGE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
-            return {"items": {}}
+            return {"items": {}, "assignments": {}, "item_comments": {}}
         data.setdefault("items", {})
         if not isinstance(data["items"], dict):
             data["items"] = {}
+        for key in ("assignments", "item_comments"):
+            if not isinstance(data.get(key), dict):
+                data[key] = {}
         return data
     except (json.JSONDecodeError, IOError):
-        return {"items": {}}
+        return {"items": {}, "assignments": {}, "item_comments": {}}
 
 
 def get_all() -> Dict[str, Any]:
@@ -99,6 +104,48 @@ def upsert_feedback(
     data["items"] = items
     save_json_atomic(STORAGE_FILE, data)
     return rec
+
+
+def set_assignment(item_id: str, assignee: str) -> Dict[str, str]:
+    """Assign a checklist item to a tester ("" clears it back to 'anyone').
+    Returns the full assignments map."""
+    if not item_id:
+        raise ValueError("item_id is required")
+    data = _load()
+    assignments = data.get("assignments")
+    if not isinstance(assignments, dict):
+        assignments = {}
+    who = (assignee or "").strip().lower()
+    if who:
+        assignments[item_id] = who
+    else:
+        assignments.pop(item_id, None)
+    data["assignments"] = assignments
+    save_json_atomic(STORAGE_FILE, data)
+    return assignments
+
+
+def add_item_comment(item_id: str, author: str, text: str) -> Dict[str, Any]:
+    """Append a comment to a checklist item's thread. Returns the comment."""
+    if not item_id:
+        raise ValueError("item_id is required")
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("comment text is required")
+    data = _load()
+    comments = data.get("item_comments")
+    if not isinstance(comments, dict):
+        comments = {}
+    thread = comments.get(item_id)
+    if not isinstance(thread, list):
+        thread = []
+    comment = {"author": (author or "").strip() or "unknown",
+               "text": text[:5000], "created_at": utcnow_iso()}
+    thread.append(comment)
+    comments[item_id] = thread
+    data["item_comments"] = comments
+    save_json_atomic(STORAGE_FILE, data)
+    return comment
 
 
 def clear_all() -> None:
