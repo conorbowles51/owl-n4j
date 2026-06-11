@@ -57,12 +57,14 @@
   Agent reads `DOCKET_MAIN_CHECKOUT` (default /home/conorbowles51/app_v2 = owl-n4j `main`)
   as the target repo. Manage: `systemctl status|restart|stop owl-docket-agent`;
   `journalctl -u owl-docket-agent -f`. Units version-controlled in `docket/deploy/`.
-- **Next action (pick one):** (A) **enable write autonomy** — set `DOCKET_AGENT_WRITES=1`
-  and test the implement→self-review→push→PR path on ONE low-risk ticket (the write paths
-  exist but are untested e2e; real PR-object creation still needs gh/PAT — currently pushes
-  a branch + posts a compare URL). (B) surface the agent's assessment/plan/effort nicely in
-  the ticket-detail UI (assessment & plan render as plain notes now). (C) wire msmtp so the
-  queued Needs-Info/PR notifications actually send. (D) real deploy on the main origin.
+- **DONE since:** write autonomy LIVE; markdown rendering; time-taken + effort metric;
+  **User-Review loop closed** — agent auto-writes non-technical test instructions before PR;
+  detail view shows a "Ready for you to test" panel (instructions + It-works/Send-back).
+- **Next action (pick one):** (A) **Coaching analytics (Phase 4)** — clarity scoring at
+  submit, "bounced & why" view, effort/cost/time dashboards. (B) **Real PRs + notifications**
+  — gh/PAT for real PR objects + msmtp delivery (needs a GitHub token + the SMTP cred).
+  (C) **Real deploy** on the main origin (migrate hub data, retire the vanilla page).
+  (D) board-card time/effort badge (small).
 - **Blocked on:** Nothing for Phases 1–early-2. SMTP credential pending for the email
   channel only (Neil is setting up a send-from address + app password later).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
