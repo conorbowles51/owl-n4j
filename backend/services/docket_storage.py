@@ -116,6 +116,61 @@ def _slugify(text: str) -> str:
     return s[:40] or "ticket"
 
 
+# Words that signal a vague ask — used by the clarity heuristic to coach testers.
+_VAGUE_WORDS = {"better", "improve", "improved", "fix", "stuff", "thing", "things",
+                "nicer", "cleaner", "good", "bad", "broken", "off", "wrong", "weird"}
+
+
+def score_clarity(title: str = "", description: str = "",
+                  acceptance_criteria: str = "", type: str = "feature") -> dict:
+    """Heuristic 0-100 quality score for an ask, with concrete suggestions. This
+    is the coaching signal — it nudges testers toward specific, testable stories.
+    Mirrored client-side for a live meter; stored at creation for analytics."""
+    title = (title or "").strip()
+    desc = (description or "").strip()
+    ac = (acceptance_criteria or "").strip()
+    score, sugg = 0, []
+
+    if len(ac) >= 15:
+        score += 30
+    else:
+        sugg.append('Add acceptance criteria — what does "done" look like?')
+
+    if len(desc) >= 120:
+        score += 25
+    elif len(desc) >= 40:
+        score += 12
+        sugg.append("Add more detail to the description (context, why it matters).")
+    else:
+        sugg.append("Describe the ask in more detail — what, where, and why.")
+
+    words = set(title.lower().split())
+    vague = bool(words & _VAGUE_WORDS) or len(title) < 10
+    if title and not vague and len(title) <= 90:
+        score += 15
+    elif vague:
+        sugg.append('Make the title specific — avoid vague words like "better"/"fix".')
+
+    blob = (desc + " " + ac).lower()
+    concrete = ("/" in blob
+                or bool(re.search(r"\b(when|should|so that|step|expected|click|open|see|"
+                                  r"returns?|display|shows?)\b", blob))
+                or bool(re.search(r"\d", blob)))
+    if concrete:
+        score += 20
+    else:
+        sugg.append("Add concrete behaviour — “when X, the user should see Y”.")
+
+    if ac and re.search(r"\b(should|returns?|displays?|shows?|when|so that|must)\b", ac.lower()):
+        score += 10
+    elif ac:
+        sugg.append('Phrase acceptance criteria as observable outcomes ("should show…").')
+
+    score = max(0, min(100, score))
+    level = "high" if score >= 70 else "medium" if score >= 40 else "low"
+    return {"score": score, "level": level, "suggestions": sugg[:4]}
+
+
 # ---------------------------------------------------------------------------
 # Connection / schema
 # ---------------------------------------------------------------------------
@@ -139,6 +194,8 @@ CREATE TABLE IF NOT EXISTS tickets (
     type                TEXT NOT NULL DEFAULT 'feature',
     description         TEXT NOT NULL DEFAULT '',
     acceptance_criteria TEXT NOT NULL DEFAULT '',
+    clarity_score       INTEGER NOT NULL DEFAULT 0,   -- 0-100 ask-quality heuristic at creation
+    clarity_level       TEXT NOT NULL DEFAULT '',     -- low | medium | high
     priority            TEXT NOT NULL DEFAULT 'P2',
     status              TEXT NOT NULL DEFAULT 'discussion',
     substage            TEXT NOT NULL DEFAULT '',
@@ -189,10 +246,16 @@ CREATE INDEX IF NOT EXISTS idx_notif_pending ON notifications(status, id);
 
 
 def init_db() -> None:
-    """Create the schema if it doesn't exist (idempotent)."""
+    """Create the schema if it doesn't exist (idempotent), with light migrations
+    for columns added after first ship."""
     conn = _connect()
     try:
         conn.executescript(_SCHEMA)
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(tickets)")}
+        for col, ddl in (("clarity_score", "INTEGER NOT NULL DEFAULT 0"),
+                         ("clarity_level", "TEXT NOT NULL DEFAULT ''")):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE tickets ADD COLUMN {col} {ddl}")
         conn.commit()
     finally:
         conn.close()
@@ -252,17 +315,19 @@ def create_ticket(
     if priority not in PRIORITIES:
         priority = DEFAULT_PRIORITY
     now = utcnow_iso()
+    clarity = score_clarity(title, description, acceptance_criteria, type)
 
     conn = _connect()
     try:
         cur = conn.execute(
             """INSERT INTO tickets
-               (title, type, description, acceptance_criteria, priority, status,
-                created_by, seed_user_item_id, created_at, updated_at)
-               VALUES (?,?,?,?,?,'discussion',?,?,?,?)""",
+               (title, type, description, acceptance_criteria, clarity_score,
+                clarity_level, priority, status, created_by, seed_user_item_id,
+                created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,'discussion',?,?,?,?)""",
             (title[:300], type, str(description)[:20000],
-             str(acceptance_criteria)[:10000], priority,
-             created_by, seed_user_item_id, now, now),
+             str(acceptance_criteria)[:10000], clarity["score"], clarity["level"],
+             priority, created_by, seed_user_item_id, now, now),
         )
         tid = cur.lastrowid
         conn.execute(
@@ -513,6 +578,110 @@ def queue_position(ticket_id: int) -> Optional[int]:
         if t["id"] == ticket_id:
             return t["position"]
     return None
+
+
+# ---------------------------------------------------------------------------
+# Analytics (Phase 4 — coaching dashboard)
+# ---------------------------------------------------------------------------
+
+def analytics() -> Dict[str, Any]:
+    """Aggregate metrics for the coaching dashboard: throughput, agent effort
+    (time + cost), quality signals (bounces, resubmits), per-tester breakdown,
+    clarity distribution, and a recent 'bounced & why' feed."""
+    conn = _connect()
+    try:
+        tickets = [dict(r) for r in conn.execute("SELECT * FROM tickets").fetchall()]
+        evs = [dict(r) for r in conn.execute(
+            """SELECT te.*, t.title AS tk_title FROM ticket_events te
+               JOIN tickets t ON t.id = te.ticket_id ORDER BY te.id""").fetchall()]
+    finally:
+        conn.close()
+
+    total = len(tickets)
+    by_status: Dict[str, int] = {}
+    for t in tickets:
+        by_status[t["status"]] = by_status.get(t["status"], 0) + 1
+    done = by_status.get("done", 0)
+
+    # Effort from event payloads.
+    cost = secs = 0.0
+    eff_tickets = set()
+    for e in evs:
+        p = e.get("payload")
+        if isinstance(p, str) and p:
+            try:
+                p = json.loads(p)
+            except ValueError:
+                p = None
+        if isinstance(p, dict):
+            if p.get("cost_usd"):
+                cost += float(p["cost_usd"]); eff_tickets.add(e["ticket_id"])
+            if p.get("duration_secs"):
+                secs += float(p["duration_secs"])
+
+    # Quality signals.
+    needs_info = {e["ticket_id"] for e in evs
+                  if e["phase"] == "needs_info" and e["kind"] == "transition"}
+    clar_comment = {e["ticket_id"]: e["summary"] for e in evs
+                    if e["kind"] == "comment" and str(e.get("summary", "")).startswith("Needs clarification")}
+    resubmits = sum(int(t.get("iteration") or 0) for t in tickets)
+    failed_review = sum(1 for t in tickets if int(t.get("iteration") or 0) > 0)
+
+    # Per-tester coaching table.
+    authors: Dict[str, Dict[str, Any]] = {}
+    for t in tickets:
+        a = t.get("created_by") or "—"
+        d = authors.setdefault(a, {"author": a, "tickets": 0, "c_sum": 0, "c_n": 0,
+                                   "iterations": 0, "bounced": 0})
+        d["tickets"] += 1
+        if t.get("clarity_score"):
+            d["c_sum"] += int(t["clarity_score"]); d["c_n"] += 1
+        d["iterations"] += int(t.get("iteration") or 0)
+        if t["id"] in needs_info:
+            d["bounced"] += 1
+    per_author = sorted(
+        [{"author": d["author"], "tickets": d["tickets"],
+          "avg_clarity": round(d["c_sum"] / d["c_n"]) if d["c_n"] else None,
+          "iterations": d["iterations"], "bounced": d["bounced"]}
+         for d in authors.values()],
+        key=lambda x: -x["tickets"])
+
+    # Clarity distribution.
+    clar = {"low": 0, "medium": 0, "high": 0}
+    c_sum = c_n = 0
+    for t in tickets:
+        if t.get("clarity_level") in clar:
+            clar[t["clarity_level"]] += 1
+        if t.get("clarity_score"):
+            c_sum += int(t["clarity_score"]); c_n += 1
+
+    # Recent "bounced & why" feed (needs-info clarifications + resubmit reasons).
+    bounced = []
+    for e in reversed(evs):
+        if len(bounced) >= 15:
+            break
+        if e["phase"] == "needs_info" and e["kind"] == "transition":
+            bounced.append({"ref": ticket_ref(e["ticket_id"]), "title": e.get("tk_title", ""),
+                            "kind": "needs_info",
+                            "reason": clar_comment.get(e["ticket_id"], e.get("summary", "")),
+                            "ts": e["ts"]})
+        elif e["kind"] == "comment" and str(e.get("summary", "")).startswith("Resubmitted"):
+            bounced.append({"ref": ticket_ref(e["ticket_id"]), "title": e.get("tk_title", ""),
+                            "kind": "resubmit", "reason": e.get("summary", ""), "ts": e["ts"]})
+
+    return {
+        "totals": {"total": total, "done": done, "open": total - done, "by_status": by_status},
+        "effort": {"total_cost_usd": round(cost, 2), "total_secs": round(secs),
+                   "tickets_with_effort": len(eff_tickets),
+                   "avg_cost_usd": round(cost / len(eff_tickets), 2) if eff_tickets else 0,
+                   "avg_secs": round(secs / len(eff_tickets)) if eff_tickets else 0},
+        "quality": {"bounced_tickets": len(needs_info), "resubmits": resubmits,
+                    "failed_review": failed_review,
+                    "bounce_rate": round(len(needs_info) / total * 100) if total else 0},
+        "clarity": {"distribution": clar, "avg": round(c_sum / c_n) if c_n else None},
+        "per_author": per_author,
+        "recently_bounced": bounced,
+    }
 
 
 # ---------------------------------------------------------------------------

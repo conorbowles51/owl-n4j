@@ -60,11 +60,15 @@
 - **DONE since:** write autonomy LIVE; markdown rendering; time-taken + effort metric;
   **User-Review loop closed** — agent auto-writes non-technical test instructions before PR;
   detail view shows a "Ready for you to test" panel (instructions + It-works/Send-back).
-- **Next action (pick one):** (A) **Coaching analytics (Phase 4)** — clarity scoring at
-  submit, "bounced & why" view, effort/cost/time dashboards. (B) **Real PRs + notifications**
-  — gh/PAT for real PR objects + msmtp delivery (needs a GitHub token + the SMTP cred).
-  (C) **Real deploy** on the main origin (migrate hub data, retire the vanilla page).
-  (D) board-card time/effort badge (small).
+- **Phase 4 (Coaching analytics) DONE (2026-06-11):** live **clarity meter** in the New
+  Ticket form (debounced `POST /api/tickets/clarity`, 0–100 score + level bar + concrete
+  suggestions) and clarity score/level **stored at creation** (schema migration on init_db).
+  New **Analytics tab** (`GET /api/tickets/analytics`): throughput, agent effort (time+cost),
+  quality (bounce rate / resubmits / failed-review), per-tester coaching table, clarity
+  distribution, and a recent **"bounced & why"** feed. Verified live on :8011 (17 tickets).
+- **Next action (pick one):** (B) **Real PRs + notifications** — gh/PAT for real PR objects
+  + msmtp delivery (needs a GitHub token + the SMTP cred). (C) **Real deploy** on the main
+  origin (migrate hub data, retire the vanilla page). (D) board-card time/effort badge (small).
 - **Blocked on:** Nothing for Phases 1–early-2. SMTP credential pending for the email
   channel only (Neil is setting up a send-from address + app password later).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
@@ -176,8 +180,10 @@ Discussion → [Submit for Processing] →
   - [x] `DOCKET_AGENT_PUSH` gate (default = WRITES) to hold the push for manual inspection.
   - [ ] Decide push policy / open the first real PR; then consider enabling writes on the
         live service (currently still WRITES=0 = grooming only).
-- [ ] **Phase 4 — Coaching analytics:** clarity scoring at submit, "bounced & why",
-  effort dashboards.
+- [x] **Phase 4 — Coaching analytics:** clarity scoring at submit (live meter +
+  stored at creation, `score_clarity`/`/clarity`), analytics dashboard (`analytics()`/
+  `/analytics` + `Analytics.jsx` tab): throughput, effort (time+cost), quality
+  (bounce/resubmit/failed-review), per-tester table, clarity distribution, "bounced & why".
 
 ---
 

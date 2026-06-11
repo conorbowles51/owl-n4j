@@ -1,6 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { api } from '../api.js'
+
+const LEVEL_TEXT = { high: 'text-emerald-600', medium: 'text-amber-600', low: 'text-rose-600' }
+const LEVEL_BAR = { high: 'bg-emerald-500', medium: 'bg-amber-400', low: 'bg-rose-500' }
 
 // Raise a new ticket. Acceptance criteria is a first-class field on purpose:
 // it's the quiet lever for "write better stories" — what 'done' looks like.
@@ -10,8 +13,19 @@ export default function NewTicketModal({ meta, onClose, onCreated, prefill }) {
   const [priority, setPriority] = useState(prefill?.priority || meta.default_priority || 'P2')
   const [description, setDescription] = useState(prefill?.description || '')
   const [acceptance, setAcceptance] = useState(prefill?.acceptance_criteria || '')
+  const [clarity, setClarity] = useState(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // Live clarity meter — debounced score of the in-progress ask.
+  useEffect(() => {
+    if (!title.trim() && !description.trim() && !acceptance.trim()) { setClarity(null); return }
+    const id = setTimeout(() => {
+      api.clarity({ title, description, acceptance_criteria: acceptance, type })
+        .then(setClarity).catch(() => {})
+    }, 400)
+    return () => clearTimeout(id)
+  }, [title, description, acceptance, type])
 
   async function submit(e) {
     e.preventDefault()
@@ -83,6 +97,25 @@ export default function NewTicketModal({ meta, onClose, onCreated, prefill }) {
           value={acceptance} onChange={(e) => setAcceptance(e.target.value)}
           placeholder="e.g. The PDF prints full-width with no clipping on A4 and Letter"
         />
+
+        {clarity && (
+          <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs font-medium text-slate-600">Ask clarity</span>
+              <div className="flex-1 h-2 rounded-full bg-slate-200 overflow-hidden">
+                <div className={`h-full ${LEVEL_BAR[clarity.level]}`} style={{ width: `${clarity.score}%` }} />
+              </div>
+              <span className={`text-xs font-semibold tabular-nums ${LEVEL_TEXT[clarity.level]}`}>
+                {clarity.score}/100
+              </span>
+            </div>
+            {clarity.suggestions.length > 0 && (
+              <ul className="text-[11px] text-slate-500 space-y-0.5 list-disc list-inside">
+                {clarity.suggestions.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
 
         {err && <div className="mb-3 text-sm text-red-600">{err}</div>}
         <div className="flex justify-end gap-2">

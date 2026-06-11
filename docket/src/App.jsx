@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { ClipboardList, Plus, LogOut, RefreshCw, LayoutGrid, ListChecks } from 'lucide-react'
+import { ClipboardList, Plus, LogOut, RefreshCw, LayoutGrid, ListChecks, BarChart3 } from 'lucide-react'
 import { api, getToken, getName, clearSession } from './api.js'
 import Login from './components/Login.jsx'
 import Board from './components/Board.jsx'
 import Checklist from './components/Checklist.jsx'
+import Analytics from './components/Analytics.jsx'
 import TicketDetail from './components/TicketDetail.jsx'
 import NewTicketModal from './components/NewTicketModal.jsx'
 
@@ -72,6 +73,7 @@ export default function App() {
         <nav className="flex items-center gap-1 ml-3">
           {tab('board', 'Board', LayoutGrid)}
           {tab('checklist', 'Checklist', ListChecks)}
+          {tab('analytics', 'Analytics', BarChart3)}
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <button onClick={() => openNewTicket()}
@@ -97,8 +99,10 @@ export default function App() {
           <div className="p-8 text-slate-400">Loading…</div>
         ) : view === 'board' ? (
           <Board tickets={tickets} statusMeta={statusMeta} onOpen={setOpenId} />
-        ) : (
+        ) : view === 'checklist' ? (
           <Checklist onRaiseTicket={openNewTicket} />
+        ) : (
+          <Analytics />
         )}
       </main>
 

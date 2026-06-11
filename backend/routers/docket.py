@@ -83,6 +83,25 @@ def get_queue(tester: dict = Depends(require_tester)):
     return {"queue": dk.queue()}
 
 
+@router.get("/analytics")
+def get_analytics(tester: dict = Depends(require_tester)):
+    """Coaching dashboard metrics (throughput, effort, quality, per-tester, clarity)."""
+    return dk.analytics()
+
+
+class ClarityIn(BaseModel):
+    title: str = ""
+    description: str = ""
+    acceptance_criteria: str = ""
+    type: str = "feature"
+
+
+@router.post("/clarity")
+def clarity_preview(body: ClarityIn, tester: dict = Depends(require_tester)):
+    """Score an in-progress ask for clarity (live meter in the New Ticket form)."""
+    return dk.score_clarity(body.title, body.description, body.acceptance_criteria, body.type)
+
+
 @router.get("/board")
 def get_board(tester: dict = Depends(require_tester)):
     """One-shot payload for the production-line board: every ticket plus its
