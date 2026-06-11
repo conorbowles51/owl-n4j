@@ -150,6 +150,7 @@ def run_claude(prompt: str, cwd: Path, *, allowed_tools=None, disallowed_tools=N
             out["text"] = (proc.stderr.read() or "claude failed")[:2000]
         except Exception:
             out["text"] = "claude failed"
+    out["duration"] = round(time.monotonic() - start, 1)
     return out
 
 
@@ -302,7 +303,7 @@ def process_ticket(t: dict) -> None:
         return _stall(tid, "assessment failed: " + a["text"][:200])
     verdict, questions = parse_verdict(a["text"], "VERDICT")
     dk.add_event(tid, "assessment", summary=_strip_control(a["text"]), actor="agent",
-                 payload={"cost_usd": a["cost"], "turns": a["turns"]})
+                 payload={"cost_usd": a["cost"], "turns": a["turns"], "duration_secs": a["duration"]})
     log(f"  assessment done (verdict={verdict or 'PROCEED'}, ${a['cost']:.3f}, {a['turns']} turns)")
 
     # Hybrid grooming gate: bounce vague P0/P1; best-effort the rest.
@@ -330,7 +331,7 @@ def process_ticket(t: dict) -> None:
     if p["is_error"]:
         return _stall(tid, "planning failed: " + p["text"][:200])
     dk.add_event(tid, "plan", summary=p["text"], actor="agent",
-                 payload={"cost_usd": p["cost"], "turns": p["turns"]})
+                 payload={"cost_usd": p["cost"], "turns": p["turns"], "duration_secs": p["duration"]})
     log(f"  plan done (${p['cost']:.3f}, {p['turns']} turns)")
 
     if not WRITES_ENABLED:
@@ -351,8 +352,8 @@ def process_ticket(t: dict) -> None:
                    on_activity=act)
     if i["is_error"]:
         return _stall(tid, "implementation failed: " + i["text"][:200])
-    dk.add_event(tid, "note", summary="Implemented:\n" + i["text"][:1500], actor="agent",
-                 payload={"cost_usd": i["cost"], "turns": i["turns"]})
+    dk.add_event(tid, "note", summary="**Implemented**\n\n" + i["text"][:1500], actor="agent",
+                 payload={"cost_usd": i["cost"], "turns": i["turns"], "duration_secs": i["duration"]})
     _git(wt, ["add", "-A"])
     _git(wt, ["commit", "-m", f"DKT-{tid}: {t['title']}\n\n"
               f"Autonomous Docket implementation.\n\n"
@@ -365,7 +366,8 @@ def process_ticket(t: dict) -> None:
                    permission_mode="acceptEdits", max_turns=25, max_budget_usd=3.0,
                    on_activity=act)
     dk.add_event(tid, "note", summary="**Self-review**\n\n" + _strip_control(r["text"])[:1500],
-                 actor="agent", payload={"cost_usd": r["cost"]})
+                 actor="agent", payload={"cost_usd": r["cost"], "turns": r["turns"],
+                                         "duration_secs": r["duration"]})
     rv, fix = parse_verdict(r["text"], "REVIEW")
     if rv == "FAIL":
         # one corrective loop back through development before giving up

@@ -4,7 +4,7 @@ import {
   ListChecks, MessageSquare, StickyNote, ExternalLink, RefreshCw,
 } from 'lucide-react'
 import { api } from '../api.js'
-import { PRIORITY_BADGE, KIND_DOT, relTime } from '../ui.js'
+import { PRIORITY_BADGE, KIND_DOT, relTime, fmtDuration } from '../ui.js'
 import AmendModal from './AmendModal.jsx'
 import Markdown from './Markdown.jsx'
 
@@ -15,6 +15,19 @@ const LONG_KINDS = new Set(['assessment', 'plan', 'note'])
 // Strip the agent's trailing machine-readable control line so it doesn't show.
 function cleanBody(text) {
   return (text || '').replace(/\n*\b(VERDICT|REVIEW)\s*:.*$/is, '').trim()
+}
+
+// Roll up the agent's effort across all phases from the event payloads.
+function computeEffort(events) {
+  let secs = 0, cost = 0, turns = 0, phases = 0
+  for (const e of events || []) {
+    const p = e.payload && typeof e.payload === 'object' ? e.payload : null
+    if (!p) continue
+    if (p.duration_secs != null) { secs += p.duration_secs; phases++ }
+    if (p.cost_usd != null) cost += p.cost_usd
+    if (p.turns != null) turns += p.turns
+  }
+  return phases ? { secs, cost, turns, phases } : null
 }
 
 // Moving to "queued" from one of these is a resubmit — open the amend modal
@@ -84,6 +97,7 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
 
   const meta_status = t ? (meta.status_meta[t.status] || {}) : {}
   const nextMoves = t ? (meta.transitions[t.status] || []) : []
+  const effort = t ? computeEffort(t.events) : null
 
   return (
     <div className="fixed inset-0 bg-black/30 flex justify-end z-40" onClick={onClose}>
@@ -156,6 +170,19 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
                 </a>
               )}
 
+              {effort && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                  <span className="font-semibold text-indigo-700">Agent effort</span>
+                  <span className="text-slate-700">⏱ {fmtDuration(effort.secs)}</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-700">${effort.cost.toFixed(2)}</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-700">{effort.turns} turns</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-700">{effort.phases} phases</span>
+                </div>
+              )}
+
               <Section title="Description" body={t.description} />
               <Section title="Acceptance criteria" body={t.acceptance_criteria} />
               {t.test_instructions && <Section title="How to test" body={t.test_instructions} />}
@@ -218,6 +245,7 @@ function TimelineEvent({ ev }) {
   const Icon = KIND_ICON[ev.kind] || StickyNote
   const cost = ev.payload && typeof ev.payload === 'object' ? ev.payload : null
   const meta = [ev.actor || 'system', relTime(ev.ts)]
+  if (cost && cost.duration_secs != null) meta.push(`⏱ ${fmtDuration(cost.duration_secs)}`)
   if (cost && cost.cost_usd != null) meta.push(`$${Number(cost.cost_usd).toFixed(3)}`)
   if (cost && cost.turns != null) meta.push(`${cost.turns} turns`)
 

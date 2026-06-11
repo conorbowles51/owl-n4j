@@ -45,6 +45,17 @@ export function relTime(iso) {
   return `${days}d ago`
 }
 
+// Compact duration: 42s, 3m 10s, 1h 4m.
+export function fmtDuration(secs) {
+  if (secs == null || Number.isNaN(secs)) return ''
+  secs = Math.round(secs)
+  if (secs < 60) return `${secs}s`
+  const m = Math.floor(secs / 60), s = secs % 60
+  if (m < 60) return s ? `${m}m ${s}s` : `${m}m`
+  const h = Math.floor(m / 60)
+  return `${h}h ${m % 60}m`
+}
+
 // How far along the main line a ticket is (0..1), for the mini progress bar.
 export function lineProgress(status) {
   const i = LINE.indexOf(status)
