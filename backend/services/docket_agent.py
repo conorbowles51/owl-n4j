@@ -237,6 +237,16 @@ def review_prompt(t: dict) -> str:
     )
 
 
+import re as _re
+
+
+def _strip_control(text: str) -> str:
+    """Remove the trailing machine-readable 'VERDICT:'/'REVIEW:' control line so
+    the stored/displayed body is clean prose."""
+    return _re.sub(r"\n*\b(VERDICT|REVIEW)\s*:.*$", "", text or "",
+                   flags=_re.IGNORECASE | _re.DOTALL).strip()
+
+
 def parse_verdict(text: str, key: str) -> tuple[str, str]:
     """Return (verdict, detail) from a trailing 'KEY: ...' line. verdict is the
     first token (e.g. PROCEED / NEEDS_INFO / PASS / FAIL)."""
@@ -291,7 +301,7 @@ def process_ticket(t: dict) -> None:
     if a["is_error"]:
         return _stall(tid, "assessment failed: " + a["text"][:200])
     verdict, questions = parse_verdict(a["text"], "VERDICT")
-    dk.add_event(tid, "assessment", summary=a["text"], actor="agent",
+    dk.add_event(tid, "assessment", summary=_strip_control(a["text"]), actor="agent",
                  payload={"cost_usd": a["cost"], "turns": a["turns"]})
     log(f"  assessment done (verdict={verdict or 'PROCEED'}, ${a['cost']:.3f}, {a['turns']} turns)")
 
@@ -354,8 +364,8 @@ def process_ticket(t: dict) -> None:
     r = run_claude(review_prompt(t), wt, allowed_tools=WRITE_TOOLS,
                    permission_mode="acceptEdits", max_turns=25, max_budget_usd=3.0,
                    on_activity=act)
-    dk.add_event(tid, "note", summary="Self-review:\n" + r["text"][:1500], actor="agent",
-                 payload={"cost_usd": r["cost"]})
+    dk.add_event(tid, "note", summary="**Self-review**\n\n" + _strip_control(r["text"])[:1500],
+                 actor="agent", payload={"cost_usd": r["cost"]})
     rv, fix = parse_verdict(r["text"], "REVIEW")
     if rv == "FAIL":
         # one corrective loop back through development before giving up

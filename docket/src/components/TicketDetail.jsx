@@ -6,6 +6,16 @@ import {
 import { api } from '../api.js'
 import { PRIORITY_BADGE, KIND_DOT, relTime } from '../ui.js'
 import AmendModal from './AmendModal.jsx'
+import Markdown from './Markdown.jsx'
+
+// Long-form entries (agent assessment/plan/notes) render as markdown cards;
+// short entries (transitions, activity, comments) render inline.
+const LONG_KINDS = new Set(['assessment', 'plan', 'note'])
+
+// Strip the agent's trailing machine-readable control line so it doesn't show.
+function cleanBody(text) {
+  return (text || '').replace(/\n*\b(VERDICT|REVIEW)\s*:.*$/is, '').trim()
+}
 
 // Moving to "queued" from one of these is a resubmit — open the amend modal
 // instead of a bare transition, so the tester records what changed.
@@ -154,20 +164,7 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
               <div>
                 <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Timeline</h3>
                 <div className="space-y-2">
-                  {t.events.map((ev) => {
-                    const Icon = KIND_ICON[ev.kind] || StickyNote
-                    return (
-                      <div key={ev.id} className="flex gap-2 text-sm">
-                        <Icon className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                        <div className="flex-1">
-                          <span className="text-slate-700">{ev.summary}</span>
-                          <span className="ml-2 text-[11px] text-slate-400">
-                            {ev.actor || 'system'} · {relTime(ev.ts)}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
+                  {t.events.map((ev) => <TimelineEvent key={ev.id} ev={ev} />)}
                 </div>
               </div>
 
@@ -205,7 +202,47 @@ function Section({ title, body }) {
   return (
     <div>
       <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{title}</h3>
-      <p className="text-sm text-slate-700 whitespace-pre-wrap">{body || <span className="text-slate-400 italic">—</span>}</p>
+      {body
+        ? <Markdown>{body}</Markdown>
+        : <p className="text-sm text-slate-400 italic">—</p>}
+    </div>
+  )
+}
+
+const KIND_LABEL = {
+  assessment: 'Assessment', plan: 'Plan', note: 'Note',
+  comment: 'Comment', transition: 'Status', activity: 'Activity',
+}
+
+function TimelineEvent({ ev }) {
+  const Icon = KIND_ICON[ev.kind] || StickyNote
+  const cost = ev.payload && typeof ev.payload === 'object' ? ev.payload : null
+  const meta = [ev.actor || 'system', relTime(ev.ts)]
+  if (cost && cost.cost_usd != null) meta.push(`$${Number(cost.cost_usd).toFixed(3)}`)
+  if (cost && cost.turns != null) meta.push(`${cost.turns} turns`)
+
+  if (LONG_KINDS.has(ev.kind)) {
+    return (
+      <div className="flex gap-2">
+        <Icon className="w-3.5 h-3.5 text-slate-400 mt-1 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] text-slate-400 mb-1">
+            {KIND_LABEL[ev.kind] || ev.kind} · {meta.join(' · ')}
+          </div>
+          <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 overflow-x-auto">
+            <Markdown>{cleanBody(ev.summary)}</Markdown>
+          </div>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="flex gap-2 text-sm">
+      <Icon className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+      <div className="flex-1">
+        <span className="text-slate-700">{ev.summary}</span>
+        <span className="ml-2 text-[11px] text-slate-400">{ev.actor || 'system'} · {relTime(ev.ts)}</span>
+      </div>
     </div>
   )
 }
