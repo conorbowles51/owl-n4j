@@ -242,10 +242,16 @@ def cmd_up(args) -> int:
         return _install_units(cfg)
     if not shutil.which("claude"):
         print("  ! 'claude' not found — the agent won't be able to work tickets.")
-    print(f"Docket up: web {cfg.base_url}/docket + agent  (Ctrl-C to stop)")
+    print(f"Docket up (foreground): web {cfg.base_url}/docket + agent")
+    print("  Ctrl-C to stop. To run in the background as a service: docket up --daemon")
     threading.Thread(target=_run_agent, daemon=True).start()
     _run_web(cfg)
     return 0
+
+
+def cmd_down(args) -> int:
+    cfg = _load_or_die()
+    return _stop_units(cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -275,61 +281,88 @@ def cmd_status(args) -> int:
 # systemd units (--daemon)
 # ---------------------------------------------------------------------------
 
-def _install_units(cfg: Config) -> int:
+def _unit_names(cfg: Config) -> tuple[str, str]:
     slug = (cfg.repo_slug or cfg.project_root.name).replace("/", "-")
-    exe = shutil.which("docket") or (str(Path(sys.executable).parent / "docket"))
-    user = _git(["config", "user.name"], cfg.project_root) or "root"
+    return f"docket-{slug}-web.service", f"docket-{slug}-agent.service"
+
+
+def _unit_bodies(cfg: Config) -> dict:
     import getpass
+    web, agent = _unit_names(cfg)
     runas = getpass.getuser()
-    units = {
-        f"docket-{slug}-web.service": f"""[Unit]
-Description=Docket web — {slug}
-After=network.target
+    exe = shutil.which("docket") or str(Path(sys.executable).parent / "docket")
+    # The agent shells out to `claude`; give the unit a HOME (for ~/.claude creds)
+    # and a PATH that includes both the docket entrypoint and the claude binary.
+    home = str(Path.home())
+    claude = shutil.which("claude")
+    pathparts = [str(Path(exe).parent)]
+    if claude:
+        pathparts.append(str(Path(claude).parent))
+    pathparts += ["/usr/local/bin", "/usr/bin", "/bin"]
+    path = ":".join(dict.fromkeys(pathparts))
 
-[Service]
-Type=simple
-User={runas}
-WorkingDirectory={cfg.project_root}
-ExecStart={exe} serve
-Restart=on-failure
-RestartSec=5
+    def body(desc, cmd, restart_secs):
+        return (f"[Unit]\nDescription={desc}\nAfter=network.target\n\n"
+                f"[Service]\nType=simple\nUser={runas}\n"
+                f'Environment="HOME={home}"\nEnvironment="PATH={path}"\n'
+                f"WorkingDirectory={cfg.project_root}\nExecStart={exe} {cmd}\n"
+                f"Restart=on-failure\nRestartSec={restart_secs}\n\n"
+                f"[Install]\nWantedBy=multi-user.target\n")
 
-[Install]
-WantedBy=multi-user.target
-""",
-        f"docket-{slug}-agent.service": f"""[Unit]
-Description=Docket agent — {slug}
-After=network.target
-
-[Service]
-Type=simple
-User={runas}
-WorkingDirectory={cfg.project_root}
-ExecStart={exe} agent
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-""",
+    return {
+        web: body(f"Docket web — {cfg.repo_slug or cfg.project_root.name}", "serve", 5),
+        agent: body(f"Docket agent — {cfg.repo_slug or cfg.project_root.name}", "agent", 10),
     }
+
+
+def _systemctl(*args) -> bool:
+    try:
+        r = subprocess.run(["systemctl", *args], capture_output=True, text=True)
+        if r.returncode != 0 and r.stderr.strip():
+            print(f"    systemctl {' '.join(args)}: {r.stderr.strip().splitlines()[-1]}")
+        return r.returncode == 0
+    except FileNotFoundError:
+        return False
+
+
+def _install_units(cfg: Config) -> int:
+    units = _unit_bodies(cfg)
     target_dir = Path("/etc/systemd/system")
-    wrote = []
-    for name, body in units.items():
-        dest = target_dir / name
+    wrote, no_perm = [], False
+    for name, bod in units.items():
         try:
-            dest.write_text(body)
+            (target_dir / name).write_text(bod)
             wrote.append(name)
         except PermissionError:
-            tmp = cfg.docket_dir / name
-            tmp.write_text(body)
-            print(f"  (no permission for {dest}) wrote {tmp} — install with:")
-            print(f"      sudo cp {tmp} {dest}")
-    if wrote:
-        print(f"  wrote units: {', '.join(wrote)}")
-        print("  enable with:")
-        for name in units:
-            print(f"      sudo systemctl enable --now {name}")
+            no_perm = True
+            (cfg.docket_dir / name).write_text(bod)
+
+    if no_perm:
+        print("  ! need root to install system services. Re-run with sudo:")
+        print(f"      sudo {shutil.which('docket') or 'docket'} up --daemon")
+        print(f"    (unit files staged under {cfg.docket_dir})")
+        return 1
+
+    _systemctl("daemon-reload")
+    ok = all(_systemctl("enable", "--now", n) for n in units)
+    web, agent = _unit_names(cfg)
+    print(f"  services: {web}, {agent}")
+    print(f"  {'started ✓' if ok else 'installed (check status below)'}")
+    _systemctl("--no-pager", "--lines=0", "status", web, agent)
+    print(f"\n  Docket is running at {cfg.base_url}/docket")
+    if cfg.base_url.startswith("http://localhost") or cfg.base_url.startswith("http://127."):
+        print(f"  ! base_url is local — for remote access set [server].base_url to your host's"
+              f" external URL (e.g. http://<EXTERNAL_IP>:{cfg.port}) and open the firewall for port {cfg.port}.")
+    print(f"  manage:  sudo systemctl {{status,restart,stop}} {web} {agent}")
+    print(f"  logs:    journalctl -u {agent} -f")
+    return 0 if ok else 1
+
+
+def _stop_units(cfg: Config) -> int:
+    web, agent = _unit_names(cfg)
+    for n in (web, agent):
+        _systemctl("disable", "--now", n)
+    print(f"  stopped {web}, {agent}")
     return 0
 
 
@@ -360,8 +393,11 @@ def build_parser() -> argparse.ArgumentParser:
     pi.set_defaults(func=cmd_init)
 
     pu = sub.add_parser("up", help="run web UI + agent")
-    pu.add_argument("--daemon", action="store_true", help="install systemd units instead of foreground")
+    pu.add_argument("--daemon", action="store_true",
+                    help="install + start background systemd services instead of foreground")
     pu.set_defaults(func=cmd_up)
+
+    sub.add_parser("down", help="stop the background services").set_defaults(func=cmd_down)
 
     sub.add_parser("serve", help="run just the web UI").set_defaults(func=cmd_serve)
     pa = sub.add_parser("agent", help="run just the agent loop")
