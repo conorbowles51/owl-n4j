@@ -715,6 +715,8 @@ def main() -> int:
     once = "--once" in sys.argv
     log(f"starting (writes={'ON' if WRITES_ENABLED else 'OFF'}, model={MODEL}, "
         f"once={once})")
+    for r in dk.requeue_stuck_agent_tickets():
+        log(f"resumed DKT-{r['id']} (was {r['from']}) -> queued")
     if once:
         ran = run_once()
         log("worked one ticket" if ran else "queue empty")

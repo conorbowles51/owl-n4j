@@ -610,6 +610,35 @@ def next_in_queue() -> Optional[Dict[str, Any]]:
     return q[0] if q else None
 
 
+def requeue_stuck_agent_tickets() -> List[Dict[str, Any]]:
+    """Recovery: re-queue tickets left mid-pipeline in an agent stage. The queue
+    only feeds 'queued' tickets, so a ticket interrupted in assessment/planning/
+    in_development/self_review (e.g. the agent was restarted) would otherwise
+    strand forever. The agent is single-instance, so on startup nothing is truly
+    in-flight — safe to re-queue and re-run from the top. Returns what was reset."""
+    conn = _connect()
+    try:
+        placeholders = ",".join("?" * len(AGENT_STAGES))
+        rows = conn.execute(
+            f"SELECT id, status FROM tickets WHERE status IN ({placeholders}) ORDER BY id",
+            AGENT_STAGES,
+        ).fetchall()
+        stuck = [(r["id"], r["status"]) for r in rows]
+        for tid, _st in stuck:
+            nxt = conn.execute(
+                "SELECT COALESCE(MAX(queue_seq),0)+1 AS n FROM tickets"
+            ).fetchone()["n"]
+            conn.execute("UPDATE tickets SET status='queued', queue_seq=?, updated_at=? WHERE id=?",
+                         (nxt, utcnow_iso(), tid))
+        conn.commit()
+    finally:
+        conn.close()
+    for tid, st in stuck:
+        add_event(tid, "transition", actor="agent", phase="queued",
+                  summary=f"Re-queued for resume (was '{st}' when the agent restarted)")
+    return [{"id": tid, "from": st} for tid, st in stuck]
+
+
 def queue_position(ticket_id: int) -> Optional[int]:
     """1-based position of a queued ticket, or None if it isn't queued."""
     for t in queue():
