@@ -18,6 +18,14 @@ logger = logging.getLogger(__name__)
 # indefinitely. Without this, a dropped response read sits forever, only reaped
 # by arq's job_timeout (4h) and leaving DB rows in a stuck non-terminal state.
 _OPENAI_TIMEOUT = httpx.Timeout(connect=30.0, read=300.0, write=60.0, pool=60.0)
+_OVERSIZED_REQUEST_MARKERS = (
+    "request_headers_too_large",
+    "input_too_large",
+    "context_length_exceeded",
+    "maximum context length",
+    "request too large",
+    "too large",
+)
 
 
 def get_openai_client() -> AsyncOpenAI:
@@ -67,30 +75,150 @@ async def chat_completion(
     return resp.choices[0].message.content or ""
 
 
+def _embedding_batch_limits() -> tuple[int, int]:
+    max_items = max(1, settings.openai_embedding_batch_size)
+    max_chars = max(1, settings.openai_embedding_max_batch_chars)
+    return max_items, max_chars
+
+
+def _embedding_batch_char_count(batch: list[str]) -> int:
+    return sum(len(text or "") for text in batch)
+
+
+def _iter_embedding_batches(
+    texts: list[str],
+    *,
+    max_items: int,
+    max_chars: int,
+) -> list[list[str]]:
+    batches: list[list[str]] = []
+    batch: list[str] = []
+    batch_chars = 0
+
+    for text in texts:
+        text_chars = len(text or "")
+        if batch and (
+            len(batch) >= max_items or batch_chars + text_chars > max_chars
+        ):
+            batches.append(batch)
+            batch = []
+            batch_chars = 0
+
+        batch.append(text)
+        batch_chars += text_chars
+
+    if batch:
+        batches.append(batch)
+
+    return batches
+
+
+def _openai_error_text(exc: Exception) -> str:
+    parts = [str(exc)]
+    for attr in ("code", "type", "param", "message"):
+        value = getattr(exc, attr, None)
+        if value:
+            parts.append(str(value))
+    response = getattr(exc, "response", None)
+    if response is not None:
+        try:
+            parts.append(json.dumps(response.json()))
+        except Exception:
+            parts.append(str(response))
+    return " ".join(parts)
+
+
+def _is_oversized_openai_request(exc: Exception) -> bool:
+    error_text = _openai_error_text(exc).lower()
+    return any(marker in error_text for marker in _OVERSIZED_REQUEST_MARKERS)
+
+
+async def _request_embedding_batch(
+    client: AsyncOpenAI,
+    *,
+    model: str,
+    batch: list[str],
+    max_chars: int,
+) -> list[list[float]]:
+    batch_chars = _embedding_batch_char_count(batch)
+    try:
+        async with _semaphore:
+            resp = await client.embeddings.create(
+                model=model,
+                input=batch,
+            )
+    except Exception as exc:
+        if _is_oversized_openai_request(exc):
+            if len(batch) == 1:
+                raise RuntimeError(
+                    "OpenAI embedding request is too large for a single text "
+                    f"item ({batch_chars} chars) using {model}: {exc}"
+                ) from exc
+
+            midpoint = max(1, len(batch) // 2)
+            logger.warning(
+                "OpenAI embedding batch rejected as oversized; retrying as "
+                "%d and %d item batches (%d chars total, limit %d): %s",
+                midpoint,
+                len(batch) - midpoint,
+                batch_chars,
+                max_chars,
+                exc,
+            )
+            left = await _request_embedding_batch(
+                client,
+                model=model,
+                batch=batch[:midpoint],
+                max_chars=max_chars,
+            )
+            right = await _request_embedding_batch(
+                client,
+                model=model,
+                batch=batch[midpoint:],
+                max_chars=max_chars,
+            )
+            return left + right
+        raise
+
+    try:
+        await record_openai_cost(
+            model_id=model,
+            operation_kind=CostOperationKind.EMBEDDING,
+            usage=getattr(resp, "usage", None),
+            extra_metadata={
+                "batch_size": len(batch),
+                "batch_char_count": batch_chars,
+                "batch_char_limit": max_chars,
+            },
+        )
+    except Exception as exc:
+        logger.warning("Failed to record embedding cost: %s", exc)
+
+    return [item.embedding for item in resp.data]
+
+
 async def embed_texts(
     texts: list[str], model: str | None = None
 ) -> list[list[float]]:
     client = get_openai_client()
     results: list[list[float]] = []
-    batch_size = 100
     resolved_model = model or settings.openai_embedding_model
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
-        async with _semaphore:
-            resp = await client.embeddings.create(
+    max_items, max_chars = _embedding_batch_limits()
+
+    for batch in _iter_embedding_batches(
+        texts,
+        max_items=max_items,
+        max_chars=max_chars,
+    ):
+        results.extend(
+            await _request_embedding_batch(
+                client,
                 model=resolved_model,
-                input=batch,
+                batch=batch,
+                max_chars=max_chars,
             )
-        try:
-            await record_openai_cost(
-                model_id=resolved_model,
-                operation_kind=CostOperationKind.EMBEDDING,
-                usage=getattr(resp, "usage", None),
-                extra_metadata={"batch_size": len(batch)},
-            )
-        except Exception as exc:
-            logger.warning("Failed to record embedding cost: %s", exc)
-        results.extend([item.embedding for item in resp.data])
+        )
+
     return results
 
 

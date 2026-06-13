@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     openai_document_summary_model: str = "gpt-5-mini"
     openai_quality_model: str = "gpt-5-mini"
     openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_batch_size: int = 16
+    openai_embedding_max_batch_chars: int = 80000
 
     # Quality thresholds
     entity_confidence_threshold: float = 0.4

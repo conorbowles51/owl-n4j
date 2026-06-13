@@ -575,6 +575,8 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini                    # Extraction & dedup
 OPENAI_QUALITY_MODEL=gpt-4o                 # Summaries
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_EMBEDDING_BATCH_SIZE=16              # Max texts per embedding request
+OPENAI_EMBEDDING_MAX_BATCH_CHARS=80000      # Max text chars per embedding request
 
 # Quality thresholds
 ENTITY_CONFIDENCE_THRESHOLD=0.4             # Drop entities below this
