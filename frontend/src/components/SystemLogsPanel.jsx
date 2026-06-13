@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { systemLogsAPI } from '../services/api';
 import CostLedgerPanel from './CostLedgerPanel';
+import { normalizeForSearch } from '../utils/normalizeText';
 
 const LOG_TYPES = [
   { value: 'ai_assistant', label: 'AI Assistant' },
@@ -174,11 +175,11 @@ export default function SystemLogsPanel({ isOpen, onClose }) {
 
   const filteredLogs = logs.filter(log => {
     if (!filters.search) return true;
-    const searchLower = filters.search.toLowerCase();
+    const searchLower = normalizeForSearch(filters.search);
     return (
-      log.action?.toLowerCase().includes(searchLower) ||
-      log.user?.toLowerCase().includes(searchLower) ||
-      JSON.stringify(log.details || {}).toLowerCase().includes(searchLower)
+      normalizeForSearch(log.action).includes(searchLower) ||
+      normalizeForSearch(log.user).includes(searchLower) ||
+      JSON.stringify(log.details || {}).toLowerCase().includes(filters.search.toLowerCase())
     );
   });
 
