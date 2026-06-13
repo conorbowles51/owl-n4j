@@ -14,6 +14,7 @@ WorkingDirectory=/home/conorbowles51/app_v2-docket/backend
 Environment="PATH=/home/conorbowles51/app_v2/venv/bin:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=/home/conorbowles51/app_v2/.env
 Environment="GEOCODER=geonames"
+Environment="TELEMETRY_READ_EXTRA=/home/conorbowles51/app_v2/data/telemetry.db"
 Environment="TMPDIR=/home/conorbowles51/app_v2-docket/data/tmp"
 Environment="TMP=/home/conorbowles51/app_v2-docket/data/tmp"
 Environment="TEMP=/home/conorbowles51/app_v2-docket/data/tmp"

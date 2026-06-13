@@ -20,6 +20,7 @@ Design constraints:
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 import time
@@ -29,6 +30,15 @@ from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_FILE = BASE_DIR / "data" / "telemetry.db"
+
+# Extra telemetry DBs to AGGREGATE when reading (colon-separated paths).
+# This is how the standalone Docket instance sees the real platform's traffic:
+# prod owl-backend writes its own data/telemetry.db with this same middleware,
+# and Docket's unit sets TELEMETRY_READ_EXTRA to that file. Reads are read-only
+# (uri mode=ro) so Docket can never corrupt the platform's data. Writes always
+# go to this checkout's own DB_FILE only.
+READ_EXTRA = [Path(p) for p in
+              os.environ.get("TELEMETRY_READ_EXTRA", "").split(":") if p.strip()]
 
 FLUSH_SECS = 30          # max staleness of the on-disk aggregates
 FLUSH_MAX_KEYS = 500     # safety valve: flush early if the buffer grows big
@@ -111,30 +121,54 @@ def flush() -> None:
         pass  # telemetry must never take the app down
 
 
-def route_stats(routes: List[str], since_day: Optional[str] = None,
-                until_day: Optional[str] = None) -> Dict[str, Any]:
-    """Aggregate traffic for the given route templates in [since_day, until_day]
-    (inclusive UTC dates). Returns hits / errors (5xx) / avg latency."""
-    if not routes:
-        return {"hits": 0, "errors": 0, "err_rate": 0.0, "avg_ms": None}
+def _agg(routes: Optional[List[str]], since_day: Optional[str],
+         until_day: Optional[str]) -> tuple:
+    """Sum (hits, 5xx errors, total ms) over our own DB plus any READ_EXTRA
+    DBs (read-only) — the same query against every telemetry source."""
     flush()
-    q = (f"SELECT status, SUM(n) AS n, SUM(total_ms) AS ms FROM route_traffic "
-         f"WHERE route IN ({','.join('?' * len(routes))})")
-    args: List[Any] = list(routes)
+    q = "SELECT status, SUM(n) AS n, SUM(total_ms) AS ms FROM route_traffic WHERE 1=1"
+    args: List[Any] = []
+    if routes is not None:
+        q += f" AND route IN ({','.join('?' * len(routes))})"
+        args += list(routes)
     if since_day:
         q += " AND day >= ?"; args.append(since_day)
     if until_day:
         q += " AND day <= ?"; args.append(until_day)
     q += " GROUP BY status"
-    conn = _connect()
-    try:
-        conn.executescript(_SCHEMA)
-        rows = conn.execute(q, args).fetchall()
-    finally:
-        conn.close()
-    hits = sum(r["n"] for r in rows)
-    errors = sum(r["n"] for r in rows if r["status"] >= 500)
-    ms = sum(r["ms"] for r in rows)
+
+    hits = errors = 0
+    ms = 0.0
+    for path in [DB_FILE, *READ_EXTRA]:
+        try:
+            if path == DB_FILE:
+                conn = _connect()
+                conn.executescript(_SCHEMA)
+            else:
+                if not Path(path).exists():
+                    continue
+                conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=10.0)
+                conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(q, args).fetchall()
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            continue
+        hits += sum(r["n"] for r in rows)
+        errors += sum(r["n"] for r in rows if r["status"] >= 500)
+        ms += sum(r["ms"] for r in rows)
+    return hits, errors, ms
+
+
+def route_stats(routes: List[str], since_day: Optional[str] = None,
+                until_day: Optional[str] = None) -> Dict[str, Any]:
+    """Aggregate traffic for the given route templates in [since_day, until_day]
+    (inclusive UTC dates), across all telemetry sources. Returns hits / errors
+    (5xx) / avg latency."""
+    if not routes:
+        return {"hits": 0, "errors": 0, "err_rate": 0.0, "avg_ms": None}
+    hits, errors, ms = _agg(routes, since_day, until_day)
     return {"hits": hits, "errors": errors,
             "err_rate": round(errors / hits, 4) if hits else 0.0,
             "avg_ms": round(ms / hits, 1) if hits else None}
@@ -142,25 +176,10 @@ def route_stats(routes: List[str], since_day: Optional[str] = None,
 
 def global_stats(since_day: Optional[str] = None,
                  until_day: Optional[str] = None) -> Dict[str, Any]:
-    """Platform-wide traffic/error aggregate — used to spot collateral damage:
-    a feature whose own routes look clean but whose ship coincides with a
-    platform-wide error spike."""
-    flush()
-    q = "SELECT status, SUM(n) AS n, SUM(total_ms) AS ms FROM route_traffic WHERE 1=1"
-    args: List[Any] = []
-    if since_day:
-        q += " AND day >= ?"; args.append(since_day)
-    if until_day:
-        q += " AND day <= ?"; args.append(until_day)
-    q += " GROUP BY status"
-    conn = _connect()
-    try:
-        conn.executescript(_SCHEMA)
-        rows = conn.execute(q, args).fetchall()
-    finally:
-        conn.close()
-    hits = sum(r["n"] for r in rows)
-    errors = sum(r["n"] for r in rows if r["status"] >= 500)
+    """Platform-wide traffic/error aggregate (across all telemetry sources) —
+    used to spot collateral damage: a feature whose own routes look clean but
+    whose ship coincides with a platform-wide error spike."""
+    hits, errors, _ms = _agg(None, since_day, until_day)
     return {"hits": hits, "errors": errors,
             "err_rate": round(errors / hits, 4) if hits else 0.0}
 
