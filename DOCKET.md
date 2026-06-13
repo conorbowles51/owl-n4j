@@ -142,8 +142,72 @@
   route → degraded) AND live (DKT-30 healthy with 5 real hits; DKT-24/25~DKT-8
   suspected links from backfill). True per-feature USAGE analytics in the prod app
   start flowing once telemetry reaches prod at cutover.
-- **Blocked on / waiting for Neil:** prod cutover GO; GitHub PAT (`DOCKET_GITHUB_TOKEN`)
-  for real PR objects; arturo's notification email. SMTP is DONE (Brevo relay live).
+- **ARCHITECTURE DECISION (Neil, 2026-06-11): Docket stays STANDALONE on :8011 —
+  no app merge / cutover.** The old cutover plan is RETIRED. Instead, a **telemetry
+  bridge** connects Docket to the real platform: the self-contained
+  `platform_telemetry.py` middleware was committed DIRECTLY TO MAIN (8bc83aa, just the
+  module + a guarded main.py hook — no Docket code) and deployed to prod owl-backend
+  (:8000), which now writes its own `app_v2/data/telemetry.db`. The owl-docket unit
+  sets `TELEMETRY_READ_EXTRA=/home/conorbowles51/app_v2/data/telemetry.db`, and
+  telemetry reads aggregate own DB + extras read-only (mode=ro URI — Docket can't
+  corrupt prod data; writes always stay local). VERIFIED live: prod /health + ping
+  traffic shows up in Docket's perf joins. Ticket code still reaches the platform the
+  normal way — agent PRs merged by Neil + owl-backend restart (PR #88 / DKT-15
+  `/api/testing/ping` was merged + deployed today; its ticket moved to user_review).
+  The deploy.sh docket-build step + `/testing`→`/docket` redirect prep are dormant/moot.
+- **(F) Merge-close-the-loop + richer commits (2026-06-13):** three changes so
+  tickets don't get stuck and work is traceable.
+  - **Auto-advance on merge:** `reconcile_merged_prs()` runs at the top of the agent
+    loop — for every ticket in `pr` with a branch it makes ONE throttled
+    (`DOCKET_MERGE_POLL`, default 180s) call to the GitHub REST API listing merged
+    PRs (`state=closed&base=main`), matches by head branch, and on a merge moves the
+    ticket `pr → user_review`, stamps the real PR html_url, and notifies. Works with
+    NO PAT because owl-n4j is PUBLIC (unauth 60/hr); auto-uses `GITHUB_TOKEN` when it
+    lands (also lifts the limit). Verified live: API returns `docket/DKT-31`→#89 etc.;
+    component paths proven (DKT-31 was already cleared manually by Neil so nothing was
+    stuck to demo at restart).
+  - **Alex always on user-test emails:** new shared `enqueue_user_review_notification()`
+    in docket_storage notifies the assignee/creator AND the user-test lead (`alex`),
+    deduped by identity. Both the `/transition` route and the merge reconciler call it.
+  - **Detailed commits/PRs:** `_pr_summary()` replaces the "Autonomous Docket
+    implementation." boilerplate — commit body now has Why / What changed / Files /
+    Acceptance criteria, built from the ticket + the agent's implementation summary +
+    `git diff --staged --stat`. Same text feeds `create_pr()` (so real PR objects match)
+    and, with no PAT, GitHub prefills the compare-URL PR from this commit body. Applies
+    to FUTURE agent commits only — existing open branches (DKT-14/20/28) keep the old
+    message until re-run. NOTE: a payments-side telemetry diff (`platform_telemetry.py`
+    multi-DB read + `TELEMETRY_READ_EXTRA` on the unit) is also still uncommitted here.
+- **(G) "Won't Do" / cancelled lane (2026-06-13):** new terminal status `cancelled`
+  (label "Won't Do", kind `cancelled`) for dismissing redundant/out-of-scope asks.
+  State machine: reachable from every human-controlled state (discussion, queued, pr,
+  user_review, needs_info, stalled, changes_requested — NOT the live agent stages, to
+  avoid racing a running phase); reopenable via cancelled → discussion/queued. Board
+  shows a muted dismissed lane at the end, only when populated; TicketDetail shows a
+  "Won't do" button (muted) + Reopen buttons. All data-driven off STATUS_META/
+  TRANSITIONS via /meta, so no per-button wiring. Bundle rebuilt + backend restarted;
+  verified live (cancel discussion→cancelled, illegal cancelled→done 400s, reopen ok).
+- **(H) PORTABLE DOCKET — `docket` CLI (2026-06-13):** Docket extracted into a
+  self-contained, pip/pipx-installable package at **`packaging/docket-dev/`** so it can
+  be installed into ANY git repo. `pipx install` is DONE on this host (`docket` at
+  /root/.local/bin/docket). Package `docket_dev`: `config.py` (loads `.docket/config.toml`
+  → Config; `apply_env()` bridges to the agent's DOCKET_* env), `storage.py`/`agent.py`/
+  `telemetry.py`/`routes.py` (copies of the in-repo modules, decoupled: paths/secret/
+  testers/base-branch/remote/slug/notification-URL all config-driven — the host
+  `from config import` and `parent.parent.parent` DB path are gone), self-contained
+  `auth.py` (testers + per-project JWT secret), standalone `app.py` (FastAPI: router +
+  login + telemetry + static, NO Neo4j), `recognize.py` (NEW: profile_repo →
+  `.docket/profile.md` injected into assess/plan prompts; ensure_claude_md; seed_tickets →
+  Discussion), `cli.py` (init/up/serve/agent/recognize/seed/status). Frontend reused
+  (Checklist tab hidden via `VITE_DOCKET_PORTABLE=1`), prebuilt bundle shipped in the
+  wheel. **VERIFIED e2e on a scratch repo:** init (auto slug/branch/free-port/secret/
+  tester), web login+board+cancelled-lane, recognition (profile+CLAUDE.md+4 seeded
+  tickets via real claude), agent grooming AND full write→worktree(off base branch)→
+  commit (detailed _pr_summary msg). Push→PR→merge cycle is the same proven in-repo code
+  (only remote/slug parameterized) — needs a real GitHub repo+push to exercise. The
+  in-repo Docket on :8011 is UNTOUCHED. This extraction is now the canonical Docket; the
+  bespoke owl-docket units could later be replaced by `docket init` on app_v2 itself.
+- **Waiting on Neil:** GitHub PAT (`DOCKET_GITHUB_TOKEN`) for real PR objects;
+  arturo's notification email. SMTP is DONE (Brevo relay live).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
 - **Open product questions (settle in/before Phase 1):**
   - Priority scheme (P0–P3 vs Critical/High/Med/Low) + who can set/override it.
