@@ -1266,6 +1266,8 @@ class Neo4jService:
                     relationship: type(r),
                     direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
                 }}) AS connections
+                OPTIONAL MATCH (comm_sender:Person)-[:SENT_MESSAGE]->(n)
+                OPTIONAL MATCH (n)-[:RECEIVED_MESSAGE]->(comm_recip:Person)
                 RETURN
                     n.key AS key,
                     n.name AS name,
@@ -1273,7 +1275,11 @@ class Neo4jService:
                     n.date AS date,
                     n.time AS time,
                     n.amount AS amount,
-                    n.summary AS summary,
+                    CASE WHEN labels(n)[0] = 'Communication' AND comm_sender IS NOT NULL
+                         THEN comm_sender.name +
+                              CASE WHEN comm_recip IS NOT NULL THEN ' → ' + comm_recip.name ELSE '' END
+                         ELSE n.summary
+                    END AS summary,
                     n.notes AS notes,
                     connections
                 ORDER BY n.date ASC, coalesce(n.time, '00:00:00') ASC, coalesce(n.key, '') ASC
