@@ -341,7 +341,7 @@ export default function CommsContactFeed({
             if (item.type === 'call') {
               return (
                 <CommsCallRow
-                  key={item.id || idx}
+                  key={item.id ?? `${item.type}-${item.report_key ?? ''}-${item.timestamp ?? ''}-${idx}`}
                   item={item}
                   reportKey={item.report_key}
                   showPhoneChip={hasMultiplePhones}
@@ -352,7 +352,7 @@ export default function CommsContactFeed({
             if (item.type === 'email') {
               return (
                 <CommsEmailCard
-                  key={item.id || idx}
+                  key={item.id ?? `${item.type}-${item.report_key ?? ''}-${item.timestamp ?? ''}-${idx}`}
                   item={item}
                   reportKey={item.report_key}
                   showPhoneChip={hasMultiplePhones}
@@ -362,7 +362,7 @@ export default function CommsContactFeed({
             }
             return (
               <CommsMessageBubble
-                key={item.id || idx}
+                key={item.id ?? `${item.type}-${item.report_key ?? ''}-${item.timestamp ?? ''}-${idx}`}
                 item={item}
                 palette={palette}
                 showSenderName
