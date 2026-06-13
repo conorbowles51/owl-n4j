@@ -8,9 +8,13 @@ Analytics endpoints for the Cellebrite Multi-Phone View:
 - Communication network analysis
 """
 
+import logging
+import traceback
 from typing import Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from pydantic import BaseModel
 
@@ -597,22 +601,26 @@ def get_comms_threads(
 ):
     """List threads (chats + synthetic call/email threads per participant pair)."""
     _require_case_access(case_id, current_user, db)
-    result = neo4j_service.get_cellebrite_comms_threads(
-        case_id=case_id,
-        report_keys=_csv_param(report_keys),
-        from_keys=_csv_param(from_keys),
-        to_keys=_csv_param(to_keys),
-        participant_keys=_csv_param(participant_keys),
-        thread_types=_csv_param(thread_types),
-        source_apps=_csv_param(source_apps),
-        start_date=start_date,
-        end_date=end_date,
-        search=search,
-        limit=limit,
-        offset=offset,
-        has_attachment=has_attachment,
-    )
-    return result
+    try:
+        result = neo4j_service.get_cellebrite_comms_threads(
+            case_id=case_id,
+            report_keys=_csv_param(report_keys),
+            from_keys=_csv_param(from_keys),
+            to_keys=_csv_param(to_keys),
+            participant_keys=_csv_param(participant_keys),
+            thread_types=_csv_param(thread_types),
+            source_apps=_csv_param(source_apps),
+            start_date=start_date,
+            end_date=end_date,
+            search=search,
+            limit=limit,
+            offset=offset,
+            has_attachment=has_attachment,
+        )
+        return result
+    except Exception as exc:
+        logger.error("get_comms_threads failed: %s\n%s", exc, traceback.format_exc())
+        raise
 
 
 @router.get("/comms/threads/{thread_id:path}")
@@ -682,24 +690,28 @@ def get_comms_between(
 ):
     """Chronological cross-type feed between selected entity sets."""
     _require_case_access(case_id, current_user, db)
-    result = neo4j_service.get_cellebrite_comms_between(
-        case_id=case_id,
-        from_keys=_csv_param(from_keys),
-        to_keys=_csv_param(to_keys),
-        participant_keys=_csv_param(participant_keys),
-        types=_csv_param(types),
-        report_keys=_csv_param(report_keys),
-        source_apps=_csv_param(source_apps),
-        start_date=start_date,
-        end_date=end_date,
-        limit=limit,
-        offset=offset,
-        sort=sort,
-        cursor=cursor,
-        has_attachment=has_attachment,
-    )
-    _resolve_attachments(case_id, result.get("items", []))
-    return result
+    try:
+        result = neo4j_service.get_cellebrite_comms_between(
+            case_id=case_id,
+            from_keys=_csv_param(from_keys),
+            to_keys=_csv_param(to_keys),
+            participant_keys=_csv_param(participant_keys),
+            types=_csv_param(types),
+            report_keys=_csv_param(report_keys),
+            source_apps=_csv_param(source_apps),
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            cursor=cursor,
+            has_attachment=has_attachment,
+        )
+        _resolve_attachments(case_id, result.get("items", []))
+        return result
+    except Exception as exc:
+        logger.error("get_comms_between failed: %s\n%s", exc, traceback.format_exc())
+        raise
 
 
 @router.get("/comms/envelope")
@@ -732,18 +744,22 @@ def get_comms_envelope(
     consistent with what a body fetch would surface.
     """
     _require_case_access(case_id, current_user, db)
-    return neo4j_service.get_cellebrite_comms_envelope(
-        case_id=case_id,
-        report_keys=_csv_param(report_keys),
-        from_keys=_csv_param(from_keys),
-        to_keys=_csv_param(to_keys),
-        participant_keys=_csv_param(participant_keys),
-        types=_csv_param(types),
-        source_apps=_csv_param(source_apps),
-        start_date=start_date,
-        end_date=end_date,
-        has_attachment=has_attachment,
-    )
+    try:
+        return neo4j_service.get_cellebrite_comms_envelope(
+            case_id=case_id,
+            report_keys=_csv_param(report_keys),
+            from_keys=_csv_param(from_keys),
+            to_keys=_csv_param(to_keys),
+            participant_keys=_csv_param(participant_keys),
+            types=_csv_param(types),
+            source_apps=_csv_param(source_apps),
+            start_date=start_date,
+            end_date=end_date,
+            has_attachment=has_attachment,
+        )
+    except Exception as exc:
+        logger.error("get_comms_envelope failed: %s\n%s", exc, traceback.format_exc())
+        raise
 
 
 @router.get("/comms/messages/search")
