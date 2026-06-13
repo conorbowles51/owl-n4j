@@ -7,6 +7,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { caseMembersAPI, usersAPI } from '../services/api';
+import { normalizeForSearch } from '../utils/normalizeText';
 
 /**
  * InviteCollaboratorForm Component
@@ -56,10 +57,10 @@ export default function InviteCollaboratorForm({
    * Filter users by search term
    */
   const filteredUsers = users.filter((user) => {
-    const term = searchTerm.toLowerCase();
+    const term = normalizeForSearch(searchTerm);
     return (
-      (user.name || '').toLowerCase().includes(term) ||
-      (user.email || '').toLowerCase().includes(term)
+      normalizeForSearch(user.name).includes(term) ||
+      normalizeForSearch(user.email).includes(term)
     );
   });
 
