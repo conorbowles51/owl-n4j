@@ -290,6 +290,31 @@ def _strip_control(text: str) -> str:
                    flags=_re.IGNORECASE | _re.DOTALL).strip()
 
 
+def _pr_summary(t: dict, impl_text: str = "", files_stat: str = "") -> str:
+    """A detailed, human-readable description of the work, built from the ticket
+    (the *why*) and what the agent actually implemented (the *what*). Used for
+    BOTH the commit-message body and the create_pr() body so they tell the same
+    story — and because, with no PAT, GitHub prefills the PR from the commit body
+    when Neil opens the compare URL. Replaces the old 'Autonomous Docket
+    implementation.' boilerplate."""
+    ref = t.get("ref") or f"DKT-{t['id']}"
+    parts: list[str] = []
+    desc = (t.get("description") or "").strip()
+    if desc:
+        parts.append(f"## Why\n{desc}")
+    impl = _strip_control(impl_text or "").strip()
+    if impl:
+        parts.append(f"## What changed\n{impl[:1800]}")
+    if files_stat.strip():
+        parts.append(f"## Files\n```\n{files_stat.strip()}\n```")
+    ac = (t.get("acceptance_criteria") or "").strip()
+    if ac:
+        parts.append(f"## Acceptance criteria\n{ac}")
+    parts.append(f"_Opened by the Docket agent for {ref}. Never auto-merged — "
+                 f"this PR is the human review gate._")
+    return "\n\n".join(parts)
+
+
 def parse_verdict(text: str, key: str) -> tuple[str, str]:
     """Return (verdict, detail) from a trailing 'KEY: ...' line. verdict is the
     first token (e.g. PROCEED / NEEDS_INFO / PASS / FAIL)."""
@@ -416,9 +441,12 @@ def process_ticket(t: dict) -> None:
     dk.add_event(tid, "note", summary="**Implemented**\n\n" + i["text"][:1500], actor="agent",
                  payload={"cost_usd": i["cost"], "turns": i["turns"], "duration_secs": i["duration"]})
     _git(wt, ["add", "-A"])
-    _git(wt, ["commit", "-m", f"DKT-{tid}: {t['title']}\n\n"
-              f"Autonomous Docket implementation.\n\n"
-              "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"])
+    files_stat = subprocess.run(
+        ["git", "-C", str(wt), "diff", "--staged", "--stat"],
+        capture_output=True, text=True).stdout
+    pr_body = _pr_summary(t, i["text"], files_stat)
+    _git(wt, ["commit", "-m", f"DKT-{tid}: {t['title']}", "-m", pr_body,
+              "-m", "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"])
 
     # Record what the change touched — the join key for post-ship telemetry.
     try:
@@ -469,11 +497,7 @@ def process_ticket(t: dict) -> None:
     if not pushed:
         return _stall(tid, "git push failed (check GitHub auth)")
     ref = dk.get_ticket(tid)["ref"]
-    pr_url = create_pr(branch, f"{ref}: {t['title']}",
-                       f"{t.get('description', '')}\n\n**Acceptance criteria**\n"
-                       f"{t.get('acceptance_criteria', '') or '—'}\n\n"
-                       f"_Opened by the Docket agent for ticket {ref}. Never auto-merged —"
-                       f" this PR is the human gate._")
+    pr_url = create_pr(branch, f"{ref}: {t['title']}", pr_body)
     real_pr = bool(pr_url)
     if not pr_url:  # no token / API failure → compare URL, Neil opens it by hand
         pr_url = f"https://github.com/{REPO_SLUG}/compare/main...{branch}?expand=1"
@@ -612,6 +636,69 @@ def drain_notifications() -> None:
 # Entrypoint
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Merge reconciler — advance a ticket out of 'pr' once its PR is merged.
+# The agent only pushes a branch + compare URL (no PAT needed); Neil opens and
+# merges the real PR on GitHub. This poll closes the loop: it spots the merge and
+# moves the ticket pr -> user_review so it doesn't sit in PR forever.
+# ---------------------------------------------------------------------------
+
+GH_API = "https://api.github.com"
+# Throttle the GitHub poll: unauthenticated REST is 60 req/hr per IP. 90s = 40/hr
+# worst case (only while a ticket actually sits in 'pr'), leaving headroom while
+# keeping post-merge latency low. With a PAT the limit is 5000/hr — drop this to
+# ~20s via DOCKET_MERGE_POLL for near-instant detection.
+MERGE_POLL_SECS = int(os.environ.get("DOCKET_MERGE_POLL", "90"))
+_last_merge_check = 0.0
+
+
+def _gh_get(path: str):
+    """GitHub REST GET. Unauthenticated works on the public repo; uses
+    GITHUB_TOKEN automatically when present (also lifts the rate limit)."""
+    req = urllib.request.Request(
+        f"{GH_API}{path}",
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "docket-agent"})
+    if GITHUB_TOKEN:
+        req.add_header("Authorization", f"Bearer {GITHUB_TOKEN}")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.load(r)
+    except (urllib.error.URLError, json.JSONDecodeError, OSError, ValueError) as e:
+        log(f"  github poll failed: {e}")
+        return None
+
+
+def reconcile_merged_prs() -> None:
+    """Detect PRs merged on GitHub and advance their tickets pr -> user_review."""
+    global _last_merge_check
+    waiting = [t for t in dk.list_tickets("pr") if t.get("branch")]
+    if not waiting:
+        return
+    now = time.monotonic()
+    if now - _last_merge_check < MERGE_POLL_SECS:
+        return
+    _last_merge_check = now
+    data = _gh_get(f"/repos/{REPO_SLUG}/pulls?state=closed&base=main"
+                   "&per_page=50&sort=updated&direction=desc")
+    if not isinstance(data, list):
+        return
+    merged = {pr["head"]["ref"]: pr for pr in data
+              if pr.get("merged_at") and pr.get("head", {}).get("ref")}
+    for t in waiting:
+        pr = merged.get(t["branch"])
+        if not pr:
+            continue
+        tid = t["id"]
+        try:
+            dk.update_ticket(tid, pr_url=pr.get("html_url") or t.get("pr_url"))
+            dk.transition(tid, "user_review", actor="github",
+                          summary=f"PR #{pr['number']} merged on GitHub — ready to test")
+            dk.enqueue_user_review_notification(dk.get_ticket(tid))
+            log(f"  → DKT-{tid}: PR #{pr['number']} merged → user_review")
+        except ValueError as e:
+            log(f"  merge reconcile skipped DKT-{tid}: {e}")
+
+
 def run_once() -> bool:
     """Work the single highest-priority queued ticket. Returns True if one ran."""
     t = dk.next_in_queue()
@@ -634,6 +721,7 @@ def main() -> int:
         return 0
     while True:
         try:
+            reconcile_merged_prs()
             drain_notifications()
             if not run_once():
                 time.sleep(POLL_SECS)

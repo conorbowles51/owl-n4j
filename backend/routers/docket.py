@@ -238,17 +238,10 @@ def transition_ticket(ticket_id: int, body: TransitionIn,
                       summary=body.summary)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    # "Ready for you to test" — tell the assignee (creator if unassigned).
+    # "Ready for you to test" — notify the assignee (creator if unassigned) plus
+    # the user-test lead. Shared with the agent's merge reconciler.
     if body.to_status == "user_review":
-        t = dk.get_ticket(ticket_id)
-        recipient = t.get("assignee") or t.get("created_by") or "neil"
-        dk.enqueue_notification(
-            ticket_id, recipient, "user_review",
-            subject=f"Docket {t['ref']}: ready for you to test",
-            body=(f"{t['title']}\n\nOpen the ticket and follow the test "
-                  f"instructions, then mark It works / Send back:\n"
-                  f"http://34.139.254.219:8011/docket"),
-        )
+        dk.enqueue_user_review_notification(dk.get_ticket(ticket_id))
     return {"ticket": _detail(ticket_id)}
 
 

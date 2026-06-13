@@ -73,6 +73,7 @@ STATUS_META: Dict[str, Dict[str, str]] = {
     "changes_requested": {"label": "Changes Requested", "kind": "human_gate"},
     "stalled":           {"label": "Stalled",           "kind": "human_gate"},
     "done":              {"label": "Done",              "kind": "terminal"},
+    "cancelled":         {"label": "Won't Do",          "kind": "cancelled"},
 }
 STATUSES = tuple(STATUS_META.keys())
 
@@ -91,20 +92,24 @@ AGENT_STAGES = ("assessment", "planning", "in_development", "self_review")
 # self-review retry loop, the user-review fail->requeue loop, and the
 # needs-info / stalled recovery paths are all encoded here.
 TRANSITIONS: Dict[str, set] = {
-    "discussion":        {"queued"},
-    "queued":            {"assessment", "discussion"},
+    "discussion":        {"queued", "cancelled"},
+    "queued":            {"assessment", "discussion", "cancelled"},
     "assessment":        {"planning", "needs_info", "stalled"},
     "planning":          {"in_development", "needs_info", "stalled"},
     "in_development":    {"self_review", "needs_info", "stalled"},
     "self_review":       {"pr", "in_development", "stalled"},
-    "pr":                {"user_review", "changes_requested"},
-    "changes_requested": {"in_development"},
-    "user_review":       {"done", "queued", "discussion"},
+    "pr":                {"user_review", "changes_requested", "cancelled"},
+    "changes_requested": {"in_development", "cancelled"},
+    "user_review":       {"done", "queued", "discussion", "cancelled"},
     # Recovery paths: a bounced/stalled ticket re-enters the pipeline or returns
     # to discussion for amendment.
-    "needs_info":        {"queued", "assessment", "planning", "in_development", "discussion"},
-    "stalled":           {"queued", "assessment", "planning", "in_development", "needs_info"},
+    "needs_info":        {"queued", "assessment", "planning", "in_development", "discussion", "cancelled"},
+    "stalled":           {"queued", "assessment", "planning", "in_development", "needs_info", "cancelled"},
     "done":              {"queued"},  # reopen
+    # "Won't Do" — a human dismisses an ask (e.g. redundant/out-of-scope). Allowed
+    # from any human-controlled state above (not the live agent stages, to avoid
+    # racing a running phase). Reopenable back into discussion or the queue.
+    "cancelled":         {"discussion", "queued"},
 }
 
 # ticket_events.kind — what a timeline entry represents. 'impact' is a
@@ -1478,6 +1483,34 @@ def enqueue_notification(
         return dict(row)
     finally:
         conn.close()
+
+
+# Username always looped in on user_review — runs hands-on user testing, so they
+# get a heads-up on every ship regardless of who created/owns the ticket.
+USER_TEST_LEAD = "alex"
+
+
+def enqueue_user_review_notification(ticket: Dict[str, Any]) -> None:
+    """Tell the assignee (creator if unassigned) AND the user-test lead that a
+    ticket is ready to test. Deduped by resolved identity so nobody gets two
+    copies. Shared by the /transition route and the agent's merge reconciler."""
+    primary = ticket.get("assignee") or ticket.get("created_by") or "neil"
+    recipients: List[str] = []
+    seen: set = set()
+    for r in (primary, USER_TEST_LEAD):
+        key = (r or "").strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            recipients.append(r)
+    ref = ticket.get("ref") or ticket_ref(ticket["id"])
+    for recipient in recipients:
+        enqueue_notification(
+            ticket["id"], recipient, "user_review",
+            subject=f"Docket {ref}: ready for you to test",
+            body=(f"{ticket['title']}\n\nOpen the ticket and follow the test "
+                  f"instructions, then mark It works / Send back:\n"
+                  f"http://34.139.254.219:8011/docket"),
+        )
 
 
 def pending_notifications() -> List[Dict[str, Any]]:
