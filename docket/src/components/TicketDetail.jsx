@@ -54,6 +54,8 @@ const MOVE_LABEL = {
   'user_review->discussion': 'Send back to discussion',
   'needs_info->queued': 'Info provided — requeue',
   'stalled->queued': 'Retry — requeue',
+  'cancelled->discussion': 'Reopen → Discussion',
+  'cancelled->queued': 'Reopen → Queue',
 }
 
 export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
@@ -182,14 +184,17 @@ export default function TicketDetail({ ticketId, meta, onClose, onChanged }) {
                 <div className="flex flex-wrap gap-2">
                   {nextMoves.map((to) => {
                     const resubmit = to === 'queued' && RESUBMIT_FROM.includes(t.status)
+                    const cancel = to === 'cancelled'
                     return (
                       <button key={to} disabled={busy}
                         onClick={() => (resubmit ? setAmending(true) : move(to))}
                         className={`px-3 py-1.5 text-xs font-medium rounded-lg border disabled:opacity-50 ${
-                          resubmit
+                          cancel
+                            ? 'border-slate-300 text-slate-500 hover:bg-slate-100'
+                            : resubmit
                             ? 'border-amber-300 text-amber-700 hover:bg-amber-50'
                             : 'border-indigo-300 text-indigo-700 hover:bg-indigo-50'}`}>
-                        {MOVE_LABEL[`${t.status}->${to}`] || (meta.status_meta[to]?.label) || to}
+                        {cancel ? "Won't do" : MOVE_LABEL[`${t.status}->${to}`] || (meta.status_meta[to]?.label) || to}
                       </button>
                     )
                   })}

@@ -74,7 +74,8 @@ export default function App() {
         <span className="font-semibold text-slate-800">Docket</span>
         <nav className="flex items-center gap-1 ml-3">
           {tab('board', 'Board', LayoutGrid)}
-          {tab('checklist', 'Checklist', ListChecks)}
+          {/* Checklist is the host-specific QA catalogue; hidden in the portable build. */}
+          {import.meta.env.VITE_DOCKET_PORTABLE !== '1' && tab('checklist', 'Checklist', ListChecks)}
           {tab('analytics', 'Analytics', BarChart3)}
           {tab('profiles', 'Profiles', Users)}
           {tab('help', 'Help', HelpCircle)}

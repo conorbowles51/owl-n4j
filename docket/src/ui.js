@@ -7,6 +7,8 @@ export const LINE = [
   'in_development', 'self_review', 'pr', 'user_review', 'done',
 ]
 export const ATTENTION = ['needs_info', 'changes_requested', 'stalled']
+// Dismissed work — its own lane at the end, only shown when it holds something.
+export const CANCELLED = 'cancelled'
 
 // Colour per status "kind" (from the backend meta) — drives column accents.
 export const KIND_ACCENT = {
@@ -15,6 +17,7 @@ export const KIND_ACCENT = {
   agent: 'border-indigo-300 bg-indigo-50',
   human_gate: 'border-rose-300 bg-rose-50',
   terminal: 'border-emerald-300 bg-emerald-50',
+  cancelled: 'border-slate-300 bg-slate-100',
 }
 export const KIND_DOT = {
   discussion: 'bg-slate-400',
@@ -22,6 +25,7 @@ export const KIND_DOT = {
   agent: 'bg-indigo-500',
   human_gate: 'bg-rose-500',
   terminal: 'bg-emerald-500',
+  cancelled: 'bg-slate-400',
 }
 
 export const PRIORITY_BADGE = {
