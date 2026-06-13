@@ -22,7 +22,11 @@ async function req(path, opts = {}) {
   const t = getToken()
   if (t) headers['Authorization'] = `Bearer ${t}`
   const res = await fetch(path, { ...opts, headers })
-  if (res.status === 401) {
+  // A 401 on an authed call means the session lapsed — drop to the login screen.
+  // A 401 on the login call itself is just bad credentials; let it fall through
+  // to the normal error path so the real message ("Invalid username or password")
+  // shows instead of a misleading "session expired".
+  if (res.status === 401 && path !== '/api/testing/login') {
     clearSession()
     window.dispatchEvent(new Event('docket-unauth'))
     throw new Error('Session expired — please sign in again')
