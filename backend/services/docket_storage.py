@@ -93,7 +93,7 @@ AGENT_STAGES = ("assessment", "planning", "in_development", "self_review")
 # needs-info / stalled recovery paths are all encoded here.
 TRANSITIONS: Dict[str, set] = {
     "discussion":        {"queued", "cancelled"},
-    "queued":            {"assessment", "discussion", "cancelled"},
+    "queued":            {"assessment", "discussion", "cancelled", "stalled"},
     "assessment":        {"planning", "needs_info", "stalled"},
     "planning":          {"in_development", "needs_info", "stalled"},
     "in_development":    {"self_review", "needs_info", "stalled"},
