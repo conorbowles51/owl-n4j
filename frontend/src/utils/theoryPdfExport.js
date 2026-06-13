@@ -7,6 +7,7 @@
 
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { normalizeDate } from './dateFormat.js';
 
 // Owl brand colors
 const OWL_COLORS = {
@@ -93,8 +94,10 @@ export async function exportTheoryToPDF(
   // Helper to add text with word wrapping
   const addWrappedText = (text, x, y, maxWidth, fontSize = 11, lineHeight = 7) => {
     doc.setFontSize(fontSize);
-    const lines = doc.splitTextToSize(text, maxWidth);
-    doc.text(lines, x, y);
+    const lines = doc.splitTextToSize(String(text), maxWidth);
+    lines.forEach((line, i) => {
+      doc.text(line, x, y + i * lineHeight);
+    });
     return lines.length * lineHeight;
   };
 
@@ -468,7 +471,7 @@ export async function exportTheoryToPDF(
       addSubsectionHeader(thread);
       events.forEach((event, idx) => {
         checkPageBreak(10);
-        const eventDate = event.date ? new Date(event.date).toLocaleDateString('en-US') : 'Unknown date';
+        const eventDate = event.date ? normalizeDate(event.date).toLocaleDateString('en-US') : 'Unknown date';
         doc.setFontSize(9);
         doc.text(`${eventDate}: ${event.title || 'Untitled Event'}`, margin + 5, yPosition);
         if (event.description) {

@@ -7,7 +7,7 @@
  * T00:00:00 (no Z) so the date is treated as local time.
  */
 
-function normalizeDate(dateString) {
+export function normalizeDate(dateString) {
   if (!dateString) return null;
   // If it already contains a time component, leave it alone
   if (dateString.includes('T') || dateString.includes(' ')) return new Date(dateString);

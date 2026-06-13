@@ -6,6 +6,7 @@
 
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { normalizeDate } from './dateFormat.js';
 
 /**
  * Simple markdown to HTML converter
@@ -95,8 +96,10 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
   // Helper to add text with word wrapping
   const addWrappedText = (text, x, y, maxWidth, fontSize = 11, lineHeight = 7) => {
     doc.setFontSize(fontSize);
-    const lines = doc.splitTextToSize(text, maxWidth);
-    doc.text(lines, x, y);
+    const lines = doc.splitTextToSize(String(text), maxWidth);
+    lines.forEach((line, i) => {
+      doc.text(line, x, y + i * lineHeight);
+    });
     return lines.length * lineHeight;
   };
 
@@ -369,7 +372,7 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
       
       // Event header
       doc.setFont(undefined, 'bold');
-      const eventDate = event.date ? new Date(event.date).toLocaleDateString('en-GB', {
+      const eventDate = event.date ? normalizeDate(event.date).toLocaleDateString('en-GB', {
         day: 'numeric',
         month: 'short',
         year: 'numeric'
@@ -384,24 +387,28 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
       
       // Event name
       if (event.name) {
+        const nameLines = doc.splitTextToSize(String(event.name), contentWidth - (timelineLineX + 8 - margin));
+        checkPageBreak(nameLines.length * 5 + 2);
         const nameHeight = addWrappedText(
-          event.name, 
-          timelineLineX + 8, 
-          yPosition, 
+          event.name,
+          timelineLineX + 8,
+          yPosition,
           contentWidth - (timelineLineX + 8 - margin),
           10,
           5
         );
         yPosition += nameHeight + 2;
       }
-      
+
       // Event summary
       if (event.summary) {
+        const summaryLines = doc.splitTextToSize(String(event.summary), contentWidth - (timelineLineX + 8 - margin));
+        checkPageBreak(summaryLines.length * 4 + 2);
         doc.setFontSize(9);
         const summaryHeight = addWrappedText(
-          event.summary, 
-          timelineLineX + 8, 
-          yPosition, 
+          event.summary,
+          timelineLineX + 8,
+          yPosition,
           contentWidth - (timelineLineX + 8 - margin),
           9,
           4
