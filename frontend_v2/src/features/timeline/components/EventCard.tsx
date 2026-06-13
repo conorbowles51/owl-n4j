@@ -5,6 +5,7 @@ import { NodeBadge } from "@/components/ui/node-badge"
 import { getEventTypeColor } from "../api"
 import type { TimelineEvent } from "../api"
 import { isValidDate } from "../lib/timeline-utils"
+import { useTheme } from "@/lib/theme-provider"
 
 interface EventCardProps {
   event: TimelineEvent
@@ -22,7 +23,7 @@ function highlightText(text: string, term: string) {
   const parts = text.split(regex)
   return parts.map((part, i) =>
     regex.test(part) ? (
-      <mark key={i} className="bg-amber-500/30 text-inherit rounded-sm px-0.5">
+      <mark key={i} className="bg-amber-500/30 dark:bg-amber-500/20 text-inherit rounded-sm px-0.5">
         {part}
       </mark>
     ) : (
@@ -40,7 +41,11 @@ export const EventCard = memo(function EventCard({
   onSelect,
   onMultiSelect,
 }: EventCardProps) {
-  const color = getEventTypeColor(event.type)
+  const { theme } = useTheme()
+  const isDark =
+    theme === "dark" ||
+    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+  const color = getEventTypeColor(event.type, isDark)
   const active = isSelected || isMultiSelected
 
   const handleClick = useCallback(
@@ -61,7 +66,7 @@ export const EventCard = memo(function EventCard({
         "group w-full text-left rounded-lg border px-3 py-2.5 transition-all duration-150",
         "hover:bg-muted/50",
         active
-          ? "ring-2 ring-amber-500 bg-amber-500/5 border-amber-500/30"
+          ? "ring-2 ring-amber-500 dark:ring-amber-400 bg-amber-500/5 dark:bg-amber-400/5 border-amber-500/30 dark:border-amber-400/30"
           : "border-border"
       )}
       style={{ borderLeftWidth: 3, borderLeftColor: color }}
@@ -113,7 +118,7 @@ export const EventCard = memo(function EventCard({
               className={cn(
                 "text-[9px] py-0",
                 highlightedEntityKeys.has(conn.key) &&
-                  "ring-1 ring-amber-500/50"
+                  "ring-1 ring-amber-500/50 dark:ring-amber-400/50"
               )}
             >
               {conn.name}

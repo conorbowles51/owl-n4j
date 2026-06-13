@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { getEventTypeColor } from "../api"
 import type { DerivedEntity } from "../lib/timeline-utils"
+import { useTheme } from "@/lib/theme-provider"
 
 interface FilterSidebarProps {
   eventTypes: string[]
@@ -40,6 +41,11 @@ export function FilterSidebar({
   activeFilterCount,
   onClearAll,
 }: FilterSidebarProps) {
+  const { theme } = useTheme()
+  const isDark =
+    theme === "dark" ||
+    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+
   const [typeFilter, setTypeFilter] = useState("")
 
   const filteredEventTypes = typeFilter
@@ -103,7 +109,7 @@ export function FilterSidebar({
                 <Checkbox checked={selectedTypes.has(type)} />
                 <span
                   className="size-2 rounded-full shrink-0"
-                  style={{ backgroundColor: getEventTypeColor(type) }}
+                  style={{ backgroundColor: getEventTypeColor(type, isDark) }}
                 />
                 <span className="flex-1 text-left">{type}</span>
               </button>
