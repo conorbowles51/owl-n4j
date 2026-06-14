@@ -45,6 +45,7 @@ class Config:
     # --- agent ---
     agent_writes: bool = True
     agent_push: bool = True
+    agent_auto_merge: bool = False   # squash-merge the PR via API once self-review passes
     agent_model: str = "sonnet"
     agent_poll_secs: int = 20
     merge_poll_secs: int = 90
@@ -121,6 +122,7 @@ def _from_dict(project_root: Path, data: Dict[str, Any]) -> Config:
         default_recipient=auth.get("default_recipient", ""),
         agent_writes=bool(agent.get("writes", True)),
         agent_push=bool(agent.get("push", True)),
+        agent_auto_merge=bool(agent.get("auto_merge", False)),
         agent_model=agent.get("model", "sonnet"),
         agent_poll_secs=int(agent.get("poll_secs", 20)),
         merge_poll_secs=int(agent.get("merge_poll_secs", 90)),
@@ -168,6 +170,7 @@ def to_toml(cfg: Config) -> str:
         "[agent]",
         f"writes = {str(cfg.agent_writes).lower()}",
         f"push = {str(cfg.agent_push).lower()}",
+        f"auto_merge = {str(cfg.agent_auto_merge).lower()}",
         f'model = "{esc(cfg.agent_model)}"',
         f"poll_secs = {cfg.agent_poll_secs}",
         f"merge_poll_secs = {cfg.merge_poll_secs}",
@@ -241,6 +244,7 @@ def apply_env(cfg: Config) -> None:
         "DOCKET_REPO_SLUG": cfg.repo_slug,
         "DOCKET_AGENT_WRITES": "1" if cfg.agent_writes else "0",
         "DOCKET_AGENT_PUSH": "1" if cfg.agent_push else "0",
+        "DOCKET_AGENT_AUTO_MERGE": "1" if cfg.agent_auto_merge else "0",
         "DOCKET_AGENT_MODEL": cfg.agent_model,
         "DOCKET_AGENT_POLL": str(cfg.agent_poll_secs),
         "DOCKET_MERGE_POLL": str(cfg.merge_poll_secs),

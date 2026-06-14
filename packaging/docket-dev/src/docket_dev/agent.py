@@ -50,6 +50,10 @@ WRITES_ENABLED = os.environ.get("DOCKET_AGENT_WRITES", "0") == "1"
 # Push gate: by default push when writes are on, but DOCKET_AGENT_PUSH=0 lets us
 # run the full implement+review locally and HOLD the push for manual inspection.
 PUSH_ENABLED = os.environ.get("DOCKET_AGENT_PUSH", "1" if WRITES_ENABLED else "0") == "1"
+# Auto-merge: squash-merge the PR via the GitHub API once self-review passes, then
+# mark the ticket done. Requires a real PR object (i.e. a GitHub token); without a
+# token it safely no-ops and the ticket waits at PR for a manual merge.
+AUTO_MERGE = os.environ.get("DOCKET_AGENT_AUTO_MERGE", "0") == "1"
 MODEL = os.environ.get("DOCKET_AGENT_MODEL", "sonnet")
 MAIN_CHECKOUT = Path(os.environ.get("DOCKET_MAIN_CHECKOUT", str(Path.cwd())))
 WORKTREE_DIR = Path(os.environ.get("DOCKET_WORKTREE_DIR", str(Path.cwd() / ".docket" / "worktrees")))
@@ -540,6 +544,22 @@ def process_ticket(t: dict) -> None:
                             body=pr_url)
     log(f"  → PR ready: {pr_url}")
 
+    # Auto-merge (opt-in): squash-merge the real PR, then mark the ticket shipped.
+    # Requires a real PR object (token); with only a compare URL it waits at PR.
+    if AUTO_MERGE:
+        num = _pr_number(pr_url)
+        if real_pr and num and merge_pr(num):
+            dk.update_ticket(tid, pr_url=pr_url.split("#")[0])
+            dk.transition(tid, "user_review", actor="agent",
+                          summary=f"PR #{num} auto-merged")
+            dk.transition(tid, "done", actor="agent",
+                          summary=f"Auto-merged & shipped (PR #{num})")
+            log(f"  → DKT-{tid}: PR #{num} auto-merged & shipped")
+        else:
+            log(f"  → DKT-{tid}: auto-merge skipped "
+                f"({'no real PR — needs a GitHub token' if not real_pr else 'merge not allowed/conflicting'})"
+                f"; left at PR for manual merge")
+
 
 _ROUTE_DECOR_RE = _re.compile(
     r'@(?:router|app)\.(?:get|post|put|patch|delete)\(\s*["\']([^"\']*)["\']')
@@ -620,6 +640,34 @@ def create_pr(branch: str, title: str, body: str) -> str:
     except Exception as e:
         log(f"  PR creation failed: {e}")
     return ""
+
+
+def _pr_number(pr_url: str) -> int:
+    """Extract the PR number from a .../pull/<n> URL, or 0 if not a real PR URL
+    (e.g. a compare URL)."""
+    m = _re.search(r"/pull/(\d+)", pr_url or "")
+    return int(m.group(1)) if m else 0
+
+
+def merge_pr(number: int, method: str = "squash") -> bool:
+    """Merge a PR via the GitHub API. Requires a token. Returns True on success;
+    False (with a log line) if not mergeable / conflicting / no token."""
+    if not GITHUB_TOKEN or not number:
+        return False
+    api = f"https://api.github.com/repos/{REPO_SLUG}/pulls/{number}/merge"
+    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}",
+               "Accept": "application/vnd.github+json",
+               "Content-Type": "application/json"}
+    payload = json.dumps({"merge_method": method}).encode()
+    try:
+        req = urllib.request.Request(api, data=payload, headers=headers, method="PUT")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return bool(json.load(resp).get("merged"))
+    except urllib.error.HTTPError as e:
+        log(f"  PR #{number} merge failed ({e.code}): {e.read().decode(errors='replace')[:200]}")
+    except Exception as e:
+        log(f"  PR #{number} merge failed: {e}")
+    return False
 
 
 # ---------------------------------------------------------------------------
