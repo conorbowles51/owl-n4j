@@ -1,5 +1,10 @@
 /neo4j/
 
+# Local agent/workflow state
+.claude/
+.gsd/
+.superpowers/
+
 # Environment variables
 .env
 .env.local
@@ -76,6 +81,9 @@ neo4j/plugins/
 
 # Data and temporary files
 data/
+db-dumps/
+test-report-assets/
+Harbor Line Discovery/
 *.log
 *.tmp
 *.temp
