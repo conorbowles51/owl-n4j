@@ -19,22 +19,17 @@ from sqlalchemy import select
 
 project_root = Path(__file__).parent.parent.parent
 backend_dir = project_root / "backend"
-ingestion_dir = project_root / "ingestion" / "scripts"
 
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
-
-if str(ingestion_dir) not in sys.path:
-    sys.path.append(str(ingestion_dir))
 
 from postgres.models.evidence import EvidenceFile
 from postgres.session import get_background_session
 from routers.backfill import extract_text_from_file
 from services.embedding_service import embedding_service
 from services.neo4j_service import neo4j_service
+from services.text_chunking import chunk_document
 from services.vector_db_service import vector_db_service
-
-from chunking import chunk_document
 
 
 def _log(log_callback, level: str, message: str) -> None:

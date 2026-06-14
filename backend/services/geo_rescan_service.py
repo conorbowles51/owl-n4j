@@ -21,7 +21,7 @@ from postgres.models.geocoding_cache import GeocodingCacheEntry
 from postgres.session import get_background_session
 
 # ---------------------------------------------------------------------------
-# Nominatim geocoding (mirrors ingestion/scripts/geocoding.py but standalone)
+# Nominatim geocoding for persisted location entities.
 # ---------------------------------------------------------------------------
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"

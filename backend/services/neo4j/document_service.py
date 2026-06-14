@@ -25,7 +25,7 @@ class DocumentService:
             Document summary if found, None otherwise
         """
         # Normalise the document name to match the key format used during ingestion
-        # This matches the normalise_key function from ingestion/scripts/entity_resolution.py
+        # Keep this aligned with the entity key normalization used by ingestion pipelines.
         import re
         doc_key = doc_name.strip().lower()
         doc_key = re.sub(r"[\s_]+", "-", doc_key)
@@ -134,7 +134,7 @@ class DocumentService:
                 return record["summary"]
 
             # Fallback: Try to find by document name pattern {profile}_{folder_name}
-            # This matches the naming convention used in folder_ingestion.py
+            # This matches the legacy wiretap document naming convention.
             result = session.run(
                 """
                 MATCH (d:Document {case_id: $case_id})

@@ -209,14 +209,7 @@ def ingest_cellebrite_report(
     # ------------------------------------------------------------------
     _log("Step 5/9: Creating PhoneReport node in Neo4j...")
 
-    # Import Neo4j client here to avoid import issues when running
-    # from different working directories
-    import sys
-    scripts_dir = Path(__file__).resolve().parent.parent
-    if str(scripts_dir) not in sys.path:
-        sys.path.insert(0, str(scripts_dir))
-
-    from neo4j_client import Neo4jClient
+    from .neo4j_client import Neo4jClient
 
     db = Neo4jClient()
     writer = CellebriteNeo4jWriter(

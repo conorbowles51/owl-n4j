@@ -16,13 +16,13 @@ from typing import Any, Dict, List, Optional
 
 from neo4j import GraphDatabase
 
-from config import BASE_DIR, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
+from config import EVIDENCE_DATA_ROOT, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
 from postgres.session import get_background_session
 from services.evidence_db_storage import EvidenceDBStorage
 
 logger = logging.getLogger(__name__)
 
-EVIDENCE_ROOT_DIR = BASE_DIR / "ingestion" / "data"
+EVIDENCE_ROOT_DIR = EVIDENCE_DATA_ROOT
 
 
 class IngestBridge:

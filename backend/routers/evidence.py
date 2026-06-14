@@ -27,7 +27,6 @@ from starlette.requests import ClientDisconnect
 
 from services.wiretap_tracking import list_processed_wiretaps, is_wiretap_processed, mark_wiretap_processed
 from services.wiretap_service import check_wiretap_suitable, process_wiretap_folder_async
-from services.cellebrite_service import check_cellebrite_report
 from services.background_task_storage import background_task_storage, TaskStatus
 from services.evidence_processing_service import process_db_files
 from services.neo4j_service import neo4j_service
@@ -42,11 +41,11 @@ from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.user import User
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from config import BASE_DIR, USE_EVIDENCE_ENGINE
+from config import BASE_DIR, EVIDENCE_DATA_ROOT, USE_EVIDENCE_ENGINE
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-EVIDENCE_ROOT_DIR = BASE_DIR / "ingestion" / "data"
+EVIDENCE_ROOT_DIR = EVIDENCE_DATA_ROOT
 
 # Uploaded bytes land here first so large evidence and Cellebrite archives are
 # streamed to disk instead of being held in memory.
@@ -75,7 +74,14 @@ def _resolve_stored_path(stored_path: str | None) -> Optional[Path]:
         return direct
 
     normalised = str(stored_path).replace("\\", "/")
-    markers = ("ingestion/data/", "/ingestion/data/")
+    markers = (
+        "evidence-data/",
+        "/evidence-data/",
+        "data/evidence/",
+        "/data/evidence/",
+        "ingestion/data/",
+        "/ingestion/data/",
+    )
     for marker in markers:
         marker_index = normalised.find(marker)
         if marker_index == -1:
@@ -414,7 +420,10 @@ async def _enqueue_cellebrite_engine_job(
     if not full_folder_path.exists() or not full_folder_path.is_dir():
         raise HTTPException(status_code=404, detail="Folder not found")
 
-    detection = check_cellebrite_report(full_folder_path, case_id=case_id)
+    detection = await evidence_engine_client.check_cellebrite_folder(
+        case_id,
+        folder_path=folder_path,
+    )
     if not detection.get("suitable"):
         raise HTTPException(
             status_code=400,
@@ -1283,7 +1292,7 @@ async def check_wiretap_folder(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
         # Build full path to folder
-        case_data_dir = BASE_DIR / "ingestion" / "data" / case_id
+        case_data_dir = EVIDENCE_ROOT_DIR / case_id
         full_folder_path = case_data_dir / folder_path
         
         # Security check: ensure path is within case directory
@@ -1356,7 +1365,7 @@ async def process_wiretap_folders(
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        case_data_dir = BASE_DIR / "ingestion" / "data" / request.case_id
+        case_data_dir = EVIDENCE_ROOT_DIR / request.case_id
 
         # Do minimal validation (just path format check) - full validation happens in background
         # This allows the endpoint to return quickly
@@ -1571,8 +1580,13 @@ async def check_cellebrite_folder(
         if not folder_path or ".." in folder_path or folder_path.startswith(("/", "\\")):
             raise HTTPException(status_code=403, detail="Path outside case directory")
 
-        full_folder_path = _resolve_case_folder(case_id, folder_path)
-        return check_cellebrite_report(full_folder_path, case_id=case_id)
+        if not USE_EVIDENCE_ENGINE:
+            raise HTTPException(status_code=503, detail="Evidence engine is not enabled")
+
+        return await evidence_engine_client.check_cellebrite_folder(
+            case_id,
+            folder_path=folder_path,
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -2363,7 +2377,7 @@ async def list_folder_files(
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        case_data_dir = BASE_DIR / "ingestion" / "data" / case_id
+        case_data_dir = EVIDENCE_ROOT_DIR / case_id
         if not case_data_dir.exists():
             raise HTTPException(status_code=404, detail="Case data directory not found")
         
@@ -2573,92 +2587,13 @@ async def test_folder_profile(
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        case_data_dir = BASE_DIR / "ingestion" / "data" / request.case_id
-        if not case_data_dir.exists():
-            raise HTTPException(status_code=404, detail="Case data directory not found")
-
-        full_folder_path = (case_data_dir / request.folder_path).resolve()
-        case_resolved = case_data_dir.resolve()
-
-        try:
-            full_folder_path.relative_to(case_resolved)
-        except ValueError:
-            raise HTTPException(status_code=403, detail="Path outside case directory")
-
-        if not full_folder_path.exists() or not full_folder_path.is_dir():
-            raise HTTPException(status_code=404, detail="Folder not found")
-
-        # Create background task for testing
-        task = background_task_storage.create_task(
-            task_type="folder_profile_test",
-            task_name=f"Test folder profile: {request.folder_path}",
-            case_id=request.case_id,
-            owner=current_user.email,
-            metadata={
-                "folder_path": request.folder_path,
-                "profile_name": request.profile_name,
-            }
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail=(
+                "Legacy folder profile test processing has been retired. "
+                "Use folder context plus evidence-engine processing instead."
+            ),
         )
-        task_id = task["id"]
-        
-        # Import and run folder ingestion in background
-        def test_folder_profile_background():
-            from pathlib import Path
-            import sys
-            INGESTION_SCRIPTS_PATH = BASE_DIR / "ingestion" / "scripts"
-            if str(INGESTION_SCRIPTS_PATH) not in sys.path:
-                sys.path.insert(0, str(INGESTION_SCRIPTS_PATH))
-            
-            from folder_ingestion import ingest_folder_with_profile
-            
-            def log_callback(message: str):
-                add_evidence_log(
-                    case_id=request.case_id,
-                    evidence_id=None,
-                    filename=None,
-                    level="info",
-                    message=f"[Profile Test] {message}"
-                )
-            
-            try:
-                background_task_storage.update_task(
-                    task_id,
-                    status=TaskStatus.RUNNING.value,
-                    started_at=datetime.now().isoformat(),
-                )
-                
-                result = ingest_folder_with_profile(
-                    folder_path=full_folder_path,
-                    profile_name=request.profile_name,
-                    case_id=request.case_id,
-                    log_callback=log_callback
-                )
-                
-                background_task_storage.update_task(
-                    task_id,
-                    status=TaskStatus.COMPLETED.value,
-                    completed_at=datetime.now().isoformat(),
-                    metadata={
-                        "result": result
-                    }
-                )
-            except Exception as e:
-                background_task_storage.update_task(
-                    task_id,
-                    status=TaskStatus.FAILED.value,
-                    error=str(e),
-                    completed_at=datetime.now().isoformat(),
-                )
-        
-        import threading
-        thread = threading.Thread(target=test_folder_profile_background, daemon=False)
-        thread.start()
-        
-        return {
-            "success": True,
-            "task_id": task_id,
-            "message": "Folder profile test started"
-        }
     except HTTPException:
         raise
     except Exception as e:

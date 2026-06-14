@@ -23,7 +23,7 @@ neo4j/import
 neo4j/plugins
 db-dumps
 data
-ingestion/data
+evidence-data
 evidence-engine/.venv
 
 *.log

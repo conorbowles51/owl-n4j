@@ -81,6 +81,7 @@ neo4j/plugins/
 
 # Data and temporary files
 data/
+evidence-data/
 db-dumps/
 test-report-assets/
 Harbor Line Discovery/

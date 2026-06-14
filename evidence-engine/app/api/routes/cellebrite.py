@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.dependencies import get_db
 from app.models.job import Job
+from app.pipeline.cellebrite.detection import check_cellebrite_report
 from app.schemas.job import JobResponse
 
 router = APIRouter()
@@ -90,3 +91,10 @@ async def create_cellebrite_job(
     pool = request.app.state.arq_pool
     await pool.enqueue_job("process_cellebrite", str(job.id), case_id)
     return job
+
+
+@router.get("/cases/{case_id}/cellebrite/check")
+async def check_cellebrite_folder(case_id: str, folder_path: str):
+    """Check whether a staged folder is a Cellebrite UFED report."""
+    _, full_path = _safe_report_folder(case_id, folder_path)
+    return check_cellebrite_report(full_path, case_id=case_id)

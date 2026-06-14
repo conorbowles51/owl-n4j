@@ -115,7 +115,7 @@ async def create_cellebrite_job(
     """
     Create a real evidence-engine job for a staged Cellebrite report folder.
 
-    folder_path is relative to ingestion/data/{case_id}; the evidence-engine
+    folder_path is relative to the shared evidence data root for {case_id}; the evidence-engine
     worker resolves it under its mounted CELLEBRITE_DATA_ROOT.
     """
     client = _get_client()
@@ -130,6 +130,17 @@ async def create_cellebrite_job(
             "force": force,
             "requested_by_user_id": requested_by_user_id,
         },
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def check_cellebrite_folder(case_id: str, *, folder_path: str) -> Dict[str, Any]:
+    """Check a staged folder for a Cellebrite UFED report via evidence-engine."""
+    client = _get_client()
+    response = await client.get(
+        f"/cases/{case_id}/cellebrite/check",
+        params={"folder_path": folder_path},
     )
     response.raise_for_status()
     return response.json()

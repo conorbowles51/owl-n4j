@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-ENV PYTHONPATH=/app:/backend:/ingestion/scripts
+ENV PYTHONPATH=/app:/backend
 
 COPY evidence-engine/pyproject.toml .
 RUN pip install --no-cache-dir .
@@ -16,7 +16,6 @@ RUN pip install --no-cache-dir .
 COPY evidence-engine/alembic.ini .
 COPY evidence-engine/alembic/ alembic/
 COPY evidence-engine/app/ app/
-COPY ingestion/ /ingestion/
 COPY backend/ /backend/
 
 EXPOSE 8000

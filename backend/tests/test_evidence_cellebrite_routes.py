@@ -60,13 +60,13 @@ class EvidenceCellebriteRouteTests(unittest.TestCase):
 
     def test_stored_path_resolves_container_evidence_root_to_host_root(self):
         with TemporaryDirectory() as tmp:
-            evidence_root = Path(tmp) / "ingestion" / "data"
+            evidence_root = Path(tmp) / "data" / "evidence"
             stored_file = evidence_root / "case-id" / "Report" / "files" / "Image" / "photo.png"
             stored_file.parent.mkdir(parents=True)
             stored_file.write_bytes(b"image")
 
             with patch("routers.evidence.EVIDENCE_ROOT_DIR", evidence_root):
-                resolved = _resolve_stored_path("/ingestion/data/case-id/Report/files/Image/photo.png")
+                resolved = _resolve_stored_path("/data/evidence/case-id/Report/files/Image/photo.png")
 
             self.assertEqual(resolved, stored_file)
 
@@ -140,13 +140,13 @@ class EvidenceCellebriteRouteTests(unittest.TestCase):
                 patch("routers.evidence._UPLOAD_STAGING_ROOT", staging_root),
                 patch("services.case_service.check_case_access", return_value=(object(), None)),
                 patch(
-                    "routers.evidence.check_cellebrite_report",
-                    return_value={
+                    "routers.evidence.evidence_engine_client.check_cellebrite_folder",
+                    new=AsyncMock(return_value={
                         "suitable": True,
                         "report_name": "PhoneReport",
                         "report_key": "cellebrite-unknown-unknown",
                         "model_count": 1,
-                    },
+                    }),
                 ),
                 patch(
                     "routers.evidence.evidence_engine_client.create_cellebrite_job",

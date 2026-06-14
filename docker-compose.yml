@@ -87,10 +87,10 @@ services:
       VIDEO_FRAME_INTERVAL: ${VIDEO_FRAME_INTERVAL:-30}
       VIDEO_MAX_FRAMES: ${VIDEO_MAX_FRAMES:-50}
       STORAGE_PATH: ${STORAGE_PATH:-/data/files}
-      CELLEBRITE_DATA_ROOT: /ingestion/data
+      CELLEBRITE_DATA_ROOT: /data/evidence
     volumes:
       - evidence-files:/data/files
-      - ./ingestion/data:/ingestion/data
+      - ./evidence-data:/data/evidence
     depends_on:
       - neo4j
       - postgres
@@ -131,10 +131,10 @@ services:
       VIDEO_FRAME_INTERVAL: ${VIDEO_FRAME_INTERVAL:-30}
       VIDEO_MAX_FRAMES: ${VIDEO_MAX_FRAMES:-50}
       STORAGE_PATH: ${STORAGE_PATH:-/data/files}
-      CELLEBRITE_DATA_ROOT: /ingestion/data
+      CELLEBRITE_DATA_ROOT: /data/evidence
     volumes:
       - evidence-files:/data/files
-      - ./ingestion/data:/ingestion/data
+      - ./evidence-data:/data/evidence
     depends_on:
       - neo4j
       - postgres

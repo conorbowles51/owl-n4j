@@ -19,8 +19,7 @@ from typing import List, Dict, Optional, Set, Callable, Tuple
 
 from .models import ParsedModel, Party, CellebriteReport
 
-# We import Neo4jClient at usage time to avoid import-order issues
-# when this module is loaded from the ingestion scripts directory.
+# The synchronous Neo4j adapter is injected by the orchestrator.
 
 
 def _geocode_lat_lon(lat: float, lon: float) -> Optional[Dict]:

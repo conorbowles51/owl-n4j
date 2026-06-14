@@ -1,13 +1,19 @@
 import uuid
 import unittest
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from ingestion.scripts.cellebrite.file_linker import CellebriteFileLinker
-from ingestion.scripts.cellebrite.models import TaggedFile
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+EVIDENCE_ENGINE_ROOT = PROJECT_ROOT / "evidence-engine"
+if str(EVIDENCE_ENGINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(EVIDENCE_ENGINE_ROOT))
+
+from app.pipeline.cellebrite.file_linker import CellebriteFileLinker
+from app.pipeline.cellebrite.models import TaggedFile
 from postgres.base import Base
 from postgres.models.case import Case
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog

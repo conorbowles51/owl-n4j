@@ -29,13 +29,11 @@ STEP_PROGRESS = {
 }
 
 
-def _ensure_cellebrite_imports() -> None:
+def _ensure_backend_imports() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     candidates = [
         repo_root / "backend",
         Path("/backend"),
-        repo_root / "ingestion" / "scripts",
-        Path("/ingestion") / "scripts",
     ]
     for candidate in reversed(candidates):
         if candidate.exists() and str(candidate) not in sys.path:
@@ -110,11 +108,12 @@ def _run_cellebrite_ingestion_sync(
     evidence_folder_id: str | None,
     log_callback,
 ) -> dict[str, Any]:
-    _ensure_cellebrite_imports()
+    _ensure_backend_imports()
 
     from postgres.session import get_background_session
-    from services.cellebrite_service import check_cellebrite_report, _import_cellebrite
     from services.evidence_db_storage import EvidenceDBStorage
+    from app.pipeline.cellebrite.detection import check_cellebrite_report
+    from app.pipeline.cellebrite.ingestion import ingest_cellebrite_report
 
     case_uuid = UUID(case_id)
     created_by_uuid = UUID(created_by_id) if created_by_id else None
@@ -167,7 +166,6 @@ def _run_cellebrite_ingestion_sync(
                 f"+ {evidence_deleted} evidence row(s)."
             )
 
-    _, ingest_cellebrite_report = _import_cellebrite()
     with get_background_session() as db:
         return ingest_cellebrite_report(
             report_dir=folder_path,

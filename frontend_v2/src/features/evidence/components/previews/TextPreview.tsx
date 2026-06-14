@@ -13,7 +13,13 @@ interface TextPreviewProps {
 function getRelativePath(file: EvidenceFile, caseId: string): string | undefined {
   let path = file.stored_path?.replace(/\\/g, "/")
   if (!path) return undefined
-  path = path.replace(/^ingestion\/data\//, "")
+  const markers = [`evidence-data/${caseId}/`, `data/evidence/${caseId}/`, `ingestion/data/${caseId}/`]
+  for (const marker of markers) {
+    const markerIndex = path.indexOf(marker)
+    if (markerIndex >= 0) {
+      return path.substring(markerIndex + marker.length)
+    }
+  }
   if (path.startsWith(`${caseId}/`)) {
     return path.substring(caseId.length + 1)
   }

@@ -10,14 +10,14 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from config import BASE_DIR
+from config import EVIDENCE_DATA_ROOT
 from routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/filesystem", tags=["filesystem"])
 
-# Root directory for file browsing - start from ingestion/data
-# For case-specific browsing, we'll use ingestion/data/{case_id}
-FILESYSTEM_ROOT = BASE_DIR / "ingestion" / "data"
+# Root directory for case-file browsing.
+# For case-specific browsing, we'll use {EVIDENCE_DATA_ROOT}/{case_id}
+FILESYSTEM_ROOT = EVIDENCE_DATA_ROOT
 
 
 class FileSystemItem(BaseModel):
@@ -57,7 +57,7 @@ async def list_directory(
         if not case_id:
             raise HTTPException(status_code=400, detail="case_id is required")
         
-        # Case-specific root: ingestion/data/{case_id}
+        # Case-specific root: {EVIDENCE_DATA_ROOT}/{case_id}
         case_root = FILESYSTEM_ROOT / case_id
         
         # Normalize path
@@ -170,7 +170,7 @@ async def read_file(
         if not case_id:
             raise HTTPException(status_code=400, detail="case_id is required")
         
-        # Case-specific root: ingestion/data/{case_id}
+        # Case-specific root: {EVIDENCE_DATA_ROOT}/{case_id}
         case_root = FILESYSTEM_ROOT / case_id
         
         # Build target path

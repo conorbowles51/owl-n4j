@@ -37,7 +37,11 @@ def normalize_amount(raw: str) -> str:
 
 from neo4j.exceptions import TransientError, ServiceUnavailable
 
-from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
+from app.config import settings
+
+NEO4J_URI = settings.neo4j_uri
+NEO4J_USER = settings.neo4j_user
+NEO4J_PASSWORD = settings.neo4j_password
 
 
 class Neo4jClient:
@@ -53,6 +57,10 @@ class Neo4jClient:
             NEO4J_URI,
             auth=(NEO4J_USER, NEO4J_PASSWORD),
         )
+        # Some Cellebrite helper routines historically used the backend
+        # facade's private `_driver` attribute. Keep this alias local to the
+        # adapter while the writer is still synchronous.
+        self._driver = self.driver
 
     def close(self):
         """Close the database connection."""

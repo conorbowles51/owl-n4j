@@ -5,9 +5,8 @@ Handles storage and retrieval of document embeddings using ChromaDB.
 """
 
 from typing import List, Dict, Optional
-from pathlib import Path
 
-from config import BASE_DIR, CHROMADB_PATH, CHROMADB_HOST, CHROMADB_PORT
+from config import CHROMADB_HOST, CHROMADB_PORT
 
 
 class VectorDBService:
@@ -32,7 +31,8 @@ class VectorDBService:
                     f"ChromaDB is not available: {error_type}: {error_msg}"
                 ) from e
 
-        # Connect to ChromaDB via HTTP (shared with evidence engine)
+        # Connect to ChromaDB via HTTP (shared with evidence engine). Chroma
+        # state lives in Docker volumes; do not create local data/chromadb.
         try:
             self.client = chromadb.HttpClient(
                 host=CHROMADB_HOST,
@@ -41,15 +41,10 @@ class VectorDBService:
             )
             self.client.heartbeat()
         except Exception as e:
-            # Fall back to file-based client if HTTP is unavailable
-            print(f"[VectorDB] HTTP client failed ({CHROMADB_HOST}:{CHROMADB_PORT}): {e}")
-            print("[VectorDB] Falling back to file-based PersistentClient")
-            db_path = BASE_DIR / CHROMADB_PATH
-            db_path.mkdir(parents=True, exist_ok=True)
-            self.client = chromadb.PersistentClient(
-                path=str(db_path),
-                settings=Settings(anonymized_telemetry=False),
-            )
+            raise RuntimeError(
+                f"ChromaDB HTTP client failed ({CHROMADB_HOST}:{CHROMADB_PORT}): {e}. "
+                "Start the chromadb Docker service and retry."
+            ) from e
 
         # Get or create collection for entities
         self.entity_collection = self.client.get_or_create_collection(
@@ -98,7 +93,7 @@ class VectorDBService:
             return True
         except Exception as e:
             print(f"[VectorDB] WARNING: Collection '{name}' failed health check: {e}")
-            print(f"[VectorDB] Run 'python backend/scripts/repair_chromadb.py' to rebuild.")
+            print("[VectorDB] Check the chromadb Docker service and re-ingest if the collection is corrupt.")
             return False
 
     def _delete_legacy_documents_collection(self):
@@ -128,7 +123,7 @@ class VectorDBService:
                     print(
                         f"[VectorDB] Dimension mismatch in '{collection_name}': "
                         f"collection has {expected}d, query has {actual}d. "
-                        f"Run 'python backend/scripts/repair_chromadb.py' to fix."
+                        "Clear the chromadb Docker volume and re-ingest with a consistent embedding model."
                     )
                     return False
             return True
@@ -165,7 +160,7 @@ class VectorDBService:
                     raise ValueError(
                         f"Embedding dimension mismatch: entity collection has {expected} dims, "
                         f"new embedding has {actual} dims. "
-                        f"Delete data/chromadb/ and re-ingest with consistent embedding model."
+                        "Clear the chromadb Docker volume and re-ingest with a consistent embedding model."
                     )
 
         metadata = metadata or {}
@@ -209,7 +204,7 @@ class VectorDBService:
             List of dicts with: id (entity_key), text, metadata, distance
         """
         if not self._entities_healthy:
-            print("[VectorDB] Entity collection is unhealthy — skipping search. Run repair_chromadb.py.")
+            print("[VectorDB] Entity collection is unhealthy - skipping search. Check the chromadb Docker service.")
             return []
 
         if not self._check_dimension(self.entity_collection, "entities", query_embedding):
@@ -305,7 +300,7 @@ class VectorDBService:
                     raise ValueError(
                         f"Embedding dimension mismatch: chunk collection has {expected} dims, "
                         f"new embedding has {actual} dims. "
-                        f"Delete data/chromadb/ and re-ingest with consistent embedding model."
+                        "Clear the chromadb Docker volume and re-ingest with a consistent embedding model."
                     )
 
         from utils.text_sanitize import sanitize_text
@@ -350,7 +345,7 @@ class VectorDBService:
             List of dicts with: id (chunk_id), text, metadata, distance
         """
         if not self._chunks_healthy:
-            print("[VectorDB] Chunks collection is unhealthy — skipping search. Run repair_chromadb.py.")
+            print("[VectorDB] Chunks collection is unhealthy - skipping search. Check the chromadb Docker service.")
             return []
 
         if not self._check_dimension(self.chunk_collection, "chunks", query_embedding):

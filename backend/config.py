@@ -55,7 +55,6 @@ else:
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Required if using OpenAI
 
 # Vector DB Configuration
-CHROMADB_PATH = os.getenv("CHROMADB_PATH", "data/chromadb")  # Relative to project root (legacy, file-based)
 CHROMADB_HOST = os.getenv("CHROMADB_HOST", "localhost")
 CHROMADB_PORT = int(os.getenv("CHROMADB_PORT", "8101"))  # 8101 = host-mapped port from docker-compose
 
@@ -84,9 +83,7 @@ RERANK_TOP_CHUNKS = int(os.getenv("RERANK_TOP_CHUNKS", "15"))
 RERANK_TOP_ENTITIES = int(os.getenv("RERANK_TOP_ENTITIES", "10"))
 CONTEXT_TOKEN_BUDGET = int(os.getenv("CONTEXT_TOKEN_BUDGET", "80000"))  # Raised from 12K→80K for GPT-4 128K context. For Ollama <32K context, reduce to 15000.
 
-# Ingestion chunking configuration
-# Keep these in sync with ingestion/scripts/config.py so the ingestion
-# pipeline can safely import them from the shared `config` module.
+# Text chunking configuration used by backend backfill utilities.
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "8000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "1600"))
 
@@ -131,6 +128,13 @@ AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "1440")) 
 EVIDENCE_ENGINE_URL = os.getenv("EVIDENCE_ENGINE_URL", "http://localhost:8003")
 EVIDENCE_ENGINE_TIMEOUT = int(os.getenv("EVIDENCE_ENGINE_TIMEOUT", "300"))  # seconds
 USE_EVIDENCE_ENGINE = os.getenv("USE_EVIDENCE_ENGINE", "true").lower() == "true"
+
+_EVIDENCE_DATA_ROOT = Path(os.getenv("EVIDENCE_DATA_ROOT", "evidence-data"))
+EVIDENCE_DATA_ROOT = (
+    _EVIDENCE_DATA_ROOT
+    if _EVIDENCE_DATA_ROOT.is_absolute()
+    else BASE_DIR / _EVIDENCE_DATA_ROOT
+)
 
 # Redis Configuration (shared with evidence-engine for job progress pub/sub)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6380")

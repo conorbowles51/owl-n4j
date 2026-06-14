@@ -5,10 +5,6 @@ Analyzes a newly created node to find potential relationships with existing node
 """
 
 from typing import Dict, List, Optional
-import os
-import json
-from pathlib import Path
-import sys
 
 try:
     from profile_loader import get_ingestion_config
@@ -16,24 +12,12 @@ except ImportError:
     def get_ingestion_config():
         return {}
 
-# Add ingestion scripts to path for the LLM client only. Keep it behind the
-# backend path so ingestion/scripts/profile_loader.py cannot shadow the
-# Postgres-backed backend profile loader.
-INGESTION_SCRIPTS_PATH = Path(__file__).parent.parent.parent / "ingestion" / "scripts"
-if str(INGESTION_SCRIPTS_PATH) not in sys.path:
-    sys.path.append(str(INGESTION_SCRIPTS_PATH))
-
 try:
-    from llm_client import call_llm, parse_json_response
+    from services.llm_service import llm_service
     _llm_available = True
 except ImportError as e:
-    print(f"Warning: Could not import LLM client: {e}")
+    print(f"Warning: Could not import LLM service: {e}")
     _llm_available = False
-    # Fallback functions if imports fail
-    def call_llm(*args, **kwargs):
-        return '{"relationships": []}'
-    def parse_json_response(response):
-        return {"relationships": []}
 
 
 def analyze_node_relationships(
@@ -146,8 +130,8 @@ IMPORTANT:
 """
     
     try:
-        response = call_llm(prompt, json_mode=True, temperature=temperature)
-        result = parse_json_response(response)
+        response = llm_service.call(prompt, json_mode=True, temperature=temperature)
+        result = llm_service.parse_json_response(response)
         relationships = result.get("relationships", [])
         
         # Validate relationships - ensure keys exist

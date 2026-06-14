@@ -21,10 +21,11 @@ if str(backend_dir) not in sys.path:
 
 from postgres.models.evidence import EvidenceFile
 from postgres.session import get_background_session
+from config import EVIDENCE_DATA_ROOT
 from services.neo4j_service import neo4j_service
 
 
-EVIDENCE_ROOT_DIR = project_root / "ingestion" / "data"
+EVIDENCE_ROOT_DIR = EVIDENCE_DATA_ROOT
 BATCH_SIZE = 500
 
 

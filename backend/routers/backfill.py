@@ -11,7 +11,7 @@ from routers.auth import get_current_user
 from services.neo4j_service import neo4j_service
 from services.vector_db_service import vector_db_service
 from services.embedding_service import embedding_service
-from config import BASE_DIR
+from config import EVIDENCE_DATA_ROOT
 from postgres.models.evidence import EvidenceFile
 from postgres.session import get_background_session
 from services.evidence_db_storage import EvidenceDBStorage
@@ -51,7 +51,7 @@ except Exception as e:
     traceback.print_exc()
 
 router = APIRouter(prefix="/api/backfill", tags=["backfill"])
-EVIDENCE_ROOT_DIR = BASE_DIR / "ingestion" / "data"
+EVIDENCE_ROOT_DIR = EVIDENCE_DATA_ROOT
 
 
 class BackfillRequest(BaseModel):
