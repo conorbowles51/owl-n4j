@@ -9611,7 +9611,7 @@ class Neo4jService:
             if "message" in active_types:
                 cypher = f"""
                     MATCH (sender:Person)-[:SENT_MESSAGE]->(msg:Communication)-[:PART_OF]->(chat:Communication)
-                    MATCH (recipient:Person)-[:PARTICIPATED_IN]->(chat)
+                    OPTIONAL MATCH (recipient:Person {{case_id: $case_id, source_type: 'cellebrite'}})-[:PARTICIPATED_IN]->(chat)
                     WHERE msg.case_id = $case_id
                       AND msg.source_type = 'cellebrite'
                       AND coalesce(msg.date, msg.timestamp, '') <> ''
