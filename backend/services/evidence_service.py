@@ -296,7 +296,7 @@ class EvidenceService:
             task_ids.append(task_id)
             
             # Start background upload for this folder (runs in a separate thread)
-            def upload_folder_task(folder_files_param, task_id_param):
+            def upload_folder_task(folder_files_param, task_id_param, folder_name_param):
                 """Background upload task function for a single folder.
 
                 Batches the JSON writes: evidence.json (~hundreds of MB) and
@@ -424,6 +424,22 @@ class EvidenceService:
                         completed_at=datetime.now().isoformat(),
                     )
                     print(f"Folder upload task {task_id_param} finished as {final_status}: {len(uploaded_files)} uploaded, {failed_count} failed")
+
+                    # Auto-route: if the folder we just landed is a Cellebrite
+                    # UFED report, kick off graph ingestion automatically (the
+                    # manual "process" second step) so users don't have to know
+                    # to trigger it — and so a report never sits as 15k inert
+                    # raw files. Runs only when files actually landed; never
+                    # raises into the upload task.
+                    if completed_count > 0 and folder_name_param:
+                        try:
+                            service_self._maybe_autoingest_cellebrite(
+                                case_id=case_id,
+                                folder_name=folder_name_param,
+                                owner=owner,
+                            )
+                        except Exception as auto_err:
+                            print(f"Cellebrite auto-route failed for '{folder_name_param}': {auto_err}")
                 except Exception as e:
                     print(f"Error in folder upload task {task_id_param}: {e}")
                     background_task_storage.update_task(
@@ -438,13 +454,94 @@ class EvidenceService:
             # Start the background thread for this folder (non-daemon so it continues even if request ends)
             thread = threading.Thread(
                 target=upload_folder_task,
-                args=(folder_files, task_id),
+                args=(folder_files, task_id, folder_name),
                 daemon=False,
                 name=f"folder-upload-{task_id}",
             )
             thread.start()
-        
+
         return task_ids
+
+    def _maybe_autoingest_cellebrite(self, case_id, folder_name, owner=None):
+        """Detect a freshly-uploaded Cellebrite report and run graph ingestion.
+
+        Mirrors the manual /cellebrite/process flow but fires automatically
+        after a folder upload lands, so a Cellebrite export is never left as
+        thousands of inert raw files just because the user didn't know to
+        click "process". Conservative: only auto-ingests a report that is
+        suitable, has an extractable phone number, and does not collide with
+        an existing report. Anything else is left as uploaded files with a
+        clear log line explaining why, so nothing is silently mis-handled.
+        """
+        from .background_task_storage import background_task_storage
+        from .evidence_log_storage import evidence_log_storage
+
+        folder_path = EVIDENCE_ROOT_DIR / case_id / folder_name
+        if not folder_path.is_dir():
+            return
+
+        # Lazy import to avoid an import cycle at module load.
+        from .cellebrite_service import check_cellebrite_report, process_cellebrite_report
+
+        det = check_cellebrite_report(folder_path, case_id=case_id)
+        if not det.get("suitable"):
+            return  # Not a Cellebrite report — normal upload, nothing to do.
+
+        report_name = det.get("report_name") or folder_name
+
+        def _log(msg):
+            evidence_log_storage.add_log(
+                case_id=case_id, evidence_id=None, filename=None,
+                level="info", message=msg,
+            )
+
+        # A PhoneReport needs an owning identity; we can't prompt from here.
+        if not (det.get("phone_numbers") or []):
+            _log(
+                f"Auto-route: '{report_name}' is a Cellebrite report with no "
+                "phone number. Skipping auto-ingest — process it manually and "
+                "supply a device identifier."
+            )
+            return
+
+        # Don't silently replace an existing report.
+        if det.get("duplicate"):
+            existing = det.get("existing") or {}
+            _log(
+                f"Auto-route: '{report_name}' duplicates an existing report "
+                f"({existing.get('report_name') or existing.get('report_key')}). "
+                "Skipping auto-ingest — re-ingest manually with force to replace."
+            )
+            return
+
+        task = background_task_storage.create_task(
+            task_type="cellebrite_ingestion",
+            task_name=f"Cellebrite report: {report_name}",
+            case_id=case_id,
+            owner=owner,
+            metadata={
+                "folder_path": folder_name,
+                "report_name": report_name,
+                "case_number": det.get("case_number"),
+                "evidence_number": det.get("evidence_number"),
+                "model_count": det.get("model_count"),
+                "auto_routed": True,
+            },
+        )
+        _log(
+            f"Auto-route: detected Cellebrite report '{report_name}' "
+            f"({det.get('device_model')}); starting ingestion (task {task['id'][:8]})."
+        )
+        # Already on a background thread; run the ingest synchronously here so
+        # it follows the upload in order (no race on the case-dir files).
+        process_cellebrite_report(
+            folder_path=folder_path,
+            case_id=case_id,
+            task_id=task["id"],
+            owner=owner,
+            force=False,
+            device_identifier=None,
+        )
 
     def upload_files_background(
         self,
