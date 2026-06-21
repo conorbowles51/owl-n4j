@@ -324,9 +324,12 @@ class EvidenceService:
                     pending_failed: List[Dict] = []
                     completed_count = 0
                     failed_count = 0
+                    last_error: Optional[str] = None
 
                     def flush(last_index: int):
-                        nonlocal completed_count, failed_count, uploaded_files
+                        nonlocal completed_count, failed_count, uploaded_files, last_error
+                        batch_ok = True
+                        batch_error_msg = None
                         if pending_uploads:
                             try:
                                 records = service_self.add_uploaded_files(
@@ -339,27 +342,35 @@ class EvidenceService:
                                 completed_count += len(pending_uploads)
                             except Exception as batch_error:
                                 # Whole-batch failure (e.g. evidence.json write
-                                # failed). Surface as failed files so progress
-                                # still moves and the user sees the problem.
-                                print(f"Batch flush error in task {task_id_param}: {batch_error}")
+                                # failed, or the case dir is not writable by the
+                                # backend user). Surface as failed files so
+                                # progress moves AND the error reaches the task
+                                # record — not just stdout.
+                                batch_error_msg = str(batch_error)
+                                print(f"Batch flush error in task {task_id_param}: {batch_error_msg}")
                                 failed_count += len(pending_uploads)
                                 pending_failed.extend([
-                                    {"filename": u.get("original_filename"), "error": str(batch_error)}
+                                    {"filename": u.get("original_filename"), "error": batch_error_msg}
                                     for u in pending_uploads
                                 ])
+                                batch_ok = False
+                                last_error = batch_error_msg
                             pending_uploads.clear()
 
                         # One task-status write per batch with summary progress
-                        # and a single representative file_status (last completed
-                        # in the batch) so the UI shows recent activity.
+                        # and a single representative file_status reflecting the
+                        # ACTUAL batch outcome (do not hardcode "completed" — that
+                        # masked total failures as success).
                         file_status = None
                         if last_index >= 0 and last_index < len(folder_files_param):
                             last_fd = folder_files_param[last_index]
                             file_status = {
                                 "file_id": f"file_{last_index}",
                                 "filename": last_fd.get("original_filename", "unknown"),
-                                "status": "completed",
+                                "status": "completed" if batch_ok else "failed",
                             }
+                            if not batch_ok and batch_error_msg:
+                                file_status["error"] = batch_error_msg
                         background_task_storage.update_task(
                             task_id_param,
                             progress_completed=completed_count,
@@ -384,12 +395,35 @@ class EvidenceService:
                     # Final flush for the remainder
                     flush(last_completed_index)
 
+                    # Choose a final status that reflects reality. Previously this
+                    # was always COMPLETED, so a 100%-failed upload looked like a
+                    # success (green) with the real error only in stdout.
+                    if failed_count == 0:
+                        final_status = TaskStatus.COMPLETED.value
+                        final_error = None
+                    elif completed_count == 0:
+                        final_status = TaskStatus.FAILED.value
+                        final_error = (
+                            f"All {failed_count} file(s) failed to upload. "
+                            f"Last error: {last_error}"
+                        )
+                    else:
+                        # Partial failure: some files landed. Keep COMPLETED so the
+                        # successful files aren't discarded, but record the error so
+                        # it is visible instead of silently swallowed.
+                        final_status = TaskStatus.COMPLETED.value
+                        final_error = (
+                            f"{failed_count} of {completed_count + failed_count} "
+                            f"file(s) failed to upload. Last error: {last_error}"
+                        )
+
                     background_task_storage.update_task(
                         task_id_param,
-                        status=TaskStatus.COMPLETED.value,
+                        status=final_status,
+                        error=final_error,
                         completed_at=datetime.now().isoformat(),
                     )
-                    print(f"Folder upload task {task_id_param} completed: {len(uploaded_files)} files uploaded ({failed_count} failed)")
+                    print(f"Folder upload task {task_id_param} finished as {final_status}: {len(uploaded_files)} uploaded, {failed_count} failed")
                 except Exception as e:
                     print(f"Error in folder upload task {task_id_param}: {e}")
                     background_task_storage.update_task(

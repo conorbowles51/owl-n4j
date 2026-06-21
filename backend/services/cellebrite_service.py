@@ -64,6 +64,7 @@ def check_cellebrite_report(folder_path: Path, case_id: Optional[str] = None) ->
 
     # Parse just the header for metadata preview
     from cellebrite.parser import CellebriteXMLParser
+    from cellebrite.ingestion import build_report_key
 
     try:
         parser = CellebriteXMLParser(xml_path)
@@ -82,12 +83,9 @@ def check_cellebrite_report(folder_path: Path, case_id: Optional[str] = None) ->
             display_device = "Unknown Device"
 
         # Mirror the report_key construction done by the orchestrator
-        # so we can detect collisions before the user even kicks off
-        # the ingest.
-        report_key = (
-            f"cellebrite-{report.case_info.case_number or 'unknown'}"
-            f"-{report.case_info.evidence_number or 'unknown'}"
-        )
+        # (same helper, so the two can't drift) to detect collisions
+        # before the user even kicks off the ingest.
+        report_key = build_report_key(report)
 
         existing = None
         if case_id:

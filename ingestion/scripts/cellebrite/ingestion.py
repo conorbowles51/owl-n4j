@@ -144,6 +144,34 @@ def detect_cellebrite_xml(report_dir: Path) -> Optional[Path]:
     return None
 
 
+def build_report_key(report) -> str:
+    """Build the stable per-report identity key.
+
+    The primary form is ``cellebrite-<case_number>-<evidence_number>``. When
+    BOTH of those are absent the old behaviour produced the literal
+    ``cellebrite-unknown-unknown`` for EVERY such report — so two completely
+    different devices (different IMEI, different phone numbers) collided as
+    "duplicates". That meant a numberless report was either wrongly refused
+    or, under force=true, would DELETE an unrelated report sharing the bogus
+    key. Fall back to a device-stable token (IMEI, else first MSISDN, else the
+    report name) so distinct devices get distinct keys.
+    """
+    case_number = report.case_info.case_number
+    evidence_number = report.case_info.evidence_number
+    if case_number or evidence_number:
+        return f"cellebrite-{case_number or 'unknown'}-{evidence_number or 'unknown'}"
+
+    msisdn = report.device_info.msisdn
+    device_token = (
+        report.device_info.imei
+        or (msisdn[0] if msisdn else None)
+        or report.report_name
+    )
+    if device_token:
+        return f"cellebrite-device-{device_token}"
+    return "cellebrite-unknown-unknown"
+
+
 def ingest_cellebrite_report(
     report_dir: Path,
     case_id: str,
@@ -287,11 +315,9 @@ def ingest_cellebrite_report(
             f"{'alias' if manual_is_phone else 'name'}: {manual_identifier}"
         )
 
-    # Generate unique report key
-    report_key = (
-        f"cellebrite-{report.case_info.case_number or 'unknown'}"
-        f"-{report.case_info.evidence_number or 'unknown'}"
-    )
+    # Generate unique report key (device-stable when case/evidence numbers
+    # are absent — see build_report_key).
+    report_key = build_report_key(report)
 
     # ------------------------------------------------------------------
     # Step 3: Parse tagged files (file index)
