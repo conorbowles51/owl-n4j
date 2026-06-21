@@ -507,6 +507,9 @@ class EvidenceService:
 
                 # Process files one by one with progress updates
                 uploaded_files = []
+                completed_count = 0
+                failed_count = 0
+                last_error: Optional[str] = None
                 for index, file_data in enumerate(files):
                     try:
                         original_filename = file_data.get("original_filename", "unknown")
@@ -532,11 +535,12 @@ class EvidenceService:
                         )
 
                         uploaded_files.extend(records)
+                        completed_count += 1
 
                         # Update file status to completed
                         background_task_storage.update_task(
                             task_id,
-                            progress_completed=index + 1,
+                            progress_completed=completed_count,
                             file_status={
                                 "file_id": f"file_{index}",
                                 "filename": original_filename,
@@ -544,22 +548,44 @@ class EvidenceService:
                             },
                         )
                     except Exception as e:
-                        # Mark file as failed
+                        # Mark file as failed. Count it as failed (not completed)
+                        # and remember the error so the task can surface it.
+                        failed_count += 1
+                        last_error = str(e)
                         background_task_storage.update_task(
                             task_id,
-                            progress_completed=index + 1,
+                            progress_failed=failed_count,
                             file_status={
                                 "file_id": f"file_{index}",
                                 "filename": file_data.get("original_filename", "unknown"),
                                 "status": "failed",
-                                "error": str(e),
+                                "error": last_error,
                             },
                         )
 
-                # Mark task as completed
+                # Final status reflects reality: FAILED if nothing landed,
+                # COMPLETED-with-error on partial failure, clean COMPLETED
+                # otherwise (mirrors upload_folder_task).
+                if failed_count == 0:
+                    final_status = TaskStatus.COMPLETED.value
+                    final_error = None
+                elif completed_count == 0:
+                    final_status = TaskStatus.FAILED.value
+                    final_error = (
+                        f"All {failed_count} file(s) failed to upload. "
+                        f"Last error: {last_error}"
+                    )
+                else:
+                    final_status = TaskStatus.COMPLETED.value
+                    final_error = (
+                        f"{failed_count} of {completed_count + failed_count} "
+                        f"file(s) failed to upload. Last error: {last_error}"
+                    )
+
                 background_task_storage.update_task(
                     task_id,
-                    status=TaskStatus.COMPLETED.value,
+                    status=final_status,
+                    error=final_error,
                     completed_at=datetime.now().isoformat(),
                 )
 
