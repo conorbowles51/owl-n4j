@@ -8795,6 +8795,10 @@ class Neo4jService:
         spot even for threads with thousands of items, where the default
         oldest-first slice wouldn't include the anchor.
         """
+        logger.debug(
+            "get_cellebrite_thread_detail case=%s thread_id=%s thread_type=%s",
+            case_id, thread_id, thread_type,
+        )
         items: list = []
 
         with self._driver.session() as session:
@@ -8923,7 +8927,7 @@ class Neo4jService:
                 # Heuristic: split into report_key + keyA + keyB by scanning for prefix markers.
                 # Simpler: store dashless separator would be cleaner; here we use known person-key prefixes.
                 def find_person_key_start(tokens, start_idx):
-                    prefixes = ("phone", "email", "fb", "ig", "wa", "tg", "snap", "twitter", "linkedin")
+                    prefixes = ("phone", "email", "fb", "ig", "wa", "whatsapp", "tg", "snap", "twitter", "linkedin", "imessage", "sms")
                     for i in range(start_idx, len(tokens)):
                         for pfx in prefixes:
                             if tokens[i] == pfx:

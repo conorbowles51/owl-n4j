@@ -634,16 +634,22 @@ def get_comms_thread_detail(
     _require_case_access(case_id, current_user, db)
     if thread_type not in ("chat", "calls", "emails"):
         raise HTTPException(status_code=400, detail="Invalid thread_type")
-    result = neo4j_service.get_cellebrite_thread_detail(
-        case_id=case_id,
-        thread_id=thread_id,
-        thread_type=thread_type,
-        limit=limit,
-        offset=offset,
-        anchor_key=anchor_key,
-    )
-    _resolve_attachments(case_id, result.get("items", []))
-    return result
+    try:
+        result = neo4j_service.get_cellebrite_thread_detail(
+            case_id=case_id,
+            thread_id=thread_id,
+            thread_type=thread_type,
+            limit=limit,
+            offset=offset,
+            anchor_key=anchor_key,
+        )
+        _resolve_attachments(case_id, result.get("items", []))
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Thread detail query failed: {type(e).__name__}: {e}",
+        ) from e
 
 
 @router.get("/comms/between")
