@@ -8634,9 +8634,12 @@ class Neo4jService:
                         if participant_keys and not any(k in pkeys for k in participant_keys):
                             continue
 
+                    rk = record["rk"]
+                    if not rk:
+                        continue
                     pair_keys = tuple(sorted([a_key, b_key]))
-                    thread_id = f"calls-{record['rk']}-{pair_keys[0]}-{pair_keys[1]}"
-                    timestamps = [t for t in (record["timestamps"] or []) if t]
+                    thread_id = f"calls-{rk}-{pair_keys[0]}-{pair_keys[1]}"
+                    timestamps = [str(t) for t in (record["timestamps"] or []) if t is not None]
                     call_count = int(record["call_count"] or 0)
                     attach_count = int(record["attach_count"] or 0)
 
@@ -8644,10 +8647,9 @@ class Neo4jService:
                     if existing is None:
                         # Determine participants preserving person metadata.
                         # Names resolved to how THIS device saved each party.
-                        _rk = record["rk"]
                         participants = [
-                            {"key": a_key, "name": dcn.get((a_key, _rk)) or a.get("name") or a_key, "is_owner": bool(a.get("is_phone_owner"))},
-                            {"key": b_key, "name": dcn.get((b_key, _rk)) or b.get("name") or b_key, "is_owner": bool(b.get("is_phone_owner"))},
+                            {"key": a_key, "name": dcn.get((a_key, rk)) or a.get("name") or a_key, "is_owner": bool(a.get("is_phone_owner"))},
+                            {"key": b_key, "name": dcn.get((b_key, rk)) or b.get("name") or b_key, "is_owner": bool(b.get("is_phone_owner"))},
                         ]
                         # Order participants to match pair_keys ordering
                         participants.sort(key=lambda p: p["key"])
@@ -8663,7 +8665,7 @@ class Neo4jService:
                             "has_attachments": attach_count > 0,
                             "last_activity": max(timestamps) if timestamps else None,
                             "first_activity": min(timestamps) if timestamps else None,
-                            "report_key": record["rk"],
+                            "report_key": rk,
                             "pair_keys": list(pair_keys),
                         }
                     else:
@@ -8716,18 +8718,20 @@ class Neo4jService:
                         if participant_keys and not any(k in pkeys for k in participant_keys):
                             continue
 
+                    rk = record["rk"]
+                    if not rk:
+                        continue
                     pair_keys = tuple(sorted([a_key, b_key]))
-                    thread_id = f"emails-{record['rk']}-{pair_keys[0]}-{pair_keys[1]}"
-                    timestamps = [t for t in (record["timestamps"] or []) if t]
+                    thread_id = f"emails-{rk}-{pair_keys[0]}-{pair_keys[1]}"
+                    timestamps = [str(t) for t in (record["timestamps"] or []) if t is not None]
                     email_count = int(record["email_count"] or 0)
                     attach_count = int(record["attach_count"] or 0)
 
                     existing = email_pairs.get(thread_id)
                     if existing is None:
-                        _rk = record["rk"]
                         participants = [
-                            {"key": a_key, "name": dcn.get((a_key, _rk)) or a.get("name") or a_key, "is_owner": bool(a.get("is_phone_owner"))},
-                            {"key": b_key, "name": dcn.get((b_key, _rk)) or b.get("name") or b_key, "is_owner": bool(b.get("is_phone_owner"))},
+                            {"key": a_key, "name": dcn.get((a_key, rk)) or a.get("name") or a_key, "is_owner": bool(a.get("is_phone_owner"))},
+                            {"key": b_key, "name": dcn.get((b_key, rk)) or b.get("name") or b_key, "is_owner": bool(b.get("is_phone_owner"))},
                         ]
                         participants.sort(key=lambda p: p["key"])
                         name_parts = [p["name"] for p in participants]
@@ -8742,7 +8746,7 @@ class Neo4jService:
                             "has_attachments": attach_count > 0,
                             "last_activity": max(timestamps) if timestamps else None,
                             "first_activity": min(timestamps) if timestamps else None,
-                            "report_key": record["rk"],
+                            "report_key": rk,
                             "pair_keys": list(pair_keys),
                         }
                     else:

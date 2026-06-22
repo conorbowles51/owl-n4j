@@ -620,7 +620,7 @@ def get_comms_threads(
         return result
     except Exception as exc:
         logger.error("get_comms_threads failed: %s\n%s", exc, traceback.format_exc())
-        raise
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/comms/threads/{thread_id:path}")
@@ -759,7 +759,7 @@ def get_comms_envelope(
         )
     except Exception as exc:
         logger.error("get_comms_envelope failed: %s\n%s", exc, traceback.format_exc())
-        raise
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/comms/messages/search")
