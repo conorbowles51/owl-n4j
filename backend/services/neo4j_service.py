@@ -9988,6 +9988,10 @@ class Neo4jService:
         per_type_cap = limit if cursor else max(limit + offset, limit)
         events: list = []
         truncated_types: set = set()
+        # Per-device contact names: {(person_key, report_key): saved_name}. Lets
+        # comms counterparties show as the event's OWNING phone has them saved
+        # (its own lens) rather than the rolled-up global Person.name (DKT-18).
+        dcn = self.device_contact_names(case_id)
         with self._driver.session() as session:
             # Helper to accumulate results from one cypher and mark the type
             # as truncated when the per-type cap is reached.
@@ -10095,7 +10099,7 @@ class Neo4jService:
                     RETURN n, src, dst
                 """
                 _add(cypher, base_params, "call",
-                     lambda rec: _project_call(rec["n"], rec["src"], rec["dst"]))
+                     lambda rec: _project_call(rec["n"], rec["src"], rec["dst"], dcn))
 
             if "message" in active:
                 extra = "" if not only_geolocated else \
@@ -10112,7 +10116,7 @@ class Neo4jService:
                     RETURN n, sender, chat
                 """
                 _add(cypher, base_params, "message",
-                     lambda rec: _project_message(rec["n"], rec["sender"], rec["chat"]))
+                     lambda rec: _project_message(rec["n"], rec["sender"], rec["chat"], dcn))
 
             if "email" in active:
                 extra = "" if not only_geolocated else \
@@ -10129,7 +10133,7 @@ class Neo4jService:
                     RETURN n, src, dst
                 """
                 _add(cypher, base_params, "email",
-                     lambda rec: _project_email(rec["n"], rec["src"], rec["dst"]))
+                     lambda rec: _project_email(rec["n"], rec["src"], rec["dst"], dcn))
 
             if "power" in active or "device_event" in active:
                 # One query feeds two output types (power vs device_event are
@@ -11248,6 +11252,9 @@ class Neo4jService:
                    thread_party_keys
             LIMIT 1
         """
+        # Per-device contact names so thread / around rows name each comms
+        # counterparty as the event's OWNING phone has them saved (DKT-18).
+        dcn = self.device_contact_names(case_id)
         with self._driver.session() as session:
             r = session.run(anchor_query, case_id=case_id, key=node_key).single()
             if not r:
@@ -11307,7 +11314,7 @@ class Neo4jService:
                     thread_key=thread_key,
                     limit=int(limit),
                 ):
-                    proj = _project_message(row["n"], row.get("sender"), row.get("chat"))
+                    proj = _project_message(row["n"], row.get("sender"), row.get("chat"), dcn)
                     if proj:
                         thread_rows.append(proj)
 
@@ -11387,9 +11394,9 @@ class Neo4jService:
                     ):
                         kind = row["kind"]
                         if kind == "call":
-                            proj = _project_call(row["n"], row.get("src"), row.get("dst"))
+                            proj = _project_call(row["n"], row.get("src"), row.get("dst"), dcn)
                         elif kind == "message":
-                            proj = _project_message(row["n"], row.get("src"), row.get("chat"))
+                            proj = _project_message(row["n"], row.get("src"), row.get("chat"), dcn)
                         else:  # email
                             proj = _project_event(row["n"], "email")
                         if proj:
@@ -12942,7 +12949,7 @@ def _project_location_lean(rec) -> Optional[dict]:
     return row
 
 
-def _project_call(node, src, dst) -> Optional[dict]:
+def _project_call(node, src, dst, dcn=None) -> Optional[dict]:
     row = _project_event(node, "call")
     if not row:
         return None
@@ -12956,11 +12963,14 @@ def _project_call(node, src, dst) -> Optional[dict]:
     counter_node = dst if (src is None or (src and dict(src).get("is_phone_owner"))) else src
     if counter_node:
         c = dict(counter_node)
-        row["counterpart"] = {"key": c.get("key"), "name": c.get("name") or c.get("key"), "phone_numbers": c.get("phone_numbers") or []}
+        # Show the counterparty as THIS phone (the event's owning report) has
+        # them saved — the phone's own lens — falling back to the global name.
+        name = (dcn or {}).get((c.get("key"), n.get("cellebrite_report_key"))) or c.get("name") or c.get("key")
+        row["counterpart"] = {"key": c.get("key"), "name": name, "phone_numbers": c.get("phone_numbers") or []}
     return row
 
 
-def _project_message(node, sender, chat) -> Optional[dict]:
+def _project_message(node, sender, chat, dcn=None) -> Optional[dict]:
     row = _project_event(node, "message")
     if not row:
         return None
@@ -12969,13 +12979,15 @@ def _project_message(node, sender, chat) -> Optional[dict]:
     row["summary"] = (n.get("body") or "")[:200]
     if sender:
         s = dict(sender)
-        row["counterpart"] = {"key": s.get("key"), "name": s.get("name") or s.get("key"), "phone_numbers": s.get("phone_numbers") or []}
+        # Name the sender as the message's owning report (phone) has them saved.
+        name = (dcn or {}).get((s.get("key"), n.get("cellebrite_report_key"))) or s.get("name") or s.get("key")
+        row["counterpart"] = {"key": s.get("key"), "name": name, "phone_numbers": s.get("phone_numbers") or []}
     if chat:
         row["thread_id"] = dict(chat).get("key")
     return row
 
 
-def _project_email(node, src, dst) -> Optional[dict]:
+def _project_email(node, src, dst, dcn=None) -> Optional[dict]:
     row = _project_event(node, "email")
     if not row:
         return None
@@ -12985,7 +12997,9 @@ def _project_email(node, src, dst) -> Optional[dict]:
     counter_node = dst if (src is None or (src and dict(src).get("is_phone_owner"))) else src
     if counter_node:
         c = dict(counter_node)
-        row["counterpart"] = {"key": c.get("key"), "name": c.get("name") or c.get("key"), "phone_numbers": c.get("phone_numbers") or []}
+        # Show the counterparty as the event's owning report (phone) has them saved.
+        name = (dcn or {}).get((c.get("key"), n.get("cellebrite_report_key"))) or c.get("name") or c.get("key")
+        row["counterpart"] = {"key": c.get("key"), "name": name, "phone_numbers": c.get("phone_numbers") or []}
     return row
 
 
