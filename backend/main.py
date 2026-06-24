@@ -5,6 +5,8 @@ Main entry point for the API server.
 """
 
 import asyncio
+import os
+import subprocess
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,11 +47,24 @@ from services.snapshot_storage import snapshot_storage
 from routers.snapshots import _cleanup_stale_chunks
 
 
+def _git_revision() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            cwd=os.path.dirname(__file__),
+        ).decode().strip()
+    except Exception:
+        return "unknown"
+
+GIT_REVISION = _git_revision()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
     # Startup
-    print("Starting Investigation Console API...")
+    print(f"Starting Investigation Console API (revision={GIT_REVISION})")
     try:
         # Reload snapshots from disk (non-blocking)
         snapshot_storage.reload()
@@ -122,6 +137,17 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Per-route traffic/error telemetry. Self-contained: aggregates per
+# (day, route, method, status) into data/telemetry.db. The standalone Docket
+# instance (:8011) reads this DB read-only to measure how shipped tickets
+# actually perform in the platform. Guarded so the app boots without it.
+try:
+    from services import platform_telemetry
+    platform_telemetry.install(app)
+    print("[Telemetry] route traffic capture enabled (data/telemetry.db)")
+except Exception as _tel_err:
+    print(f"[Telemetry] disabled: {_tel_err}")
 
 # CORS middleware for React frontend
 app.add_middleware(

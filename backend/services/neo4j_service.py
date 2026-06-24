@@ -1266,6 +1266,8 @@ class Neo4jService:
                     relationship: type(r),
                     direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
                 }}) AS connections
+                OPTIONAL MATCH (comm_sender:Person)-[:SENT_MESSAGE]->(n)
+                OPTIONAL MATCH (n)-[:RECEIVED_MESSAGE]->(comm_recip:Person)
                 RETURN
                     n.key AS key,
                     n.name AS name,
@@ -1273,7 +1275,11 @@ class Neo4jService:
                     n.date AS date,
                     n.time AS time,
                     n.amount AS amount,
-                    n.summary AS summary,
+                    CASE WHEN labels(n)[0] = 'Communication' AND comm_sender IS NOT NULL
+                         THEN comm_sender.name +
+                              CASE WHEN comm_recip IS NOT NULL THEN ' → ' + comm_recip.name ELSE '' END
+                         ELSE n.summary
+                    END AS summary,
                     n.notes AS notes,
                     connections
                 ORDER BY n.date ASC, coalesce(n.time, '00:00:00') ASC, coalesce(n.key, '') ASC
@@ -8595,6 +8601,23 @@ class Neo4jService:
                     truncated = True
 
             # ---- Synthetic call threads (per participant pair + report) ----
+            # Push participant key constraints into Cypher so the LIMIT only
+            # applies to pairs involving the requested person, not all case pairs.
+            call_email_filter_keys: set = set()
+            if from_keys:
+                call_email_filter_keys.update(from_keys)
+            if to_keys:
+                call_email_filter_keys.update(to_keys)
+            if participant_keys:
+                call_email_filter_keys.update(participant_keys)
+
+            call_email_participant_filter = ""
+            if call_email_filter_keys:
+                call_email_participant_filter = (
+                    "AND (a.key IN $call_email_filter_keys OR b.key IN $call_email_filter_keys)"
+                )
+                params["call_email_filter_keys"] = list(call_email_filter_keys)
+
             if "calls" in active_types:
                 # Cap pair aggregations after the WITH so we don't materialise
                 # one row per (caller, callee, report) for cases with millions
@@ -8602,7 +8625,7 @@ class Neo4jService:
                 # most-active pairs which are the likely-of-interest ones.
                 query = f"""
                     MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(b:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_call} {app_filter_call} {date_filter_call} {att_call}
+                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_call} {app_filter_call} {date_filter_call} {att_call} {call_email_participant_filter}
                     WITH a, b, c.cellebrite_report_key AS rk,
                          collect(c) AS calls
                     WITH a, b, rk,
@@ -8687,7 +8710,7 @@ class Neo4jService:
             if "emails" in active_types:
                 query = f"""
                     MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})-[:EMAILED]->(e:Email)-[:SENT_TO]->(b:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_email} {app_filter_email} {date_filter_email} {att_email}
+                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_email} {app_filter_email} {date_filter_email} {att_email} {call_email_participant_filter}
                     WITH a, b, e.cellebrite_report_key AS rk,
                          collect(e) AS emails
                     WITH a, b, rk,
@@ -9605,7 +9628,7 @@ class Neo4jService:
             if "message" in active_types:
                 cypher = f"""
                     MATCH (sender:Person)-[:SENT_MESSAGE]->(msg:Communication)-[:PART_OF]->(chat:Communication)
-                    MATCH (recipient:Person)-[:PARTICIPATED_IN]->(chat)
+                    OPTIONAL MATCH (recipient:Person {{case_id: $case_id, source_type: 'cellebrite'}})-[:PARTICIPATED_IN]->(chat)
                     WHERE msg.case_id = $case_id
                       AND msg.source_type = 'cellebrite'
                       AND coalesce(msg.date, msg.timestamp, '') <> ''
