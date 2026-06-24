@@ -234,10 +234,10 @@ export async function exportTheoryToPDF(
   if (theory.supporting_evidence && theory.supporting_evidence.length > 0) {
     addSubsectionHeader('Supporting Evidence');
     theory.supporting_evidence.forEach((evidence, idx) => {
-      checkPageBreak(8);
+      checkPageBreak(15);
       doc.setFontSize(10);
-      doc.text(`${idx + 1}. ${evidence}`, margin + 5, yPosition);
-      yPosition += 6;
+      const h = addWrappedText(`${idx + 1}. ${evidence}`, margin + 5, yPosition, contentWidth - 5, 10, 5);
+      yPosition += h + 1;
     });
     yPosition += 3;
   }
@@ -245,10 +245,10 @@ export async function exportTheoryToPDF(
   if (theory.counter_arguments && theory.counter_arguments.length > 0) {
     addSubsectionHeader('Counter Arguments');
     theory.counter_arguments.forEach((arg, idx) => {
-      checkPageBreak(8);
+      checkPageBreak(15);
       doc.setFontSize(10);
-      doc.text(`${idx + 1}. ${arg}`, margin + 5, yPosition);
-      yPosition += 6;
+      const h = addWrappedText(`${idx + 1}. ${arg}`, margin + 5, yPosition, contentWidth - 5, 10, 5);
+      yPosition += h + 1;
     });
     yPosition += 3;
   }
@@ -256,10 +256,10 @@ export async function exportTheoryToPDF(
   if (theory.next_steps && theory.next_steps.length > 0) {
     addSubsectionHeader('Next Steps');
     theory.next_steps.forEach((step, idx) => {
-      checkPageBreak(8);
+      checkPageBreak(15);
       doc.setFontSize(10);
-      doc.text(`${idx + 1}. ${step}`, margin + 5, yPosition);
-      yPosition += 6;
+      const h = addWrappedText(`${idx + 1}. ${step}`, margin + 5, yPosition, contentWidth - 5, 10, 5);
+      yPosition += h + 1;
     });
     yPosition += 3;
   }

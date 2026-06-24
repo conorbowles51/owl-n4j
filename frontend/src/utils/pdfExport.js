@@ -469,12 +469,15 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
           const tempDiv = document.createElement('div');
           tempDiv.style.position = 'absolute';
           tempDiv.style.left = '-9999px';
-          tempDiv.style.width = `${(contentWidth - 5) * 3.779527559}px`; // Convert mm to px (1mm = 3.779527559px)
+          tempDiv.style.width = `${contentWidth * 3.779527559}px`; // Convert mm to px (1mm = 3.779527559px)
           tempDiv.style.padding = '10px';
           tempDiv.style.fontSize = '10pt';
           tempDiv.style.fontFamily = 'helvetica, arial, sans-serif';
           tempDiv.style.lineHeight = '1.5';
           tempDiv.style.color = '#000000';
+          tempDiv.style.wordBreak = 'break-word';
+          tempDiv.style.overflowWrap = 'break-word';
+          tempDiv.style.overflowX = 'hidden';
           tempDiv.innerHTML = htmlContent;
           document.body.appendChild(tempDiv);
           
@@ -492,7 +495,7 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
             });
             
             const imgData = canvas.toDataURL('image/png');
-            const imgWidth = contentWidth - 5;
+            const imgWidth = contentWidth;
             const imgHeight = (canvas.height * imgWidth) / canvas.width;
             
             // Check if we need a new page
@@ -501,7 +504,7 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
               yPosition = margin;
             }
             
-            doc.addImage(imgData, 'PNG', margin + 5, yPosition, imgWidth, imgHeight);
+            doc.addImage(imgData, 'PNG', margin, yPosition, imgWidth, imgHeight);
             yPosition += imgHeight + 3;
             
             // Clean up
@@ -511,10 +514,10 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
             // Fallback to plain text
             const plainText = stripHtmlTags(htmlContent);
             const contentHeight = addWrappedText(
-              plainText, 
-              margin + 5, 
-              yPosition, 
-              contentWidth - 5,
+              plainText,
+              margin,
+              yPosition,
+              contentWidth,
               10,
               5
             );
@@ -528,10 +531,10 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
           // Fallback to plain text if HTML rendering fails
           const plainText = stripHtmlTags(markdownToHtml(content));
           const contentHeight = addWrappedText(
-            plainText, 
-            margin + 5, 
-            yPosition, 
-            contentWidth - 5,
+            plainText,
+            margin,
+            yPosition,
+            contentWidth,
             10,
             5
           );
@@ -540,10 +543,10 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
       } else {
         // For user messages, render as plain text
         const contentHeight = addWrappedText(
-          content, 
-          margin + 5, 
-          yPosition, 
-          contentWidth - 5,
+          content,
+          margin,
+          yPosition,
+          contentWidth,
           10,
           5
         );
