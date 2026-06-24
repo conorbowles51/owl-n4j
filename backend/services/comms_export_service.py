@@ -164,7 +164,12 @@ def generate_timeline_pdf(
     return ''.join(parts)
 
 
-def generate_conversation_pdf(thread: dict, messages: list, case_label: str) -> str:
+def generate_conversation_pdf(
+    thread: dict,
+    messages: list,
+    case_label: str,
+    truncated: bool = False,
+) -> str:
     app = thread.get('source_app') or thread.get('app') or ''
     thread_type = thread.get('thread_type') or thread.get('type') or ''
     participants = thread.get('participants') or []
@@ -175,6 +180,13 @@ def generate_conversation_pdf(thread: dict, messages: list, case_label: str) -> 
         f'<h1>Conversation Export</h1>',
         f'<p class="subtitle">Case: {_esc(case_label)}</p>',
     ]
+
+    if truncated:
+        parts.append(
+            '<div class="banner">'
+            '&#9888; Export limited to 2,000 messages. Apply tighter filters to see all records.'
+            '</div>'
+        )
 
     info = []
     if participants:

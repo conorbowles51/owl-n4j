@@ -904,11 +904,14 @@ def export_comms_pdf(
             case_id=payload.case_id,
             thread_id=payload.thread_id,
             thread_type=thread_type,
-            limit=2000,
+            limit=2001,
             offset=0,
             anchor_key=None,
         )
         messages = detail.get("items", [])
+        truncated = len(messages) > 2000
+        if truncated:
+            messages = messages[:2000]
         _resolve_attachments(payload.case_id, messages)
 
         thread_meta = {
@@ -918,7 +921,7 @@ def export_comms_pdf(
                 _label(k) for k in (payload.participant_keys or payload.from_keys or [])
             ],
         }
-        html = generate_conversation_pdf(thread_meta, messages, case_label)
+        html = generate_conversation_pdf(thread_meta, messages, case_label, truncated)
 
     else:
         raise HTTPException(status_code=400, detail="Invalid mode")
