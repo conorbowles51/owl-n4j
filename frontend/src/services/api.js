@@ -3005,8 +3005,13 @@ export const cellebriteCommsAPI = {
     limit = 1000,
     offset = 0,
     hasAttachment = false,
+    // A single human is often minted as separate Person nodes per phone.
+    // Pass every key here (e.g. the canonical-phone bucket's person_keys) so
+    // the feed spans all their devices instead of one phone. (DKT-25)
+    personKeys = null,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
+    if (personKeys?.length) params.append('contact_keys', personKeys.join(','));
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
     if (types?.length) params.append('types', types.join(','));
     if (hasAttachment) params.append('has_attachment', 'true');

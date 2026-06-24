@@ -109,6 +109,21 @@ export default function CellebriteCommunicationView({ caseId }) {
     }
   };
 
+  // Cellebrite mints a SEPARATE Person per phone for the same human, so a
+  // contact row carries only one device's key. `shared_contacts` already
+  // groups those siblings by canonical phone number; index every member key
+  // to the full set so drilling into any one of them shows comms across all
+  // their phones rather than a single device. (DKT-25)
+  const siblingKeys = useMemo(() => {
+    const map = new Map();
+    for (const sc of data.shared_contacts || []) {
+      const keys = sc.person_keys || [];
+      if (keys.length < 2) continue;
+      for (const k of keys) map.set(k, keys);
+    }
+    return map;
+  }, [data.shared_contacts]);
+
   /**
    * Drill into a contact: push a new layer locally AND a perspective
    * frame globally. The two stacks track each other for as long as
@@ -116,10 +131,14 @@ export default function CellebriteCommunicationView({ caseId }) {
    */
   const drillInto = (contact) => {
     if (!contact?.person_key) return;
-    setDrillStack((prev) => [...prev, contact]);
+    // Resolve the full multi-device key set so the feed spans every phone the
+    // contact appears on, not just the one device the clicked row came from.
+    const keys = contact.person_keys || siblingKeys.get(contact.person_key) || [contact.person_key];
+    const enriched = { ...contact, person_keys: keys };
+    setDrillStack((prev) => [...prev, enriched]);
     if (perspective) {
       perspective.pushFrame(
-        [contact.person_key],
+        keys,
         contact.name || contact.person_key,
         'communications.drill',
       );
@@ -147,11 +166,12 @@ export default function CellebriteCommunicationView({ caseId }) {
   const openInGraph = () => {
     if (drillStack.length === 0) return;
     const head = drillStack[drillStack.length - 1];
+    const headKeys = head.person_keys || [head.person_key];
     if (perspective) {
       // setPerspective resets the stack to this single frame so the
       // graph rebuilds with a clean lens — drilling further afterward
       // re-pushes naturally.
-      perspective.setPerspective([head.person_key], head.name || head.person_key, 'communications.open-graph');
+      perspective.setPerspective(headKeys, head.name || head.person_key, 'communications.open-graph');
     }
     requestCellebriteTabSwitch('graph');
   };
@@ -164,14 +184,15 @@ export default function CellebriteCommunicationView({ caseId }) {
   const openInComms = () => {
     if (drillStack.length === 0) return;
     const head = drillStack[drillStack.length - 1];
+    const headKeys = head.person_keys || [head.person_key];
     if (perspective) {
-      perspective.setPerspective([head.person_key], head.name || head.person_key, 'communications.open-comms');
+      perspective.setPerspective(headKeys, head.name || head.person_key, 'communications.open-comms');
     }
     selectEntity({
       type: 'name-action',
       id: `name-action-${head.person_key}-${Date.now()}`,
       caseId,
-      payload: { _filter_intent: 'comms', person_keys: [head.person_key] },
+      payload: { _filter_intent: 'comms', person_keys: headKeys },
       source: 'communications.drill',
     });
     requestCellebriteTabSwitch('comms');

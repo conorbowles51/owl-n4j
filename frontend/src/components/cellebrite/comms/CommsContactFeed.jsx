@@ -81,13 +81,21 @@ export default function CommsContactFeed({
   const [searchQuery, setSearchQuery] = useState('');
   const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
 
+  // Full multi-device key set for this contact (one human, several phones).
+  // Falls back to the single device key for non-shared contacts. (DKT-25)
+  const personKeys = useMemo(
+    () => (contact?.person_keys?.length ? contact.person_keys : (contact?.person_key ? [contact.person_key] : [])),
+    [contact?.person_keys, contact?.person_key],
+  );
+  const personKeysSig = personKeys.join(',');
+
   // Reset per-contact state when the contact changes (drilling into a
   // new person should start with a clean lens).
   useEffect(() => {
     setCellFilters({});
     setSearchQuery('');
     setHasAttachmentOnly(false);
-  }, [contact?.person_key]);
+  }, [personKeysSig]);
 
   useEffect(() => {
     if (!caseId || !contact?.person_key) return;
@@ -96,6 +104,7 @@ export default function CommsContactFeed({
     setError(null);
     cellebriteCommsAPI
       .getContactFeed(caseId, contact.person_key, {
+        personKeys,
         types: [...activeTypes],
         hasAttachment: hasAttachmentOnly,
         limit: 2000,
@@ -112,7 +121,7 @@ export default function CommsContactFeed({
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [caseId, contact?.person_key, activeTypes, hasAttachmentOnly]);
+  }, [caseId, contact?.person_key, personKeysSig, activeTypes, hasAttachmentOnly]);
 
   const phoneCtx = usePhoneReports();
   const hasMultiplePhones = !!phoneCtx?.hasMultiple;

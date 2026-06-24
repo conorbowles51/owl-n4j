@@ -12404,22 +12404,31 @@ class Neo4jService:
     def get_contact_comms_feed(
         self,
         case_id: str,
-        contact_key: str,
+        contact_key: Optional[str] = None,
         report_keys: Optional[List[str]] = None,
         types: Optional[List[str]] = None,
         limit: int = 1000,
         offset: int = 0,
         has_attachment: bool = False,
+        contact_keys: Optional[List[str]] = None,
     ) -> dict:
         """
-        Chronological feed of every comm event involving a single Person,
-        across all (or selected) devices. Used by the Communications tab
-        drill-down drawer.
+        Chronological feed of every comm event involving a contact, across all
+        (or selected) devices. Used by the Communications tab drill-down drawer.
+
+        A single human is often minted as SEPARATE Person nodes per phone by
+        Cellebrite ingestion (one per device, each with its own saved name).
+        Callers that have resolved the full multi-device identity (e.g. via the
+        canonical-phone `shared_contacts` bucket) pass `contact_keys` with every
+        Person key so the feed spans all of them; `contact_key` remains for the
+        common single-device case. The two are merged into one IN-list, and the
+        per-query `WITH DISTINCT n` dedupes events reached via more than one key.
 
         types: subset of ['call', 'message', 'email'] — defaults to all three.
         has_attachment: keep only items carrying an attachment (in-query, so
         it reaches past the per-type cap).
         """
+        keys = [k for k in (contact_keys or ([contact_key] if contact_key else [])) if k]
         active = set(types) if types else {"call", "message", "email"}
         # All three per-type queries below alias the event node as `n`, so one
         # clause gates them all.
@@ -12433,7 +12442,7 @@ class Neo4jService:
         # the UI always shows the real number and can page through all of it.
         fetch_cap = offset + limit
         rk_filter = ""
-        params: Dict[str, Any] = {"case_id": case_id, "contact_key": contact_key,
+        params: Dict[str, Any] = {"case_id": case_id, "contact_keys": keys,
                                   "fetch_cap": fetch_cap}
         if report_keys:
             rk_filter = "AND n.cellebrite_report_key IN $report_keys"
@@ -12441,17 +12450,44 @@ class Neo4jService:
 
         items: list = []
 
-        # Look up the contact for the header
+        # Look up the contact(s) for the header. When the feed spans multiple
+        # Person nodes (one human across several phones) we union their phone
+        # numbers / identifiers so the header reflects the whole identity, and
+        # carry every key so the UI can tell it's a rolled-up contact.
         with self._driver.session() as session:
-            contact_rec = session.run(
+            contact_recs = session.run(
                 """
-                MATCH (p:Person {case_id: $case_id, key: $contact_key})
-                RETURN p LIMIT 1
+                MATCH (p:Person {case_id: $case_id})
+                WHERE p.key IN $contact_keys
+                RETURN p
                 """,
                 case_id=case_id,
-                contact_key=contact_key,
-            ).single()
-            contact = dict(contact_rec["p"]) if contact_rec else {}
+                contact_keys=keys,
+            )
+            persons = [dict(rec["p"]) for rec in contact_recs]
+            # Show the clicked device's saved name as the header representative
+            # (Neo4j row order isn't guaranteed), unioning the rest below.
+            if contact_key:
+                persons.sort(key=lambda pr: 0 if pr.get("key") == contact_key else 1)
+            if persons:
+                phone_numbers, identifiers = [], []
+                for pr in persons:
+                    for ph in (pr.get("phone_numbers") or []):
+                        if ph and ph not in phone_numbers:
+                            phone_numbers.append(ph)
+                    for ident in (pr.get("all_identifiers") or []):
+                        if ident and ident not in identifiers:
+                            identifiers.append(ident)
+                contact = {
+                    "key": persons[0].get("key"),
+                    "keys": [pr.get("key") for pr in persons if pr.get("key")],
+                    "name": persons[0].get("name"),
+                    "phone_numbers": phone_numbers,
+                    "is_phone_owner": any(bool(pr.get("is_phone_owner")) for pr in persons),
+                    "all_identifiers": identifiers,
+                }
+            else:
+                contact = {}
             # Per-device saved names — each feed item shows how the device it
             # happened on named the parties.
             dcn = self.device_contact_names(case_id)
@@ -12465,7 +12501,7 @@ class Neo4jService:
             if "call" in active:
                 rs = session.run(
                     f"""
-                    MATCH (p:Person {{case_id: $case_id, key: $contact_key}})
+                    MATCH (p:Person {{case_id: $case_id}}) WHERE p.key IN $contact_keys
                     CALL {{
                       WITH p MATCH (p)-[:CALLED]->(n:PhoneCall {{source_type:'cellebrite'}}) RETURN n
                       UNION
@@ -12513,7 +12549,7 @@ class Neo4jService:
             if "message" in active:
                 rs = session.run(
                     f"""
-                    MATCH (p:Person {{case_id: $case_id, key: $contact_key}})
+                    MATCH (p:Person {{case_id: $case_id}}) WHERE p.key IN $contact_keys
                     CALL {{
                       WITH p MATCH (p)-[:SENT_MESSAGE]->(n:Communication {{source_type:'cellebrite'}}) RETURN n
                       UNION
@@ -12557,7 +12593,7 @@ class Neo4jService:
             if "email" in active:
                 rs = session.run(
                     f"""
-                    MATCH (p:Person {{case_id: $case_id, key: $contact_key}})
+                    MATCH (p:Person {{case_id: $case_id}}) WHERE p.key IN $contact_keys
                     CALL {{
                       WITH p MATCH (p)-[:EMAILED]->(n:Email {{source_type:'cellebrite'}}) RETURN n
                       UNION
@@ -12612,7 +12648,7 @@ class Neo4jService:
             if "call" in active:
                 r = session.run(
                     f"""
-                    MATCH (p:Person {{case_id:$case_id, key:$contact_key}})
+                    MATCH (p:Person {{case_id:$case_id}}) WHERE p.key IN $contact_keys
                     CALL {{
                       WITH p MATCH (p)-[:CALLED]->(n:PhoneCall {{source_type:'cellebrite'}}) RETURN n
                       UNION WITH p MATCH (n:PhoneCall {{source_type:'cellebrite'}})-[:CALLED_TO]->(p) RETURN n
@@ -12624,7 +12660,7 @@ class Neo4jService:
             if "message" in active:
                 r = session.run(
                     f"""
-                    MATCH (p:Person {{case_id:$case_id, key:$contact_key}})
+                    MATCH (p:Person {{case_id:$case_id}}) WHERE p.key IN $contact_keys
                     CALL {{
                       WITH p MATCH (p)-[:SENT_MESSAGE]->(n:Communication {{source_type:'cellebrite'}}) RETURN n
                       UNION WITH p MATCH (p)-[:PARTICIPATED_IN]->(:Communication)<-[:PART_OF]-(n:Communication {{source_type:'cellebrite'}}) RETURN n
@@ -12636,7 +12672,7 @@ class Neo4jService:
             if "email" in active:
                 r = session.run(
                     f"""
-                    MATCH (p:Person {{case_id:$case_id, key:$contact_key}})
+                    MATCH (p:Person {{case_id:$case_id}}) WHERE p.key IN $contact_keys
                     CALL {{
                       WITH p MATCH (p)-[:EMAILED]->(n:Email {{source_type:'cellebrite'}}) RETURN n
                       UNION WITH p MATCH (n:Email {{source_type:'cellebrite'}})-[:SENT_TO]->(p) RETURN n
@@ -12655,6 +12691,7 @@ class Neo4jService:
         return {
             "contact": {
                 "key": contact.get("key"),
+                "keys": list(contact.get("keys") or []),
                 "name": contact.get("name"),
                 "phone_numbers": list(contact.get("phone_numbers") or []),
                 "is_phone_owner": bool(contact.get("is_phone_owner")),

@@ -1708,6 +1708,11 @@ def overview_contact_detail(
 def comms_contact_feed(
     contact_key: str,
     case_id: str = Query(...),
+    # A single human is often minted as separate Person nodes per phone. When
+    # the caller has resolved the full multi-device identity (the canonical-
+    # phone bucket) it passes every Person key here so the feed spans them all;
+    # the path `contact_key` is the single-device fallback. (DKT-25)
+    contact_keys: Optional[str] = Query(None, description="Comma-separated Person keys to span"),
     report_keys: Optional[str] = Query(None),
     types: Optional[str] = Query(None, description="Comma-separated: call,message,email"),
     # No artificial contact cap: a key contact's thread can run to tens of
@@ -1725,6 +1730,7 @@ def comms_contact_feed(
     result = neo4j_service.get_contact_comms_feed(
         case_id=case_id,
         contact_key=contact_key,
+        contact_keys=_csv_param(contact_keys),
         report_keys=_csv_param(report_keys),
         types=_csv_param(types),
         limit=limit,

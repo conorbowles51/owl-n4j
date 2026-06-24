@@ -48,6 +48,8 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
     setError(null);
     cellebriteCommsAPI
       .getContactFeed(caseId, contact.person_key, {
+        // Span every phone the same human appears on, when known. (DKT-25)
+        personKeys: contact.person_keys?.length ? contact.person_keys : null,
         types: [...activeTypes],
         hasAttachment: hasAttachmentOnly,
         limit: 1000,
