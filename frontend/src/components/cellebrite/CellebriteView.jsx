@@ -33,7 +33,7 @@ const TABS = [
   // every data type (people, messages, places, files). The single entry
   // point that pivots out to the right tab (Epic 2A).
   { key: 'discovery', label: 'Search & Discovery', icon: Search },
-  { key: 'comms', label: 'Comms Center', icon: MessageSquare },
+  { key: 'comms', label: 'Communications Center', icon: MessageSquare },
   // Unified contacts: rolls Persons up by canonical phone number so
   // the same human across multiple phones (different alias names)
   // shows as one row. Direct response to user feedback that

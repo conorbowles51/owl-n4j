@@ -81,8 +81,8 @@ export default function PerspectivePill() {
         />
         <ActionButton
           icon={MessageSquare}
-          label="In Comms"
-          title="Filter Comms Center by this perspective"
+          label="In Communications"
+          title="Filter Communications Center by this perspective"
           onClick={() => requestCellebriteTabSwitch('comms')}
         />
       </div>

@@ -1074,7 +1074,7 @@ function CrossTypeTimelineFlyover({
     <aside
       className="fixed left-0 right-0 bottom-0 z-30 bg-white border-t border-light-200 shadow-2xl flex flex-col animate-timeline-slide"
       role="complementary"
-      aria-label="Cross-type comms timeline"
+      aria-label="Cross-type communications timeline"
       style={{ height: `${height}px` }}
     >
       <style>{`

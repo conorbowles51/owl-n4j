@@ -146,7 +146,7 @@ export default function NameActionMenu({
           <Divider />
           <MenuItem icon={ArrowRight} label="Drill into communications" onClick={drill} />
           <MenuItem icon={Network} label="View Cross-Phone Graph from here" onClick={inGraph} />
-          <MenuItem icon={MessageSquare} label="Filter Comms Center by this" onClick={inComms} />
+          <MenuItem icon={MessageSquare} label="Filter Communications Center by this" onClick={inComms} />
           <Divider />
           {perspective?.hasPerspective ? (
             <>

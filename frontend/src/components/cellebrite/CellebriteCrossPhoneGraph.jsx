@@ -1704,7 +1704,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                     type="button"
                     onClick={() => setPathFlow({ aKey, bKey, aName, bName })}
                     className="text-[10px] text-owl-blue-800 bg-white border border-owl-blue-200 hover:bg-owl-blue-50 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                    title="Trace the shortest path between these two people and the comms exchanged at each hop"
+                    title="Trace the shortest path between these two people and the communications exchanged at each hop"
                   >
                     <Share2 className="w-2.5 h-2.5" />
                     Trace path
@@ -1752,7 +1752,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
               switch. */}
           <span className="ml-auto inline-flex items-center gap-1 flex-wrap">
             <span className="text-[9px] uppercase tracking-wide text-amber-700">View in</span>
-            <PivotBtn icon={MessageSquare} label="Comms"        onClick={() => pivotTo('comms')} />
+            <PivotBtn icon={MessageSquare} label="Communications Center" onClick={() => pivotTo('comms')} />
             <PivotBtn icon={UsersIcon}     label="Communications" onClick={() => pivotTo('communications')} />
             <PivotBtn icon={Clock}         label="Timeline"     onClick={() => pivotTo('timeline')} />
             <PivotBtn icon={MapPin}        label="Locations"    onClick={() => pivotTo('locations')} />
@@ -2446,7 +2446,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                             pivotPersonKeys('comms', [r.key], r.name || r.key);
                           }}
                           className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-light-300 text-light-700 hover:bg-light-50"
-                          title="Open Comms Center filtered to this person"
+                          title="Open Communications Center filtered to this person"
                         >
                           <MessageSquare className="w-2.5 h-2.5" /> Comms
                         </button>
@@ -2513,7 +2513,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                       type="button"
                       onClick={() => pivotPersonKeys('comms', [personKey], selNode.name || personKey)}
                       className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-light-300 text-light-700 hover:bg-light-50"
-                      title="Open Comms Center filtered to this person"
+                      title="Open Communications Center filtered to this person"
                     >
                       <MessageSquare className="w-3 h-3" /> Comms
                     </button>

@@ -30,7 +30,7 @@ export default function FilterCommsButton({
   intentId,
   // Free-form label shown in the rail title bar before Comms takes
   // over. Caller-supplied so the chip reads sensibly per surface.
-  label = 'Filter Comms',
+  label = 'Filter Communications',
   // 'icon' = compact icon-only button (good for dense rows).
   // 'full' = icon + 'Filter Comms' label.
   variant = 'icon',
@@ -68,10 +68,10 @@ export default function FilterCommsButton({
         type="button"
         onClick={onClick}
         className="inline-flex items-center gap-1 text-[11px] text-owl-blue-700 hover:text-owl-blue-900 hover:underline"
-        title={`Filter the Comms feed by ${keys.length === 1 ? 'this party' : 'these parties'}`}
+        title={`Filter the Communications feed by ${keys.length === 1 ? 'this party' : 'these parties'}`}
       >
         <Filter className="w-3 h-3" />
-        Filter Comms
+        Filter Communications
         <ExternalLink className="w-3 h-3" />
       </button>
     );
@@ -82,7 +82,7 @@ export default function FilterCommsButton({
       type="button"
       onClick={onClick}
       className="inline-flex items-center justify-center text-light-500 hover:text-owl-blue-700 hover:bg-owl-blue-50 rounded p-1 transition-colors"
-      title={`Filter the Comms feed by ${keys.length === 1 ? 'this party' : 'these parties'}`}
+      title={`Filter the Communications feed by ${keys.length === 1 ? 'this party' : 'these parties'}`}
     >
       <Filter className="w-3.5 h-3.5" />
     </button>

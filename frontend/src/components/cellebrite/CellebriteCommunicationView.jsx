@@ -477,10 +477,10 @@ function DrillBreadcrumbBar({ stack, onDrillTo, onOpenInGraph, onOpenInComms }) 
           type="button"
           onClick={onOpenInComms}
           className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded border border-light-300 bg-white hover:bg-light-50 text-light-700"
-          title="Filter Comms Center by this perspective"
+          title="Filter Communications Center by this perspective"
         >
           <MessageSquare className="w-3 h-3" />
-          In Comms
+          In Communications
         </button>
         <button
           type="button"

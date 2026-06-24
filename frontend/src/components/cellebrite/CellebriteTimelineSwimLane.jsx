@@ -379,7 +379,7 @@ export default function CellebriteTimelineSwimLane({
             className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700"
           >
             <MessageSquareText className="w-3 h-3" />
-            Open in Comms
+            Open in Communications
           </button>
           <button
             type="button"

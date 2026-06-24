@@ -252,7 +252,7 @@ function DeviceCard({ report, onDrillDown, onDelete, onEditName }) {
           <StatBadge
             icon={MessageSquare}
             count={totalComms}
-            label="Total Comms"
+            label="Total Communications"
             color="emerald"
           />
         </div>

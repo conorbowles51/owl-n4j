@@ -189,7 +189,7 @@ export function buildCommsContext({
 
   return {
     viewType: 'comms',
-    viewLabel: 'Cellebrite Comms Center',
+    viewLabel: 'Cellebrite Communications Center',
     filters: f,
     filterLabels: labels,
     selectionIds: selectedThread?.thread_id ? [selectedThread.thread_id] : [],

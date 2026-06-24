@@ -227,10 +227,10 @@ export default function CellebriteUnifiedContacts({ caseId, isActive = true }) {
                           });
                         }}
                         className="text-xs text-owl-blue-700 hover:underline inline-flex items-center gap-1"
-                        title="Filter Comms feed by this number's aliases"
+                        title="Filter Communications feed by this number's aliases"
                       >
                         <Filter className="w-3 h-3" />
-                        Filter Comms
+                        Filter Communications
                         <ExternalLink className="w-3 h-3" />
                       </button>
                     </td>
