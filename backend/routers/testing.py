@@ -18,6 +18,7 @@ Endpoints:
     GET    /api/testing/ping          → unauthenticated health ping
     POST   /api/testing/login         → exchange username/password for a token
     GET    /api/testing/me            → who am I (token check)
+    GET    /api/testing/whoami        → alias of /me (token check)
     GET    /api/testing/whoami        → alias for /me (token check)
     GET    /api/testing/checklist     → the checklist catalogue (auth required)
     GET    /api/testing/feedback      → all stored feedback (auth required)
@@ -130,6 +131,7 @@ def login(body: LoginIn):
 
 
 @router.get("/api/testing/me")
+@router.get("/api/testing/whoami")
 def me(tester: dict = Depends(require_tester)):
     """Return the signed-in tester (used by the page to validate a stored token)."""
     return tester
