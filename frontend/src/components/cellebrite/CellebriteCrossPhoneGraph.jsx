@@ -2448,7 +2448,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                           className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-light-300 text-light-700 hover:bg-light-50"
                           title="Open Communications Center filtered to this person"
                         >
-                          <MessageSquare className="w-2.5 h-2.5" /> Comms
+                          <MessageSquare className="w-2.5 h-2.5" /> Communications
                         </button>
                       </>
                     )}
@@ -2515,7 +2515,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                       className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-light-300 text-light-700 hover:bg-light-50"
                       title="Open Communications Center filtered to this person"
                     >
-                      <MessageSquare className="w-3 h-3" /> Comms
+                      <MessageSquare className="w-3 h-3" /> Communications
                     </button>
                   </>
                 )}
