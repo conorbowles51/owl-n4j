@@ -75,7 +75,7 @@ export function useFilteredEvents({
         ? new Date(dateRange.start + 'T00:00:00').getTime()
         : -Infinity
       const end = dateRange.end
-        ? new Date(dateRange.end + 'T00:00:00').getTime()
+        ? new Date(dateRange.end + 'T23:59:59.999').getTime()
         : Infinity
       filtered = filtered.filter((e) => {
         const ts = new Date(e.date).getTime()
