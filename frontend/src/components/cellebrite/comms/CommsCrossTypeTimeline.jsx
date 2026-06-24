@@ -49,9 +49,11 @@ export default function CommsCrossTypeTimeline({
   // Center wires this into its scrubber so the picked window narrows
   // the rest of the page (threads + thread view) too.
   onApplyWindow = null,
+  fillContainer = false,
 }) {
   useCellebriteTime(); // re-render row times when the zone toggles
   const [expanded, setExpanded] = useState(true);
+  const isExpanded = fillContainer || expanded;
   // List | Lanes ↓ | Lanes → renderer selector. Same data either
   // way — only the visual layout differs.
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'swim-v' | 'swim-h'
@@ -91,7 +93,7 @@ export default function CommsCrossTypeTimeline({
   const hasMultiplePhones = !!phoneCtx?.hasMultiple;
 
   useEffect(() => {
-    if (!caseId || !expanded) {
+    if (!caseId || !isExpanded) {
       return;
     }
     let cancelled = false;
@@ -141,7 +143,7 @@ export default function CommsCrossTypeTimeline({
       hasAttachment: hasAttachmentOnly,
     }).then((env) => { if (!cancelled) setExactTotal(env?.total ?? null); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps, startDate, endDate, expanded, sortMode, hasAttachmentOnly]);
+  }, [caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps, startDate, endDate, isExpanded, sortMode, hasAttachmentOnly]);
 
   // Per-phone seed for Lanes view.
   //
@@ -161,7 +163,7 @@ export default function CommsCrossTypeTimeline({
   // The List view doesn't need this — it's strictly chronological
   // and the global newest-N is correct.
   useEffect(() => {
-    if (!caseId || !expanded) return undefined;
+    if (!caseId || !isExpanded) return undefined;
     if (viewMode === 'list') return undefined;
     if (reportKeys.size < 2) return undefined; // single phone == no seed needed
 
@@ -206,7 +208,7 @@ export default function CommsCrossTypeTimeline({
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, expanded, viewMode, [...reportKeys].join(','), sortMode, hasAttachmentOnly]);
+  }, [caseId, isExpanded, viewMode, [...reportKeys].join(','), sortMode, hasAttachmentOnly]);
 
   // Apply the has-attachment filter (client-side over loaded items) +
   // sort=type client-side (the backend doesn't bucket by type). For asc/desc
@@ -281,15 +283,15 @@ export default function CommsCrossTypeTimeline({
   // loaded. scrollTop is already tracked for virtualization, so this just
   // watches it.
   useEffect(() => {
-    if (!expanded || !cursor || loadingMoreRef.current) return;
+    if (!isExpanded || !cursor || loadingMoreRef.current) return;
     const nearBottom = (scrollTop + viewportH) >= (orderedItems.length * ROW_HEIGHT) - ROW_HEIGHT * 12;
     if (nearBottom) loadMore();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollTop, viewportH, orderedItems.length, cursor, expanded]);
+  }, [scrollTop, viewportH, orderedItems.length, cursor, isExpanded]);
 
   // Re-measure viewport on expand / data change
   useEffect(() => {
-    if (!expanded) return;
+    if (!isExpanded) return;
     const el = scrollRef.current;
     if (!el) return;
     const measure = () => setViewportH(el.clientHeight || 0);
@@ -297,7 +299,7 @@ export default function CommsCrossTypeTimeline({
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [expanded]);
+  }, [isExpanded]);
 
   const contextLabel = hasEntitySelection
     ? 'between selected entities'
@@ -305,27 +307,46 @@ export default function CommsCrossTypeTimeline({
 
   return (
     <div
-      className="border-t-2 border-owl-blue-200 bg-white flex-shrink-0 flex flex-col"
-      style={{ height: expanded ? '33vh' : 'auto', minHeight: expanded ? '200px' : '32px' }}
+      className="border-t-2 border-owl-blue-200 bg-white flex flex-col"
+      style={
+        fillContainer
+          ? { height: '100%', minHeight: 0 }
+          : { height: expanded ? '33vh' : 'auto', minHeight: expanded ? '200px' : '32px', flexShrink: 0 }
+      }
     >
       <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-light-700 border-b border-light-100 flex-shrink-0">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-2 flex-1 text-left hover:bg-light-50 -mx-1 px-1 rounded"
-        >
-          {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-          <Activity className="w-3.5 h-3.5 text-owl-blue-600" />
-          <span className="font-semibold">Conversation timeline</span>
-          <span className="text-light-500">{contextLabel}</span>
-          <span className="text-light-400">·</span>
-          <span className="text-light-500">
-            {exactTotal != null
-              ? `${orderedItems.length.toLocaleString()} of ${exactTotal.toLocaleString()}`
-              : `${orderedItems.length.toLocaleString()}${cursor ? '+' : ''} loaded`}
-          </span>
-          {(loading || loadingMore) && <Loader2 className="w-3 h-3 animate-spin text-light-400 ml-1" />}
-        </button>
-        {expanded && (
+        {fillContainer ? (
+          <div className="flex items-center gap-2 flex-1 text-left -mx-1 px-1">
+            <Activity className="w-3.5 h-3.5 text-owl-blue-600" />
+            <span className="font-semibold">Conversation timeline</span>
+            <span className="text-light-500">{contextLabel}</span>
+            <span className="text-light-400">·</span>
+            <span className="text-light-500">
+              {exactTotal != null
+                ? `${orderedItems.length.toLocaleString()} of ${exactTotal.toLocaleString()}`
+                : `${orderedItems.length.toLocaleString()}${cursor ? '+' : ''} loaded`}
+            </span>
+            {(loading || loadingMore) && <Loader2 className="w-3 h-3 animate-spin text-light-400 ml-1" />}
+          </div>
+        ) : (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-2 flex-1 text-left hover:bg-light-50 -mx-1 px-1 rounded"
+          >
+            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            <Activity className="w-3.5 h-3.5 text-owl-blue-600" />
+            <span className="font-semibold">Conversation timeline</span>
+            <span className="text-light-500">{contextLabel}</span>
+            <span className="text-light-400">·</span>
+            <span className="text-light-500">
+              {exactTotal != null
+                ? `${orderedItems.length.toLocaleString()} of ${exactTotal.toLocaleString()}`
+                : `${orderedItems.length.toLocaleString()}${cursor ? '+' : ''} loaded`}
+            </span>
+            {(loading || loadingMore) && <Loader2 className="w-3 h-3 animate-spin text-light-400 ml-1" />}
+          </button>
+        )}
+        {isExpanded && (
           <div className="inline-flex items-center bg-white border border-light-300 rounded overflow-hidden text-[11px] flex-shrink-0 mr-1">
             <button
               type="button"
@@ -353,14 +374,14 @@ export default function CommsCrossTypeTimeline({
             </button>
           </div>
         )}
-        {expanded && (
+        {isExpanded && (
           <AttachmentFilterToggle
             value={hasAttachmentOnly}
             onChange={setHasAttachmentOnly}
             className="flex-shrink-0 mr-1"
           />
         )}
-        {expanded && viewMode === 'list' && (
+        {isExpanded && viewMode === 'list' && (
           <div className="relative flex-shrink-0">
             <button
               onClick={() => setSortOpen((v) => !v)}
@@ -409,7 +430,7 @@ export default function CommsCrossTypeTimeline({
           </div>
         )}
       </div>
-      {expanded && (
+      {isExpanded && (
         <div
           ref={scrollRef}
           className={`flex-1 min-h-0 ${viewMode === 'list' ? 'overflow-y-auto' : 'flex flex-col overflow-hidden'}`}

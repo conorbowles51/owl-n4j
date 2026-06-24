@@ -1132,6 +1132,7 @@ function CrossTypeTimelineFlyover({
           endDate={endDate}
           onItemSelect={onItemSelect}
           onApplyWindow={onApplyWindow}
+          fillContainer
         />
       </div>
     </aside>
