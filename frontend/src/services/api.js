@@ -2996,6 +2996,32 @@ export const cellebriteCommsAPI = {
     ),
 
   /**
+   * Export filtered comms as a PDF blob.
+   *
+   * mode="timeline": cross-type chronological table (capped at 2,000 items).
+   * mode="conversation": chat-bubble layout for the given thread_id.
+   *
+   * Returns a Blob so the caller can trigger a download.
+   */
+  exportPdf: async (payload) => {
+    const token = localStorage.getItem('authToken');
+    const resp = await fetch(`${API_BASE}/cellebrite/comms/export/pdf`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: 'Export failed' }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    return resp.blob();
+  },
+
+  /**
    * Phase 9: All comms (calls + messages + emails) involving one contact,
    * across all (or selected) devices, sorted chronologically.
    */

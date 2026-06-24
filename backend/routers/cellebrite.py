@@ -8,8 +8,8 @@ Analytics endpoints for the Cellebrite Multi-Phone View:
 - Communication network analysis
 """
 
-from typing import Dict, List, Optional, Tuple
-from fastapi import APIRouter, Depends, Query, HTTPException
+from typing import Dict, List, Literal, Optional, Tuple
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from pydantic import BaseModel
@@ -796,6 +796,151 @@ def resolve_comms_attachment(
         "size": rec.get("size"),
         "sha256": rec.get("sha256"),
     }
+
+
+# -------------------------------------------------------------------
+# Comms PDF export
+# -------------------------------------------------------------------
+
+class CommsExportRequest(BaseModel):
+    case_id: str
+    mode: Literal["timeline", "conversation"]
+    participant_keys: List[str] = []
+    from_keys: List[str] = []
+    to_keys: List[str] = []
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    types: List[str] = []
+    source_apps: List[str] = []
+    report_keys: List[str] = []
+    thread_id: Optional[str] = None
+    thread_type: Optional[str] = None
+    participants_mode: str = "any"
+
+
+@router.post("/comms/export/pdf")
+def export_comms_pdf(
+    payload: CommsExportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Export filtered comms as a PDF.
+
+    mode=timeline: cross-type chronological table (max 2,000 items).
+    mode=conversation: chat-bubble layout for a single thread.
+    """
+    from services.comms_export_service import (
+        generate_timeline_pdf,
+        generate_conversation_pdf,
+        render_pdf,
+    )
+
+    _require_case_access(payload.case_id, current_user, db)
+
+    case_label = payload.case_id[:8]
+
+    # Resolve participant keys to "Name (+number)" labels so the PDF header
+    # shows readable identities (name alongside number) instead of raw keys.
+    label_keys = list(
+        dict.fromkeys(payload.participant_keys + payload.from_keys + payload.to_keys)
+    )
+    label_map: dict = {}
+    if label_keys:
+        for person in neo4j_service.get_persons_by_keys(payload.case_id, label_keys):
+            name = person.get("name") or person.get("key")
+            phones = person.get("phone_numbers") or []
+            label_map[person.get("key")] = (
+                f"{name} ({phones[0]})" if phones else name
+            )
+
+    def _label(key: str) -> str:
+        return label_map.get(key, key)
+
+    if payload.mode == "timeline":
+        result = neo4j_service.get_cellebrite_comms_between(
+            case_id=payload.case_id,
+            from_keys=payload.from_keys or None,
+            to_keys=payload.to_keys or None,
+            participant_keys=payload.participant_keys or None,
+            types=payload.types or None,
+            report_keys=payload.report_keys or None,
+            source_apps=payload.source_apps or None,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            limit=2001,
+            offset=0,
+            sort="asc",
+            cursor=None,
+            has_attachment=False,
+        )
+        items = result.get("items", [])
+        truncated = len(items) > 2000
+        if truncated:
+            items = items[:2000]
+        _resolve_attachments(payload.case_id, items)
+
+        # Build a human-readable filters summary for the PDF header.
+        parts_list = [
+            _label(k)
+            for k in dict.fromkeys(
+                payload.participant_keys + payload.from_keys + payload.to_keys
+            )
+        ]
+        filters_summary = {
+            "participants": ", ".join(parts_list) if parts_list else "",
+            "date_range": " – ".join(filter(None, [payload.start_date, payload.end_date])),
+            "types": ", ".join(payload.types) if payload.types else "",
+            "apps": ", ".join(payload.source_apps) if payload.source_apps else "",
+        }
+
+        html = generate_timeline_pdf(items, filters_summary, case_label, truncated)
+
+    elif payload.mode == "conversation":
+        if not payload.thread_id:
+            raise HTTPException(status_code=400, detail="thread_id is required for conversation mode")
+
+        thread_type = payload.thread_type or "chat"
+        detail = neo4j_service.get_cellebrite_thread_detail(
+            case_id=payload.case_id,
+            thread_id=payload.thread_id,
+            thread_type=thread_type,
+            limit=2000,
+            offset=0,
+            anchor_key=None,
+        )
+        messages = detail.get("items", [])
+        _resolve_attachments(payload.case_id, messages)
+
+        thread_meta = {
+            "thread_type": thread_type,
+            "source_app": ", ".join(payload.source_apps) if payload.source_apps else "",
+            "participants": [
+                _label(k) for k in (payload.participant_keys or payload.from_keys or [])
+            ],
+        }
+        html = generate_conversation_pdf(thread_meta, messages, case_label)
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid mode")
+
+    try:
+        pdf_bytes = render_pdf(html)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="comms-export-{payload.case_id[:8]}.pdf"'
+            },
+        )
+    except Exception:
+        # Fallback: return print-friendly HTML if WeasyPrint is unavailable.
+        return Response(
+            content=html,
+            media_type="text/html",
+            headers={
+                "Content-Disposition": f'attachment; filename="comms-export-{payload.case_id[:8]}.html"'
+            },
+        )
 
 
 # -------------------------------------------------------------------

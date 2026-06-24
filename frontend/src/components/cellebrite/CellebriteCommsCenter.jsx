@@ -290,6 +290,57 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     });
   }, [caseId, selectEntity]);
 
+  const [exportLoading, setExportLoading] = useState(false);
+
+  const handleExport = useCallback(async (mode) => {
+    if (exportLoading) return;
+    setExportLoading(true);
+    try {
+      const body = {
+        case_id: caseId,
+        mode,
+        participant_keys: [...participantKeys],
+        from_keys: [...fromKeys],
+        to_keys: [...toKeys],
+        participants_mode: participantsMode,
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+        types: [...activeTypes],
+        source_apps: [...activeApps],
+        report_keys: [...selectedReportKeys],
+        thread_id: mode === 'conversation' ? (selectedThread?.thread_id || selectedThread?.id) : undefined,
+        thread_type: mode === 'conversation' ? (selectedThread?.thread_type || selectedThread?.type) : undefined,
+      };
+      const blob = await cellebriteCommsAPI.exportPdf(body);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `comms-${mode}-${caseId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Comms PDF export failed:', err);
+      alert(`Export failed: ${err.message}`);
+    } finally {
+      setExportLoading(false);
+    }
+  }, [
+    exportLoading,
+    caseId,
+    participantKeys,
+    fromKeys,
+    toKeys,
+    participantsMode,
+    startDate,
+    endDate,
+    activeTypes,
+    activeApps,
+    selectedReportKeys,
+    selectedThread,
+  ]);
+
   // View-aware AI context
   const rootRef = useRef(null);
   const { publish, clear } = useChatContext();
@@ -896,6 +947,9 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         windowStart={windowStart}
         windowEnd={windowEnd}
         onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+        onExport={handleExport}
+        exportLoading={exportLoading}
+        hasSelectedThread={!!selectedThread}
       />
 
       {/* Phase K4 (revised): cross-type timeline returns as a slide-

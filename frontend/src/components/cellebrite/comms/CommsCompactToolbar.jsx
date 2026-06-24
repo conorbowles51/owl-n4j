@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, BarChart3, Smartphone, X, Calendar } from 'lucide-react';
+import { ChevronDown, BarChart3, Smartphone, X, Calendar, Download, Loader2 } from 'lucide-react';
 import CellebriteSearchInput from '../shared/CellebriteSearchInput';
 import TimelineScrubber from '../shared/TimelineScrubber';
 import CommsTypeFilter from './CommsTypeFilter';
@@ -44,6 +44,9 @@ export default function CommsCompactToolbar({
   windowStart,
   windowEnd,
   onWindowChange,
+  onExport,
+  exportLoading = false,
+  hasSelectedThread = false,
 }) {
   const [appsOpen, setAppsOpen] = useState(false);
   const [scrubberOpen, setScrubberOpen] = useState(false);
@@ -185,6 +188,15 @@ export default function CommsCompactToolbar({
           </div>
         )}
 
+        {/* Export button */}
+        {onExport && (
+          <ExportDropdown
+            onExport={onExport}
+            loading={exportLoading}
+            hasSelectedThread={hasSelectedThread}
+          />
+        )}
+
         {/* Scrubber handle */}
         <button
           type="button"
@@ -263,5 +275,81 @@ function DateChip({ label, date, onClear, title }) {
         <X className="w-3 h-3" />
       </button>
     </span>
+  );
+}
+
+/**
+ * Small dropdown for PDF export. Two options:
+ *   - Timeline: cross-type chronological table of all filtered comms
+ *   - Conversation: chat-bubble layout for the currently selected thread
+ *
+ * "Conversation" is disabled when no thread is selected.
+ */
+function ExportDropdown({ onExport, loading, hasSelectedThread }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handler = (ev) => {
+      if (
+        menuRef.current && !menuRef.current.contains(ev.target) &&
+        btnRef.current && !btnRef.current.contains(ev.target)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const choose = (mode) => {
+    setOpen(false);
+    onExport(mode);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={loading}
+        onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-1 text-[11px] px-2 py-1 border rounded transition-colors bg-white border-light-300 text-light-700 hover:bg-light-100 disabled:opacity-50"
+        title="Export comms as PDF"
+      >
+        {loading
+          ? <Loader2 className="w-3 h-3 animate-spin" />
+          : <Download className="w-3 h-3" />}
+        <span>Export</span>
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          className="absolute right-0 top-full mt-1 z-30 bg-white border border-light-300 rounded shadow-xl py-1 min-w-[180px]"
+        >
+          <button
+            type="button"
+            onClick={() => choose('timeline')}
+            className="w-full text-left px-3 py-2 text-[12px] hover:bg-light-100"
+          >
+            <div className="font-medium">Timeline PDF</div>
+            <div className="text-[10px] text-light-500">All filtered comms, chronological table</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => choose('conversation')}
+            disabled={!hasSelectedThread}
+            className="w-full text-left px-3 py-2 text-[12px] hover:bg-light-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={hasSelectedThread ? undefined : 'Select a thread first'}
+          >
+            <div className="font-medium">Conversation PDF</div>
+            <div className="text-[10px] text-light-500">Selected thread, chat-bubble layout</div>
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

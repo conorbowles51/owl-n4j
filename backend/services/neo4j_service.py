@@ -6070,6 +6070,28 @@ class Neo4jService:
                 "is_owner": bool(r["is_owner"]),
             } for r in rows]
 
+    def get_persons_by_keys(self, case_id: str, keys: list) -> list:
+        """Batch-fetch Person nodes by key list — used for display-name resolution."""
+        if not keys:
+            return []
+        with self._driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (p:Person {case_id:$case_id, source_type:'cellebrite'})
+                WHERE p.key IN $keys
+                RETURN p.key AS key, p.name AS name, p.phone_numbers AS phone_numbers
+                """,
+                {"case_id": case_id, "keys": list(keys)},
+            )
+            return [
+                {
+                    "key": r["key"],
+                    "name": r["name"] or r["key"],
+                    "phone_numbers": list(r["phone_numbers"] or []),
+                }
+                for r in rows
+            ]
+
     def merge_person_identities(
         self,
         case_id: str,
