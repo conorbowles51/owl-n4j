@@ -72,14 +72,14 @@ export function useFilteredEvents({
     // 4. Date range filter (from sidebar date picker)
     if (dateRange.start || dateRange.end) {
       const start = dateRange.start
-        ? new Date(dateRange.start).getTime()
+        ? new Date(dateRange.start + 'T00:00:00').getTime()
         : -Infinity
       const end = dateRange.end
-        ? new Date(dateRange.end).getTime() + 86400000
+        ? new Date(dateRange.end + 'T23:59:59.999').getTime()
         : Infinity
       filtered = filtered.filter((e) => {
         const ts = new Date(e.date).getTime()
-        return ts >= start && ts < end
+        return ts >= start && ts <= end
       })
     }
 
