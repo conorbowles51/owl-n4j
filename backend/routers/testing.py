@@ -96,7 +96,16 @@ def testing_hub_page_via_api():
 
 @router.get("/api/testing/ping")
 def ping():
-    return {"status": "ok"}
+    import subprocess
+    try:
+        rev = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        rev = None
+    return {"status": "ok", "git_revision": rev}
 
 
 # ---- login ----
