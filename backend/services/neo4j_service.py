@@ -8595,6 +8595,23 @@ class Neo4jService:
                     truncated = True
 
             # ---- Synthetic call threads (per participant pair + report) ----
+            # Push participant key constraints into Cypher so the LIMIT only
+            # applies to pairs involving the requested person, not all case pairs.
+            call_email_filter_keys: set = set()
+            if from_keys:
+                call_email_filter_keys.update(from_keys)
+            if to_keys:
+                call_email_filter_keys.update(to_keys)
+            if participant_keys:
+                call_email_filter_keys.update(participant_keys)
+
+            call_email_participant_filter = ""
+            if call_email_filter_keys:
+                call_email_participant_filter = (
+                    "AND (a.key IN $call_email_filter_keys OR b.key IN $call_email_filter_keys)"
+                )
+                params["call_email_filter_keys"] = list(call_email_filter_keys)
+
             if "calls" in active_types:
                 # Cap pair aggregations after the WITH so we don't materialise
                 # one row per (caller, callee, report) for cases with millions
@@ -8602,7 +8619,7 @@ class Neo4jService:
                 # most-active pairs which are the likely-of-interest ones.
                 query = f"""
                     MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(b:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_call} {app_filter_call} {date_filter_call} {att_call}
+                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_call} {app_filter_call} {date_filter_call} {att_call} {call_email_participant_filter}
                     WITH a, b, c.cellebrite_report_key AS rk,
                          collect(c) AS calls
                     WITH a, b, rk,
@@ -8687,7 +8704,7 @@ class Neo4jService:
             if "emails" in active_types:
                 query = f"""
                     MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})-[:EMAILED]->(e:Email)-[:SENT_TO]->(b:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_email} {app_filter_email} {date_filter_email} {att_email}
+                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_email} {app_filter_email} {date_filter_email} {att_email} {call_email_participant_filter}
                     WITH a, b, e.cellebrite_report_key AS rk,
                          collect(e) AS emails
                     WITH a, b, rk,
