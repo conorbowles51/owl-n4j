@@ -35,6 +35,42 @@ def _fmt_duration(seconds) -> str:
         return ''
 
 
+def _person_name(person) -> str:
+    """Display name for a sender/recipient.
+
+    neo4j_service returns these as nested dicts ({key, name, is_owner}),
+    not flat *_name strings. Fall back to the key, then to a bare string
+    for any unexpected shape.
+    """
+    if not person:
+        return ''
+    if isinstance(person, dict):
+        return person.get('name') or person.get('key') or ''
+    return str(person)
+
+
+def _recipients_name(item) -> str:
+    """Comma-joined recipient names.
+
+    Timeline items carry a `recipients` list; thread-detail call/email
+    items carry a singular `recipient`. Accept either.
+    """
+    recips = item.get('recipients')
+    if not recips:
+        single = item.get('recipient')
+        recips = [single] if single else []
+    names = [_person_name(r) for r in recips]
+    return ', '.join(n for n in names if n)
+
+
+def _is_outbound(item) -> bool:
+    """True when the phone owner is the sender (outbound bubble)."""
+    sender = item.get('sender')
+    if isinstance(sender, dict) and sender.get('is_owner'):
+        return True
+    return (item.get('direction') or '') in ('outbound', 'sent', 'out')
+
+
 def _attachment_html(attachments) -> str:
     if not attachments:
         return ''
@@ -128,11 +164,11 @@ def generate_timeline_pdf(
         t = item.get('type', '')
         ts = _fmt_ts(item.get('timestamp', ''))
         direction = item.get('direction') or ''
-        from_name = _esc(item.get('from_name') or '')
-        to_name = _esc(item.get('to_name') or '')
+        from_name = _esc(_person_name(item.get('sender')))
+        to_name = _esc(_recipients_name(item))
 
         if t == 'call':
-            dur = _fmt_duration(item.get('duration_seconds'))
+            dur = _fmt_duration(item.get('duration'))
             content = _esc(f'Call — {dur}' if dur else 'Call')
         elif t == 'email':
             subj = item.get('subject') or item.get('body') or ''
@@ -214,11 +250,22 @@ def generate_conversation_pdf(
             parts.append(f'<div class="day-header">&#8212; {_esc(day_str)} &#8212;</div>')
             last_day = day
 
-        direction = msg.get('direction') or ''
-        is_out = direction in ('outbound', 'sent', 'out')
-        from_name = _esc(msg.get('from_name') or msg.get('sender') or '')
+        is_out = _is_outbound(msg)
+        from_name = _esc(_person_name(msg.get('sender')))
         ts_display = _fmt_ts(ts_raw)
-        body = _esc(msg.get('body') or '')
+
+        t = msg.get('type', '')
+        if t == 'call':
+            dur = _fmt_duration(msg.get('duration'))
+            body = _esc(f'Call — {dur}' if dur else 'Call')
+        elif t == 'email':
+            subj = msg.get('subject') or ''
+            body_txt = msg.get('body') or ''
+            combined = '\n'.join(p for p in (subj, body_txt) if p)
+            body = _esc(combined).replace('\n', '<br>')
+        else:
+            body = _esc(msg.get('body') or '')
+
         att = _attachment_html(msg.get('attachments') or [])
         bubble_cls = 'bubble out' if is_out else 'bubble'
 
