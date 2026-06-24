@@ -9322,7 +9322,7 @@ class Neo4jService:
                         "thread_type": "chat",
                         "sender": {
                             "key": sender.get("key"),
-                            "name": sender.get("name") or sender.get("key"),
+                            "name": dcn.get((sender.get("key"), msg.get("cellebrite_report_key"))) or sender.get("name") or sender.get("key"),
                             "is_owner": bool(sender.get("is_phone_owner")),
                         } if sender else None,
                         "recipients": [
@@ -9371,11 +9371,11 @@ class Neo4jService:
                         "thread_type": "calls",
                         "sender": {
                             "key": src.get("key"),
-                            "name": src.get("name") or src.get("key"),
+                            "name": dcn.get((src.get("key"), c.get("cellebrite_report_key"))) or src.get("name") or src.get("key"),
                             "is_owner": bool(src.get("is_phone_owner")),
                         } if src else None,
                         "recipients": [
-                            {"key": dst.get("key"), "name": dst.get("name") or dst.get("key")}
+                            {"key": dst.get("key"), "name": dcn.get((dst.get("key"), c.get("cellebrite_report_key"))) or dst.get("name") or dst.get("key")}
                         ] if dst else [],
                         "report_key": c.get("cellebrite_report_key"),
                     })
@@ -9418,11 +9418,11 @@ class Neo4jService:
                         "thread_type": "emails",
                         "sender": {
                             "key": src.get("key"),
-                            "name": src.get("name") or src.get("key"),
+                            "name": dcn.get((src.get("key"), e.get("cellebrite_report_key"))) or src.get("name") or src.get("key"),
                             "is_owner": bool(src.get("is_phone_owner")),
                         } if src else None,
                         "recipients": [
-                            {"key": dst.get("key"), "name": dst.get("name") or dst.get("key")}
+                            {"key": dst.get("key"), "name": dcn.get((dst.get("key"), e.get("cellebrite_report_key"))) or dst.get("name") or dst.get("key")}
                         ] if dst else [],
                         "report_key": e.get("cellebrite_report_key"),
                     })
