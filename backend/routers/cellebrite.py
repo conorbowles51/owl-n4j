@@ -8,6 +8,7 @@ Analytics endpoints for the Cellebrite Multi-Phone View:
 - Communication network analysis
 """
 
+import logging
 from typing import Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
@@ -21,6 +22,8 @@ from services import cellebrite_intersection_service
 from postgres.session import get_db
 from postgres.models.user import User
 from routers.users import get_current_db_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/cellebrite", tags=["cellebrite"])
 
@@ -643,7 +646,20 @@ def get_comms_thread_detail(
             offset=offset,
             anchor_key=anchor_key,
         )
-        _resolve_attachments(case_id, result.get("items", []))
+        # Attachment enrichment is a secondary concern — it must never block
+        # the conversation itself from loading. If resolving evidence records
+        # fails, fall back to the raw attachment_file_ids so the messages /
+        # calls still render rather than failing the whole thread.
+        try:
+            _resolve_attachments(case_id, result.get("items", []))
+        except Exception:
+            logger.exception(
+                "Attachment resolution failed for thread %s (case %s); "
+                "serving items without resolved attachments",
+                thread_id, case_id,
+            )
+            for it in result.get("items", []):
+                it.setdefault("attachments", [])
         return result
     except Exception as e:
         raise HTTPException(

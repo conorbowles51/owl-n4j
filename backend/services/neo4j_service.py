@@ -8926,31 +8926,46 @@ class Neo4jService:
                 # Person keys look like phone-XXXXXX, email-xxx, or app-slug-id.
                 # Heuristic: split into report_key + keyA + keyB by scanning for prefix markers.
                 # Simpler: store dashless separator would be cleaner; here we use known person-key prefixes.
-                def find_person_key_start(tokens, start_idx):
-                    prefixes = ("phone", "email", "fb", "ig", "wa", "whatsapp", "tg", "snap", "twitter", "linkedin", "imessage", "sms")
-                    for i in range(start_idx, len(tokens)):
-                        for pfx in prefixes:
-                            if tokens[i] == pfx:
-                                return i
-                    return -1
-
-                # Find two person-key start indices
-                key_a_start = find_person_key_start(parts, 0)
-                key_b_start = find_person_key_start(parts, key_a_start + 1) if key_a_start >= 0 else -1
-                if key_a_start < 0 or key_b_start < 0:
+                person_key_prefixes = ("phone", "email", "fb", "ig", "wa", "whatsapp", "tg", "snap", "twitter", "linkedin", "imessage", "sms")
+                # The pair is always the LAST two prefix-started token groups:
+                # thread_id is "{type}-{report_key}-{keyA}-{keyB}" and report_key
+                # comes first. Scanning from the LEFT (the old behaviour) mis-split
+                # any thread whose report_key itself contained a token equal to a
+                # prefix — e.g. a device-slug report key like "samsung-phone-2024"
+                # would be read as the start of keyA, leaving a garbage report_key
+                # and a join that silently returned nothing ("not loading"). Anchor
+                # on the last two prefix boundaries instead, which the report_key
+                # can never collide with.
+                prefix_starts = [i for i, tok in enumerate(parts) if tok in person_key_prefixes]
+                if len(prefix_starts) < 2:
                     return {"thread": None, "items": [], "total": 0}
+                key_a_start = prefix_starts[-2]
+                key_b_start = prefix_starts[-1]
 
                 report_key = "-".join(parts[:key_a_start])
                 key_a = "-".join(parts[key_a_start:key_b_start])
                 key_b = "-".join(parts[key_b_start:])
 
                 if thread_type == "calls":
+                    # One-edge model: a PhoneCall typically carries only the
+                    # counterparty edge (CALLED or CALLED_TO); the phone owner's
+                    # side is often implicit (no Person edge). The old strict
+                    # double-edge join required BOTH a CALLED and a CALLED_TO
+                    # Person, so single-edge calls were silently dropped — the
+                    # detail view returned empty even though the thread existed.
+                    # Match on the PhoneCall node and OPTIONAL MATCH each side
+                    # (mirroring get_cellebrite_event_detail's canonical read),
+                    # keeping calls whose present endpoint(s) fall within the
+                    # pair {key_a, key_b}.
                     query = """
-                        MATCH (a:Person {case_id: $case_id, key: $key_a})
-                        MATCH (b:Person {case_id: $case_id, key: $key_b})
-                        MATCH (src:Person)-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(dst:Person)
-                        WHERE c.cellebrite_report_key = $report_key
-                          AND ((src = a AND dst = b) OR (src = b AND dst = a))
+                        MATCH (c:PhoneCall {case_id: $case_id, cellebrite_report_key: $report_key})
+                        OPTIONAL MATCH (src:Person)-[:CALLED]->(c)
+                        OPTIONAL MATCH (c)-[:CALLED_TO]->(dst:Person)
+                        WITH c, src, dst
+                        WHERE (src IS NULL OR src.key IN [$key_a, $key_b])
+                          AND (dst IS NULL OR dst.key IN [$key_a, $key_b])
+                          AND (coalesce(src.key, '') IN [$key_a, $key_b]
+                               OR coalesce(dst.key, '') IN [$key_a, $key_b])
                         RETURN c, src, dst
                         ORDER BY c.timestamp
                         SKIP $offset LIMIT $limit
