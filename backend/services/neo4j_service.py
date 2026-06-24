@@ -8941,12 +8941,17 @@ class Neo4jService:
                 key_b = "-".join(parts[key_b_start:])
 
                 if thread_type == "calls":
+                    # Anchor on the case+report-scoped PhoneCall via its composite
+                    # index, then expand to the two parties. The previous form
+                    # scanned the CALLED relationship type store-wide (the a/b
+                    # Person anchors didn't bind src/dst/c), which walks other
+                    # cases' call chains — including orphaned/zombie data that can
+                    # be corrupt ("NOT PART OF CHAIN") — and 500s the thread load.
                     query = """
-                        MATCH (a:Person {case_id: $case_id, key: $key_a})
-                        MATCH (b:Person {case_id: $case_id, key: $key_b})
-                        MATCH (src:Person)-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(dst:Person)
-                        WHERE c.cellebrite_report_key = $report_key
-                          AND ((src = a AND dst = b) OR (src = b AND dst = a))
+                        MATCH (c:PhoneCall {case_id: $case_id, cellebrite_report_key: $report_key})
+                        MATCH (src:Person)-[:CALLED]->(c)-[:CALLED_TO]->(dst:Person)
+                        WHERE ((src.key = $key_a AND dst.key = $key_b)
+                            OR (src.key = $key_b AND dst.key = $key_a))
                         RETURN c, src, dst
                         ORDER BY c.timestamp
                         SKIP $offset LIMIT $limit
@@ -8990,12 +8995,13 @@ class Neo4jService:
                             } if dst else None,
                         })
                 else:  # emails
+                    # Anchor on the case+report-scoped Email (see the calls branch
+                    # above for why the store-wide scan is unsafe).
                     query = """
-                        MATCH (a:Person {case_id: $case_id, key: $key_a})
-                        MATCH (b:Person {case_id: $case_id, key: $key_b})
-                        MATCH (src:Person)-[:EMAILED]->(e:Email)-[:SENT_TO]->(dst:Person)
-                        WHERE e.cellebrite_report_key = $report_key
-                          AND ((src = a AND dst = b) OR (src = b AND dst = a))
+                        MATCH (e:Email {case_id: $case_id, cellebrite_report_key: $report_key})
+                        MATCH (src:Person)-[:EMAILED]->(e)-[:SENT_TO]->(dst:Person)
+                        WHERE ((src.key = $key_a AND dst.key = $key_b)
+                            OR (src.key = $key_b AND dst.key = $key_a))
                         RETURN e, src, dst
                         ORDER BY e.timestamp
                         SKIP $offset LIMIT $limit
@@ -9094,13 +9100,18 @@ class Neo4jService:
         # One round-trip to learn how many sibling messages come BEFORE
         # the anchor in timestamp ASC order. Counting on the database
         # side keeps the response payload tiny.
+        # Lead with the chat node (seek by case_id+key) and expand ITS PART_OF
+        # chain for both the anchor and the sibling count. The previous form
+        # left the sibling MATCH's chat anonymous, letting the planner scan the
+        # PART_OF relationship type store-wide — which walks orphaned/zombie
+        # cases' chains that can be corrupt and 500 the anchored chat load.
         rec = session.run(
             """
-            MATCH (anchor:Communication {case_id: $case_id, key: $anchor_key})
-                  -[:PART_OF]->(chat:Communication {case_id: $case_id, key: $thread_id})
+            MATCH (chat:Communication {case_id: $case_id, key: $thread_id})
+            MATCH (anchor:Communication {case_id: $case_id, key: $anchor_key})-[:PART_OF]->(chat)
             WHERE (anchor.body IS NOT NULL OR coalesce(anchor.attachment_count, 0) > 0)
-            WITH anchor.timestamp AS ts, anchor.key AS aks
-            MATCH (m:Communication)-[:PART_OF]->(:Communication {case_id: $case_id, key: $thread_id})
+            WITH chat, anchor.timestamp AS ts, anchor.key AS aks
+            MATCH (m:Communication)-[:PART_OF]->(chat)
             WHERE (m.body IS NOT NULL OR coalesce(m.attachment_count, 0) > 0)
               AND (m.timestamp < ts OR (m.timestamp = ts AND m.key < aks))
             RETURN count(m) AS before
@@ -9285,13 +9296,20 @@ class Neo4jService:
                 # by one contact returns nothing" — previously the same key in
                 # from_keys + to_keys forced sender == recipient.
                 msg_cursor_clause = _cursor_clause("message", "msg.timestamp", "msg.id")
+                # Anchor on the case-scoped message via its case_id index, then
+                # expand to sender/chat. Leading with the SENT_MESSAGE pattern
+                # let the planner scan that relationship type store-wide, walking
+                # the chains of orphaned/zombie-case messages that can be corrupt
+                # ("NOT PART OF CHAIN"). Seeking this case's messages first keeps
+                # every traversal on this case's (clean) chains.
                 query = f"""
-                    MATCH (sender:Person)-[:SENT_MESSAGE]->(msg:Communication)-[:PART_OF]->(chat:Communication)
-                    WHERE msg.case_id = $case_id
-                      AND (msg.body IS NOT NULL OR coalesce(msg.attachment_count, 0) > 0)
-                      AND (size($from_keys) = 0 OR sender.key IN $from_keys)
+                    MATCH (msg:Communication {{case_id: $case_id}})
+                    WHERE (msg.body IS NOT NULL OR coalesce(msg.attachment_count, 0) > 0)
                       {rk_filter_msg} {app_filter_msg} {date_filter_msg}{att_filter_msg}
                       {msg_cursor_clause}
+                    MATCH (sender:Person)-[:SENT_MESSAGE]->(msg)
+                    WHERE (size($from_keys) = 0 OR sender.key IN $from_keys)
+                    MATCH (msg)-[:PART_OF]->(chat:Communication {{case_id: $case_id}})
                     MATCH (recipient:Person)-[:PARTICIPATED_IN]->(chat)
                     WHERE recipient <> sender
                       AND (size($to_keys) = 0 OR recipient.key IN $to_keys)
@@ -9334,10 +9352,17 @@ class Neo4jService:
 
             if "call" in active_types:
                 call_cursor_clause = _cursor_clause("call", "c.timestamp", "c.id")
+                # Anchor on the case-scoped PhoneCall via its case_id index and
+                # expand from there, rather than scanning the CALLED relationship
+                # type store-wide. A store-wide scan walks EVERY PhoneCall's
+                # relationship chain — including orphaned/zombie cases that share
+                # the graph — which can hit a corrupt chain and throw
+                # "NOT PART OF CHAIN". Seeking the live case's calls first keeps
+                # the traversal on this case's (clean) chains only.
                 query = f"""
-                    MATCH (src:Person)-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(dst:Person)
-                    WHERE c.case_id = $case_id
-                      AND (
+                    MATCH (c:PhoneCall {{case_id: $case_id}})
+                    MATCH (src:Person)-[:CALLED]->(c)-[:CALLED_TO]->(dst:Person)
+                    WHERE (
                           (size($from_keys) = 0 OR src.key IN $from_keys)
                           AND (size($to_keys) = 0 OR dst.key IN $to_keys)
                       )
@@ -9382,10 +9407,12 @@ class Neo4jService:
 
             if "email" in active_types:
                 email_cursor_clause = _cursor_clause("email", "e.timestamp", "e.id")
+                # Anchor on the case-scoped Email (see the call branch above for
+                # why store-wide relationship scans are unsafe here).
                 query = f"""
-                    MATCH (src:Person)-[:EMAILED]->(e:Email)-[:SENT_TO]->(dst:Person)
-                    WHERE e.case_id = $case_id
-                      AND (
+                    MATCH (e:Email {{case_id: $case_id}})
+                    MATCH (src:Person)-[:EMAILED]->(e)-[:SENT_TO]->(dst:Person)
+                    WHERE (
                           (size($from_keys) = 0 OR src.key IN $from_keys)
                           AND (size($to_keys) = 0 OR dst.key IN $to_keys)
                       )
@@ -9603,14 +9630,20 @@ class Neo4jService:
 
         with self._driver.session() as session:
             if "message" in active_types:
+                # Anchor on the case-scoped message (index seek) and expand to
+                # sender/chat/recipient. Leading with the relationship pattern
+                # let the planner scan SENT_MESSAGE/PARTICIPATED_IN store-wide,
+                # walking other (incl. orphaned/zombie) cases' chains that can be
+                # corrupt and 500 the envelope. msg-referencing filters stay on
+                # the anchor; sender/recipient filters move to the expand WHERE.
                 cypher = f"""
-                    MATCH (sender:Person)-[:SENT_MESSAGE]->(msg:Communication)-[:PART_OF]->(chat:Communication)
+                    MATCH (msg:Communication {{case_id: $case_id, source_type: 'cellebrite'}})
+                    WHERE coalesce(msg.date, msg.timestamp, '') <> ''
+                      {rk_filter_msg}{app_filter_msg}{date_filter_msg}{att_filter_msg}
+                    MATCH (sender:Person)-[:SENT_MESSAGE]->(msg)
+                    MATCH (msg)-[:PART_OF]->(chat:Communication {{case_id: $case_id}})
                     MATCH (recipient:Person)-[:PARTICIPATED_IN]->(chat)
-                    WHERE msg.case_id = $case_id
-                      AND msg.source_type = 'cellebrite'
-                      AND coalesce(msg.date, msg.timestamp, '') <> ''
-                      {rk_filter_msg}{from_filter_msg}{to_filter_msg}{inv_filter_msg}
-                      {app_filter_msg}{date_filter_msg}{att_filter_msg}
+                    WHERE true{from_filter_msg}{to_filter_msg}{inv_filter_msg}
                     WITH coalesce(msg.date, substring(msg.timestamp, 0, 10)) AS d, msg
                     RETURN d, count(DISTINCT msg) AS c
                 """
@@ -9629,12 +9662,11 @@ class Neo4jService:
 
             if "call" in active_types:
                 cypher = f"""
-                    MATCH (src:Person)-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(dst:Person)
-                    WHERE c.case_id = $case_id
-                      AND c.source_type = 'cellebrite'
-                      AND coalesce(c.date, c.timestamp, '') <> ''
-                      {rk_filter_call}{from_filter_call}{to_filter_call}{inv_filter_call}
-                      {app_filter_call}{date_filter_call}{att_filter_call}
+                    MATCH (c:PhoneCall {{case_id: $case_id, source_type: 'cellebrite'}})
+                    WHERE coalesce(c.date, c.timestamp, '') <> ''
+                      {rk_filter_call}{app_filter_call}{date_filter_call}{att_filter_call}
+                    MATCH (src:Person)-[:CALLED]->(c)-[:CALLED_TO]->(dst:Person)
+                    WHERE true{from_filter_call}{to_filter_call}{inv_filter_call}
                     WITH coalesce(c.date, substring(c.timestamp, 0, 10)) AS d, c
                     RETURN d, count(DISTINCT c) AS cnt
                 """
@@ -9653,12 +9685,11 @@ class Neo4jService:
 
             if "email" in active_types:
                 cypher = f"""
-                    MATCH (a:Person)-[:EMAILED]->(e:Email)-[:SENT_TO]->(b:Person)
-                    WHERE e.case_id = $case_id
-                      AND e.source_type = 'cellebrite'
-                      AND coalesce(e.date, e.timestamp, '') <> ''
-                      {rk_filter_email}{from_filter_email}{to_filter_email}{inv_filter_email}
-                      {app_filter_email}{date_filter_email}{att_filter_email}
+                    MATCH (e:Email {{case_id: $case_id, source_type: 'cellebrite'}})
+                    WHERE coalesce(e.date, e.timestamp, '') <> ''
+                      {rk_filter_email}{app_filter_email}{date_filter_email}{att_filter_email}
+                    MATCH (a:Person)-[:EMAILED]->(e)-[:SENT_TO]->(b:Person)
+                    WHERE true{from_filter_email}{to_filter_email}{inv_filter_email}
                     WITH coalesce(e.date, substring(e.timestamp, 0, 10)) AS d, e
                     RETURN d, count(DISTINCT e) AS cnt
                 """
