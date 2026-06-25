@@ -899,6 +899,29 @@ class CellebriteNeo4jWriter:
         if manual_owner_name and not phone_numbers:
             phone_numbers.append(manual_owner_name)
 
+        # Hard-fail an empty phone_numbers array. A PhoneReport with no owning
+        # identity breaks every investigative view that keys comms on the owner
+        # (3 of 7 reports on case 43f1afb1 shipped this way — see
+        # cellebrite-phone-number-required). The upstream ingestion.py
+        # precondition catches the "raw di.msisdn empty" case; this catches the
+        # subtler one where raw MSISDN values were present but ALL failed
+        # _normalise_phone (and no investigator name was supplied). Raising here
+        # — before the MERGE below, the report's first write — fails the task
+        # cleanly with no partial data (caught in cellebrite_service.py).
+        if not phone_numbers:
+            self._log(
+                "ERROR: PhoneReport has no usable phone number after "
+                "normalisation and no device identifier was supplied — "
+                "refusing to ingest a report with an empty phone_numbers array."
+            )
+            raise ValueError(
+                "PhoneReport has no usable phone number: the report's MSISDN "
+                "value(s) could not be normalised and no device identifier was "
+                "supplied. Refusing to ingest a report with an empty "
+                "phone_numbers array (it breaks investigative views). Re-ingest "
+                "with a device identifier to attribute this device's data."
+            )
+
         props = {
             "id": str(uuid.uuid4()),
             "key": self.report_key,
