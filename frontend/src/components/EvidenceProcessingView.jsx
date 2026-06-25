@@ -21,6 +21,8 @@ import {
   HardDrive,
   Radio,
   Copy,
+  Smartphone,
+  Clock,
 } from 'lucide-react';
 import { evidenceAPI, profilesAPI, filesystemAPI, backgroundTasksAPI } from '../services/api';
 import { useCasePermissions } from '../contexts/CasePermissionContext';
@@ -50,6 +52,43 @@ function formatBytes(bytes) {
   const value = bytes / Math.pow(1000, i);
   // Show one decimal once we're past KB; whole numbers below that.
   return `${i >= 2 ? value.toFixed(1) : Math.round(value)} ${units[i]}`;
+}
+
+// Human label + icon for an ingestion/upload task type (used by the status panel).
+const TASK_TYPE_META = {
+  cellebrite_ingestion: { label: 'Cellebrite report', Icon: Smartphone },
+  file_upload: { label: 'File upload', Icon: UploadCloud },
+  evidence_processing: { label: 'Evidence processing', Icon: FileText },
+  wiretap_processing: { label: 'Wiretap processing', Icon: Radio },
+};
+
+// Visual treatment for a task status. Returns { Icon, spin, cls, label }.
+function taskStatusMeta(status) {
+  switch (status) {
+    case 'completed':
+      return { Icon: CheckCircle2, spin: false, cls: 'text-green-600', label: 'Done' };
+    case 'failed':
+      return { Icon: AlertTriangle, spin: false, cls: 'text-red-600', label: 'Failed' };
+    case 'cancelled':
+      return { Icon: X, spin: false, cls: 'text-light-500', label: 'Cancelled' };
+    case 'running':
+      return { Icon: Loader2, spin: true, cls: 'text-owl-blue-700', label: 'Processing' };
+    default: // pending / queued
+      return { Icon: Clock, spin: false, cls: 'text-owl-orange-600', label: 'Queued' };
+  }
+}
+
+function relativeTime(iso) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
 }
 
 export default function EvidenceProcessingView({
@@ -109,6 +148,18 @@ export default function EvidenceProcessingView({
   const completedWiretapTaskIdsRef = useRef(new Set()); // Track completed wiretap task IDs to avoid duplicate refreshes
   const completedUploadTaskIdsRef = useRef(new Set()); // Track completed upload task IDs to avoid duplicate refreshes
   const completedProcessingTaskIdsRef = useRef(new Set()); // Track completed evidence_processing task IDs to avoid duplicate refreshes
+  const completedCellebriteTaskIdsRef = useRef(new Set()); // Track completed cellebrite_ingestion task IDs (resumable tus uploads) to avoid duplicate refreshes
+  // Files whose resumable (tus) upload has finished but whose server-side
+  // unpack+ingest hasn't surfaced a background task yet. Bridges the dead zone
+  // between Uppy "complete" and the cellebrite_ingestion task appearing so the
+  // user isn't left staring at a vanished file with no feedback.
+  const [unpackingFiles, setUnpackingFiles] = useState([]); // [{ name, at }]
+  // Ingestion/upload tasks for this case, surfaced as a persistent, always-visible
+  // status panel so the user can see what they've uploaded and where it is
+  // (queued → processing → done/failed). Auto-ingest / resumable-upload tasks run
+  // in a detached worker and previously only triggered a silent log refresh.
+  // Only updated on a successful poll so transient backend stalls don't blank it.
+  const [caseTasks, setCaseTasks] = useState([]);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [lastProcessedVersion, setLastProcessedVersion] = useState(null);
   const [showBackgroundTasksPanel, setShowBackgroundTasksPanel] = useState(false);
@@ -121,7 +172,7 @@ export default function EvidenceProcessingView({
   const [editingProfileName, setEditingProfileName] = useState(null);
   const [showFileNavigator, setShowFileNavigator] = useState(true);
   const [showProcessedWiretaps, setShowProcessedWiretaps] = useState(false); // Collapsed by default
-  const [showIngestionLog, setShowIngestionLog] = useState(true); // Expanded by default
+  const [showIngestionLog, setShowIngestionLog] = useState(false); // Collapsed by default
   const [selectedFileId, setSelectedFileId] = useState(null);
   const [selectedFilePath, setSelectedFilePath] = useState(null);
   const [selectedFilePaths, setSelectedFilePaths] = useState(new Set()); // Multi-select file paths
@@ -300,6 +351,9 @@ export default function EvidenceProcessingView({
       completedWiretapTaskIdsRef.current.clear();
       completedUploadTaskIdsRef.current.clear();
       completedProcessingTaskIdsRef.current.clear();
+      completedCellebriteTaskIdsRef.current.clear();
+      setUnpackingFiles([]);
+      setCaseTasks([]);
       return;
     }
     
@@ -375,11 +429,54 @@ export default function EvidenceProcessingView({
           }
         }
 
+        // Check for cellebrite ingestion tasks (resumable tus uploads land here).
+        // The post-finish hook unpacks the zip in a detached worker, then creates
+        // this task — so its appearance/completion is what we tie the
+        // "unpacking & processing" card to.
+        const cellebriteTasks = (tasks?.tasks || []).filter(
+          task => task.task_type === 'cellebrite_ingestion'
+        );
+
+        for (const task of cellebriteTasks) {
+          if (task.status === 'completed' && !completedCellebriteTaskIdsRef.current.has(task.id)) {
+            shouldRefreshFiles = true;
+            completedCellebriteTaskIdsRef.current.add(task.id);
+            setUnpackingFiles([]); // ingest finished — drop the bridging card
+          } else if (task.status === 'failed' && !completedCellebriteTaskIdsRef.current.has(task.id)) {
+            const failError = task.error || 'Unknown ingestion error';
+            setError(`Cellebrite ingestion failed: ${failError}`);
+            completedCellebriteTaskIdsRef.current.add(task.id);
+            setUnpackingFiles([]);
+            shouldRefreshFiles = true;
+          } else if (task.status === 'completed' || task.status === 'failed') {
+            completedCellebriteTaskIdsRef.current.add(task.id);
+          }
+        }
+
+        // Once the ingestion task actually exists (running/pending), the normal
+        // active-processing UI + logs take over, so we can retire the bridging
+        // card to avoid showing two "processing" indicators.
+        const cellebriteActive = cellebriteTasks.some(
+          task => task.status === 'running' || task.status === 'pending'
+        );
+        if (cellebriteActive) {
+          setUnpackingFiles((prev) => (prev.length ? [] : prev));
+        }
+
         // Refresh files if any new upload or processing tasks completed
         if (shouldRefreshFiles) {
           await loadFiles();
         }
-        
+
+        // Persist the upload/ingest tasks for the always-visible status panel,
+        // newest first. (Successful poll only — the catch block leaves the last
+        // known list in place so a transient backend stall doesn't blank it.)
+        const INGEST_TYPES = ['cellebrite_ingestion', 'file_upload', 'evidence_processing', 'wiretap_processing'];
+        const relevant = (tasks?.tasks || [])
+          .filter(t => INGEST_TYPES.includes(t.task_type))
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        setCaseTasks(relevant);
+
         // Processing is active if:
         // 1. Local processing state is true, OR
         // 2. There are active background tasks
@@ -414,6 +511,18 @@ export default function EvidenceProcessingView({
     const el = logContainerRef.current;
     el.scrollTop = el.scrollHeight;
   }, [logs]);
+
+  // Resumable (tus) upload finished sending bytes. The server now unpacks the
+  // zip and ingests it asynchronously; show an immediate "unpacking & processing"
+  // card so the file doesn't appear to silently vanish, and nudge the pollers so
+  // logs/files refresh as soon as the cellebrite_ingestion task surfaces.
+  const handleResumableUploadComplete = useCallback((file) => {
+    const name = file?.name || file?.meta?.filename || 'uploaded archive';
+    setUnpackingFiles((prev) =>
+      prev.some((f) => f.name === name) ? prev : [...prev, { name, at: Date.now() }]
+    );
+    loadLogs();
+  }, [loadLogs]);
 
   const handleFileSelect = async (event) => {
     const fileList = event.target.files;
@@ -1378,7 +1487,7 @@ export default function EvidenceProcessingView({
       {/* Body */}
       <div className="flex-1 flex flex-row overflow-hidden">
         {/* Left: Upload + File Navigator */}
-        <div className="w-1/4 border-r border-light-200 flex flex-col">
+        <div className="w-1/4 border-r border-light-200 flex flex-col overflow-y-auto">
           {/* Upload Panel */}
           <div className="p-4 border-b border-light-200 bg-white">
             <h2 className="text-md font-semibold text-owl-blue-900 mb-2">
@@ -1426,8 +1535,75 @@ export default function EvidenceProcessingView({
                 caseId={caseId}
                 owner={authUsername}
                 disabled={!canUploadEvidence || !caseId}
+                onUploadComplete={handleResumableUploadComplete}
               />
             </div>
+            {/* Persistent ingestion status: what's been uploaded and where it
+                is (queued → processing → done/failed). Bridges the gap between
+                the upload finishing and the result appearing in a viewer. */}
+            {caseId && (
+              <div className="mt-3 rounded-lg border border-light-300 bg-white">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-light-200">
+                  <h4 className="text-xs font-semibold text-owl-blue-900 uppercase tracking-wide">
+                    Evidence Ingestion
+                  </h4>
+                  {(caseTasks.some(t => t.status === 'running' || t.status === 'pending') || unpackingFiles.length > 0) && (
+                    <span className="flex items-center gap-1 text-[11px] text-owl-blue-700">
+                      <Loader2 className="w-3 h-3 animate-spin" /> processing
+                    </span>
+                  )}
+                </div>
+                <div className="max-h-56 overflow-y-auto divide-y divide-light-100">
+                  {/* Files whose upload just finished but whose ingest task hasn't surfaced yet */}
+                  {unpackingFiles.map((f) => (
+                    <div key={`unpack-${f.name}`} className="flex items-start gap-2 px-3 py-2">
+                      <Loader2 className="w-4 h-4 mt-0.5 shrink-0 animate-spin text-owl-blue-700" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-dark-800 truncate" title={f.name}>{f.name}</p>
+                        <p className="text-[11px] text-owl-blue-700">Upload complete — unpacking &amp; ingesting…</p>
+                      </div>
+                    </div>
+                  ))}
+
+                  {caseTasks.length === 0 && unpackingFiles.length === 0 && (
+                    <p className="px-3 py-3 text-[11px] italic text-light-500">
+                      Nothing ingested yet for this case. Uploads and Cellebrite ingests will appear here with live status.
+                    </p>
+                  )}
+
+                  {caseTasks.slice(0, 12).map((t) => {
+                    const meta = TASK_TYPE_META[t.task_type] || { label: t.task_type, Icon: FileText };
+                    const s = taskStatusMeta(t.status);
+                    const total = t.progress?.total || 0;
+                    const done = t.progress?.completed || 0;
+                    const failed = t.progress?.failed || 0;
+                    const TypeIcon = meta.Icon;
+                    const StatusIcon = s.Icon;
+                    return (
+                      <div key={t.id} className="flex items-start gap-2 px-3 py-2">
+                        <TypeIcon className="w-4 h-4 mt-0.5 shrink-0 text-light-500" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-dark-800 truncate" title={t.task_name || meta.label}>
+                            {t.task_name || meta.label}
+                          </p>
+                          <div className="flex items-center gap-1.5 text-[11px] text-light-600">
+                            <StatusIcon className={`w-3 h-3 ${s.cls} ${s.spin ? 'animate-spin' : ''}`} />
+                            <span className={s.cls}>{s.label}</span>
+                            {total > 0 && (
+                              <span className="text-light-500">· {done}/{total}{failed > 0 ? ` (${failed} failed)` : ''}</span>
+                            )}
+                            <span className="text-light-400">· {relativeTime(t.updated_at || t.created_at)}</span>
+                          </div>
+                          {t.status === 'failed' && t.error && (
+                            <p className="mt-0.5 text-[11px] text-red-600 truncate" title={t.error}>{t.error}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {uploading && uploadProgress && (() => {
               const { loaded = 0, total = 0, lengthComputable } = uploadProgress;
               const hasTotal = lengthComputable && total > 0;

@@ -13,7 +13,7 @@ import '@uppy/dashboard/css/style.min.css'
  * ingest pipeline — same as a normal upload. Endpoint /files is proxied to
  * tusd by Vite (same origin). See deploy/owl-tusd.service + tus-hooks/.
  */
-export default function UppyEvidenceUploader({ caseId, owner, disabled }) {
+export default function UppyEvidenceUploader({ caseId, owner, disabled, onUploadComplete }) {
   // useState initializer (not useMemo) so the instance is stable across renders
   // and React 18 StrictMode's mount→unmount→mount cycle. Do NOT destroy it on
   // unmount: StrictMode would remount with a destroyed instance and render an
@@ -47,6 +47,16 @@ export default function UppyEvidenceUploader({ caseId, owner, disabled }) {
     uppy.on('file-added', onAdded)
     return () => uppy.off('file-added', onAdded)
   }, [uppy, caseId, owner])
+
+  // Notify the parent when each file finishes uploading so it can show a
+  // server-side "unpacking & processing" indicator. tus' post-finish hook does
+  // the extract + ingest asynchronously, so without this the file just appears
+  // to vanish once the bytes are sent.
+  useEffect(() => {
+    const onUploadSuccess = (file) => onUploadComplete?.(file)
+    uppy.on('upload-success', onUploadSuccess)
+    return () => uppy.off('upload-success', onUploadSuccess)
+  }, [uppy, onUploadComplete])
 
   return (
     <div className="rounded-lg border border-light-300 bg-light-50 p-4">
