@@ -47,7 +47,15 @@ surfacing upload/ingestion failures. Recent commits:
     (zip-slip guarded, original unlinked after); XML parsed with `iterparse`
     (constant memory); final move is `os.replace` (atomic, no copy). ENOSPC→507,
     MemoryError→507 are handled (`backend/routers/evidence.py`).
-  - ⚠️ **REAL BLOCKER — disk:** `/dev/root` is **91% full, ~49 GB free**. The
+  - **Disk cleanup (2026-06-25):** reclaimed ~44 GB (**49→93 GB free**) — deleted
+    3 `_staging` orphans (28 GB; verified partial-duplicates of live case dirs,
+    not unique media), docker build cache (9.3 GB), pip cache (6.6 GB). Live
+    docker volumes (118.6 GB Neo4j/PG/Chroma) untouched; stopped `nominatim`
+    container/image preserved. **Tier 2 still available** (~33 GB of stale
+    backups: `app_v2_backup` 25G, `app_backup` 3.8G, `app` 3.5G) to clear 100 GB+
+    for the full 3× staging a 31.8 GB zip needs.
+  - ⚠️ **REAL BLOCKER — disk:** `/dev/root` was 91% full / ~49 GB free, now 81% /
+    ~93 GB free after the cleanup above — but still likely tight. The
     archive path holds ~3 full copies on staging *simultaneously*: TMPDIR spool
     (~31.8 GB) + staged zip (~31.8 GB) + the extracted tree (>> 31.8 GB,
     coexists with the staged zip until extraction finishes). A 31.8 GB Cellebrite
