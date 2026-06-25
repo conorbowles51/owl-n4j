@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""tusd pre-create hook: require case_id + filename metadata before accepting an
+upload. Rejects junk early. (JWT auth is enforced at the nginx/app layer in a
+later phase; this guarantees every accepted upload is routable to a case.)
+
+tusd v2 file-hook contract: event JSON on stdin; to reject, print a HookResponse
+JSON with RejectUpload=true on stdout (exit 0)."""
+import sys, json
+
+def reject(msg, code=400):
+    print(json.dumps({
+        "RejectUpload": True,
+        "HTTPResponse": {"StatusCode": code, "Body": msg,
+                          "Header": {"Content-Type": "text/plain"}},
+    }))
+    sys.exit(0)
+
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    reject("invalid hook payload")
+
+meta = (((payload.get("Event") or {}).get("Upload") or {}).get("MetaData")) or {}
+case_id = (meta.get("case_id") or "").strip()
+filename = (meta.get("filename") or "").strip()
+
+if not case_id:
+    reject("missing required metadata: case_id")
+if not filename:
+    reject("missing required metadata: filename")
+
+# accept
+print(json.dumps({}))
+sys.exit(0)

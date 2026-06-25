@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""tusd post-finish hook: a completed upload exists at Event.Upload.Storage.Path.
+VERTICAL-SLICE behaviour: move the finished file into the case's _incoming dir
+and log it. (Phase 2 replaces the "log" step with a call into the existing
+Cellebrite ingest pipeline.)"""
+import sys, json, os, shutil, time, traceback
+
+LOG = "/mnt/owl-data/uploads-tus/hooks.log"
+# Use the DIRECT data-disk path (NOT the app's bind-mount path
+# /home/.../ingestion/data). The tus store (/mnt/owl-data/uploads-tus) and this
+# dir are on the SAME mount (/mnt/owl-data), so shutil.move does an atomic
+# os.rename — instant, no copy, no transient double-space. Going via the
+# bind-mount path crosses a mount boundary -> EXDEV -> a full (slow, 2x-space)
+# copy, which is fatal for 30GB+ files. Same underlying inode either way.
+DATA_ROOT = "/mnt/owl-data/ingestion-data"
+
+def log(msg):
+    try:
+        with open(LOG, "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} post-finish: {msg}\n")
+    except Exception:
+        pass
+
+try:
+    payload = json.load(sys.stdin)
+    up = ((payload.get("Event") or {}).get("Upload")) or {}
+    upload_id = up.get("ID")
+    size = up.get("Size")
+    src = ((up.get("Storage") or {}).get("Path"))
+    meta = up.get("MetaData") or {}
+    case_id = (meta.get("case_id") or "").strip()
+    filename = os.path.basename((meta.get("filename") or "upload.bin").strip()) or "upload.bin"
+
+    if not src or not os.path.exists(src):
+        log(f"id={upload_id} ERROR: source file missing ({src})"); sys.exit(0)
+    if not case_id:
+        log(f"id={upload_id} ERROR: no case_id"); sys.exit(0)
+
+    dest_dir = os.path.join(DATA_ROOT, case_id, "_incoming")
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, filename)
+    # same filesystem (tus store + ingestion/data both on /mnt/owl-data) -> atomic rename
+    shutil.move(src, dest)
+    # tusd leaves a sidecar .info; remove it so the store stays clean
+    info = src + ".info"
+    if os.path.exists(info):
+        try: os.remove(info)
+        except Exception: pass
+    log(f"id={upload_id} case={case_id} size={size} landed -> {dest}")
+except Exception:
+    log("EXCEPTION:\n" + traceback.format_exc())
+# never fail the upload from post-finish
+sys.exit(0)

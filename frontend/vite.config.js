@@ -37,6 +37,19 @@ export default defineConfig({
         proxyTimeout: 0,
         timeout: 0,
       },
+      // Resumable evidence uploads -> tusd (127.0.0.1:1080). Same origin as
+      // the app, so the browser/Uppy never crosses CORS. xfwd:true adds the
+      // X-Forwarded-* headers tusd needs (it runs with -behind-proxy) to
+      // build correct absolute upload URLs in its Location header. Timeouts
+      // disabled like /api so long uploads aren't cut off (chunks are small,
+      // but a slow link on a big file can still hold a chunk a while).
+      '/files': {
+        target: 'http://127.0.0.1:1080',
+        changeOrigin: true,
+        xfwd: true,
+        proxyTimeout: 0,
+        timeout: 0,
+      },
     },
   },
 })
