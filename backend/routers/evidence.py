@@ -574,6 +574,40 @@ def _stage_upload_files(files: List[UploadFile], staging_dir: Path) -> List[dict
     return staged
 
 
+class AuthorizeUploadRequest(BaseModel):
+    case_id: str
+
+
+@router.post("/uploads/authorize")
+async def authorize_upload(
+    request: AuthorizeUploadRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Authorize a resumable (tus) upload before tusd accepts it.
+
+    Called by the tusd pre-create hook, which forwards the uploader's
+    `Authorization: Bearer <jwt>` header. The hook only sees metadata, not the
+    app session, so this endpoint is the single place that enforces the same
+    auth + case-ACL bar as the regular /upload route:
+      - `get_current_db_user` → 401 if the token is missing/invalid.
+      - `check_case_access(..., ("evidence", "upload"))` → 403 if the user has
+        no evidence-upload permission on this case.
+    Returns 200 only when both pass, so the hook can safely accept the upload.
+    """
+    from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+    from uuid import UUID
+    try:
+        case_uuid = UUID(request.case_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=400, detail="invalid case_id")
+    try:
+        check_case_access(db, case_uuid, current_user, required_permission=("evidence", "upload"))
+    except (CaseNotFound, CaseAccessDenied) as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    return {"authorized": True, "case_id": request.case_id}
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_evidence(
     request: Request,

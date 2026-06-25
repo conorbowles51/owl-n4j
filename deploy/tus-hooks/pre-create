@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
-"""tusd pre-create hook: require case_id + filename metadata before accepting an
-upload. Rejects junk early. (JWT auth is enforced at the nginx/app layer in a
-later phase; this guarantees every accepted upload is routable to a case.)
+"""tusd pre-create hook: enforce auth + case-ACL before accepting an upload.
+
+Requires case_id + filename metadata, AND validates the uploader's JWT against
+the app's auth + evidence-upload permission via the backend authorize endpoint.
+Without this, anyone able to reach the /files proxy could upload+ingest into any
+case — the rest of the app is JWT-gated, so this closes that bypass.
+
+Fails CLOSED: if the token is missing or the backend can't confirm permission,
+the upload is rejected (we never accept an upload we couldn't authorize).
 
 tusd v2 file-hook contract: event JSON on stdin; to reject, print a HookResponse
 JSON with RejectUpload=true on stdout (exit 0)."""
-import sys, json
+import sys, json, urllib.request, urllib.error
+
+AUTHORIZE_URL = "http://127.0.0.1:8000/api/evidence/uploads/authorize"
+TIMEOUT = 10
+
 
 def reject(msg, code=400):
     print(json.dumps({
@@ -15,12 +25,15 @@ def reject(msg, code=400):
     }))
     sys.exit(0)
 
+
 try:
     payload = json.load(sys.stdin)
 except Exception:
     reject("invalid hook payload")
 
-meta = (((payload.get("Event") or {}).get("Upload") or {}).get("MetaData")) or {}
+event = payload.get("Event") or {}
+upload = event.get("Upload") or {}
+meta = upload.get("MetaData") or {}
 case_id = (meta.get("case_id") or "").strip()
 filename = (meta.get("filename") or "").strip()
 
@@ -28,6 +41,42 @@ if not case_id:
     reject("missing required metadata: case_id")
 if not filename:
     reject("missing required metadata: filename")
+
+# Pull the Bearer token the Uppy widget sends on the creation request.
+# tusd serialises Go's http.Header (canonical keys, list values); match
+# case-insensitively and tolerate str values just in case.
+headers = ((event.get("HTTPRequest") or {}).get("Header")) or {}
+auth = None
+for k, v in headers.items():
+    if k.lower() == "authorization":
+        if isinstance(v, list):
+            auth = v[0] if v else None
+        elif isinstance(v, str):
+            auth = v
+        break
+if not auth or not auth.strip():
+    reject("authentication required to upload evidence", code=401)
+
+# Verify token + case permission against the app — same bar as POST
+# /api/evidence/upload (get_current_db_user + check_case_access evidence:upload).
+req = urllib.request.Request(
+    AUTHORIZE_URL,
+    data=json.dumps({"case_id": case_id}).encode("utf-8"),
+    headers={"Content-Type": "application/json", "Authorization": auth.strip()},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        if resp.status != 200:
+            reject("not authorized to upload to this case", code=403)
+except urllib.error.HTTPError as e:
+    # 401 (bad/expired token) and 403 (no access) pass straight through;
+    # anything else (e.g. 404 if the endpoint is missing) → fail closed.
+    code = e.code if e.code in (401, 403) else 403
+    reject("not authorized to upload to this case", code=code)
+except Exception:
+    # Backend unreachable / timeout — fail closed rather than accept blindly.
+    reject("upload authorization unavailable; please retry", code=503)
 
 # accept
 print(json.dumps({}))
