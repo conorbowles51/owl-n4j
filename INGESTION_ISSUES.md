@@ -54,9 +54,17 @@ surfacing upload/ingestion failures. Recent commits:
     container/image preserved. **Tier 2 still available** (~33 GB of stale
     backups: `app_v2_backup` 25G, `app_backup` 3.8G, `app` 3.5G) to clear 100 GB+
     for the full 3× staging a 31.8 GB zip needs.
-  - ⚠️ **REAL BLOCKER — disk:** `/dev/root` was 91% full / ~49 GB free, now 81% /
-    ~93 GB free after the cleanup above — but still likely tight. The
-    archive path holds ~3 full copies on staging *simultaneously*: TMPDIR spool
+  - ✅ **DISK BLOCKER RESOLVED (2026-06-25).** GCP `SSD_TOTAL_GB` quota was
+    maxed (500/500, us-east1) but `DISKS_TOTAL_GB` (standard PD) was 4096/0
+    unused. Added a **1TB pd-standard disk `owl-data`** (`/mnt/owl-data`),
+    symlinked `ingestion/data` → `/mnt/owl-data/ingestion-data` (moved 139G /
+    1.66M files, verified mirror), and repointed TMPDIR → `/mnt/owl-data/tmp`.
+    **Boot disk 49→232 GB free; data disk 845 GB free.** Upload spool + staging +
+    case dirs all on the roomy disk now, so a 31.8 GB zip's ~3× staging fits. See
+    [[project_deploy_layout]]. Remaining DKT-34 to-do: actually carry a 31.8 GB
+    file end-to-end to confirm (the only untested leg now).
+  - (historical) The archive path holds ~3 full copies on staging
+    *simultaneously*: TMPDIR spool
     (~31.8 GB) + staged zip (~31.8 GB) + the extracted tree (>> 31.8 GB,
     coexists with the staged zip until extraction finishes). A 31.8 GB Cellebrite
     zip needs **100 GB+** of free staging → it will ENOSPC → HTTP 507. **No code
