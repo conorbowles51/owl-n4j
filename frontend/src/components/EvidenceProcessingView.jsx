@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import UppyEvidenceUploader from './UppyEvidenceUploader';
 import {
   UploadCloud,
   FileText,
@@ -1434,6 +1435,13 @@ export default function EvidenceProcessingView({
                   disabled={!canUploadEvidence || uploading || !caseId}
                 />
               </label>
+            </div>
+            <div className="mt-3">
+              <UppyEvidenceUploader
+                caseId={caseId}
+                owner={authUsername}
+                disabled={!canUploadEvidence || !caseId}
+              />
             </div>
             {uploading && uploadProgress && (() => {
               const { loaded = 0, total = 0, lengthComputable } = uploadProgress;
