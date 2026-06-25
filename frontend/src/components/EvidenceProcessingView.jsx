@@ -1385,7 +1385,7 @@ export default function EvidenceProcessingView({
               Upload Evidence
             </h2>
             <p className="text-xs text-light-600 mb-3">
-              Upload individual files, an entire folder, or a single .zip archive (recommended for large Cellebrite reports — server unpacks it).
+              Upload individual files or an entire folder. For Cellebrite .zip archives (incl. large 30GB+ exports), use the resumable uploader below — it chunks the file and survives network drops.
             </p>
             <div className="flex flex-col gap-2">
               <label className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-light-300 rounded-lg text-sm transition-colors ${
@@ -1417,21 +1417,6 @@ export default function EvidenceProcessingView({
                   directory=""
                   className="hidden"
                   onChange={handleFolderSelect}
-                  disabled={!canUploadEvidence || uploading || !caseId}
-                />
-              </label>
-              <label className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-light-300 rounded-lg text-sm transition-colors ${
-                !canUploadEvidence || uploading || !caseId
-                  ? 'text-light-400 bg-light-100 cursor-not-allowed'
-                  : 'text-light-700 bg-light-50 hover:bg-light-100 cursor-pointer'
-              }`}>
-                <HardDrive className="w-5 h-5 text-owl-blue-700" />
-                <span>{uploading ? 'Uploading…' : 'Click to choose .zip archive'}</span>
-                <input
-                  type="file"
-                  accept=".zip,application/zip,application/x-zip-compressed"
-                  className="hidden"
-                  onChange={handleArchiveSelect}
                   disabled={!canUploadEvidence || uploading || !caseId}
                 />
               </label>

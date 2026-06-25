@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import Uppy from '@uppy/core'
 import Tus from '@uppy/tus'
 import Dashboard from '@uppy/react/dashboard'
@@ -14,7 +14,11 @@ import '@uppy/dashboard/css/style.min.css'
  * tusd by Vite (same origin). See deploy/owl-tusd.service + tus-hooks/.
  */
 export default function UppyEvidenceUploader({ caseId, owner, disabled }) {
-  const uppy = useMemo(() => {
+  // useState initializer (not useMemo) so the instance is stable across renders
+  // and React 18 StrictMode's mount→unmount→mount cycle. Do NOT destroy it on
+  // unmount: StrictMode would remount with a destroyed instance and render an
+  // empty Dashboard. The Dashboard wrapper installs/uninstalls its own plugin.
+  const [uppy] = useState(() => {
     const u = new Uppy({
       autoProceed: false,
       // Cellebrite exports are zipped; this widget is the large-archive path.
@@ -30,7 +34,7 @@ export default function UppyEvidenceUploader({ caseId, owner, disabled }) {
       headers: () => ({ Authorization: `Bearer ${localStorage.getItem('authToken') || ''}` }),
     })
     return u
-  }, []) // one Uppy instance for the component's lifetime
+  })
 
   // keep case/owner fresh, and give tusd the `filename` its hooks require
   useEffect(() => {
@@ -44,8 +48,6 @@ export default function UppyEvidenceUploader({ caseId, owner, disabled }) {
     return () => uppy.off('file-added', onAdded)
   }, [uppy, caseId, owner])
 
-  useEffect(() => () => { try { uppy.destroy() } catch { /* noop */ } }, [uppy])
-
   return (
     <div className="rounded-lg border border-light-300 bg-light-50 p-4">
       <div className="mb-2 flex items-center justify-between">
@@ -57,6 +59,7 @@ export default function UppyEvidenceUploader({ caseId, owner, disabled }) {
           uppy={uppy}
           proudlyDisplayPoweredByUppy={false}
           showProgressDetails
+          width="100%"
           height={300}
           note="Drag a Cellebrite .zip here. Uploads in chunks; if the connection drops it resumes where it left off. Processing starts automatically when the upload finishes."
         />
