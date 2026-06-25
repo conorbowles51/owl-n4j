@@ -91,6 +91,33 @@ function relativeTime(iso) {
   return `${Math.round(hrs / 24)}d ago`;
 }
 
+// Compact elapsed duration between two ISO timestamps (end defaults to now).
+function formatDuration(startIso, endIso) {
+  if (!startIso) return '';
+  const start = new Date(startIso).getTime();
+  const end = endIso ? new Date(endIso).getTime() : Date.now();
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return '';
+  const secs = Math.round((end - start) / 1000);
+  if (secs < 90) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+// Icon + colour for a single ingestion stage's status.
+function stageStatusMeta(status) {
+  switch (status) {
+    case 'completed':
+      return { Icon: CheckCircle2, spin: false, cls: 'text-green-600' };
+    case 'running':
+      return { Icon: Loader2, spin: true, cls: 'text-owl-blue-700' };
+    case 'failed':
+      return { Icon: AlertTriangle, spin: false, cls: 'text-red-600' };
+    default: // pending
+      return { Icon: Clock, spin: false, cls: 'text-light-400' };
+  }
+}
+
 export default function EvidenceProcessingView({
   caseId,
   caseName,
@@ -1577,6 +1604,12 @@ export default function EvidenceProcessingView({
                     const total = t.progress?.total || 0;
                     const done = t.progress?.completed || 0;
                     const failed = t.progress?.failed || 0;
+                    // Extraction reports progress via the counter, but the long
+                    // post-extraction phase (building contacts/relationships/comms)
+                    // emits nothing and leaves the task "running" at 100%. Show a
+                    // distinct "Finalizing" state so it doesn't read as done-but-stuck.
+                    const finalizing = t.status === 'running' && total > 0 && done >= total;
+                    const stages = Array.isArray(t.metadata?.stages) ? t.metadata.stages : [];
                     const TypeIcon = meta.Icon;
                     const StatusIcon = s.Icon;
                     return (
@@ -1588,12 +1621,41 @@ export default function EvidenceProcessingView({
                           </p>
                           <div className="flex items-center gap-1.5 text-[11px] text-light-600">
                             <StatusIcon className={`w-3 h-3 ${s.cls} ${s.spin ? 'animate-spin' : ''}`} />
-                            <span className={s.cls}>{s.label}</span>
+                            <span className={s.cls}>{finalizing ? 'Finalizing' : s.label}</span>
                             {total > 0 && (
-                              <span className="text-light-500">· {done}/{total}{failed > 0 ? ` (${failed} failed)` : ''}</span>
+                              <span className="text-light-500">
+                                · {finalizing ? `${total.toLocaleString()} records extracted` : `${done}/${total}${failed > 0 ? ` (${failed} failed)` : ''}`}
+                              </span>
                             )}
                             <span className="text-light-400">· {relativeTime(t.updated_at || t.created_at)}</span>
                           </div>
+                          {stages.length > 0 ? (
+                            <ul className="mt-1.5 space-y-0.5">
+                              {stages.map((st) => {
+                                const sm = stageStatusMeta(st.status);
+                                const SIcon = sm.Icon;
+                                const dur = st.status === 'completed'
+                                  ? formatDuration(st.started_at, st.completed_at)
+                                  : st.status === 'running'
+                                    ? formatDuration(st.started_at, null)
+                                    : '';
+                                return (
+                                  <li key={st.key} className="flex items-center gap-1.5 text-[11px]">
+                                    <SIcon className={`w-3 h-3 shrink-0 ${sm.cls} ${sm.spin ? 'animate-spin' : ''}`} />
+                                    <span className={st.status === 'pending' ? 'text-light-400' : 'text-dark-700'}>{st.label}</span>
+                                    {st.key === 'write' && st.total > 0 && (
+                                      <span className="text-light-400">{(st.completed || 0).toLocaleString()}/{st.total.toLocaleString()}</span>
+                                    )}
+                                    {dur && <span className="ml-auto text-light-400 tabular-nums">{dur}</span>}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : finalizing && (
+                            <p className="mt-0.5 text-[11px] text-owl-blue-700">
+                              Extraction complete — building contacts, relationships &amp; communications. This can take several minutes for large reports.
+                            </p>
+                          )}
                           {t.status === 'failed' && t.error && (
                             <p className="mt-0.5 text-[11px] text-red-600 truncate" title={t.error}>{t.error}</p>
                           )}

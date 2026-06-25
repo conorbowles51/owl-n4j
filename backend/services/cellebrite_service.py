@@ -7,11 +7,84 @@ extraction reports. Follows the same pattern as wiretap_service.py.
 
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Callable
+from typing import Dict, List, Optional, Callable
 from datetime import datetime
 
 from config import BASE_DIR
 from services._timeutil import utcnow_iso
+
+
+# User-facing ingestion stages (ordered). The pipeline emits finer-grained
+# `phase` markers via its progress callback; we group them into these stages so
+# the UI can show a readable checklist with per-stage timing. See PHASE_TO_STAGE.
+INGEST_STAGES = [
+    ("read", "Reading report"),
+    ("report", "Registering device"),
+    ("write", "Writing records"),
+    ("identities", "Resolving identities"),
+    ("locations", "Harvesting locations"),
+    ("linking", "Linking"),
+    ("media", "Registering media"),
+]
+_STAGE_INDEX = {key: i for i, (key, _label) in enumerate(INGEST_STAGES)}
+
+# Map a pipeline phase (emitted by ingest_cellebrite_report) to its UI stage.
+PHASE_TO_STAGE = {
+    "detect": "read",
+    "parse": "read",
+    "file_index": "read",
+    "resolve_paths": "read",
+    "create_report": "report",
+    "identify_owner": "report",
+    "map_files": "report",
+    "writing": "write",
+    "finalising_sim": "identities",
+    "person_identity": "identities",
+    "geotag_harvest": "locations",
+    "coordinate_harvest": "locations",
+    "linking_contains": "linking",
+    "geotag_backfill": "linking",
+    "registering_media": "media",
+}
+
+
+def _build_stage_list(runtime: Dict[str, Dict], current_key: Optional[str],
+                      terminal: Optional[str]) -> List[Dict]:
+    """Render the ordered stage checklist from accumulated per-stage timing.
+
+    runtime: {stage_key: {started_at, completed_at, total, completed, failed}}
+    current_key: the stage currently in progress (None before the first phase)
+    terminal: None while running, "completed" or "failed" once the task ends.
+    """
+    cur_idx = _STAGE_INDEX.get(current_key, -1)
+    out: List[Dict] = []
+    for i, (key, label) in enumerate(INGEST_STAGES):
+        st = runtime.get(key, {})
+        started = st.get("started_at")
+        completed = st.get("completed_at")
+        if terminal == "completed":
+            status = "completed"
+        elif terminal == "failed":
+            status = "failed" if key == current_key else ("completed" if (completed or i < cur_idx) else "pending")
+        else:
+            if completed or (current_key is not None and i < cur_idx):
+                status = "completed"
+            elif key == current_key:
+                status = "running"
+            else:
+                status = "pending"
+        entry = {"key": key, "label": label, "status": status}
+        if started:
+            entry["started_at"] = started
+        # Stamp a completion time for anything we now consider finished.
+        if status == "completed":
+            entry["completed_at"] = completed or utcnow_iso()
+        if key == "write":
+            entry["total"] = st.get("total", 0)
+            entry["completed"] = st.get("completed", 0)
+            entry["failed"] = st.get("failed", 0)
+        out.append(entry)
+    return out
 
 
 def _import_cellebrite():
@@ -186,6 +259,11 @@ def process_cellebrite_report(
         started_at=utcnow_iso(),
     )
 
+    # Per-stage timing accumulator for the UI checklist (defined here so the
+    # except handler can finalise the checklist even if a pre-ingest step throws).
+    stage_runtime: Dict[str, Dict] = {}
+    _stage = {"key": None}
+
     # Create a log callback that writes to both the task log and any provided callback
     def _log(msg: str):
         if log_callback:
@@ -248,13 +326,42 @@ def process_cellebrite_report(
         #     declared dead.
         # The orchestrator already throttles to ~1 call/2s; no
         # additional rate-limiting needed here.
+        # The pipeline emits a `phase` on its progress payloads; we translate
+        # phase→stage and stamp start/end times as stages transition.
+        # `_stage["key"]` holds the in-progress stage so the final completion/
+        # failure handlers can finish the checklist correctly.
+        def _advance_stage(stage_key: str):
+            """Open `stage_key`, closing every earlier stage that isn't yet done."""
+            if not stage_key or stage_key == _stage["key"]:
+                return
+            now = utcnow_iso()
+            new_idx = _STAGE_INDEX.get(stage_key, -1)
+            for key, _label in INGEST_STAGES[:new_idx]:
+                st = stage_runtime.setdefault(key, {})
+                st.setdefault("started_at", now)
+                if not st.get("completed_at"):
+                    st["completed_at"] = now
+            st = stage_runtime.setdefault(stage_key, {})
+            st.setdefault("started_at", now)
+            _stage["key"] = stage_key
+
         def _heartbeat(payload: dict):
             try:
+                phase = payload.get("phase")
+                stage_key = PHASE_TO_STAGE.get(phase) if phase else None
+                if stage_key:
+                    _advance_stage(stage_key)
+                    if stage_key == "write":
+                        st = stage_runtime.setdefault("write", {})
+                        st["total"] = payload.get("total") or 0
+                        st["completed"] = payload.get("completed") or 0
+                        st["failed"] = payload.get("failed") or 0
                 background_task_storage.update_task(
                     task_id,
                     progress_total=payload.get("total") or 0,
                     progress_completed=payload.get("completed") or 0,
                     progress_failed=payload.get("failed") or 0,
+                    stages=_build_stage_list(stage_runtime, _stage["key"], None),
                 )
             except Exception as e:
                 _log(f"WARNING: heartbeat update failed: {e}")
@@ -300,6 +407,7 @@ def process_cellebrite_report(
                     progress_total=xml_total,
                     progress_completed=result.get("total_nodes", 0),
                     progress_failed=errors_total,
+                    stages=_build_stage_list(stage_runtime, _stage["key"], "failed"),
                 )
                 _log(f"Cellebrite ingestion DEGRADED: {err_msg}")
             else:
@@ -310,6 +418,7 @@ def process_cellebrite_report(
                     progress_total=xml_total,
                     progress_completed=result.get("total_nodes", 0),
                     progress_failed=errors_total,
+                    stages=_build_stage_list(stage_runtime, _stage["key"], "completed"),
                 )
                 _log(
                     f"Cellebrite ingestion completed: "
@@ -325,6 +434,7 @@ def process_cellebrite_report(
                 status=TaskStatus.FAILED.value,
                 completed_at=utcnow_iso(),
                 error=fail_msg,
+                stages=_build_stage_list(stage_runtime, _stage["key"], "failed"),
             )
             _log(f"Cellebrite ingestion failed: {fail_msg}")
 
@@ -355,5 +465,6 @@ def process_cellebrite_report(
             status=TaskStatus.FAILED.value,
             completed_at=utcnow_iso(),
             error=error_msg,
+            stages=_build_stage_list(stage_runtime, _stage["key"], "failed"),
         )
         return {"status": "error", "reason": str(e)}

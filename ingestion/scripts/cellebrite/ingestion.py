@@ -227,6 +227,7 @@ def ingest_cellebrite_report(
     # ------------------------------------------------------------------
     # Step 1: Detect and validate XML
     # ------------------------------------------------------------------
+    _emit_progress(phase="detect", total=0, completed=0, failed=0)
     _log("Step 1/9: Detecting Cellebrite XML report...")
 
     xml_path = detect_cellebrite_xml(report_dir)
@@ -342,6 +343,7 @@ def ingest_cellebrite_report(
     # ------------------------------------------------------------------
     # Step 5: Create Neo4j writer and PhoneReport node
     # ------------------------------------------------------------------
+    _emit_progress(phase="create_report", total=0, completed=0, failed=0)
     _log("Step 5/9: Creating PhoneReport node in Neo4j...")
 
     # Import Neo4j client here to avoid import issues when running
@@ -482,6 +484,8 @@ def ingest_cellebrite_report(
     # CONTAINS sweep links the new Location nodes for free. The (expected,
     # created) parity is the assertion the leak slipped past — surfaced in
     # stats and logged loudly on any gap.
+    _emit_progress(phase="geotag_harvest", total=total_models, completed=total_models,
+                   failed=sum(writer.write_errors.values()))
     _log("Step 8.35: Harvesting photo geotags from tagged files...")
     try:
         geo_expected, geo_created = writer.harvest_photo_geotags(tagged_files)

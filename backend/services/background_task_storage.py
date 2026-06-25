@@ -224,6 +224,7 @@ class BackgroundTaskStorage:
         error: Optional[str] = None,
         started_at: Optional[str] = None,
         completed_at: Optional[str] = None,
+        stages: Optional[List[Dict]] = None,
     ) -> Optional[Dict]:
         """
         Update a task's status and progress.
@@ -238,6 +239,8 @@ class BackgroundTaskStorage:
             error: Error message if task failed
             started_at: When task started (ISO timestamp)
             completed_at: When task completed (ISO timestamp)
+            stages: Per-stage progress checklist (list of stage dicts), stored
+                under metadata.stages for the UI ingestion status panel
 
         Returns:
             Updated task dict or None if not found
@@ -294,6 +297,10 @@ class BackgroundTaskStorage:
 
             if completed_at is not None:
                 task["completed_at"] = completed_at
+                updated = True
+
+            if stages is not None:
+                task.setdefault("metadata", {})["stages"] = stages
                 updated = True
 
             if updated:
