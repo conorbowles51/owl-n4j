@@ -3,9 +3,11 @@
 VERTICAL-SLICE behaviour: move the finished file into the case's _incoming dir
 and log it. (Phase 2 replaces the "log" step with a call into the existing
 Cellebrite ingest pipeline.)"""
-import sys, json, os, shutil, time, traceback
+import sys, json, os, shutil, time, traceback, subprocess
 
 LOG = "/mnt/owl-data/uploads-tus/hooks.log"
+VENV_PY = "/home/conorbowles51/app_v2/venv/bin/python"
+WORKER = "/home/conorbowles51/app_v2/deploy/tus-ingest-worker.py"
 # Use the DIRECT data-disk path (NOT the app's bind-mount path
 # /home/.../ingestion/data). The tus store (/mnt/owl-data/uploads-tus) and this
 # dir are on the SAME mount (/mnt/owl-data), so shutil.move does an atomic
@@ -29,6 +31,7 @@ try:
     src = ((up.get("Storage") or {}).get("Path"))
     meta = up.get("MetaData") or {}
     case_id = (meta.get("case_id") or "").strip()
+    owner = (meta.get("owner") or "").strip()
     filename = os.path.basename((meta.get("filename") or "upload.bin").strip()) or "upload.bin"
 
     if not src or not os.path.exists(src):
@@ -47,6 +50,17 @@ try:
         try: os.remove(info)
         except Exception: pass
     log(f"id={upload_id} case={case_id} size={size} landed -> {dest}")
+
+    # Hand off extraction + ingestion to a DETACHED worker so this hook returns
+    # immediately (tusd must not block on a multi-GB extract + ingest). The
+    # worker runs the same auto-route as API uploads. start_new_session detaches
+    # it from tusd's process group so it survives the hook exiting.
+    subprocess.Popen(
+        [VENV_PY, WORKER, case_id, dest, owner],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL, start_new_session=True,
+    )
+    log(f"id={upload_id} spawned ingest worker (detached)")
 except Exception:
     log("EXCEPTION:\n" + traceback.format_exc())
 # never fail the upload from post-finish
