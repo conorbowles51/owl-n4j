@@ -470,8 +470,15 @@ export default function EvidenceProcessingView({
             completedCellebriteTaskIdsRef.current.add(task.id);
             setUnpackingFiles([]); // ingest finished — drop the bridging card
           } else if (task.status === 'failed' && !completedCellebriteTaskIdsRef.current.has(task.id)) {
-            const failError = task.error || 'Unknown ingestion error';
-            setError(`Cellebrite ingestion failed: ${failError}`);
+            // A "needs action" task (report detected but awaiting a device
+            // identifier / duplicate decision) is not a failure — the panel
+            // surfaces it inline as an amber call-to-action. Don't raise the
+            // top-level error banner for it; just drop the bridging card and
+            // refresh so the unpacked report folder appears for processing.
+            if (!task.metadata?.needs_action) {
+              const failError = task.error || 'Unknown ingestion error';
+              setError(`Cellebrite ingestion failed: ${failError}`);
+            }
             completedCellebriteTaskIdsRef.current.add(task.id);
             setUnpackingFiles([]);
             shouldRefreshFiles = true;
@@ -1610,8 +1617,20 @@ export default function EvidenceProcessingView({
                     // distinct "Finalizing" state so it doesn't read as done-but-stuck.
                     const finalizing = t.status === 'running' && total > 0 && done >= total;
                     const stages = Array.isArray(t.metadata?.stages) ? t.metadata.stages : [];
+                    // A report that was detected but not yet ingested (no phone
+                    // number / duplicate) is surfaced as a failed task carrying
+                    // a `needs_action` flag. Render it as an amber "Action
+                    // needed" call-to-action — with what to do — rather than a
+                    // red error, so an uploaded-but-unprocessed report is
+                    // visible and actionable instead of looking like nothing
+                    // happened.
+                    const needsAction = t.metadata?.needs_action;
+                    const actionMessage = t.metadata?.action_message || t.error;
+                    const sEff = needsAction
+                      ? { Icon: AlertTriangle, spin: false, cls: 'text-amber-600', label: 'Action needed' }
+                      : s;
                     const TypeIcon = meta.Icon;
-                    const StatusIcon = s.Icon;
+                    const StatusIcon = sEff.Icon;
                     return (
                       <div key={t.id} className="flex items-start gap-2 px-3 py-2">
                         <TypeIcon className="w-4 h-4 mt-0.5 shrink-0 text-light-500" />
@@ -1620,8 +1639,8 @@ export default function EvidenceProcessingView({
                             {t.task_name || meta.label}
                           </p>
                           <div className="flex items-center gap-1.5 text-[11px] text-light-600">
-                            <StatusIcon className={`w-3 h-3 ${s.cls} ${s.spin ? 'animate-spin' : ''}`} />
-                            <span className={s.cls}>{finalizing ? 'Finalizing' : s.label}</span>
+                            <StatusIcon className={`w-3 h-3 ${sEff.cls} ${sEff.spin ? 'animate-spin' : ''}`} />
+                            <span className={sEff.cls}>{finalizing ? 'Finalizing' : sEff.label}</span>
                             {total > 0 && (
                               <span className="text-light-500">
                                 · {finalizing ? `${total.toLocaleString()} records extracted` : `${done}/${total}${failed > 0 ? ` (${failed} failed)` : ''}`}
@@ -1656,7 +1675,9 @@ export default function EvidenceProcessingView({
                               Extraction complete — building contacts, relationships &amp; communications. This can take several minutes for large reports.
                             </p>
                           )}
-                          {t.status === 'failed' && t.error && (
+                          {needsAction ? (
+                            <p className="mt-0.5 text-[11px] text-amber-700" title={actionMessage}>{actionMessage}</p>
+                          ) : t.status === 'failed' && t.error && (
                             <p className="mt-0.5 text-[11px] text-red-600 truncate" title={t.error}>{t.error}</p>
                           )}
                         </div>

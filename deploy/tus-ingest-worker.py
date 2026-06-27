@@ -101,9 +101,20 @@ def main():
     try:
         from services.evidence_service import evidence_service
         log(f"calling _maybe_autoingest_cellebrite(case={case_id}, folder={folder_name})")
-        evidence_service._maybe_autoingest_cellebrite(
+        result = evidence_service._maybe_autoingest_cellebrite(
             case_id=case_id, folder_name=folder_name, owner=owner)
-        log("ingest handoff returned (task created + processed)")
+        # Report what actually happened — the handoff may have ingested the
+        # report, OR detected it but stopped for a recoverable reason (no phone
+        # number / duplicate), in which case a "needs action" task is surfaced
+        # in the UI instead of a completed ingest.
+        action = (result or {}).get("action", "unknown")
+        if action == "ingested":
+            log(f"ingest handoff: report ingested ({(result or {}).get('report_name')})")
+        elif action == "needs_action":
+            log(f"ingest handoff: report needs user action "
+                f"({(result or {}).get('reason')}) — surfaced in Evidence Ingestion panel")
+        else:
+            log(f"ingest handoff: no auto-ingest ({(result or {}).get('reason', action)})")
     except Exception:
         log("INGEST HANDOFF FAILED:\n" + traceback.format_exc())
 
