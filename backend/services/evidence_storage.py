@@ -321,6 +321,16 @@ class EvidenceStorage:
             deleted[0] = records.pop(evidence_id, None)
         return deleted[0]
 
+    def update_record(self, evidence_id: str, **kwargs) -> bool:
+        """Merge kwargs into an evidence record. Returns True if the record exists."""
+        found = [False]
+        with self._file_locked() as records:
+            rec = records.get(evidence_id)
+            if rec is not None:
+                rec.update(kwargs)
+                found[0] = True
+        return found[0]
+
     def get_by_cellebrite_file_ids(
         self, case_id: str, file_ids: List[str]
     ) -> Dict[str, dict]:

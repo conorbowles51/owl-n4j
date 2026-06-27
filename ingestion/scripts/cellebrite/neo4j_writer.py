@@ -1580,9 +1580,10 @@ class CellebriteNeo4jWriter:
         # sender's name needs harvesting into name_aliases. Skip all the prop
         # building (body/provenance/attachment) for the 100k+ messages.
         if self.identity_only:
-            fp = model.get_party("From")
-            if fp and (fp.identifier or fp.name):
-                self._ensure_person(identifier=fp.identifier, name=fp.name, source_app=source)
+            for field_name in ("From", "To"):
+                p = model.get_party(field_name)
+                if p and (p.identifier or p.name):
+                    self._ensure_person(identifier=p.identifier, name=p.name, source_app=source)
             return
 
         body = model.get_field("Body")
@@ -1603,6 +1604,11 @@ class CellebriteNeo4jWriter:
         # Truncate very long message bodies for the node name
         short_body = (body[:80] + "...") if body and len(body) > 80 else body
 
+        from_party = model.get_party("From")
+        to_party = model.get_party("To")
+        from_display = (from_party.name or from_party.identifier) if from_party else None
+        to_display = (to_party.name or to_party.identifier) if to_party else None
+
         props = self._base_props(model, msg_key, short_body or f"Message ({source or ''})")
         props.update({
             "body": body,
@@ -1612,6 +1618,8 @@ class CellebriteNeo4jWriter:
             "identifier": identifier,
             "folder": folder,
             "date_delivered": date_delivered,
+            "from_name": from_display,
+            "to_name": to_display,
         })
         if timestamp:
             props["date"] = timestamp[:10]
@@ -1624,7 +1632,6 @@ class CellebriteNeo4jWriter:
         self._create_node("Communication", msg_key, props)
 
         # Link sender
-        from_party = model.get_party("From")
         if from_party:
             person_key = self._ensure_person(
                 identifier=from_party.identifier,
@@ -1633,6 +1640,16 @@ class CellebriteNeo4jWriter:
             )
             if person_key:
                 self._create_relationship(person_key, msg_key, "SENT_MESSAGE")
+
+        # Link recipient
+        if to_party and (to_party.identifier or to_party.name):
+            to_person_key = self._ensure_person(
+                identifier=to_party.identifier,
+                name=to_party.name,
+                source_app=source,
+            )
+            if to_person_key:
+                self._create_relationship(msg_key, to_person_key, "RECEIVED_MESSAGE")
 
         # Link to parent chat
         if parent_chat_key:

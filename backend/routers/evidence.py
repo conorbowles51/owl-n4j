@@ -209,6 +209,49 @@ def _cellebrite_root_prefixes(case_id: str) -> List[str]:
     return prefixes
 
 
+def _register_cellebrite_dir_record(
+    case_id: str,
+    folder_path: Path,
+    folder_name: str,
+    owner: Optional[str],
+    det: dict,
+) -> Optional[str]:
+    """Register a single directory-level evidence record for a Cellebrite report
+    root if one does not already exist. Idempotent — skips if stored_path matches.
+    Returns the evidence ID if created (or already present), None on failure.
+    """
+    folder_str = str(folder_path).replace("\\", "/").rstrip("/")
+    for rec in evidence_storage.list_files(case_id=case_id):
+        if rec.get("is_cellebrite_folder") and str(rec.get("stored_path", "")).replace("\\", "/").rstrip("/") == folder_str:
+            return rec.get("id")
+
+    sentinel_sha256 = hashlib.sha256(
+        f"cellebrite-dir:{case_id}:{folder_name}".encode()
+    ).hexdigest()
+
+    created = evidence_storage.add_files(
+        case_id=case_id,
+        files=[{
+            "original_filename": folder_name,
+            "stored_path": folder_path,
+            "sha256": sentinel_sha256,
+            "size": 0,
+        }],
+        owner=owner,
+    )
+    if created:
+        evidence_id = created[0]["id"]
+        evidence_storage.update_record(
+            evidence_id,
+            is_cellebrite_folder=True,
+            cellebrite_report_name=det.get("report_name") or folder_name,
+            cellebrite_device_model=det.get("device_model"),
+            cellebrite_phone_numbers=det.get("phone_numbers") or [],
+        )
+        return evidence_id
+    return None
+
+
 @router.get("", response_model=EvidenceListResponse)
 def list_evidence(
     case_id: Optional[str] = None,
@@ -308,10 +351,19 @@ def _sync_filesystem_blocking(case_id: str, owner_email: str) -> dict:
     for dirpath, dirnames, filenames in os.walk(case_dir):
         current_dir = Path(dirpath)
 
-        # If this directory is a Cellebrite report root, prune the entire
-        # subtree — don't list files, don't descend, don't read anything.
+        # If this directory is a Cellebrite report root, register a single
+        # folder-level evidence record (so it appears in the evidence tab
+        # as "ready for processing"), then prune the entire subtree so we
+        # never touch the thousands of extraction artifact files inside.
         if _is_cellebrite_report_root(current_dir):
             skipped_cellebrite_dirs.append(str(current_dir.relative_to(case_dir)) or ".")
+            # Parse the report header so the folder record carries the phone
+            # number / device model for the evidence tab (header-only parse,
+            # one per report root). case_id omitted to skip the Neo4j probe.
+            det = check_cellebrite_report(current_dir)
+            _register_cellebrite_dir_record(
+                case_id, current_dir, current_dir.name, owner_email, det
+            )
             dirnames[:] = []
             continue
 
@@ -720,6 +772,32 @@ async def upload_evidence(
                         status_code=400,
                         detail="Archive contained no extractable files.",
                     )
+
+                # Detect top-level Cellebrite report folders in the extracted
+                # tree and register a folder-level evidence record for each.
+                # This makes the extraction visible in the evidence tab as
+                # "ready for Cellebrite processing" even while the background
+                # task is still moving individual files into place.
+                top_folders: dict = {}
+                for u in uploads:
+                    rp = (u.get("relative_path") or "").replace("\\", "/")
+                    if "/" in rp:
+                        top_folders.setdefault(rp.split("/")[0], True)
+                for fn in top_folders:
+                    staged_folder = extract_dir / fn
+                    if staged_folder.is_dir() and _is_cellebrite_report_root(staged_folder):
+                        final_path = EVIDENCE_ROOT_DIR / case_id / fn
+                        # Parse the report header off the staged tree (files are
+                        # still there pre-move) so the folder record carries the
+                        # phone number / device model. Without this the evidence
+                        # tab would always claim "no phone number detected" and
+                        # demand a manual identifier even for reports that have
+                        # one. case_id omitted to skip the Neo4j duplicate probe.
+                        det = check_cellebrite_report(staged_folder)
+                        _register_cellebrite_dir_record(
+                            case_id, final_path, fn, current_user.email, det
+                        )
+
         except Exception:
             # Stage or extract failed — remove anything we managed to write.
             shutil.rmtree(staging_dir, ignore_errors=True)

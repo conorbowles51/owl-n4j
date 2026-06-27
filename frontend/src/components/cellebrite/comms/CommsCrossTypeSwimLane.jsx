@@ -280,7 +280,8 @@ export default function CommsCrossTypeSwimLane({
     <div className="flex-1 min-h-0 flex flex-col relative">
       <div
         ref={surfaceRef}
-        className="relative flex-1 min-h-0 overflow-auto select-none cursor-crosshair bg-light-50"
+        className="relative flex-1 min-h-0 overflow-auto cursor-crosshair bg-light-50"
+        style={{ userSelect: drag ? 'none' : 'auto' }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}

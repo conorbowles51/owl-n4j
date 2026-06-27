@@ -8,6 +8,11 @@ from dotenv import load_dotenv
 
 # Load environment variables
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+import tempfile as _tempfile
+_DISK_TMP = BASE_DIR / "ingestion" / "data" / "_tmp"
+_DISK_TMP.mkdir(parents=True, exist_ok=True)
+_tempfile.tempdir = str(_DISK_TMP)
 ENV_PATH = BASE_DIR / ".env"
 
 if ENV_PATH.exists():
