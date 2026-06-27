@@ -361,6 +361,11 @@ class CellebriteNeo4jWriter:
         self._phone_owner_key: Optional[str] = None
         self._phone_owner_names: Dict[str, int] = {}  # name -> count
         self._phone_owner_identifiers: Set[str] = set()
+        # Comm-level `Account` values (owner's own account on each message/call),
+        # tallied for owner-number inference when the header has no MSISDN. See
+        # infer_owner_msisdn — full-file-system extractions leave the owner Party
+        # empty and carry the owner's number only here.
+        self._owner_account_counts: Dict[str, int] = {}  # account -> count
 
         # SIMData aggregation — see _write_sim_data / finalise_sim_card.
         # Cellebrite emits SIM properties one per model row; we collect
@@ -680,6 +685,30 @@ class CellebriteNeo4jWriter:
 
     def _scan_for_phone_owner(self, model: ParsedModel):
         """Check all Party elements for IsPhoneOwner flag."""
+        # The comm-level `Account` is the device owner's own account on this
+        # message/call (e.g. WhatsApp "13015498311@s.whatsapp.net"). Tally it
+        # for infer_owner_msisdn: on full-file-system extractions the header
+        # carries no MSISDN and the IsPhoneOwner Party is empty, so this is the
+        # only place the owner's own number surfaces.
+        account = model.get_field("Account")
+        if account:
+            self._owner_account_counts[account] = (
+                self._owner_account_counts.get(account, 0) + 1
+            )
+
+        # UserAccount models are accounts configured ON the device, so their
+        # display `Name` is the device owner's real name (e.g. "Abraham Luna"
+        # across their Google/WhatsApp accounts). Tally real names as owner-name
+        # candidates — the single richest name signal when the IsPhoneOwner
+        # Party carries none (full-file-system extractions). _is_real_name drops
+        # app/business labels ("WhatsApp Business") and bare-number lookalikes.
+        if model.model_type == "UserAccount":
+            acct_name = model.get_field("Name")
+            if acct_name and _is_real_name(acct_name):
+                self._phone_owner_names[acct_name] = (
+                    self._phone_owner_names.get(acct_name, 0) + 1
+                )
+
         # Check direct modelFields (From/To)
         for field_name in ("From", "To"):
             party = model.get_party(field_name)
@@ -860,6 +889,117 @@ class CellebriteNeo4jWriter:
         self._log(f"Phone owner: {best_name or 'Unknown'} (key={key})")
         return key
 
+    def infer_owner_msisdn(self) -> Optional[str]:
+        """Best-effort device owner phone number for a report whose header
+        carried no MSISDN.
+
+        Full-file-system extractions (iOS FFS, modern Android) routinely omit
+        the header <MSISDN>; the owner's own number instead appears as the
+        comm-level `Account` on their messages/calls (e.g. WhatsApp
+        "13015498311@s.whatsapp.net"), while the IsPhoneOwner Party itself is
+        empty. Picks the most frequently-seen Account (plus any IsPhoneOwner
+        party identifier, for formats that DO populate it) that resolves to a
+        valid phone number. Returns canonical E.164 or None.
+
+        Requires collect_phone_owner_info to have run first. Creates no nodes:
+        the caller sets device_info.msisdn so the rest of the pipeline treats
+        the result exactly like an extracted number.
+        """
+        counts: Dict[str, int] = {}
+
+        def _tally(raw: Optional[str], weight: int) -> None:
+            # Reuse the shared person-key resolver: it maps WhatsApp/messaging
+            # JIDs ("<digits>@s.whatsapp.net") to their embedded phone number
+            # and validates via libphonenumber, so app IDs / emails fall away.
+            key = _generate_person_key(
+                identifier=raw, default_region=self.default_region
+            )
+            if key and key.startswith("phone-"):
+                num = "+" + key[len("phone-"):]
+                counts[num] = counts.get(num, 0) + weight
+
+        for account, freq in self._owner_account_counts.items():
+            _tally(account, freq)
+        for ident in self._phone_owner_identifiers:
+            _tally(ident, 1)
+
+        if not counts:
+            return None
+
+        # Most frequent wins; E.164 string breaks ties for determinism.
+        best = max(counts, key=lambda n: (counts[n], n))
+        if len(counts) > 1:
+            ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+            self._log(
+                "Owner-number inference: candidates "
+                + ", ".join(f"{n}×{c}" for n, c in ranked[:5])
+                + f" -> chose {best}"
+            )
+        else:
+            self._log(
+                f"Owner-number inference: {best} (seen on {counts[best]} comms)"
+            )
+        return best
+
+    def flag_owner_app_identities(self) -> int:
+        """Flag the device owner's per-app identities (Snapchat/Facebook/etc.)
+        as is_phone_owner so the Comms Center badges them as the owner instead
+        of surfacing them as separate/unknown people.
+
+        The owner's own account on each comm is stored as `account` (+
+        `source_app`) on the PhoneCall/Communication node. Each distinct
+        (account, source_app) resolves — via the SAME person-key rule used at
+        write time — to the owner's Person on that app, e.g.:
+          Snapchat  'ricoteo1'        -> snapchat-ricoteo1            ('Rico Teo')
+          Facebook  '100021548101373' -> facebook-messenger-100021…  ('Tal Reese')
+          WhatsApp  '…@s.whatsapp.net' -> phone-13015498311          ('Rico Valentin')
+        We FLAG them only — names and per-app identities are preserved (no
+        merge, no rename), honouring the perspective-primary rule.
+
+        Must run AFTER the write pass (needs the comm nodes). Returns the count
+        newly flagged.
+        """
+        rows = self.db.run_query(
+            """
+            MATCH (c {case_id: $cid, cellebrite_report_key: $rk})
+            WHERE (c:PhoneCall OR c:Communication) AND c.account IS NOT NULL
+            RETURN DISTINCT c.account AS account, c.source_app AS source_app
+            """,
+            cid=self.case_id, rk=self.report_key,
+        ) or []
+
+        keys: Set[str] = set()
+        if self._phone_owner_key:
+            keys.add(self._phone_owner_key)
+        for r in rows:
+            k = _generate_person_key(
+                identifier=r.get("account"),
+                source_app=r.get("source_app"),
+                default_region=self.default_region,
+            )
+            if k:
+                keys.add(k)
+        if not keys:
+            return 0
+
+        res = self.db.run_query(
+            """
+            MATCH (p:Person {case_id: $cid})
+            WHERE p.key IN $keys AND coalesce(p.is_phone_owner, false) = false
+            SET p.is_phone_owner = true
+            RETURN count(p) AS flagged
+            """,
+            cid=self.case_id, keys=list(keys),
+        )
+        flagged = (res[0].get("flagged") if res else 0) or 0
+        if flagged:
+            self._log(
+                f"Flagged {flagged} owner app-identit"
+                f"{'y' if flagged == 1 else 'ies'} (Snapchat/Facebook/etc.) as "
+                "device owner — names preserved"
+            )
+        return flagged
+
     def create_phone_report_node(self):
         """Create the central PhoneReport anchor node."""
         ci = self.report.case_info
@@ -964,6 +1104,10 @@ class CellebriteNeo4jWriter:
             # alias was added). UI badges this so a manual identity isn't
             # mistaken for an extracted MSISDN.
             "device_identifier_manual": getattr(di, "identifier_is_manual", False),
+            # True when phone_numbers was recovered by inference (no header
+            # MSISDN; derived from the owner's comm-level Account). Distinct
+            # from a manual identifier — the UI badges it "inferred".
+            "device_identifier_inferred": getattr(di, "identifier_is_inferred", False),
         }
 
         # Remove None values

@@ -478,14 +478,15 @@ class EvidenceService:
 
         folder_path = EVIDENCE_ROOT_DIR / case_id / folder_name
         if not folder_path.is_dir():
-            return
+            return {"action": "none", "reason": "missing_folder"}
 
         # Lazy import to avoid an import cycle at module load.
         from .cellebrite_service import check_cellebrite_report, process_cellebrite_report
 
         det = check_cellebrite_report(folder_path, case_id=case_id)
         if not det.get("suitable"):
-            return  # Not a Cellebrite report — normal upload, nothing to do.
+            # Not a Cellebrite report — normal upload, nothing to do.
+            return {"action": "none", "reason": "not_cellebrite"}
 
         report_name = det.get("report_name") or folder_name
 
@@ -495,24 +496,49 @@ class EvidenceService:
                 level="info", message=msg,
             )
 
-        # A PhoneReport needs an owning identity; we can't prompt from here.
-        if not (det.get("phone_numbers") or []):
-            _log(
-                f"Auto-route: '{report_name}' is a Cellebrite report with no "
-                "phone number. Skipping auto-ingest — process it manually and "
-                "supply a device identifier."
+        # When auto-ingest detects a real report but can't finish on its own,
+        # surface it as an actionable row in the Evidence Ingestion panel.
+        # A bare log line left the upload looking like "nothing happened" even
+        # though a multi-GB report is sitting on disk waiting for one click —
+        # the panel renders only background tasks, so without a task there's
+        # nothing to show. The task is marked failed (terminal) and carries a
+        # `needs_action` flag the panel renders as an amber "Action needed".
+        def _needs_action(action: str, message: str):
+            _log("Auto-route: " + message)
+            task = background_task_storage.create_task(
+                task_type="cellebrite_ingestion",
+                task_name=f"Cellebrite report: {report_name}",
+                case_id=case_id,
+                owner=owner,
+                metadata={
+                    "folder_path": folder_name,
+                    "report_name": report_name,
+                    "case_number": det.get("case_number"),
+                    "evidence_number": det.get("evidence_number"),
+                    "device_model": det.get("device_model"),
+                    "auto_routed": True,
+                    "needs_action": action,
+                    "action_message": message,
+                },
             )
-            return
+            background_task_storage.update_task(
+                task["id"],
+                status=TaskStatus.FAILED.value,
+                error=message,
+                completed_at=datetime.now().isoformat(),
+            )
+            return {"action": "needs_action", "reason": action, "task_id": task["id"]}
 
         # Don't silently replace an existing report.
         if det.get("duplicate"):
             existing = det.get("existing") or {}
-            _log(
-                f"Auto-route: '{report_name}' duplicates an existing report "
+            return _needs_action(
+                "duplicate",
+                f"'{report_name}' duplicates an existing report "
                 f"({existing.get('report_name') or existing.get('report_key')}). "
-                "Skipping auto-ingest — re-ingest manually with force to replace."
+                "Open the report folder below and re-process with replace to "
+                "overwrite it.",
             )
-            return
 
         task = background_task_storage.create_task(
             task_type="cellebrite_ingestion",
@@ -534,7 +560,7 @@ class EvidenceService:
         )
         # Already on a background thread; run the ingest synchronously here so
         # it follows the upload in order (no race on the case-dir files).
-        process_cellebrite_report(
+        result = process_cellebrite_report(
             folder_path=folder_path,
             case_id=case_id,
             task_id=task["id"],
@@ -542,6 +568,24 @@ class EvidenceService:
             force=False,
             device_identifier=None,
         )
+
+        # The pipeline now infers the owner number from the report's comms when
+        # the header carries no MSISDN (full-file-system extractions). Only when
+        # that inference ALSO fails does it return missing_device_identifier —
+        # surface it as an actionable row so the investigator can supply one.
+        # (update_task can't set metadata, so drop the interim task and recreate
+        # it through _needs_action with the flag the Ingestion panel renders.)
+        if (result or {}).get("reason") == "missing_device_identifier":
+            background_task_storage.delete_task(task["id"])
+            return _needs_action(
+                "device_identifier",
+                f"'{report_name}' is a Cellebrite report with no phone number in "
+                "its header and none could be inferred from its communications. "
+                "Open the report folder below and click 'Process as Cellebrite "
+                "Report', supplying a device identifier, to ingest it.",
+            )
+
+        return {"action": "ingested", "report_name": report_name, "task_id": task["id"]}
 
     def upload_files_background(
         self,

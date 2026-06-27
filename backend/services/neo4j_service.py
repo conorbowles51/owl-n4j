@@ -9344,7 +9344,7 @@ class Neo4jService:
                             "is_owner": bool(sender.get("is_phone_owner")),
                         } if sender else None,
                         "recipients": [
-                            {"key": rp.get("key"), "name": dcn.get((rp.get("key"), msg.get("cellebrite_report_key"))) or rp.get("name") or rp.get("key")}
+                            {"key": rp.get("key"), "name": dcn.get((rp.get("key"), msg.get("cellebrite_report_key"))) or rp.get("name") or rp.get("key"), "is_owner": bool(rp.get("is_phone_owner"))}
                             for rp in recipients
                         ],
                         "report_key": msg.get("cellebrite_report_key"),
@@ -9400,7 +9400,7 @@ class Neo4jService:
                             "is_owner": bool(src.get("is_phone_owner")),
                         } if src else None,
                         "recipients": [
-                            {"key": dst.get("key"), "name": dst.get("name") or dst.get("key")}
+                            {"key": dst.get("key"), "name": dst.get("name") or dst.get("key"), "is_owner": bool(dst.get("is_phone_owner"))}
                         ] if dst else [],
                         "report_key": c.get("cellebrite_report_key"),
                     })
@@ -9449,7 +9449,7 @@ class Neo4jService:
                             "is_owner": bool(src.get("is_phone_owner")),
                         } if src else None,
                         "recipients": [
-                            {"key": dst.get("key"), "name": dst.get("name") or dst.get("key")}
+                            {"key": dst.get("key"), "name": dst.get("name") or dst.get("key"), "is_owner": bool(dst.get("is_phone_owner"))}
                         ] if dst else [],
                         "report_key": e.get("cellebrite_report_key"),
                     })

@@ -123,23 +123,55 @@ def _build_reconciliation(
     return {"summary": summary, "rows": rows}
 
 
-def detect_cellebrite_xml(report_dir: Path) -> Optional[Path]:
+def detect_cellebrite_xml(report_dir: Path, max_depth: int = 6) -> Optional[Path]:
     """
-    Find the Cellebrite UFED XML report file in a directory.
+    Find the Cellebrite UFED XML report file in a directory tree.
 
     Looks for XML files containing the Cellebrite namespace in the first 4KB.
+    Searches breadth-first up to ``max_depth`` levels deep so a report whose
+    XML sits one or more folders below the passed directory is still found —
+    e.g. an uploaded/extracted zip whose top entry repeats the folder name,
+    giving ``Report/Report/*.xml``. Without this, clicking the folder you
+    actually uploaded yielded no detection (and so no "Process as Cellebrite
+    Report" option). BFS returns the *shallowest* match — the report root —
+    and stops there, so it never descends into the (potentially huge)
+    media/thumbnail leaf directories once the report XML is found.
+
     Returns the path to the XML file, or None if not found.
     """
     CELLEBRITE_NS = "http://pa.cellebrite.com/report/2.0"
 
-    for xml_file in report_dir.glob("*.xml"):
+    def _matches(xml_file: Path) -> bool:
         try:
             with open(xml_file, "r", encoding="utf-8", errors="ignore") as f:
                 header = f.read(4096)
-            if CELLEBRITE_NS in header:
-                return xml_file
+            return CELLEBRITE_NS in header
         except (OSError, IOError):
-            continue
+            return False
+
+    current: list[Path] = [report_dir]
+    depth = 0
+    while current and depth <= max_depth:
+        next_level: list[Path] = []
+        for d in current:
+            try:
+                xmls = sorted(d.glob("*.xml"))
+            except (OSError, IOError):
+                xmls = []
+            for xml_file in xmls:
+                if _matches(xml_file):
+                    return xml_file
+            # Queue subdirectories for the next depth level only (we read no
+            # files here — leaf media dirs are never opened unless the report
+            # XML genuinely lives that deep).
+            try:
+                for child in d.iterdir():
+                    if child.is_dir() and not child.name.startswith("."):
+                        next_level.append(child)
+            except (OSError, IOError):
+                pass
+        current = next_level
+        depth += 1
 
     return None
 
@@ -241,6 +273,12 @@ def ingest_cellebrite_report(
 
     _log(f"Found report: {xml_path.name}")
 
+    # The report's media paths are resolved relative to the directory that
+    # holds the UFED XML. When the XML was found nested below the passed
+    # folder (recursive detect_cellebrite_xml above), anchor all downstream
+    # file resolution at the XML's own directory so media links don't break.
+    report_dir = xml_path.parent
+
     # ------------------------------------------------------------------
     # Step 2: Parse report header
     # ------------------------------------------------------------------
@@ -250,22 +288,31 @@ def ingest_cellebrite_report(
     report = parser.parse_header()
 
     # ------------------------------------------------------------------
-    # Precondition: every PhoneReport needs an owning device identity.
-    # When the report has NO extractable phone number, the investigator
-    # must supply a manual identifier (collected up-front in the UI) —
-    # otherwise communications/contacts can't be attributed to an owner
-    # and the investigative views are useless. See the
-    # cellebrite-phone-number-required rule. parse_header() has already
-    # populated device_info.msisdn, so this check is cheap (no full
-    # model parse needed).
+    # Owning device identity (resolved in 3 tiers):
+    #   1. Header MSISDN          — parse_header() already populated it.
+    #   2. Inference from comms   — when the header has none, the owner's own
+    #                               number is recovered from the comm-level
+    #                               `Account` field (see Step 6 below). Full-
+    #                               file-system extractions (iOS FFS, modern
+    #                               Android) omit the header <MSISDN>.
+    #   3. Investigator-supplied  — a manual identifier collected up-front in
+    #                               the UI.
+    # Only when all three fail do we refuse: a PhoneReport with no owning
+    # identity can't attribute communications/contacts and breaks every
+    # investigative view. See the cellebrite-phone-number-required rule.
     #
-    # A supplied identifier is recorded as a synthetic MSISDN: it then
-    # flows through create_phone_report_node() (PhoneReport.phone_numbers)
+    # A supplied (or inferred) identifier is recorded as a synthetic MSISDN: it
+    # then flows through create_phone_report_node() (PhoneReport.phone_numbers)
     # and create_phone_owner() (the owner Person node + every owner edge)
-    # exactly as a real number would. We also flag it so the UI can show
-    # it's investigator-supplied rather than extracted.
+    # exactly as a real number would. The identity is flagged (manual/inferred)
+    # so the UI can show it wasn't a header-extracted MSISDN.
+    #
+    # NOTE: the manual identifier is resolved here, but the "no identity at all"
+    # refusal is DEFERRED to Step 6 — after the model scan — so the comms-based
+    # inference gets its chance first.
     manual_identifier = (device_identifier or "").strip()
     report.device_info.identifier_is_manual = False
+    report.device_info.identifier_is_inferred = False
     report.device_info.manual_owner_name = None
     # Does the supplied identifier validate as a phone number, or is it a
     # name/label? A non-numeric identifier (e.g. "Vides Martinez") is recorded
@@ -281,22 +328,8 @@ def ingest_cellebrite_report(
             ) is not None
         except Exception:
             manual_is_phone = False
-    if not report.device_info.msisdn:
-        if not manual_identifier:
-            _log(
-                "ERROR: report has no extractable phone number and no manual "
-                "device identifier was supplied — refusing to ingest a "
-                "PhoneReport with no owning identity."
-            )
-            return {
-                "status": "error",
-                "reason": "missing_device_identifier",
-                "message": (
-                    "This device has no phone number in the Cellebrite report. "
-                    "Supply a device identifier to attribute its data."
-                ),
-                "file": str(report_dir),
-            }
+    if not report.device_info.msisdn and manual_identifier:
+        # No header number, but the investigator supplied one up-front.
         report.device_info.msisdn = [manual_identifier]
         report.device_info.identifier_is_manual = True
         if manual_is_phone:
@@ -341,10 +374,12 @@ def ingest_cellebrite_report(
     )
 
     # ------------------------------------------------------------------
-    # Step 5: Create Neo4j writer and PhoneReport node
+    # Step 5: Create Neo4j writer
     # ------------------------------------------------------------------
+    # The PhoneReport node itself is created AFTER the owner scan (Step 6) so
+    # an inferred owner number can populate it.
     _emit_progress(phase="create_report", total=0, completed=0, failed=0)
-    _log("Step 5/9: Creating PhoneReport node in Neo4j...")
+    _log("Step 5/9: Connecting to Neo4j...")
 
     # Import Neo4j client here to avoid import issues when running
     # from different working directories
@@ -376,28 +411,59 @@ def ingest_cellebrite_report(
         default_region=default_region,
     )
 
-    writer.create_phone_report_node()
-
     # ------------------------------------------------------------------
     # Step 6: First pass — collect phone owner identity
     # ------------------------------------------------------------------
+    # Stream every model once (the list is reused for the write pass in Step 8)
+    # and scan for the owner's identity: names, IsPhoneOwner party identifiers,
+    # AND the comm-level `Account` values used for owner-number inference. This
+    # MUST run before create_phone_report_node so an inferred number can land on
+    # the report node. The scan is in-memory only — it writes nothing.
     _log("Step 6/9: Identifying phone owner (first pass)...")
 
-    # We need a first pass through models to find the phone owner
-    # before writing anything, so we can link entities correctly.
-    # Collect all models first, then write.
     all_models: List[ParsedModel] = []
-
     for batch in parser.stream_models(batch_size=500):
         for model in batch:
             writer.collect_phone_owner_info([model])
             all_models.append(model)
+    _log(f"Collected {len(all_models)} models for processing")
 
+    # Tier 2 of the owning-identity resolution (see the precondition note
+    # above): if neither a header MSISDN nor a manual identifier gave us a
+    # number, infer the owner's own number from the communications just
+    # scanned. Only refuse when inference ALSO comes up empty.
+    if not report.device_info.msisdn:
+        inferred = writer.infer_owner_msisdn()
+        if inferred:
+            report.device_info.msisdn = [inferred]
+            report.device_info.identifier_is_inferred = True
+            _log(
+                "No phone number in the report header; inferred device owner "
+                f"number from communications: {inferred}"
+            )
+        else:
+            _log(
+                "ERROR: report has no extractable or inferable phone number "
+                "and no manual device identifier was supplied — refusing to "
+                "ingest a PhoneReport with no owning identity."
+            )
+            return {
+                "status": "error",
+                "reason": "missing_device_identifier",
+                "message": (
+                    "This device has no phone number in the Cellebrite report "
+                    "and none could be inferred from its communications. Supply "
+                    "a device identifier to attribute its data."
+                ),
+                "file": str(report_dir),
+            }
+
+    # Owner number resolved — create the PhoneReport anchor, then the owner
+    # Person node and its edges.
+    writer.create_phone_report_node()
     phone_owner_key = writer.create_phone_owner()
     if phone_owner_key:
         writer.link_phone_owner_to_report()
-
-    _log(f"Collected {len(all_models)} models for processing")
 
     # ------------------------------------------------------------------
     # Step 7: Build model-to-file mapping from jump targets
@@ -471,6 +537,20 @@ def ingest_cellebrite_report(
         writer.finalise_person_identities()
     except Exception as e:
         _log(f"WARNING: Person identity finalisation failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Step 8.34: Flag the owner's per-app identities as device owner
+    # ------------------------------------------------------------------
+    # The device owner posts from multiple accounts (WhatsApp number, Snapchat
+    # handle, Facebook id…). Only the phone-number identity is the owner Person;
+    # the app identities are separate nodes, so conversations on those apps show
+    # the owner as a SEPARATE / "unknown" party. Flag them is_phone_owner (names
+    # preserved) so the Comms Center badges them as the owner. Runs after the
+    # identity finalisation so it isn't overwritten.
+    try:
+        writer.flag_owner_app_identities()
+    except Exception as e:
+        _log(f"WARNING: Owner app-identity flagging failed: {e}")
 
     # ------------------------------------------------------------------
     # Step 8.35: Harvest photo EXIF geotags into Location nodes

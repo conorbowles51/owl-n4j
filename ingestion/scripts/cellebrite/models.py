@@ -56,6 +56,12 @@ class DeviceInfo:
     # when the report had no extractable phone number, or when an override
     # alias was provided). Lets the UI badge the identity as manual.
     identifier_is_manual: bool = False
+    # True when `msisdn` was recovered by inference rather than read from the
+    # header — derived from the owner's comm-level `Account` (see
+    # neo4j_writer.infer_owner_msisdn). Full-file-system extractions omit the
+    # header <MSISDN>; this lets the UI distinguish an inferred number from an
+    # extracted one without treating it as investigator-supplied.
+    identifier_is_inferred: bool = False
     # Set when the investigator-supplied identifier is NOT a valid phone
     # number (e.g. a person's name like "Vides Martinez"). It's recorded as
     # the device owner's NAME: the owner Person is name-keyed and the
