@@ -1160,6 +1160,8 @@ class Neo4jService:
         event_types: Optional[List[str]] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        start_datetime: Optional[str] = None,
+        end_datetime: Optional[str] = None,
         case_id: str = None,
         limit: Optional[int] = None,
         cursor: Optional[str] = None,
@@ -1184,6 +1186,11 @@ class Neo4jService:
                         If None, returns ALL entities with dates (not just event types).
             start_date: Filter events on or after this date (YYYY-MM-DD)
             end_date: Filter events on or before this date (YYYY-MM-DD)
+            start_datetime: Filter on or after this UTC instant
+                        (YYYY-MM-DDTHH:MM:SS). Carries time-of-day and
+                        takes precedence over start_date.
+            end_datetime: Filter on or before this UTC instant
+                        (YYYY-MM-DDTHH:MM:SS). Takes precedence over end_date.
             case_id: REQUIRED - Filter to only include nodes belonging to this case
             limit:   Max rows per page. None disables pagination.
             cursor:  Opaque page token from a previous response.
@@ -1197,10 +1204,26 @@ class Neo4jService:
             # case_id is always required
             params = {"case_id": case_id}
 
-            if start_date:
+            # Datetime boundaries (carry time-of-day) take precedence over
+            # the date-only params. Nodes store date + time as separate UTC
+            # string props; we synthesise a "YYYY-MM-DDTHH:MM:SS" key so the
+            # lexicographic compare matches the boundary's wall-clock UTC.
+            # NULL `time` rows coalesce to 00:00:00 — consistent with the
+            # cursor/ORDER BY logic below.
+            if start_datetime:
+                date_conditions.append(
+                    "(n.date + 'T' + coalesce(n.time, '00:00:00')) >= $start_datetime"
+                )
+                params["start_datetime"] = start_datetime
+            elif start_date:
                 date_conditions.append("n.date >= $start_date")
                 params["start_date"] = start_date
-            if end_date:
+            if end_datetime:
+                date_conditions.append(
+                    "(n.date + 'T' + coalesce(n.time, '00:00:00')) <= $end_datetime"
+                )
+                params["end_datetime"] = end_datetime
+            elif end_date:
                 date_conditions.append("n.date <= $end_date")
                 params["end_date"] = end_date
 
