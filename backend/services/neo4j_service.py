@@ -1206,13 +1206,18 @@ class Neo4jService:
 
             # Datetime boundaries (carry time-of-day) take precedence over
             # the date-only params. Nodes store date + time as separate UTC
-            # string props; we synthesise a "YYYY-MM-DDTHH:MM:SS" key so the
-            # lexicographic compare matches the boundary's wall-clock UTC.
-            # NULL `time` rows coalesce to 00:00:00 — consistent with the
-            # cursor/ORDER BY logic below.
+            # string props; `time` is `HH:MM` (Cellebrite ingestion stores
+            # timestamp[11:16], no seconds) or NULL. We synthesise a fixed-
+            # width "YYYY-MM-DDTHH:MM:SS" key — padding with ':00' then
+            # truncating to 8 chars normalises HH:MM → HH:MM:SS, leaves any
+            # full-precision HH:MM:SS untouched, and maps NULL → 00:00:00 —
+            # so the lexicographic compare matches the 19-char boundary's
+            # wall-clock UTC. Without the pad, a 16-char "...T04:00" sorts as
+            # a prefix (less than) the 19-char "...T04:00:00" boundary and an
+            # event at exactly the start minute would be wrongly excluded.
             if start_datetime:
                 date_conditions.append(
-                    "(n.date + 'T' + coalesce(n.time, '00:00:00')) >= $start_datetime"
+                    "(n.date + 'T' + substring(coalesce(n.time, '00:00:00') + ':00', 0, 8)) >= $start_datetime"
                 )
                 params["start_datetime"] = start_datetime
             elif start_date:
@@ -1220,7 +1225,7 @@ class Neo4jService:
                 params["start_date"] = start_date
             if end_datetime:
                 date_conditions.append(
-                    "(n.date + 'T' + coalesce(n.time, '00:00:00')) <= $end_datetime"
+                    "(n.date + 'T' + substring(coalesce(n.time, '00:00:00') + ':00', 0, 8)) <= $end_datetime"
                 )
                 params["end_datetime"] = end_datetime
             elif end_date:
