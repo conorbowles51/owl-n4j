@@ -14,7 +14,7 @@ Neo4j: `bolt://localhost:7687` neo4j/testpassword (driver in `../venv/bin/python
 ---
 
 ## ▶ NEXT (resume here)
-**Missing writers (Notification + Voicemail) BUILT 2026-06-30 (commit pending)** — closes
+**Missing writers (Notification + Voicemail) BUILT 2026-06-30 (commit `db56c5e`)** — closes
 the "Missing writers" backlog item below. End-to-end pipeline + surfacing, validated against
 raw XML; **inert until re-ingest** (Neil's call — no Notification/Voicemail nodes on any
 live case yet, so the new chip stays hidden at count 0; backend returns 0 cleanly).
