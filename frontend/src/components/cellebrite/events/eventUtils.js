@@ -5,6 +5,8 @@
 import {
   MapPin, Radio, Wifi, Phone, MessageSquare, Mail, Power,
   Unlock, Smartphone, Search, Globe, Users, Calendar,
+  File as FileIcon, Image as ImageIcon, Video as VideoIcon,
+  FileAudio, FileText,
 } from 'lucide-react';
 import { fmtDateTime, getTzId } from '../shared/cellebriteTime';
 
@@ -22,6 +24,7 @@ export const EVENT_COLORS = {
   search: '#db2777',        // pink
   visit: '#9333ea',         // purple
   meeting: '#f97316',       // orange
+  file: '#0ea5e9',          // sky — media files (images/videos/audio/docs)
 };
 
 export const EVENT_ICONS = {
@@ -37,6 +40,24 @@ export const EVENT_ICONS = {
   search: Search,
   visit: Globe,
   meeting: Users,
+  file: FileIcon,
+};
+
+// Per-category icon/label for "file" timeline events (images/videos/audio/docs),
+// so a media row reads as what it is even before its thumbnail/player loads.
+export const FILE_CATEGORY_ICONS = {
+  image: ImageIcon,
+  video: VideoIcon,
+  audio: FileAudio,
+  text: FileText,
+  document: FileText,
+};
+export const FILE_CATEGORY_LABELS = {
+  image: 'Image',
+  video: 'Video',
+  audio: 'Audio',
+  text: 'Document',
+  document: 'Document',
 };
 
 export const EVENT_LABELS = {
@@ -51,7 +72,8 @@ export const EVENT_LABELS = {
   app_session: 'App',
   search: 'Search',
   visit: 'Visit',
-  meeting: 'Meeting',
+  meeting: 'Calendar',
+  file: 'File',
 };
 
 // Per-device colour palette is now owned by utils/phoneIdentity.js so the

@@ -14,11 +14,16 @@ Neo4j: `bolt://localhost:7687` neo4j/testpassword (driver in `../venv/bin/python
 ---
 
 ## ▶ NEXT (resume here)
-**AUDIO playback — DONE** (commit below). Remaining BACKLOG:
-2. **Timeline event-type COVERAGE** — surface Files/images/videos/calendar/audio/app
-   events. The events feed `active` set already lists ~20 types (`neo4j_service.py:9969`)
-   — so first check whether those NODES exist in the graph (ingestion) vs. just not being
-   requested by the UI type filter (`EventTypeFilter` / `getEventTypes`).
+**Event-type coverage — core DONE** (calendar fix + 14K media files now on the timeline).
+Remaining smaller items:
+- **Unresolved attachments** (~23/53 sampled message attachments have no evidence record)
+  + **507 media files lack `modify_time`** so aren't placed on the timeline — both are
+  ingestion gaps worth a pass.
+- **main thread view** `get_cellebrite_thread_detail` owner attribution (still null-sender).
+- Optional: split "Files & media" into per-category filter chips (currently one chip);
+  cursor-pagination doesn't cover file events (timeline uses pageLimit, so fine there —
+  but the Locations/Events cursor consumers won't page files). EventTypeFilter chip could
+  show a per-category icon.
 
 Also still TODO (smaller): the **main thread view** `get_cellebrite_thread_detail`
 (`neo4j_service.py` ~8860) has the SAME null-sender pattern and does NOT inject the owner —
@@ -68,14 +73,32 @@ Cache dir writable by backend (uid 1001 = conorbowles51). Verified transcode + c
 record) — some media wasn't linked at ingest. Separate ingestion issue; revisit with
 the event-type coverage item.
 
+## EVENT-TYPE COVERAGE (resolved 2026-06-30, commit `14a75d5`)
+**Inventory (case 34fbbb06):** the graph has ONLY Communication/Location/PhoneCall/
+Cookie/SearchedItem/Note/Meeting(9)/Autofill(7) nodes — that's all ingestion created.
+Two distinct gaps found + fixed:
+1. **Calendar wasn't showing** — `Meeting` nodes (the calendar) carry `start_date`/`date`
+   but NO `timestamp`, and both `get_cellebrite_event_types` AND the events-feed meeting
+   branch filtered `WHERE n.timestamp IS NOT NULL` → 0. Fixed: filter/order on
+   `coalesce(timestamp, start_date, date)`, synthesize the row timestamp from it,
+   relabel "Calendar". Verified: 9 calendar entries now surface.
+2. **Files/images/videos/audio weren't on the timeline at all** — they're NOT nodes;
+   they live in evidence_storage (**14,731** files: 12,169 image / 2,223 audio / 332 video;
+   14,224 have device `modify_time`). Only message-attached media showed inline. Added a
+   `"file"` event type projected from evidence files via new
+   `Neo4jService._cellebrite_media_events` (uses `modify_time`; `attachment_file_ids`
+   set so the router resolves the thumbnail/player). Wired into the feed, `getEventTypes`
+   ("Files & media", 14,224), and the envelope (total now 27,376). Frontend: per-category
+   icons/labels (`eventUtils` FILE_CATEGORY_*) + category-aware TimelineRow. Images render
+   as thumbnails, audio as players (plays via the AMR→MP3 transcode). VERIFIED end-to-end.
+   Caveats: files skipped under only_geolocated + cursor pagination (timeline uses
+   pageLimit so unaffected); 507 files without modify_time are not placed.
+
 ## BACKLOG (raised, not started)
-- **Timeline event-type COVERAGE** — only Locations/Calls/Messages/Searches/Notes/Cookies
-  surface. Add Files, images, videos, calendar events, audio, app events, etc. Touches the
-  events feed `active` set (already lists many types ~`neo4j_service.py:9969`) + ingestion
-  (are these nodes created?) + UI type filter. Investigate why current types are narrow.
-- **Unresolved attachments** (~23/53 sampled) — some message media has no evidence
-  record (not linked at ingest). Pair with the event-type coverage investigation.
-- ~~AUDIO duration=0 / won't play~~ — RESOLVED, see AUDIO INVESTIGATION above (`9495dec`).
+- **Unresolved attachments** (~23/53 sampled) + 507 media files w/o modify_time — ingestion gaps.
+- **Autofill (7)** nodes exist with timestamps but have no event type (minor).
+- ~~AUDIO duration=0 / won't play~~ — RESOLVED (`9495dec`).
+- ~~Event-type coverage~~ — core RESOLVED (calendar + media files), see above.
 
 ## Verification
 - Owner/recipient service check:

@@ -31,6 +31,8 @@ import {
   EVENT_COLORS,
   EVENT_ICONS,
   EVENT_LABELS,
+  FILE_CATEGORY_ICONS,
+  FILE_CATEGORY_LABELS,
   formatTs,
   parseTs,
   deviceColor as deviceColorOf,
@@ -923,7 +925,13 @@ const TimelineList = forwardRef(function TimelineList(
 });
 
 function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights = [], isCallout = false, onToggleCallout }) {
-  const Icon = EVENT_ICONS[ev.event_type] || EVENT_ICONS.location;
+  // File events carry a sub-category (image/video/audio/document) — use its
+  // specific icon/label so a media row reads as what it is.
+  const isFile = ev.event_type === 'file';
+  const Icon = (isFile && FILE_CATEGORY_ICONS[ev.file_category])
+    || EVENT_ICONS[ev.event_type] || EVENT_ICONS.location;
+  const typeLabel = (isFile && FILE_CATEGORY_LABELS[ev.file_category])
+    || EVENT_LABELS[ev.event_type] || ev.event_type;
   const color = EVENT_COLORS[ev.event_type] || '#64748b';
   const dColor = deviceColorOf(ev.device_report_key, reports);
   const time = formatTs(ev.timestamp).slice(11) || '—';
@@ -980,7 +988,7 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
         <div className="flex items-center gap-1.5 flex-wrap">
           <Icon className="w-3 h-3 flex-shrink-0" style={{ color }} />
           <span className="text-[11px] font-medium text-light-800">
-            {EVENT_LABELS[ev.event_type] || ev.event_type}
+            {typeLabel}
           </span>
           {ev.source_app && (
             <span className="text-[10px] text-light-500">

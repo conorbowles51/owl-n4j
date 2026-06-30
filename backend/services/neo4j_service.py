@@ -9933,6 +9933,66 @@ class Neo4jService:
                 params["near_radius_m"] = rad_f
         return " AND ".join(parts), params
 
+    # Evidence categories that become "file" timeline events.
+    _MEDIA_CAT_LABEL = {
+        "image": "Image", "video": "Video", "audio": "Audio",
+        "text": "Document", "document": "Document",
+    }
+
+    def _cellebrite_media_events(
+        self,
+        case_id: str,
+        report_keys: Optional[List[str]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> list:
+        """Project Cellebrite media FILES (images / videos / audio / documents)
+        as timeline events. These live in evidence_storage (NOT Neo4j) — only
+        message-attached media used to surface, so the bulk of the camera roll /
+        downloads were invisible on the timeline. Uses the device file
+        `modify_time` as the event timestamp; files without one are skipped (we
+        can't place them in time). Returns rows in the unified event shape with
+        `attachment_file_ids` set so the router resolves the thumbnail/player."""
+        from services.evidence_storage import evidence_storage
+        rks = set(report_keys) if report_keys else None
+        rows: list = []
+        for rec in evidence_storage.list_files(case_id=case_id):
+            cat = (rec.get("cellebrite_category") or "").lower()
+            label = self._MEDIA_CAT_LABEL.get(cat)
+            if not label:
+                continue
+            if rks and rec.get("cellebrite_report_key") not in rks:
+                continue
+            ts = rec.get("modify_time")
+            if not ts:
+                continue
+            d = str(ts)[:10]
+            if start_date and d < start_date:
+                continue
+            if end_date and d > end_date:
+                continue
+            fid = rec.get("cellebrite_file_id")
+            rows.append({
+                "id": rec.get("id"),
+                "node_key": rec.get("id"),
+                "event_type": "file",
+                "file_category": cat,
+                "label": label,
+                "summary": rec.get("original_filename") or label,
+                "timestamp": ts,
+                "date": d,
+                "source_app": None,
+                "direction": None,
+                "duration": None,
+                "device_report_key": rec.get("cellebrite_report_key"),
+                "counterpart": None,
+                "thread_id": None,
+                "attachment_file_ids": [fid] if fid else [],
+                "is_geolocated": bool(rec.get("has_geotag")),
+                "location_source": "none",
+            })
+        return rows
+
     def get_cellebrite_events(
         self,
         case_id: str,
@@ -9972,6 +10032,8 @@ class Neo4jService:
             # Phase 9 — app-activity / provenance / movement events (2026-05-25)
             "social_media", "chat_activity", "file_upload", "journey",
             "note", "device_connectivity", "cookie", "log_entry", "motion",
+            # Media files (images/videos/audio/documents) from evidence storage.
+            "file",
         }
         # Only comms types can carry attachments — restrict to them when the
         # has-attachment filter is on (everything else would return 0 anyway).
@@ -10268,10 +10330,12 @@ class Neo4jService:
                 _add(cypher, base_params, "visit", lambda rec: _project_event(rec["n"], "visit"))
 
             if "meeting" in active:
-                # Meetings may not have all filter fields; simpler filter.
-                # This branch builds its own params dict (not base_params), so
-                # bind the meeting cursor bounds locally when present.
-                meeting_cur = _event_cursor_clause("meeting")
+                # Calendar/meeting nodes carry start_date/date and often NO
+                # `timestamp` — a timestamp-only filter silently dropped every
+                # calendar entry. Order + filter on whichever exists so they
+                # actually surface. This branch builds its own params dict.
+                m_ts = "coalesce(n.timestamp, n.start_date, n.date)"
+                meeting_cur = _event_cursor_clause("meeting", ts_expr=m_ts)
                 meeting_params = {"case_id": case_id, "per_type_cap": per_type_cap}
                 _m_cur = per_type_cursor.get("meeting")
                 if meeting_cur and _m_cur and _m_cur[0] is not None:
@@ -10279,8 +10343,8 @@ class Neo4jService:
                     meeting_params["meeting_cur_id"] = _m_cur[1] or ""
                 rows = list(session.run(
                     "MATCH (n:Meeting {case_id:$case_id}) "
-                    f"WHERE n.timestamp IS NOT NULL{meeting_cur} "
-                    "RETURN n ORDER BY n.timestamp DESC LIMIT $per_type_cap",
+                    f"WHERE {m_ts} IS NOT NULL{meeting_cur} "
+                    f"RETURN n ORDER BY {m_ts} DESC LIMIT $per_type_cap",
                     **meeting_params,
                 ))
                 if len(rows) >= per_type_cap:
@@ -10289,7 +10353,27 @@ class Neo4jService:
                     row = _project_event(rec["n"], "meeting")
                     if row:
                         row["event_type"] = "meeting"
+                        # Date-only calendar entries: synthesize the timestamp
+                        # from start_date/date so they sort + render on the feed.
+                        if not row.get("timestamp"):
+                            mn = dict(rec["n"])
+                            row["timestamp"] = mn.get("start_date") or mn.get("date")
                         events.append(row)
+
+            # Media files (images/videos/audio/documents) — sourced from
+            # evidence storage, not Neo4j. Geo-only and cursor pagination don't
+            # apply to this source, so it's skipped under only_geolocated and
+            # the timeline (which paginates by growing the per-type cap, not the
+            # cursor) gets the newest `per_type_cap` by device modify-time.
+            if "file" in active and not only_geolocated:
+                file_rows = self._cellebrite_media_events(
+                    case_id, report_keys=report_keys,
+                    start_date=start_date, end_date=end_date,
+                )
+                file_rows.sort(key=lambda r: r.get("timestamp") or "", reverse=True)
+                if len(file_rows) >= per_type_cap:
+                    truncated_types.add("file")
+                events.extend(file_rows[:per_type_cap])
 
             # Phase 9 — app-activity / provenance / movement events. These all
             # share the standard node shape (timestamp + optional lat/lon), so
@@ -10469,7 +10553,7 @@ class Neo4jService:
         gated by the same filters get_cellebrite_events uses so the envelope
         is always consistent with what the body would return.
         """
-        active = list(event_types) if event_types else list(self._EVENT_TYPE_LABELS.keys())
+        active = list(event_types) if event_types else (list(self._EVENT_TYPE_LABELS.keys()) + ["file"])
         # Collapse to distinct labels — power + device_event share DeviceEvent,
         # so we don't double-count it.
         labels: List[str] = []
@@ -10558,6 +10642,26 @@ class Neo4jService:
                     if max_date is None or d > max_date:
                         max_date = d
 
+        # Media files (evidence storage) — fold their device-modify dates into
+        # the same histogram so the scrubber range/density + "showing N of TOTAL"
+        # stay honest. Skipped under has_attachment / only_geolocated (those gate
+        # to Neo4j comms only), matching the body fetch.
+        if "file" in active and not has_attachment and not only_geolocated:
+            for fr in self._cellebrite_media_events(
+                case_id, report_keys=report_keys,
+                start_date=start_date, end_date=end_date,
+            ):
+                d = (fr.get("date") or "")[:10]
+                if not d or d < plausible_min or d > plausible_max:
+                    continue
+                total += 1
+                per_label["File"] = per_label.get("File", 0) + 1
+                per_day[d] = per_day.get(d, 0) + 1
+                if min_date is None or d < min_date:
+                    min_date = d
+                if max_date is None or d > max_date:
+                    max_date = d
+
         hist = [{"date": d, "count": c} for d, c in sorted(per_day.items())]
         return {
             "total": total,
@@ -10624,16 +10728,29 @@ class Neo4jService:
 
             # Meeting — separate (not always source_type cellebrite)
             r = session.run(
-                "MATCH (n:Meeting {case_id:$case_id}) WHERE n.timestamp IS NOT NULL RETURN count(n) AS total",
+                "MATCH (n:Meeting {case_id:$case_id}) "
+                "WHERE coalesce(n.timestamp, n.start_date, n.date) IS NOT NULL "
+                "RETURN count(n) AS total",
                 case_id=case_id,
             ).single()
             if r and r["total"] > 0:
                 out.append({
                     "event_type": "meeting",
-                    "label": "Meetings",
+                    "label": "Calendar",
                     "count": int(r["total"]),
                     "geolocated": 0,
                 })
+
+        # Files & media (images/videos/audio/documents) — from evidence storage,
+        # not Neo4j, so counted outside the session loop.
+        file_ct = len(self._cellebrite_media_events(case_id, report_keys=report_keys))
+        if file_ct > 0:
+            out.append({
+                "event_type": "file",
+                "label": "Files & media",
+                "count": file_ct,
+                "geolocated": 0,
+            })
         return out
 
     def get_cellebrite_location_suggestion_values(
