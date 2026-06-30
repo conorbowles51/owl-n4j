@@ -30,13 +30,6 @@ an empty `MediaResults/*.json` classification stub (`{"FileId":…,"Classificati
 already flagged them (`CommsAttachment` missing branch); reworded the placeholder from the
 ambiguous "Attachment unavailable" to **"Attachment not in extraction"** (+ tooltip) so
 it reads as absent source data, not a tool failure. Frontend build clean.
-- **Autofill (7)** nodes have timestamps but no event type (minor).
-- Optional: split "Files & media" into per-category filter chips (currently one chip);
-  cursor-pagination doesn't cover file events (timeline uses pageLimit, so fine there —
-  but the Locations/Events cursor consumers won't page files). EventTypeFilter chip could
-  show a per-category icon.
-
-Verify each fix against the live data (case 34fbbb06) before claiming done.
 
 ---
 
@@ -108,10 +101,11 @@ Two distinct gaps found + fixed:
    pageLimit so unaffected); 507 files without modify_time are not placed.
 
 ## BACKLOG (raised, not started)
-- **Unresolved attachments** (~23/53 sampled) + 507 media files w/o modify_time — ingestion gaps.
+- **507 media files w/o modify_time** — not placed on the timeline (no device time).
 - **Autofill (7)** nodes exist with timestamps but have no event type (minor).
 - ~~AUDIO duration=0 / won't play~~ — RESOLVED (`9495dec`).
-- ~~Event-type coverage~~ — core RESOLVED (calendar + media files), see above.
+- ~~Event-type coverage~~ — core RESOLVED (calendar + media files).
+- ~~Unresolved attachments~~ — RESOLVED: absent source data, labeled honestly (`4797cc9`).
 
 ## Verification
 - Owner/recipient service check:
