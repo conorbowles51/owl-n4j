@@ -134,7 +134,7 @@ export default function CommsMediaStrip({ attachments, className = '', expandabl
           src={attachmentUrl(a)}
           alt=""
           loading="lazy"
-          className="w-7 h-7 rounded object-cover border border-light-200"
+          className="w-7 h-7 rounded object-contain bg-light-100 border border-light-200"
         />
       ))}
       {Object.entries(counts).map(([k, n]) => {

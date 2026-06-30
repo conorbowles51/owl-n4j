@@ -68,7 +68,7 @@ export default function FileThumbnail({
             <img
               src={thumbUrl}
               alt=""
-              className="w-full h-full object-cover"
+              className="max-w-full max-h-full object-contain"
               loading="lazy"
               onError={() => setImgError(true)}
             />

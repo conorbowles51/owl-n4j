@@ -53,9 +53,21 @@ export default function CommsAttachment({ attachment }) {
     media = (
       <button
         onClick={() => setViewerOpen(true)}
+        title={`${name} — click to open full image`}
         className="block overflow-hidden rounded border border-light-200 hover:border-owl-blue-400 transition-colors"
       >
-        <img src={url} alt={name} className="max-w-[240px] max-h-[240px] object-cover" loading="lazy" />
+        {/* object-contain + a responsive max (min(240px, 100%)) so the whole
+            image shows at its real resolution: never cropped (misshapen), never
+            upscaled (pixelated), and never wider than its column — so it can't
+            overflow + get clipped when the timeline narrows (rail open). Click
+            opens the full file in the viewer. */}
+        <img
+          src={url}
+          alt={name}
+          loading="lazy"
+          className="object-contain"
+          style={{ maxWidth: 'min(240px, 100%)', maxHeight: '240px' }}
+        />
       </button>
     );
   } else if (kind === 'audio') {
@@ -69,7 +81,7 @@ export default function CommsAttachment({ attachment }) {
         title={name}
       >
         {thumb ? (
-          <img src={thumb} alt={name} className="max-w-[240px] max-h-[240px] object-cover" loading="lazy" />
+          <img src={thumb} alt={name} className="max-w-[240px] max-h-[240px] object-contain" loading="lazy" />
         ) : (
           <div className="w-60 h-32 bg-light-100 flex items-center justify-center text-light-400">
             <Film className="w-8 h-8" />

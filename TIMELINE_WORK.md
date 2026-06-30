@@ -14,6 +14,17 @@ Neo4j: `bolt://localhost:7687` neo4j/testpassword (driver in `../venv/bin/python
 ---
 
 ## ▶ NEXT (resume here)
+**Image thumbnails — DONE** (commit below). Root cause: fixed-size boxes with
+`object-cover` upscaled+cropped small/odd-aspect images (~15% of images are ≤320px
+embedded thumbs/stickers), and in the timeline a 240px image overflowed + got clipped
+by `overflow-hidden` when the rail narrowed the column. Fix: `object-contain` + never
+upscale (`max-w/max-h`, not `w/h-full`) + responsive cap `min(240px,100%)` so it can't
+overflow. Across CommsAttachment (timeline/flyout, image+video), FileThumbnail (grid+list),
+CommsMediaStrip (compact). Click already opens the full file (CommsAttachment→DocumentViewer,
+object-contain full-res). Build clean. NOTE: genuinely small source images (the 15%) are
+still small — that's the source resolution; the full file is that image. A server-side
+thumbnail endpoint could downscale crisply but isn't needed for correctness.
+
 Remaining smaller items:
 - **507 media files lack `modify_time`** so aren't placed on the timeline. Could fall back
   to `created_at`? (No — that's the ingest time, not device time; better to leave undated
