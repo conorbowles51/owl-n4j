@@ -1215,18 +1215,19 @@ class Neo4jService:
             # wall-clock UTC. Without the pad, a 16-char "...T04:00" sorts as
             # a prefix (less than) the 19-char "...T04:00:00" boundary and an
             # event at exactly the start minute would be wrongly excluded.
+            # `substring(n.date, 0, 10)` defends the date half symmetrically:
+            # the expected value is `YYYY-MM-DD`, but if a node ever stores a
+            # full ISO timestamp the slice degrades it to date-only rather
+            # than concatenating into a corrupt double-`T` key.
+            _dt_key = "(substring(n.date, 0, 10) + 'T' + substring(coalesce(n.time, '00:00:00') + ':00', 0, 8))"
             if start_datetime:
-                date_conditions.append(
-                    "(n.date + 'T' + substring(coalesce(n.time, '00:00:00') + ':00', 0, 8)) >= $start_datetime"
-                )
+                date_conditions.append(f"{_dt_key} >= $start_datetime")
                 params["start_datetime"] = start_datetime
             elif start_date:
                 date_conditions.append("n.date >= $start_date")
                 params["start_date"] = start_date
             if end_datetime:
-                date_conditions.append(
-                    "(n.date + 'T' + substring(coalesce(n.time, '00:00:00') + ':00', 0, 8)) <= $end_datetime"
-                )
+                date_conditions.append(f"{_dt_key} <= $end_datetime")
                 params["end_datetime"] = end_datetime
             elif end_date:
                 date_conditions.append("n.date <= $end_date")
