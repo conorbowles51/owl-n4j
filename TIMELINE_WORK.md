@@ -33,7 +33,13 @@ it reads as absent source data, not a tool failure. Frontend build clean.
 
 ---
 
-## DONE (committed to `main`, NOT pushed/deployed)
+## DONE (PUSHED to origin/main 2026-06-30 — HEAD `a05950c`)
+Integration note: merged origin/main (had PR #101 DKT-41 + PR #102 DKT-40), kept #101's
+audio fix (Ogg/Opus transcode — superseded my redundant MP3 version), then **reverted
+PR #102** (`a05950c` reverts `a7e1f4a` — the agent's wrong-surface graph-filter DKT-40).
+Safety backup branch: `backup/timeline-pre-push-ae874ea`. All my work verified intact
+post-revert (types incl. file+calendar; owner attribution; builds clean).
+
 - **`71c1a1b`** — zone-anchored timeline date/time filter (typed numbers stay; instants
   re-anchor on UTC↔Device flip). `cellebriteTime.js` helpers + `useTimelineWindow` hook
   across 5 timelines + scrubber picker. Unit-tested + build-clean. [[project_timeline_tz_filter_fix]]
