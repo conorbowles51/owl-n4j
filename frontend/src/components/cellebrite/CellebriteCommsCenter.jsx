@@ -9,6 +9,7 @@ import CommsThreadList from './comms/CommsThreadList';
 import CommsThreadView from './comms/CommsThreadView';
 import CommsCrossTypeTimeline from './comms/CommsCrossTypeTimeline';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
+import useTimelineWindow from './shared/useTimelineWindow';
 import ResizableSplit from './shared/ResizableSplit';
 import { useChatContext } from '../../contexts/ChatContext';
 import { buildCommsContext } from '../../utils/chatContextSummary';
@@ -113,10 +114,16 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // "Has attachment" thread filter — client-side over the loaded threads,
   // gating on the thread-level has_attachments aggregate.
   const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
-  // Scrubber-driven coarse window (Date | null). Maps to startDate/endDate
-  // strings sent to the server-side filter.
-  const [windowStart, setWindowStart] = useState(null);
-  const [windowEnd, setWindowEnd] = useState(null);
+  // Scrubber window — zone-anchored. The hook stores the analyst's typed/
+  // dragged wall-clock NUMBERS and resolves them to instants in the active
+  // zone, so flipping the zone re-anchors the filter instead of sliding the
+  // visible boundary. windowStart/windowEnd are Date instants (for the
+  // scrubber); startDate/endDate are coarse UTC day bounds for the server;
+  // inWindow() is the precise instant-level test for the in-memory filter.
+  const {
+    windowStart, windowEnd, startDate, endDate,
+    setWindow, inWindow, formatInput, parseInput, hasWindow,
+  } = useTimelineWindow();
   const [searchQuery, setSearchQuery] = useState('');
 
   // Phase K3 — Browse / Read mode toggle. Browse = full filter
@@ -156,10 +163,6 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     try { window.localStorage.setItem(timelineFlyoverKey, timelineFlyoverOpen ? '1' : '0'); }
     catch { /* ignore */ }
   }, [timelineFlyoverOpen, timelineFlyoverKey]);
-
-  // ISO yyyy-mm-dd derived from the scrubber window for the API.
-  const startDate = windowStart ? toISODate(windowStart) : '';
-  const endDate = windowEnd ? toISODate(windowEnd) : '';
 
   // --- Data state ---
   const [entities, setEntities] = useState([]);
@@ -609,29 +612,35 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // metadata matches OR a message inside it matches.
   const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
   const { filteredThreads, threadHighlights } = useMemo(() => {
-    if (!searchQuery && !hasAttachmentOnly) {
+    const textFilter = !!(searchQuery || hasAttachmentOnly);
+    if (!textFilter && !hasWindow) {
       return { filteredThreads: dedupedThreads, threadHighlights: [] };
     }
     const out = [];
     const allHighlights = new Set();
     const deepHits = deepSearch.threadIds;
     for (const t of dedupedThreads) {
+      // Precise instant window (zone-anchored) — the server filter is coarse
+      // (whole UTC days), so enforce the exact picked boundary here against the
+      // thread's last activity. Falls back through last_message_at / timestamp.
+      if (!inWindow(t.last_activity ?? t.last_message_at ?? t.timestamp)) continue;
       // Has-attachment gate (thread-level aggregate flag) — applied before
       // the text gates so it also bounds the deep-body-search hits.
       if (hasAttachmentOnly && !(t.has_attachments || (t.attachment_count || 0) > 0)) continue;
-      const m = matchItem(t, parsedQuery, 'thread', reports);
-      const inDeep = deepHits.has(t.thread_id);
-      if (m.matches || inDeep) {
-        out.push(t);
+      if (textFilter) {
+        const m = matchItem(t, parsedQuery, 'thread', reports);
+        const inDeep = deepHits.has(t.thread_id);
+        if (!(m.matches || inDeep)) continue;
         m.highlights.forEach((h) => allHighlights.add(h));
       }
+      out.push(t);
     }
     // Always highlight the literal search term itself, even if it only
     // matched a body (so the row text gets `<mark>` if the term appears
     // anywhere displayable).
     if (searchQuery.trim()) allHighlights.add(searchQuery.trim().toLowerCase());
     return { filteredThreads: out, threadHighlights: Array.from(allHighlights) };
-  }, [dedupedThreads, searchQuery, hasAttachmentOnly, parsedQuery, reports, deepSearch.threadIds]);
+  }, [dedupedThreads, searchQuery, hasAttachmentOnly, parsedQuery, reports, deepSearch.threadIds, inWindow, hasWindow]);
 
   // Publish counts to the persistent status bar.
   //
@@ -775,8 +784,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       // subset of the available lanes (so a one-lane drag on a busy
       // case never accidentally collapses the global phone selection).
       onApplyWindow={({ startTs, endTs, reportKeys }) => {
-        setWindowStart(startTs ? new Date(startTs) : null);
-        setWindowEnd(endTs ? new Date(endTs) : null);
+        setWindow(startTs ? new Date(startTs) : null, endTs ? new Date(endTs) : null);
         if (phoneCtx && Array.isArray(reportKeys) && reportKeys.length > 0
             && reportKeys.length < reports.length) {
           phoneCtx.setSelection(reportKeys);
@@ -895,7 +903,9 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         } : null}
         windowStart={windowStart}
         windowEnd={windowEnd}
-        onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+        onWindowChange={(s, e) => setWindow(s, e)}
+        formatInput={formatInput}
+        parseInput={parseInput}
       />
 
       {/* Phase K4 (revised): cross-type timeline returns as a slide-
@@ -1137,16 +1147,6 @@ function CrossTypeTimelineFlyover({
       </div>
     </aside>
   );
-}
-
-/**
- * yyyy-mm-dd in local time. Used to sync the scrubber Date window with
- * the server-side date filter strings.
- */
-function toISODate(d) {
-  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 /**

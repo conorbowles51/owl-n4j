@@ -44,6 +44,10 @@ export default function CommsCompactToolbar({
   windowStart,
   windowEnd,
   onWindowChange,
+  // Zone-aware datetime-local ⇄ instant converters, forwarded to the scrubber's
+  // "Pick dates" entry so typed times are read in the active zone.
+  formatInput,
+  parseInput,
 }) {
   const [appsOpen, setAppsOpen] = useState(false);
   const [scrubberOpen, setScrubberOpen] = useState(false);
@@ -221,6 +225,8 @@ export default function CommsCompactToolbar({
             windowStart={windowStart}
             windowEnd={windowEnd}
             onWindowChange={onWindowChange}
+            formatInput={formatInput}
+            parseInput={parseInput}
           />
         </div>
       )}

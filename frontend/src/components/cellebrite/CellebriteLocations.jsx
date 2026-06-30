@@ -6,6 +6,7 @@ import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
 import EventMapPanel from './events/EventMapPanel';
 import CollapsibleScrubber from './shared/CollapsibleScrubber';
+import useTimelineWindow from './shared/useTimelineWindow';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import LocationsTable from './locations/LocationsTable';
 import PlaybackBar from './locations/PlaybackBar';
@@ -39,11 +40,14 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   const reportsReady = phoneCtx ? phoneCtx.hydrated : true;
 
   // --- Filter state ---
-  const [windowStart, setWindowStart] = useState(null);
-  const [windowEnd, setWindowEnd] = useState(null);
+  // Zone-anchored scrubber window — stores the analyst's wall-clock numbers and
+  // resolves them to instants in the active zone; startDate/endDate are coarse
+  // UTC day bounds for the server fetch, inWindow() the precise in-memory test.
+  const {
+    windowStart, windowEnd, startDate, endDate,
+    setWindow, inWindow, formatInput, parseInput, hasWindow,
+  } = useTimelineWindow();
   const [searchQuery, setSearchQuery] = useState('');
-  const startDate = windowStart ? toISODate(windowStart) : '';
-  const endDate = windowEnd ? toISODate(windowEnd) : '';
 
   // --- Data state ---
   const [locations, setLocations] = useState([]);
@@ -298,9 +302,14 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   })), [tiles]);
   const mapEvents = useMemo(() => {
     if (renderMode === 'tiles') return tileMarkers;
-    if (!searchQuery) return locations;
-    return locations.filter((loc) => matchItem(loc, parsedQuery, 'event', reports).matches);
-  }, [renderMode, tileMarkers, locations, searchQuery, parsedQuery, reports]);
+    if (!searchQuery && !hasWindow) return locations;
+    // Precise instant window (zone-anchored) on top of the coarse server-side
+    // startDate/endDate filter, composed with the text search.
+    return locations.filter((loc) =>
+      inWindow(loc.timestamp) &&
+      (!searchQuery || matchItem(loc, parsedQuery, 'event', reports).matches)
+    );
+  }, [renderMode, tileMarkers, locations, searchQuery, parsedQuery, reports, inWindow, hasWindow]);
 
   // Playback envelope: min/max timestamp across the FILTERED set so
   // the playhead only sweeps through what the active filter allows.
@@ -711,7 +720,9 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
           items={mapEvents}
           windowStart={windowStart}
           windowEnd={windowEnd}
-          onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+          onWindowChange={(s, e) => setWindow(s, e)}
+          formatInput={formatInput}
+          parseInput={parseInput}
           label="Locations"
         />
       )}
@@ -820,12 +831,6 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
       />
     </div>
   );
-}
-
-function toISODate(d) {
-  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function ModeButton({ current, mode, onClick, children }) {

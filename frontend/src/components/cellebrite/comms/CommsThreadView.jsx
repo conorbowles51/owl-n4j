@@ -11,6 +11,7 @@ import PersonName from '../shared/PersonName';
 import { useCellebriteTime } from '../shared/CellebriteTimezone';
 import CellebriteSearchInput from '../shared/CellebriteSearchInput';
 import CollapsibleScrubber from '../shared/CollapsibleScrubber';
+import useTimelineWindow from '../shared/useTimelineWindow';
 import AttachmentFilterToggle from '../shared/AttachmentFilterToggle';
 import { parseQuery, matchItem } from '../../../utils/cellebriteSearch';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
@@ -52,13 +53,16 @@ export default function CommsThreadView({
   // Seed from the parent's search if it matched a body in this thread.
   const [searchQuery, setSearchQuery] = useState(externalSearchQuery || '');
   const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
-  const [windowStart, setWindowStart] = useState(null);
-  const [windowEnd, setWindowEnd] = useState(null);
+  // Zone-anchored scrubber window — stores the analyst's wall-clock numbers and
+  // resolves them to instants in the active zone, so flipping the zone re-
+  // anchors the filter. inWindow() is the precise instant-level test below.
+  const {
+    windowStart, windowEnd, setWindow, inWindow, formatInput, parseInput,
+  } = useTimelineWindow();
   useEffect(() => {
     setSearchQuery(externalSearchQuery || '');
     setHasAttachmentOnly(false);
-    setWindowStart(null);
-    setWindowEnd(null);
+    setWindow(null, null);
   }, [selectedThread?.thread_id, externalSearchQuery]);
 
   useEffect(() => {
@@ -174,18 +178,13 @@ export default function CommsThreadView({
   // client-side, instant per keystroke. Highlights are shown inside bubbles.
   const parsedQuery = parseQuery(searchQuery);
   if (hasAttachmentOnly) parsedQuery.operators = { ...parsedQuery.operators, has: 'attachment' };
-  const windowStartMs = windowStart instanceof Date ? windowStart.getTime() : null;
-  const windowEndMs = windowEnd instanceof Date ? windowEnd.getTime() : null;
   const reportsForSearch = phoneCtx?.reports || [];
   const allItemHighlights = new Set();
   const filteredItems = [];
   for (const item of detail.items) {
-    if (windowStartMs != null || windowEndMs != null) {
-      const t = item.timestamp ? new Date(item.timestamp).getTime() : null;
-      if (t == null) continue;
-      if (windowStartMs != null && t < windowStartMs) continue;
-      if (windowEndMs != null && t > windowEndMs) continue;
-    }
+    // Precise instant window (zone-anchored) — enforces the exact picked
+    // time-of-day boundary against each item's absolute timestamp.
+    if (!inWindow(item.timestamp)) continue;
     if (searchQuery || hasAttachmentOnly) {
       const m = matchItem(item, parsedQuery, 'event', reportsForSearch);
       if (!m.matches) continue;
@@ -329,7 +328,9 @@ export default function CommsThreadView({
           items={detail.items}
           windowStart={windowStart}
           windowEnd={windowEnd}
-          onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+          onWindowChange={(s, e) => setWindow(s, e)}
+          formatInput={formatInput}
+          parseInput={parseInput}
           label="Messages"
           defaultOpen={false}
           compact

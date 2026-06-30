@@ -40,6 +40,12 @@ export default function TimelineScrubber({
   onBarClick,
   compact = false,
   getColorForType,
+  // Zone-aware datetime-local ⇄ instant converters for the "Pick dates" entry.
+  // Default to browser-local (legacy behaviour) when a host doesn't pass them;
+  // the Cellebrite timelines pass zone-aware ones so the typed numbers are read
+  // in the analyst's selected zone, matching the rows on screen.
+  formatInput = toLocalInputValue,
+  parseInput = fromLocalInputValue,
 }) {
   // ------------------------------------------------------------------
   // Bounds + bucketing
@@ -394,6 +400,8 @@ export default function TimelineScrubber({
             endTs={effectiveEnd}
             onApply={(s, e) => onWindowChange?.(s, e)}
             onClear={reset}
+            formatInput={formatInput}
+            parseInput={parseInput}
           />
           {!isFullWindow && (
             <button
@@ -419,7 +427,11 @@ export default function TimelineScrubber({
 // browser-local clock the scrubber's ticks render in, and stays in the
 // component so every place that renders a scrubber gets it for free.
 // ---------------------------------------------------------------------------
-function DateRangePicker({ minTs, maxTs, startTs, endTs, onApply, onClear }) {
+function DateRangePicker({
+  minTs, maxTs, startTs, endTs, onApply, onClear,
+  formatInput = toLocalInputValue,
+  parseInput = fromLocalInputValue,
+}) {
   const [open, setOpen] = useState(false);
   const [startVal, setStartVal] = useState('');
   const [endVal, setEndVal] = useState('');
@@ -429,9 +441,9 @@ function DateRangePicker({ minTs, maxTs, startTs, endTs, onApply, onClear }) {
   // (or when the committed window changes while open, e.g. via a drag).
   useEffect(() => {
     if (!open) return;
-    setStartVal(toLocalInputValue(startTs));
-    setEndVal(toLocalInputValue(endTs));
-  }, [open, startTs, endTs]);
+    setStartVal(formatInput(startTs));
+    setEndVal(formatInput(endTs));
+  }, [open, startTs, endTs, formatInput]);
 
   // Close on outside click.
   useEffect(() => {
@@ -443,10 +455,10 @@ function DateRangePicker({ minTs, maxTs, startTs, endTs, onApply, onClear }) {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [open]);
 
-  const minVal = toLocalInputValue(minTs);
-  const maxVal = toLocalInputValue(maxTs);
-  const startMs = fromLocalInputValue(startVal);
-  const endMs = fromLocalInputValue(endVal);
+  const minVal = formatInput(minTs);
+  const maxVal = formatInput(maxTs);
+  const startMs = parseInput(startVal);
+  const endMs = parseInput(endVal);
   const invalid = startMs == null || endMs == null || startMs > endMs;
 
   const apply = () => {

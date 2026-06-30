@@ -18,6 +18,7 @@ import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import CollapsibleScrubber from './shared/CollapsibleScrubber';
+import useTimelineWindow from './shared/useTimelineWindow';
 import CommsMediaStrip from './comms/CommsMediaStrip';
 import AttachmentFilterToggle from './shared/AttachmentFilterToggle';
 import HighlightedText from './shared/HighlightedText';
@@ -70,11 +71,16 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   const selectedReportKeys = phoneCtx ? phoneCtx.selectedReportKeys : fallbackSelection;
 
   const [activeEventTypes, setActiveEventTypes] = useState(new Set());
-  // Scrubber window — Date objects, both null = show everything.
-  // Tracked alongside string forms passed to the API so we can keep the
-  // server-side coarse filter without re-deriving strings everywhere.
-  const [windowStart, setWindowStart] = useState(null);
-  const [windowEnd, setWindowEnd] = useState(null);
+  // Scrubber window — zone-anchored. The hook stores the analyst's typed/dragged
+  // wall-clock NUMBERS and resolves them to absolute instants in the active
+  // zone, so flipping the zone re-anchors the filter instead of sliding the
+  // visible boundary. windowStart/windowEnd are Date instants (for the
+  // scrubber); startDate/endDate are coarse UTC day bounds for the server;
+  // inWindow() is the precise instant-level test for the in-memory filter.
+  const {
+    windowStart, windowEnd, startDate, endDate,
+    setWindow, inWindow, formatInput, parseInput, hasWindow,
+  } = useTimelineWindow();
   const [searchQuery, setSearchQuery] = useState('');
   // "Has attachment" filter — applied via the shared search matcher
   // (injected into the parsed query so it composes with text search).
@@ -144,11 +150,6 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // (drawer + flyout) on every row click.
   const { selectEntity } = useCellebriteSelection();
   const [selectedEvent, setSelectedEvent] = useState(null);
-
-  // ISO yyyy-mm-dd derived from the scrubber window, sent to the
-  // server-side filter so we don't pull data we'll never display.
-  const startDate = windowStart ? toISODate(windowStart) : '';
-  const endDate = windowEnd ? toISODate(windowEnd) : '';
 
   // Fetch event types when device set changes (powers the type filter chips)
   useEffect(() => {
@@ -403,21 +404,30 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
 
   // Pure in-memory filter — runs synchronously on every keystroke
   // because the events array is already loaded. No network calls.
+  // Applies BOTH the text/attachment search AND the precise instant window
+  // (inWindow): the server filter is coarse (whole UTC days, widened), so the
+  // exact time-of-day boundary the analyst picked is enforced here against each
+  // event's absolute timestamp. This re-runs when the zone flips (inWindow
+  // closes over the re-anchored instants), so the visible set tracks the typed
+  // numbers in the active zone.
   const { filteredEvents, highlights } = useMemo(() => {
-    if (!searchQuery && !hasAttachmentOnly) {
+    const textFilter = !!(searchQuery || hasAttachmentOnly);
+    if (!textFilter && !hasWindow) {
       return { filteredEvents: events, highlights: [] };
     }
     const out = [];
     const allHighlights = new Set();
     for (const ev of events) {
-      const m = matchItem(ev, parsedQuery, 'event', reports);
-      if (m.matches) {
-        out.push(ev);
+      if (!inWindow(ev.timestamp)) continue;
+      if (textFilter) {
+        const m = matchItem(ev, parsedQuery, 'event', reports);
+        if (!m.matches) continue;
         m.highlights.forEach((h) => allHighlights.add(h));
       }
+      out.push(ev);
     }
     return { filteredEvents: out, highlights: Array.from(allHighlights) };
-  }, [events, searchQuery, hasAttachmentOnly, parsedQuery, reports]);
+  }, [events, searchQuery, hasAttachmentOnly, parsedQuery, reports, inWindow, hasWindow]);
 
   // Sort by the chosen direction; group by date for visual rhythm. Because
   // groups are emitted in encounter order, sorting the events ascending also
@@ -532,8 +542,10 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
         envelope={scrubberEnvelope}
         windowStart={windowStart}
         windowEnd={windowEnd}
-        onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+        onWindowChange={(s, e) => setWindow(s, e)}
         onBarClick={(bucketStart) => scrollToDate(bucketStart)}
+        formatInput={formatInput}
+        parseInput={parseInput}
       />
 
       {/* Honest truncation notice — the body feed caps each event type at
@@ -618,8 +630,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
               });
             }}
             onApplyWindow={({ startTs, endTs }) => {
-              setWindowStart(startTs ? new Date(startTs) : null);
-              setWindowEnd(endTs ? new Date(endTs) : null);
+              setWindow(startTs ? new Date(startTs) : null, endTs ? new Date(endTs) : null);
             }}
           />
         ) : (
@@ -1064,13 +1075,3 @@ function formatDayHeader(day) {
   }
 }
 
-/**
- * yyyy-mm-dd in *local* time (so the bar-click → day-header lookup
- * matches the way `groupedByDay` derives its key from
- * `(ev.timestamp || '').slice(0, 10)`).
- */
-function toISODate(d) {
-  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}

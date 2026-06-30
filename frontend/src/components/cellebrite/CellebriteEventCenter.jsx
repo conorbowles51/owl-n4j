@@ -13,6 +13,7 @@ import EventTimelinePanel from './events/EventTimelinePanel';
 import IntersectionPanel from './events/IntersectionPanel';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import CollapsibleScrubber from './shared/CollapsibleScrubber';
+import useTimelineWindow from './shared/useTimelineWindow';
 import AttachmentFilterToggle from './shared/AttachmentFilterToggle';
 import ResizableSplit from './shared/ResizableSplit';
 import { deviceColor, EVENT_LABELS } from './events/eventUtils';
@@ -56,12 +57,16 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   const [onlyGeolocated, setOnlyGeolocated] = useState(
     () => Boolean(restored?.onlyGeolocated)
   );
-  // Scrubber-driven coarse window (Date | null). The string forms feed
-  // the existing server-side filter and the IntersectionPanel.
-  const [windowStart, setWindowStart] = useState(null);
-  const [windowEnd, setWindowEnd] = useState(null);
-  const startDate = windowStart ? toISODate(windowStart) : '';
-  const endDate = windowEnd ? toISODate(windowEnd) : '';
+  // Scrubber window — zone-anchored. The hook stores the analyst's typed/
+  // dragged wall-clock NUMBERS and resolves them to instants in the active
+  // zone, so flipping the zone re-anchors the filter. windowStart/windowEnd
+  // are Date instants (scrubber + IntersectionPanel); startDate/endDate are
+  // coarse UTC day bounds for the server filter; inWindow() is the precise
+  // instant-level test for the in-memory filter.
+  const {
+    windowStart, windowEnd, startDate, endDate,
+    setWindow, inWindow, formatInput, parseInput, hasWindow,
+  } = useTimelineWindow();
   const [searchQuery, setSearchQuery] = useState('');
   const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
 
@@ -138,9 +143,14 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
     return q;
   }, [searchQuery, hasAttachmentOnly]);
   const filteredEvents = useMemo(() => {
-    if (!searchQuery && !hasAttachmentOnly) return events;
-    return events.filter((ev) => matchItem(ev, parsedQuery, 'event', reports).matches);
-  }, [events, searchQuery, hasAttachmentOnly, parsedQuery, reports]);
+    if (!searchQuery && !hasAttachmentOnly && !hasWindow) return events;
+    // Precise instant window (zone-anchored) on top of the coarse server-side
+    // startDate/endDate filter, composed with the text/attachment search.
+    return events.filter((ev) =>
+      inWindow(ev.timestamp) &&
+      ((!searchQuery && !hasAttachmentOnly) || matchItem(ev, parsedQuery, 'event', reports).matches)
+    );
+  }, [events, searchQuery, hasAttachmentOnly, parsedQuery, reports, inWindow, hasWindow]);
 
   // Derived: how many events have direct or nearest geolocation
   const geolocatedCount = useMemo(() => {
@@ -483,7 +493,9 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
         envelope={scrubberEnvelope}
         windowStart={windowStart}
         windowEnd={windowEnd}
-        onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+        onWindowChange={(s, e) => setWindow(s, e)}
+        formatInput={formatInput}
+        parseInput={parseInput}
       />
 
       {/* Honest truncation notice — the map + table load at most 5,000 rows
@@ -662,13 +674,6 @@ function ViewModeButton({ mode, current, onClick, icon: Icon, label }) {
       <span>{label}</span>
     </button>
   );
-}
-
-/** yyyy-mm-dd in local time — feeds the existing server-side date filter. */
-function toISODate(d) {
-  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 /**

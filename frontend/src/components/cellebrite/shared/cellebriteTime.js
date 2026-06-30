@@ -136,6 +136,61 @@ export function fmtShort(iso, tzId) {
   return `${datePart}, ${time}`;
 }
 
+// ---- Wall-clock ⇄ instant conversion (zone-anchored filtering) ----------
+//
+// The timeline filter is "wall-clock anchored": the analyst types a start/end
+// (e.g. 00:00) and those NUMBERS are read in whatever zone the view is showing.
+// So 00:00 viewed in UTC is the instant 00:00Z, but the SAME 00:00 viewed in
+// UTC−4 (device, EDT) is 04:00Z. Flip the zone and the typed numbers stay put
+// while the selected instant-set shifts by the offset — which is exactly what
+// "the filter should not shift with the timezone" means to the user. These two
+// helpers are the single conversion both directions go through; the offset is
+// resolved per-instant so DST (EDT=UTC−4 in summer, EST=UTC−5 in winter) is
+// handled automatically.
+
+/** Parse "YYYY-MM-DDTHH:MM[:SS]" → numeric parts, or null. */
+function _parseWall(wallStr) {
+  if (!wallStr || typeof wallStr !== 'string') return null;
+  const m = wallStr.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/,
+  );
+  if (!m) return null;
+  return { y: +m[1], mo: +m[2], d: +m[3], h: +m[4], mi: +m[5], s: +(m[6] || 0) };
+}
+
+/**
+ * A wall-clock string read IN `tzId` → the absolute instant (ms epoch), or
+ * null. "2025-04-12T00:00" in `utc` → 2025-04-12T00:00:00Z; the same string in
+ * `device` (EDT) → 2025-04-12T04:00:00Z.
+ */
+export function wallClockToInstant(wallStr, tzId) {
+  const w = _parseWall(wallStr);
+  if (!w) return null;
+  const iana = _ianaFor(tzId);
+  // Treat the wall parts as if they were UTC, then subtract the zone's offset
+  // at that instant. Refine once so a value near a DST transition lands on the
+  // offset that actually applies to the resolved instant, not the guess.
+  const utcGuess = Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi, w.s);
+  let off = _offsetMinutes(new Date(utcGuess).toISOString(), iana);
+  let instant = utcGuess - off * 60000;
+  off = _offsetMinutes(new Date(instant).toISOString(), iana);
+  instant = utcGuess - off * 60000;
+  return instant;
+}
+
+/** Instant (ms epoch or ISO) → "YYYY-MM-DDTHH:MM" wall-clock in `tzId`, or ''. */
+export function instantToWallClock(msOrIso, tzId) {
+  const iso = typeof msOrIso === 'number' ? new Date(msOrIso).toISOString() : msOrIso;
+  const m = _parts(iso, _ianaFor(tzId));
+  return m ? `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}` : '';
+}
+
+/** Instant (ms epoch or ISO) → "YYYY-MM-DD" calendar day in `tzId`, or ''. */
+export function instantToZoneDate(msOrIso, tzId) {
+  const iso = typeof msOrIso === 'number' ? new Date(msOrIso).toISOString() : msOrIso;
+  return dayKey(iso, tzId);
+}
+
 // ---- Module-level "current zone" (kept in sync by the React provider) ----
 // Lets the plain formatter functions (eventUtils.formatTs / commsUtils.
 // formatShortTime), which can't use hooks, render in the active zone so every
