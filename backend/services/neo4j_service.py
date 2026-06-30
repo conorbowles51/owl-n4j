@@ -1160,6 +1160,8 @@ class Neo4jService:
         event_types: Optional[List[str]] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        start_datetime: Optional[str] = None,
+        end_datetime: Optional[str] = None,
         case_id: str = None,
         limit: Optional[int] = None,
         cursor: Optional[str] = None,
@@ -1184,6 +1186,11 @@ class Neo4jService:
                         If None, returns ALL entities with dates (not just event types).
             start_date: Filter events on or after this date (YYYY-MM-DD)
             end_date: Filter events on or before this date (YYYY-MM-DD)
+            start_datetime: Filter on or after this UTC instant
+                        (YYYY-MM-DDTHH:MM:SS). Carries time-of-day and
+                        takes precedence over start_date.
+            end_datetime: Filter on or before this UTC instant
+                        (YYYY-MM-DDTHH:MM:SS). Takes precedence over end_date.
             case_id: REQUIRED - Filter to only include nodes belonging to this case
             limit:   Max rows per page. None disables pagination.
             cursor:  Opaque page token from a previous response.
@@ -1197,10 +1204,31 @@ class Neo4jService:
             # case_id is always required
             params = {"case_id": case_id}
 
-            if start_date:
+            # Datetime boundaries (carry time-of-day) take precedence over
+            # the date-only params. Nodes store date + time as separate UTC
+            # string props; `time` is `HH:MM` (Cellebrite ingestion stores
+            # timestamp[11:16], no seconds) or NULL. We synthesise a fixed-
+            # width "YYYY-MM-DDTHH:MM:SS" key — padding with ':00' then
+            # truncating to 8 chars normalises HH:MM → HH:MM:SS, leaves any
+            # full-precision HH:MM:SS untouched, and maps NULL → 00:00:00 —
+            # so the lexicographic compare matches the 19-char boundary's
+            # wall-clock UTC. Without the pad, a 16-char "...T04:00" sorts as
+            # a prefix (less than) the 19-char "...T04:00:00" boundary and an
+            # event at exactly the start minute would be wrongly excluded.
+            if start_datetime:
+                date_conditions.append(
+                    "(n.date + 'T' + substring(coalesce(n.time, '00:00:00') + ':00', 0, 8)) >= $start_datetime"
+                )
+                params["start_datetime"] = start_datetime
+            elif start_date:
                 date_conditions.append("n.date >= $start_date")
                 params["start_date"] = start_date
-            if end_date:
+            if end_datetime:
+                date_conditions.append(
+                    "(n.date + 'T' + substring(coalesce(n.time, '00:00:00') + ':00', 0, 8)) <= $end_datetime"
+                )
+                params["end_datetime"] = end_datetime
+            elif end_date:
                 date_conditions.append("n.date <= $end_date")
                 params["end_date"] = end_date
 

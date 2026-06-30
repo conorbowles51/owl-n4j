@@ -152,7 +152,9 @@ function AppInner() {
   const [largeGraphConfirm, setLargeGraphConfirm] = useState({
     isOpen: false, operationName: '', nodeCount: 0, linkCount: 0, scope: '', onConfirm: null,
   });
-  const [dateRange, setDateRange] = useState({ start_date: null, end_date: null });
+  const [dateRange, setDateRange] = useState({
+    start_date: null, end_date: null, start_datetime: null, end_datetime: null,
+  });
   const [graphSearchTerm, setGraphSearchTerm] = useState('');
   const [graphSearchFieldScope, setGraphSearchFieldScope] = useState('all'); // 'all' | 'selected'
   const [graphSearchMode, setGraphSearchMode] = useState('filter');
@@ -2323,10 +2325,16 @@ function AppInner() {
       try {
         // Pass date range and case_id to timeline API if set
         const timelineParams = {};
-        if (dateRange.start_date) {
+        // Prefer the timezone-aware UTC datetime boundary (carries the
+        // user's time-of-day); fall back to the date-only param.
+        if (dateRange.start_datetime) {
+          timelineParams.startDatetime = dateRange.start_datetime;
+        } else if (dateRange.start_date) {
           timelineParams.startDate = dateRange.start_date;
         }
-        if (dateRange.end_date) {
+        if (dateRange.end_datetime) {
+          timelineParams.endDatetime = dateRange.end_datetime;
+        } else if (dateRange.end_date) {
           timelineParams.endDate = dateRange.end_date;
         }
         if (currentCaseId) {
@@ -3308,6 +3316,8 @@ function AppInner() {
     setDateRange({
       start_date: range.start_date,
       end_date: range.end_date,
+      start_datetime: range.start_datetime || null,
+      end_datetime: range.end_datetime || null,
     });
   }, []);
 

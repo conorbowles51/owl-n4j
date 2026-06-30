@@ -65,6 +65,40 @@ function _offsetMinutes(iso, iana) {
   return Math.round((asUTC - d.getTime()) / 60000);
 }
 
+/**
+ * Convert a wall-clock date/time the user typed in a given zone into the
+ * equivalent UTC instant, formatted as a fixed-width "YYYY-MM-DDTHH:MM:SS"
+ * string. Used by the date-range filter: stored event props are UTC, so a
+ * boundary the user enters as "Apr 12 00:00 EDT" must be sent to the API as
+ * the matching UTC instant ("2025-04-12T04:00:00"). Fixed width matters —
+ * the backend does a lexicographic string compare.
+ *
+ * @param {string} dateStr  "YYYY-MM-DD" (falsy → returns null)
+ * @param {string} [timeStr="00:00:00"] "HH:MM" or "HH:MM:SS"
+ * @param {string} tzId     a CB_ZONES id (defaults to the device zone)
+ * @returns {string|null}
+ */
+export function wallClockToUTCDateTime(dateStr, timeStr, tzId) {
+  if (!dateStr) return null;
+  const [y, mo, d] = dateStr.split('-').map(Number);
+  const [h = 0, mi = 0, s = 0] = (timeStr || '00:00:00').split(':').map(Number);
+  if ([y, mo, d, h, mi, s].some((n) => Number.isNaN(n))) return null;
+
+  const iana = _ianaFor(tzId);
+  // Treat the wall-clock parts as if they were UTC to get a provisional
+  // instant, then look up how far the zone is ahead of UTC at that instant
+  // (DST-aware) and shift back to the true UTC instant.
+  const wallAsUTC = Date.UTC(y, mo - 1, d, h, mi, s);
+  const offsetMin = _offsetMinutes(new Date(wallAsUTC).toISOString(), iana);
+  const trueUTC = new Date(wallAsUTC - offsetMin * 60000);
+
+  const p = (n) => String(n).padStart(2, '0');
+  return (
+    `${trueUTC.getUTCFullYear()}-${p(trueUTC.getUTCMonth() + 1)}-${p(trueUTC.getUTCDate())}` +
+    `T${p(trueUTC.getUTCHours())}:${p(trueUTC.getUTCMinutes())}:${p(trueUTC.getUTCSeconds())}`
+  );
+}
+
 // ---- Public formatters (all take an explicit tzId) --------------------
 
 /** "HH:MM" in the selected zone. */
