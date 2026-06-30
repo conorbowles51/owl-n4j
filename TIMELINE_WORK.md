@@ -59,7 +59,7 @@ gate + readable/detailed ticket history. [[project_docket_false_pass]]
 (category=Audio, real bytes, e.g. `PART_..._Audio_Mes.amr`) but are **`.amr`**
 (AMR / AMR-WB) which browsers can't decode → `<audio>` shows duration 0 and won't
 play. ffmpeg 7.1.1 is installed and transcodes AMR→MP3 cleanly (verified: 25s AMR →
-24.8s MP3). **Fix (commit `1446e12`):** `routers/evidence.py` `get_evidence_file` now
+24.8s MP3). **Fix (commit `9495dec`):** `routers/evidence.py` `get_evidence_file` now
 transcodes `.amr/.3ga/.awb/.qcp` → MP3 on first request (cached in
 `data/audio_transcoded/{evidence_id}.mp3`, served as `audio/mpeg`); raw fallback if
 ffmpeg fails. No frontend change needed (player already classifies category=Audio).
@@ -73,11 +73,9 @@ the event-type coverage item.
   surface. Add Files, images, videos, calendar events, audio, app events, etc. Touches the
   events feed `active` set (already lists many types ~`neo4j_service.py:9969`) + ingestion
   (are these nodes created?) + UI type filter. Investigate why current types are narrow.
-- **AUDIO duration=0 / won't play** — voice notes show duration 0 and don't play though
-  they exist in Cellebrite. Likely **ingestion**: duration not parsed, or attachment not
-  linked/served. Per [[feedback_fix_pipeline_not_side_artifacts]] fix the pipeline, not a
-  band-aid. Needs its own investigation (check the attachment file ids, audio metadata,
-  the media-serving endpoint).
+- **Unresolved attachments** (~23/53 sampled) — some message media has no evidence
+  record (not linked at ingest). Pair with the event-type coverage investigation.
+- ~~AUDIO duration=0 / won't play~~ — RESOLVED, see AUDIO INVESTIGATION above (`9495dec`).
 
 ## Verification
 - Owner/recipient service check:
