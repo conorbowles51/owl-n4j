@@ -162,6 +162,9 @@ SUPPORTED_MODEL_TYPES = {
     # nested types stay out of SUPPORTED because the parser only dispatches
     # top-level models — they're reached inside the ActivitySensorData handler.
     "ActivitySensorData",
+    # Phase 10 — coverage audit 2026-06-30 (CELLEBRITE_INGEST_AUDIT.md).
+    "Voicemail",             # voicemails: From party + audio recording (.amr)
+    "Notification",          # app push notifications w/ subject text (7,040)
 }
 
 # Model types we intentionally skip (too granular / low investigative value).

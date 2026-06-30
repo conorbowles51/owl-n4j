@@ -49,7 +49,11 @@ _RECONCILE_MAP: dict = {
     "RecognizedDevice":     {"stats": ["devices_created"],          "nested": False},
     # Phase 6 — device inventory / identity / downloads
     "Autofill":             {"stats": ["autofill_created"],         "nested": False},
-    "SIMData":              {"stats": ["sim_data_created"],         "nested": False},
+    # SIMData is an AGGREGATING type: Cellebrite emits one record per SIM
+    # property (ICCID/IMSI/MSISDN/…), all folded into a single SIMCard node, and
+    # empty property rows are skipped — so persisted < xml is EXPECTED, not a
+    # writer bug. Mark nested so it reconciles "nested", not a false "under".
+    "SIMData":              {"stats": ["sim_data_created"],         "nested": True},
     "User":                 {"stats": ["users_created"],            "nested": False},
     "InstalledApplication": {"stats": ["installed_apps_created"],   "nested": False},
     "FileDownload":         {"stats": ["file_downloads_created"],   "nested": False},
@@ -68,6 +72,10 @@ _RECONCILE_MAP: dict = {
     "LogEntry":             {"stats": ["log_entries_created"],         "nested": False},
     # ActivitySensorData -> one MotionActivity window node each (children summarised)
     "ActivitySensorData":   {"stats": ["motion_activity_created"],     "nested": False},
+    # Phase 10 (2026-06-30). Voicemail writes a PhoneCall node but counts its own
+    # stat so reconciliation stays 1:1 against the Voicemail xml count.
+    "Voicemail":            {"stats": ["voicemails_created"],          "nested": False},
+    "Notification":         {"stats": ["notifications_created"],       "nested": False},
 }
 
 

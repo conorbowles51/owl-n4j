@@ -10045,6 +10045,8 @@ class Neo4jService:
             "note", "device_connectivity", "cookie", "log_entry", "motion",
             # Form-autofill entries (saved typed form/search input).
             "autofill",
+            # App push notifications (subject text + source app + timestamp).
+            "notification",
             # Media files (images/videos/audio/documents) from evidence storage.
             "file",
         }
@@ -10354,6 +10356,30 @@ class Neo4jService:
                     return row
                 _add(cypher, base_params, "autofill", _proj_autofill)
 
+            if "notification" in active:
+                # App push notifications (message previews, social alerts) — each
+                # carries subject text + source app + a timestamp, so they're
+                # activity/intent signals that belong on the timeline.
+                cur = _event_cursor_clause("notification")
+                cypher = f"""
+                    MATCH (n:Notification {{source_type:'cellebrite'}})
+                    WHERE {where} AND n.timestamp IS NOT NULL{cur}
+                    RETURN n
+                    ORDER BY n.timestamp DESC
+                    LIMIT $per_type_cap
+                """
+
+                def _proj_notification(rec):
+                    row = _project_event(rec["n"], "notification")
+                    if row:
+                        n = dict(rec["n"])
+                        app = (n.get("source_app") or "").strip()
+                        subj = (n.get("title") or n.get("body") or "").strip()
+                        row["label"] = f"{app} notification" if app else "Notification"
+                        row["summary"] = (subj or app or "Notification")[:200]
+                    return row
+                _add(cypher, base_params, "notification", _proj_notification)
+
             if "visit" in active:
                 cur = _event_cursor_clause("visit")
                 cypher = f"""
@@ -10558,6 +10584,7 @@ class Neo4jService:
         "journey": "Journey",
         "note": "Note",
         "autofill": "Autofill",
+        "notification": "Notification",
         "device_connectivity": "DeviceConnectivity",
         "cookie": "Cookie",
         "log_entry": "LogEntry",
@@ -10759,6 +10786,7 @@ class Neo4jService:
             _count("Journey", "", "journey", "Journeys")
             _count("Note", "", "note", "Notes")
             _count("Autofill", "AND n.timestamp IS NOT NULL", "autofill", "Autofill")
+            _count("Notification", "AND n.timestamp IS NOT NULL", "notification", "Notifications")
             _count("DeviceConnectivity", "", "device_connectivity", "Device connections")
             _count("Cookie", "", "cookie", "Cookies")
             _count("LogEntry", "", "log_entry", "Log entries")

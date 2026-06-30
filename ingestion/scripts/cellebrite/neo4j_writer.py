@@ -308,6 +308,8 @@ class CellebriteNeo4jWriter:
         self.contacts_created = 0
         self.contact_entries_created = 0
         self.calls_created = 0
+        self.voicemails_created = 0
+        self.notifications_created = 0
         self.messages_created = 0
         self.chats_created = 0
         self.emails_created = 0
@@ -1218,6 +1220,8 @@ class CellebriteNeo4jWriter:
             "Cookie": self._write_cookie,
             "LogEntry": self._write_log_entry,
             "ActivitySensorData": self._write_motion_activity,
+            "Voicemail": self._write_voicemail,
+            "Notification": self._write_notification,
             # Explicit ignores (parser emits them, writer silently skips)
             "KeyValueModel": self._noop,
             "Party": self._noop,
@@ -2093,6 +2097,93 @@ class CellebriteNeo4jWriter:
             self._create_relationship(self._phone_owner_key, key, "SEARCHED")
 
         self.searches_created += 1
+
+    def _write_voicemail(self, model: ParsedModel):
+        """Voicemail -> PhoneCall node (call_type=Voicemail) + From person + audio.
+
+        Voicemails carry a From party, timestamp, duration and an audio
+        Recording (usually .amr). We model them as an INCOMING PhoneCall flagged
+        call_type=Voicemail so they surface on the existing call timeline with
+        the recording playable (the AMR->Ogg transcode makes it audible) — rather
+        than inventing a whole new surface for 76 records. The recording links
+        through the standard attachment path (jump-target file refs), the same
+        way regular call recordings do."""
+        timestamp = self._extract_timestamp(model, prefer=("Timestamp", "TimeStamp", "Date"))
+        duration = model.get_field("Duration")
+        source = model.get_field("Source")
+        # Cellebrite stores the extracted audio under its own field, not a
+        # jump-target, so capture the path for provenance (the standalone .amr
+        # already surfaces as a media file and plays via the AMR transcode).
+        audio_path = model.get_field("voicemail_extracted_path")
+
+        key = f"voicemail-{model.model_id[:12]}"
+        props = self._base_props(model, key, "Voicemail")
+        props.update({
+            "direction": "Incoming",
+            "call_type": "Voicemail",
+            "duration": duration,
+            "source_app": source,
+            "voicemail_path": audio_path,
+        })
+        if timestamp:
+            props["date"] = timestamp[:10]
+            props["time"] = timestamp[11:16] if len(timestamp) > 16 else None
+            props["timestamp"] = timestamp
+        props.update(self._attachment_props(model))
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("PhoneCall", key, props)
+
+        # Incoming voicemail: the From party "called" the owner. The party's
+        # `Name` here is a voicemail sequence index ("26", "27"), NOT a saved
+        # contact name — and a short bare number escapes _is_real_name's
+        # phone-pattern guard — so never pass it through (it would set/alias a
+        # Person's name to a digit). Identify by phone number only; the real
+        # name comes from the contact book / call log.
+        party = model.get_party("From")
+        if party and party.identifier:
+            vm_name = party.name if (party.name and not party.name.strip().isdigit()) else None
+            person_key = self._ensure_person(
+                identifier=party.identifier, name=vm_name, source_app=source)
+            if person_key:
+                self._create_relationship(person_key, key, "CALLED")
+
+        self.voicemails_created += 1
+
+    def _write_notification(self, model: ParsedModel):
+        """Notification -> Notification node (app push/alert carrying text).
+
+        App notifications (e.g. Facebook "X shared a post", message previews)
+        are timestamped, text-bearing events — valuable activity/intent signals.
+        Stored as a Notification node with the subject text + source app, shown
+        on the timeline via the `notification` event type."""
+        source = model.get_field("Source")
+        subject = (model.get_field("Subject") or model.get_field("Title")
+                   or model.get_field("Body") or model.get_field("Text"))
+        timestamp = self._extract_timestamp(model, prefer=("TimeStamp", "Timestamp", "Date"))
+        status = model.get_field("Status")
+        url = model.get_field("URL")
+
+        if not subject and not timestamp:
+            return
+
+        key = f"notif-{model.model_id[:12]}"
+        props = self._base_props(model, key, (subject or "Notification")[:100])
+        props.update({
+            "title": subject,
+            "body": subject,
+            "source_app": source,
+            "status": status,
+            "url": url,
+        })
+        if timestamp:
+            props["date"] = timestamp[:10]
+            props["time"] = timestamp[11:16] if len(timestamp) > 16 else None
+            props["timestamp"] = timestamp
+        props.update(self._attachment_props(model))
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("Notification", key, props)
+
+        self.notifications_created += 1
 
     def _write_visited_page(self, model: ParsedModel):
         """VisitedPage -> VisitedPage node.
@@ -3351,6 +3442,8 @@ class CellebriteNeo4jWriter:
             "contact_entries_created": self.contact_entries_created,
             "harvested_coords_created": self.harvested_coords_created,
             "calls_created": self.calls_created,
+            "voicemails_created": self.voicemails_created,
+            "notifications_created": self.notifications_created,
             "chats_created": self.chats_created,
             "messages_created": self.messages_created,
             "emails_created": self.emails_created,

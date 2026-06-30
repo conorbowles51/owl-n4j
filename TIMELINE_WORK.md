@@ -14,17 +14,39 @@ Neo4j: `bolt://localhost:7687` neo4j/testpassword (driver in `../venv/bin/python
 ---
 
 ## ▶ NEXT (resume here)
+**Missing writers (Notification + Voicemail) BUILT 2026-06-30 (commit pending)** — closes
+the "Missing writers" backlog item below. End-to-end pipeline + surfacing, validated against
+raw XML; **inert until re-ingest** (Neil's call — no Notification/Voicemail nodes on any
+live case yet, so the new chip stays hidden at count 0; backend returns 0 cleanly).
+- Parser: `Voicemail` + `Notification` added to `SUPPORTED_MODEL_TYPES`.
+- Writer: `_write_voicemail` → **PhoneCall** node (`call_type=Voicemail`, Incoming, From
+  party CALLED owner, `voicemail_path` for provenance — audio also already surfaces as a
+  standalone media file). `_write_notification` → **Notification** node (Source/Subject/
+  TimeStamp/Status/URL). Both count own stats (1:1 reconcile). Junk numeric voicemail
+  `Name` ("26"/"27") suppressed so it can't pollute Person names.
+- ingestion.py reconcile: Voicemail/Notification entries added; **SIMData marked `nested`**
+  (it aggregates many property rows into one SIMCard node — persisted<xml is EXPECTED, not
+  a writer under-count bug; removes that false flag).
+- Backend `neo4j_service`: `notification` event type wired into the feed branch, default
+  active set, `_EVENT_TYPE_LABELS`, envelope (auto), and `get_cellebrite_event_types`
+  ("Notifications"). Voicemails ride the existing `call` type (no double-count).
+- Frontend `eventUtils.js`: `notification` color (rose) / icon (Bell) / label.
+- DRY-RUN verified on `5e374d4f` C2 report: 39 voicemails + 3951 notifications parse with
+  correct fields. Backend smoke-tested on live case 34fbbb06 → returns 0, no errors.
+- Validation against more reports + `infer_owner_msisdn` interplay → confirm on re-ingest.
+
 **Ingestion coverage audit DONE 2026-06-30** — see `CELLEBRITE_INGEST_AUDIT.md` (full
 per-phone breakdown). SearchedItem writer bug FIXED (`neo4j_writer._write_searched_item`:
 was requiring a `Value` field location-searches lack + never read lat/lon). Under-count
 warning added to `ingestion.py`. Remediation backlog (Neil's call):
 - **RE-INGEST** `43f1afb1` (10 phones) + `5e374d4f` (3 phones) with current code → recovers
   ~60k version-drift artifacts (Cookie/LogEntry/DeviceConnectivity/AppsUsageLog/etc.) +
-  the SearchedItem fix. (Cellebrite re-ingest is sensitive — see [[project_cellebrite_ingestion_failures]].)
+  the SearchedItem fix + the new Notification/Voicemail writers. (Cellebrite re-ingest is
+  sensitive — see [[project_cellebrite_ingestion_failures]].)
 - **Writer under-count bugs** still to investigate: Location (lost 1241/171/…), Contact
-  (723/1155/…), SIMData (consistent −2 everywhere).
-- **Missing writers** to add: Notification (7,040), Voicemail (76) high-value; Recording/
-  DeviceInfoEntry/etc. low.
+  (723/1155/…). ~~SIMData (−2)~~ — RESOLVED: aggregating type, not a bug (now reconciles nested).
+- ~~**Missing writers**: Notification (7,040), Voicemail (76)~~ — BUILT (see top of NEXT).
+  Remaining low-value missing writers: Recording / DeviceInfoEntry / etc.
 
 The timeline/comms epic is essentially complete. Remaining OPTIONAL / flagged items:
 - **SearchedItem ingestion bug** (flagged, not fixed): 34 of 71 Waze location-searches +
