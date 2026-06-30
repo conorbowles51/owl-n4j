@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Calendar, Clock, X, Filter } from 'lucide-react';
+import { getTzId, wallClockToUTCDateTime, zoneTag } from './cellebrite/shared/cellebriteTime';
 
 /**
  * DateRangeFilter Component
@@ -83,8 +84,13 @@ export default function DateRangeFilter({
     setAppliedEndDate(endDate);
     
     if (onDateRangeChange) {
-      const start = startDate ? `${startDate}T${startTime}:00` : null;
-      const end = endDate ? `${endDate}T${endTime}:59` : null;
+      // The user types wall-clock times in the active display zone, but
+      // stored event props are UTC. Convert each boundary to the matching
+      // UTC instant so the backend compares UTC-to-UTC. The end boundary
+      // keeps :59 seconds so it's inclusive to the selected minute.
+      const tzId = getTzId();
+      const start = wallClockToUTCDateTime(startDate, `${startTime}:00`, tzId);
+      const end = wallClockToUTCDateTime(endDate, `${endTime}:59`, tzId);
       onDateRangeChange({
         start_date: startDate || null,
         end_date: endDate || null,
@@ -138,6 +144,16 @@ export default function DateRangeFilter({
   };
 
   const hasActiveFilter = appliedStartDate || appliedEndDate;
+
+  // Zone the user is entering times in (DST-correct for the picked date).
+  const startZoneLabel = useMemo(
+    () => zoneTag(startDate ? `${startDate}T12:00:00Z` : new Date().toISOString(), getTzId()),
+    [startDate],
+  );
+  const endZoneLabel = useMemo(
+    () => zoneTag(endDate ? `${endDate}T12:00:00Z` : new Date().toISOString(), getTzId()),
+    [endDate],
+  );
 
   return (
     <div className="relative">
@@ -238,6 +254,7 @@ export default function DateRangeFilter({
             <div>
               <label className="block text-xs font-medium text-light-600 mb-1.5">
                 Start Date & Time
+                <span className="ml-1.5 font-normal text-light-500">({startZoneLabel})</span>
               </label>
               <div className="flex gap-2">
                 <div className="flex-1 flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-light-300">
@@ -266,6 +283,7 @@ export default function DateRangeFilter({
             <div>
               <label className="block text-xs font-medium text-light-600 mb-1.5">
                 End Date & Time
+                <span className="ml-1.5 font-normal text-light-500">({endZoneLabel})</span>
               </label>
               <div className="flex gap-2">
                 <div className="flex-1 flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-light-300">
