@@ -1797,13 +1797,39 @@ def get_evidence_file(
             ".mp3": "audio/mpeg",
             ".wav": "audio/wav",
             ".ogg": "audio/ogg",
+            ".oga": "audio/ogg",
+            ".opus": "audio/ogg",   # Ogg/Opus (most WhatsApp/modern voicenotes); audio/ogg is the most broadly playable label
             ".flac": "audio/flac",
             ".aac": "audio/aac",
             ".m4a": "audio/mp4",
+            ".amr": "audio/amr",
         }
-        
-        content_type = content_type_map.get(extension, "application/octet-stream")
-        
+
+        # Cellebrite classifies each media file into a category; it disambiguates
+        # extensions that map to more than one media type (e.g. .3gp).
+        cellebrite_category = (record.get("cellebrite_category") or "").lower()
+
+        # .amr — and AMR audio carried in a .3gp container — isn't natively
+        # decodable by any browser even with the correct MIME type, so clicking
+        # play does nothing. Transcode to Ogg/Opus on first request (cached) and
+        # serve that instead so the voicenote plays inline.
+        if extension == ".amr" or (extension == ".3gp" and cellebrite_category == "audio"):
+            transcoded = _transcode_audio_to_ogg(file_path, evidence_id)
+            if transcoded and transcoded.exists():
+                return FileResponse(
+                    path=transcoded,
+                    media_type="audio/ogg",
+                    headers={
+                        "Content-Disposition": f"inline; filename=\"{Path(filename).stem}.ogg\"",
+                    }
+                )
+
+        if extension == ".3gp":
+            # Ambiguous: Cellebrite lists .3gp under both Audio and Video.
+            content_type = "audio/3gpp" if cellebrite_category == "audio" else "video/3gpp"
+        else:
+            content_type = content_type_map.get(extension, "application/octet-stream")
+
         return FileResponse(
             path=file_path,
             filename=filename,
@@ -1819,6 +1845,39 @@ def get_evidence_file(
 
 
 FRAMES_CACHE_DIR = BASE_DIR / "data" / "video_frames"
+AUDIO_TRANSCODE_CACHE_DIR = BASE_DIR / "data" / "audio_transcode"
+
+
+def _transcode_audio_to_ogg(src_path: Path, evidence_id: str) -> Optional[Path]:
+    """Transcode an audio file no browser can natively decode (AMR, or AMR audio
+    in a .3gp container) to Ogg/Opus, caching the result keyed by evidence ID.
+
+    Returns the cached output path, or None if ffmpeg is missing or fails (the
+    caller then falls back to serving the original bytes).
+    """
+    AUDIO_TRANSCODE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = AUDIO_TRANSCODE_CACHE_DIR / f"{evidence_id}.ogg"
+    if out_path.exists() and out_path.stat().st_size > 0:
+        return out_path
+
+    ffmpeg_cmd = shutil.which("ffmpeg") or "ffmpeg"
+    try:
+        proc = subprocess.run(
+            [ffmpeg_cmd, "-i", str(src_path), "-c:a", "libopus", "-b:a", "32k",
+             "-y", str(out_path)],
+            capture_output=True, text=True, timeout=120,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+
+    if proc.returncode != 0 or not out_path.exists() or out_path.stat().st_size == 0:
+        # Don't leave a zero-byte file behind to be served as a "cached" result.
+        try:
+            out_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+    return out_path
 
 
 def _extract_video_frames(video_path: Path, output_dir: Path, interval: int = 30, max_frames: int = 50) -> List[dict]:
