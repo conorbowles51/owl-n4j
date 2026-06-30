@@ -241,17 +241,17 @@ function RelatedList({ items, onPick, highlight }) {
                 </span>
               )}
             </div>
-            {(it.body || it.summary || it.counterpart?.name) && (
+            {(it.body || it.summary || it.sender?.name || it.counterpart?.name) && (
               <div className="text-light-600 mt-0.5 whitespace-pre-wrap break-words">
-                {it.counterpart?.name && (
+                {(it.sender || it.counterpart)?.name && (
                   <PersonName
-                    name={it.counterpart.name}
-                    personKey={it.counterpart.key}
+                    name={(it.sender || it.counterpart).name}
+                    personKey={(it.sender || it.counterpart).key}
                     className={`font-medium ${it.is_owner_sender ? 'text-owl-blue-700' : 'text-light-700'}`}
                     numberClassName="text-[10px]"
                   />
                 )}
-                {it.counterpart?.name && (it.body || it.summary) && <span className="mx-1 text-light-400">·</span>}
+                {(it.sender || it.counterpart)?.name && (it.body || it.summary) && <span className="mx-1 text-light-400">·</span>}
                 {(it.body || it.summary) && <span>{it.body || it.summary}</span>}
               </div>
             )}

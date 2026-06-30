@@ -10163,10 +10163,16 @@ class Neo4jService:
                     LIMIT $per_type_cap
                     OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(n)
                     OPTIONAL MATCH (n)-[:PART_OF]->(chat:Communication)
-                    RETURN n, sender, chat
+                    OPTIONAL MATCH (part:Person)-[:PARTICIPATED_IN]->(chat)
+                    WITH n, sender, chat, collect(DISTINCT part) AS participants
+                    RETURN n, sender, chat, participants
                 """
                 _add(cypher, base_params, "message",
-                     lambda rec: _project_message(rec["n"], rec["sender"], rec["chat"]))
+                     lambda rec: _project_message(
+                         rec["n"], rec["sender"], rec["chat"],
+                         owner=self._resolve_report_owner(
+                             session, case_id, dict(rec["n"]).get("cellebrite_report_key")),
+                         participants=rec["participants"]))
 
             if "email" in active:
                 extra = "" if not only_geolocated else \
@@ -13093,7 +13099,7 @@ def _project_call(node, src, dst) -> Optional[dict]:
     return row
 
 
-def _project_message(node, sender, chat, owner=None) -> Optional[dict]:
+def _project_message(node, sender, chat, owner=None, participants=None) -> Optional[dict]:
     row = _project_event(node, "message")
     if not row:
         return None
@@ -13103,14 +13109,55 @@ def _project_message(node, sender, chat, owner=None) -> Optional[dict]:
     # Full body too — the rail's conversation list renders this untruncated so
     # the thread reads like the real chat, not 200-char stubs.
     row["body"] = n.get("body") or ""
-    s = dict(sender) if sender else None
-    # Owner-sent messages have no sender edge (owner implicit on FFS exports) —
-    # attribute them to the resolved device owner so the row shows who sent it.
-    if not s and owner:
-        s = dict(owner)
+
+    def _pp(p):
+        if not p:
+            return None
+        d = dict(p)
+        return {
+            "key": d.get("key"),
+            "name": d.get("name") or d.get("key"),
+            "phone_numbers": d.get("phone_numbers") or [],
+            "is_owner": bool(d.get("is_phone_owner") or d.get("is_owner")),
+        }
+
+    s = _pp(sender)
+    owner_p = _pp(owner)
+    if owner_p:
+        owner_p["is_owner"] = True
+
+    # Owner-sent messages have NO sender edge (owner implicit on FFS exports);
+    # "no sender = outgoing". Attribute them to the resolved device owner.
     if s:
-        row["counterpart"] = {"key": s.get("key"), "name": s.get("name") or s.get("key"), "phone_numbers": s.get("phone_numbers") or []}
-        row["is_owner_sender"] = bool(s.get("is_owner") or s.get("is_phone_owner"))
+        actual_sender = s
+        is_owner_sender = bool(s.get("is_owner"))
+    elif owner_p:
+        actual_sender = owner_p
+        is_owner_sender = True
+    else:
+        actual_sender = None
+        is_owner_sender = False
+
+    row["sender"] = actual_sender
+    row["is_owner_sender"] = is_owner_sender
+    row["direction"] = "outgoing" if is_owner_sender else "incoming"
+
+    # The "other party" = non-owner participant(s). For an OUTGOING message that
+    # is the recipient(s); for an INCOMING one the recipient is the owner. So the
+    # timeline can always render a clear sender → recipient pair.
+    parts = [_pp(p) for p in (participants or []) if p]
+    non_owner = [
+        p for p in parts
+        if p and not p.get("is_owner")
+        and not (actual_sender and p.get("key") == actual_sender.get("key"))
+    ]
+    if is_owner_sender:
+        row["recipients"] = non_owner
+        row["counterpart"] = non_owner[0] if non_owner else None
+    else:
+        row["recipients"] = [owner_p] if owner_p else []
+        row["counterpart"] = owner_p
+
     if chat:
         row["thread_id"] = dict(chat).get("key")
     return row
