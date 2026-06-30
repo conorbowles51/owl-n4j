@@ -14,9 +14,7 @@ Neo4j: `bolt://localhost:7687` neo4j/testpassword (driver in `../venv/bin/python
 ---
 
 ## ▶ NEXT (resume here)
-Pick up the BACKLOG. Suggested order:
-1. **AUDIO duration=0 / won't play** — investigate ingestion (see BACKLOG). Likely the
-   highest user value + a real pipeline bug.
+**AUDIO playback — DONE** (commit below). Remaining BACKLOG:
 2. **Timeline event-type COVERAGE** — surface Files/images/videos/calendar/audio/app
    events. The events feed `active` set already lists ~20 types (`neo4j_service.py:9969`)
    — so first check whether those NODES exist in the graph (ingestion) vs. just not being
@@ -55,6 +53,20 @@ Verify each fix against the live data (case 34fbbb06) before claiming done.
 
 Docket (separate, branch `feat/docket`, committed `523e6e4`, live): honest self-review
 gate + readable/detailed ticket history. [[project_docket_false_pass]]
+
+## AUDIO INVESTIGATION (resolved 2026-06-30)
+**Root cause: codec, not missing files.** Voice notes resolve fine to evidence
+(category=Audio, real bytes, e.g. `PART_..._Audio_Mes.amr`) but are **`.amr`**
+(AMR / AMR-WB) which browsers can't decode → `<audio>` shows duration 0 and won't
+play. ffmpeg 7.1.1 is installed and transcodes AMR→MP3 cleanly (verified: 25s AMR →
+24.8s MP3). **Fix (commit `1446e12`):** `routers/evidence.py` `get_evidence_file` now
+transcodes `.amr/.3ga/.awb/.qcp` → MP3 on first request (cached in
+`data/audio_transcoded/{evidence_id}.mp3`, served as `audio/mpeg`); raw fallback if
+ffmpeg fails. No frontend change needed (player already classifies category=Audio).
+Cache dir writable by backend (uid 1001 = conorbowles51). Verified transcode + cache-hit.
+**Sub-gap noted:** ~23/53 sampled message attachments are UNRESOLVED (no evidence
+record) — some media wasn't linked at ingest. Separate ingestion issue; revisit with
+the event-type coverage item.
 
 ## BACKLOG (raised, not started)
 - **Timeline event-type COVERAGE** — only Locations/Calls/Messages/Searches/Notes/Cookies

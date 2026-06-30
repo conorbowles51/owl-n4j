@@ -1744,6 +1744,41 @@ def delete_evidence_file(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Cellebrite voice notes are commonly AMR / AMR-WB (and other mobile codecs)
+# which browsers cannot decode — served raw they show duration 0 and won't play.
+# We transcode those to MP3 on first request (ffmpeg) and cache the result.
+AUDIO_TRANSCODE_EXTS = {".amr", ".3ga", ".awb", ".qcp"}
+AUDIO_TRANSCODE_CACHE_DIR = BASE_DIR / "data" / "audio_transcoded"
+
+
+def _transcoded_audio(evidence_id: str, src: Path) -> Optional[Path]:
+    """Return a cached, browser-playable MP3 for a non-web audio file, transcoding
+    on first use via ffmpeg. Returns None (caller serves raw) if it can't."""
+    try:
+        AUDIO_TRANSCODE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        out = AUDIO_TRANSCODE_CACHE_DIR / f"{evidence_id}.mp3"
+        if (out.exists() and out.stat().st_size > 0
+                and out.stat().st_mtime >= src.stat().st_mtime):
+            return out
+        tmp = out.with_suffix(".mp3.tmp")
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(src),
+             "-codec:a", "libmp3lame", "-qscale:a", "4",
+             # The temp name ends in .tmp, so tell ffmpeg the muxer explicitly —
+             # it can't infer MP3 from the extension.
+             "-f", "mp3", str(tmp)],
+            capture_output=True, timeout=120,
+        )
+        if proc.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
+            return None
+        tmp.replace(out)
+        return out
+    except Exception:
+        return None
+
+
 @router.get("/{evidence_id}/file")
 def get_evidence_file(
     evidence_id: str,
@@ -1800,10 +1835,27 @@ def get_evidence_file(
             ".flac": "audio/flac",
             ".aac": "audio/aac",
             ".m4a": "audio/mp4",
+            ".amr": "audio/amr",
         }
-        
+
         content_type = content_type_map.get(extension, "application/octet-stream")
-        
+
+        # Non-web audio codecs (AMR voice notes etc.) → serve a transcoded MP3 so
+        # the browser can actually play it and report a real duration. Falls
+        # through to the raw bytes if transcoding isn't possible.
+        if extension in AUDIO_TRANSCODE_EXTS:
+            playable = _transcoded_audio(evidence_id, file_path)
+            if playable is not None:
+                mp3_name = f"{Path(filename).stem}.mp3"
+                return FileResponse(
+                    path=playable,
+                    filename=mp3_name,
+                    media_type="audio/mpeg",
+                    headers={
+                        "Content-Disposition": f"inline; filename=\"{mp3_name}\"",
+                    },
+                )
+
         return FileResponse(
             path=file_path,
             filename=filename,
