@@ -24,23 +24,6 @@ async def get_timeline(
         None,
         description="Filter events on or before this date (YYYY-MM-DD)"
     ),
-    start_datetime: Optional[str] = Query(
-        None,
-        description=(
-            "Filter events on or after this UTC instant "
-            "(YYYY-MM-DDTHH:MM:SS). Carries time-of-day and takes "
-            "precedence over start_date. Stored event props are UTC, "
-            "so callers must convert any local boundary to UTC first."
-        ),
-    ),
-    end_datetime: Optional[str] = Query(
-        None,
-        description=(
-            "Filter events on or before this UTC instant "
-            "(YYYY-MM-DDTHH:MM:SS). Carries time-of-day and takes "
-            "precedence over end_date."
-        ),
-    ),
     case_id: str = Query(
         ...,
         description="REQUIRED: Filter to events in this case"
@@ -94,8 +77,6 @@ async def get_timeline(
         event_types=event_types,
         start_date=start_date,
         end_date=end_date,
-        start_datetime=start_datetime,
-        end_datetime=end_datetime,
         case_id=case_id,
         limit=limit,
         cursor=cursor,
