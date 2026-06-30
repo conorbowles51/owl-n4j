@@ -20,10 +20,17 @@ export default function CommsAttachment({ attachment }) {
 
   if (!attachment) return null;
   if (attachment.missing) {
+    // The message referenced an attachment whose file bytes were NOT included
+    // in the Cellebrite extraction (e.g. cloud/expired/deleted media that was
+    // referenced but never exported). Say so precisely — it's absent source
+    // data, not a tool failure — so the investigator knows a file existed here.
     return (
-      <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 text-xs">
+      <div
+        className="flex items-center gap-1.5 px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 text-xs"
+        title="The message referenced this attachment, but its file was not included in the extraction."
+      >
         <AlertCircle className="w-3 h-3" />
-        <span>Attachment unavailable</span>
+        <span>Attachment not in extraction</span>
       </div>
     );
   }

@@ -15,9 +15,21 @@ Neo4j: `bolt://localhost:7687` neo4j/testpassword (driver in `../venv/bin/python
 
 ## ▶ NEXT (resume here)
 Remaining smaller items:
-- **Unresolved attachments** (~23/53 sampled message attachments have no evidence record)
-  + **507 media files lack `modify_time`** so aren't placed on the timeline — both are
-  ingestion gaps worth a pass.
+- **507 media files lack `modify_time`** so aren't placed on the timeline. Could fall back
+  to `created_at`? (No — that's the ingest time, not device time; better to leave undated
+  or use another device field if one exists. Investigate the raw file metadata.)
+- **Autofill (7)** nodes have timestamps but no event type (minor).
+- Optional: per-category "Files & media" filter chips.
+
+## UNRESOLVED ATTACHMENTS (resolved 2026-06-30, commit `8f6fe4d`)
+**Not an ingestion bug — absent source data.** Case-wide: 664 unique message attachment
+file_ids, **75 unresolved (11%)**. Classified all 75: **0 have file bytes**; 48 have only
+an empty `MediaResults/*.json` classification stub (`{"FileId":…,"Classifications":[],
+"Type":null}`), 27 are bare references. The actual files are NOT in the Cellebrite export
+(cloud/expired/deleted media referenced but never exported) — nothing to ingest. The UI
+already flagged them (`CommsAttachment` missing branch); reworded the placeholder from the
+ambiguous "Attachment unavailable" to **"Attachment not in extraction"** (+ tooltip) so
+it reads as absent source data, not a tool failure. Frontend build clean.
 - **Autofill (7)** nodes have timestamps but no event type (minor).
 - Optional: split "Files & media" into per-category filter chips (currently one chip);
   cursor-pagination doesn't cover file events (timeline uses pageLimit, so fine there —
