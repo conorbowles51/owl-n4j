@@ -110,7 +110,7 @@ Two distinct gaps found + fixed:
 ## Key facts
 - **null sender = owner-sent** (FFS exports: owner has no SENT_MESSAGE edge, isn't a
   participant). Owner identity resolved by traffic, cached per (case,report).
-- Projections involved: `get_cellebrite_events` (timeline + payload + rail header),
+- Owner injected (via `_resolve_report_owner`) in ALL comms projections now:
+  `get_cellebrite_events` (timeline + payload + rail header),
   `get_cellebrite_event_detail` (flyout bubble), `get_event_related`/`_project_message`
-  (flyout conversation), `get_cellebrite_thread_detail` (main thread view — same null-sender
-  pattern, NOT yet patched; check if it also shows Unknown).
+  (flyout conversation), and `get_cellebrite_thread_detail` (main thread view).
