@@ -91,22 +91,39 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // the list — only the renderer changes, no extra fetches.
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'swim-v' | 'swim-h'
 
-  // Sort direction for the chronological list. 'desc' (default) shows
-  // newest events first; 'asc' shows oldest first. Drives BOTH the
-  // day-group order and the intra-day row order. Persisted per-case in
+  // Sort direction for the chronological list. 'desc' shows newest events
+  // first; 'asc' shows oldest first. Drives BOTH the day-group order and the
+  // intra-day row order. The user's manual choice is persisted per-case in
   // localStorage (mirrors the cb.* per-case key style used elsewhere).
   const sortDirKey = `cb.timeline.sortDir.${caseId || 'unknown'}`;
-  const [sortDir, setSortDir] = useState(() => {
+  const readStoredSort = useCallback(() => {
     if (typeof window === 'undefined') return 'desc';
     try {
       return window.localStorage.getItem(sortDirKey) === 'asc' ? 'asc' : 'desc';
     } catch { return 'desc'; }
-  });
+  }, [sortDirKey]);
+  const [sortDir, setSortDir] = useState(readStoredSort);
+  // Manual toggle — flips direction AND persists it as the user's preference.
+  const toggleSortDir = useCallback(() => {
+    setSortDir((d) => {
+      const next = d === 'desc' ? 'asc' : 'desc';
+      try { window.localStorage.setItem(sortDirKey, next); } catch { /* ignore */ }
+      return next;
+    });
+  }, [sortDirKey]);
+  // When a date/time filter becomes active, default to OLDEST-first so the list
+  // begins at the filter's start and reads forward to its end (the natural way
+  // to read a selected window). When the filter is cleared, restore the user's
+  // saved preference. Fires only on the filter-active EDGE, so a manual toggle
+  // while filtered still wins. (hasWindow comes from useTimelineWindow above.)
+  const prevHasWindowRef = useRef(false);
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try { window.localStorage.setItem(sortDirKey, sortDir); }
-    catch { /* ignore */ }
-  }, [sortDir, sortDirKey]);
+    const prev = prevHasWindowRef.current;
+    if (prev === hasWindow) return;
+    prevHasWindowRef.current = hasWindow;
+    if (hasWindow) setSortDir('asc');
+    else setSortDir(readStoredSort());
+  }, [hasWindow, readStoredSort]);
 
   // --- Data state ---
   const [eventTypes, setEventTypes] = useState([]);
@@ -496,7 +513,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
             intra-day row order. Default 'desc' = newest first. */}
         <button
           type="button"
-          onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+          onClick={toggleSortDir}
           title={sortDir === 'desc' ? 'Newest first (click for oldest first)' : 'Oldest first (click for newest first)'}
           className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-light-300 rounded-md text-[11px] text-light-700 hover:bg-light-100 flex-shrink-0"
         >
