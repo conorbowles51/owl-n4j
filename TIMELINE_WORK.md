@@ -14,6 +14,18 @@ Neo4j: `bolt://localhost:7687` neo4j/testpassword (driver in `../venv/bin/python
 ---
 
 ## ▶ NEXT (resume here)
+**Ingestion coverage audit DONE 2026-06-30** — see `CELLEBRITE_INGEST_AUDIT.md` (full
+per-phone breakdown). SearchedItem writer bug FIXED (`neo4j_writer._write_searched_item`:
+was requiring a `Value` field location-searches lack + never read lat/lon). Under-count
+warning added to `ingestion.py`. Remediation backlog (Neil's call):
+- **RE-INGEST** `43f1afb1` (10 phones) + `5e374d4f` (3 phones) with current code → recovers
+  ~60k version-drift artifacts (Cookie/LogEntry/DeviceConnectivity/AppsUsageLog/etc.) +
+  the SearchedItem fix. (Cellebrite re-ingest is sensitive — see [[project_cellebrite_ingestion_failures]].)
+- **Writer under-count bugs** still to investigate: Location (lost 1241/171/…), Contact
+  (723/1155/…), SIMData (consistent −2 everywhere).
+- **Missing writers** to add: Notification (7,040), Voicemail (76) high-value; Recording/
+  DeviceInfoEntry/etc. low.
+
 The timeline/comms epic is essentially complete. Remaining OPTIONAL / flagged items:
 - **SearchedItem ingestion bug** (flagged, not fixed): 34 of 71 Waze location-searches +
   ALL their geo Positions were lost at ingest (parser fix + re-ingest; v2-deferred). See

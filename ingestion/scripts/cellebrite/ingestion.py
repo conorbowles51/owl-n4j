@@ -677,6 +677,26 @@ def ingest_cellebrite_report(
             + " — add a handler or mark SKIPPED."
         )
 
+    # UNDER-COUNT GUARD (2026-06-30). A `not_supported` type is obvious (no
+    # writer). The more insidious failure is a SUPPORTED type whose writer
+    # silently drops a SUBSET — e.g. SearchedItem persisted 37 of 71 because the
+    # handler required a `Value` field that location-searches don't have. That
+    # was buried in the JSON for nobody to see. Surface under-counts just as
+    # loudly so a writer regression is caught at ingest, not months later.
+    under = [
+        (r["model_type"], r["xml_count"], r["persisted_count"])
+        for r in reconciliation["rows"] if r["status"] == "under"
+    ]
+    if under:
+        under.sort(key=lambda x: (x[2] - x[1]))  # biggest loss first
+        total_under = sum(x - p for _, x, p in under)
+        _log(
+            f"WARNING: UNDER-COUNTED MODEL TYPES (writer dropped some) — "
+            f"{len(under)} types, {total_under:,} instances lost: "
+            + ", ".join(f"{t}({p}/{x})" for t, x, p in under[:15])
+            + " — a writer is dropping records; check the handler."
+        )
+
     # Write to disk next to the report so it's discoverable without DB
     # access (useful for re-ingest comparisons and offline review).
     try:

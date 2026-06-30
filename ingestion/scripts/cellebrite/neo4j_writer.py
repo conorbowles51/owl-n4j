@@ -2052,18 +2052,35 @@ class CellebriteNeo4jWriter:
         # vs in-app search). Sparse in our data (~3 non-empty) but the
         # audit flagged it as unread — capture it when present.
         origin = model.get_field("Origin")
+        # Navigation/location searches (e.g. Waze) carry coordinates and OFTEN NO
+        # text Value — the search IS a place. The 2026-06-30 audit found 34 of 71
+        # SearchedItems were value-less and silently dropped by the old
+        # `if not value: return`, and the Position (lat/lon) was never read, so
+        # even the kept ones lost their geo. Read the coordinate and keep any
+        # search that has content: a value, a location, OR a timestamp.
+        lat, lon, acc = self._extract_coord(model)
+        name = model.get_field("Name") or model.get_field("Address")
 
-        if not value:
+        if not value and not name and lat is None and not timestamp:
             return
 
         key = f"search-{model.model_id[:12]}"
+        label = (value or name
+                 or (f"Location search ({lat:.5f}, {lon:.5f})" if lat is not None else "Search"))
 
-        props = self._base_props(model, key, value[:100])
+        props = self._base_props(model, key, label[:100])
         props.update({
-            "query": value,
+            "query": value or name,
             "source_app": source,
             "origin": origin,
         })
+        if (lat is not None and lon is not None
+                and -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0
+                and not (lat == 0.0 and lon == 0.0)):
+            props["latitude"] = lat
+            props["longitude"] = lon
+            if acc is not None:
+                props["accuracy_meters"] = acc
         if timestamp:
             props["date"] = timestamp[:10]
             props["time"] = timestamp[11:16] if len(timestamp) > 16 else None
