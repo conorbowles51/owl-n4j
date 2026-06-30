@@ -11157,6 +11157,63 @@ class Neo4jService:
 
         return {"tracks": tracks}
 
+    def _resolve_report_owner(self, session, case_id: str, report_key) -> Optional[dict]:
+        """Best-effort DEVICE-OWNER identity for a report, used to attribute
+        owner-sent comms that carry no sender edge (the owner is implicit on
+        Cellebrite's FFS exports — verified: owner-sent messages have no
+        ``(:Person)-[:SENT_MESSAGE]->`` link and the owner isn't a participant).
+
+        Resolution mirrors the Overview's owner logic (the traffic-based pick),
+        which deliberately does NOT trust the over-flagged ``Person.is_phone_owner``:
+        the top sender that is one of the device's own numbers, else a named one,
+        else by volume. Cached per (case, report) on the service instance.
+        Returns ``{key, name, phone_numbers, is_owner: True}`` or ``None``.
+        """
+        if not report_key:
+            return None
+        cache = getattr(self, "_owner_cache", None)
+        if cache is None:
+            cache = self._owner_cache = {}
+        ck = (case_id, report_key)
+        if ck in cache:
+            return cache[ck]
+        rep = session.run(
+            "MATCH (rep:PhoneReport {case_id:$c, cellebrite_report_key:$k}) "
+            "RETURN rep.phone_numbers AS nums LIMIT 1",
+            c=case_id, k=report_key,
+        ).single()
+        own_keys = []
+        for num in ((rep["nums"] if rep else None) or []):
+            digits = "".join(ch for ch in str(num) if ch.isdigit())
+            if digits:
+                own_keys.append(f"phone-{digits}")
+        rec = session.run(
+            """
+            MATCH (p:Person)-[:SENT_MESSAGE]->(c:Communication
+                {case_id:$case_id, cellebrite_report_key:$key})
+            WHERE coalesce(p.name,'') <> 'System Message'
+              AND NOT coalesce(p.key,'') CONTAINS 'system-message'
+            WITH p, count(*) AS sent,
+                 (p.key IN $own_keys) AS is_own,
+                 (p.name IS NOT NULL
+                  AND NOT p.name =~ '[+(]?[0-9][0-9\\s().\\-]{5,}'
+                  AND p.name <> p.key) AS named
+            ORDER BY is_own DESC, named DESC, sent DESC LIMIT 1
+            RETURN p.key AS key, p.name AS name, p.phone_numbers AS numbers
+            """,
+            case_id=case_id, key=report_key, own_keys=own_keys,
+        ).single()
+        owner = None
+        if rec and rec["key"]:
+            owner = {
+                "key": rec["key"],
+                "name": rec["name"] or rec["key"],
+                "phone_numbers": rec["numbers"] or [],
+                "is_owner": True,
+            }
+        cache[ck] = owner
+        return owner
+
     def get_cellebrite_event_detail(self, case_id: str, node_key: str) -> Optional[dict]:
         """
         Fetch one event's full properties for the detail drawer.
@@ -11226,6 +11283,7 @@ class Neo4jService:
                     return {
                         "key": party.get("key"),
                         "name": party.get("name") or party.get("key"),
+                        "phone_numbers": party.get("phone_numbers") or [],
                         "is_owner": bool(party.get("is_phone_owner")),
                     }
 
@@ -11233,6 +11291,24 @@ class Neo4jService:
                 props["recipient"] = _person(r.get("recipient"))
                 if "recipients" in r.keys():
                     props["recipients"] = [_person(p) for p in (r.get("recipients") or []) if p]
+                # Owner-sent messages carry NO sender edge (owner is implicit on
+                # FFS exports). Fill the device owner so the drawer shows who sent
+                # it instead of "Unknown", and drop the owner from the
+                # participant-derived recipients so the recipient is the
+                # counterparty only.
+                if props.get("sender") is None and label in ("Communication", "Email"):
+                    owner = self._resolve_report_owner(
+                        session, case_id, props.get("cellebrite_report_key"))
+                    if owner:
+                        props["sender"] = owner
+                        if props.get("recipients"):
+                            props["recipients"] = [
+                                p for p in props["recipients"]
+                                if p and p.get("key") != owner["key"]
+                            ]
+                            props["recipient"] = (
+                                props["recipients"][0] if props["recipients"]
+                                else props.get("recipient"))
                 return props
 
             # Plain (non-comms) labels — original behaviour.
@@ -11361,7 +11437,10 @@ class Neo4jService:
                     thread_key=thread_key,
                     limit=int(limit),
                 ):
-                    proj = _project_message(row["n"], row.get("sender"), row.get("chat"))
+                    sib = row["n"]
+                    owner = self._resolve_report_owner(
+                        session, case_id, dict(sib).get("cellebrite_report_key"))
+                    proj = _project_message(sib, row.get("sender"), row.get("chat"), owner=owner)
                     if proj:
                         thread_rows.append(proj)
 
@@ -13014,16 +13093,24 @@ def _project_call(node, src, dst) -> Optional[dict]:
     return row
 
 
-def _project_message(node, sender, chat) -> Optional[dict]:
+def _project_message(node, sender, chat, owner=None) -> Optional[dict]:
     row = _project_event(node, "message")
     if not row:
         return None
     n = dict(node)
     row["label"] = (n.get("source_app") or "Message") + " message"
     row["summary"] = (n.get("body") or "")[:200]
-    if sender:
-        s = dict(sender)
+    # Full body too — the rail's conversation list renders this untruncated so
+    # the thread reads like the real chat, not 200-char stubs.
+    row["body"] = n.get("body") or ""
+    s = dict(sender) if sender else None
+    # Owner-sent messages have no sender edge (owner implicit on FFS exports) —
+    # attribute them to the resolved device owner so the row shows who sent it.
+    if not s and owner:
+        s = dict(owner)
+    if s:
         row["counterpart"] = {"key": s.get("key"), "name": s.get("name") or s.get("key"), "phone_numbers": s.get("phone_numbers") or []}
+        row["is_owner_sender"] = bool(s.get("is_owner") or s.get("is_phone_owner"))
     if chat:
         row["thread_id"] = dict(chat).get("key")
     return row

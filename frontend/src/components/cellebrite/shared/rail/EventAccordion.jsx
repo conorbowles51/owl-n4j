@@ -241,18 +241,18 @@ function RelatedList({ items, onPick, highlight }) {
                 </span>
               )}
             </div>
-            {(it.summary || it.counterpart?.name) && (
-              <div className="text-light-500 mt-0.5 truncate">
+            {(it.body || it.summary || it.counterpart?.name) && (
+              <div className="text-light-600 mt-0.5 whitespace-pre-wrap break-words">
                 {it.counterpart?.name && (
                   <PersonName
                     name={it.counterpart.name}
                     personKey={it.counterpart.key}
-                    className="text-light-700"
+                    className={`font-medium ${it.is_owner_sender ? 'text-owl-blue-700' : 'text-light-700'}`}
                     numberClassName="text-[10px]"
                   />
                 )}
-                {it.counterpart?.name && it.summary && <span className="mx-1">·</span>}
-                {it.summary && <span>{it.summary}</span>}
+                {it.counterpart?.name && (it.body || it.summary) && <span className="mx-1 text-light-400">·</span>}
+                {(it.body || it.summary) && <span>{it.body || it.summary}</span>}
               </div>
             )}
             {Array.isArray(it.attachments) && it.attachments.length > 0 && (
