@@ -26,9 +26,6 @@ still small — that's the source resolution; the full file is that image. A ser
 thumbnail endpoint could downscale crisply but isn't needed for correctness.
 
 Remaining smaller items:
-- **507 media files lack `modify_time`** so aren't placed on the timeline. Could fall back
-  to `created_at`? (No — that's the ingest time, not device time; better to leave undated
-  or use another device field if one exists. Investigate the raw file metadata.)
 - **Autofill (7)** nodes have timestamps but no event type (minor).
 - Optional: per-category "Files & media" filter chips.
 
@@ -117,8 +114,18 @@ Two distinct gaps found + fixed:
    Caveats: files skipped under only_geolocated + cursor pagination (timeline uses
    pageLimit so unaffected); 507 files without modify_time are not placed.
 
+## 507 UNDATED MEDIA (resolved 2026-06-30 — won't fabricate)
+Investigated: the 507 (333 image / 174 video) have **no** `modify_time`, `creation_time`,
+`capture_time`, or EXIF date (0/121 sampled images had EXIF) — they're app-cache/sticker/
+web images with no device timestamp. Correctly left OFF the time-ordered timeline (placing
+them at a fabricated time would be forensically false); they remain available in the Files
+tab. NOTE for future: `capture_time` exists on 1,984 media but is naive **device-local**
+(EDT, no TZ) whereas `modify_time` is **UTC** — they're the same instant ~1 min apart, so
+`modify_time` (what the timeline uses) is the correct UTC value; do NOT naively swap to
+`capture_time` (would shift those files by the 4–5h offset). `creation_time` is parsed at
+ingest but dropped from the evidence record (would need re-ingest to recover; low value).
+
 ## BACKLOG (raised, not started)
-- **507 media files w/o modify_time** — not placed on the timeline (no device time).
 - **Autofill (7)** nodes exist with timestamps but have no event type (minor).
 - ~~AUDIO duration=0 / won't play~~ — RESOLVED (`9495dec`).
 - ~~Event-type coverage~~ — core RESOLVED (calendar + media files).
