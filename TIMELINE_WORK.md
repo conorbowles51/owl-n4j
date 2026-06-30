@@ -14,21 +14,15 @@ Neo4j: `bolt://localhost:7687` neo4j/testpassword (driver in `../venv/bin/python
 ---
 
 ## ▶ NEXT (resume here)
-**Event-type coverage — core DONE** (calendar fix + 14K media files now on the timeline).
 Remaining smaller items:
 - **Unresolved attachments** (~23/53 sampled message attachments have no evidence record)
   + **507 media files lack `modify_time`** so aren't placed on the timeline — both are
   ingestion gaps worth a pass.
-- **main thread view** `get_cellebrite_thread_detail` owner attribution (still null-sender).
+- **Autofill (7)** nodes have timestamps but no event type (minor).
 - Optional: split "Files & media" into per-category filter chips (currently one chip);
   cursor-pagination doesn't cover file events (timeline uses pageLimit, so fine there —
   but the Locations/Events cursor consumers won't page files). EventTypeFilter chip could
   show a per-category icon.
-
-Also still TODO (smaller): the **main thread view** `get_cellebrite_thread_detail`
-(`neo4j_service.py` ~8860) has the SAME null-sender pattern and does NOT inject the owner —
-confirm whether it shows "Unknown" for owner-sent messages and, if so, apply
-`_resolve_report_owner` there too (the bubble owner attribution).
 
 Verify each fix against the live data (case 34fbbb06) before claiming done.
 
@@ -55,6 +49,13 @@ Verify each fix against the live data (case 34fbbb06) before claiming done.
   `direction`, and full `body`. `EventAccordion` attributes each conversation row by
   `it.sender`. VERIFIED on case 34fbbb06: outgoing → "Rico Valentin → Big T",
   incoming → "Big T → Rico Valentin", with numbers; flyout conversation intact.
+
+- **`058b602`** — **main thread view owner attribution**. `get_cellebrite_thread_detail`
+  (chat branch) had the same null-sender pattern: owner-sent messages returned
+  `sender: None` → bubble showed "Unknown" left-aligned. Now resolves the device owner
+  once per thread (`_resolve_report_owner`) and injects it (is_owner=True) when the sender
+  edge is absent. Backend-only (frontend already handles is_owner). VERIFIED on
+  chat-fb62e13b-940: owner-sent → "Rico Valentin" (right-aligned), received → "Jayanna Hinge".
 
 Docket (separate, branch `feat/docket`, committed `523e6e4`, live): honest self-review
 gate + readable/detailed ticket history. [[project_docket_false_pass]]

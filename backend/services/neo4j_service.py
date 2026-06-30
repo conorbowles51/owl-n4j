@@ -8856,6 +8856,10 @@ class Neo4jService:
                 # Resolve names to how THIS device saved each party.
                 _dcn = self.device_contact_names(case_id)
                 _rk = chat.get("cellebrite_report_key")
+                # Owner-sent messages carry no sender edge (owner implicit) —
+                # resolve the device owner once so those bubbles attribute to the
+                # owner (right-aligned) instead of "Unknown".
+                _owner = self._resolve_report_owner(session, case_id, _rk)
 
                 msg_result = session.run(
                     """
@@ -8890,12 +8894,19 @@ class Neo4jService:
                         "body": msg.get("body") or "",
                         "deleted_state": msg.get("deleted_state"),
                         "attachment_file_ids": list(msg.get("attachment_file_ids") or []),
-                        "sender": {
-                            "key": sender.get("key") if sender else None,
-                            "name": (_dcn.get((sender.get("key"), _rk))
-                                     or sender.get("name")) if sender else None,
-                            "is_owner": bool(sender.get("is_phone_owner")) if sender else False,
-                        } if sender else None,
+                        "sender": (
+                            {
+                                "key": sender.get("key"),
+                                "name": (_dcn.get((sender.get("key"), _rk))
+                                         or sender.get("name")),
+                                "is_owner": bool(sender.get("is_phone_owner")),
+                            } if sender
+                            else ({
+                                "key": _owner["key"],
+                                "name": _owner["name"],
+                                "is_owner": True,
+                            } if _owner else None)
+                        ),
                     })
 
                 # Total count for pagination
