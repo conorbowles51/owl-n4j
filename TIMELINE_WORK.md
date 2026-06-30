@@ -125,6 +125,20 @@ tab. NOTE for future: `capture_time` exists on 1,984 media but is naive **device
 `capture_time` (would shift those files by the 4–5h offset). `creation_time` is parsed at
 ingest but dropped from the evidence record (would need re-ingest to recover; low value).
 
+## ARTIFACT-TYPE AUDIT (2026-06-30)
+Examined the raw report XML (129MB) — full `<model type>` inventory mapped to timeline:
+InstantMessage/Location/Attachment/Call/Cookie/Note/CalendarEntry all ON timeline;
+Party/Chat = people/thread-containers; MessageLabel(90)/StreetAddress(66)/
+QuotedMessageData(16)/ContactPhoto(6)/Coordinate = no timestamp or attributes (not events).
+**Autofill (7) was the one clear new timeline type → ADDED** (commit `0902b94`): feed branch +
+type count + envelope + frontend icon/label (`autofill`, Keyboard icon). Rows read
+"Autofill · q = Coworker · Chrome". Verified 7 events end-to-end.
+**SEPARATE INGESTION BUG found (not a new type):** SearchedItem — 71 distinct Waze
+location-searches in the XML (all timestamped, all with a geo Position), but only **37**
+reached the graph and **0 retained lat/lon**. So ~34 searches + ALL search geo were lost at
+ingestion. v1 fix would need a parser change + re-ingest (cellebrite rework is v2-deferred,
+see [[project_cellebrite_v2_migration]]); logged for Neil's call.
+
 ## BACKLOG (raised, not started)
 - **Autofill (7)** nodes exist with timestamps but have no event type (minor).
 - ~~AUDIO duration=0 / won't play~~ — RESOLVED (`9495dec`).

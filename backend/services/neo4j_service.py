@@ -10043,6 +10043,8 @@ class Neo4jService:
             # Phase 9 — app-activity / provenance / movement events (2026-05-25)
             "social_media", "chat_activity", "file_upload", "journey",
             "note", "device_connectivity", "cookie", "log_entry", "motion",
+            # Form-autofill entries (saved typed form/search input).
+            "autofill",
             # Media files (images/videos/audio/documents) from evidence storage.
             "file",
         }
@@ -10329,6 +10331,29 @@ class Neo4jService:
                 """
                 _add(cypher, base_params, "search", lambda rec: _project_event(rec["n"], "search"))
 
+            if "autofill" in active:
+                # Form-autofill entries (values typed into form/search fields the
+                # device saved) — timestamped, so they belong on the timeline.
+                cur = _event_cursor_clause("autofill")
+                cypher = f"""
+                    MATCH (n:Autofill {{source_type:'cellebrite'}})
+                    WHERE {where} AND n.timestamp IS NOT NULL{cur}
+                    RETURN n
+                    ORDER BY n.timestamp DESC
+                    LIMIT $per_type_cap
+                """
+
+                def _proj_autofill(rec):
+                    row = _project_event(rec["n"], "autofill")
+                    if row:
+                        n = dict(rec["n"])
+                        fld = (n.get("field_name") or n.get("key") or "").strip()
+                        val = (n.get("value") or "").strip()
+                        row["label"] = "Autofill"
+                        row["summary"] = (f"{fld} = {val}" if fld and val else (val or fld))[:200]
+                    return row
+                _add(cypher, base_params, "autofill", _proj_autofill)
+
             if "visit" in active:
                 cur = _event_cursor_clause("visit")
                 cypher = f"""
@@ -10532,6 +10557,7 @@ class Neo4jService:
         "file_upload": "FileUpload",
         "journey": "Journey",
         "note": "Note",
+        "autofill": "Autofill",
         "device_connectivity": "DeviceConnectivity",
         "cookie": "Cookie",
         "log_entry": "LogEntry",
@@ -10732,6 +10758,7 @@ class Neo4jService:
             _count("FileUpload", "", "file_upload", "File uploads")
             _count("Journey", "", "journey", "Journeys")
             _count("Note", "", "note", "Notes")
+            _count("Autofill", "AND n.timestamp IS NOT NULL", "autofill", "Autofill")
             _count("DeviceConnectivity", "", "device_connectivity", "Device connections")
             _count("Cookie", "", "cookie", "Cookies")
             _count("LogEntry", "", "log_entry", "Log entries")
