@@ -1827,6 +1827,12 @@ def get_evidence_file(
         if extension == ".3gp":
             # Ambiguous: Cellebrite lists .3gp under both Audio and Video.
             content_type = "audio/3gpp" if cellebrite_category == "audio" else "video/3gpp"
+        elif extension == ".tts" and cellebrite_category == "audio":
+            # Cellebrite's Audio folder holds MPEG (MP3) voice files under a
+            # non-standard `.tts` extension (verified: all start with an MPEG
+            # frame header). Serve as audio/mpeg so the browser player decodes
+            # them — octet-stream would make the inline <audio> refuse to play.
+            content_type = "audio/mpeg"
         else:
             content_type = content_type_map.get(extension, "application/octet-stream")
 
