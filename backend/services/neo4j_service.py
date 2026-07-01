@@ -166,6 +166,26 @@ def _infer_call_type(direction: Optional[str], duration: Optional[str]) -> Optio
     return None
 
 
+def _dedup_comms_items(items):
+    seen = set()
+    out = []
+    for it in items:
+        key = it.get("id") or it.get("node_key")
+        if key is None:
+            key = (
+                it.get("type"),
+                it.get("report_key"),
+                it.get("timestamp"),
+                (it.get("body") or it.get("subject") or "")[:120],
+                it.get("thread_id"),
+            )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(it)
+    return out
+
+
 class Neo4jService:
     """Service for Neo4j graph operations."""
 
@@ -9496,19 +9516,9 @@ class Neo4jService:
 
         # Dedupe — the same message can be returned multiple times when a
         # chat has many participants and the from/to filters overlap. Keep the
-        # first occurrence (keys in the Python dict preserve insertion order).
-        seen_ids = set()
-        deduped = []
-        for it in items:
-            key = it.get("id") or it.get("node_key")
-            if key is None:
-                deduped.append(it)
-                continue
-            if key in seen_ids:
-                continue
-            seen_ids.add(key)
-            deduped.append(it)
-        items = deduped
+        # first occurrence. Falls back to a composite fingerprint when no
+        # stable id is present, preventing null-id bypass.
+        items = _dedup_comms_items(items)
 
         # Sort the merged items chronologically. Two passes:
         # (1) compute the page slice for the response, (2) compute the
@@ -12968,10 +12978,12 @@ class Neo4jService:
                     """, params).single()
                 true_total += int(r["c"]) if r else 0
 
-        # Sort newest-first, return the requested page. `total` is the TRUE
-        # count (not the capped page), and `truncated` flags when more exists
-        # beyond this page — so truncation is always visible.
+        # Sort newest-first, deduplicate, then return the requested page.
+        # `total` is the TRUE count (not the capped page), and `truncated`
+        # flags when more exists beyond this page — so truncation is always
+        # visible.
         items.sort(key=lambda i: (i.get("timestamp") or ""), reverse=True)
+        items = _dedup_comms_items(items)
         items = items[offset: offset + limit]
 
         return {
