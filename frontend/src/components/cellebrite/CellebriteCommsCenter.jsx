@@ -216,6 +216,10 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // updates live as the analyst filters. Fetched in parallel with the feed.
   const [tally, setTally] = useState(null);
   const [tallyLoading, setTallyLoading] = useState(false);
+  // Surface fetch failures instead of swallowing them: a 404 (endpoint not
+  // deployed) or 500 must read as a visible "unavailable" note, not a blank
+  // panel — otherwise "not reachable" is indistinguishable from "no data".
+  const [tallyError, setTallyError] = useState(null);
   const tallyCollapsedKey = `cb.comms.tallyCollapsed.${caseId || 'unknown'}`;
   const [tallyCollapsed, setTallyCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -575,10 +579,15 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     }).then(data => {
       if (cancelled) return;
       setTally(data || null);
+      setTallyError(null);
       setTallyLoading(false);
     }).catch((err) => {
       if (cancelled || err?.name === 'AbortError') return;
-      // Keep the last tally visible on transient errors rather than blanking.
+      // Keep the last tally visible on transient errors rather than blanking,
+      // but record the failure so the panel can flag it (a 404 here means the
+      // /comms/tally endpoint isn't deployed — the exact silent failure that
+      // made the tally look "not there at all").
+      setTallyError(err?.message || 'Tally unavailable');
       setTallyLoading(false);
     });
     return () => {
@@ -848,6 +857,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     <CommsTallyPanel
       tally={tally}
       loading={tallyLoading}
+      error={tallyError}
       entities={entities}
       selectedKeys={new Set(participants.map(p => p.key))}
       onSelectContact={handleTallySelectContact}

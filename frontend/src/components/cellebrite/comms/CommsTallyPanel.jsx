@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   BarChart3, ChevronDown, ChevronRight, ArrowDownLeft, ArrowUpRight,
-  MessageSquare, Phone, Mail, Loader2, Smartphone, User, Trophy,
+  MessageSquare, Phone, Mail, Loader2, Smartphone, User, Trophy, AlertTriangle,
 } from 'lucide-react';
 import PersonName from '../shared/PersonName';
 
@@ -29,6 +29,7 @@ const DEFAULT_VISIBLE = 8;
 export default function CommsTallyPanel({
   tally,
   loading = false,
+  error = null,            // string when the last /comms/tally fetch failed
   entities = [],
   selectedKeys,            // Set of currently-filtered participant keys
   onSelectContact,         // (key, name) => void — toggle contact filter
@@ -91,7 +92,16 @@ export default function CommsTallyPanel({
 
         <div className="flex-1" />
         {loading && <Loader2 className="w-3 h-3 text-light-400 animate-spin" />}
-        {!loading && totals && (
+        {!loading && error && (
+          <span
+            className="inline-flex items-center gap-1 text-[11px] text-amber-700"
+            title={`Comms tally couldn't load: ${error}`}
+          >
+            <AlertTriangle className="w-3 h-3" />
+            Tally unavailable
+          </span>
+        )}
+        {!loading && !error && totals && (
           <span className="text-[11px] text-light-500 tabular-nums">
             {grandTotal.toLocaleString()} interactions · {(tally?.contact_count || 0).toLocaleString()} contacts
           </span>
@@ -127,6 +137,11 @@ export default function CommsTallyPanel({
           {loading && contacts.length === 0 ? (
             <div className="py-3 text-[11px] text-light-500 italic text-center">
               Computing tally…
+            </div>
+          ) : error && contacts.length === 0 ? (
+            <div className="py-3 flex items-center justify-center gap-1.5 text-[11px] text-amber-700 text-center">
+              <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+              Comms tally couldn’t load — the ranking will appear once it’s reachable.
             </div>
           ) : contacts.length === 0 ? (
             <div className="py-3 text-[11px] text-light-500 italic text-center">
