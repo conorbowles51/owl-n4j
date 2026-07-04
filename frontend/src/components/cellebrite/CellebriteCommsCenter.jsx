@@ -1207,6 +1207,17 @@ function dedupeThreads(threads) {
       if (!sameContext(a, b)) continue;
       const bSet = participantSet(b);
       if (bSet.size <= aSet.size) continue; // only collapse smaller into larger
+      // A genuine 1:1 conversation (single counterparty) is a distinct
+      // conversation, never a duplicate ingest of a group that merely happens
+      // to include that person. Collapsing it would silently drop the whole
+      // 1:1 thread — DKT-42: the individual chat with a contact vanished from
+      // the Comms Center because a group chat that also contained them was a
+      // participant superset. Never drop a 1:1 as the subset.
+      if (aSet.size <= 1) continue;
+      // Duplicate ingests capture the SAME messages, so the subset row can't
+      // legitimately hold MORE messages than its superset. If it does, they're
+      // distinct conversations, not a re-ingest of one — keep both.
+      if ((a.message_count || 0) > (b.message_count || 0)) continue;
       let isSubset = true;
       for (const k of aSet) {
         if (!bSet.has(k)) { isSubset = false; break; }
