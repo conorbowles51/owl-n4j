@@ -30,6 +30,7 @@ export default function CommsTallyPanel({
   tally,
   loading = false,
   error = null,            // string when the last /comms/tally fetch failed
+  approximate = false,     // true when `tally` is the thread-derived fallback
   entities = [],
   selectedKeys,            // Set of currently-filtered participant keys
   onSelectContact,         // (key, name) => void — toggle contact filter
@@ -84,9 +85,9 @@ export default function CommsTallyPanel({
         {/* Inline totals summary — visible even when collapsed. */}
         {totals && (
           <div className="flex items-center gap-2 text-[11px] text-light-600">
-            <TypeStat icon={MessageSquare} inN={totals.message_in} outN={totals.message_out} label="messages" />
-            <TypeStat icon={Phone} inN={totals.call_in} outN={totals.call_out} label="calls" />
-            <TypeStat icon={Mail} inN={totals.email_in} outN={totals.email_out} label="emails" />
+            <TypeStat icon={MessageSquare} inN={totals.message_in} outN={totals.message_out} label="messages" approximate={approximate} />
+            <TypeStat icon={Phone} inN={totals.call_in} outN={totals.call_out} label="calls" approximate={approximate} />
+            <TypeStat icon={Mail} inN={totals.email_in} outN={totals.email_out} label="emails" approximate={approximate} />
           </div>
         )}
 
@@ -102,8 +103,19 @@ export default function CommsTallyPanel({
           </span>
         )}
         {!loading && !error && totals && (
-          <span className="text-[11px] text-light-500 tabular-nums">
-            {grandTotal.toLocaleString()} interactions · {(tally?.contact_count || 0).toLocaleString()} contacts
+          <span className="flex items-center gap-1.5 text-[11px] text-light-500 tabular-nums">
+            <span>
+              {grandTotal.toLocaleString()} interactions · {(tally?.contact_count || 0).toLocaleString()} contacts
+            </span>
+            {approximate && (
+              <span
+                className="inline-flex items-center gap-0.5 text-light-400"
+                title="Estimated from the loaded conversations — combined volume, no inbound/outbound split. The precise breakdown loads once the tally service is reachable."
+              >
+                <BarChart3 className="w-3 h-3" />
+                approx
+              </span>
+            )}
           </span>
         )}
       </div>
@@ -156,6 +168,7 @@ export default function CommsTallyPanel({
                   contact={c}
                   entity={entityByKey.get(c.key)}
                   maxTotal={maxTotal}
+                  approximate={approximate}
                   active={selectedKeys?.has(c.key)}
                   onClick={() => onSelectContact?.(c.key, c.name)}
                 />
@@ -193,8 +206,19 @@ export default function CommsTallyPanel({
  * Compact "↓in ↑out" pair for one comm type in the header summary. Hidden
  * entirely when the type has no traffic under the active filters.
  */
-function TypeStat({ icon: Icon, inN, outN, label }) {
+function TypeStat({ icon: Icon, inN, outN, label, approximate = false }) {
   if (!inN && !outN) return null;
+  // The thread-derived fallback has no direction — show a single combined
+  // count rather than a misleading "N in / 0 out".
+  if (approximate) {
+    const total = inN + outN;
+    return (
+      <span className="inline-flex items-center gap-0.5" title={`${total} ${label}`}>
+        <Icon className="w-3 h-3 text-light-400" />
+        <span className="tabular-nums text-light-600">{total.toLocaleString()}</span>
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-0.5" title={`${label}: ${inN} in / ${outN} out`}>
       <Icon className="w-3 h-3 text-light-400" />
@@ -213,7 +237,7 @@ function TypeStat({ icon: Icon, inN, outN, label }) {
  * gives an at-a-glance sense of relative weight; the per-type in/out counts
  * spell out the breakdown.
  */
-function RankRow({ rank, contact, entity, maxTotal, active, onClick }) {
+function RankRow({ rank, contact, entity, maxTotal, active, onClick, approximate = false }) {
   const msg = contact.message_in + contact.message_out;
   const call = contact.call_in + contact.call_out;
   const email = contact.email_in + contact.email_out;
@@ -258,13 +282,13 @@ function RankRow({ rank, contact, entity, maxTotal, active, onClick }) {
       {/* Per-type breakdown — only the types with traffic show. */}
       <span className="relative z-10 flex items-center gap-1.5 flex-shrink-0 text-[10px] text-light-500">
         {msg > 0 && (
-          <TypeMini icon={MessageSquare} inN={contact.message_in} outN={contact.message_out} />
+          <TypeMini icon={MessageSquare} inN={contact.message_in} outN={contact.message_out} label="messages" approximate={approximate} />
         )}
         {call > 0 && (
-          <TypeMini icon={Phone} inN={contact.call_in} outN={contact.call_out} />
+          <TypeMini icon={Phone} inN={contact.call_in} outN={contact.call_out} label="calls" approximate={approximate} />
         )}
         {email > 0 && (
-          <TypeMini icon={Mail} inN={contact.email_in} outN={contact.email_out} />
+          <TypeMini icon={Mail} inN={contact.email_in} outN={contact.email_out} label="emails" approximate={approximate} />
         )}
       </span>
 
@@ -275,14 +299,15 @@ function RankRow({ rank, contact, entity, maxTotal, active, onClick }) {
   );
 }
 
-function TypeMini({ icon: Icon, inN, outN }) {
+function TypeMini({ icon: Icon, inN, outN, label = '', approximate = false }) {
+  const total = inN + outN;
   return (
     <span
       className="inline-flex items-center gap-0.5"
-      title={`${inN} in / ${outN} out`}
+      title={approximate ? `${total} ${label}`.trim() : `${inN} in / ${outN} out`}
     >
       <Icon className="w-2.5 h-2.5" />
-      <span className="tabular-nums">{(inN + outN).toLocaleString()}</span>
+      <span className="tabular-nums">{total.toLocaleString()}</span>
     </span>
   );
 }

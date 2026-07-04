@@ -729,6 +729,93 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     return { filteredThreads: out, threadHighlights: Array.from(allHighlights) };
   }, [dedupedThreads, searchQuery, hasAttachmentOnly, parsedQuery, reports, deepSearch.threadIds, inWindow, hasWindow]);
 
+  // DKT-43 — client-side fallback tally.
+  //
+  // The precise tally comes from GET /comms/tally (inbound/outbound split per
+  // contact). That route is NEW on this branch, so on a partially-deployed box
+  // — new frontend served, backend process not yet restarted — the fetch 404s
+  // and the panel could only show an error (exactly what attempt #2's tester
+  // hit: "the tally bar gives an error… once it's reachable"). Rather than hard
+  // -depend on a brand-new endpoint, derive a best-effort tally from the threads
+  // already loaded for the feed: each thread carries its counterparties and an
+  // item count (message_count holds messages / calls / emails alike), so we can
+  // rank the most-contacted and total volume per platform without any extra
+  // request. It has NO direction (thread metadata carries none) so counts are
+  // combined, flagged `approximate` so the panel labels it honestly and swaps to
+  // the precise split the moment /comms/tally succeeds. Built from
+  // filteredThreads so it tracks the same filters/search/window as the list and
+  // updates live as the analyst narrows.
+  const fallbackTally = useMemo(() => {
+    if (!filteredThreads.length) return null;
+    const TYPE_BUCKET = {
+      chat: 'message_in', messages: 'message_in',
+      calls: 'call_in', emails: 'email_in',
+    };
+    const acc = new Map();
+    for (const t of filteredThreads) {
+      const bucket = TYPE_BUCKET[t.thread_type] || 'message_in';
+      const n = Number(t.message_count || 0);
+      if (n <= 0) continue;
+      const app = t.source_app || 'Unknown';
+      for (const p of t.participants || []) {
+        if (!p || !p.key) continue;
+        let r = acc.get(p.key);
+        if (!r) {
+          r = {
+            key: p.key, name: p.name || p.key, is_owner: !!p.is_owner,
+            call_in: 0, call_out: 0, message_in: 0, message_out: 0,
+            email_in: 0, email_out: 0, by_platform: {},
+          };
+          acc.set(p.key, r);
+        } else if (p.is_owner) {
+          r.is_owner = true;
+        }
+        r[bucket] += n;
+        r.by_platform[app] = (r.by_platform[app] || 0) + n;
+      }
+    }
+    if (acc.size === 0) return null;
+    const rows = [];
+    for (const r of acc.values()) {
+      rows.push({
+        ...r,
+        total: r.call_in + r.call_out + r.message_in + r.message_out
+          + r.email_in + r.email_out,
+      });
+    }
+    const owners = rows.filter(r => r.is_owner).sort((a, b) => b.total - a.total);
+    const contacts = rows
+      .filter(r => !r.is_owner)
+      .sort((a, b) => (b.total - a.total)
+        || (a.name || '').localeCompare(b.name || ''));
+    const totals = {
+      message_in: 0, message_out: 0, call_in: 0, call_out: 0,
+      email_in: 0, email_out: 0, total: 0, by_platform: {},
+    };
+    for (const r of contacts) {
+      totals.message_in += r.message_in;
+      totals.call_in += r.call_in;
+      totals.email_in += r.email_in;
+      totals.total += r.total;
+      for (const [app, v] of Object.entries(r.by_platform)) {
+        totals.by_platform[app] = (totals.by_platform[app] || 0) + v;
+      }
+    }
+    return {
+      contacts, owners, totals,
+      contact_count: contacts.length,
+      truncated: 0,
+      approximate: true,
+    };
+  }, [filteredThreads]);
+
+  // Prefer the precise server tally; fall back to the thread-derived estimate
+  // when it hasn't loaded or the endpoint is unreachable. Only surface the hard
+  // error state when we have NOTHING to show — otherwise the analyst still gets
+  // a working, filter-responsive ranking instead of a red banner.
+  const effectiveTally = tally || fallbackTally;
+  const tallyApproximate = !tally && !!fallbackTally;
+
   // Publish counts to the persistent status bar.
   //
   // `total` prefers the envelope's true item count over the threads
@@ -855,9 +942,10 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // Browse, so Read mode showed no tally at all).
   const tallyPanel = (
     <CommsTallyPanel
-      tally={tally}
-      loading={tallyLoading}
-      error={tallyError}
+      tally={effectiveTally}
+      approximate={tallyApproximate}
+      loading={tallyLoading && !effectiveTally}
+      error={effectiveTally ? null : tallyError}
       entities={entities}
       selectedKeys={new Set(participants.map(p => p.key))}
       onSelectContact={handleTallySelectContact}
