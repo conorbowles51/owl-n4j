@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   BarChart3, ChevronDown, ChevronRight, ArrowDownLeft, ArrowUpRight,
-  MessageSquare, Phone, Mail, Loader2, Smartphone, User, Trophy, AlertTriangle,
+  MessageSquare, Phone, Mail, Loader2, Smartphone, User, Trophy,
 } from 'lucide-react';
 import PersonName from '../shared/PersonName';
 
@@ -29,7 +29,6 @@ const DEFAULT_VISIBLE = 8;
 export default function CommsTallyPanel({
   tally,
   loading = false,
-  error = null,            // string when the last /comms/tally fetch failed
   approximate = false,     // true when `tally` is the thread-derived fallback
   entities = [],
   selectedKeys,            // Set of currently-filtered participant keys
@@ -93,16 +92,7 @@ export default function CommsTallyPanel({
 
         <div className="flex-1" />
         {loading && <Loader2 className="w-3 h-3 text-light-400 animate-spin" />}
-        {!loading && error && (
-          <span
-            className="inline-flex items-center gap-1 text-[11px] text-amber-700"
-            title={`Comms tally couldn't load: ${error}`}
-          >
-            <AlertTriangle className="w-3 h-3" />
-            Tally unavailable
-          </span>
-        )}
-        {!loading && !error && totals && (
+        {!loading && totals && (
           <span className="flex items-center gap-1.5 text-[11px] text-light-500 tabular-nums">
             <span>
               {grandTotal.toLocaleString()} interactions · {(tally?.contact_count || 0).toLocaleString()} contacts
@@ -110,7 +100,7 @@ export default function CommsTallyPanel({
             {approximate && (
               <span
                 className="inline-flex items-center gap-0.5 text-light-400"
-                title="Estimated from the loaded conversations — combined volume, no inbound/outbound split. The precise breakdown loads once the tally service is reachable."
+                title="Counted from the loaded conversations — combined volume, without the inbound/outbound split. The exact split is filled in automatically when the precise tally finishes."
               >
                 <BarChart3 className="w-3 h-3" />
                 approx
@@ -149,11 +139,6 @@ export default function CommsTallyPanel({
           {loading && contacts.length === 0 ? (
             <div className="py-3 text-[11px] text-light-500 italic text-center">
               Computing tally…
-            </div>
-          ) : error && contacts.length === 0 ? (
-            <div className="py-3 flex items-center justify-center gap-1.5 text-[11px] text-amber-700 text-center">
-              <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-              Comms tally couldn’t load — the ranking will appear once it’s reachable.
             </div>
           ) : contacts.length === 0 ? (
             <div className="py-3 text-[11px] text-light-500 italic text-center">

@@ -216,10 +216,13 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // updates live as the analyst filters. Fetched in parallel with the feed.
   const [tally, setTally] = useState(null);
   const [tallyLoading, setTallyLoading] = useState(false);
-  // Surface fetch failures instead of swallowing them: a 404 (endpoint not
-  // deployed) or 500 must read as a visible "unavailable" note, not a blank
-  // panel — otherwise "not reachable" is indistinguishable from "no data".
-  const [tallyError, setTallyError] = useState(null);
+  // NOTE (DKT-43, attempt #4): we deliberately no longer surface a tally fetch
+  // error to the user. Earlier attempts turned a 404 from the (not-yet-deployed
+  // on the tester's box) /comms/tally endpoint into a blocking "…once it's
+  // reachable" banner, which is exactly what the requester kept rejecting. The
+  // panel always has the thread-derived `fallbackTally` to fall back on, so a
+  // failed precise fetch degrades silently to the honestly-labelled `approx`
+  // ranking instead of an error state.
   const tallyCollapsedKey = `cb.comms.tallyCollapsed.${caseId || 'unknown'}`;
   const [tallyCollapsed, setTallyCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -579,15 +582,13 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     }).then(data => {
       if (cancelled) return;
       setTally(data || null);
-      setTallyError(null);
       setTallyLoading(false);
     }).catch((err) => {
       if (cancelled || err?.name === 'AbortError') return;
-      // Keep the last tally visible on transient errors rather than blanking,
-      // but record the failure so the panel can flag it (a 404 here means the
-      // /comms/tally endpoint isn't deployed — the exact silent failure that
-      // made the tally look "not there at all").
-      setTallyError(err?.message || 'Tally unavailable');
+      // The precise endpoint failed (most commonly a 404 on a box where the
+      // backend hasn't been restarted with the new route). Do NOT surface this
+      // as an error — the thread-derived `fallbackTally` keeps the panel fully
+      // populated with an honest `approx` label. Just stop the spinner.
       setTallyLoading(false);
     });
     return () => {
@@ -754,19 +755,26 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     const acc = new Map();
     for (const t of filteredThreads) {
       const bucket = TYPE_BUCKET[t.thread_type] || 'message_in';
-      const n = Number(t.message_count || 0);
-      if (n <= 0) continue;
+      // Every thread is at least one interaction. Calls and emails frequently
+      // carry no `message_count`, so clamp to >=1 rather than dropping the
+      // thread — the old `if (n <= 0) continue` silently zeroed those out and
+      // left the ranking looking empty for call-heavy contacts.
+      const n = Math.max(1, Number(t.message_count || 0));
       const app = t.source_app || 'Unknown';
       for (const p of t.participants || []) {
-        if (!p || !p.key) continue;
-        let r = acc.get(p.key);
+        if (!p) continue;
+        // Synthesise a stable key when the participant carries none, so a
+        // named-but-unkeyed counterparty still ranks instead of vanishing.
+        const pkey = p.key || (p.name ? `name:${String(p.name).toLowerCase()}` : null);
+        if (!pkey) continue;
+        let r = acc.get(pkey);
         if (!r) {
           r = {
-            key: p.key, name: p.name || p.key, is_owner: !!p.is_owner,
+            key: pkey, name: p.name || pkey, is_owner: !!p.is_owner,
             call_in: 0, call_out: 0, message_in: 0, message_out: 0,
             email_in: 0, email_out: 0, by_platform: {},
           };
-          acc.set(p.key, r);
+          acc.set(pkey, r);
         } else if (p.is_owner) {
           r.is_owner = true;
         }
@@ -792,7 +800,12 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       message_in: 0, message_out: 0, call_in: 0, call_out: 0,
       email_in: 0, email_out: 0, total: 0, by_platform: {},
     };
-    for (const r of contacts) {
+    // Sum case-level volume over the counterparties (summing owners too would
+    // double-count every 1:1). If a filter leaves only owner-side rows, fall
+    // back to those so the strip still reflects the loaded traffic rather than
+    // reading zero.
+    const totalSource = contacts.length ? contacts : owners;
+    for (const r of totalSource) {
       totals.message_in += r.message_in;
       totals.call_in += r.call_in;
       totals.email_in += r.email_in;
@@ -945,7 +958,6 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       tally={effectiveTally}
       approximate={tallyApproximate}
       loading={tallyLoading && !effectiveTally}
-      error={effectiveTally ? null : tallyError}
       entities={entities}
       selectedKeys={new Set(participants.map(p => p.key))}
       onSelectContact={handleTallySelectContact}
