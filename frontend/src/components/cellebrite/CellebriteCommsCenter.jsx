@@ -838,6 +838,24 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     />
   );
 
+  // DKT-43: Comms tally — live per-contact counts + "most contacted"
+  // ranking pinned to the top section. Recomputes under the active
+  // filters; clicking a ranked contact pivots the whole feed to them.
+  // Extracted so BOTH Browse and Read layouts render the identical
+  // element with the same props/state (attempt #1 only mounted it in
+  // Browse, so Read mode showed no tally at all).
+  const tallyPanel = (
+    <CommsTallyPanel
+      tally={tally}
+      loading={tallyLoading}
+      entities={entities}
+      selectedKeys={new Set(participants.map(p => p.key))}
+      onSelectContact={handleTallySelectContact}
+      collapsed={tallyCollapsed}
+      onToggleCollapsed={() => setTallyCollapsed(v => !v)}
+    />
+  );
+
   // Cross-type timeline flyover. Mounted at the root level so it
   // overlays both Browse and Read layouts identically. Slides in
   // from the bottom edge (separate from the right-rail flyout
@@ -887,6 +905,10 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     return (
       <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
         <PhoneSelector />
+        {/* DKT-43: tally pinned to the top section in Read mode too — it's
+            collapsible (collapsed state persists per-case) so it doesn't
+            meaningfully eat the max-feed layout. */}
+        {tallyPanel}
         <div className="flex items-center gap-2 px-4 py-1.5 border-b border-light-200 bg-light-50 flex-shrink-0">
           {modeToggle}
           <div className="flex-1 max-w-2xl">
@@ -943,18 +965,9 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
           filter eats half the screen on busy cases — its content is
           unbounded (one row per entity) and the windowed render
           sized itself to whatever container height it got. */}
-      {/* DKT-43: Comms tally — live per-contact counts + "most contacted"
-          ranking pinned to the top section. Recomputes under the active
-          filters; clicking a ranked contact pivots the whole feed to them. */}
-      <CommsTallyPanel
-        tally={tally}
-        loading={tallyLoading}
-        entities={entities}
-        selectedKeys={new Set(participants.map(p => p.key))}
-        onSelectContact={handleTallySelectContact}
-        collapsed={tallyCollapsed}
-        onToggleCollapsed={() => setTallyCollapsed(v => !v)}
-      />
+      {/* DKT-43: Comms tally — pinned to the top section (shared with the
+          Read-mode layout via the `tallyPanel` fragment). */}
+      {tallyPanel}
 
       {/* Phase K1: Participants filter — self-contained collapsible
           chip strip; the old ResizableSplit between it and the rest
