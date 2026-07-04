@@ -65,7 +65,10 @@ export default function CommsTallyPanel({
   const maxTotal = contacts.length ? (contacts[0].total || 1) : 1;
 
   return (
-    <div className="border-b border-light-200 bg-white flex-shrink-0">
+    <div
+      data-testid="comms-tally-panel"
+      className="border-b border-light-200 bg-white flex-shrink-0"
+    >
       {/* Header strip — always visible, mirrors the participants filter chrome */}
       <div className="flex items-center gap-2 px-3 py-1 bg-light-50">
         <button
@@ -88,6 +91,15 @@ export default function CommsTallyPanel({
             <TypeStat icon={Phone} inN={totals.call_in} outN={totals.call_out} label="calls" approximate={approximate} />
             <TypeStat icon={Mail} inN={totals.email_in} outN={totals.email_out} label="emails" approximate={approximate} />
           </div>
+        )}
+
+        {/* No totals yet AND not loading → say so inline, so the bar always
+            reads as present-and-working rather than a lone "Tally" button that
+            looks like the panel failed to render. */}
+        {!totals && !loading && (
+          <span className="text-[11px] text-light-500 italic">
+            No interactions under the current filters
+          </span>
         )}
 
         <div className="flex-1" />

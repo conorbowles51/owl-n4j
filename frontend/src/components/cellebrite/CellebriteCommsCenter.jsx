@@ -822,12 +822,60 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     };
   }, [filteredThreads]);
 
-  // Prefer the precise server tally; fall back to the thread-derived estimate
-  // when it hasn't loaded or the endpoint is unreachable. Only surface the hard
-  // error state when we have NOTHING to show — otherwise the analyst still gets
-  // a working, filter-responsive ranking instead of a red banner.
-  const effectiveTally = tally || fallbackTally;
-  const tallyApproximate = !tally && !!fallbackTally;
+  // DKT-43 (attempt #5) — headline totals from the ALREADY-DEPLOYED envelope.
+  //
+  // The precise `/comms/tally` route is new on this branch; on a box where the
+  // frontend is fresh but the backend process wasn't restarted it 404s, and the
+  // strip used to fall back to the thread-derived estimate — which is empty
+  // until threads finish loading, so the bar read as broken/missing. The
+  // `/comms/envelope` route predates DKT-43 and is deployed on every box, and it
+  // already returns exact, filter-aware per-type totals (`type_counts`). Derive
+  // the headline from it so the strip paints real numbers the moment the
+  // envelope returns — independent of the new route and of thread loading. The
+  // envelope carries no inbound/outbound split, so these are combined-direction
+  // (rendered honestly as a single count under the `approximate` flag).
+  const envelopeTotals = useMemo(() => {
+    const tc = envelope?.type_counts;
+    if (!tc) return null;
+    const message = Number(tc.message || 0);
+    const call = Number(tc.call || 0);
+    const email = Number(tc.email || 0);
+    if (!(message || call || email)) return null;
+    return {
+      message_in: message, message_out: 0,
+      call_in: call, call_out: 0,
+      email_in: email, email_out: 0,
+      total: message + call + email,
+      // The envelope has no per-platform split; borrow the thread-derived
+      // breakdown when present so the platform chips still render.
+      by_platform: fallbackTally?.totals?.by_platform || {},
+    };
+  }, [envelope, fallbackTally]);
+
+  // Merge the three sources by precedence rather than picking one wholesale:
+  //   • Ranking (`contacts`): precise → thread-derived (unchanged path).
+  //   • Headline totals: precise (has in/out split) → envelope (deployed,
+  //     combined) → thread-derived. This is what structurally eliminates the
+  //     "unreachable"/missing failure mode — the strip has real totals as long
+  //     as EITHER the envelope OR the threads have loaded, never gated on the
+  //     brand-new route.
+  // The precise in/out split upgrades in-place the moment /comms/tally succeeds.
+  const effectiveTally = useMemo(() => {
+    const contacts = tally?.contacts ?? fallbackTally?.contacts ?? [];
+    const owners = tally?.owners ?? fallbackTally?.owners ?? [];
+    const totals = tally?.totals || envelopeTotals || fallbackTally?.totals || null;
+    if (!totals && contacts.length === 0) return null;
+    return {
+      contacts,
+      owners,
+      totals,
+      contact_count: tally?.contact_count ?? fallbackTally?.contact_count ?? contacts.length,
+      truncated: tally?.truncated ?? fallbackTally?.truncated ?? 0,
+    };
+  }, [tally, fallbackTally, envelopeTotals]);
+  // Approximate whenever we don't have the precise tally — envelope- and
+  // thread-derived totals both lack the inbound/outbound split.
+  const tallyApproximate = !tally;
 
   // Publish counts to the persistent status bar.
   //
