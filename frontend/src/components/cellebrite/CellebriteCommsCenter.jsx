@@ -1222,7 +1222,21 @@ function dedupeThreads(threads) {
       for (const k of aSet) {
         if (!bSet.has(k)) { isSubset = false; break; }
       }
+      // The subset-merge exists to fold away one specific ingest artifact:
+      // the SAME conversation parsed twice, once with an extra "+1" phantom
+      // participant (a raw number with no contact record). Only collapse when
+      // EVERY participant B has beyond A is such an unresolved placeholder.
+      // If any extra participant is a real, named contact, then A and B are
+      // DISTINCT conversations — a smaller group (or 1:1) genuinely different
+      // from the larger group that happens to contain the same people — and
+      // dropping A would silently lose a whole conversation (DKT-42: the 1:1
+      // with Thomas Hookah vanished because a group chat that also included
+      // Uzo was a participant superset). Named extras ⇒ keep both.
       if (isSubset) {
+        const extrasNamed = [...bSet].some(
+          (k) => !aSet.has(k) && participantIsResolved(b, k),
+        );
+        if (extrasNamed) continue; // distinct conversation — never drop it
         // Carry the smaller's thread_id onto the survivor for traceability.
         const merged = b.merged_thread_ids || [];
         if (a.thread_id) merged.push(a.thread_id);
@@ -1265,6 +1279,21 @@ function participantSet(t) {
     if (p && p.key) s.add(p.key);
   }
   return s;
+}
+
+// Does this thread carry a *resolved* (named) participant for `key`? The
+// backend falls back to the raw key/number as the display name when a party
+// has no contact record, so "resolved" means the participant exists and its
+// name is something other than the bare key. Used by the subset-merge to tell
+// a real extra group member (named) from a "+1" phantom (unresolved number).
+function participantIsResolved(t, key) {
+  for (const p of t.participants || []) {
+    if (p && p.key === key) {
+      const name = (p.name || '').trim();
+      return !!name && name !== key;
+    }
+  }
+  return false;
 }
 
 function pickSurvivor(bucket) {

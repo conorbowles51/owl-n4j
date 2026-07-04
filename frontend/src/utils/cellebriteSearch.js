@@ -276,9 +276,19 @@ export function buildHaystack(item, kind, reports = []) {
     parts.push((item.name || '').toLowerCase());
     parts.push((item.thread_id || '').toLowerCase());
     const participants = item.participants || [];
-    const participantTexts = participants.map(partyToText).join(' ');
-    fields.from = participantTexts.toLowerCase();
+    const participantTexts = participants.map(partyToText).join(' ').toLowerCase();
+    fields.from = participantTexts;
     fields.to = fields.from; // threads don't distinguish from/to
+    // Push the LOWERCASED participant blob into the free-text haystack.
+    // Every other field here is lowercased and search terms arrive
+    // lowercased (parseQuery), but matching is a case-sensitive
+    // substring test — so pushing the raw mixed-case participant text
+    // meant a lowercased term ("thomas") never hit a capitalised name
+    // ("Thomas Hookah"). A 1:1 chat whose own `name` is a generic label
+    // ("Chat (Native Messages)") then had NO searchable "thomas" at all
+    // and vanished from a contact-name search — DKT-42: the individual
+    // conversation with a contact was missing from the Comms Center while
+    // a group chat that carried the name in its title still showed.
     parts.push(participantTexts);
   } else {
     // event / message. `fields.type` is what the `type:` operator
