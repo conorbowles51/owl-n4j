@@ -2980,42 +2980,6 @@ export const cellebriteCommsAPI = {
     return fetchAPI(`/cellebrite/comms/envelope?${params.toString()}`, signal ? { signal } : undefined);
   },
 
-  /**
-   * Per-contact tally + "most contacted" ranking for the Comms Center
-   * header. Same filter contract as getEnvelope()/getThreads() so the
-   * counts update live as the analyst filters.
-   *
-   * Returns { contacts: [{key, name, is_owner, call_in, call_out,
-   *   message_in, message_out, email_in, email_out, total, by_platform}],
-   *   owners: [...], totals: {...}, contact_count, truncated }
-   */
-  getTally: (caseId, {
-    fromKeys = null,
-    toKeys = null,
-    participantKeys = null,
-    types = null,
-    reportKeys = null,
-    sourceApps = null,
-    startDate = null,
-    endDate = null,
-    hasAttachment = false,
-    rankLimit = null,
-    signal = null,
-  } = {}) => {
-    const params = new URLSearchParams({ case_id: caseId });
-    if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
-    if (toKeys?.length) params.append('to_keys', toKeys.join(','));
-    if (participantKeys?.length) params.append('participant_keys', participantKeys.join(','));
-    if (types?.length) params.append('types', types.join(','));
-    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
-    if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
-    if (startDate) params.append('start_date', startDate);
-    if (endDate) params.append('end_date', endDate);
-    if (hasAttachment) params.append('has_attachment', 'true');
-    if (rankLimit) params.append('rank_limit', String(rankLimit));
-    return fetchAPI(`/cellebrite/comms/tally?${params.toString()}`, signal ? { signal } : undefined);
-  },
-
   searchMessages: (caseId, { q, reportKeys = null, limit = 200 } = {}) => {
     const params = new URLSearchParams({ case_id: caseId, q });
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));

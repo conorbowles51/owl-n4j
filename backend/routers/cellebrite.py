@@ -762,56 +762,6 @@ def get_comms_envelope(
         raise
 
 
-@router.get("/comms/tally")
-def get_comms_tally(
-    case_id: str = Query(...),
-    from_keys: Optional[str] = Query(None),
-    to_keys: Optional[str] = Query(None),
-    participant_keys: Optional[str] = Query(
-        None,
-        description="Direction-agnostic involvement filter (see /comms/between).",
-    ),
-    types: Optional[str] = Query(None, description="Comma-separated: message,call,email"),
-    report_keys: Optional[str] = Query(None),
-    source_apps: Optional[str] = Query(None),
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
-    has_attachment: bool = Query(False),
-    rank_limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_db_user),
-):
-    """
-    Per-contact communication tally + "most contacted" ranking for the
-    Comms Center header.
-
-    Returns per-contact inbound/outbound counts split by type (message /
-    call / email) plus a per-platform breakdown, a non-owner ranking capped
-    at `rank_limit` (with `truncated` = how many were dropped), the device
-    owner rows kept aside, and case-level `totals`. Computed under the SAME
-    filter contract as /comms/between and /comms/envelope so the tally
-    updates live as the analyst filters.
-    """
-    _require_case_access(case_id, current_user, db)
-    try:
-        return neo4j_service.get_cellebrite_comms_tally(
-            case_id=case_id,
-            report_keys=_csv_param(report_keys),
-            from_keys=_csv_param(from_keys),
-            to_keys=_csv_param(to_keys),
-            participant_keys=_csv_param(participant_keys),
-            types=_csv_param(types),
-            source_apps=_csv_param(source_apps),
-            start_date=start_date,
-            end_date=end_date,
-            has_attachment=has_attachment,
-            rank_limit=rank_limit,
-        )
-    except Exception as exc:
-        logger.error("get_comms_tally failed: %s\n%s", exc, traceback.format_exc())
-        raise
-
-
 @router.get("/comms/messages/search")
 def search_comms_messages(
     case_id: str = Query(...),
