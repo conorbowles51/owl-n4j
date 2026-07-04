@@ -4,7 +4,6 @@ import { cellebriteCommsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
 import CommsParticipantsFilter from './comms/CommsParticipantsFilter';
-import CommsTallyPanel from './comms/CommsTallyPanel';
 import CommsCompactToolbar from './comms/CommsCompactToolbar';
 import CommsThreadList from './comms/CommsThreadList';
 import CommsThreadView from './comms/CommsThreadView';
@@ -210,27 +209,6 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // so the UI can render the bar before the threads themselves arrive.
   const [envelope, setEnvelope] = useState(null);
   const [envelopeLoading, setEnvelopeLoading] = useState(false);
-
-  // Tally = per-contact in/out counts + "most contacted" ranking under the
-  // active filters (DKT-43). Same filter contract as the envelope so it
-  // updates live as the analyst filters. Fetched in parallel with the feed.
-  const [tally, setTally] = useState(null);
-  const [tallyLoading, setTallyLoading] = useState(false);
-  // Surface fetch failures instead of swallowing them: a 404 (endpoint not
-  // deployed) or 500 must read as a visible "unavailable" note, not a blank
-  // panel — otherwise "not reachable" is indistinguishable from "no data".
-  const [tallyError, setTallyError] = useState(null);
-  const tallyCollapsedKey = `cb.comms.tallyCollapsed.${caseId || 'unknown'}`;
-  const [tallyCollapsed, setTallyCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    try { return window.localStorage.getItem(tallyCollapsedKey) === '1'; }
-    catch { return false; }
-  });
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try { window.localStorage.setItem(tallyCollapsedKey, tallyCollapsed ? '1' : '0'); }
-    catch { /* ignore */ }
-  }, [tallyCollapsed, tallyCollapsedKey]);
 
   const [selectedThread, setSelectedThread] = useState(null);
 
@@ -556,67 +534,6 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     };
   }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, activeTypes, activeApps, startDate, endDate, reportsReady, hasAttachmentOnly]);
 
-  // Tally fetch — same filter inputs as the envelope so the header counts +
-  // "most contacted" ranking stay in lockstep with the feed and update live
-  // as the analyst filters. Runs in parallel with the threads + envelope loads.
-  useEffect(() => {
-    if (!caseId) return;
-    if (!reportsReady) return;
-    const controller = new AbortController();
-    let cancelled = false;
-    setTallyLoading(true);
-    cellebriteCommsAPI.getTally(caseId, {
-      reportKeys: selectedReportKeys.size > 0 ? [...selectedReportKeys] : null,
-      fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
-      toKeys: toKeys.size > 0 ? [...toKeys] : null,
-      participantKeys: participantKeys.size > 0 ? [...participantKeys] : null,
-      types: activeTypes.size > 0 ? [...activeTypes] : null,
-      sourceApps: activeApps.size > 0 ? [...activeApps] : null,
-      startDate: startDate || null,
-      endDate: endDate || null,
-      hasAttachment: hasAttachmentOnly,
-      signal: controller.signal,
-    }).then(data => {
-      if (cancelled) return;
-      setTally(data || null);
-      setTallyError(null);
-      setTallyLoading(false);
-    }).catch((err) => {
-      if (cancelled || err?.name === 'AbortError') return;
-      // Keep the last tally visible on transient errors rather than blanking,
-      // but record the failure so the panel can flag it (a 404 here means the
-      // /comms/tally endpoint isn't deployed — the exact silent failure that
-      // made the tally look "not there at all").
-      setTallyError(err?.message || 'Tally unavailable');
-      setTallyLoading(false);
-    });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, activeTypes, activeApps, startDate, endDate, reportsReady, hasAttachmentOnly]);
-
-  // Toggle a contact into the participant filter straight from the tally
-  // ranking. Forces Any-mode involvement (same as a Filter Comms intent) so
-  // the whole Comms Center — including the tally itself — narrows to every
-  // comm involving that contact; clicking an already-filtered contact removes
-  // them again.
-  const handleTallySelectContact = useCallback((key, name) => {
-    if (!key) return;
-    const already = participants.some(p => p.key === key);
-    if (already) {
-      setParticipants(prev => prev.filter(p => p.key !== key));
-      return;
-    }
-    // New selection → force Any-mode involvement (same as a Filter Comms
-    // intent) so the feed shows every comm involving this contact.
-    setParticipantsMode('any');
-    setParticipants(prev =>
-      prev.some(p => p.key === key)
-        ? prev
-        : [...prev, { key, name: name || key, role: 'any' }]);
-  }, [participants]);
-
   // Cellebrite sometimes ingests the same logical conversation twice
   // — e.g. once as a Chat node and once as a Conversation node, or once
   // with an extra participant captured ("+1") and once without. Both
@@ -847,25 +764,6 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     />
   );
 
-  // DKT-43: Comms tally — live per-contact counts + "most contacted"
-  // ranking pinned to the top section. Recomputes under the active
-  // filters; clicking a ranked contact pivots the whole feed to them.
-  // Extracted so BOTH Browse and Read layouts render the identical
-  // element with the same props/state (attempt #1 only mounted it in
-  // Browse, so Read mode showed no tally at all).
-  const tallyPanel = (
-    <CommsTallyPanel
-      tally={tally}
-      loading={tallyLoading}
-      error={tallyError}
-      entities={entities}
-      selectedKeys={new Set(participants.map(p => p.key))}
-      onSelectContact={handleTallySelectContact}
-      collapsed={tallyCollapsed}
-      onToggleCollapsed={() => setTallyCollapsed(v => !v)}
-    />
-  );
-
   // Cross-type timeline flyover. Mounted at the root level so it
   // overlays both Browse and Read layouts identically. Slides in
   // from the bottom edge (separate from the right-rail flyout
@@ -915,10 +813,6 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     return (
       <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
         <PhoneSelector />
-        {/* DKT-43: tally pinned to the top section in Read mode too — it's
-            collapsible (collapsed state persists per-case) so it doesn't
-            meaningfully eat the max-feed layout. */}
-        {tallyPanel}
         <div className="flex items-center gap-2 px-4 py-1.5 border-b border-light-200 bg-light-50 flex-shrink-0">
           {modeToggle}
           <div className="flex-1 max-w-2xl">
@@ -975,10 +869,6 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
           filter eats half the screen on busy cases — its content is
           unbounded (one row per entity) and the windowed render
           sized itself to whatever container height it got. */}
-      {/* DKT-43: Comms tally — pinned to the top section (shared with the
-          Read-mode layout via the `tallyPanel` fragment). */}
-      {tallyPanel}
-
       {/* Phase K1: Participants filter — self-contained collapsible
           chip strip; the old ResizableSplit between it and the rest
           of the page was a workaround for the From/To filter eating
