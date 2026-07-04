@@ -93,7 +93,7 @@ export default function CommsThreadList({
 
 function ThreadRow({ thread, isSelected, onSelect, phoneCtx, showPhoneChip, highlights = [] }) {
   const hasHighlights = highlights && highlights.length > 0;
-  const Icon = thread.thread_type === 'chat'
+  const Icon = thread.thread_type === 'chat' || thread.thread_type === 'messages'
     ? MessageSquare
     : thread.thread_type === 'calls'
       ? Phone

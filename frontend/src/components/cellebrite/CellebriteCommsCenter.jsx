@@ -347,8 +347,11 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   }, [reports]);
 
   const threadTypesParam = useMemo(() => {
-    const map = { message: 'chat', call: 'calls', email: 'emails' };
-    return [...activeTypes].map(t => map[t]).filter(Boolean);
+    // "message" fans out to both real chat threads AND standalone 1:1
+    // messages that never got a chat wrapper (DKT-42) — both render as
+    // message conversations.
+    const map = { message: ['chat', 'messages'], call: ['calls'], email: ['emails'] };
+    return [...activeTypes].flatMap(t => map[t] || []);
   }, [activeTypes]);
 
   // Load entities + source apps when report set changes
@@ -425,12 +428,13 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     // Friendly labels for the active set, in stable order.
     const STAGE_LABELS = {
       chat: 'Loading chat conversations',
+      messages: 'Loading direct messages',
       calls: 'Loading call threads',
       emails: 'Loading email threads',
     };
     const stages = threadTypesParam.length > 0
       ? threadTypesParam
-      : ['chat', 'calls', 'emails'];
+      : ['chat', 'messages', 'calls', 'emails'];
 
     (async () => {
       const aggregated = [];
@@ -1203,6 +1207,17 @@ function dedupeThreads(threads) {
       if (!sameContext(a, b)) continue;
       const bSet = participantSet(b);
       if (bSet.size <= aSet.size) continue; // only collapse smaller into larger
+      // A genuine 1:1 conversation (single counterparty) is a distinct
+      // conversation, never a duplicate ingest of a group that merely happens
+      // to include that person. Collapsing it would silently drop the whole
+      // 1:1 thread — DKT-42: the individual chat with a contact vanished from
+      // the Comms Center because a group chat that also contained them was a
+      // participant superset. Never drop a 1:1 as the subset.
+      if (aSet.size <= 1) continue;
+      // Duplicate ingests capture the SAME messages, so the subset row can't
+      // legitimately hold MORE messages than its superset. If it does, they're
+      // distinct conversations, not a re-ingest of one — keep both.
+      if ((a.message_count || 0) > (b.message_count || 0)) continue;
       let isSubset = true;
       for (const k of aSet) {
         if (!bSet.has(k)) { isSubset = false; break; }

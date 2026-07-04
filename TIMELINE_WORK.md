@@ -14,6 +14,21 @@ Neo4j: `bolt://localhost:7687` neo4j/testpassword (driver in `../venv/bin/python
 ---
 
 ## ▶ NEXT (resume here)
+**`.tts` audio files skipped at ingest — FIXED 2026-07-01 (commit pending; needs re-ingest).**
+User reported audio missing from the timeline (`1744516964-955899-2.tts`). Root cause:
+`file_linker._detect_category` only inspected the TOP path segment (always `files`), never
+the `Audio`/`Image`/… category folder one level down (`files/Audio/x.tts`), so any file
+whose extension wasn't in the allowlist was dropped — even though Cellebrite had already
+sorted it into a category folder. On case 34fbbb06 this silently lost **2,079 `.tts` audio
+files** (all real MP3 — verified MPEG frame header) + **308 odd-named images**, and
+mislabeled **49 `.3gp` Video-folder files as Audio**. Fix: trust Cellebrite's category
+folder wherever it appears in the path, extension fallback only when none. Dry-run over all
+19,341 tagged files: Audio 2225→4255, Image 14248→14556, Video 414→463; reported file now
+→ Audio. Also `routers/evidence.py` now serves `.tts` (audio category) as `audio/mpeg` so
+it plays (was octet-stream → player refused). **Both inert until case 34fbbb06 is
+re-ingested** (a THIRD case beyond the parked 43f1afb1/5e374d4f). [[feedback_fix_pipeline_not_side_artifacts]]
+
+
 **Missing writers (Notification + Voicemail) BUILT 2026-06-30 (commit `db56c5e`)** — closes
 the "Missing writers" backlog item below. End-to-end pipeline + surfacing, validated against
 raw XML; **inert until re-ingest** (Neil's call — no Notification/Voicemail nodes on any

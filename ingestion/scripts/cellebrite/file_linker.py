@@ -38,17 +38,30 @@ def _normalise_path(windows_path: str) -> str:
 
 
 def _detect_category(local_path: str) -> Optional[str]:
-    """Detect file category from the taggedFiles local path prefix or extension."""
+    """Detect file category from the taggedFiles local path prefix or extension.
+
+    Cellebrite sorts extracted files into a category folder (`Image` / `Audio` /
+    `Video` / `Text`) — that foldering is authoritative for the file's content
+    type, so we trust it FIRST and fall back to the extension allowlist only for
+    files that aren't under one. This matters because a category folder holds
+    files with non-standard extensions the allowlist can't know about: e.g.
+    `files/Audio/*.tts` (2,079 real MP3 voice files on case 34fbbb06 — the
+    reported "audio not on the timeline") and extension-less/`mime_type=…`-named
+    images. The old code only inspected the TOP path segment, which is `files`,
+    never the `Audio`/`Image` segment one level down, so every such file was
+    silently dropped even though Cellebrite had already classified it.
+    """
     normalised = _normalise_path(local_path)
 
-    # Check path prefix (Cellebrite convention)
+    # Trust Cellebrite's category folder wherever it appears in the path
+    # (typically `files/<Category>/…`). Scan the DIRECTORY segments only so a
+    # file merely *named* like a category can't be miscategorised.
     parts = normalised.split("/")
-    if len(parts) >= 2:
-        folder = parts[0]
-        if folder in MEDIA_CATEGORIES:
-            return folder
+    for segment in parts[:-1]:
+        if segment in MEDIA_CATEGORIES:
+            return segment
 
-    # Fallback: check extension
+    # Fallback: no known category folder — classify by extension.
     ext = Path(normalised).suffix.lower()
     for category, info in MEDIA_CATEGORIES.items():
         if ext in info["extensions"]:

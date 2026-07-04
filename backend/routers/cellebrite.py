@@ -588,7 +588,7 @@ def get_comms_threads(
             "OR-combined with from_keys/to_keys when present."
         ),
     ),
-    thread_types: Optional[str] = Query(None, description="Comma-separated: chat,calls,emails"),
+    thread_types: Optional[str] = Query(None, description="Comma-separated: chat,messages,calls,emails"),
     source_apps: Optional[str] = Query(None, description="Comma-separated source app names"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
@@ -627,7 +627,7 @@ def get_comms_threads(
 def get_comms_thread_detail(
     thread_id: str,
     case_id: str = Query(...),
-    thread_type: str = Query(..., description="chat, calls, or emails"),
+    thread_type: str = Query(..., description="chat, messages, calls, or emails"),
     limit: int = Query(500, ge=1, le=2000),
     offset: int = Query(0, ge=0),
     anchor_key: Optional[str] = Query(
@@ -640,7 +640,7 @@ def get_comms_thread_detail(
 ):
     """Get chronological items for a thread with attachment metadata resolved."""
     _require_case_access(case_id, current_user, db)
-    if thread_type not in ("chat", "calls", "emails"):
+    if thread_type not in ("chat", "messages", "calls", "emails"):
         raise HTTPException(status_code=400, detail="Invalid thread_type")
     result = neo4j_service.get_cellebrite_thread_detail(
         case_id=case_id,
