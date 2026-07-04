@@ -8447,7 +8447,7 @@ class Neo4jService:
         attachment-bearing item. Filtered IN-QUERY (before the per-block cap)
         so it reaches past the cap rather than just hiding loaded rows.
         """
-        active_types = set(thread_types) if thread_types else {"chat", "calls", "emails"}
+        active_types = set(thread_types) if thread_types else {"chat", "messages", "calls", "emails"}
         threads: list = []
 
         # Per-block cap. Each thread block (chat / calls / emails) returns at
@@ -8463,21 +8463,25 @@ class Neo4jService:
         dcn = self.device_contact_names(case_id)
 
         rk_filter_chat = ""
+        rk_filter_msg = ""
         rk_filter_call = ""
         rk_filter_email = ""
         params: Dict[str, Any] = {"case_id": case_id, "per_block_cap": per_block_cap}
         if report_keys:
             rk_filter_chat = "AND chat.cellebrite_report_key IN $report_keys"
+            rk_filter_msg = "AND m.cellebrite_report_key IN $report_keys"
             rk_filter_call = "AND c.cellebrite_report_key IN $report_keys"
             rk_filter_email = "AND e.cellebrite_report_key IN $report_keys"
             params["report_keys"] = list(report_keys)
 
         # Source-app filter (e.g. only WhatsApp + Facebook Messenger). Empty / None = all.
         app_filter_chat = ""
+        app_filter_msg = ""
         app_filter_call = ""
         app_filter_email = ""
         if source_apps:
             app_filter_chat = "AND chat.source_app IN $source_apps"
+            app_filter_msg = "AND m.source_app IN $source_apps"
             app_filter_call = "AND c.source_app IN $source_apps"
             app_filter_email = "AND e.source_app IN $source_apps"
             params["source_apps"] = list(source_apps)
@@ -8488,6 +8492,7 @@ class Neo4jService:
         # threads — which carry `last_activity`/`start_time` strings only —
         # use a substring prefix that's still safe across timezone formats.
         date_filter_chat = ""
+        date_filter_msg = ""
         date_filter_call = ""
         date_filter_email = ""
         sd = _normalize_date_bound(start_date)
@@ -8497,6 +8502,7 @@ class Neo4jService:
             # `last_activity` as an ISO string — prefix-compare is correct
             # because YYYY-MM-DD orders the same lexicographically as ISO.
             date_filter_chat += " AND coalesce(chat.last_activity, '') >= $start_date"
+            date_filter_msg += " AND coalesce(m.date, m.timestamp, '') >= $start_date"
             date_filter_call += " AND coalesce(c.date, c.timestamp, '') >= $start_date"
             date_filter_email += " AND coalesce(e.date, e.timestamp, '') >= $start_date"
             params["start_date"] = sd
@@ -8506,6 +8512,7 @@ class Neo4jService:
             # end_date='2024-03-15' would exclude any event on 2024-03-15.
             ed_inclusive = f"{ed}T23:59:59.999"
             date_filter_chat += " AND coalesce(chat.start_time, chat.last_activity, '') <= $end_date_incl"
+            date_filter_msg += " AND coalesce(m.date, m.timestamp, '') <= $end_date"
             date_filter_call += " AND coalesce(c.date, c.timestamp, '') <= $end_date"
             date_filter_email += " AND coalesce(e.date, e.timestamp, '') <= $end_date"
             params["end_date"] = ed
@@ -8515,12 +8522,13 @@ class Neo4jService:
         # carries an attachment (EXISTS subquery, evaluated before the cap).
         # Calls/emails: restrict the aggregated items to attachment-bearing
         # ones so a pair only forms a thread when it has media.
-        att_chat = att_call = att_email = ""
+        att_chat = att_msg = att_call = att_email = ""
         if has_attachment:
             att_chat = (
                 " AND EXISTS { MATCH (am:Communication)-[:PART_OF]->(chat) "
                 "WHERE coalesce(am.attachment_count, 0) > 0 }"
             )
+            att_msg = " AND coalesce(m.attachment_count, 0) > 0"
             att_call = " AND coalesce(c.attachment_count, 0) > 0"
             att_email = " AND coalesce(e.attachment_count, 0) > 0"
 
@@ -8599,6 +8607,128 @@ class Neo4jService:
                     })
                 if chat_block_count >= per_block_cap:
                     truncated = True
+
+            # ---- Synthetic message threads (standalone 1:1 messages) ----
+            # Cellebrite emits some InstantMessages nested under a Chat (they
+            # get a PART_OF edge + a chat_id-bearing parent, handled above) and
+            # others top-level with NO chat wrapper — those carry only the
+            # SENT_MESSAGE / RECEIVED_MESSAGE person edges and never became a
+            # thread here (the timeline, which is message-first, still showed
+            # them — DKT-42). Synthesize a thread per counterparty pair from
+            # those chat-less messages. The owner side is implicit (no Person
+            # edge) on FFS exports, so owner-sent and owner-received halves of
+            # the same 1:1 are two rows (sender/recipient) merged in Python.
+            if "messages" in active_types:
+                query = f"""
+                    MATCH (m:Communication {{case_id: $case_id, source_type: 'cellebrite'}})
+                    WHERE m.chat_id IS NULL
+                      AND (m.body IS NOT NULL OR coalesce(m.attachment_count, 0) > 0)
+                      AND NOT EXISTS {{ (m)-[:PART_OF]->(:Communication) }}
+                      {rk_filter_msg} {app_filter_msg} {date_filter_msg} {att_msg}
+                    OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(m)
+                    OPTIONAL MATCH (m)-[:RECEIVED_MESSAGE]->(recipient:Person)
+                    WITH m.cellebrite_report_key AS rk, sender, recipient, m
+                    WITH rk, sender, recipient,
+                         count(m) AS msg_count,
+                         sum(coalesce(m.attachment_count, 0)) AS attach_count,
+                         max(m.timestamp) AS last_ts, min(m.timestamp) AS first_ts,
+                         [sa IN collect(DISTINCT m.source_app) WHERE sa IS NOT NULL] AS apps
+                    ORDER BY msg_count DESC
+                    LIMIT $per_block_cap
+                    RETURN rk, sender, recipient,
+                           sender.key AS s_key, recipient.key AS r_key,
+                           msg_count, attach_count, last_ts, first_ts, apps
+                """
+                result = session.run(query, params)
+                msg_pairs: Dict[str, dict] = {}
+                owner_by_rk: Dict[Any, Optional[dict]] = {}
+                for record in result:
+                    rk = record["rk"]
+                    sender = dict(record["sender"]) if record["sender"] else None
+                    recipient = dict(record["recipient"]) if record["recipient"] else None
+                    s_key = record["s_key"]
+                    r_key = record["r_key"]
+
+                    # Resolve the device owner once per report — it's the
+                    # implicit party on whichever side has no Person edge.
+                    if rk not in owner_by_rk:
+                        owner_by_rk[rk] = self._resolve_report_owner(session, case_id, rk)
+                    owner = owner_by_rk[rk]
+                    owner_key = owner.get("key") if owner else None
+
+                    # Counterparties = the explicit (non-owner) person edges.
+                    cp: Dict[str, Optional[dict]] = {}
+                    for k, node in ((s_key, sender), (r_key, recipient)):
+                        if k and k != owner_key:
+                            cp[k] = node
+                    if not cp:
+                        # Nothing but the owner (or unattributed) on both sides —
+                        # no counterparty to anchor a 1:1 thread; skip.
+                        continue
+                    cp_keys = sorted(cp.keys())
+                    thread_id = f"messages-{rk}-{'-'.join(cp_keys)}"
+                    msg_count = int(record["msg_count"] or 0)
+                    attach_count = int(record["attach_count"] or 0)
+                    last_ts = record["last_ts"]
+                    first_ts = record["first_ts"]
+
+                    # Participant filter — owner-aware set (owner + counterparties).
+                    if from_keys or to_keys or participant_keys:
+                        pkeys = set(cp_keys)
+                        if owner_key:
+                            pkeys.add(owner_key)
+                        if from_keys and not any(k in pkeys for k in from_keys):
+                            continue
+                        if to_keys and not any(k in pkeys for k in to_keys):
+                            continue
+                        if participant_keys and not any(k in pkeys for k in participant_keys):
+                            continue
+
+                    existing = msg_pairs.get(thread_id)
+                    if existing is None:
+                        participants = []
+                        # Owner first (right-aligned "you" in the thread view).
+                        if owner_key:
+                            participants.append({
+                                "key": owner_key,
+                                "name": dcn.get((owner_key, rk)) or owner.get("name") or owner_key,
+                                "is_owner": True,
+                            })
+                        for k in cp_keys:
+                            node = cp[k] or {}
+                            participants.append({
+                                "key": k,
+                                "name": dcn.get((k, rk)) or node.get("name") or k,
+                                "is_owner": False,
+                            })
+                        name_parts = [p["name"] for p in participants if not p["is_owner"]]
+                        apps = record["apps"] or []
+                        msg_pairs[thread_id] = {
+                            "thread_id": thread_id,
+                            "thread_type": "messages",
+                            "source_app": apps[0] if apps else "Messages",
+                            "name": ", ".join(name_parts) if name_parts else "Messages",
+                            "participants": participants,
+                            "message_count": msg_count,
+                            "attachment_count": attach_count,
+                            "has_attachments": attach_count > 0,
+                            "last_activity": last_ts,
+                            "first_activity": first_ts,
+                            "report_key": rk,
+                            "pair_keys": cp_keys,
+                        }
+                    else:
+                        existing["message_count"] += msg_count
+                        existing["attachment_count"] += attach_count
+                        existing["has_attachments"] = existing["attachment_count"] > 0
+                        if last_ts and (existing.get("last_activity") is None or last_ts > existing["last_activity"]):
+                            existing["last_activity"] = last_ts
+                        if first_ts and (existing.get("first_activity") is None or first_ts < existing["first_activity"]):
+                            existing["first_activity"] = first_ts
+
+                if len(msg_pairs) >= per_block_cap:
+                    truncated = True
+                threads.extend(msg_pairs.values())
 
             # ---- Synthetic call threads (per participant pair + report) ----
             # Push participant key constraints into Cypher so the LIMIT only
@@ -8937,6 +9067,161 @@ class Neo4jService:
                             for p in participants
                         ],
                         "report_key": chat.get("cellebrite_report_key"),
+                    },
+                    "items": items,
+                    "total": total,
+                }
+
+            elif thread_type == "messages":
+                # Standalone 1:1 messages (no chat wrapper). thread_id is
+                # "messages-{report_key}-{keyA}[-{keyB}]" where the counterparty
+                # keys are the non-owner person edges (1 for owner↔contact,
+                # 2 for a message explicitly attributed to two contacts).
+                if not thread_id.startswith("messages-"):
+                    return {"thread": None, "items": [], "total": 0}
+                parts = thread_id[len("messages-"):].split("-")
+
+                def _find_person_key_start(tokens, start_idx):
+                    prefixes = ("phone", "email", "fb", "ig", "wa", "tg", "snap",
+                                "twitter", "linkedin")
+                    for i in range(start_idx, len(tokens)):
+                        if tokens[i] in prefixes:
+                            return i
+                    return -1
+
+                key_a_start = _find_person_key_start(parts, 0)
+                if key_a_start < 0:
+                    return {"thread": None, "items": [], "total": 0}
+                key_b_start = _find_person_key_start(parts, key_a_start + 1)
+                report_key = "-".join(parts[:key_a_start])
+                if key_b_start < 0:
+                    cp_keys = ["-".join(parts[key_a_start:])]
+                else:
+                    cp_keys = [
+                        "-".join(parts[key_a_start:key_b_start]),
+                        "-".join(parts[key_b_start:]),
+                    ]
+
+                # Owner is the implicit party on FFS exports. Fall back to ""
+                # (never a real person key) so the `<> $owner_key` guard below
+                # keeps its non-null semantics when no owner resolves.
+                _dcn = self.device_contact_names(case_id)
+                _owner = self._resolve_report_owner(session, case_id, report_key)
+                owner_key = _owner["key"] if _owner else ""
+
+                # Select chat-less messages whose non-owner person edges match
+                # exactly the thread's counterparty set — mirrors how the list
+                # block grouped them, so counts stay consistent.
+                result = session.run(
+                    """
+                    MATCH (m:Communication {case_id: $case_id, cellebrite_report_key: $report_key})
+                    WHERE m.chat_id IS NULL
+                      AND (m.body IS NOT NULL OR coalesce(m.attachment_count, 0) > 0)
+                      AND NOT EXISTS { (m)-[:PART_OF]->(:Communication) }
+                    OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(m)
+                    OPTIONAL MATCH (m)-[:RECEIVED_MESSAGE]->(recipient:Person)
+                    WITH m, sender, recipient,
+                         [k IN [sender.key, recipient.key]
+                            WHERE k IS NOT NULL AND k <> $owner_key] AS cp
+                    WHERE size(cp) = size($cp_keys)
+                      AND all(k IN cp WHERE k IN $cp_keys)
+                      AND all(k IN $cp_keys WHERE k IN cp)
+                    RETURN m, sender
+                    ORDER BY m.timestamp
+                    SKIP $offset LIMIT $limit
+                    """,
+                    case_id=case_id,
+                    report_key=report_key,
+                    owner_key=owner_key,
+                    cp_keys=cp_keys,
+                    offset=offset,
+                    limit=limit,
+                )
+                for r in result:
+                    msg = dict(r["m"])
+                    sender = dict(r["sender"]) if r["sender"] else None
+                    items.append({
+                        "id": msg.get("id"),
+                        "key": msg.get("key"),
+                        "type": "message",
+                        "timestamp": msg.get("timestamp"),
+                        "date": msg.get("date"),
+                        "time": msg.get("time"),
+                        "source_app": msg.get("source_app"),
+                        "message_type": msg.get("message_type"),
+                        "body": msg.get("body") or "",
+                        "deleted_state": msg.get("deleted_state"),
+                        "attachment_file_ids": list(msg.get("attachment_file_ids") or []),
+                        # Owner-sent messages carry no sender edge — attribute
+                        # them to the resolved device owner (right-aligned).
+                        "sender": (
+                            {
+                                "key": sender.get("key"),
+                                "name": (_dcn.get((sender.get("key"), report_key))
+                                         or sender.get("name")),
+                                "is_owner": bool(sender.get("is_phone_owner")),
+                            } if sender
+                            else ({
+                                "key": _owner["key"],
+                                "name": _owner["name"],
+                                "is_owner": True,
+                            } if _owner else None)
+                        ),
+                    })
+
+                total_r = session.run(
+                    """
+                    MATCH (m:Communication {case_id: $case_id, cellebrite_report_key: $report_key})
+                    WHERE m.chat_id IS NULL
+                      AND (m.body IS NOT NULL OR coalesce(m.attachment_count, 0) > 0)
+                      AND NOT EXISTS { (m)-[:PART_OF]->(:Communication) }
+                    OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(m)
+                    OPTIONAL MATCH (m)-[:RECEIVED_MESSAGE]->(recipient:Person)
+                    WITH m,
+                         [k IN [sender.key, recipient.key]
+                            WHERE k IS NOT NULL AND k <> $owner_key] AS cp
+                    WHERE size(cp) = size($cp_keys)
+                      AND all(k IN cp WHERE k IN $cp_keys)
+                      AND all(k IN $cp_keys WHERE k IN cp)
+                    RETURN count(m) AS n
+                    """,
+                    case_id=case_id,
+                    report_key=report_key,
+                    owner_key=owner_key,
+                    cp_keys=cp_keys,
+                ).single()
+                total = int(total_r["n"]) if total_r else len(items)
+
+                # Counterparty names as this device saved them.
+                cp_participants = []
+                for k in cp_keys:
+                    prow = session.run(
+                        "MATCH (p:Person {case_id: $case_id, key: $key}) RETURN p LIMIT 1",
+                        case_id=case_id, key=k,
+                    ).single()
+                    pnode = dict(prow["p"]) if prow else {}
+                    cp_participants.append({
+                        "key": k,
+                        "name": _dcn.get((k, report_key)) or pnode.get("name") or k,
+                        "is_owner": False,
+                    })
+                participants = []
+                if _owner:
+                    participants.append({
+                        "key": _owner["key"],
+                        "name": (_dcn.get((_owner["key"], report_key)) or _owner["name"]),
+                        "is_owner": True,
+                    })
+                participants.extend(cp_participants)
+
+                return {
+                    "thread": {
+                        "thread_id": thread_id,
+                        "thread_type": "messages",
+                        "name": ", ".join(p["name"] for p in cp_participants) or "Messages",
+                        "source_app": (items[0].get("source_app") if items else None) or "Messages",
+                        "participants": participants,
+                        "report_key": report_key,
                     },
                     "items": items,
                     "total": total,

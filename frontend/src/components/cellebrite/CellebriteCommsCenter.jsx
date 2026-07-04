@@ -347,8 +347,11 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   }, [reports]);
 
   const threadTypesParam = useMemo(() => {
-    const map = { message: 'chat', call: 'calls', email: 'emails' };
-    return [...activeTypes].map(t => map[t]).filter(Boolean);
+    // "message" fans out to both real chat threads AND standalone 1:1
+    // messages that never got a chat wrapper (DKT-42) — both render as
+    // message conversations.
+    const map = { message: ['chat', 'messages'], call: ['calls'], email: ['emails'] };
+    return [...activeTypes].flatMap(t => map[t] || []);
   }, [activeTypes]);
 
   // Load entities + source apps when report set changes
@@ -425,12 +428,13 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     // Friendly labels for the active set, in stable order.
     const STAGE_LABELS = {
       chat: 'Loading chat conversations',
+      messages: 'Loading direct messages',
       calls: 'Loading call threads',
       emails: 'Loading email threads',
     };
     const stages = threadTypesParam.length > 0
       ? threadTypesParam
-      : ['chat', 'calls', 'emails'];
+      : ['chat', 'messages', 'calls', 'emails'];
 
     (async () => {
       const aggregated = [];
