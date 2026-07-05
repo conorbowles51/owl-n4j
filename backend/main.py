@@ -38,6 +38,7 @@ from routers import (
     financial_router,
     maintenance_router,
     case_deadlines_router,
+    notebook_router,
     evidence_folders_router,
     cellebrite_router,
     triage_router,
@@ -144,6 +145,7 @@ app.include_router(admin_ai_costs_router)
 app.include_router(financial_router)
 app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)
+app.include_router(notebook_router)
 app.include_router(evidence_folders_router)
 app.include_router(cellebrite_router)
 app.include_router(triage_router)

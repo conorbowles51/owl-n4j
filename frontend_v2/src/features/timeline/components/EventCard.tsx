@@ -1,25 +1,31 @@
 import { memo, useCallback } from "react"
 import { cn } from "@/lib/cn"
-import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { markdownToPlainText } from "@/lib/markdown-text"
 import { getEventTypeColor } from "../api"
 import type { TimelineEvent } from "../api"
-import { isValidDate } from "../lib/timeline-utils"
+import { formatEventTime, getEventTimeValue } from "../lib/timeline-utils"
 
 interface EventCardProps {
   event: TimelineEvent
   isSelected: boolean
   isMultiSelected: boolean
+  curationMode?: boolean
+  isCurationSelected?: boolean
   searchTerm: string
   highlightedEntityKeys: Set<string>
   onSelect: (key: string) => void
   onMultiSelect: (key: string) => void
+  onToggleCurationSelection?: (key: string) => void
 }
 
 function highlightText(text: string, term: string) {
   if (!term.trim()) return text
-  const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi")
+  const regex = new RegExp(
+    `(${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+    "gi"
+  )
   const parts = text.split(regex)
   return parts.map((part, i) =>
     regex.test(part) ? (
@@ -36,14 +42,19 @@ export const EventCard = memo(function EventCard({
   event,
   isSelected,
   isMultiSelected,
+  curationMode = false,
+  isCurationSelected = false,
   searchTerm,
   highlightedEntityKeys,
   onSelect,
   onMultiSelect,
+  onToggleCurationSelection,
 }: EventCardProps) {
   const color = getEventTypeColor(event.type)
   const active = isSelected || isMultiSelected
   const summaryText = event.summary ? markdownToPlainText(event.summary) : null
+  const timeLabel = formatEventTime(event)
+  const hasTime = Boolean(getEventTimeValue(event))
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -56,73 +67,117 @@ export const EventCard = memo(function EventCard({
     [event.key, onSelect, onMultiSelect]
   )
 
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key !== "Enter" && e.key !== " ") return
+      e.preventDefault()
+      if (e.ctrlKey || e.metaKey) onMultiSelect(event.key)
+      else onSelect(event.key)
+    },
+    [event.key, onMultiSelect, onSelect]
+  )
+
+  const stopCurationClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+  }, [])
+
   return (
-    <button
+    <article
+      role="button"
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       className={cn(
-        "group w-full text-left rounded-lg border px-3 py-2.5 transition-all duration-150",
-        "hover:bg-muted/50",
+        "group w-full cursor-pointer rounded-lg border bg-card px-3 py-3 text-left transition-colors duration-150",
+        "hover:bg-muted/40",
         active
-          ? "ring-2 ring-amber-500 bg-amber-500/5 border-amber-500/30"
-          : "border-border"
+          ? "border-slate-400/70 bg-slate-50 shadow-sm ring-1 ring-slate-400/40 dark:border-slate-500/60 dark:bg-slate-900/45 dark:ring-slate-500/40"
+          : "border-border/80"
       )}
-      style={{ borderLeftWidth: 3, borderLeftColor: color }}
     >
-      {/* Row 1: type badge, name, date, amount */}
-      <div className="flex items-start gap-2">
-        <Badge
-          variant="outline"
-          className="shrink-0 text-[10px] font-medium"
-          style={{ borderColor: `${color}50`, color }}
-        >
-          {event.type}
-        </Badge>
-        <span className="flex-1 text-sm font-medium leading-tight truncate">
-          {highlightText(event.name, searchTerm)}
-        </span>
-        <div className="shrink-0 flex items-center gap-2 text-xs text-muted-foreground">
-          {event.amount && (
-            <span className="font-semibold text-amber-600 dark:text-amber-400">
-              {event.amount}
-            </span>
-          )}
-          <span>
-            {isValidDate(event.date)
-              ? new Date(event.date).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                })
-              : "—"}
-            {event.time && `, ${event.time}`}
+      <div
+        className={cn(
+          "grid gap-3",
+          curationMode
+            ? "grid-cols-[1.5rem_4.75rem_minmax(0,1fr)]"
+            : "grid-cols-[4.75rem_minmax(0,1fr)]"
+        )}
+      >
+        {curationMode && (
+          <div className="pt-0.5">
+            <Checkbox
+              checked={isCurationSelected}
+              aria-label="Select event for timeline view"
+              title={
+                isCurationSelected
+                  ? "Remove from selection"
+                  : "Select for timeline view"
+              }
+              onClick={stopCurationClick}
+              onKeyDown={(event) => event.stopPropagation()}
+              onCheckedChange={() => onToggleCurationSelection?.(event.key)}
+            />
+          </div>
+        )}
+
+        <div className="flex flex-col items-start gap-1 pt-0.5">
+          <span
+            className={cn(
+              "font-mono text-xs font-semibold leading-none tabular-nums",
+              hasTime ? "text-foreground" : "text-muted-foreground"
+            )}
+          >
+            {timeLabel}
+          </span>
+          <span
+            className="inline-flex max-w-full items-center gap-1 rounded-full border bg-background/70 px-1.5 py-0.5 text-[10px] font-medium leading-none"
+            style={{ borderColor: `${color}40`, color }}
+          >
+            <span
+              className="size-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: color }}
+            />
+            <span className="truncate">{event.type}</span>
           </span>
         </div>
-      </div>
 
-      {/* Row 2: summary */}
-      {summaryText && (
-        <p className="mt-1 text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-          {highlightText(summaryText, searchTerm)}
-        </p>
-      )}
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-start gap-2">
+            <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground line-clamp-2">
+              {highlightText(event.name, searchTerm)}
+            </span>
+            {event.amount && (
+              <span className="shrink-0 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                {event.amount}
+              </span>
+            )}
+          </div>
 
-      {/* Row 3: entity chips */}
-      {event.connections.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {event.connections.map((conn) => (
-            <NodeBadge
-              key={conn.key}
-              type={conn.type}
-              className={cn(
-                "text-[9px] py-0",
-                highlightedEntityKeys.has(conn.key) &&
-                  "ring-1 ring-amber-500/50"
-              )}
-            >
-              {conn.name}
-            </NodeBadge>
-          ))}
+          {summaryText && (
+            <p className="mt-1 text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+              {highlightText(summaryText, searchTerm)}
+            </p>
+          )}
+
+          {event.connections.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {event.connections.map((conn) => (
+                <NodeBadge
+                  key={conn.key}
+                  type={conn.type}
+                  className={cn(
+                    "text-[9px] py-0",
+                    highlightedEntityKeys.has(conn.key) &&
+                      "ring-1 ring-slate-400/60"
+                  )}
+                >
+                  {conn.name}
+                </NodeBadge>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-    </button>
+      </div>
+    </article>
   )
 })

@@ -1,4 +1,4 @@
-import { Info, MessageSquare, PanelRightClose, X } from "lucide-react"
+import { Info, MessageSquare, NotebookPen, PanelRightClose, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -10,6 +10,7 @@ import { useGraphStore } from "@/stores/graph.store"
 import { cn } from "@/lib/cn"
 import { NodeDetailSheet } from "./NodeDetailSheet"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
+import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { ForceControlsPanel } from "./ForceControlsPanel"
 import { GraphAnalysisPanel } from "./GraphAnalysisPanel"
 import { RecycleBinPanel } from "./RecycleBinPanel"
@@ -82,6 +83,25 @@ export function GraphSidePanelRail() {
           </Button>
         </TooltipTrigger>
         <TooltipContent side="left">AI Chat</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={cn(
+              "relative",
+              tab === "notebook" && "text-foreground"
+            )}
+            onClick={() => expandTo("notebook")}
+          >
+            <NotebookPen className="size-4" />
+            {tab === "notebook" && (
+              <span className="absolute -left-1 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-amber-500" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left">Notebook</TooltipContent>
       </Tooltip>
     </div>
   )
@@ -156,6 +176,19 @@ export function GraphSidePanelContent({
             <MessageSquare className="size-3.5" />
             AI Chat
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("notebook")}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2",
+              tab === "notebook"
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <NotebookPen className="size-3.5" />
+            Notebook
+          </button>
           <div className="ml-auto pr-1">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -215,8 +248,10 @@ export function GraphSidePanelContent({
               </p>
             </div>
           )
-        ) : (
+        ) : tab === "chat" ? (
           <ChatSidePanel caseId={caseId} />
+        ) : (
+          <NotebookPanel caseId={caseId} />
         )}
       </div>
     </div>

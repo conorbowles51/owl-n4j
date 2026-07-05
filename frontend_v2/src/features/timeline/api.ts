@@ -27,25 +27,102 @@ export interface TimelineResponse {
   next_cursor?: string | null
 }
 
-/** Color palette for event types — visually distinct, works on both light/dark */
+export interface TimelineViewEvent {
+  id: string
+  view_id: string
+  case_id: string
+  event_key: string
+  event_snapshot: Partial<TimelineEvent>
+  sort_date?: string | null
+  sort_time?: string | null
+  position: number
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface TimelineView {
+  id: string
+  case_id: string
+  title: string
+  description?: string | null
+  visibility: string
+  owner_user_id?: string | null
+  owner_email?: string | null
+  owner_name?: string | null
+  filter_snapshot: Record<string, unknown>
+  export_defaults: Record<string, unknown>
+  event_count: number
+  created_at?: string | null
+  updated_at?: string | null
+  events: TimelineViewEvent[]
+}
+
+export interface TimelineViewListResponse {
+  views: TimelineView[]
+  total: number
+}
+
+export interface TimelineViewInput {
+  case_id: string
+  title: string
+  description?: string | null
+  event_keys?: string[]
+  filter_snapshot?: Record<string, unknown>
+  export_defaults?: Record<string, unknown>
+}
+
+export interface TimelineViewUpdate {
+  case_id: string
+  title?: string
+  description?: string | null
+  filter_snapshot?: Record<string, unknown>
+  export_defaults?: Record<string, unknown>
+}
+
+export type TimelineViewEventAction = "add" | "remove" | "set"
+
+export interface TimelineExportRequest {
+  case_id: string
+  source: "view" | "selection" | "filtered"
+  format: "pdf" | "csv"
+  view_id?: string | null
+  event_keys?: string[]
+  title?: string | null
+  detail_level?: "compact" | "standard" | "detailed"
+  fields?: Record<string, boolean>
+  footer_label?: string
+}
+
+/** Restrained type colors for small timeline accents. */
 export const EVENT_TYPE_COLORS: Record<string, string> = {
-  Transaction: "#F59E0B",
-  Transfer: "#F97316",
-  Payment: "#EF4444",
-  Communication: "#06B6D4",
-  Email: "#3B82F6",
-  PhoneCall: "#8B5CF6",
-  Meeting: "#EC4899",
-  Travel: "#14B8A6",
+  Transaction: "#B7791F",
+  Transfer: "#B45309",
+  Payment: "#B91C1C",
+  Communication: "#0E7490",
+  Email: "#2563EB",
+  PhoneCall: "#6D5BD0",
+  Meeting: "#BE567C",
+  Travel: "#0F766E",
   Filing: "#64748B",
-  Registration: "#84CC16",
-  Incorporation: "#A855F7",
-  Seizure: "#DC2626",
+  Registration: "#4D7C0F",
+  Incorporation: "#7C3AED",
+  Seizure: "#991B1B",
+  Event: "#BE567C",
+  Document: "#64748B",
+  LegalAction: "#6D5BD0",
+  Intelligence: "#0F766E",
+  Device: "#15803D",
 }
 
 const EVENT_TYPE_FALLBACK_PALETTE = [
-  "#6366F1", "#10B981", "#F43F5E", "#0EA5E9",
-  "#D946EF", "#FBBF24", "#34D399", "#FB7185",
+  "#64748B",
+  "#0F766E",
+  "#6D5BD0",
+  "#0E7490",
+  "#4D7C0F",
+  "#B7791F",
+  "#BE567C",
+  "#475569",
 ]
 
 export function getEventTypeColor(type: string): string {
@@ -55,7 +132,9 @@ export function getEventTypeColor(type: string): string {
   for (let i = 0; i < type.length; i++) {
     hash = type.charCodeAt(i) + ((hash << 5) - hash)
   }
-  return EVENT_TYPE_FALLBACK_PALETTE[Math.abs(hash) % EVENT_TYPE_FALLBACK_PALETTE.length]
+  return EVENT_TYPE_FALLBACK_PALETTE[
+    Math.abs(hash) % EVENT_TYPE_FALLBACK_PALETTE.length
+  ]
 }
 
 export const timelineAPI = {
@@ -77,7 +156,86 @@ export const timelineAPI = {
   },
 
   getEventTypes: async () => {
-    const data = await fetchAPI<{ event_types: string[] }>("/api/timeline/types")
+    const data = await fetchAPI<{ event_types: string[] }>(
+      "/api/timeline/types"
+    )
     return data.event_types
+  },
+
+  listViews: (caseId: string) =>
+    fetchAPI<TimelineViewListResponse>(
+      `/api/timeline/views?case_id=${encodeURIComponent(caseId)}`
+    ),
+
+  getView: (caseId: string, viewId: string) =>
+    fetchAPI<TimelineView>(
+      `/api/timeline/views/${encodeURIComponent(viewId)}?case_id=${encodeURIComponent(caseId)}`
+    ),
+
+  createView: (input: TimelineViewInput) =>
+    fetchAPI<TimelineView>("/api/timeline/views", {
+      method: "POST",
+      body: input,
+    }),
+
+  updateView: (viewId: string, input: TimelineViewUpdate) =>
+    fetchAPI<TimelineView>(`/api/timeline/views/${encodeURIComponent(viewId)}`, {
+      method: "PATCH",
+      body: input,
+    }),
+
+  deleteView: (caseId: string, viewId: string) =>
+    fetchAPI<void>(
+      `/api/timeline/views/${encodeURIComponent(viewId)}?case_id=${encodeURIComponent(caseId)}`,
+      { method: "DELETE" }
+    ),
+
+  updateViewEvents: (
+    caseId: string,
+    viewId: string,
+    action: TimelineViewEventAction,
+    eventKeys: string[]
+  ) =>
+    fetchAPI<TimelineView>(
+      `/api/timeline/views/${encodeURIComponent(viewId)}/events:batch`,
+      {
+        method: "POST",
+        body: {
+          case_id: caseId,
+          action,
+          event_keys: eventKeys,
+        },
+      }
+    ),
+
+  downloadExport: async (request: TimelineExportRequest) => {
+    const token = localStorage.getItem("authToken")
+    const response = await fetch("/api/timeline/export", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: "include",
+      body: JSON.stringify(request),
+    })
+    if (!response.ok) {
+      let message = `Export failed: ${response.status}`
+      try {
+        const data = (await response.json()) as { detail?: unknown }
+        if (typeof data.detail === "string") message = data.detail
+      } catch {
+        // Keep status fallback.
+      }
+      throw new Error(message)
+    }
+    const blob = await response.blob()
+    const disposition = response.headers.get("Content-Disposition") ?? ""
+    const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1]
+    const quoted = disposition.match(/filename="([^"]+)"/)?.[1]
+    const filename = encoded
+      ? decodeURIComponent(encoded)
+      : quoted || `timeline-export.${request.format}`
+    return { blob, filename }
   },
 }

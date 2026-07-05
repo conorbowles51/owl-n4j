@@ -43,6 +43,7 @@ import {
   Loader2,
   Map as MapIcon,
   Network,
+  NotebookPen,
   PanelRight,
   PanelRightClose,
   PanelRightOpen,
@@ -72,8 +73,10 @@ import { downloadProtectedFile } from "@/lib/protected-file"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-provider"
 import { useGraphStore } from "@/stores/graph.store"
+import { useUIStore } from "@/stores/ui.store"
 import { EditNodeDialog } from "@/features/graph/components/EditNodeDialog"
 import { NodeDetailSheet } from "@/features/graph/components/NodeDetailSheet"
+import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -550,13 +553,24 @@ export function AgentPage() {
   const [showInvestigationTrail, setShowInvestigationTrail] = useState(loadInvestigationTrailSetting)
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   const [detailsPanelOpen, setDetailsPanelOpen] = useState(false)
+  const [detailsPanelTab, setDetailsPanelTab] = useState<"details" | "notebook">("details")
   const selectNodes = useGraphStore((s) => s.selectNodes)
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
+  const sharedPanelTab = useUIStore((s) => s.graphPanelTab)
+  const sharedPanelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
 
   const selectedArtifact = useMemo(
     () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0] ?? null,
     [artifacts, selectedArtifactId]
   )
+
+  useEffect(() => {
+    if (!sharedPanelCollapsed && sharedPanelTab === "notebook") {
+      setDetailsPanelTab("notebook")
+      setDetailsPanelOpen(true)
+    }
+  }, [sharedPanelCollapsed, sharedPanelTab])
+
   const selectedModel =
     AGENT_MODEL_OPTIONS.find((model) => model.id === selectedModelId) ?? AGENT_MODEL_OPTIONS[0]
   const visibleToolTrace = useMemo(
@@ -1075,13 +1089,19 @@ export function AgentPage() {
         <aside className="h-full w-[360px] shrink-0">
           <AgentEntityDetailsPanel
             caseId={caseId}
+            tab={detailsPanelTab}
+            onTabChange={setDetailsPanelTab}
             onClose={() => setDetailsPanelOpen(false)}
           />
         </aside>
       ) : (
         <AgentEntityDetailsRail
           hasSelection={selectedNodeKeys.size > 0}
-          onOpen={() => setDetailsPanelOpen(true)}
+          activeTab={detailsPanelTab}
+          onOpen={(tab) => {
+            setDetailsPanelTab(tab)
+            setDetailsPanelOpen(true)
+          }}
         />
       )}
     </div>
@@ -1237,10 +1257,12 @@ function ClarificationPanel({
 
 function AgentEntityDetailsRail({
   hasSelection,
+  activeTab,
   onOpen,
 }: {
   hasSelection: boolean
-  onOpen: () => void
+  activeTab: "details" | "notebook"
+  onOpen: (tab: "details" | "notebook") => void
 }) {
   return (
     <aside className="flex h-full w-12 shrink-0 flex-col items-center gap-1 border-l border-border bg-muted/30 pt-2">
@@ -1248,12 +1270,25 @@ function AgentEntityDetailsRail({
         type="button"
         variant="ghost"
         size="icon-sm"
-        className={cn("relative", hasSelection && "text-foreground")}
-        onClick={onOpen}
+        className={cn("relative", activeTab === "details" && "text-foreground")}
+        onClick={() => onOpen("details")}
         title="Entity details"
       >
         <Info className="size-4" />
-        {hasSelection && (
+        {activeTab === "details" && hasSelection && (
+          <span className="absolute -left-1 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-amber-500" />
+        )}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className={cn("relative", activeTab === "notebook" && "text-foreground")}
+        onClick={() => onOpen("notebook")}
+        title="Notebook"
+      >
+        <NotebookPen className="size-4" />
+        {activeTab === "notebook" && (
           <span className="absolute -left-1 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-amber-500" />
         )}
       </Button>
@@ -1263,9 +1298,13 @@ function AgentEntityDetailsRail({
 
 function AgentEntityDetailsPanel({
   caseId,
+  tab,
+  onTabChange,
   onClose,
 }: {
   caseId?: string
+  tab: "details" | "notebook"
+  onTabChange: (tab: "details" | "notebook") => void
   onClose: () => void
 }) {
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
@@ -1273,27 +1312,49 @@ function AgentEntityDetailsPanel({
 
   return (
     <section className="flex h-full min-w-0 flex-col border-l border-border bg-card">
-      <header className="flex items-center justify-between border-b border-border bg-muted/30 px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Info className="size-4 text-muted-foreground" />
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-foreground">
-              Entity details
-            </h2>
-            <p className="truncate text-xs text-muted-foreground">
-              {selectedNodeKeys.size > 0
-                ? `${selectedNodeKeys.size} selected`
-                : "Select an entity in an artifact"}
-            </p>
-          </div>
-        </div>
-        <Button type="button" variant="ghost" size="icon-sm" onClick={onClose} title="Collapse details">
+      <header className="flex items-center border-b border-border bg-muted/30">
+        <button
+          type="button"
+          onClick={() => onTabChange("details")}
+          className={cn(
+            "flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors",
+            tab === "details"
+              ? "border-foreground text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Info className="size-3.5" />
+          Details
+        </button>
+        <button
+          type="button"
+          onClick={() => onTabChange("notebook")}
+          className={cn(
+            "flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors",
+            tab === "notebook"
+              ? "border-foreground text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <NotebookPen className="size-3.5" />
+          Notebook
+        </button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="ml-auto mr-1"
+          onClick={onClose}
+          title="Collapse details"
+        >
           <PanelRightClose className="size-3.5" />
         </Button>
       </header>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {caseId && selectedNodeKeys.size > 0 ? (
+        {tab === "notebook" && caseId ? (
+          <NotebookPanel caseId={caseId} />
+        ) : caseId && selectedNodeKeys.size > 0 ? (
           <NodeDetailSheet
             caseId={caseId}
             onEditNode={(nodeKey) => setEditNodeKey(nodeKey)}
@@ -1409,10 +1470,7 @@ function InvestigationTrail({
     [steps]
   )
   const durationLabel = formatDuration(duration)
-
-  useEffect(() => {
-    if (live) setOpen(true)
-  }, [live, steps.length])
+  const isOpen = open || live
 
   if (steps.length === 0) return null
 
@@ -1422,9 +1480,9 @@ function InvestigationTrail({
         type="button"
         className="flex w-full items-center gap-2 px-3 py-2 text-left"
         onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
+        aria-expanded={isOpen}
       >
-        {open ? (
+        {isOpen ? (
           <ChevronDown className="size-3.5 text-muted-foreground" />
         ) : (
           <ChevronRight className="size-3.5 text-muted-foreground" />
@@ -1441,7 +1499,7 @@ function InvestigationTrail({
           </Badge>
         )}
       </button>
-      {open && (
+      {isOpen && (
         <div className="border-t border-border px-3 py-2">
           <div className="space-y-2">
             {steps.map((step, index) => {

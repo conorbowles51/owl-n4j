@@ -6,6 +6,8 @@ from postgres.models.rejected_merge_pair import RejectedMergePair
 from postgres.models.cost_record import CostRecord, CostJobType
 from postgres.models.ai_pricing_rate import AIPricingRate
 from postgres.models.case_deadline import CaseDeadline
+from postgres.models.notebook import NotebookNote, NotebookNoteLink
+from postgres.models.timeline_view import TimelineView, TimelineViewEvent
 from postgres.models.processing_profile import ProcessingProfile, CaseProcessingConfig
 from postgres.models.geocoding_cache import GeocodingCacheEntry
 from postgres.models.chat import CaseRevision, ChatConversation, ChatMessage
@@ -49,6 +51,7 @@ from postgres.models.workspace import (
 __all__ = [
     "User", "Case", "CaseMembership", "RejectedMergePair",
     "CostRecord", "CostJobType", "AIPricingRate", "CaseDeadline",
+    "NotebookNote", "NotebookNoteLink", "TimelineView", "TimelineViewEvent",
     "ProcessingProfile", "CaseProcessingConfig",
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",

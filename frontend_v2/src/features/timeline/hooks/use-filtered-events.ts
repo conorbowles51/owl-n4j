@@ -2,7 +2,11 @@ import { useMemo } from "react"
 import { markdownToPlainText } from "@/lib/markdown-text"
 import type { TimelineEvent } from "../api"
 import type { DateGroup } from "../lib/timeline-utils"
-import { groupEventsByDate } from "../lib/timeline-utils"
+import {
+  compareTimelineEvents,
+  getEventTimestamp,
+  groupEventsByDate,
+} from "../lib/timeline-utils"
 
 export type StreamItem =
   | { kind: "header"; date: string; label: string; count: number }
@@ -15,6 +19,7 @@ interface UseFilteredEventsParams {
   dateRange: { start: string | null; end: string | null }
   visibleWindow: { start: string; end: string } | null
   searchTerm: string
+  includedEventKeys?: Set<string> | null
 }
 
 interface UseFilteredEventsResult {
@@ -32,12 +37,18 @@ export function useFilteredEvents({
   dateRange,
   visibleWindow,
   searchTerm,
+  includedEventKeys,
 }: UseFilteredEventsParams): UseFilteredEventsResult {
   return useMemo(() => {
-    const totalCount = events.length
     let filtered = events
 
-    // 1. Type filter — empty means show all
+    if (includedEventKeys) {
+      filtered = filtered.filter((event) => includedEventKeys.has(event.key))
+    }
+
+    const totalCount = filtered.length
+
+    // 1. Type filter: empty means show all
     if (selectedTypes.size > 0) {
       filtered = filtered.filter((e) => selectedTypes.has(e.type))
     }
@@ -53,7 +64,7 @@ export function useFilteredEvents({
       }
     }
 
-    // 2. Entity filter — empty means no entity filter (show all)
+    // 2. Entity filter: empty means no entity filter (show all)
     if (selectedEntityKeys.size > 0) {
       filtered = filtered.filter((e) =>
         e.connections.some((c) => selectedEntityKeys.has(c.key))
@@ -65,7 +76,7 @@ export function useFilteredEvents({
       const windowStart = new Date(visibleWindow.start).getTime()
       const windowEnd = new Date(visibleWindow.end).getTime()
       filtered = filtered.filter((e) => {
-        const ts = new Date(e.date).getTime()
+        const ts = getEventTimestamp(e, true)
         return ts >= windowStart && ts <= windowEnd
       })
     }
@@ -79,7 +90,7 @@ export function useFilteredEvents({
         ? new Date(dateRange.end).getTime() + 86400000
         : Infinity
       filtered = filtered.filter((e) => {
-        const ts = new Date(e.date).getTime()
+        const ts = getEventTimestamp(e, true)
         return ts >= start && ts < end
       })
     }
@@ -91,15 +102,17 @@ export function useFilteredEvents({
         (e) =>
           e.name.toLowerCase().includes(term) ||
           e.type.toLowerCase().includes(term) ||
-          (e.summary && markdownToPlainText(e.summary).toLowerCase().includes(term)) ||
+          (e.summary &&
+            markdownToPlainText(e.summary).toLowerCase().includes(term)) ||
           (e.notes && e.notes.toLowerCase().includes(term)) ||
           (e.amount && e.amount.toLowerCase().includes(term)) ||
           e.connections.some((c) => c.name.toLowerCase().includes(term))
       )
     }
 
-    // 6. Group by date → StreamItem[]
-    const groups: DateGroup[] = groupEventsByDate(filtered)
+    // 6. Group by date for the stream
+    const sortedFiltered = [...filtered].sort(compareTimelineEvents)
+    const groups: DateGroup[] = groupEventsByDate(sortedFiltered)
     const items: StreamItem[] = []
     for (const group of groups) {
       items.push({
@@ -115,10 +128,18 @@ export function useFilteredEvents({
 
     return {
       items,
-      filteredEvents: filtered,
-      filteredCount: filtered.length,
+      filteredEvents: sortedFiltered,
+      filteredCount: sortedFiltered.length,
       totalCount,
       entityFilterCounts,
     }
-  }, [events, selectedTypes, selectedEntityKeys, dateRange, visibleWindow, searchTerm])
+  }, [
+    events,
+    selectedTypes,
+    selectedEntityKeys,
+    dateRange,
+    visibleWindow,
+    searchTerm,
+    includedEventKeys,
+  ])
 }

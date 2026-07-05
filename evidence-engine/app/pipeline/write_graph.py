@@ -135,14 +135,22 @@ async def _write_entities(
             batch = sanitize_json(nodes[i : i + batch_size])
             query = (
                 f"UNWIND $nodes AS node "
-                f"MERGE (n:{category} {{id: node.id}}) "
-                f"WITH n, node, n.aliases AS prev_aliases, "
+                f"OPTIONAL MATCH (existing {{id: node.id, case_id: node.case_id}}) "
+                f"WITH node, existing "
+                f"FOREACH (_ IN CASE WHEN existing IS NULL THEN [1] ELSE [] END | "
+                f"CREATE (created:{category} {{id: node.id, case_id: node.case_id}})) "
+                f"WITH node "
+                f"MATCH (n {{id: node.id, case_id: node.case_id}}) "
+                f"WITH n, node, coalesce(n.manual_fields, []) AS manual_fields, "
+                f"n.aliases AS prev_aliases, "
                 f"n.source_files AS prev_sf, n.source_quotes AS prev_sq, "
                 f"n.description AS prev_desc, n.summary AS prev_summary, "
                 f"n.confidence AS prev_conf, n.role AS prev_role, "
                 f"n.specific_type AS prev_st, n.verified_facts AS prev_vf, "
                 f"n.ai_insights AS prev_ai "
-                f"SET n += node, "
+                f"FOREACH (_ IN CASE WHEN NOT 'category' IN manual_fields THEN [1] ELSE [] END | "
+                f"SET n:{category}) "
+                f"SET n += apoc.map.removeKeys(node, manual_fields), "
                 # List properties: accumulate with dedup
                 f"n.aliases = reduce(acc = [], x IN (coalesce(prev_aliases, []) + coalesce(node.aliases, [])) "
                 f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
@@ -154,10 +162,12 @@ async def _write_entities(
                 f"n.description = CASE "
                 f"WHEN prev_desc IS NULL OR prev_desc = '' THEN node.description "
                 f"WHEN node.description IS NULL OR node.description = '' THEN prev_desc "
+                f"WHEN 'description' IN manual_fields THEN prev_desc "
                 f"WHEN size(node.description) > size(prev_desc) THEN node.description "
                 f"ELSE prev_desc END, "
                 # summary: always use new (merge prompt ensures it incorporates old)
                 f"n.summary = CASE "
+                f"WHEN 'summary' IN manual_fields THEN prev_summary "
                 f"WHEN node.summary IS NULL OR node.summary = '' THEN coalesce(prev_summary, '') "
                 f"ELSE node.summary END, "
                 # confidence: prefer higher
@@ -168,12 +178,14 @@ async def _write_entities(
                 f"ELSE prev_conf END, "
                 # role: prefer longer non-empty value
                 f"n.role = CASE "
+                f"WHEN 'role' IN manual_fields THEN prev_role "
                 f"WHEN prev_role IS NULL OR prev_role = '' THEN node.role "
                 f"WHEN node.role IS NULL OR node.role = '' THEN prev_role "
                 f"WHEN size(coalesce(node.role, '')) > size(prev_role) THEN node.role "
                 f"ELSE prev_role END, "
                 # specific_type: prefer existing (first extraction has best context)
                 f"n.specific_type = CASE "
+                f"WHEN 'specific_type' IN manual_fields THEN prev_st "
                 f"WHEN prev_st IS NULL OR prev_st = '' THEN node.specific_type "
                 f"ELSE prev_st END, "
                 f"n.verified_facts = CASE "

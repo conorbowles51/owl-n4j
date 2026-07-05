@@ -16,6 +16,7 @@ import { MarkdownSummary } from "@/components/ui/markdown-summary"
 import { ConnectionsList } from "./ConnectionsList"
 import { MultiNodePanel } from "./MultiNodePanel"
 import { NodePropertiesTable } from "./NodePropertiesTable"
+import { NotebookLinkedNotes } from "@/features/notebook/components/NotebookLinkedNotes"
 import {
   Pencil,
   Expand,
@@ -169,6 +170,12 @@ export function NodeDetailSheet({
             (detail.properties.aliases as unknown[]).length > 0 && (
               <p className="mt-0.5 truncate text-[11px] italic text-muted-foreground">
                 also known as: {(detail.properties.aliases as string[]).join(", ")}
+              </p>
+            )}
+          {typeof detail.properties.specific_type === "string" &&
+            detail.properties.specific_type.trim() && (
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                {detail.properties.specific_type}
               </p>
             )}
           {detail.confidence !== undefined && (
@@ -396,6 +403,18 @@ export function NodeDetailSheet({
           <ConnectionsList
             connections={connections}
             onNodeClick={(key) => selectNodes([key])}
+          />
+        </div>
+
+        <Separator />
+
+        {/* Linked notebook notes */}
+        <div className="px-4 py-3">
+          <NotebookLinkedNotes
+            caseId={caseId}
+            targetType="entity"
+            targetId={detail.key}
+            targetLabel={detail.label}
           />
         </div>
 

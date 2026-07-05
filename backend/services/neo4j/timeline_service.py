@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 from typing import Dict, List, Optional
 
 from services.neo4j.driver import driver
@@ -15,11 +16,47 @@ logger = logging.getLogger(__name__)
 
 
 class TimelineService:
+    SORT_DATE_CYPHER = """
+        CASE
+            WHEN n.date IS NULL THEN NULL
+            WHEN toString(n.date) CONTAINS 'T' THEN split(toString(n.date), 'T')[0]
+            ELSE substring(toString(n.date), 0, 10)
+        END
+    """
+    SORT_TIME_CYPHER = """
+        CASE
+            WHEN n.time IS NOT NULL AND trim(toString(n.time)) <> ''
+                THEN substring(toString(n.time), 0, 5)
+            WHEN n.date IS NOT NULL AND toString(n.date) CONTAINS 'T'
+                THEN substring(split(toString(n.date), 'T')[1], 0, 5)
+            ELSE NULL
+        END
+    """
+
+    @staticmethod
+    def _normalise_date_time(date_value, time_value) -> tuple[str | None, str | None]:
+        date_text = str(date_value) if date_value is not None else ""
+        time_text = str(time_value) if time_value is not None else ""
+
+        if "T" in date_text:
+            date_part, remainder = date_text.split("T", 1)
+            date_text = date_part
+            if not time_text:
+                match = re.match(r"(\d{2}:\d{2})", remainder)
+                if match:
+                    time_text = match.group(1)
+
+        if time_text:
+            match = re.match(r"^(\d{2}:\d{2})", time_text)
+            time_text = match.group(1) if match else time_text
+
+        return (date_text or None, time_text or None)
+
     @staticmethod
     def _encode_cursor(event: Dict) -> str:
         payload = {
             "date": event.get("date") or "",
-            "time": event.get("time") or "",
+            "time": event.get("time") or "99:99",
             "key": event.get("key") or "",
         }
         raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -51,7 +88,7 @@ class TimelineService:
         case_id: str,
     ) -> tuple[str, Dict]:
         conditions = [
-            "n.date IS NOT NULL",
+            "sort_date IS NOT NULL",
             "NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])",
             "coalesce(properties(n)['system_node'], false) <> true",
             "n.case_id = $case_id",
@@ -62,27 +99,46 @@ class TimelineService:
             conditions.append("labels(n)[0] IN $types")
             params["types"] = event_types
         if start_date:
-            conditions.append("n.date >= $start_date")
+            conditions.append("sort_date >= $start_date")
             params["start_date"] = start_date
         if end_date:
-            conditions.append("n.date <= $end_date")
+            conditions.append("sort_date <= $end_date")
             params["end_date"] = end_date
 
         return " AND ".join(conditions), params
 
     @staticmethod
     def _event_from_record(record) -> Dict:
-        return {
+        date_value, time_value = TimelineService._normalise_date_time(
+            record["date"], record["time"]
+        )
+        event = {
             "key": record["key"],
             "name": record["name"],
             "type": record["type"],
-            "date": record["date"],
-            "time": record["time"],
+            "date": date_value,
+            "time": time_value,
             "amount": record["amount"],
             "summary": record["summary"],
             "notes": record["notes"],
             "connections": [c for c in record["connections"] if c["key"]],
         }
+        record_keys = record.keys() if hasattr(record, "keys") else record
+        for field in (
+            "location",
+            "location_raw",
+            "location_formatted",
+            "location_name",
+            "latitude",
+            "longitude",
+            "source_files",
+            "source_quotes",
+            "source_references",
+            "source_pages",
+        ):
+            if field in record_keys:
+                event[field] = record[field]
+        return event
 
     def get_timeline_events(
         self,
@@ -119,14 +175,14 @@ class TimelineService:
         if cursor_payload:
             where_clause += """
                 AND (
-                    n.date > $cursor_date
+                    sort_date > $cursor_date
                     OR (
-                        n.date = $cursor_date
-                        AND coalesce(n.time, '') > $cursor_time
+                        sort_date = $cursor_date
+                        AND coalesce(sort_time, '99:99') > $cursor_time
                     )
                     OR (
-                        n.date = $cursor_date
-                        AND coalesce(n.time, '') = $cursor_time
+                        sort_date = $cursor_date
+                        AND coalesce(sort_time, '99:99') = $cursor_time
                         AND n.key > $cursor_key
                     )
                 )
@@ -144,6 +200,10 @@ class TimelineService:
 
         query = f"""
             MATCH (n)
+            WITH
+                n,
+                {self.SORT_DATE_CYPHER} AS sort_date,
+                {self.SORT_TIME_CYPHER} AS sort_time
             WHERE {where_clause}
             OPTIONAL MATCH (n)-[r]-(connected)
             WHERE connected IS NULL OR (
@@ -151,7 +211,7 @@ class TimelineService:
               AND coalesce(properties(connected)['system_node'], false) <> true
               AND connected.case_id = $case_id
             )
-            WITH n, collect(DISTINCT {{
+            WITH n, sort_date, sort_time, collect(DISTINCT {{
                 key: connected.key,
                 name: connected.name,
                 type: labels(connected)[0],
@@ -162,19 +222,23 @@ class TimelineService:
                 n.key AS key,
                 n.name AS name,
                 labels(n)[0] AS type,
-                n.date AS date,
-                n.time AS time,
+                sort_date AS date,
+                sort_time AS time,
                 n.amount AS amount,
                 n.summary AS summary,
                 n.notes AS notes,
                 connections
-            ORDER BY n.date ASC, coalesce(n.time, '') ASC, n.key ASC
+            ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC
             LIMIT $limit
         """
 
         count_where, count_params = self._build_filters(event_types, start_date, end_date, case_id)
         count_query = f"""
             MATCH (n)
+            WITH
+                n,
+                {self.SORT_DATE_CYPHER} AS sort_date,
+                {self.SORT_TIME_CYPHER} AS sort_time
             WHERE {count_where}
             RETURN count(n) AS total
         """
@@ -192,6 +256,89 @@ class TimelineService:
             "total": int(total_record["total"] or 0) if total_record else 0,
             "next_cursor": next_cursor,
         }
+
+    def get_timeline_events_by_keys(
+        self,
+        *,
+        case_id: str,
+        event_keys: List[str],
+        include_export_fields: bool = False,
+    ) -> List[Dict]:
+        """Fetch a case-scoped set of timeline events by key."""
+        ordered_keys = []
+        seen = set()
+        for key in event_keys or []:
+            key_text = str(key or "").strip()
+            if key_text and key_text not in seen:
+                seen.add(key_text)
+                ordered_keys.append(key_text)
+        if not ordered_keys:
+            return []
+
+        export_returns = ""
+        if include_export_fields:
+            export_returns = """
+                n.location AS location,
+                n.location_raw AS location_raw,
+                n.location_formatted AS location_formatted,
+                n.location_name AS location_name,
+                n.latitude AS latitude,
+                n.longitude AS longitude,
+                n.source_files AS source_files,
+                n.source_quotes AS source_quotes,
+                n.source_references AS source_references,
+                n.source_pages AS source_pages,
+            """
+
+        query = f"""
+            MATCH (n)
+            WITH
+                n,
+                {self.SORT_DATE_CYPHER} AS sort_date,
+                {self.SORT_TIME_CYPHER} AS sort_time
+            WHERE
+                n.case_id = $case_id
+                AND n.key IN $event_keys
+                AND sort_date IS NOT NULL
+                AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                AND coalesce(properties(n)['system_node'], false) <> true
+            OPTIONAL MATCH (n)-[r]-(connected)
+            WHERE connected IS NULL OR (
+              NONE(label IN labels(connected) WHERE label IN ['Document', 'Case', 'RecycleBin', 'RecycleBinItem'])
+              AND coalesce(properties(connected)['system_node'], false) <> true
+              AND connected.case_id = $case_id
+            )
+            WITH n, sort_date, sort_time, collect(DISTINCT {{
+                key: connected.key,
+                name: connected.name,
+                type: labels(connected)[0],
+                relationship: type(r),
+                direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
+            }}) AS connections
+            RETURN
+                n.key AS key,
+                n.name AS name,
+                labels(n)[0] AS type,
+                sort_date AS date,
+                sort_time AS time,
+                n.amount AS amount,
+                n.summary AS summary,
+                n.notes AS notes,
+                connections,
+                {export_returns}
+                n.key AS key_echo
+            ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC
+        """
+
+        with driver.session() as session:
+            return [
+                self._event_from_record(record)
+                for record in session.run(
+                    query,
+                    case_id=case_id,
+                    event_keys=ordered_keys,
+                )
+            ]
 
 
 timeline_service = TimelineService()

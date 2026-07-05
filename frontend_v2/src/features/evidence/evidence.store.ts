@@ -42,9 +42,9 @@ interface EvidenceState {
   closeDetail: () => void
 
   // Context sidebar (tab state only — collapse is managed by UIStore.graphPanelCollapsed)
-  sidebarTab: "details" | "processing" | "chat"
-  setSidebarTab: (tab: "details" | "processing" | "chat") => void
-  openSidebarTo: (tab: "details" | "processing" | "chat") => void
+  sidebarTab: "details" | "processing" | "chat" | "notebook"
+  setSidebarTab: (tab: "details" | "processing" | "chat" | "notebook") => void
+  openSidebarTo: (tab: "details" | "processing" | "chat" | "notebook") => void
 
   // Filters
   searchTerm: string

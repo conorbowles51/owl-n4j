@@ -33,6 +33,35 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 
+const BULK_EDIT_HIDDEN_PROPERTIES = new Set([
+  "id",
+  "key",
+  "case_id",
+  "node_key",
+  "job_id",
+  "source_files",
+  "source_quotes",
+  "verified_facts",
+  "ai_insights",
+  "confidence",
+  "manual_fields",
+  "last_edited_at",
+  "last_edited_by",
+  "last_edit_source",
+  "geocoding_status",
+  "geocoding_confidence",
+  "geocode_confidence",
+  "geocode_source",
+  "geocode_accuracy",
+  "formatted_address",
+  "nearest_location_key",
+  "nearest_location_lat",
+  "nearest_location_lon",
+  "nearest_location_delta_s",
+  "nearest_location_source",
+  "location_source",
+])
+
 export function TablePage() {
   const { id: caseId } = useParams()
   const queryClient = useQueryClient()
@@ -337,6 +366,11 @@ export function TablePage() {
   const handleBulkEditComplete = useCallback(() => {
     if (caseId) {
       queryClient.invalidateQueries({ queryKey: ["graph", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["graph", "summary", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["graph", "entity-types", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["timeline", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["map", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["financial", caseId] })
     }
   }, [caseId, queryClient])
 
@@ -363,7 +397,9 @@ export function TablePage() {
     const props = new Set<string>()
     for (const node of nodes) {
       for (const key of Object.keys(node.properties)) {
-        props.add(key)
+        if (!BULK_EDIT_HIDDEN_PROPERTIES.has(key.toLowerCase())) {
+          props.add(key)
+        }
       }
     }
     return Array.from(props).sort()
@@ -501,6 +537,7 @@ export function TablePage() {
       <BulkEditDialog
         open={bulkEditOpen}
         onOpenChange={setBulkEditOpen}
+        caseId={caseId ?? ""}
         entityKeys={checkedArray}
         knownProperties={knownProperties}
         onComplete={handleBulkEditComplete}

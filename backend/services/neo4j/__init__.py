@@ -18,6 +18,7 @@ from services.neo4j.document_service import document_service
 from services.neo4j.geo_service import geo_service
 from services.neo4j.timeline_service import timeline_service
 from services.neo4j.cellebrite_service import cellebrite_service, resolve_file_parents
+from services.neo4j.graph_edit_service import graph_edit_service
 
 
 class Neo4jServiceFacade:
@@ -63,7 +64,9 @@ class Neo4jServiceFacade:
     restore_recycled_entity = staticmethod(entity_service.restore_recycled_entity)
     permanently_delete_recycled = staticmethod(entity_service.permanently_delete_recycled)
     get_case_entity_summary = staticmethod(entity_service.get_case_entity_summary)
-    batch_update_entities = staticmethod(entity_service.batch_update_entities)
+    batch_update_entities = staticmethod(graph_edit_service.batch_update_entities)
+    update_graph_node = staticmethod(graph_edit_service.update_node)
+    get_graph_edit_schema = staticmethod(lambda: graph_edit_service.editable_schema)
     get_entities_for_insights = staticmethod(entity_service.get_entities_for_insights)
     save_entity_insights = staticmethod(entity_service.save_entity_insights)
     reject_entity_insight = staticmethod(entity_service.reject_entity_insight)
@@ -104,6 +107,8 @@ class Neo4jServiceFacade:
     get_entities_with_locations = staticmethod(geo_service.get_entities_with_locations)
     update_entity_location = staticmethod(geo_service.update_entity_location)
     remove_entity_location = staticmethod(geo_service.remove_entity_location)
+    update_location = staticmethod(graph_edit_service.update_location)
+    remove_location = staticmethod(graph_edit_service.remove_location)
     get_all_nodes = staticmethod(geo_service.get_all_nodes)
     update_entity_location_full = staticmethod(geo_service.update_entity_location_full)
     create_location_node = staticmethod(geo_service.create_location_node)
@@ -112,6 +117,7 @@ class Neo4jServiceFacade:
     # ── Timeline ───────────────────────────────────────────────────────
     get_timeline_events = staticmethod(timeline_service.get_timeline_events)
     get_timeline_page = staticmethod(timeline_service.get_timeline_page)
+    get_timeline_events_by_keys = staticmethod(timeline_service.get_timeline_events_by_keys)
 
     # ── Cellebrite analytics ───────────────────────────────────────────
     get_cellebrite_reports = staticmethod(cellebrite_service.get_cellebrite_reports)

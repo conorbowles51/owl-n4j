@@ -23,6 +23,7 @@ import {
   Building,
   MapPin,
   Banknote,
+  NotebookPen,
   Tag,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -40,6 +41,7 @@ import { useFolderContents } from "../hooks/use-folder-contents"
 import { JobsPanel } from "./JobsPanel"
 import { FileSummaryPanel } from "./FileSummaryPanel"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
+import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { evidenceAPI } from "../api"
 import { useProcessBackground } from "../hooks/use-evidence-detail"
 import { useFileEntities, useFileRelationships } from "../hooks/use-file-entities"
@@ -704,6 +706,7 @@ export function EvidenceContextSidebar({
     { id: "details" as const, label: "Details", icon: Info },
     { id: "processing" as const, label: "Processing", icon: Loader2 },
     { id: "chat" as const, label: "AI Chat", icon: MessageSquare },
+    { id: "notebook" as const, label: "Notebook", icon: NotebookPen },
   ]
 
   return (
@@ -767,6 +770,9 @@ export function EvidenceContextSidebar({
         )}
         {sidebarTab === "chat" && (
           <ChatSidePanel caseId={caseId} />
+        )}
+        {sidebarTab === "notebook" && (
+          <NotebookPanel caseId={caseId} />
         )}
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Info, Loader2, MessageSquare, PanelRightClose } from "lucide-react"
+import { Info, Loader2, MessageSquare, NotebookPen, PanelRightClose } from "lucide-react"
 import { useParams, useMatch } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import {
@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn"
 import { NodeDetailSheet } from "@/features/graph/components/NodeDetailSheet"
 import { EditNodeDialog } from "@/features/graph/components/EditNodeDialog"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
+import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 
 /**
  * Collapsed icon rail for non-graph case views.
@@ -28,9 +29,9 @@ export function CaseSidePanelRail() {
 
   const handleExpand = (target: string) => {
     if (isEvidenceRoute) {
-      setSidebarTab(target as "details" | "processing" | "chat")
+      setSidebarTab(target as "details" | "processing" | "chat" | "notebook")
     } else {
-      expandTo(target as "detail" | "chat")
+      expandTo(target as "detail" | "chat" | "notebook")
     }
     useUIStore.getState().setGraphPanelCollapsed(false)
   }
@@ -39,6 +40,7 @@ export function CaseSidePanelRail() {
   const isDetailsActive = isEvidenceRoute ? evidenceSidebarTab === "details" : tab === "detail"
   const isProcessingActive = isEvidenceRoute && evidenceSidebarTab === "processing"
   const isChatActive = isEvidenceRoute ? evidenceSidebarTab === "chat" : tab === "chat"
+  const isNotebookActive = isEvidenceRoute ? evidenceSidebarTab === "notebook" : tab === "notebook"
 
   return (
     <div className="flex h-full w-12 flex-col items-center gap-1 border-l border-border bg-muted/30 pt-2">
@@ -101,6 +103,25 @@ export function CaseSidePanelRail() {
         </TooltipTrigger>
         <TooltipContent side="left">AI Chat</TooltipContent>
       </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={cn(
+              "relative",
+              isNotebookActive && "text-foreground"
+            )}
+            onClick={() => handleExpand("notebook")}
+          >
+            <NotebookPen className="size-4" />
+            {isNotebookActive && (
+              <span className="absolute -left-1 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-amber-500" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left">Notebook</TooltipContent>
+      </Tooltip>
     </div>
   )
 }
@@ -148,6 +169,19 @@ export function CaseSidePanelContent() {
           <MessageSquare className="size-3.5" />
           AI Chat
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("notebook")}
+          className={cn(
+            "flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2",
+            tab === "notebook"
+              ? "border-foreground text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <NotebookPen className="size-3.5" />
+          Notebook
+        </button>
         <div className="ml-auto pr-1">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -183,8 +217,10 @@ export function CaseSidePanelContent() {
               </p>
             </div>
           )
-        ) : (
+        ) : tab === "chat" ? (
           caseId && <ChatSidePanel caseId={caseId} />
+        ) : (
+          caseId && <NotebookPanel caseId={caseId} />
         )}
       </div>
 

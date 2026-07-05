@@ -11,9 +11,12 @@ interface TimelineState {
   // Selection
   selectedEventKey: string | null
   multiSelectedKeys: Set<string>
+  curationSelectedKeys: Set<string>
+  activeViewId: string | null
 
   // UI
   filterSidebarOpen: boolean
+  curationMode: boolean
   visibleWindow: { start: string; end: string } | null
 
   // Clusters
@@ -36,9 +39,15 @@ interface TimelineState {
   selectEvent: (key: string) => void
   multiSelectEvent: (key: string) => void
   clearSelection: () => void
+  setActiveViewId: (viewId: string | null) => void
+  toggleCurationSelection: (key: string) => void
+  setCurationSelection: (keys: Set<string>) => void
+  clearCurationSelection: () => void
 
   // Actions — UI
   toggleFilterSidebar: () => void
+  setCurationMode: (enabled: boolean) => void
+  toggleCurationMode: () => void
   setVisibleWindow: (window: { start: string; end: string } | null) => void
 
   // Actions — Clusters
@@ -60,8 +69,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   selectedEventKey: null,
   multiSelectedKeys: new Set(),
+  curationSelectedKeys: new Set(),
+  activeViewId: null,
 
   filterSidebarOpen: true,
+  curationMode: false,
   visibleWindow: null,
 
   clusters: [],
@@ -123,9 +135,33 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   clearSelection: () =>
     set({ selectedEventKey: null, multiSelectedKeys: new Set() }),
 
+  setActiveViewId: (viewId) =>
+    set({ activeViewId: viewId, curationSelectedKeys: new Set() }),
+
+  toggleCurationSelection: (key) =>
+    set((s) => {
+      const next = new Set(s.curationSelectedKeys)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return { curationSelectedKeys: next }
+    }),
+
+  setCurationSelection: (keys) => set({ curationSelectedKeys: new Set(keys) }),
+
+  clearCurationSelection: () => set({ curationSelectedKeys: new Set() }),
+
   // UI actions
   toggleFilterSidebar: () =>
     set((s) => ({ filterSidebarOpen: !s.filterSidebarOpen })),
+
+  setCurationMode: (enabled) =>
+    set({ curationMode: enabled, curationSelectedKeys: enabled ? get().curationSelectedKeys : new Set() }),
+
+  toggleCurationMode: () =>
+    set((s) => ({
+      curationMode: !s.curationMode,
+      curationSelectedKeys: s.curationMode ? new Set() : s.curationSelectedKeys,
+    })),
 
   setVisibleWindow: (window) => set({ visibleWindow: window }),
 

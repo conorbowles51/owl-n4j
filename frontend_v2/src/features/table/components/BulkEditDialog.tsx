@@ -21,6 +21,7 @@ import { graphAPI } from "@/features/graph/api"
 interface BulkEditDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  caseId: string
   entityKeys: string[]
   knownProperties: string[]
   onComplete: () => void
@@ -29,6 +30,7 @@ interface BulkEditDialogProps {
 export function BulkEditDialog({
   open,
   onOpenChange,
+  caseId,
   entityKeys,
   knownProperties,
   onComplete,
@@ -49,7 +51,11 @@ export function BulkEditDialog({
     try {
       await Promise.all(
         entityKeys.map((key) =>
-          graphAPI.updateNode(key, { properties: { [effectiveKey]: value.trim() } })
+          graphAPI.updateNode(key, {
+            case_id: caseId,
+            properties: { [effectiveKey]: value.trim() },
+            source_view: "table",
+          })
         )
       )
       onComplete()

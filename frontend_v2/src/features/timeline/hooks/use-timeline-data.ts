@@ -1,7 +1,12 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { timelineAPI } from "../api"
-import { getDateRange, deriveEntities, isValidDate } from "../lib/timeline-utils"
+import {
+  compareTimelineEvents,
+  deriveEntities,
+  getDateRange,
+  isValidDate,
+} from "../lib/timeline-utils"
 
 import type { DateRange, DerivedEntity } from "../lib/timeline-utils"
 import type { TimelineEvent } from "../api"
@@ -19,7 +24,9 @@ interface UseTimelineDataResult {
   totalCount: number
 }
 
-export function useTimelineData({ caseId }: UseTimelineDataParams): UseTimelineDataResult {
+export function useTimelineData({
+  caseId,
+}: UseTimelineDataParams): UseTimelineDataResult {
   const eventsQuery = useQuery({
     queryKey: ["timeline", caseId],
     queryFn: async () => {
@@ -53,7 +60,7 @@ export function useTimelineData({ caseId }: UseTimelineDataParams): UseTimelineD
         `Timeline: skipped ${rawEvents.length - valid.length} event(s) with invalid dates`
       )
     }
-    return valid
+    return [...valid].sort(compareTimelineEvents)
   }, [eventsQuery.data?.events])
 
   const eventTypes = useMemo(() => {

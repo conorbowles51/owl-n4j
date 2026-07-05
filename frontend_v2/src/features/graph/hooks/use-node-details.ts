@@ -8,3 +8,12 @@ export function useNodeDetails(nodeKey: string | null, caseId: string | undefine
     enabled: !!nodeKey && !!caseId,
   })
 }
+
+export function useGraphEditSchema(enabled = true) {
+  return useQuery({
+    queryKey: ["graph", "edit-schema"],
+    queryFn: () => graphAPI.getEditSchema(),
+    enabled,
+    staleTime: 1000 * 60 * 10,
+  })
+}

@@ -189,16 +189,22 @@ class CreateNodeResponse(BaseModel):
 
 class UpdateNodeRequest(BaseModel):
     """Request model for updating a node."""
+    case_id: str
     name: Optional[str] = None
     summary: Optional[str] = None
     notes: Optional[str] = None
+    category: Optional[str] = None
+    specific_type: Optional[str] = None
     properties: Optional[Dict[str, Any]] = None  # Additional type-specific properties
+    source_view: Optional[str] = None
 
 
 class UpdateNodeResponse(BaseModel):
     """Response model for node update."""
     success: bool
-    cypher: str
+    updated_fields: List[str] = []
+    changes: Dict[str, Any] = {}
+    cypher: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -263,6 +269,15 @@ async def get_entity_types(
         types_list.sort(key=lambda x: (-x["count"], x["type"]))
 
         return {"entity_types": types_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/edit-schema")
+async def get_graph_edit_schema():
+    """Get ontology-backed metadata for investigator-facing graph edits."""
+    try:
+        return neo4j_service.get_graph_edit_schema()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1181,108 +1196,49 @@ async def analyze_node_relationships(node_key: str):
 @router.put("/node/{node_key}", response_model=UpdateNodeResponse)
 async def update_node(node_key: str, request: UpdateNodeRequest, user: dict = Depends(get_current_user)):
     """
-    Update properties of an existing node.
-    
-    Args:
-        node_key: The key of the node to update
-        request: Update request with optional summary and notes
-        user: Current authenticated user
-        
-    Returns:
-        Response with success status and generated Cypher
+    Update investigator-facing fields on an existing node.
     """
     try:
-        # Verify node exists
-        node_details = neo4j_service.get_node_details(node_key)
-        if not node_details:
-            raise HTTPException(status_code=404, detail=f"Node with key '{node_key}' not found")
-        
-        # Build SET clause for properties to update
-        set_clauses = []
-        updated_fields = []
-        
-        if request.name is not None:
-            # Escape single quotes in name
-            escaped_name = request.name.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
-            set_clauses.append(f"n.name = '{escaped_name}'")
-            updated_fields.append("name")
-        
-        if request.summary is not None:
-            # Escape single quotes in summary
-            escaped_summary = request.summary.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
-            set_clauses.append(f"n.summary = '{escaped_summary}'")
-            updated_fields.append("summary")
-        
-        if request.notes is not None:
-            # Escape single quotes in notes
-            escaped_notes = request.notes.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
-            set_clauses.append(f"n.notes = '{escaped_notes}'")
-            updated_fields.append("notes")
-        
-        # Add type-specific properties if provided
-        if request.properties:
-            from services.cypher_generator import format_properties
-            # Format properties for Cypher (escape values)
-            for key, value in request.properties.items():
-                # Skip standard fields that are handled above
-                if key in ['name', 'summary', 'notes']:
-                    continue
-                # Escape property key if needed
-                if not key.replace("_", "").replace("-", "").isalnum() or (key and key[0].isdigit()):
-                    escaped_key = f"`{key.replace('`', '``')}`"
-                else:
-                    escaped_key = key
-                # Format value based on type
-                if isinstance(value, str):
-                    escaped_value = value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
-                    set_clauses.append(f"n.{escaped_key} = '{escaped_value}'")
-                elif isinstance(value, bool):
-                    set_clauses.append(f"n.{escaped_key} = {str(value).lower()}")
-                elif isinstance(value, (int, float)):
-                    set_clauses.append(f"n.{escaped_key} = {value}")
-                elif value is None:
-                    set_clauses.append(f"n.{escaped_key} = null")
-                else:
-                    # For other types, convert to string
-                    escaped_value = str(value).replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
-                    set_clauses.append(f"n.{escaped_key} = '{escaped_value}'")
-                updated_fields.append(key)
-        
-        if not set_clauses:
-            raise HTTPException(status_code=400, detail="At least one field must be provided")
-        
-        # Generate Cypher query to update the node
-        # Find the node by key and update properties
-        # Escape the node_key for use in Cypher string
-        escaped_key = node_key.replace('\\', '\\\\').replace("'", "\\'")
-        cypher = f"MATCH (n {{key: '{escaped_key}'}})\n"
-        cypher += f"SET {', '.join(set_clauses)}"
-        
-        # Execute the update
-        neo4j_service.run_cypher(cypher, {})
-        
-        # Log the operation
+        result = neo4j_service.update_graph_node(
+            node_key,
+            case_id=request.case_id,
+            name=request.name,
+            summary=request.summary,
+            notes=request.notes,
+            category=request.category,
+            specific_type=request.specific_type,
+            properties=request.properties,
+            edited_by=user.get("username", "unknown"),
+            source_view=request.source_view or "entity_detail",
+        )
+
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
             action=f"Update Node: {node_key}",
             details={
+                "case_id": request.case_id,
                 "node_key": node_key,
-                "node_name": node_details.get("name", "unknown"),
-                "updated_fields": updated_fields,
+                "updated_fields": result.get("updated_fields", []),
+                "changes": result.get("changes", {}),
+                "source_view": request.source_view or "entity_detail",
             },
             user=user.get("username", "unknown"),
             success=True,
         )
-        
+
         return UpdateNodeResponse(
             success=True,
-            cypher=cypher
+            updated_fields=result.get("updated_fields", []),
+            changes=result.get("changes", {}),
         )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
-        # Log the error
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
@@ -1295,12 +1251,7 @@ async def update_node(node_key: str, request: UpdateNodeRequest, user: dict = De
             success=False,
             error=str(e),
         )
-        
-        return UpdateNodeResponse(
-            success=False,
-            cypher="",
-            error=str(e)
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/node/{node_key}/pin-fact")
@@ -1986,12 +1937,13 @@ async def update_entity_location(
 ):
     """Update the location of an entity node on the map."""
     try:
-        result = neo4j_service.update_entity_location(
+        result = neo4j_service.update_location(
             node_key=node_key,
             case_id=request.case_id,
             location_name=request.location_name,
             latitude=request.latitude,
             longitude=request.longitude,
+            edited_by=user.get("username", "unknown"),
         )
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
@@ -2007,8 +1959,10 @@ async def update_entity_location(
             success=True,
         )
         return result
-    except ValueError as e:
+    except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2021,7 +1975,11 @@ async def remove_entity_location(
 ):
     """Remove location data from an entity node (node stays in graph)."""
     try:
-        result = neo4j_service.remove_entity_location(node_key=node_key, case_id=case_id)
+        result = neo4j_service.remove_location(
+            node_key=node_key,
+            case_id=case_id,
+            edited_by=user.get("username", "unknown"),
+        )
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
@@ -2031,8 +1989,10 @@ async def remove_entity_location(
             success=True,
         )
         return result
-    except ValueError as e:
+    except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2060,15 +2020,12 @@ async def batch_update_entities(
     """Batch update properties on multiple entity nodes."""
     if len(request.updates) > 500:
         raise HTTPException(status_code=400, detail="Maximum 500 updates per call")
-    allowed = {"name", "summary", "notes", "type", "description"}
-    for u in request.updates:
-        if u.get("property") not in allowed:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Property '{u.get('property')}' not allowed",
-            )
     try:
-        count = neo4j_service.batch_update_entities(request.updates, request.case_id)
+        count = neo4j_service.batch_update_entities(
+            request.updates,
+            request.case_id,
+            edited_by=user.get("username", "unknown"),
+        )
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
@@ -2082,6 +2039,10 @@ async def batch_update_entities(
             success=True,
         )
         return {"success": True, "updated": count}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2274,9 +2235,15 @@ class GeocodeNodeRequest(BaseModel):
     address: str
 
 
+@router.post("/node/{node_key}/geocode")
 @router.post("/nodes/{node_key}/geocode")
-async def geocode_node(node_key: str, body: GeocodeNodeRequest):
-    """Geocode a single entity's address and update its location properties."""
+async def geocode_node(
+    node_key: str,
+    body: GeocodeNodeRequest,
+    apply: bool = Query(True, description="If true, persist the geocoded location to the node"),
+    user: dict = Depends(get_current_user),
+):
+    """Geocode a single entity address, optionally applying it to the node."""
     from services.geo_rescan_service import geocode_with_cache
 
     if not body.address.strip():
@@ -2287,21 +2254,19 @@ async def geocode_node(node_key: str, body: GeocodeNodeRequest):
         if not result:
             return {"success": False, "error": "Could not geocode address", "address": body.address}
 
-        # Update the node with geocoded coordinates
-        with neo4j_service._driver.session() as session:
-            session.run(
-                """
-                MATCH (n {key: $key, case_id: $case_id})
-                SET n.latitude = $lat, n.longitude = $lon,
-                    n.formatted_address = $formatted_address,
-                    n.geocode_confidence = $confidence
-                """,
-                key=node_key,
+        if apply:
+            neo4j_service.update_graph_node(
+                node_key,
                 case_id=body.case_id,
-                lat=result["latitude"],
-                lon=result["longitude"],
-                formatted_address=result["formatted_address"],
-                confidence=result["confidence"],
+                properties={
+                    "latitude": result["latitude"],
+                    "longitude": result["longitude"],
+                    "location_raw": body.address.strip(),
+                    "location_formatted": result["formatted_address"],
+                    "location_name": result["formatted_address"],
+                },
+                edited_by=user.get("username", "unknown"),
+                source_view="map",
             )
 
         return {
@@ -2310,6 +2275,11 @@ async def geocode_node(node_key: str, body: GeocodeNodeRequest):
             "longitude": result["longitude"],
             "formatted_address": result["formatted_address"],
             "confidence": result["confidence"],
+            "applied": apply,
         }
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

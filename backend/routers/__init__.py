@@ -29,6 +29,7 @@ from routers.admin_ai_costs import router as admin_ai_costs_router
 from routers.financial import router as financial_router
 from routers.maintenance import router as maintenance_router
 from routers.case_deadlines import router as case_deadlines_router
+from routers.notebook import router as notebook_router
 from routers.evidence_folders import router as evidence_folders_router
 from routers.cellebrite import router as cellebrite_router
 from routers.triage import router as triage_router
@@ -61,6 +62,7 @@ __all__ = [
     "financial_router",
     "maintenance_router",
     "case_deadlines_router",
+    "notebook_router",
     "evidence_folders_router",
     "cellebrite_router",
     "triage_router",

@@ -10,11 +10,14 @@ interface EventStreamProps {
   totalCount: number
   selectedEventKey: string | null
   multiSelectedKeys: Set<string>
+  curationMode: boolean
+  curationSelectedKeys: Set<string>
   searchTerm: string
   selectedEntityKeys: Set<string>
   scrollToEventKey: string | null
   onSelectEvent: (key: string) => void
   onMultiSelectEvent: (key: string) => void
+  onToggleCurationSelection: (key: string) => void
   onClearScrollTarget: () => void
   onClearFilters: () => void
 }
@@ -27,11 +30,14 @@ export function EventStream({
   totalCount,
   selectedEventKey,
   multiSelectedKeys,
+  curationMode,
+  curationSelectedKeys,
   searchTerm,
   selectedEntityKeys,
   scrollToEventKey,
   onSelectEvent,
   onMultiSelectEvent,
+  onToggleCurationSelection,
   onClearScrollTarget,
   onClearFilters,
 }: EventStreamProps) {
@@ -105,11 +111,11 @@ export function EventStream({
               ref={virtualizer.measureElement}
             >
               {item.kind === "header" ? (
-                <div className="flex items-center gap-2 bg-background px-3 py-1.5 border-b border-border/50">
-                  <span className="text-xs font-semibold text-foreground">
+                <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-background/95 px-3 py-2">
+                  <span className="text-xs font-semibold tracking-normal text-foreground">
                     {item.label}
                   </span>
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                     {item.count} event{item.count !== 1 ? "s" : ""}
                   </span>
                 </div>
@@ -119,10 +125,13 @@ export function EventStream({
                     event={item.event}
                     isSelected={selectedEventKey === item.event.key}
                     isMultiSelected={multiSelectedKeys.has(item.event.key)}
+                    curationMode={curationMode}
+                    isCurationSelected={curationSelectedKeys.has(item.event.key)}
                     searchTerm={searchTerm}
                     highlightedEntityKeys={selectedEntityKeys}
                     onSelect={onSelectEvent}
                     onMultiSelect={onMultiSelectEvent}
+                    onToggleCurationSelection={onToggleCurationSelection}
                   />
                 </div>
               )}

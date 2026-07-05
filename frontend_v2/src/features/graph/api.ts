@@ -11,6 +11,48 @@ import type {
   ShortestPathResult,
 } from "@/types/graph.types"
 
+export interface GraphEditPropertySchema {
+  name: string
+  type: string
+  description?: string
+  enum?: string[]
+}
+
+export interface GraphEditCategorySchema {
+  name: string
+  description: string
+  properties: GraphEditPropertySchema[]
+}
+
+export interface GraphEditSchema {
+  version: string
+  categories: GraphEditCategorySchema[]
+  category_properties: Record<string, GraphEditPropertySchema[]>
+  timeline: {
+    categories: string[]
+    date_field: string
+    fields: GraphEditPropertySchema[]
+  }
+  map: {
+    categories: string[]
+    requires: string[]
+    fields: GraphEditPropertySchema[]
+  }
+  hidden_properties: string[]
+  system_properties: string[]
+}
+
+export interface UpdateNodePayload {
+  case_id: string
+  name?: string | null
+  summary?: string | null
+  notes?: string | null
+  category?: string | null
+  specific_type?: string | null
+  properties?: Record<string, string | number | boolean | null>
+  source_view?: string
+}
+
 /* ------------------------------------------------------------------ */
 /*  Raw backend shape → frontend mapping                               */
 /* ------------------------------------------------------------------ */
@@ -125,6 +167,9 @@ export const graphAPI = {
       `/api/graph/entity-types?case_id=${caseId}`
     ),
 
+  getEditSchema: () =>
+    fetchAPI<GraphEditSchema>("/api/graph/edit-schema"),
+
   /* --- Node CRUD --- */
 
   createNode: (nodeData: Record<string, unknown>, caseId: string) =>
@@ -133,11 +178,14 @@ export const graphAPI = {
       body: { ...nodeData, case_id: caseId },
     }),
 
-  updateNode: (nodeKey: string, updates: Record<string, unknown>) =>
-    fetchAPI<void>(`/api/graph/node/${encodeURIComponent(nodeKey)}`, {
-      method: "PUT",
-      body: updates,
-    }),
+  updateNode: (nodeKey: string, updates: UpdateNodePayload) =>
+    fetchAPI<{ success: boolean; updated_fields: string[]; changes: Record<string, unknown> }>(
+      `/api/graph/node/${encodeURIComponent(nodeKey)}`,
+      {
+        method: "PUT",
+        body: updates,
+      }
+    ),
 
   deleteNode: (nodeKey: string, caseId: string, permanent = false) =>
     fetchAPI<void>(
@@ -356,9 +404,17 @@ export const graphAPI = {
 
   /* --- Geocoding --- */
 
-  geocodeNode: (nodeKey: string, caseId: string, address: string) =>
-    fetchAPI<{ lat: number; lng: number }>(
-      `/api/graph/node/${encodeURIComponent(nodeKey)}/geocode`,
+  geocodeNode: (nodeKey: string, caseId: string, address: string, apply = true) =>
+    fetchAPI<{
+      success: boolean
+      latitude: number
+      longitude: number
+      formatted_address: string
+      confidence: string
+      applied: boolean
+      error?: string
+    }>(
+      `/api/graph/node/${encodeURIComponent(nodeKey)}/geocode?apply=${apply}`,
       { method: "POST", body: { case_id: caseId, address } }
     ),
 

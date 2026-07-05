@@ -4,8 +4,61 @@ import type { EntityType } from "@/lib/theme"
 /** Returns true if the string parses to a valid Date */
 export function isValidDate(dateStr: string | null | undefined): boolean {
   if (!dateStr) return false
-  const ts = new Date(dateStr).getTime()
+  const dateKey = normaliseDateKey(dateStr)
+  const ts = new Date(`${dateKey}T00:00:00`).getTime()
   return !Number.isNaN(ts)
+}
+
+function normaliseDateKey(dateStr: string): string {
+  return dateStr.includes("T") ? dateStr.split("T")[0] : dateStr.slice(0, 10)
+}
+
+function normaliseTimeValue(timeStr: string | null | undefined): string | null {
+  if (!timeStr) return null
+  const match = String(timeStr).match(/^(\d{2}:\d{2})/)
+  return match ? match[1] : null
+}
+
+function getEmbeddedIsoTime(dateStr: string | null | undefined): string | null {
+  if (!dateStr?.includes("T")) return null
+  return normaliseTimeValue(dateStr.split("T")[1])
+}
+
+export function getEventDateKey(event: Pick<TimelineEvent, "date">): string {
+  return normaliseDateKey(event.date)
+}
+
+export function getEventTimeValue(
+  event: Pick<TimelineEvent, "date" | "time">
+): string | null {
+  return normaliseTimeValue(event.time) ?? getEmbeddedIsoTime(event.date)
+}
+
+export function formatEventTime(
+  event: Pick<TimelineEvent, "date" | "time">
+): string {
+  return getEventTimeValue(event) ?? "No time"
+}
+
+export function getEventTimestamp(
+  event: TimelineEvent,
+  unknownTimeAtEnd = false
+): number {
+  const date = getEventDateKey(event)
+  if (!date) return Number.NaN
+  const time =
+    getEventTimeValue(event) || (unknownTimeAtEnd ? "23:59:59" : "00:00:00")
+  const normalizedTime = time.length === 5 ? `${time}:00` : time
+  return new Date(`${date}T${normalizedTime}`).getTime()
+}
+
+export function compareTimelineEvents(
+  a: TimelineEvent,
+  b: TimelineEvent
+): number {
+  const delta = getEventTimestamp(a, true) - getEventTimestamp(b, true)
+  if (delta !== 0) return delta
+  return a.key.localeCompare(b.key)
 }
 
 export interface DateRange {
@@ -31,7 +84,7 @@ export interface TimelineCluster {
 export function getDateRange(events: TimelineEvent[]): DateRange {
   if (events.length === 0) return { min: "", max: "" }
 
-  const timestamps = events.map((e) => new Date(e.date).getTime())
+  const timestamps = events.map((e) => getEventTimestamp(e))
   const minTs = Math.min(...timestamps)
   const maxTs = Math.max(...timestamps)
   const span = maxTs - minTs || 86400000 // at least 1 day
@@ -77,7 +130,7 @@ function autoGapThreshold(events: TimelineEvent[]): number {
   if (events.length < 2) return 90 * DAY_MS
 
   const sorted = events
-    .map((e) => new Date(e.date).getTime())
+    .map((e) => getEventTimestamp(e, true))
     .sort((a, b) => a - b)
 
   const intervals: number[] = []
@@ -101,18 +154,18 @@ export function detectClusters(
   if (events.length === 0) return []
 
   const threshold = minGapMs ?? autoGapThreshold(events)
-  const sorted = [...events].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-  )
+  const sorted = [...events].sort(compareTimelineEvents)
 
   const clusters: TimelineCluster[] = []
-  let clusterStartDate = sorted[0].date
-  let clusterEndDate = sorted[0].date
+  let clusterStartDate = getEventDateKey(sorted[0])
+  let clusterEndDate = getEventDateKey(sorted[0])
+  let previousEvent = sorted[0]
   let count = 1
 
   for (let i = 1; i < sorted.length; i++) {
+    const event = sorted[i]
     const gap =
-      new Date(sorted[i].date).getTime() - new Date(clusterEndDate).getTime()
+      getEventTimestamp(event, true) - getEventTimestamp(previousEvent, true)
     if (gap > threshold) {
       clusters.push({
         startDate: clusterStartDate,
@@ -120,13 +173,14 @@ export function detectClusters(
         eventCount: count,
         label: formatClusterLabel(clusterStartDate, clusterEndDate, count),
       })
-      clusterStartDate = sorted[i].date
-      clusterEndDate = sorted[i].date
+      clusterStartDate = getEventDateKey(event)
+      clusterEndDate = getEventDateKey(event)
       count = 1
     } else {
-      clusterEndDate = sorted[i].date
+      clusterEndDate = getEventDateKey(event)
       count++
     }
+    previousEvent = event
   }
 
   clusters.push({
@@ -139,13 +193,9 @@ export function detectClusters(
   return clusters
 }
 
-function formatClusterLabel(
-  start: string,
-  end: string,
-  count: number
-): string {
-  const s = new Date(start)
-  const e = new Date(end)
+function formatClusterLabel(start: string, end: string, count: number): string {
+  const s = parseDateKey(start)
+  const e = parseDateKey(end)
   const startStr = s.toLocaleDateString("en-US", {
     month: "short",
     year: "2-digit",
@@ -155,7 +205,7 @@ function formatClusterLabel(
     year: "2-digit",
   })
   if (startStr === endStr) return `${startStr} (${count})`
-  return `${startStr} – ${endStr} (${count})`
+  return `${startStr} - ${endStr} (${count})`
 }
 
 // ---------------------------------------------------------------------------
@@ -168,52 +218,42 @@ export interface DateGroup {
   events: TimelineEvent[]
 }
 
-/** Format a date string for group headers — uses "Month YYYY" or "Day Month YYYY" based on density */
-function formatDateHeader(dateStr: string, dayLevel: boolean): string {
-  const d = new Date(dateStr)
-  if (dayLevel) {
-    return d.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    })
-  }
-  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+/** Parse a calendar-day key without applying UTC timezone offsets. */
+function parseDateKey(dateStr: string): Date {
+  const dateKey = normaliseDateKey(dateStr)
+  const [year, month, day] = dateKey.split("-").map(Number)
+  if (!year || !month || !day) return new Date(dateStr)
+  return new Date(year, month - 1, day)
 }
 
-/** Group sorted events by date. Uses day-level grouping if avg density > 2 events/day */
+function formatDateHeader(dateStr: string): string {
+  return parseDateKey(dateStr).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
+/** Group sorted events by calendar day. */
 export function groupEventsByDate(events: TimelineEvent[]): DateGroup[] {
   if (events.length === 0) return []
 
-  const sorted = [...events].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-  )
-
-  // Decide granularity
-  const range = getDateRange(sorted)
-  const spanDays = Math.max(
-    1,
-    (new Date(range.max).getTime() - new Date(range.min).getTime()) / DAY_MS
-  )
-  const dayLevel = sorted.length / spanDays > 2
+  const sorted = [...events].sort(compareTimelineEvents)
 
   const groups: DateGroup[] = []
   let currentKey = ""
   let currentGroup: DateGroup | null = null
 
   for (const event of sorted) {
-    const d = new Date(event.date)
-    const groupKey = dayLevel
-      ? event.date.split("T")[0]
-      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    const groupKey = getEventDateKey(event)
 
     if (groupKey !== currentKey) {
       if (currentGroup) groups.push(currentGroup)
       currentKey = groupKey
       currentGroup = {
-        date: event.date,
-        label: formatDateHeader(event.date, dayLevel),
+        date: groupKey,
+        label: formatDateHeader(groupKey),
         events: [event],
       }
     } else {
@@ -250,15 +290,18 @@ export function buildDensityHistogram(
   const span = maxTs - minTs || DAY_MS
   const bucketWidth = span / bucketCount
 
-  const buckets: DensityBucket[] = Array.from({ length: bucketCount }, (_, i) => ({
-    startDate: new Date(minTs + i * bucketWidth).toISOString(),
-    endDate: new Date(minTs + (i + 1) * bucketWidth).toISOString(),
-    totalCount: 0,
-    filteredCount: 0,
-  }))
+  const buckets: DensityBucket[] = Array.from(
+    { length: bucketCount },
+    (_, i) => ({
+      startDate: new Date(minTs + i * bucketWidth).toISOString(),
+      endDate: new Date(minTs + (i + 1) * bucketWidth).toISOString(),
+      totalCount: 0,
+      filteredCount: 0,
+    })
+  )
 
   for (const event of allEvents) {
-    const ts = new Date(event.date).getTime()
+    const ts = getEventTimestamp(event, true)
     const idx = Math.min(
       Math.floor((ts - minTs) / bucketWidth),
       bucketCount - 1
@@ -269,7 +312,7 @@ export function buildDensityHistogram(
   const filteredSet = new Set(filteredEvents.map((e) => e.key))
   for (const event of allEvents) {
     if (!filteredSet.has(event.key)) continue
-    const ts = new Date(event.date).getTime()
+    const ts = getEventTimestamp(event, true)
     const idx = Math.min(
       Math.floor((ts - minTs) / bucketWidth),
       bucketCount - 1

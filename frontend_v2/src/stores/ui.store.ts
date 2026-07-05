@@ -7,7 +7,7 @@ interface ModalEntry {
   props?: Record<string, unknown>
 }
 
-export type GraphPanelTab = "detail" | "chat"
+export type GraphPanelTab = "detail" | "chat" | "notebook"
 export type GraphPanelToolOverlay =
   | "force-controls"
   | "analysis"
