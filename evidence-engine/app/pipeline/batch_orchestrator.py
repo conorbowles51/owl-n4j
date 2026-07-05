@@ -120,7 +120,15 @@ async def _extract_file(
         )
 
         await _update_job_status(job_id, JobStatus.EXTRACTING_TEXT, 0.15, "Generating document summary...")
-        doc_summary = await generate_document_summary(doc, file_name)
+        enriched_context = build_enriched_context(folder_context, sibling_files, llm_profile)
+        summary_context = effective_context or enriched_context
+        doc_summary = await generate_document_summary(
+            doc,
+            file_name,
+            case_context=summary_context,
+            mandatory_instructions=effective_mandatory_instructions or [],
+            special_entity_types=effective_special_entity_types or [],
+        )
         await _update_job_status(
             job_id,
             JobStatus.EXTRACTING_TEXT,
@@ -135,10 +143,9 @@ async def _extract_file(
         await _update_job_status(job_id, JobStatus.CHUNKING, 0.30, f"Created {len(chunks)} chunks")
 
         await _update_job_status(job_id, JobStatus.EXTRACTING_ENTITIES, 0.30, "Extracting entities...")
-        enriched_context = build_enriched_context(folder_context, sibling_files, llm_profile)
         raw_entities, raw_rels = await extract_entities_and_relationships(
             chunks,
-            effective_context or enriched_context,
+            summary_context,
             file_name,
             mandatory_instructions=effective_mandatory_instructions or [],
             special_entity_types=effective_special_entity_types or [],

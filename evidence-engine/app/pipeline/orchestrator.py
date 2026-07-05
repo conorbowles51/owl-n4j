@@ -67,7 +67,19 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
 
             # Stage 1.5: Document summary -> 15-20%
             await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.15, db, "Generating document summary...")
-            doc_summary = await generate_document_summary(doc, job.file_name)
+            enriched_context = build_enriched_context(
+                job.folder_context,
+                job.sibling_files,
+                job.llm_profile or "",
+            )
+            summary_context = job.effective_context or enriched_context
+            doc_summary = await generate_document_summary(
+                doc,
+                job.file_name,
+                case_context=summary_context,
+                mandatory_instructions=job.effective_mandatory_instructions or [],
+                special_entity_types=job.effective_special_entity_types or [],
+            )
             job.document_summary = doc_summary
             await _update_job(
                 job,
@@ -85,14 +97,9 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
 
             # Stage 3: Entity & relationship extraction -> 30-55%
             await _update_job(job, JobStatus.EXTRACTING_ENTITIES, 0.30, db, "Extracting entities...")
-            enriched_context = build_enriched_context(
-                job.folder_context,
-                job.sibling_files,
-                job.llm_profile or "",
-            )
             raw_entities, raw_rels = await extract_entities_and_relationships(
                 chunks,
-                job.effective_context or enriched_context,
+                summary_context,
                 job.file_name,
                 mandatory_instructions=job.effective_mandatory_instructions or [],
                 special_entity_types=job.effective_special_entity_types or [],
