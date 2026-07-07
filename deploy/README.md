@@ -22,6 +22,7 @@ Systemd services:
 
 - `owl-backend-v2`
 - `owl-frontend-v2`
+- `owl-self-update` (optional, for admin-triggered updates)
 
 Docker containers:
 
@@ -64,6 +65,25 @@ The script will:
 5. Restart `owl-backend-v2` and `owl-frontend-v2`
 6. Health-check the v2 backend
 7. Roll back automatically if the v2 health check fails
+
+## Admin-Triggered Updates
+
+To allow admins to update the platform from the OWL admin UI:
+
+1. Copy `deploy/owl-self-update.service.example` to `/etc/systemd/system/owl-self-update.service`
+   and update `WorkingDirectory` / `ExecStart` to match the server checkout path.
+2. Copy the narrow sudoers rules from `deploy/owl-self-update.sudoers.example`
+   with `visudo`, replacing `owl-backend` with the Linux user that runs
+   `owl-backend-v2`.
+3. Enable the backend feature in `.env`:
+
+```bash
+PLATFORM_UPDATE_ENABLED=true
+PLATFORM_UPDATE_BRANCH=main
+PLATFORM_UPDATE_POLL_SECONDS=60
+```
+
+Set `PLATFORM_UPDATE_POLL_SECONDS=3600` later if you want hourly checks.
 
 ## Rolling Back
 

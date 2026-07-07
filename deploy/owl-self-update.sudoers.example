@@ -1,0 +1,8 @@
+# Replace owl-backend with the Linux user that runs owl-backend-v2.
+# Install with visudo, for example:
+# sudo visudo -f /etc/sudoers.d/owl-self-update
+#
+# The backend API only needs to inspect and start this one service.
+Cmnd_Alias OWL_SELF_UPDATE_SHOW = /bin/systemctl show owl-self-update.service --property=LoadState\,ActiveState\,SubState\,Result\,ExecMainStartTimestamp\,ExecMainExitTimestamp --no-pager, /usr/bin/systemctl show owl-self-update.service --property=LoadState\,ActiveState\,SubState\,Result\,ExecMainStartTimestamp\,ExecMainExitTimestamp --no-pager
+Cmnd_Alias OWL_SELF_UPDATE_START = /bin/systemctl start --no-block owl-self-update.service, /usr/bin/systemctl start --no-block owl-self-update.service
+owl-backend ALL=(root) NOPASSWD: OWL_SELF_UPDATE_SHOW, OWL_SELF_UPDATE_START

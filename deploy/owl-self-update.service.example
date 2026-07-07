@@ -1,0 +1,13 @@
+[Unit]
+Description=Owl platform self-update
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/owl-n4j
+ExecStart=/opt/owl-n4j/deploy/deploy.sh
+TimeoutStartSec=3600
+
+[Install]
+WantedBy=multi-user.target

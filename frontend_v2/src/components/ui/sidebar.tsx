@@ -20,11 +20,13 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  CloudDownload,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/cn"
 import { useAppStore } from "@/stores/app.store"
 import { Button } from "@/components/ui/button"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import {
   Tooltip,
   TooltipContent,
@@ -73,6 +75,7 @@ function getCaseWorkspaceNav(caseId: string): NavItem[] {
 
 const adminNav: NavItem[] = [
   { label: "AI Costs", icon: DollarSign, to: "/admin/ai-costs" },
+  { label: "Updates", icon: CloudDownload, to: "/admin/updates" },
   { label: "Users", icon: Users, to: "/admin/users" },
   { label: "Profiles", icon: Sliders, to: "/admin/profiles" },
 ]
@@ -257,6 +260,9 @@ export function AppSidebar() {
   const { id: caseId } = useParams()
   const { pathname } = useLocation()
   const { sidebarExpanded, toggleSidebar } = useAppStore()
+  const user = useAuthStore((s) => s.user)
+  const role = user?.global_role ?? user?.role
+  const canSeeAdmin = role === "admin" || role === "super_admin"
 
   const toggleButton = (
     <Button
@@ -351,16 +357,18 @@ export function AppSidebar() {
           </SidebarSection>
         )}
 
-        <SidebarSection label="Admin" expanded={sidebarExpanded} separated>
-          {adminNav.map((item) => (
-            <SidebarLink
-              key={item.to}
-              item={item}
-              expanded={sidebarExpanded}
-              active={isItemActive(pathname, item)}
-            />
-          ))}
-        </SidebarSection>
+        {canSeeAdmin && (
+          <SidebarSection label="Admin" expanded={sidebarExpanded} separated>
+            {adminNav.map((item) => (
+              <SidebarLink
+                key={item.to}
+                item={item}
+                expanded={sidebarExpanded}
+                active={isItemActive(pathname, item)}
+              />
+            ))}
+          </SidebarSection>
+        )}
       </nav>
 
       <div className="border-t border-slate-200/80 p-2 dark:border-slate-800">

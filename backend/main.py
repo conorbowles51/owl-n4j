@@ -35,6 +35,7 @@ from routers import (
     setup_router,
     cost_ledger_router,
     admin_ai_costs_router,
+    admin_update_router,
     financial_router,
     maintenance_router,
     case_deadlines_router,
@@ -50,6 +51,7 @@ from routers.snapshots import _cleanup_stale_chunks
 from routers.evidence_ws import router as evidence_ws_router, close_redis
 from services.job_status_subscriber import get_subscriber
 from services.neo4j.driver import driver
+from services.platform_update_service import platform_update_service
 
 
 @asynccontextmanager
@@ -68,6 +70,11 @@ async def lifespan(app: FastAPI):
 
     # Background task: clean up orphaned chunk upload cache entries
     cleanup_task = asyncio.create_task(_cleanup_stale_chunks())
+    platform_update_task = (
+        asyncio.create_task(platform_update_service.poll_forever())
+        if platform_update_service.enabled
+        else None
+    )
 
     # Start Redis subscriber for evidence engine job status sync
     job_subscriber = get_subscriber()
@@ -79,6 +86,8 @@ async def lifespan(app: FastAPI):
     yield
 
     cleanup_task.cancel()
+    if platform_update_task:
+        platform_update_task.cancel()
 
     # Stop job status subscriber
     try:
@@ -142,6 +151,7 @@ app.include_router(users_router)
 app.include_router(setup_router)
 app.include_router(cost_ledger_router)
 app.include_router(admin_ai_costs_router)
+app.include_router(admin_update_router)
 app.include_router(financial_router)
 app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)

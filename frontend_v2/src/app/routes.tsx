@@ -109,6 +109,11 @@ const AICostsPage = lazy(() =>
     default: m.AICostsPage,
   }))
 )
+const PlatformUpdatesPage = lazy(() =>
+  import("@/features/admin/components/PlatformUpdatesPage").then((m) => ({
+    default: m.PlatformUpdatesPage,
+  }))
+)
 
 // Lazy-loaded settings
 const SettingsPage = lazy(() =>
@@ -168,6 +173,7 @@ export function AppRoutes() {
             <Route path="profiles" element={<LazyPage><ProfileManagementPage /></LazyPage>} />
             <Route path="logs" element={<LazyPage><SystemLogsPage /></LazyPage>} />
             <Route path="tasks" element={<LazyPage><BackgroundTasksPage /></LazyPage>} />
+            <Route path="updates" element={<LazyPage><PlatformUpdatesPage /></LazyPage>} />
             <Route path="usage" element={<Navigate to="/admin/ai-costs" replace />} />
           </Route>
 

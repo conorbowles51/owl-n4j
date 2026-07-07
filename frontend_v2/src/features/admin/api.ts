@@ -83,6 +83,32 @@ export interface AICostRecordsResponse {
   page_size: number
 }
 
+export interface PlatformUpdateStatus {
+  enabled: boolean
+  configured: boolean
+  config_error?: string | null
+  can_deploy: boolean
+  repo_dir: string
+  remote: string
+  branch?: string | null
+  service_name: string
+  local_sha?: string | null
+  local_short_sha?: string | null
+  remote_sha?: string | null
+  remote_short_sha?: string | null
+  update_available: boolean
+  last_checked_at?: string | null
+  last_check_error?: string | null
+  deployment_running: boolean
+  deployment_status: string
+  deployment_error?: string | null
+  deployment_started_at?: string | null
+  deployment_completed_at?: string | null
+  last_deploy_requested_by?: string | null
+  deploy_log_path?: string | null
+  deploy_log_tail?: string | null
+}
+
 export const profilesAPI = {
   list: () => fetchAPI<Profile[]>("/api/profiles"),
 
@@ -149,4 +175,18 @@ export const aiCostsAPI = {
     fetchAPI<AICostRecordsResponse>(
       `/api/admin/ai-costs/records?${buildAIQuery(params)}`
     ),
+}
+
+export const platformUpdateAPI = {
+  getStatus: () => fetchAPI<PlatformUpdateStatus>("/api/admin/update/status"),
+
+  check: () =>
+    fetchAPI<PlatformUpdateStatus>("/api/admin/update/check", {
+      method: "POST",
+    }),
+
+  deploy: () =>
+    fetchAPI<PlatformUpdateStatus>("/api/admin/update/deploy", {
+      method: "POST",
+    }),
 }

@@ -143,3 +143,22 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6380")
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8002"))
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5174,http://localhost:3000").split(",")
+
+# Platform self-update configuration. Disabled by default so local/dev
+# environments do not try to call systemd.
+PLATFORM_UPDATE_ENABLED = os.getenv("PLATFORM_UPDATE_ENABLED", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+PLATFORM_UPDATE_REMOTE = os.getenv("PLATFORM_UPDATE_REMOTE", "origin")
+PLATFORM_UPDATE_BRANCH = os.getenv("PLATFORM_UPDATE_BRANCH") or os.getenv("DEPLOY_BRANCH") or None
+PLATFORM_UPDATE_POLL_SECONDS = int(os.getenv("PLATFORM_UPDATE_POLL_SECONDS", "60"))
+PLATFORM_UPDATE_SERVICE = os.getenv("PLATFORM_UPDATE_SERVICE", "owl-self-update.service")
+_PLATFORM_UPDATE_REPO_DIR = Path(os.getenv("PLATFORM_UPDATE_REPO_DIR", str(BASE_DIR)))
+PLATFORM_UPDATE_REPO_DIR = (
+    _PLATFORM_UPDATE_REPO_DIR
+    if _PLATFORM_UPDATE_REPO_DIR.is_absolute()
+    else BASE_DIR / _PLATFORM_UPDATE_REPO_DIR
+)

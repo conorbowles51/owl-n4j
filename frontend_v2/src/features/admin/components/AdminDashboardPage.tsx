@@ -1,9 +1,13 @@
 import { useQuery } from "@tanstack/react-query"
-import { Users, Cpu, FileText, Activity } from "lucide-react"
+import { Link } from "react-router-dom"
+import { Users, Cpu, FileText, Activity, CloudDownload } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { authAPI } from "@/features/auth/api"
-import { profilesAPI } from "../api"
+import { platformUpdateAPI, profilesAPI } from "../api"
+import { getPlatformUpdatePresentation } from "../platform-update-status"
 
 export function AdminDashboardPage() {
   const { data: users = [], isLoading: usersLoading } = useQuery({
@@ -14,6 +18,12 @@ export function AdminDashboardPage() {
   const { data: profiles = [], isLoading: profilesLoading } = useQuery({
     queryKey: ["profiles"],
     queryFn: () => profilesAPI.list(),
+  })
+
+  const { data: updateStatus } = useQuery({
+    queryKey: ["admin", "platform-update", "status"],
+    queryFn: () => platformUpdateAPI.getStatus(),
+    refetchInterval: 60000,
   })
 
   if (usersLoading || profilesLoading) {
@@ -30,6 +40,7 @@ export function AdminDashboardPage() {
     { label: "Active Tasks", value: 0, icon: Activity, color: "text-emerald-500" },
     { label: "System Logs", value: "—", icon: FileText, color: "text-slate-400" },
   ]
+  const updatePresentation = getPlatformUpdatePresentation(updateStatus)
 
   return (
     <div className="space-y-6 p-6">
@@ -57,6 +68,46 @@ export function AdminDashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
+        <Card className="border-amber-500/20 bg-amber-500/[0.03]">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-2 text-sm">
+              <span className="flex items-center gap-2">
+                <CloudDownload className="size-4 text-amber-500" />
+                Platform update
+              </span>
+              <Badge variant={updatePresentation.badgeVariant}>
+                {updatePresentation.label}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              {updatePresentation.description}
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-md border border-border bg-background/70 p-2">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Deployed
+                </p>
+                <p className="mt-1 font-mono">
+                  {updateStatus?.local_short_sha || "Unknown"}
+                </p>
+              </div>
+              <div className="rounded-md border border-border bg-background/70 p-2">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Latest
+                </p>
+                <p className="mt-1 font-mono">
+                  {updateStatus?.remote_short_sha || "Unknown"}
+                </p>
+              </div>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/admin/updates">Open updates</Link>
+            </Button>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Recent Users</CardTitle>
