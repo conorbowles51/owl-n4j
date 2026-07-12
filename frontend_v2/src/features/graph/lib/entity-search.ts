@@ -1,6 +1,9 @@
 import Fuse from "fuse.js"
 import type { IFuseOptions } from "fuse.js"
 import type { GraphNode } from "@/types/graph.types"
+import { matchesSearchQuery, parseSearchQuery } from "./search-query"
+
+export type GraphSearchMode = "filter" | "search"
 
 const fuseOptions: IFuseOptions<GraphNode> = {
   keys: [
@@ -36,8 +39,24 @@ export function filterNodesBySearch(
 ): GraphNode[] {
   const trimmed = term.trim()
   if (!trimmed) return nodes
-  if (trimmed.length < 2) return nodes
+  if (trimmed.length < 2) return filterNodesDeterministically(nodes, trimmed)
   const matched = fuse.search(trimmed).map((r) => r.item)
   const survivors = new Set(nodes)
   return matched.filter((n) => survivors.has(n))
+}
+
+export function filterNodesDeterministically(nodes: GraphNode[], query: string): GraphNode[] {
+  const parsed = parseSearchQuery(query)
+  return parsed ? nodes.filter((node) => matchesSearchQuery(parsed, node)) : nodes
+}
+
+export function applyNodeSearch(
+  nodes: GraphNode[],
+  query: string,
+  mode: GraphSearchMode,
+  fuse: Fuse<GraphNode>
+): GraphNode[] {
+  return mode === "filter"
+    ? filterNodesDeterministically(nodes, query)
+    : filterNodesBySearch(nodes, query, fuse)
 }

@@ -88,6 +88,8 @@ entity_categories:
     description: "A meaningful discrete occurrence — a meeting, incident, shipment, attack, arrest scene"
     properties:
       date:           { type: string, description: "Date or date range (ISO format if possible)" }
+      time:           { type: string, description: "Start time in HH:mm format when the source provides a specific time" }
+      end_time:       { type: string, description: "End time in HH:mm format when the source provides a time range" }
       date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       event_type:     { type: string, description: "Type of event (meeting, incident, shipment, raid, etc.)" }
       significance:   { type: string, description: "Why this event matters to the investigation" }
@@ -112,6 +114,7 @@ entity_categories:
       amount:         { type: string, description: "Monetary amount" }
       currency:       { type: string, description: "Currency code (USD, EUR, GBP, etc.)" }
       date:           { type: string, description: "Transaction date (ISO format if possible)" }
+      time:           { type: string, description: "Transaction time in HH:mm format when available" }
       date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       sender:         { type: string, description: "Sending party name" }
       receiver:       { type: string, description: "Receiving party name" }
@@ -171,7 +174,9 @@ entity_categories:
     description: "A specific communication — phone call, email, text message, letter, meeting"
     properties:
       comm_type:      { type: string, description: "Type (phone_call, email, text_message, letter, in_person_meeting, radio, etc.)" }
-      date:           { type: string, description: "Date/time of communication" }
+      date:           { type: string, description: "Date of communication" }
+      time:           { type: string, description: "Time of communication in HH:mm format when available" }
+      end_time:       { type: string, description: "End time in HH:mm format when the source provides a time range" }
       date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       participants:   { type: list,   description: "Names of participants" }
       duration:       { type: string, description: "Duration if known" }
@@ -204,6 +209,8 @@ entity_categories:
     properties:
       media_type:     { type: string, enum: [surveillance_footage, photograph, audio_recording, video, screenshot, body_cam, other], description: "Type of media" }
       date:           { type: string, description: "Date the media was captured" }
+      time:           { type: string, description: "Time the media was captured in HH:mm format when available" }
+      end_time:       { type: string, description: "End time in HH:mm format when the media spans a time range" }
       date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       duration:       { type: string, description: "Duration for audio/video" }
       source_device:  { type: string, description: "Device that captured the media" }
@@ -329,6 +336,7 @@ entity_categories:
       case_number:    { type: string, description: "Case or docket number" }
       jurisdiction:   { type: string, description: "Court or jurisdiction" }
       date:           { type: string, description: "Date of the legal action" }
+      time:           { type: string, description: "Time of the legal action in HH:mm format when available" }
       date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       outcome:        { type: string, description: "Outcome or result if known" }
       location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
@@ -351,6 +359,7 @@ entity_categories:
       country:                  { type: string, description: "Country directly supported by the source text" }
       intel_type:               { type: string, enum: [tip, informant_report, surveillance_observation, intercept, open_source_intel, forensic_analysis, other], description: "Type of intelligence" }
       date:                     { type: string, description: "Date of the intelligence" }
+      time:                     { type: string, description: "Time of the intelligence in HH:mm format when available" }
       date_precision:           { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       source_reliability:       { type: string, enum: [A, B, C, D, E, F], description: "NATO reliability scale — A (completely reliable) to F (reliability cannot be judged)" }
       information_credibility:  { type: string, enum: ["1", "2", "3", "4", "5", "6"], description: "NATO credibility scale — 1 (confirmed) to 6 (truth cannot be judged)" }

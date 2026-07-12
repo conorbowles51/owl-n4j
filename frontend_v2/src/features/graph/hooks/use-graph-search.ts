@@ -1,16 +1,10 @@
 import { useMemo } from "react"
-import type { GraphData, GraphNode } from "@/types/graph.types"
+import type { GraphData } from "@/types/graph.types"
 import { useGraphStore } from "@/stores/graph.store"
-import { buildEntityFuse, filterNodesBySearch } from "../lib/entity-search"
-
-interface SearchResult {
-  node: GraphNode
-  matchField: string
-  matchValue: string
-}
+import { applyNodeSearch, buildEntityFuse } from "../lib/entity-search"
 
 export function useGraphSearch(data: GraphData | undefined) {
-  const { searchTerm, filters } = useGraphStore()
+  const { appliedSearchQuery, searchMode, filters } = useGraphStore()
 
   const fuse = useMemo(
     () => (data ? buildEntityFuse(data.nodes) : null),
@@ -33,8 +27,8 @@ export function useGraphSearch(data: GraphData | undefined) {
     }
 
     // Apply search term (fuzzy + alias-aware)
-    if (searchTerm.trim() && fuse) {
-      nodes = filterNodesBySearch(nodes, searchTerm, fuse)
+    if (appliedSearchQuery.trim() && fuse) {
+      nodes = applyNodeSearch(nodes, appliedSearchQuery, searchMode, fuse)
     }
 
     // Drop edges whose endpoints didn't survive
@@ -46,22 +40,10 @@ export function useGraphSearch(data: GraphData | undefined) {
     }
 
     return { nodes, edges }
-  }, [data, searchTerm, filters, fuse])
-
-  const searchResults = useMemo((): SearchResult[] => {
-    if (!data || !searchTerm.trim() || !fuse) return []
-    return filterNodesBySearch(data.nodes, searchTerm, fuse)
-      .slice(0, 20)
-      .map((node) => ({
-        node,
-        matchField: "label",
-        matchValue: node.label,
-      }))
-  }, [data, searchTerm, fuse])
+  }, [data, appliedSearchQuery, searchMode, filters, fuse])
 
   return {
     filteredData,
-    searchResults,
     totalNodes: data?.nodes.length ?? 0,
     filteredNodes: filteredData?.nodes.length ?? 0,
   }

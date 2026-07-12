@@ -20,11 +20,15 @@ interface ContextMenuData {
 
 type ContextMenuState = ContextMenuData | null
 
+export type GraphSearchMode = "filter" | "search"
+
 interface GraphStore {
   /* Selection */
   selectedNodeKeys: Set<string>
   focusHistory: FocusEntry[]
-  searchTerm: string
+  searchMode: GraphSearchMode
+  searchDraft: string
+  appliedSearchQuery: string
   filters: Record<string, boolean>
   viewSettings: GraphViewSettings
 
@@ -54,7 +58,10 @@ interface GraphStore {
   clearSelection: () => void
   pushFocus: (entry: FocusEntry) => void
   popFocus: () => void
-  setSearchTerm: (term: string) => void
+  setSearchMode: (mode: GraphSearchMode) => void
+  setSearchDraft: (term: string) => void
+  applySearch: (term?: string) => void
+  clearSearch: () => void
   setFilter: (key: string, value: boolean) => void
   setViewSetting: <K extends keyof GraphViewSettings>(
     key: K,
@@ -94,7 +101,9 @@ export const useGraphStore = create<GraphStore>((set) => ({
   /* Defaults */
   selectedNodeKeys: new Set(),
   focusHistory: [],
-  searchTerm: "",
+  searchMode: "filter",
+  searchDraft: "",
+  appliedSearchQuery: "",
   filters: {},
   viewSettings: { layout: "force", showLabels: true, showEdgeLabels: false },
 
@@ -132,7 +141,11 @@ export const useGraphStore = create<GraphStore>((set) => ({
   popFocus: () =>
     set((s) => ({ focusHistory: s.focusHistory.slice(0, -1) })),
 
-  setSearchTerm: (term) => set({ searchTerm: term }),
+  setSearchMode: (mode) => set({ searchMode: mode }),
+  setSearchDraft: (term) => set({ searchDraft: term }),
+  applySearch: (term) =>
+    set((state) => ({ appliedSearchQuery: (term ?? state.searchDraft).trim() })),
+  clearSearch: () => set({ searchDraft: "", appliedSearchQuery: "" }),
 
   setFilter: (key, value) =>
     set((s) => ({ filters: { ...s.filters, [key]: value } })),

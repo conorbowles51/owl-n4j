@@ -70,6 +70,8 @@ class TimelineServiceTests(unittest.TestCase):
 
         self.assertIn("AS sort_date", page_query)
         self.assertIn("AS sort_time", page_query)
+        self.assertIn("n.timestamp IS NOT NULL", page_query)
+        self.assertIn("'time' IN coalesce(n.manual_fields, [])", page_query)
         self.assertIn("sort_date >= $start_date", page_query)
         self.assertIn("sort_date <= $end_date", page_query)
         self.assertIn("sort_date > $cursor_date", page_query)
@@ -107,6 +109,29 @@ class TimelineServiceTests(unittest.TestCase):
 
         self.assertEqual(page["events"][0]["date"], "2024-02-03")
         self.assertEqual(page["events"][0]["time"], "19:47")
+
+    def test_space_datetime_records_are_returned_with_separate_date_and_time(self):
+        captured = []
+        row = {
+            "key": "event-1",
+            "name": "Timestamped event",
+            "type": "Media",
+            "date": "2025-04-12 06:21:47-06:23:45",
+            "time": None,
+            "amount": None,
+            "summary": None,
+            "notes": None,
+            "connections": [],
+        }
+
+        with patch(
+            "services.neo4j.timeline_service.driver.session",
+            return_value=_FakeSession(captured, rows=[row], total=1),
+        ):
+            page = TimelineService().get_timeline_page(case_id="case-1")
+
+        self.assertEqual(page["events"][0]["date"], "2025-04-12")
+        self.assertEqual(page["events"][0]["time"], "06:21")
 
     def test_fetch_timeline_events_by_keys_is_case_scoped_and_includes_export_fields(self):
         captured = []

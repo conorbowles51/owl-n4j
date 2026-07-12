@@ -7,6 +7,10 @@ from app.pipeline.resolve_entities import (
     ResolvedRelationship,
     coalesce_resolved_entities_by_id,
 )
+from app.pipeline.property_canonicalization import (
+    canonicalize_properties,
+    is_neo4j_primitive_list,
+)
 from app.services import chroma_client, neo4j_client
 from app.services.geocoding import build_geocode_request, geocoding_service
 from app.services.openai_client import embed_texts
@@ -100,6 +104,9 @@ async def _write_entities(
     case_id: str,
     job_id: str,
 ) -> None:
+    for entity in entities:
+        entity.properties = canonicalize_properties(entity.category, entity.properties)
+
     await _apply_geocoding(entities)
 
     # Group by category and batch-write
@@ -125,7 +132,7 @@ async def _write_entities(
         for k, v in e.properties.items():
             if k.startswith("_") or k in ("description", "aliases"):
                 continue
-            if isinstance(v, (str, int, float, bool)):
+            if isinstance(v, (str, int, float, bool)) or is_neo4j_primitive_list(v):
                 props[k] = v
         by_cat.setdefault(e.category, []).append(props)
 

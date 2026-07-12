@@ -17,6 +17,8 @@ import re
 import uuid
 from typing import List, Dict, Optional, Set, Callable, Tuple
 
+from app.pipeline.property_canonicalization import canonicalize_properties
+
 from .models import ParsedModel, Party, CellebriteReport
 
 # The synchronous Neo4j adapter is injected by the orchestrator.
@@ -255,6 +257,9 @@ class CellebriteNeo4jWriter:
         sanitized = re.sub(r"_+", "_", sanitized).strip("_")
         if not sanitized:
             sanitized = "Other"
+
+        props = canonicalize_properties(sanitized, props)
+        props = {k: v for k, v in props.items() if v is not None}
 
         self.db.run_query(
             f"CREATE (n:`{sanitized}` $props)",

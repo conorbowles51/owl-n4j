@@ -17,6 +17,7 @@ from app.ontology.prompt_builder import (
 from app.ontology.schema_builder import get_entity_schema, get_relationship_schema
 from app.pipeline.mandatory_rules import normalize_mandatory_instructions
 from app.pipeline.chunk_embed import TextChunk
+from app.pipeline.property_canonicalization import canonicalize_properties
 from app.services.openai_client import chat_completion
 
 
@@ -472,8 +473,12 @@ async def _extract_entities_from_chunk(
             file_name=file_name,
         )
 
-        properties = dict(e.get("properties", {}) or {})
         source_quote = str(e.get("source_quote", ""))
+        properties = canonicalize_properties(
+            category,
+            dict(e.get("properties", {}) or {}),
+            evidence_texts=[name, source_quote],
+        )
         confidence = _coerce_confidence(e.get("confidence"))
         financial_provenance = _build_financial_provenance(
             e.get("financial_provenance"),
@@ -491,6 +496,11 @@ async def _extract_entities_from_chunk(
         )
         if financial_provenance:
             properties.update(financial_provenance)
+            properties = canonicalize_properties(
+                category,
+                properties,
+                evidence_texts=[name, source_quote],
+            )
 
         entities.append(
             RawEntity(

@@ -147,6 +147,14 @@ class TimelineViewServiceTests(unittest.TestCase):
         self.assertIn("Source Appendix", html)
         self.assertIn("a.pdf", html)
 
+    def test_snapshot_sort_time_falls_back_to_datetime_in_date_field(self):
+        self.assertEqual(
+            timeline_view_service._event_sort_time(
+                _event("a", date="2025-04-12 06:21:47-06:23:45", time=None)
+            ),
+            "06:21",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

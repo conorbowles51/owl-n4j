@@ -43,11 +43,16 @@ export function GraphPage() {
 
   /* ---- Data fetching ---- */
   const { data: graphData, isLoading } = useGraphData(caseId)
-  const { filteredData } = useGraphSearch(graphData)
+  const { filteredData, filteredNodes, totalNodes } = useGraphSearch(graphData)
 
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const selectNodes = useGraphStore((s) => s.selectNodes)
+  const clearSearch = useGraphStore((s) => s.clearSearch)
   const hasSelection = selectedNodeKeys.size > 0
+
+  useEffect(() => {
+    clearSearch()
+  }, [caseId, clearSearch])
 
   /* ---- Spotlight state ---- */
   const spotlightVisible = useGraphStore((s) => s.spotlightVisible)
@@ -194,10 +199,6 @@ export function GraphPage() {
         e.preventDefault()
         if (filteredData) selectNodes(filteredData.nodes.map((n) => n.key))
       }
-      if (e.key === "f" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault()
-        // Focus search handled by toolbar
-      }
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
@@ -251,6 +252,8 @@ export function GraphPage() {
         onOpenSimilarEntities={() => toggleToolOverlay("similar")}
         onOpenRecycleBin={() => toggleToolOverlay("recycle")}
         onOpenCypher={() => toggleToolOverlay("cypher")}
+        filteredNodes={filteredNodes}
+        totalNodes={totalNodes}
       />
 
       <div className="flex flex-1 overflow-hidden">

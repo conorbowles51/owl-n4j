@@ -6,7 +6,9 @@ describe("graph.store", () => {
     useGraphStore.setState({
       selectedNodeKeys: new Set(),
       focusHistory: [],
-      searchTerm: "",
+      searchMode: "filter",
+      searchDraft: "",
+      appliedSearchQuery: "",
       filters: {},
       viewSettings: {
         layout: "force",
@@ -57,9 +59,26 @@ describe("graph.store", () => {
   })
 
   describe("search and filters", () => {
-    it("setSearchTerm updates term", () => {
-      useGraphStore.getState().setSearchTerm("test")
-      expect(useGraphStore.getState().searchTerm).toBe("test")
+    it("keeps draft and applied search separate", () => {
+      useGraphStore.getState().setSearchDraft("test")
+      expect(useGraphStore.getState().appliedSearchQuery).toBe("")
+      useGraphStore.getState().applySearch()
+      expect(useGraphStore.getState().appliedSearchQuery).toBe("test")
+    })
+
+    it("clears draft and applied search together", () => {
+      useGraphStore.getState().setSearchDraft("test")
+      useGraphStore.getState().applySearch()
+      useGraphStore.getState().clearSearch()
+      expect(useGraphStore.getState().searchDraft).toBe("")
+      expect(useGraphStore.getState().appliedSearchQuery).toBe("")
+    })
+
+    it("changes search mode without applying the draft", () => {
+      useGraphStore.getState().setSearchDraft("test")
+      useGraphStore.getState().setSearchMode("search")
+      expect(useGraphStore.getState().searchMode).toBe("search")
+      expect(useGraphStore.getState().appliedSearchQuery).toBe("")
     })
 
     it("setFilter adds/updates filter", () => {

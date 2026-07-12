@@ -18,17 +18,39 @@ logger = logging.getLogger(__name__)
 class TimelineService:
     SORT_DATE_CYPHER = """
         CASE
-            WHEN n.date IS NULL THEN NULL
-            WHEN toString(n.date) CONTAINS 'T' THEN split(toString(n.date), 'T')[0]
-            ELSE substring(toString(n.date), 0, 10)
+            WHEN n.date IS NOT NULL AND toString(n.date) CONTAINS 'T' THEN split(toString(n.date), 'T')[0]
+            WHEN n.date IS NOT NULL THEN substring(toString(n.date), 0, 10)
+            WHEN 'date' IN coalesce(n.manual_fields, []) THEN NULL
+            WHEN n.timestamp IS NOT NULL THEN substring(toString(n.timestamp), 0, 10)
+            WHEN n.start_time IS NOT NULL THEN substring(toString(n.start_time), 0, 10)
+            WHEN n.capture_time IS NOT NULL THEN substring(toString(n.capture_time), 0, 10)
+            WHEN n.creation_time IS NOT NULL THEN substring(toString(n.creation_time), 0, 10)
+            WHEN n.date_time IS NOT NULL THEN substring(toString(n.date_time), 0, 10)
+            WHEN n.datetime IS NOT NULL THEN substring(toString(n.datetime), 0, 10)
+            ELSE NULL
         END
     """
     SORT_TIME_CYPHER = """
         CASE
             WHEN n.time IS NOT NULL AND trim(toString(n.time)) <> ''
                 THEN substring(toString(n.time), 0, 5)
+            WHEN 'time' IN coalesce(n.manual_fields, []) THEN NULL
             WHEN n.date IS NOT NULL AND toString(n.date) CONTAINS 'T'
                 THEN substring(split(toString(n.date), 'T')[1], 0, 5)
+            WHEN n.date IS NOT NULL AND toString(n.date) =~ '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}.*'
+                THEN substring(toString(n.date), 11, 5)
+            WHEN n.timestamp IS NOT NULL AND replace(toString(n.timestamp), 'T', ' ') =~ '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}.*'
+                THEN substring(replace(toString(n.timestamp), 'T', ' '), 11, 5)
+            WHEN n.start_time IS NOT NULL AND replace(toString(n.start_time), 'T', ' ') =~ '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}.*'
+                THEN substring(replace(toString(n.start_time), 'T', ' '), 11, 5)
+            WHEN n.capture_time IS NOT NULL AND replace(toString(n.capture_time), 'T', ' ') =~ '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}.*'
+                THEN substring(replace(toString(n.capture_time), 'T', ' '), 11, 5)
+            WHEN n.creation_time IS NOT NULL AND replace(toString(n.creation_time), 'T', ' ') =~ '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}.*'
+                THEN substring(replace(toString(n.creation_time), 'T', ' '), 11, 5)
+            WHEN n.date_time IS NOT NULL AND replace(toString(n.date_time), 'T', ' ') =~ '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}.*'
+                THEN substring(replace(toString(n.date_time), 'T', ' '), 11, 5)
+            WHEN n.datetime IS NOT NULL AND replace(toString(n.datetime), 'T', ' ') =~ '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}.*'
+                THEN substring(replace(toString(n.datetime), 'T', ' '), 11, 5)
             ELSE NULL
         END
     """
@@ -38,16 +60,17 @@ class TimelineService:
         date_text = str(date_value) if date_value is not None else ""
         time_text = str(time_value) if time_value is not None else ""
 
-        if "T" in date_text:
-            date_part, remainder = date_text.split("T", 1)
-            date_text = date_part
-            if not time_text:
-                match = re.match(r"(\d{2}:\d{2})", remainder)
-                if match:
-                    time_text = match.group(1)
+        date_match = re.search(r"(\d{4}-\d{2}-\d{2})", date_text)
+        if date_match:
+            date_text = date_match.group(1)
+
+        if not time_text:
+            time_match = re.search(r"(?:T| )(\d{2}:\d{2})", str(date_value or ""))
+            if time_match:
+                time_text = time_match.group(1)
 
         if time_text:
-            match = re.match(r"^(\d{2}:\d{2})", time_text)
+            match = re.search(r"(\d{2}:\d{2})", time_text)
             time_text = match.group(1) if match else time_text
 
         return (date_text or None, time_text or None)

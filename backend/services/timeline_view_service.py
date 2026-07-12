@@ -127,6 +127,10 @@ def _event_sort_date(event: dict[str, Any]) -> str | None:
 def _event_sort_time(event: dict[str, Any]) -> str | None:
     value = str(event.get("time") or "").strip()
     match = re.match(r"^(\d{2}:\d{2})", value)
+    if match:
+        return match.group(1)
+    date_value = str(event.get("date") or "").strip()
+    match = re.search(r"(?:T| )(\d{2}:\d{2})", date_value)
     return match.group(1) if match else None
 
 
