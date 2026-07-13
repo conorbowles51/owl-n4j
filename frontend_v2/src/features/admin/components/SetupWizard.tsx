@@ -47,7 +47,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             )}
           </div>
           <CardTitle className="text-lg">
-            {step === 0 ? "Welcome to Owl" : "Setup Complete"}
+            {step === 0 ? "Welcome to Loupe" : "Setup Complete"}
           </CardTitle>
           <p className="text-xs text-muted-foreground">
             {step === 0
