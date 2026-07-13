@@ -126,7 +126,7 @@ export function AppSidebar() {
         )}
       >
         <span className="text-lg font-bold tracking-tight text-amber-500 dark:text-amber-500">
-          {sidebarExpanded ? "OWL" : "O"}
+          {sidebarExpanded ? "Loupe" : "L"}
         </span>
       </div>
 
