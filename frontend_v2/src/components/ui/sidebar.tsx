@@ -218,7 +218,7 @@ function LogoMark({ expanded }: { expanded: boolean }) {
   const mark = (
     <Link
       to="/cases"
-      aria-label="OWL cases"
+      aria-label="Loupe cases"
       className={cn(
         "group flex min-w-0 items-center rounded-lg outline-none",
         "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]",
@@ -236,7 +236,7 @@ function LogoMark({ expanded }: { expanded: boolean }) {
       </span>
       {expanded && (
         <span className="min-w-0 text-[15px] font-black leading-none tracking-[0.18em] text-slate-950 dark:text-slate-50">
-          OWL
+          Loupe
         </span>
       )}
     </Link>
@@ -250,7 +250,7 @@ function LogoMark({ expanded }: { expanded: boolean }) {
     <Tooltip>
       <TooltipTrigger asChild>{mark}</TooltipTrigger>
       <TooltipContent side="right" sideOffset={10}>
-        OWL
+        Loupe
       </TooltipContent>
     </Tooltip>
   )

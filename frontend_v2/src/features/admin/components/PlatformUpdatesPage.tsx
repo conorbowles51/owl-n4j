@@ -205,7 +205,7 @@ export function PlatformUpdatesPage() {
           </DialogHeader>
           <div className="space-y-3 text-sm">
             <p className="text-muted-foreground">
-              This starts the server update service. OWL may briefly disconnect
+              This starts the server update service. Loupe may briefly disconnect
               while the backend and frontend restart.
             </p>
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs">
