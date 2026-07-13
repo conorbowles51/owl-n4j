@@ -72,12 +72,12 @@ export function LoginPage() {
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 ring-1 ring-amber-500/20">
               <span className="text-lg font-bold tracking-tight text-amber-500">
-                O
+                L
               </span>
             </div>
             <div>
               <span className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-                OWL
+                Loupe
               </span>
               <span className="ml-2 text-xs font-medium tracking-widest text-slate-400 dark:text-slate-500 uppercase">
                 Investigation Console
@@ -127,7 +127,7 @@ export function LoginPage() {
 
           {/* Bottom: Footer */}
           <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-600">
-            <span>&copy; {new Date().getFullYear()} OWL Platform</span>
+            <span>&copy; {new Date().getFullYear()} Loupe Platform</span>
             <span className="font-mono text-[11px] tracking-wider text-slate-400 dark:text-slate-700">
               v2.0
             </span>
@@ -145,11 +145,11 @@ export function LoginPage() {
           <div className="mb-10 flex items-center gap-3 lg:hidden">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 ring-1 ring-amber-500/20">
               <span className="text-base font-bold tracking-tight text-amber-500">
-                O
+                L
               </span>
             </div>
             <span className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-              OWL
+              Loupe
             </span>
           </div>
 
