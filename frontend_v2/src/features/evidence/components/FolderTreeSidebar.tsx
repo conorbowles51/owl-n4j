@@ -54,10 +54,10 @@ export function FolderTreeSidebar({
   }
 
   return (
-    <div className="flex h-full flex-col border-r border-border bg-muted/30">
+    <div className="flex h-full flex-col border-r border-border bg-panel">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3 className="font-display text-sm font-semibold tracking-[-0.015em] text-foreground">
           Folders
         </h3>
         <div className="flex items-center gap-1">

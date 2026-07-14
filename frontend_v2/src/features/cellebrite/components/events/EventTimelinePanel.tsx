@@ -133,7 +133,7 @@ export function EventTimelinePanel({
           )
         })}
         {playheadX != null && (
-          <line x1={playheadX} x2={playheadX} y1={20} y2={height - 8} stroke="#f59e0b" strokeWidth="2" />
+          <line x1={playheadX} x2={playheadX} y1={20} y2={height - 8} stroke="#0c9da0" strokeWidth="2" />
         )}
       </svg>
       {hover && (
@@ -149,4 +149,3 @@ export function EventTimelinePanel({
     </div>
   )
 }
-

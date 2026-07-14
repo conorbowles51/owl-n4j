@@ -230,9 +230,9 @@ export function GraphPage() {
     setGraphPanelToolOverlay(graphPanelToolOverlay === name ? null : name)
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-canvas">
       {workspaceGraphSource?.sourceLabel && (
-        <div className="border-b border-border bg-muted/20 px-4 py-2">
+        <div className="border-b border-border bg-card/95 px-4 py-2 backdrop-blur-sm">
           <div className="flex items-center gap-2 text-xs">
             <Badge variant="outline" className="uppercase">
               {workspaceGraphSource.sourceType}

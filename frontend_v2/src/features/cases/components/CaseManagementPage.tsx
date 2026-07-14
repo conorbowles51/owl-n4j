@@ -15,13 +15,26 @@ export function CaseManagementPage() {
   return (
     <div className="h-full">
       <ResizablePanelGroup orientation="horizontal">
-        <ResizablePanel id="case-list" order={1} defaultSize="30" minSize="20" maxSize="50">
+        <ResizablePanel
+          id="case-list"
+          order={1}
+          defaultSize="30"
+          minSize="20"
+          maxSize="50"
+          className="bg-panel"
+        >
           <CaseListSidebar onDeleteCase={setDeleteTarget} />
         </ResizablePanel>
 
         <ResizableHandle withHandle />
 
-        <ResizablePanel id="case-detail" order={2} defaultSize="70" minSize="40">
+        <ResizablePanel
+          id="case-detail"
+          order={2}
+          defaultSize="70"
+          minSize="40"
+          className="bg-background"
+        >
           <CaseDetailPanel />
         </ResizablePanel>
       </ResizablePanelGroup>

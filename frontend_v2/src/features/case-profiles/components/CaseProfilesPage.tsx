@@ -223,9 +223,9 @@ export function CaseProfilesPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background">
-      <div className="flex h-14 items-center justify-between gap-3 border-b border-border px-5">
+      <div className="flex h-14 items-center justify-between gap-3 border-b border-border bg-card px-5">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold">Case Profiles</h1>
+          <h1 className="truncate font-display text-sm font-semibold">Case Profiles</h1>
           <p className="text-xs text-muted-foreground">
             {profilesQuery.data?.total ?? 0} profiles
           </p>
@@ -242,7 +242,7 @@ export function CaseProfilesPage() {
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border bg-panel px-5 py-3">
         <div className="relative min-w-64 flex-1">
           <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input

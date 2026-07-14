@@ -22,7 +22,7 @@ export function PageHeader({
       )}
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">
+          <h1 className="font-display truncate text-lg font-semibold tracking-[-0.025em] text-foreground">
             {title}
           </h1>
           {description && (

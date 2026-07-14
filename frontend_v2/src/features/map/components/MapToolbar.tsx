@@ -29,7 +29,7 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
   }
 
   return (
-    <div className="flex items-center gap-1.5 border-b border-border px-3 py-1.5">
+    <div className="flex items-center gap-1.5 border-b border-border bg-card px-3 py-1.5">
       {/* Layer toggles */}
       <Popover>
         <PopoverTrigger asChild>

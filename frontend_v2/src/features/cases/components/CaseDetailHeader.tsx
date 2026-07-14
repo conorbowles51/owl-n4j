@@ -25,12 +25,12 @@ export function CaseDetailHeader({
   const navigate = useNavigate()
 
   return (
-    <div className="border-b border-border px-5 py-4">
+    <div className="border-b border-border bg-card/95 px-5 py-4 backdrop-blur-sm">
       {/* Title row */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h2 className="truncate text-lg font-semibold text-foreground">
+            <h2 className="font-display truncate text-lg font-semibold tracking-[-0.03em] text-foreground">
               {caseData.title}
             </h2>
             <RoleBadge role={caseData.user_role} />

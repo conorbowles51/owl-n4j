@@ -34,10 +34,10 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className="flex h-full flex-col bg-background">
+      <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
         <FileBarChart className="size-4 text-amber-500" />
-        <span className="text-sm font-semibold">Reports</span>
+        <span className="font-display text-sm font-semibold">Reports</span>
         <div className="flex-1" />
         <Badge variant="slate">{reports.length} reports</Badge>
         <Button variant="primary" size="sm" onClick={() => setBuildOpen(true)}>
@@ -58,7 +58,7 @@ export function ReportsPage() {
             {reports.map((report) => (
               <div
                 key={report.id}
-                className="group flex items-center gap-3 rounded-lg border border-border p-3 hover:bg-muted/30"
+                className="group flex items-center gap-3 rounded-lg border border-border bg-card p-3 shadow-sm transition-colors hover:border-primary/30 hover:bg-muted/30"
               >
                 <FileBarChart className="size-4 text-muted-foreground" />
                 <div className="min-w-0 flex-1">

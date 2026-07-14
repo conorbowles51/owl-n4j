@@ -12,12 +12,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <BrowserRouter>
           <TooltipProvider>
             {children}
-            <Toaster
-              position="bottom-right"
-              theme="dark"
-              richColors
-              closeButton
-            />
+            <Toaster position="bottom-right" richColors closeButton />
           </TooltipProvider>
         </BrowserRouter>
       </QueryClientProvider>

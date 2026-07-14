@@ -29,8 +29,8 @@ export function WorkspacePage() {
   }
 
   return (
-    <Tabs defaultValue="overview" className="flex h-full flex-col">
-      <div className="border-b border-border px-4">
+    <Tabs defaultValue="overview" className="flex h-full flex-col bg-background">
+      <div className="border-b border-border bg-card/95 px-4 backdrop-blur-sm">
         <TabsList variant="line" className="h-10">
           <TabsTrigger value="overview">
             <LayoutDashboard className="size-3.5" />

@@ -20,7 +20,7 @@ interface FindingsSectionProps {
 
 const PRIORITY_STYLES: Record<string, string> = {
   HIGH: "bg-red-500/10 text-red-600 border-red-500/20",
-  MEDIUM: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+  MEDIUM: "border-yellow-500/20 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300",
   LOW: "bg-slate-500/10 text-slate-600 border-slate-500/20",
 }
 

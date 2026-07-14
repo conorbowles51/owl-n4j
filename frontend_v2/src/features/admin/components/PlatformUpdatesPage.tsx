@@ -82,7 +82,7 @@ export function PlatformUpdatesPage() {
         <div>
           <div className="flex items-center gap-2">
             <CloudDownload className="size-4 text-amber-500" />
-            <h1 className="text-lg font-semibold">Platform Updates</h1>
+            <h1 className="font-display text-lg font-semibold">Platform Updates</h1>
             <Badge variant={presentation.badgeVariant}>{presentation.label}</Badge>
           </div>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
@@ -112,14 +112,14 @@ export function PlatformUpdatesPage() {
         </div>
       </div>
 
-      <Card className="overflow-hidden border-slate-200/80 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] dark:border-slate-800 dark:bg-[linear-gradient(135deg,#0b1120_0%,#111827_100%)]">
+      <Card className="overflow-hidden border-primary/15 bg-gradient-to-br from-card via-card to-primary/5">
         <CardHeader className="border-b border-border/70">
           <CardTitle className="flex items-center gap-2">
             {presentation.badgeVariant === "success" ? (
               <CheckCircle2 className="size-4 text-emerald-500" />
             ) : presentation.badgeVariant === "danger" ||
               presentation.badgeVariant === "warning" ? (
-              <AlertTriangle className="size-4 text-amber-500" />
+              <AlertTriangle className="size-4 text-yellow-500" />
             ) : (
               <ServerCog className="size-4 text-amber-500" />
             )}
@@ -165,7 +165,7 @@ export function PlatformUpdatesPage() {
             <FieldRow label="Remote" value={status?.remote || "Unknown"} mono />
             <FieldRow label="Repository" value={status?.repo_dir || "Unknown"} mono />
             {status?.config_error && (
-              <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-3 text-amber-700 dark:text-amber-300">
+              <div className="rounded-md border border-yellow-500/25 bg-yellow-500/10 p-3 text-yellow-800 dark:text-yellow-200">
                 {status.config_error}
               </div>
             )}

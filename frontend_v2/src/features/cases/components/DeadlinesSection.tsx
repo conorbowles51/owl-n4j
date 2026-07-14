@@ -22,18 +22,25 @@ function getDeadlineBadge(dueDateStr: string) {
 
   if (diffDays < 0) {
     return (
-      <Badge className="bg-red-500/15 text-red-400 text-[10px]">Overdue</Badge>
+      <Badge className="bg-red-500/15 text-[10px] text-red-600 dark:text-red-400">Overdue</Badge>
     )
   }
   if (diffDays === 0) {
     return (
-      <Badge className="bg-amber-500/15 text-amber-400 text-[10px]">
+      <Badge className="bg-yellow-500/15 text-[10px] text-yellow-700 dark:text-yellow-300">
         Today
       </Badge>
     )
   }
+  if (diffDays <= 7) {
+    return (
+      <Badge className="bg-yellow-500/15 text-[10px] text-yellow-700 dark:text-yellow-300">
+        {diffDays} day{diffDays !== 1 ? "s" : ""}
+      </Badge>
+    )
+  }
   return (
-    <Badge className="bg-green-500/15 text-green-400 text-[10px]">
+      <Badge className="bg-green-500/15 text-[10px] text-green-700 dark:text-green-400">
       {diffDays} day{diffDays !== 1 ? "s" : ""}
     </Badge>
   )
@@ -74,10 +81,10 @@ export function DeadlinesSection({ caseId }: DeadlinesSectionProps) {
           {deadlines.map((d) => (
             <div
               key={d.id}
-              className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50"
+              className="group flex items-center gap-2 border-b border-border/80 px-2 py-2 text-sm transition-colors last:border-b-0 hover:bg-card"
             >
               <div className="min-w-0 flex-1">
-                <span className="font-medium text-foreground">{d.name}</span>
+                <span className="font-display font-semibold text-foreground">{d.name}</span>
                 <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span>
                     {new Date(d.due_date + "T00:00:00").toLocaleDateString()}

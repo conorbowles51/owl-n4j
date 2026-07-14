@@ -24,15 +24,15 @@ export function CaseListItem({
     <button
       onClick={onSelect}
       className={cn(
-        "group flex w-full items-start gap-2.5 rounded-md px-3 py-2.5 text-left transition-colors",
+        "group flex w-full items-start gap-2.5 rounded-md border border-transparent px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150",
         isSelected
-          ? "bg-amber-500/10 ring-1 ring-amber-500/30"
-          : "hover:bg-accent/50"
+          ? "border-brand-200 bg-brand-50 shadow-[inset_2px_0_0_var(--color-brand-400)] dark:border-brand-700/40 dark:bg-brand-500/10"
+          : "hover:border-border hover:bg-panel-raised/75"
       )}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium text-foreground">
+          <p className="font-display truncate text-sm font-semibold tracking-[-0.018em] text-foreground">
             {caseData.title}
           </p>
           {caseData.archived && <Badge variant="slate">Archived</Badge>}
@@ -45,7 +45,7 @@ export function CaseListItem({
           <div className={cn(
             "mt-0.5 flex items-center gap-1 text-[11px]",
             new Date(caseData.next_deadline_date + "T00:00:00") < new Date(new Date().toDateString())
-              ? "text-red-400"
+              ? "text-destructive"
               : "text-muted-foreground"
           )}>
             <CalendarClock className="size-3" />

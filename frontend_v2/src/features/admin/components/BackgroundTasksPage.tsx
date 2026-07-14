@@ -44,10 +44,10 @@ export function BackgroundTasksPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className="flex h-full flex-col bg-background">
+      <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
         <Activity className="size-4 text-amber-500" />
-        <span className="text-sm font-semibold">Background Tasks</span>
+        <span className="font-display text-sm font-semibold">Background Tasks</span>
         <div className="flex-1" />
         <Badge variant={running.length > 0 ? "amber" : "slate"}>
           {running.length} running
@@ -69,7 +69,7 @@ export function BackgroundTasksPage() {
             {tasks.map((task) => (
               <div
                 key={task.id}
-                className="rounded-lg border border-border p-3"
+                className="rounded-lg border border-border bg-card p-3 shadow-sm"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{task.type}</span>

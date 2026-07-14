@@ -55,7 +55,7 @@ export function ProcessConfirmDialog({
       <DialogContent className="flex max-h-[80vh] max-w-lg flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Play className="size-4 text-amber-500" />
+            <Play className="size-4 text-primary" />
             Confirm Processing
           </DialogTitle>
           <DialogDescription>
@@ -66,8 +66,8 @@ export function ProcessConfirmDialog({
         <ScrollArea className="flex-1 -mx-6 px-6">
           <div className="space-y-4 py-1">
             {/* ---- File count banner ---- */}
-            <div className="flex items-center gap-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3">
-              <FileText className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="flex items-center gap-3 rounded-md border border-primary/20 bg-primary/5 p-3">
+              <FileText className="size-4 shrink-0 text-primary" />
               <div>
                 <p className="text-sm font-medium text-foreground">
                   {fileCount} file{fileCount !== 1 ? "s" : ""} selected for

@@ -174,7 +174,7 @@ export function ResultGraphPanel() {
       if (isSelected) {
         ctx.beginPath()
         ctx.arc(node.x!, node.y!, size + 2, 0, 2 * Math.PI)
-        ctx.strokeStyle = "#f59e0b"
+        ctx.strokeStyle = canvasColors.selectionStroke
         ctx.lineWidth = 1.5 / globalScale
         ctx.stroke()
       }
@@ -192,10 +192,10 @@ export function ResultGraphPanel() {
         ? node.name.slice(0, 14) + "..."
         : node.name
       const fontSize = Math.max(10 / globalScale, 2)
-      ctx.font = `${fontSize}px sans-serif`
+      ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
       ctx.textAlign = "center"
       ctx.textBaseline = "top"
-      ctx.fillStyle = isSelected ? "#f59e0b" : canvasColors.labelText
+      ctx.fillStyle = isSelected ? canvasColors.selectionStroke : canvasColors.labelText
       ctx.fillText(label, node.x!, node.y! + size + 2)
     },
     [selectedNodeKey, canvasColors]

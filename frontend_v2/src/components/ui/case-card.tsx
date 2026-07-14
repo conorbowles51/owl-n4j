@@ -35,7 +35,7 @@ export function CaseCard({
   return (
     <Card
       className={cn(
-        "transition-colors duration-200 hover:border-slate-300 dark:hover:border-slate-600",
+        "transition-colors duration-200 hover:border-primary/35",
         onClick && "cursor-pointer",
         className
       )}

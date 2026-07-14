@@ -33,10 +33,10 @@ export function SettingsPage() {
   const user = useAuthStore((s) => s.user)
 
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea className="h-full bg-background">
       <div className="mx-auto max-w-2xl space-y-6 p-6">
         <div>
-          <h1 className="text-lg font-semibold">Settings</h1>
+        <h1 className="font-display text-lg font-semibold">Settings</h1>
           <p className="text-xs text-muted-foreground">
             Manage your personal preferences
           </p>

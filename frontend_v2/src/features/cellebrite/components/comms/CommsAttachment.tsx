@@ -46,7 +46,7 @@ export function CommsAttachment({
 
   if (missing || !url) {
     return (
-      <span className="inline-flex max-w-[240px] items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300">
+      <span className="inline-flex max-w-[240px] items-center gap-1.5 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-2 py-1 text-[11px] text-yellow-800 dark:text-yellow-200">
         <AlertCircle className="size-3 shrink-0" />
         <span className="truncate">{name || "Attachment unavailable"}</span>
       </span>

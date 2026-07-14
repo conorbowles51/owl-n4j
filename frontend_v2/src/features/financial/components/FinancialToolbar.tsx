@@ -70,7 +70,7 @@ export function FinancialToolbar({
     (maxAmount ? 1 : 0)
 
   return (
-    <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
       <div className="relative">
         <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input

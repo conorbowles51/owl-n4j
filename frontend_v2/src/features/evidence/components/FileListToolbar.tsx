@@ -156,7 +156,7 @@ export function FileListToolbar({
   }
 
   return (
-    <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
       {/* Search */}
       <div className="relative max-w-xs flex-1">
         <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />

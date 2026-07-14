@@ -43,7 +43,7 @@ export function CaseSidePanelRail() {
   const isNotebookActive = isEvidenceRoute ? evidenceSidebarTab === "notebook" : tab === "notebook"
 
   return (
-    <div className="flex h-full w-12 flex-col items-center gap-1 border-l border-border bg-muted/30 pt-2">
+    <div className="flex h-full w-12 flex-col items-center gap-1 border-l border-border bg-panel pt-2">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -140,16 +140,16 @@ export function CaseSidePanelContent() {
   const [editNodeKey, setEditNodeKey] = useState<string | null>(null)
 
   return (
-    <div className="flex h-full flex-col border-l border-border bg-card">
+    <div className="flex h-full flex-col border-l border-border bg-panel-raised">
       {/* Tab bar + collapse chevron */}
-      <div className="flex items-center border-b border-border bg-muted/30">
+      <div className="flex items-center border-b border-border bg-panel">
         <button
           type="button"
           onClick={() => setTab("detail")}
           className={cn(
             "flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2",
             tab === "detail"
-              ? "border-foreground text-foreground"
+              ? "border-primary text-foreground"
               : "border-transparent text-muted-foreground hover:text-foreground"
           )}
         >
@@ -162,7 +162,7 @@ export function CaseSidePanelContent() {
           className={cn(
             "flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2",
             tab === "chat"
-              ? "border-amber-500 text-foreground"
+              ? "border-primary text-foreground"
               : "border-transparent text-muted-foreground hover:text-foreground"
           )}
         >
@@ -175,7 +175,7 @@ export function CaseSidePanelContent() {
           className={cn(
             "flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2",
             tab === "notebook"
-              ? "border-foreground text-foreground"
+              ? "border-primary text-foreground"
               : "border-transparent text-muted-foreground hover:text-foreground"
           )}
         >

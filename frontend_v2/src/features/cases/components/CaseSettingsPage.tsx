@@ -7,7 +7,7 @@ export function CaseSettingsPage() {
   const { data: caseData } = useCase(id)
 
   return (
-    <div className="p-6">
+    <div className="h-full bg-background p-6">
       <PageHeader
         title="Case Settings"
         description={caseData?.title ?? "Loading..."}

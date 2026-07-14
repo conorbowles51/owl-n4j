@@ -45,7 +45,7 @@ export function GraphSidePanelRail() {
   const expandTo = useUIStore((s) => s.expandGraphPanelTo)
 
   return (
-    <div className="flex h-full w-12 flex-col items-center gap-1 border-l border-border bg-muted/30 pt-2">
+    <div className="flex h-full w-12 flex-col items-center gap-1 border-l border-border bg-panel pt-2">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -132,7 +132,7 @@ export function GraphSidePanelContent({
   const showToolOverlay = toolOverlay !== null
 
   return (
-    <div className="flex h-full flex-col border-l border-border bg-card">
+    <div className="flex h-full flex-col border-l border-border bg-panel-raised">
       {/* Tool overlay header */}
       {showToolOverlay ? (
         <div className="flex items-center justify-between border-b border-border px-3 py-2">

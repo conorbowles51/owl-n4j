@@ -1,14 +1,14 @@
 export const nodeColors = {
-  person: "#6366F1",
-  organization: "#8B5CF6",
-  location: "#14B8A6",
-  financial: "#F59E0B",
-  document: "#64748B",
-  event: "#EC4899",
-  communication: "#06B6D4",
-  vehicle: "#84CC16",
-  digital: "#A855F7",
-  evidence: "#F97316",
+  person: "#4F69C6",
+  organization: "#7458A6",
+  location: "#0C9DA0",
+  financial: "#B7791F",
+  document: "#667D85",
+  event: "#B55473",
+  communication: "#17879E",
+  vehicle: "#6F8D3C",
+  digital: "#7A5BA7",
+  evidence: "#C66A32",
 } as const
 
 export type EntityType = keyof typeof nodeColors
@@ -35,7 +35,7 @@ export const typeAliases: Record<string, EntityType> = {
   place: "location",
 }
 
-const FALLBACK_COLOR = "#64748B"
+const FALLBACK_COLOR = "#667D85"
 
 /** Case-insensitive entity type → color lookup with alias mapping and hash fallback */
 export function getNodeColor(type: string): string {
@@ -59,12 +59,12 @@ export function getNodeColor(type: string): string {
 }
 
 export const statusColors = {
-  success: { bg: "#DCFCE7", text: "#15803D", dot: "#22C55E" },
-  danger: { bg: "#FEE2E2", text: "#B91C1C", dot: "#EF4444" },
-  warning: { bg: "#FEF9C3", text: "#A16207", dot: "#EAB308" },
-  info: { bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
-  amber: { bg: "#FBF0D0", text: "#92610A", dot: "#D4920A" },
-  slate: { bg: "#E8ECF1", text: "#3E4C63", dot: "#8494A7" },
+  success: { bg: "#DDF2E9", text: "#267159", dot: "#3E9B78" },
+  danger: { bg: "#F9E5E7", text: "#A33D46", dot: "#C34E57" },
+  warning: { bg: "#FAEFD5", text: "#8B6622", dot: "#B8892E" },
+  info: { bg: "#E2EFF2", text: "#276C7A", dot: "#388FA0" },
+  amber: { bg: "#DBEFEE", text: "#067278", dot: "#0C9DA0" },
+  slate: { bg: "#EBF0F2", text: "#46656F", dot: "#91A2A8" },
 } as const
 
 export type StatusVariant = keyof typeof statusColors
@@ -72,14 +72,14 @@ export type StatusVariant = keyof typeof statusColors
 /** Canvas/WebGL colors that adapt to light/dark mode */
 export function getCanvasColors(isDark: boolean) {
   return {
-    background: isDark ? "#0B0F1A" : "#F4F6F8",
-    linkColor: isDark ? "#2D3A4F" : "#CBD5E1",
-    labelText: isDark ? "#AAB7C7" : "#475569",
-    labelBg: isDark ? "rgba(11,15,26,0.85)" : "rgba(244,246,248,0.9)",
-    hoverStroke: isDark ? "#94A3B8" : "#64748B",
-    selectionStroke: "#3B82F6",
-    selectionGlow: isDark ? "rgba(59,130,246,0.25)" : "rgba(59,130,246,0.15)",
-    statsOverlayBg: isDark ? "rgba(15,23,42,0.8)" : "rgba(241,245,249,0.9)",
-    statsOverlayText: isDark ? "#94A3B8" : "#64748B",
+    background: isDark ? "#071820" : "#F4F7F8",
+    linkColor: isDark ? "#294D59" : "#D3DCDF",
+    labelText: isDark ? "#B6C2C6" : "#46656F",
+    labelBg: isDark ? "rgba(7,24,32,0.88)" : "rgba(244,247,248,0.92)",
+    hoverStroke: isDark ? "#91A2A8" : "#667D85",
+    selectionStroke: "#0C9DA0",
+    selectionGlow: isDark ? "rgba(54,179,178,0.28)" : "rgba(12,157,160,0.18)",
+    statsOverlayBg: isDark ? "rgba(11,32,42,0.86)" : "rgba(244,247,248,0.92)",
+    statsOverlayText: isDark ? "#91A2A8" : "#667D85",
   }
 }

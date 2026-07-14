@@ -58,7 +58,7 @@ export function FilterSidebar({
   )
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-panel">
       <ScrollArea className="flex-1">
         {/* Event Types */}
         <div className="px-3 py-3">

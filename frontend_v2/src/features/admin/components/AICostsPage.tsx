@@ -110,7 +110,7 @@ export function AICostsPage() {
     <div className="flex h-full flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
         <div>
-          <h1 className="text-lg font-semibold">AI Costs</h1>
+          <h1 className="font-display text-lg font-semibold">AI Costs</h1>
           <p className="text-sm text-muted-foreground">
             Track ingestion and chat spend across users and cases.
           </p>
@@ -297,8 +297,8 @@ export function AICostsPage() {
                       type="monotone"
                       dataKey="ingestion_cost_usd"
                       stackId="cost"
-                      stroke="#d97706"
-                      fill="#f59e0b"
+                      stroke="#067278"
+                      fill="#0c9da0"
                       fillOpacity={0.8}
                       name="Ingestion"
                     />
@@ -334,7 +334,7 @@ export function AICostsPage() {
                     />
                     <YAxis tickFormatter={chartCurrency} tick={{ fontSize: 12 }} />
                     <RechartsTooltip formatter={(value) => chartCurrency(value as number | string | undefined)} />
-                    <Bar dataKey="cost_usd" fill="#111827" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="cost_usd" fill="#0b202a" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>

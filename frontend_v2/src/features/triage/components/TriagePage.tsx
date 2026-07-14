@@ -245,10 +245,10 @@ function TriageCaseList({
   }, [casesQuery.data, search])
 
   return (
-    <div className="flex h-full flex-col border-r border-border">
+    <div className="flex h-full flex-col border-r border-border bg-panel">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <HardDrive className="size-4 text-amber-500" />
-        <span className="text-sm font-semibold">Evidence Triage</span>
+        <span className="font-display text-sm font-semibold">Evidence Triage</span>
         <div className="flex-1" />
         <Button
           variant="ghost"
@@ -732,15 +732,15 @@ function TriageWorkbench({
   }
 
   return (
-    <div className="relative flex h-full min-w-0 flex-col">
-      <div className="flex h-14 items-center gap-3 border-b border-border px-4">
+    <div className="relative flex h-full min-w-0 flex-col bg-background">
+      <div className="flex h-14 items-center gap-3 border-b border-border bg-card px-4">
         <Button variant="ghost" size="icon" onClick={onBack} title="Back to triage list">
           <ArrowLeft className="size-4" />
         </Button>
         <HardDrive className="size-5 text-amber-500" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-sm font-semibold">{caseData.name}</h1>
+            <h1 className="truncate font-display text-sm font-semibold">{caseData.name}</h1>
             <StatusBadge status={caseData.status} />
           </div>
           <p className="truncate font-mono text-[11px] text-muted-foreground">
@@ -783,7 +783,7 @@ function TriageWorkbench({
       />
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <ScrollArea className="min-h-0 border-r border-border bg-muted/20">
+        <ScrollArea className="min-h-0 border-r border-border bg-panel">
           <div className="p-4">
             <StagePanel
               caseData={caseData}
@@ -1093,7 +1093,7 @@ function ClassificationSummary({ stats }: { stats?: ClassificationStats }) {
   const labels = [
     ["Known Good", stats?.known_good ?? 0, "bg-emerald-500"],
     ["Known Bad", stats?.known_bad ?? 0, "bg-red-500"],
-    ["Suspicious", stats?.suspicious ?? 0, "bg-amber-500"],
+    ["Suspicious", stats?.suspicious ?? 0, "bg-yellow-500"],
     ["Custom Match", stats?.custom_match ?? 0, "bg-cyan-500"],
     ["Unknown", stats?.unknown ?? 0, "bg-slate-400"],
   ] as const

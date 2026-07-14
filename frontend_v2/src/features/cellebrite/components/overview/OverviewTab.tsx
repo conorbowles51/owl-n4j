@@ -351,7 +351,7 @@ function OverviewReconciliationPanel({ reconciliation }: { reconciliation: unkno
       >
         <span className="flex min-w-0 items-center gap-1.5">
           {hasIssues ? (
-            <AlertTriangle className="size-3.5 shrink-0 text-amber-600" />
+            <AlertTriangle className="size-3.5 shrink-0 text-yellow-600 dark:text-yellow-300" />
           ) : (
             <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600" />
           )}
@@ -866,7 +866,7 @@ function OverviewLocationMap({
             id="overview-location-points"
             type="circle"
             paint={{
-              "circle-color": ["case", ["==", ["get", "key"], selectedId ?? ""], "#f59e0b", "#0891b2"],
+              "circle-color": ["case", ["==", ["get", "key"], selectedId ?? ""], "#0c9da0", "#17879e"],
               "circle-radius": ["case", ["==", ["get", "key"], selectedId ?? ""], 9, 6],
               "circle-stroke-color": "#ffffff",
               "circle-stroke-width": 2,

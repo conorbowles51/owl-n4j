@@ -22,9 +22,9 @@ export const CypherInput = React.forwardRef<
     <textarea
       ref={ref}
       className={cn(
-        "min-h-[4rem] w-full rounded-md border border-input bg-slate-950 px-3 py-2 font-mono text-sm text-foreground shadow-xs transition-[color,box-shadow] outline-none",
+        "min-h-[4rem] w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100 caret-primary shadow-xs transition-[border-color,box-shadow] outline-none",
         "placeholder:text-muted-foreground",
-        "focus-visible:border-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/40",
+        "focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/30",
         "disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}

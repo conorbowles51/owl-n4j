@@ -108,7 +108,7 @@ export function UnifiedContactsTab({
       </div>
 
       {truncated && (
-        <div className="shrink-0 border-b border-amber-200 bg-amber-500/10 px-4 py-1.5 text-[11px] text-amber-800 dark:border-amber-900 dark:text-amber-300">
+        <div className="shrink-0 border-b border-yellow-500/25 bg-yellow-500/10 px-4 py-1.5 text-[11px] text-yellow-800 dark:text-yellow-200">
           This case has at least {compactNumber(personCount)} contacts. The rollup was capped at {compactNumber(personCap)} by activity, so rare contacts may not appear here.
         </div>
       )}

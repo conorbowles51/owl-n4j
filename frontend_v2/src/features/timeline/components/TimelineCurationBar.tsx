@@ -37,8 +37,8 @@ export function TimelineCurationBar({
   const hasSelection = selectedCount > 0
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-slate-50 px-3 py-2 dark:bg-slate-900/40">
-      <span className="mr-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-panel px-3 py-2">
+      <span className="mr-1 text-xs font-semibold text-foreground">
         {selectedCount} selected
       </span>
 

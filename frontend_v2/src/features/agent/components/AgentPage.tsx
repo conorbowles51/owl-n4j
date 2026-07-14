@@ -171,14 +171,14 @@ const artifactIcons = {
 } as const
 
 const CHART_COLORS = [
-  "#6366F1",
-  "#F59E0B",
-  "#14B8A6",
-  "#EC4899",
-  "#8B5CF6",
-  "#06B6D4",
-  "#84CC16",
-  "#F97316",
+  "#0C9DA0",
+  "#4F69C6",
+  "#17879E",
+  "#B55473",
+  "#7458A6",
+  "#6F8D3C",
+  "#C66A32",
+  "#B7791F",
 ]
 
 function asArray<T = Dict>(value: unknown): T[] {
@@ -855,7 +855,7 @@ export function AgentPage() {
 
   return (
     <div className="flex h-full min-h-0 bg-background">
-      <aside className="hidden w-64 shrink-0 border-r border-border bg-muted/20 md:flex md:flex-col">
+      <aside className="hidden w-64 shrink-0 border-r border-border bg-panel md:flex md:flex-col">
         <div className="flex items-center justify-between border-b border-border px-3 py-3">
           <div className="min-w-0">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -1265,7 +1265,7 @@ function AgentEntityDetailsRail({
   onOpen: (tab: "details" | "notebook") => void
 }) {
   return (
-    <aside className="flex h-full w-12 shrink-0 flex-col items-center gap-1 border-l border-border bg-muted/30 pt-2">
+    <aside className="flex h-full w-12 shrink-0 flex-col items-center gap-1 border-l border-border bg-panel pt-2">
       <Button
         type="button"
         variant="ghost"
@@ -1312,7 +1312,7 @@ function AgentEntityDetailsPanel({
 
   return (
     <section className="flex h-full min-w-0 flex-col border-l border-border bg-card">
-      <header className="flex items-center border-b border-border bg-muted/30">
+      <header className="flex items-center border-b border-border bg-panel">
         <button
           type="button"
           onClick={() => onTabChange("details")}
@@ -1932,7 +1932,7 @@ function GraphArtifact({
       if (isSelected) {
         ctx.beginPath()
         ctx.arc(x, y, radius + 4, 0, 2 * Math.PI)
-        ctx.strokeStyle = "#f59e0b"
+        ctx.strokeStyle = "#0c9da0"
         ctx.lineWidth = 2 / globalScale
         ctx.stroke()
       }
@@ -1956,7 +1956,7 @@ function GraphArtifact({
       if (!shouldShowLabel) return
 
       const fontSize = Math.max(9 / globalScale, 2.4)
-      ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+      ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
       ctx.textAlign = "center"
       ctx.textBaseline = "top"
       ctx.fillStyle = canvasColors.labelText
@@ -2016,7 +2016,7 @@ function GraphArtifact({
         const midY = (source.y + target.y) / 2
         const fontSize = Math.max(8 / globalScale, 2)
         const text = link.type.length > 28 ? `${link.type.slice(0, 26)}...` : link.type
-        ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+        ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
         const metrics = ctx.measureText(text)
         const padX = 3 / globalScale
         const padY = 2 / globalScale

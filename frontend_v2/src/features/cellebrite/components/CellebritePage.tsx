@@ -167,7 +167,7 @@ export function CellebritePage() {
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-semibold text-foreground">
+              <h1 className="font-display text-sm font-semibold text-foreground">
                 Cellebrite Phone Viewer
               </h1>
               <Badge variant={reports.length ? "success" : "slate"}>

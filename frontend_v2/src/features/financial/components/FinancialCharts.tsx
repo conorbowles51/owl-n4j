@@ -21,7 +21,7 @@ import {
 } from "../lib/date-utils"
 
 const CHART_COLORS = [
-  "#f59e0b", "#3b82f6", "#10b981", "#ef4444", "#8b5cf6",
+  "#0c9da0", "#4f69c6", "#17879e", "#c65c66", "#7458a6",
   "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1",
 ]
 

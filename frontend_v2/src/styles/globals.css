@@ -4,72 +4,92 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     /* Surfaces */
-    --background: 0 0% 100%;
-    --foreground: 215 28% 10%;
+    --background: 200 23% 97%;
+    --foreground: 199 58% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 215 28% 10%;
+    --card-foreground: 199 58% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 215 28% 10%;
+    --popover-foreground: 199 58% 10%;
 
-    /* Primary (Amber) */
-    --primary: 39 91% 44%;
-    --primary-foreground: 0 0% 100%;
+    /* Loupe teal */
+    --primary: 181 86% 34%;
+    --primary-foreground: 199 64% 8%;
 
-    /* Secondary (Slate) */
-    --secondary: 215 16% 95%;
-    --secondary-foreground: 215 28% 10%;
+    /* Cool investigation neutrals */
+    --secondary: 197 21% 94%;
+    --secondary-foreground: 195 37% 25%;
 
     /* Muted */
-    --muted: 215 16% 95%;
-    --muted-foreground: 215 10% 46%;
+    --muted: 197 21% 94%;
+    --muted-foreground: 195 13% 46%;
 
     /* Accent */
-    --accent: 215 16% 95%;
-    --accent-foreground: 215 28% 10%;
+    --accent: 175 44% 95%;
+    --accent-foreground: 183 90% 25%;
 
     /* Destructive */
-    --destructive: 0 84% 60%;
+    --destructive: 355 49% 54%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Focus ring: Amber */
-    --ring: 39 91% 44%;
+    /* Focus ring */
+    --ring: 181 86% 34%;
 
     /* Border & Input */
-    --border: 215 16% 85%;
-    --input: 215 16% 85%;
+    --border: 195 16% 85%;
+    --input: 195 16% 85%;
+
+    /* Application shell */
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 195 37% 25%;
+    --sidebar-muted: 195 13% 46%;
+    --sidebar-border: 195 16% 85%;
+    --panel: 195 20% 95%;
+    --panel-raised: 0 0% 100%;
+    --canvas: 192 20% 96%;
 
     /* Radius */
-    --radius: 0.375rem;
+    --radius: 0.4rem;
   }
 
   .dark {
-    --background: 224 43% 7%;
-    --foreground: 210 40% 96%;
-    --card: 222 47% 9%;
-    --card-foreground: 210 40% 96%;
-    --popover: 222 47% 9%;
-    --popover-foreground: 210 40% 96%;
+    color-scheme: dark;
+    --background: 199 64% 8%;
+    --foreground: 192 26% 96%;
+    --card: 199 58% 10%;
+    --card-foreground: 192 26% 96%;
+    --popover: 197 54% 14%;
+    --popover-foreground: 192 26% 96%;
 
-    --primary: 39 91% 44%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 180 54% 46%;
+    --primary-foreground: 199 64% 8%;
 
-    --secondary: 217 25% 18%;
-    --secondary-foreground: 210 40% 96%;
+    --secondary: 197 48% 17%;
+    --secondary-foreground: 192 26% 96%;
 
-    --muted: 217 25% 18%;
-    --muted-foreground: 215 16% 57%;
+    --muted: 197 48% 17%;
+    --muted-foreground: 196 12% 61%;
 
-    --accent: 217 25% 18%;
-    --accent-foreground: 210 40% 96%;
+    --accent: 195 43% 21%;
+    --accent-foreground: 177 35% 80%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 355 55% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --ring: 39 91% 44%;
+    --ring: 180 54% 46%;
 
-    --border: 215 25% 22%;
-    --input: 215 25% 22%;
+    --border: 195 37% 25%;
+    --input: 195 37% 25%;
+
+    /* The persistent rail follows dark mode using the transparent lockup. */
+    --sidebar: 200 65% 7%;
+    --sidebar-foreground: 192 26% 96%;
+    --sidebar-muted: 196 12% 61%;
+    --sidebar-border: 197 48% 17%;
+    --panel: 197 54% 14%;
+    --panel-raised: 197 48% 17%;
+    --canvas: 199 64% 8%;
   }
 }
 
@@ -81,11 +101,27 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: "Source Sans 3", "Segoe UI", sans-serif;
     font-size: 0.875rem;
     line-height: 1.375rem;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  [data-slot="card-title"],
+  [data-slot="dialog-title"],
+  [data-slot="sheet-title"] {
+    font-family: "Manrope", "Segoe UI", sans-serif;
+    letter-spacing: -0.025em;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+    color: hsl(var(--foreground));
   }
 }
 
@@ -115,40 +151,57 @@
   background-color: hsl(var(--border) / 0.8);
 }
 
-/* Owl theme tokens as Tailwind v4 theme */
+/* Loupe theme tokens as Tailwind v4 theme */
 @theme {
-  /* Owl brand slate */
+  /* Loupe cool navy */
   --color-slate-50: #F4F6F8;
-  --color-slate-100: #E8ECF1;
-  --color-slate-200: #CDD5DF;
-  --color-slate-300: #AAB7C7;
-  --color-slate-400: #8494A7;
-  --color-slate-500: #5A6A82;
-  --color-slate-600: #3E4C63;
-  --color-slate-700: #2D3A4F;
-  --color-slate-800: #1E293B;
-  --color-slate-900: #111827;
-  --color-slate-950: #0B0F1A;
+  --color-slate-100: #EBF0F2;
+  --color-slate-200: #D3DCDF;
+  --color-slate-300: #B6C2C6;
+  --color-slate-400: #91A2A8;
+  --color-slate-500: #667D85;
+  --color-slate-600: #46656F;
+  --color-slate-700: #294D59;
+  --color-slate-800: #173541;
+  --color-slate-900: #0B202A;
+  --color-slate-950: #071820;
 
-  /* Owl amber accent */
-  --color-amber-50: #FEFAF0;
-  --color-amber-100: #FBF0D0;
-  --color-amber-200: #F7D88A;
-  --color-amber-300: #F0BD4F;
-  --color-amber-400: #E5A61B;
-  --color-amber-500: #D4920A;
+  /* Loupe teal. The amber aliases keep existing components branded while
+     screen-specific semantic warning colors are migrated separately. */
+  --color-brand-50: #EDF8F7;
+  --color-brand-100: #DBEFEE;
+  --color-brand-200: #B7E0DF;
+  --color-brand-300: #77CACA;
+  --color-brand-400: #36B3B2;
+  --color-brand-500: #0C9DA0;
+  --color-brand-600: #078A8E;
+  --color-brand-700: #067278;
+  --color-brand-800: #0A555A;
+  --color-brand-900: #0B3D42;
+  --color-brand-950: #052B2F;
+  --color-amber-50: var(--color-brand-50);
+  --color-amber-100: var(--color-brand-100);
+  --color-amber-200: var(--color-brand-200);
+  --color-amber-300: var(--color-brand-300);
+  --color-amber-400: var(--color-brand-400);
+  --color-amber-500: var(--color-brand-500);
+  --color-amber-600: var(--color-brand-600);
+  --color-amber-700: var(--color-brand-700);
+  --color-amber-800: var(--color-brand-800);
+  --color-amber-900: var(--color-brand-900);
+  --color-amber-950: var(--color-brand-950);
 
   /* Graph node palette */
-  --color-node-person: #6366F1;
-  --color-node-organization: #8B5CF6;
-  --color-node-location: #14B8A6;
-  --color-node-financial: #F59E0B;
-  --color-node-document: #64748B;
-  --color-node-event: #EC4899;
-  --color-node-communication: #06B6D4;
-  --color-node-vehicle: #84CC16;
-  --color-node-digital: #A855F7;
-  --color-node-evidence: #F97316;
+  --color-node-person: #4F69C6;
+  --color-node-organization: #7458A6;
+  --color-node-location: #0C9DA0;
+  --color-node-financial: #B7791F;
+  --color-node-document: #667D85;
+  --color-node-event: #B55473;
+  --color-node-communication: #17879E;
+  --color-node-vehicle: #6F8D3C;
+  --color-node-digital: #7A5BA7;
+  --color-node-evidence: #C66A32;
 
   /* Semantic colors from CSS variables */
   --color-background: hsl(var(--background));
@@ -170,12 +223,20 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-muted: hsl(var(--sidebar-muted));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-panel: hsl(var(--panel));
+  --color-panel-raised: hsl(var(--panel-raised));
+  --color-canvas: hsl(var(--canvas));
 
   /* Typography */
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  --font-display: "Manrope", "Segoe UI", sans-serif;
+  --font-sans: "Source Sans 3", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", Consolas, monospace;
 
-  /* Font sizes - Owl data-dense scale */
+  /* Font sizes - Loupe data-dense scale */
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
@@ -200,13 +261,14 @@
   --radius-xl: 0.75rem;
 
   /* Shadows */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 2px 8px -1px rgba(0, 0, 0, 0.08), 0 1px 3px -1px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 8px 24px -4px rgba(0, 0, 0, 0.10), 0 2px 8px -2px rgba(0, 0, 0, 0.06);
-  --shadow-xl: 0 16px 48px -8px rgba(0, 0, 0, 0.12), 0 4px 16px -4px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 1px 2px 0 rgba(7, 24, 32, 0.05);
+  --shadow-md: 0 3px 10px -2px rgba(7, 24, 32, 0.1), 0 1px 3px -1px rgba(7, 24, 32, 0.06);
+  --shadow-lg: 0 10px 28px -6px rgba(7, 24, 32, 0.14), 0 3px 10px -3px rgba(7, 24, 32, 0.08);
+  --shadow-xl: 0 20px 52px -10px rgba(7, 24, 32, 0.18), 0 5px 18px -5px rgba(7, 24, 32, 0.1);
 
   /* Transitions */
-  --ease-owl: cubic-bezier(0.25, 0.1, 0.25, 1.0);
+  --ease-loupe: cubic-bezier(0.2, 0, 0, 1);
+  --ease-owl: var(--ease-loupe);
 }
 
 /* MapLibre overrides */

@@ -124,10 +124,10 @@ export function ProfileManagementPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className="flex h-full flex-col bg-background">
+      <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
         <Cpu className="size-4 text-amber-500" />
-        <span className="text-sm font-semibold">Profile Management</span>
+        <span className="font-display text-sm font-semibold">Profile Management</span>
         <div className="flex-1" />
         <Badge variant="slate">{profiles.length} profiles</Badge>
         <Button variant="primary" size="sm" onClick={openNew}>
@@ -148,7 +148,7 @@ export function ProfileManagementPage() {
             {profiles.map((profile) => (
               <div
                 key={profile.name}
-                className="group flex items-start gap-3 rounded-lg border border-border p-3"
+                className="group flex items-start gap-3 rounded-lg border border-border bg-card p-3 shadow-sm"
               >
                 <Cpu className="mt-0.5 size-4 text-muted-foreground" />
                 <div className="min-w-0 flex-1">

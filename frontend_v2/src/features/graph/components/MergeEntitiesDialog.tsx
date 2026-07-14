@@ -136,9 +136,9 @@ export function MergeEntitiesDialog({
               </div>
 
               {/* Warning */}
-              <div className="flex items-start gap-2.5 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400 mt-0.5" />
-                <div className="text-xs text-amber-700 dark:text-amber-400">
+              <div className="flex items-start gap-2.5 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-700 dark:text-yellow-300" />
+                <div className="text-xs text-yellow-800 dark:text-yellow-200">
                   <p className="font-medium">AI-powered merge</p>
                   <p className="mt-0.5 opacity-80">
                     AI will intelligently merge all properties from {entities.length} entities into one.
@@ -179,9 +179,9 @@ export function MergeEntitiesDialog({
 
           {/* Partial success warning */}
           {isPartial && (
-            <div className="flex items-start gap-2.5 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400 mt-0.5" />
-              <div className="text-xs text-amber-700 dark:text-amber-400">
+              <div className="flex items-start gap-2.5 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-700 dark:text-yellow-300" />
+                <div className="text-xs text-yellow-800 dark:text-yellow-200">
                 <p className="font-medium">Merge completed with warnings</p>
                 <p className="mt-0.5 opacity-80">
                   Entities merged successfully, but some source entities could not be removed.

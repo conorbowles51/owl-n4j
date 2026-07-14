@@ -128,7 +128,7 @@ export function GraphToolbar({
   }
 
   return (
-    <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 overflow-x-auto">
+    <div className="flex items-center gap-2 overflow-x-auto border-b border-border bg-card/95 px-3 py-1.5 backdrop-blur-sm">
       {/* Search */}
       <div className="flex min-w-[340px] max-w-xl flex-1 items-center gap-1.5">
         <div className="relative min-w-[160px] flex-1">

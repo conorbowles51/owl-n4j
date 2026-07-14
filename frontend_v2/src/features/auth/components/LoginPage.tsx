@@ -1,16 +1,28 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { Eye, EyeOff, ShieldCheck } from "lucide-react"
+import { LoupeLogo } from "@/components/brand/LoupeLogo"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { authAPI } from "../api"
 import { useAuthStore } from "../hooks/use-auth"
-import {
-  Eye,
-  EyeOff,
-  Shield,
-} from "lucide-react"
-import { AnimatedGraphBackground } from "./AnimatedGraphBackground"
+
+function LoginBackdrop() {
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 overflow-hidden"
+      aria-hidden="true"
+    >
+      <div className="absolute inset-0 opacity-70 [background-image:linear-gradient(hsl(var(--border)/0.46)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.46)_1px,transparent_1px)] [background-size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_70%_68%_at_50%_50%,black_8%,transparent_76%)] dark:opacity-35" />
+      <div className="absolute left-1/2 top-1/2 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/[0.035] blur-[110px] dark:bg-primary/[0.025]" />
+      <div className="absolute left-1/2 top-1/2 size-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/[0.055] dark:border-primary/[0.045]" />
+      <div className="absolute left-1/2 top-1/2 size-[30rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/[0.05] dark:border-primary/[0.04]" />
+      <div className="absolute left-1/2 top-1/2 size-[18rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/[0.045] dark:border-primary/[0.035]" />
+      <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent" />
+    </div>
+  )
+}
 
 export function LoginPage() {
   const [username, setUsername] = useState("")
@@ -18,20 +30,20 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
-  const login = useAuthStore((s) => s.login)
+  const login = useAuthStore((state) => state.login)
   const navigate = useNavigate()
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     setError("")
     setLoading(true)
 
     try {
-      const res = await authAPI.login({ username, password })
-      login(res.access_token, {
-        username: res.username,
-        name: res.name,
-        role: res.role,
+      const response = await authAPI.login({ username, password })
+      login(response.access_token, {
+        username: response.username,
+        name: response.name,
+        role: response.role,
       })
       navigate("/cases")
     } catch (err) {
@@ -44,131 +56,35 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* ── Left: Brand hero area ── */}
-      <div className="relative hidden flex-1 overflow-hidden lg:flex lg:flex-col">
-        {/* Background with subtle graph pattern */}
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950" />
+    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background px-6 py-10 text-foreground sm:px-8">
+      <LoginBackdrop />
 
-        {/* Decorative grid dots */}
-        <div
-          className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle, hsl(210 40% 96%) 1px, transparent 1px)",
-            backgroundSize: "32px 32px",
-          }}
-        />
-
-        {/* Animated graph visualization */}
-        <AnimatedGraphBackground />
-
-        {/* Ambient glow */}
-        <div className="absolute left-1/2 top-1/3 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-500/[0.04] blur-[120px]" />
-
-        {/* Content */}
-        <div className="relative z-10 flex flex-1 flex-col justify-between px-12 py-10 xl:px-20">
-          {/* Top: Logo */}
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 ring-1 ring-amber-500/20">
-              <span className="text-lg font-bold tracking-tight text-amber-500">
-                L
-              </span>
-            </div>
-            <div>
-              <span className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-                Loupe
-              </span>
-              <span className="ml-2 text-xs font-medium tracking-widest text-slate-400 dark:text-slate-500 uppercase">
-                Investigation Console
-              </span>
-            </div>
-          </div>
-
-          {/* Center: Hero copy */}
-          <div className="max-w-lg space-y-8">
-            {/* <div className="space-y-4">
-              <h1 className="text-4xl font-bold leading-tight tracking-tight text-slate-900 dark:text-slate-50">
-                Uncover connections.
-                <br />
-                <span className="text-amber-500">Solve faster.</span>
-              </h1>
-              <p className="text-base leading-relaxed text-slate-500 dark:text-slate-400">
-                Graph-powered investigation platform for analysts, investigators,
-                and intelligence teams. Map entities, trace relationships, and
-                surface hidden patterns across complex cases.
-              </p>
-            </div> */}
-
-            {/* Feature pills */}
-            {/* <div className="grid grid-cols-2 gap-3">
-              <FeaturePill
-                icon={<Network className="size-4 text-node-person" />}
-                label="Graph Analysis"
-                description="Entity relationship mapping"
-              />
-              <FeaturePill
-                icon={<Search className="size-4 text-amber-500" />}
-                label="AI-Powered Search"
-                description="Natural language queries"
-              />
-              <FeaturePill
-                icon={<Shield className="size-4 text-node-location" />}
-                label="Case Isolation"
-                description="Secure multi-tenant data"
-              />
-              <FeaturePill
-                icon={<Lock className="size-4 text-node-organization" />}
-                label="Audit Trail"
-                description="Full activity logging"
-              />
-            </div> */}
-          </div>
-
-          {/* Bottom: Footer */}
-          <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-600">
-            <span>&copy; {new Date().getFullYear()} Loupe Platform</span>
-            <span className="font-mono text-[11px] tracking-wider text-slate-400 dark:text-slate-700">
-              v2.0
-            </span>
-          </div>
+      <main
+        id="login-content"
+        className="relative z-10 w-full max-w-[25rem]"
+      >
+        <div className="flex justify-center">
+          <LoupeLogo size="login" />
         </div>
-      </div>
 
-      {/* ── Right: Login panel — flush top-to-bottom ── */}
-      <div className="relative flex w-full flex-col border-l border-slate-200 dark:border-slate-800/60 bg-card lg:w-[480px] xl:w-[520px]">
-        {/* Subtle top accent line */}
-        <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-500/40 to-transparent" />
-
-        <div className="flex flex-1 flex-col justify-center px-10 py-12 sm:px-14 xl:px-16">
-          {/* Mobile logo — only visible on small screens */}
-          <div className="mb-10 flex items-center gap-3 lg:hidden">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 ring-1 ring-amber-500/20">
-              <span className="text-base font-bold tracking-tight text-amber-500">
-                L
-              </span>
-            </div>
-            <span className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-              Loupe
-            </span>
-          </div>
-
-          {/* Header */}
-          <div className="mb-8 space-y-2">
-            <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+        <section className="mt-9" aria-labelledby="login-heading">
+          <header className="text-center">
+            <h1
+              id="login-heading"
+              className="text-3xl font-semibold tracking-[-0.035em] text-foreground"
+            >
               Welcome back
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Sign in to your account to continue
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Sign in to continue to your investigation workspace.
             </p>
-          </div>
+          </header>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-1.5">
+          <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+            <div className="space-y-2">
               <label
                 htmlFor="username"
-                className="block text-xs font-medium text-muted-foreground"
+                className="block text-[13px] font-semibold text-foreground"
               >
                 Username
               </label>
@@ -177,17 +93,18 @@ export function LoginPage() {
                 type="text"
                 placeholder="Enter your username"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(event) => setUsername(event.target.value)}
                 autoComplete="username"
                 disabled={loading}
-                className="h-10"
+                aria-invalid={Boolean(error)}
+                className="h-11 bg-card/95 shadow-[0_8px_22px_rgba(7,24,32,0.035)] dark:shadow-none"
               />
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <label
                 htmlFor="password"
-                className="block text-xs font-medium text-muted-foreground"
+                className="block text-[13px] font-semibold text-foreground"
               >
                 Password
               </label>
@@ -197,16 +114,17 @@ export function LoginPage() {
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(event) => setPassword(event.target.value)}
                   autoComplete="current-password"
                   disabled={loading}
-                  className="h-10 pr-10"
+                  aria-invalid={Boolean(error)}
+                  className="h-11 bg-card/95 pr-11 shadow-[0_8px_22px_rgba(7,24,32,0.035)] dark:shadow-none"
                 />
                 <button
                   type="button"
                   tabIndex={-1}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={() => setShowPassword((visible) => !visible)}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
@@ -219,7 +137,10 @@ export function LoginPage() {
             </div>
 
             {error && (
-              <div className="rounded-md border border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+              <div
+                role="alert"
+                className="rounded-md border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs leading-5 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300"
+              >
                 {error}
               </div>
             )}
@@ -228,34 +149,35 @@ export function LoginPage() {
               type="submit"
               variant="primary"
               size="lg"
-              className="h-10 w-full"
+              className="h-11 w-full"
               disabled={loading || !username || !password}
             >
               {loading ? (
-                <LoadingSpinner size="sm" />
+                <>
+                  <LoadingSpinner size="sm" />
+                  Signing in
+                </>
               ) : (
-                "Sign In"
+                "Sign in"
               )}
             </Button>
           </form>
 
-          {/* Security note */}
-          <div className="mt-10 flex items-start gap-2 rounded-md border border-slate-200 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-900/40 px-3.5 py-3">
-            <Shield className="mt-0.5 size-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
-            <p className="text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
-              This is a secured system. All access attempts are logged and
-              monitored. Unauthorized access is prohibited.
+          <div className="mt-8 flex items-start justify-center gap-2.5 border-t border-border pt-5">
+            <ShieldCheck
+              className="mt-0.5 size-4 shrink-0 text-primary"
+              strokeWidth={1.7}
+            />
+            <p className="max-w-xs text-xs leading-5 text-muted-foreground">
+              Access is logged and monitored. Unauthorized use is prohibited.
             </p>
           </div>
-        </div>
+        </section>
 
-        {/* Panel footer */}
-        <div className="border-t border-slate-200 dark:border-slate-800/60 px-10 py-4 sm:px-14 xl:px-16">
-          <p className="text-center text-[11px] text-slate-400 dark:text-slate-600">
-            Protected by enterprise-grade encryption
-          </p>
-        </div>
-      </div>
+        <p className="mt-8 text-center text-[11px] text-muted-foreground">
+          &copy; {new Date().getFullYear()} Loupe
+        </p>
+      </main>
     </div>
   )
 }

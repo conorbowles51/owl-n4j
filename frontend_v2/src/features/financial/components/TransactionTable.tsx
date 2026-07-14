@@ -454,7 +454,7 @@ function TransactionRow({
             {tx.amount_corrected && (
               <Tooltip>
                 <TooltipTrigger>
-                  <AlertCircle className="size-3 text-amber-500" />
+                  <AlertCircle className="size-3 text-yellow-600 dark:text-yellow-300" />
                 </TooltipTrigger>
                 <TooltipContent>
                   <p className="text-xs">

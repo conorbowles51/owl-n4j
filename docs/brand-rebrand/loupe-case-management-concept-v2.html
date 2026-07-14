@@ -1,0 +1,1639 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Loupe case management brand concept." />
+    <title>Loupe — Case management concept 02</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='26' fill='none' stroke='%23152734' stroke-width='9'/%3E%3Ccircle cx='32' cy='32' r='7' fill='%23089ea4'/%3E%3Cpath d='M32 6v14M58 32H44' stroke='white' stroke-width='5'/%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+
+        /* Brand */
+        --navy-950: #071820;
+        --navy-900: #0b202a;
+        --navy-850: #102a35;
+        --navy-800: #173541;
+        --navy-750: #1e3f4b;
+        --navy-700: #294d59;
+        --navy-600: #46656f;
+        --navy-500: #667d85;
+        --navy-400: #91a2a8;
+        --navy-300: #b6c2c6;
+        --navy-200: #d3dcdf;
+        --navy-150: #e0e7e9;
+        --navy-100: #ebf0f2;
+        --navy-50: #f4f7f8;
+
+        --teal-700: #067278;
+        --teal-600: #078a8e;
+        --teal-500: #0c9da0;
+        --teal-400: #36b3b2;
+        --teal-300: #77caca;
+        --teal-200: #b7e0df;
+        --teal-100: #dbefee;
+        --teal-50: #edf8f7;
+
+        --danger-700: #a33d46;
+        --danger-100: #f9e5e7;
+        --warning-700: #967027;
+        --warning-100: #faefd5;
+        --success-700: #267159;
+        --success-100: #ddf2e9;
+
+        /* Semantics */
+        --app-nav: #ffffff;
+        --case-rail: #f0f4f5;
+        --case-rail-raised: #ffffff;
+        --detail-bg: #f7f9fa;
+        --detail-raised: #ffffff;
+        --detail-soft: var(--navy-50);
+        --detail-border: var(--navy-150);
+        --text-main: var(--navy-900);
+        --text-muted: var(--navy-500);
+        --text-faint: var(--navy-400);
+        --text-on-dark: #f3f7f8;
+        --text-on-dark-muted: #a9bac0;
+        --dark-border: rgba(190, 216, 218, 0.12);
+        --focus: var(--teal-400);
+
+        /* Typography */
+        --font-display: "Manrope", "Segoe UI", sans-serif;
+        --font-sans: "Source Sans 3", "Segoe UI", sans-serif;
+        --text-2xs: 0.6875rem;
+        --text-xs: 0.75rem;
+        --text-sm: 0.8125rem;
+        --text-base: 0.875rem;
+        --text-lg: 1rem;
+        --text-xl: 1.25rem;
+
+        /* Shape, density, motion */
+        --sidebar-width: 14rem;
+        --case-width: 22.25rem;
+        --control-sm: 1.875rem;
+        --control-md: 2.25rem;
+        --radius-xs: 0.25rem;
+        --radius-sm: 0.4rem;
+        --radius-md: 0.65rem;
+        --space-1: 0.25rem;
+        --space-2: 0.5rem;
+        --space-3: 0.75rem;
+        --space-4: 1rem;
+        --space-5: 1.25rem;
+        --space-6: 1.5rem;
+        --ease: cubic-bezier(0.2, 0, 0, 1);
+        --fast: 140ms;
+        --normal: 210ms;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        overflow: hidden;
+        background: var(--navy-950);
+        color: var(--text-main);
+        font-family: var(--font-sans);
+        font-size: var(--text-base);
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      button,
+      input,
+      select {
+        color: inherit;
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      .icon {
+        width: 1rem;
+        height: 1rem;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.7;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: var(--sidebar-width) var(--case-width) minmax(35rem, 1fr);
+        width: 100%;
+        min-width: 75rem;
+        height: 100dvh;
+        overflow: hidden;
+        transition: grid-template-columns var(--normal) var(--ease);
+      }
+
+      .app.collapsed {
+        --sidebar-width: 4.25rem;
+      }
+
+      /* Global sidebar */
+      .sidebar {
+        position: relative;
+        z-index: 3;
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        border-right: 1px solid var(--navy-150);
+        background: var(--app-nav);
+      }
+
+      .brand {
+        display: flex;
+        height: 4.5rem;
+        flex: none;
+        align-items: center;
+        padding: 0 var(--space-4);
+        border-bottom: 1px solid var(--navy-150);
+        background: var(--app-nav);
+      }
+
+      .logo-crop {
+        position: relative;
+        width: 10.25rem;
+        height: 3.25rem;
+        overflow: hidden;
+        flex: none;
+      }
+
+      .logo-crop img {
+        position: absolute;
+        top: -4.8rem;
+        left: -1.65rem;
+        width: 12.95rem;
+        height: 12.95rem;
+        max-width: none;
+      }
+
+      .logo-fallback {
+        display: none;
+        align-items: center;
+        gap: var(--space-2);
+        color: var(--navy-900);
+        font-family: var(--font-display);
+        font-size: 1.45rem;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+      }
+
+      .logo-fallback::before {
+        width: 1.65rem;
+        height: 1.65rem;
+        border: 0.45rem solid var(--navy-800);
+        border-radius: 50%;
+        box-shadow: inset 0 0 0 0.3rem white;
+        background: var(--teal-500);
+        content: "";
+      }
+
+      .primary-nav {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
+        gap: var(--space-5);
+        overflow-y: auto;
+        padding: var(--space-4) var(--space-3);
+      }
+
+      .nav-section {
+        display: grid;
+        gap: 0.18rem;
+      }
+
+      .nav-label {
+        margin: 0 0 var(--space-1);
+        padding: var(--space-1) var(--space-3);
+        color: var(--navy-400);
+        font-size: 0.625rem;
+        font-weight: 600;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+
+      .nav-item {
+        position: relative;
+        display: flex;
+        width: 100%;
+        min-width: 0;
+        height: 2.4rem;
+        align-items: center;
+        gap: var(--space-3);
+        padding: 0 var(--space-3);
+        border: 1px solid transparent;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--navy-600);
+        font-size: var(--text-sm);
+        font-weight: 500;
+        text-align: left;
+        transition:
+          background-color var(--fast) var(--ease),
+          border-color var(--fast) var(--ease),
+          color var(--fast) var(--ease),
+          transform var(--fast) var(--ease);
+      }
+
+      .nav-item:hover {
+        border-color: var(--navy-150);
+        background: var(--navy-50);
+        color: var(--navy-900);
+      }
+
+      .nav-item:active {
+        transform: translateY(1px);
+      }
+
+      .nav-item.active {
+        border-color: var(--teal-200);
+        background: var(--teal-50);
+        color: var(--navy-950);
+        box-shadow: inset 2px 0 0 var(--teal-400);
+      }
+
+      .nav-item.active .icon {
+        color: var(--teal-600);
+      }
+
+      .nav-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .sidebar-footer {
+        flex: none;
+        padding: var(--space-3);
+        border-top: 1px solid var(--navy-150);
+      }
+
+      .collapse-button {
+        display: flex;
+        width: 100%;
+        height: 2.25rem;
+        align-items: center;
+        gap: var(--space-3);
+        margin-top: var(--space-1);
+        padding: 0 var(--space-3);
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--navy-500);
+        font-size: var(--text-xs);
+        font-weight: 500;
+      }
+
+      .collapse-button:hover {
+        background: var(--navy-50);
+        color: var(--navy-900);
+      }
+
+      .app.collapsed .brand {
+        justify-content: center;
+        padding: 0;
+      }
+
+      .app.collapsed .logo-crop {
+        width: 3.1rem;
+      }
+
+      .app.collapsed .logo-crop img {
+        left: -1.65rem;
+      }
+
+      .app.collapsed .nav-label,
+      .app.collapsed .nav-text,
+      .app.collapsed .collapse-text {
+        display: none;
+      }
+
+      .app.collapsed .primary-nav {
+        padding-inline: var(--space-2);
+      }
+
+      .app.collapsed .nav-item,
+      .app.collapsed .collapse-button {
+        width: 2.5rem;
+        justify-content: center;
+        margin-inline: auto;
+        padding: 0;
+      }
+
+      /* Case list */
+      .case-panel {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        border-right: 1px solid var(--navy-150);
+        background:
+          radial-gradient(circle at 85% -5%, rgba(54, 179, 178, 0.08), transparent 19rem),
+          var(--case-rail);
+        box-shadow: 0.75rem 0 2rem rgba(11, 32, 42, 0.045);
+      }
+
+      .case-header {
+        display: flex;
+        height: 4.5rem;
+        flex: none;
+        align-items: center;
+        gap: var(--space-2);
+        padding: 0 var(--space-4);
+        border-bottom: 1px solid var(--navy-150);
+      }
+
+      .case-header > .icon {
+        color: var(--teal-600);
+      }
+
+      .case-header h1 {
+        margin: 0;
+        color: var(--navy-950);
+        font-family: var(--font-display);
+        font-size: var(--text-lg);
+        font-weight: 600;
+        letter-spacing: -0.025em;
+      }
+
+      .case-header-spacer {
+        flex: 1;
+      }
+
+      .button {
+        display: inline-flex;
+        height: var(--control-md);
+        align-items: center;
+        justify-content: center;
+        gap: 0.42rem;
+        padding: 0 0.85rem;
+        border: 1px solid transparent;
+        border-radius: var(--radius-sm);
+        font-size: var(--text-xs);
+        font-weight: 600;
+        letter-spacing: -0.005em;
+        white-space: nowrap;
+        transition:
+          background-color var(--fast) var(--ease),
+          border-color var(--fast) var(--ease),
+          box-shadow var(--fast) var(--ease),
+          color var(--fast) var(--ease),
+          transform var(--fast) var(--ease);
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button:active {
+        transform: translateY(1px) scale(0.99);
+      }
+
+      .button-teal {
+        border-color: var(--teal-400);
+        background: var(--teal-500);
+        color: var(--navy-950);
+        box-shadow: 0 0.4rem 1.2rem rgba(12, 157, 160, 0.16);
+      }
+
+      .button-teal:hover {
+        border-color: var(--teal-300);
+        background: var(--teal-400);
+      }
+
+      .button-primary {
+        border-color: var(--navy-900);
+        background: var(--navy-900);
+        color: white;
+        box-shadow: 0 0.35rem 1rem rgba(8, 21, 29, 0.12);
+      }
+
+      .button-primary:hover {
+        border-color: var(--navy-700);
+        background: var(--navy-700);
+      }
+
+      .button-outline {
+        border-color: var(--navy-200);
+        background: white;
+        color: var(--navy-700);
+        box-shadow: 0 1px 1px rgba(8, 21, 29, 0.03);
+      }
+
+      .button-outline:hover {
+        border-color: var(--navy-300);
+        background: var(--navy-50);
+        color: var(--navy-950);
+      }
+
+      .button-ghost {
+        height: var(--control-sm);
+        padding-inline: var(--space-2);
+        background: transparent;
+        color: var(--teal-700);
+      }
+
+      .button-ghost:hover {
+        background: var(--teal-50);
+      }
+
+      .button-danger {
+        border-color: #e7c2c6;
+        background: white;
+        color: var(--danger-700);
+      }
+
+      .button-danger:hover {
+        background: var(--danger-100);
+      }
+
+      .scope-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        flex: none;
+        padding: var(--space-2) var(--space-3) 0;
+        border-bottom: 1px solid var(--navy-150);
+      }
+
+      .scope-tab {
+        position: relative;
+        height: 2.4rem;
+        border: 0;
+        background: transparent;
+        color: var(--navy-500);
+        font-size: var(--text-xs);
+        font-weight: 500;
+      }
+
+      .scope-tab:hover {
+        color: var(--navy-900);
+      }
+
+      .scope-tab.active {
+        color: var(--navy-950);
+      }
+
+      .scope-tab.active::after {
+        position: absolute;
+        right: var(--space-3);
+        bottom: -1px;
+        left: var(--space-3);
+        height: 2px;
+        border-radius: 2px 2px 0 0;
+        background: var(--teal-400);
+        content: "";
+      }
+
+      .case-controls {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 7.7rem;
+        gap: var(--space-2);
+        padding: var(--space-3);
+        border-bottom: 1px solid var(--navy-150);
+      }
+
+      .field {
+        position: relative;
+        min-width: 0;
+      }
+
+      .field > .icon {
+        position: absolute;
+        left: 0.7rem;
+        top: 50%;
+        width: 0.9rem;
+        height: 0.9rem;
+        transform: translateY(-50%);
+        pointer-events: none;
+      }
+
+      .dark-input,
+      .dark-select {
+        width: 100%;
+        height: var(--control-md);
+        border: 1px solid var(--navy-200);
+        border-radius: var(--radius-sm);
+        background: var(--case-rail-raised);
+        color: var(--navy-900);
+        font-size: var(--text-xs);
+        transition:
+          border-color var(--fast) var(--ease),
+          background-color var(--fast) var(--ease),
+          box-shadow var(--fast) var(--ease);
+      }
+
+      .dark-input {
+        padding: 0 var(--space-3) 0 2.15rem;
+      }
+
+      .dark-input::placeholder {
+        color: var(--navy-400);
+      }
+
+      .field > .icon {
+        color: var(--navy-400);
+      }
+
+      .dark-input:hover,
+      .dark-select:hover {
+        border-color: var(--teal-200);
+        background: white;
+      }
+
+      .dark-input:focus,
+      .dark-select:focus {
+        border-color: var(--teal-400);
+        box-shadow: 0 0 0 3px rgba(54, 179, 178, 0.12);
+      }
+
+      .dark-select {
+        appearance: none;
+        padding: 0 1.8rem 0 0.65rem;
+        background-image:
+          linear-gradient(45deg, transparent 50%, var(--navy-500) 50%),
+          linear-gradient(135deg, var(--navy-500) 50%, transparent 50%);
+        background-position:
+          calc(100% - 0.8rem) 50%,
+          calc(100% - 0.56rem) 50%;
+        background-repeat: no-repeat;
+        background-size: 0.25rem 0.25rem, 0.25rem 0.25rem;
+      }
+
+      .dark-select option {
+        background: white;
+        color: var(--navy-900);
+      }
+
+      .archived {
+        display: flex;
+        grid-column: 1 / -1;
+        align-items: center;
+        gap: var(--space-2);
+        color: var(--navy-500);
+        font-size: var(--text-2xs);
+        cursor: pointer;
+      }
+
+      .archived input {
+        width: 0.9rem;
+        height: 0.9rem;
+        margin: 0;
+        accent-color: var(--teal-400);
+      }
+
+      .case-list {
+        min-height: 0;
+        flex: 1;
+        overflow-y: auto;
+        padding: var(--space-2);
+        scrollbar-color: var(--navy-300) transparent;
+        scrollbar-width: thin;
+      }
+
+      .case-row {
+        position: relative;
+        display: grid;
+        width: 100%;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--space-3);
+        margin-bottom: 0.2rem;
+        padding: 0.78rem 0.8rem;
+        border: 1px solid transparent;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        transition:
+          background-color var(--fast) var(--ease),
+          border-color var(--fast) var(--ease),
+          box-shadow var(--fast) var(--ease),
+          transform var(--fast) var(--ease);
+      }
+
+      .case-row:hover {
+        border-color: var(--navy-150);
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .case-row:active {
+        transform: scale(0.995);
+      }
+
+      .case-row.selected {
+        border-color: var(--teal-200);
+        background: var(--teal-50);
+        box-shadow: inset 2px 0 0 var(--teal-400);
+      }
+
+      .case-row-copy {
+        min-width: 0;
+      }
+
+      .case-title {
+        display: block;
+        overflow: hidden;
+        color: var(--navy-950);
+        font-family: var(--font-display);
+        font-size: var(--text-sm);
+        font-weight: 600;
+        letter-spacing: -0.018em;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .case-meta,
+      .case-deadline {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: var(--space-2);
+        margin-top: 0.35rem;
+        color: var(--navy-500);
+        font-size: var(--text-2xs);
+        font-weight: 400;
+        letter-spacing: 0.008em;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .case-deadline {
+        margin-top: var(--space-1);
+        color: var(--navy-600);
+      }
+
+      .case-deadline.overdue {
+        color: var(--danger-700);
+      }
+
+      .case-deadline .icon {
+        width: 0.75rem;
+        height: 0.75rem;
+        color: var(--teal-600);
+      }
+
+      .case-deadline.overdue .icon {
+        color: var(--danger-700);
+      }
+
+      .role {
+        display: inline-flex;
+        min-height: 1.3rem;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.08rem 0.42rem;
+        border-radius: var(--radius-xs);
+        font-size: 0.625rem;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .role .icon {
+        width: 0.7rem;
+        height: 0.7rem;
+      }
+
+      .role-owner-dark {
+        background: var(--teal-100);
+        color: var(--teal-700);
+      }
+
+      .role-editor-dark {
+        background: var(--navy-100);
+        color: var(--navy-600);
+      }
+
+      .role-viewer-dark {
+        border: 1px solid var(--navy-200);
+        color: var(--navy-600);
+      }
+
+      .empty-search {
+        display: none;
+        padding: 2.5rem var(--space-4);
+        color: var(--navy-500);
+        font-size: var(--text-xs);
+        text-align: center;
+      }
+
+      /* Case detail */
+      .detail {
+        min-width: 0;
+        overflow-y: auto;
+        background:
+          radial-gradient(circle at 100% 0, rgba(54, 179, 178, 0.065), transparent 24rem),
+          var(--detail-bg);
+        scrollbar-color: var(--navy-200) transparent;
+        scrollbar-width: thin;
+      }
+
+      .detail-header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        padding: 1.35rem 1.6rem 1.2rem;
+        border-bottom: 1px solid var(--detail-border);
+        background: rgba(255, 255, 255, 0.93);
+        backdrop-filter: blur(1rem);
+      }
+
+      .detail-title-line {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: var(--space-3);
+      }
+
+      .detail-title {
+        overflow: hidden;
+        margin: 0;
+        color: var(--navy-950);
+        font-family: var(--font-display);
+        font-size: var(--text-xl);
+        font-weight: 600;
+        letter-spacing: -0.035em;
+        line-height: 1.25;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .role-owner-light {
+        background: var(--teal-100);
+        color: var(--teal-700);
+      }
+
+      .detail-description {
+        max-width: 65ch;
+        margin: var(--space-2) 0 0;
+        color: var(--text-muted);
+        font-size: var(--text-xs);
+        line-height: 1.55;
+        text-wrap: pretty;
+      }
+
+      .detail-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-4);
+        margin-top: var(--space-3);
+        color: var(--text-muted);
+        font-size: var(--text-2xs);
+      }
+
+      .meta-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
+
+      .meta-item .icon {
+        width: 0.8rem;
+        height: 0.8rem;
+        color: var(--text-faint);
+      }
+
+      .detail-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        margin-top: var(--space-4);
+      }
+
+      .detail-section {
+        border-bottom: 1px solid var(--detail-border);
+      }
+
+      .section-trigger {
+        display: flex;
+        width: 100%;
+        min-height: 3.35rem;
+        align-items: center;
+        gap: var(--space-3);
+        padding: 0 1.6rem;
+        border: 0;
+        background: transparent;
+        text-align: left;
+        transition: background-color var(--fast) var(--ease);
+      }
+
+      .section-trigger:hover {
+        background: var(--navy-50);
+      }
+
+      .section-trigger > .icon {
+        width: 0.85rem;
+        height: 0.85rem;
+        color: var(--navy-400);
+        transition: transform var(--normal) var(--ease);
+      }
+
+      .detail-section.closed .section-trigger > .icon {
+        transform: rotate(-90deg);
+      }
+
+      .section-mark {
+        display: grid;
+        width: 1.8rem;
+        height: 1.8rem;
+        place-items: center;
+        border: 1px solid var(--teal-100);
+        border-radius: var(--radius-sm);
+        background: var(--teal-50);
+        color: var(--teal-700);
+      }
+
+      .section-mark .icon {
+        width: 0.9rem;
+        height: 0.9rem;
+      }
+
+      .section-title {
+        color: var(--text-main);
+        font-family: var(--font-display);
+        font-size: var(--text-sm);
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .section-count {
+        display: grid;
+        min-width: 1.45rem;
+        height: 1.35rem;
+        place-items: center;
+        margin-left: auto;
+        padding-inline: 0.38rem;
+        border: 1px solid var(--navy-150);
+        border-radius: var(--radius-xs);
+        background: white;
+        color: var(--navy-500);
+        font-size: 0.625rem;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .section-content {
+        display: grid;
+        grid-template-rows: 1fr;
+        opacity: 1;
+        transition:
+          grid-template-rows var(--normal) var(--ease),
+          opacity var(--fast) var(--ease);
+      }
+
+      .section-content-inner {
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .detail-section.closed .section-content {
+        grid-template-rows: 0fr;
+        opacity: 0;
+      }
+
+      .section-body {
+        padding: 0 1.6rem 1.35rem 4.65rem;
+      }
+
+      .section-actions {
+        display: flex;
+        min-height: 2.15rem;
+        align-items: center;
+        justify-content: flex-end;
+        margin-bottom: var(--space-2);
+      }
+
+      .data-list {
+        border-top: 1px solid var(--detail-border);
+      }
+
+      .data-row {
+        display: grid;
+        min-height: 3.75rem;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--space-4);
+        padding: var(--space-3) var(--space-2);
+        border-bottom: 1px solid var(--detail-border);
+        transition: background-color var(--fast) var(--ease);
+      }
+
+      .data-row:hover {
+        background: white;
+      }
+
+      .data-title {
+        margin: 0;
+        color: var(--navy-900);
+        font-family: var(--font-display);
+        font-size: var(--text-xs);
+        font-weight: 600;
+      }
+
+      .data-meta {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin-top: 0.3rem;
+        color: var(--text-muted);
+        font-size: var(--text-2xs);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .status {
+        display: inline-flex;
+        min-height: 1.25rem;
+        align-items: center;
+        padding: 0.05rem 0.42rem;
+        border-radius: var(--radius-xs);
+        font-family: var(--font-sans);
+        font-size: 0.625rem;
+        font-weight: 600;
+      }
+
+      .status-overdue {
+        background: var(--danger-100);
+        color: var(--danger-700);
+      }
+
+      .status-warning {
+        background: var(--warning-100);
+        color: var(--warning-700);
+      }
+
+      .status-success {
+        background: var(--success-100);
+        color: var(--success-700);
+      }
+
+      .light-input {
+        width: 100%;
+        height: var(--control-md);
+        padding: 0 var(--space-3) 0 2.15rem;
+        border: 1px solid var(--navy-200);
+        border-radius: var(--radius-sm);
+        background: white;
+        color: var(--text-main);
+        font-size: var(--text-xs);
+        box-shadow: 0 1px 1px rgba(8, 21, 29, 0.03);
+      }
+
+      .light-input::placeholder {
+        color: var(--navy-400);
+      }
+
+      .light-field .icon {
+        color: var(--navy-400);
+      }
+
+      .snapshot-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        margin-bottom: var(--space-2);
+      }
+
+      .snapshot-search {
+        width: min(17rem, 55%);
+      }
+
+      .snapshot-list {
+        border-top: 1px solid var(--detail-border);
+      }
+
+      .snapshot {
+        border-bottom: 1px solid var(--detail-border);
+      }
+
+      .snapshot-trigger {
+        display: grid;
+        width: 100%;
+        min-height: 3.85rem;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--space-3);
+        padding: var(--space-3) var(--space-2);
+        border: 0;
+        background: transparent;
+        text-align: left;
+        transition: background-color var(--fast) var(--ease);
+      }
+
+      .snapshot-trigger:hover {
+        background: white;
+      }
+
+      .snapshot-icon {
+        position: relative;
+        display: grid;
+        width: 2rem;
+        height: 2rem;
+        place-items: center;
+        border: 1px solid var(--teal-200);
+        border-radius: var(--radius-sm);
+        background: var(--teal-50);
+        color: var(--teal-700);
+      }
+
+      .snapshot-icon::before {
+        width: 0.45rem;
+        height: 0.45rem;
+        border: 0.22rem solid var(--teal-600);
+        border-radius: 50%;
+        box-shadow: 0.55rem -0.45rem 0 -0.1rem var(--navy-500), -0.45rem 0.5rem 0 -0.1rem var(--navy-400);
+        content: "";
+      }
+
+      .snapshot-copy {
+        min-width: 0;
+      }
+
+      .snapshot-heading {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+
+      .snapshot-name {
+        overflow: hidden;
+        color: var(--navy-900);
+        font-family: var(--font-display);
+        font-size: var(--text-xs);
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .latest {
+        display: inline-flex;
+        min-height: 1.2rem;
+        align-items: center;
+        padding: 0.05rem 0.4rem;
+        border-radius: var(--radius-xs);
+        background: var(--teal-100);
+        color: var(--teal-700);
+        font-size: 0.625rem;
+        font-weight: 600;
+      }
+
+      .snapshot-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-3);
+        margin-top: 0.25rem;
+        color: var(--text-muted);
+        font-size: var(--text-2xs);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .snapshot-trigger > .icon {
+        width: 0.8rem;
+        height: 0.8rem;
+        color: var(--navy-400);
+        transition: transform var(--normal) var(--ease);
+      }
+
+      .snapshot.open .snapshot-trigger > .icon {
+        transform: rotate(90deg);
+      }
+
+      .snapshot-detail {
+        display: none;
+        margin: 0 var(--space-2) var(--space-3) 3.35rem;
+        padding: var(--space-3) var(--space-4);
+        border-left: 2px solid var(--teal-400);
+        background: white;
+        color: var(--text-muted);
+        font-size: var(--text-2xs);
+        line-height: 1.55;
+      }
+
+      .snapshot.open .snapshot-detail {
+        display: block;
+      }
+
+      .snapshot-detail strong {
+        display: block;
+        margin-bottom: var(--space-1);
+        color: var(--navy-700);
+        font-size: var(--text-2xs);
+        font-weight: 600;
+      }
+
+      .snapshot-detail p {
+        margin: 0 0 var(--space-2);
+      }
+
+      .snapshot-detail-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        margin-top: var(--space-2);
+        color: var(--text-faint);
+        font-size: var(--text-2xs);
+        font-variant-numeric: tabular-nums;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          transition-duration: 0.01ms !important;
+        }
+      }
+
+      @media (max-width: 78rem) {
+        :root {
+          --sidebar-width: 4.25rem;
+          --case-width: 20rem;
+        }
+
+        .logo-crop {
+          width: 3.1rem;
+        }
+
+        .nav-label,
+        .nav-text,
+        .collapse-text {
+          display: none;
+        }
+
+        .primary-nav {
+          padding-inline: var(--space-2);
+        }
+
+        .nav-item,
+        .collapse-button {
+          width: 2.5rem;
+          justify-content: center;
+          margin-inline: auto;
+          padding: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg aria-hidden="true" width="0" height="0" style="position: absolute">
+      <defs>
+        <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 6.5h6l2 2h9v10.5a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19z"/><path d="M3.5 8.5V5A1.5 1.5 0 0 1 5 3.5h4l2 2h6"/></symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 20 6v5c0 5.1-3.2 8.2-8 10-4.8-1.8-8-4.9-8-10V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+        <symbol id="i-dollar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.7-.7-1.7-1-3-1-1.7 0-3 .8-3 2s1 1.8 3 2.2c2 .4 3 1.1 3 2.4s-1.3 2.4-3 2.4c-1.3 0-2.5-.4-3.3-1.3M12 5.5v13"/></symbol>
+        <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></symbol>
+        <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.4-3.4 2.2-5 5.5-5s5.1 1.6 5.5 5M16 5.5a3 3 0 0 1 0 5.8M16.5 14c2.4.2 3.7 1.8 4 4.5"/></symbol>
+        <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h7m4 0h5M4 12h3m4 0h9M4 18h10m4 0h2"/><circle cx="13" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="16" cy="18" r="2"/></symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7-.5-1.2.9-1.9-2.1-2.1-1.9.9-1.2-.5-.7-2h-3l-.7 2-1.2.5-1.9-.9-2.1 2.1.9 1.9-.5 1.2-2 .7v3l2 .7.5 1.2-.9 1.9 2.1 2.1 1.9-.9 1.2.5.7 2h3l.7-2 1.2-.5 1.9.9 2.1-2.1-.9-1.9.5-1.2z"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+        <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+        <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+        <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+        <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="15" rx="2"/><path d="M7.5 3v5M16.5 3v5M3.5 10h17"/></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.5-4.2 2.8-6 7-6s6.5 1.8 7 6"/></symbol>
+        <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M19 13v5.5A1.5 1.5 0 0 1 17.5 20h-12A1.5 1.5 0 0 1 4 18.5v-12A1.5 1.5 0 0 1 5.5 5H11"/></symbol>
+        <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M3.5 9h17M9 9v11"/></symbol>
+        <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0-4 4m4-4 4 4M5 20h14"/></symbol>
+        <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4.5 7.5h3l1.3-2h6.4l1.3 2h3A1.5 1.5 0 0 1 21 9v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5V9a1.5 1.5 0 0 1 1.5-1.5Z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+        <symbol id="i-crown" viewBox="0 0 24 24"><path d="m4 8 4 4 4-7 4 7 4-4-2 10H6zM7 21h10"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></symbol>
+      </defs>
+    </svg>
+
+    <div class="app" id="app">
+      <aside class="sidebar" aria-label="Application sidebar">
+        <div class="brand">
+          <div class="logo-crop" aria-label="Loupe">
+            <img
+              src="../../../../../../Downloads/ChatGPT Image Jul 14, 2026, 04_11_39 PM.png"
+              alt="Loupe"
+              onerror="this.parentElement.style.display='none'; this.parentElement.nextElementSibling.style.display='flex'"
+            />
+          </div>
+          <div class="logo-fallback" aria-hidden="true">Loupe</div>
+        </div>
+
+        <nav class="primary-nav" aria-label="Primary navigation">
+          <section class="nav-section" aria-labelledby="investigation-label">
+            <h2 class="nav-label" id="investigation-label">Investigation</h2>
+            <button class="nav-item active" type="button" aria-current="page" title="Cases">
+              <svg class="icon"><use href="#i-folder" /></svg><span class="nav-text">Cases</span>
+            </button>
+            <button class="nav-item" type="button" title="Triage">
+              <svg class="icon"><use href="#i-shield" /></svg><span class="nav-text">Triage</span>
+            </button>
+          </section>
+
+          <section class="nav-section" aria-labelledby="admin-label">
+            <h2 class="nav-label" id="admin-label">Admin</h2>
+            <button class="nav-item" type="button" title="AI Costs">
+              <svg class="icon"><use href="#i-dollar" /></svg><span class="nav-text">AI Costs</span>
+            </button>
+            <button class="nav-item" type="button" title="Updates">
+              <svg class="icon"><use href="#i-download" /></svg><span class="nav-text">Updates</span>
+            </button>
+            <button class="nav-item" type="button" title="Users">
+              <svg class="icon"><use href="#i-users" /></svg><span class="nav-text">Users</span>
+            </button>
+            <button class="nav-item" type="button" title="Profiles">
+              <svg class="icon"><use href="#i-sliders" /></svg><span class="nav-text">Profiles</span>
+            </button>
+          </section>
+        </nav>
+
+        <footer class="sidebar-footer">
+          <button class="nav-item" type="button" title="Settings">
+            <svg class="icon"><use href="#i-settings" /></svg><span class="nav-text">Settings</span>
+          </button>
+          <button class="collapse-button" id="collapse" type="button" aria-label="Collapse sidebar">
+            <svg class="icon"><use id="collapse-icon" href="#i-left" /></svg><span class="collapse-text">Collapse</span>
+          </button>
+        </footer>
+      </aside>
+
+      <aside class="case-panel" aria-label="Cases">
+        <header class="case-header">
+          <svg class="icon"><use href="#i-folder" /></svg>
+          <h1>Cases</h1>
+          <span class="case-header-spacer"></span>
+          <button class="button button-teal" type="button"><svg class="icon"><use href="#i-plus" /></svg>New</button>
+        </header>
+
+        <div class="scope-tabs" role="tablist" aria-label="Case view">
+          <button class="scope-tab active" type="button" role="tab" aria-selected="true">My Cases</button>
+          <button class="scope-tab" type="button" role="tab" aria-selected="false">All Cases</button>
+        </div>
+
+        <div class="case-controls">
+          <label class="field">
+            <span class="sr-only">Search cases</span>
+            <svg class="icon"><use href="#i-search" /></svg>
+            <input class="dark-input" id="case-search" name="case-search" type="search" placeholder="Search cases..." autocomplete="off" />
+          </label>
+          <label>
+            <span class="sr-only">Sort cases</span>
+            <select class="dark-select" id="case-sort" name="case-sort">
+              <option value="updated">Last Updated</option>
+              <option value="deadline">Next Deadline</option>
+            </select>
+          </label>
+          <label class="archived"><input type="checkbox" name="archived" />Archived</label>
+        </div>
+
+        <div class="case-list" id="case-list">
+          <button
+            class="case-row selected"
+            type="button"
+            aria-pressed="true"
+            data-title="Operation Glasshouse"
+            data-description="Cross-jurisdiction investigation into procurement fraud, connected shell companies, and diverted public funds."
+            data-owner="Maeve O'Donnell"
+            data-created="04/03/2026"
+            data-updated="14/07/2026"
+            data-role="Owner"
+          >
+            <span class="case-row-copy">
+              <span class="case-title">Operation Glasshouse</span>
+              <span class="case-meta"><span>Maeve O'Donnell</span><span>14/07/2026</span></span>
+              <span class="case-deadline overdue"><svg class="icon"><use href="#i-calendar" /></svg>Disclosure schedule due · 16/07/2026</span>
+            </span>
+            <span class="role role-owner-dark"><svg class="icon"><use href="#i-crown" /></svg>Owner</span>
+          </button>
+
+          <button
+            class="case-row"
+            type="button"
+            aria-pressed="false"
+            data-title="North Quay Network"
+            data-description="Financial and communications analysis relating to suspected organized import activity through Dublin Port."
+            data-owner="Declan Byrne"
+            data-created="18/04/2026"
+            data-updated="14/07/2026"
+            data-role="Editor"
+          >
+            <span class="case-row-copy">
+              <span class="case-title">North Quay Network</span>
+              <span class="case-meta"><span>Declan Byrne</span><span>14/07/2026</span></span>
+              <span class="case-deadline"><svg class="icon"><use href="#i-calendar" /></svg>Review conference · 22/07/2026</span>
+            </span>
+            <span class="role role-editor-dark">Editor</span>
+          </button>
+
+          <button
+            class="case-row"
+            type="button"
+            aria-pressed="false"
+            data-title="Meridian Ledger"
+            data-description="Asset tracing across eight corporate entities following a complex insolvency and creditor complaint."
+            data-owner="Sarah Chen"
+            data-created="27/05/2026"
+            data-updated="13/07/2026"
+            data-role="Viewer"
+          >
+            <span class="case-row-copy">
+              <span class="case-title">Meridian Ledger</span>
+              <span class="case-meta"><span>Sarah Chen</span><span>13/07/2026</span></span>
+              <span class="case-deadline"><svg class="icon"><use href="#i-calendar" /></svg>Interim report · 29/07/2026</span>
+            </span>
+            <span class="role role-viewer-dark">Viewer</span>
+          </button>
+
+          <button
+            class="case-row"
+            type="button"
+            aria-pressed="false"
+            data-title="Project Aster"
+            data-description="Evidence review and timeline reconstruction for a coordinated insider access investigation."
+            data-owner="Niamh Gallagher"
+            data-created="08/06/2026"
+            data-updated="12/07/2026"
+            data-role="Editor"
+          >
+            <span class="case-row-copy">
+              <span class="case-title">Project Aster</span>
+              <span class="case-meta"><span>Niamh Gallagher</span><span>12/07/2026</span></span>
+            </span>
+            <span class="role role-editor-dark">Editor</span>
+          </button>
+
+          <button
+            class="case-row"
+            type="button"
+            aria-pressed="false"
+            data-title="Silverline Holdings"
+            data-description="Corporate ownership mapping and beneficial interest analysis for an international recovery action."
+            data-owner="Oliver Hayes"
+            data-created="22/06/2026"
+            data-updated="11/07/2026"
+            data-role="Owner"
+          >
+            <span class="case-row-copy">
+              <span class="case-title">Silverline Holdings</span>
+              <span class="case-meta"><span>Oliver Hayes</span><span>11/07/2026</span></span>
+              <span class="case-deadline"><svg class="icon"><use href="#i-calendar" /></svg>Ownership brief · 05/08/2026</span>
+            </span>
+            <span class="role role-owner-dark"><svg class="icon"><use href="#i-crown" /></svg>Owner</span>
+          </button>
+
+          <button
+            class="case-row"
+            type="button"
+            aria-pressed="false"
+            data-title="Harbour Signal"
+            data-description="Device, location, and communications correlation following a six-month surveillance operation."
+            data-owner="Aisha Rahman"
+            data-created="01/07/2026"
+            data-updated="10/07/2026"
+            data-role="Editor"
+          >
+            <span class="case-row-copy">
+              <span class="case-title">Harbour Signal</span>
+              <span class="case-meta"><span>Aisha Rahman</span><span>10/07/2026</span></span>
+            </span>
+            <span class="role role-editor-dark">Editor</span>
+          </button>
+
+          <p class="empty-search" id="empty-search">No cases</p>
+        </div>
+      </aside>
+
+      <main class="detail" id="detail">
+        <header class="detail-header">
+          <div class="detail-title-line">
+            <h2 class="detail-title" id="detail-title">Operation Glasshouse</h2>
+            <span class="role role-owner-light" id="detail-role"><svg class="icon"><use href="#i-crown" /></svg>Owner</span>
+          </div>
+          <p class="detail-description" id="detail-description">Cross-jurisdiction investigation into procurement fraud, connected shell companies, and diverted public funds.</p>
+          <div class="detail-meta">
+            <span class="meta-item"><svg class="icon"><use href="#i-user" /></svg><span id="detail-owner">Maeve O'Donnell</span></span>
+            <span class="meta-item"><svg class="icon"><use href="#i-calendar" /></svg>Created <span id="detail-created">04/03/2026</span></span>
+            <span class="meta-item"><svg class="icon"><use href="#i-calendar" /></svg>Updated <span id="detail-updated">14/07/2026</span></span>
+          </div>
+          <div class="detail-actions">
+            <button class="button button-primary" type="button"><svg class="icon"><use href="#i-open" /></svg>Open Case</button>
+            <button class="button button-outline" type="button"><svg class="icon"><use href="#i-layout" /></svg>Workspace</button>
+            <button class="button button-outline" type="button"><svg class="icon"><use href="#i-upload" /></svg>Evidence</button>
+            <button class="button button-outline" type="button"><svg class="icon"><use href="#i-users" /></svg>Collaborators</button>
+          </div>
+        </header>
+
+        <section class="detail-section" data-section>
+          <button class="section-trigger" type="button" aria-expanded="true">
+            <svg class="icon"><use href="#i-down" /></svg>
+            <span class="section-mark"><svg class="icon"><use href="#i-calendar" /></svg></span>
+            <span class="section-title">Deadlines</span>
+            <span class="section-count">3</span>
+          </button>
+          <div class="section-content">
+            <div class="section-content-inner">
+              <div class="section-body">
+                <div class="section-actions">
+                  <button class="button button-ghost" type="button"><svg class="icon"><use href="#i-plus" /></svg>Add Deadline</button>
+                </div>
+                <div class="data-list">
+                  <div class="data-row">
+                    <div><p class="data-title">Disclosure schedule due</p><div class="data-meta"><span>16/07/2026</span><span class="status status-overdue">Overdue</span></div></div>
+                  </div>
+                  <div class="data-row">
+                    <div><p class="data-title">Counsel evidence review</p><div class="data-meta"><span>21/07/2026</span><span class="status status-warning">7 days</span></div></div>
+                  </div>
+                  <div class="data-row">
+                    <div><p class="data-title">Interim findings memorandum</p><div class="data-meta"><span>02/08/2026</span><span class="status status-success">19 days</span></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-section" data-section>
+          <button class="section-trigger" type="button" aria-expanded="true">
+            <svg class="icon"><use href="#i-down" /></svg>
+            <span class="section-mark"><svg class="icon"><use href="#i-camera" /></svg></span>
+            <span class="section-title">Snapshots</span>
+            <span class="section-count">4</span>
+          </button>
+          <div class="section-content">
+            <div class="section-content-inner">
+              <div class="section-body">
+                <div class="snapshot-actions">
+                  <label class="field light-field snapshot-search">
+                    <span class="sr-only">Search snapshots</span>
+                    <svg class="icon"><use href="#i-search" /></svg>
+                    <input class="light-input" name="snapshot-search" type="search" placeholder="Search snapshots..." autocomplete="off" />
+                  </label>
+                  <button class="button button-danger" type="button"><svg class="icon"><use href="#i-trash" /></svg>Delete All</button>
+                </div>
+
+                <div class="snapshot-list">
+                  <article class="snapshot open">
+                    <button class="snapshot-trigger" type="button" aria-expanded="true">
+                      <span class="snapshot-icon" aria-hidden="true"></span>
+                      <span class="snapshot-copy">
+                        <span class="snapshot-heading"><span class="snapshot-name">Post-disclosure entity network</span><span class="latest">Latest</span></span>
+                        <span class="snapshot-meta"><span>14/07/2026, 13:54</span><span>286 nodes</span><span>419 links</span></span>
+                      </span>
+                      <svg class="icon"><use href="#i-right" /></svg>
+                    </button>
+                    <div class="snapshot-detail">
+                      <strong>AI Overview</strong>
+                      <p>Three newly identified directors connect the principal procurement entities to two offshore holding companies.</p>
+                      <p>Recurring payment path through the Westbridge account cluster.</p>
+                      <div class="snapshot-detail-footer"><span>38 timeline events</span><button class="button button-danger" type="button"><svg class="icon"><use href="#i-trash" /></svg>Delete</button></div>
+                    </div>
+                  </article>
+
+                  <article class="snapshot">
+                    <button class="snapshot-trigger" type="button" aria-expanded="false">
+                      <span class="snapshot-icon" aria-hidden="true"></span>
+                      <span class="snapshot-copy"><span class="snapshot-heading"><span class="snapshot-name">Payment route comparison</span></span><span class="snapshot-meta"><span>12/07/2026, 16:08</span><span>174 nodes</span><span>267 links</span></span></span>
+                      <svg class="icon"><use href="#i-right" /></svg>
+                    </button>
+                    <div class="snapshot-detail"><strong>AI Overview</strong><p>Comparison of the confirmed payment route against the inferred control network.</p><div class="snapshot-detail-footer"><span>24 timeline events</span><button class="button button-danger" type="button"><svg class="icon"><use href="#i-trash" /></svg>Delete</button></div></div>
+                  </article>
+
+                  <article class="snapshot">
+                    <button class="snapshot-trigger" type="button" aria-expanded="false">
+                      <span class="snapshot-icon" aria-hidden="true"></span>
+                      <span class="snapshot-copy"><span class="snapshot-heading"><span class="snapshot-name">Director and address overlap</span></span><span class="snapshot-meta"><span>09/07/2026, 10:41</span><span>92 nodes</span><span>138 links</span></span></span>
+                      <svg class="icon"><use href="#i-right" /></svg>
+                    </button>
+                    <div class="snapshot-detail"><strong>AI Overview</strong><p>Registered-office reuse and director overlap across the selected companies.</p><div class="snapshot-detail-footer"><span>17 timeline events</span><button class="button button-danger" type="button"><svg class="icon"><use href="#i-trash" /></svg>Delete</button></div></div>
+                  </article>
+
+                  <article class="snapshot">
+                    <button class="snapshot-trigger" type="button" aria-expanded="false">
+                      <span class="snapshot-icon" aria-hidden="true"></span>
+                      <span class="snapshot-copy"><span class="snapshot-heading"><span class="snapshot-name">Initial consolidated graph</span></span><span class="snapshot-meta"><span>03/07/2026, 18:22</span><span>61 nodes</span><span>74 links</span></span></span>
+                      <svg class="icon"><use href="#i-right" /></svg>
+                    </button>
+                    <div class="snapshot-detail"><strong>AI Overview</strong><p>Initial graph produced from the first evidence tranche.</p><div class="snapshot-detail-footer"><span>11 timeline events</span><button class="button button-danger" type="button"><svg class="icon"><use href="#i-trash" /></svg>Delete</button></div></div>
+                  </article>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const app = document.querySelector("#app");
+      const collapseButton = document.querySelector("#collapse");
+      const collapseIcon = document.querySelector("#collapse-icon");
+
+      collapseButton.addEventListener("click", () => {
+        const collapsed = app.classList.toggle("collapsed");
+        collapseButton.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+        collapseIcon.setAttribute("href", collapsed ? "#i-right" : "#i-left");
+      });
+
+      document.querySelectorAll(".scope-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".scope-tab").forEach((item) => {
+            item.classList.toggle("active", item === tab);
+            item.setAttribute("aria-selected", String(item === tab));
+          });
+        });
+      });
+
+      const rows = [...document.querySelectorAll(".case-row")];
+      const detailTitle = document.querySelector("#detail-title");
+      const detailDescription = document.querySelector("#detail-description");
+      const detailOwner = document.querySelector("#detail-owner");
+      const detailCreated = document.querySelector("#detail-created");
+      const detailUpdated = document.querySelector("#detail-updated");
+      const detailRole = document.querySelector("#detail-role");
+
+      rows.forEach((row) => {
+        row.addEventListener("click", () => {
+          rows.forEach((item) => {
+            item.classList.toggle("selected", item === row);
+            item.setAttribute("aria-pressed", String(item === row));
+          });
+          detailTitle.textContent = row.dataset.title;
+          detailDescription.textContent = row.dataset.description;
+          detailOwner.textContent = row.dataset.owner;
+          detailCreated.textContent = row.dataset.created;
+          detailUpdated.textContent = row.dataset.updated;
+          detailRole.textContent = row.dataset.role;
+        });
+      });
+
+      const search = document.querySelector("#case-search");
+      const emptySearch = document.querySelector("#empty-search");
+      search.addEventListener("input", () => {
+        const query = search.value.trim().toLowerCase();
+        let matches = 0;
+        rows.forEach((row) => {
+          const match = row.textContent.toLowerCase().includes(query);
+          row.hidden = !match;
+          if (match) matches += 1;
+        });
+        emptySearch.style.display = matches ? "none" : "block";
+      });
+
+      document.querySelectorAll("[data-section]").forEach((section) => {
+        const trigger = section.querySelector(".section-trigger");
+        trigger.addEventListener("click", () => {
+          const closed = section.classList.toggle("closed");
+          trigger.setAttribute("aria-expanded", String(!closed));
+        });
+      });
+
+      document.querySelectorAll(".snapshot-trigger").forEach((trigger) => {
+        trigger.addEventListener("click", () => {
+          const snapshot = trigger.closest(".snapshot");
+          const open = snapshot.classList.toggle("open");
+          trigger.setAttribute("aria-expanded", String(open));
+        });
+      });
+    </script>
+  </body>
+</html>

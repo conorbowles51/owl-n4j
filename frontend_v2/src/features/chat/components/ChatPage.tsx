@@ -56,7 +56,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-background">
       {/* Left: Conversation sidebar */}
       <ConversationSidebar
         caseId={caseId!}

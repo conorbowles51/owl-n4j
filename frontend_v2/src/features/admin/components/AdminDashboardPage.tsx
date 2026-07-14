@@ -45,7 +45,7 @@ export function AdminDashboardPage() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-lg font-semibold">Admin Dashboard</h1>
+        <h1 className="font-display text-lg font-semibold">Admin Dashboard</h1>
         <p className="text-xs text-muted-foreground">
           System overview and management
         </p>
@@ -68,7 +68,7 @@ export function AdminDashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <Card className="border-amber-500/20 bg-amber-500/[0.03]">
+        <Card className="border-primary/20 bg-primary/[0.03]">
           <CardHeader>
             <CardTitle className="flex items-center justify-between gap-2 text-sm">
               <span className="flex items-center gap-2">

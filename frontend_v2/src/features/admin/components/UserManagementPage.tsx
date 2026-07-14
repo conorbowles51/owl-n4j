@@ -123,10 +123,10 @@ export function UserManagementPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className="flex h-full flex-col bg-background">
+      <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
         <Users className="size-4 text-amber-500" />
-        <span className="text-sm font-semibold">User Management</span>
+        <span className="font-display text-sm font-semibold">User Management</span>
         <div className="flex-1" />
         <Input
           placeholder="Search users..."
@@ -152,7 +152,7 @@ export function UserManagementPage() {
             {filtered.map((user) => (
               <div
                 key={user.id ?? user.username}
-                className="group flex items-center gap-3 rounded-lg border border-border p-3"
+                className="group flex items-center gap-3 rounded-lg border border-border bg-card p-3 shadow-sm"
               >
                 <div className="flex size-8 items-center justify-center rounded-full bg-amber-500/10">
                   <Users className="size-4 text-amber-500" />

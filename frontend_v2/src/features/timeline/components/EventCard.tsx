@@ -91,7 +91,7 @@ export const EventCard = memo(function EventCard({
         "group w-full cursor-pointer rounded-lg border bg-card px-3 py-3 text-left transition-colors duration-150",
         "hover:bg-muted/40",
         active
-          ? "border-slate-400/70 bg-slate-50 shadow-sm ring-1 ring-slate-400/40 dark:border-slate-500/60 dark:bg-slate-900/45 dark:ring-slate-500/40"
+          ? "border-brand-300 bg-brand-50 shadow-sm ring-1 ring-brand-300/40 dark:border-brand-700/60 dark:bg-brand-500/10 dark:ring-brand-600/35"
           : "border-border/80"
       )}
     >
@@ -147,7 +147,7 @@ export const EventCard = memo(function EventCard({
               {highlightText(event.name, searchTerm)}
             </span>
             {event.amount && (
-              <span className="shrink-0 text-xs font-semibold text-amber-700 dark:text-amber-300">
+              <span className="shrink-0 text-xs font-semibold text-yellow-700 dark:text-yellow-300">
                 {event.amount}
               </span>
             )}

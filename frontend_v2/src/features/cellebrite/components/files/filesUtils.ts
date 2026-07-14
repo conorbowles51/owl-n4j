@@ -58,7 +58,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   Image: "#06b6d4",
   Audio: "#10b981",
   Video: "#8b5cf6",
-  Text: "#f59e0b",
+  Text: "#0c9da0",
   Other: "#64748b",
 }
 

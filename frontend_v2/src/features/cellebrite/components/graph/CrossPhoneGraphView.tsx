@@ -128,7 +128,7 @@ export function CrossPhoneGraphView({
       ctx.fill()
 
       if (shared) {
-        ctx.strokeStyle = "#d97706"
+        ctx.strokeStyle = "#0c9da0"
         ctx.lineWidth = 1.5
         ctx.stroke()
       }

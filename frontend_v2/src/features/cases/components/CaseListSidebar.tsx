@@ -58,11 +58,11 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
   }, [cases, search, sortBy])
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-panel text-foreground">
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <FolderOpen className="size-4 text-amber-500" />
-        <span className="text-sm font-semibold">Cases</span>
+        <FolderOpen className="size-4 text-primary" />
+        <span className="font-display text-sm font-semibold tracking-[-0.02em]">Cases</span>
         <div className="flex-1" />
         <Button
           variant="primary"
@@ -81,7 +81,7 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
             onClick={() => setViewMode("my_cases")}
             className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
               viewMode === "my_cases"
-                ? "border-b-2 border-amber-500 text-amber-500"
+                ? "border-b-2 border-primary text-foreground"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -91,7 +91,7 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
             onClick={() => setViewMode("all_cases")}
             className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
               viewMode === "all_cases"
-                ? "border-b-2 border-amber-500 text-amber-500"
+                ? "border-b-2 border-primary text-foreground"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -130,7 +130,7 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
       </div>
 
       {/* Case list */}
-      <div className="flex-1 overflow-auto px-2 py-1">
+      <div className="flex-1 overflow-auto px-2 py-1.5">
         {isLoading ? (
           <div className="flex justify-center py-8">
             <LoadingSpinner />

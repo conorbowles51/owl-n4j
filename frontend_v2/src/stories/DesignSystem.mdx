@@ -2,26 +2,26 @@ import { Meta } from "@storybook/addon-docs/blocks"
 
 <Meta title="Design System/Overview" />
 
-# Owl Design System
+# Loupe Design System
 
-The Owl Investigation Console design system built on Tailwind CSS 4 with CSS custom properties for theme tokens.
+The Loupe Investigation Console design system built on Tailwind CSS 4 with CSS custom properties for theme tokens.
 
 ---
 
 ## Color Palette
 
-### Brand Colors — Amber (Primary)
+### Brand Colors — Loupe Teal (Primary)
 
 Brand accent used for buttons, focus rings, and active indicators.
 
 | Token | Hex | Usage |
 |-------|-----|-------|
-| `amber-50` | `#FEFAF0` | Lightest tint |
-| `amber-100` | `#FBF0D0` | Light backgrounds |
-| `amber-200` | `#F7D88A` | Subtle accents |
-| `amber-300` | `#F0BD4F` | Hover states |
-| `amber-400` | `#E5A61B` | Active states |
-| `amber-500` | `#D4920A` | Primary brand color |
+| `brand-50` | `#EDF8F7` | Lightest tint |
+| `brand-100` | `#DBEFEE` | Light backgrounds |
+| `brand-200` | `#B7E0DF` | Subtle accents |
+| `brand-300` | `#77CACA` | Soft active states |
+| `brand-400` | `#36B3B2` | Dark-mode primary |
+| `brand-500` | `#0C9DA0` | Primary brand color |
 
 ### Brand Colors — Slate (Neutral)
 
@@ -30,30 +30,30 @@ Surfaces, text, and borders — the backbone of the UI.
 | Token | Hex | Usage |
 |-------|-----|-------|
 | `slate-50` | `#F4F6F8` | Light mode background |
-| `slate-100` | `#E8ECF1` | Light borders |
-| `slate-200` | `#CDD5DF` | Light muted |
-| `slate-300` | `#AAB7C7` | Placeholder text |
-| `slate-400` | `#8494A7` | Muted text |
-| `slate-500` | `#5A6A82` | Secondary text |
-| `slate-600` | `#3E4C63` | Dark mode text |
-| `slate-700` | `#2D3A4F` | Dark borders |
-| `slate-800` | `#1E293B` | Dark surfaces |
-| `slate-900` | `#111827` | Dark backgrounds |
-| `slate-950` | `#0B0F1A` | Darkest background |
+| `slate-100` | `#EBF0F2` | Light borders |
+| `slate-200` | `#D3DCDF` | Light muted |
+| `slate-300` | `#B6C2C6` | Placeholder text |
+| `slate-400` | `#91A2A8` | Muted text |
+| `slate-500` | `#667D85` | Secondary text |
+| `slate-600` | `#46656F` | Dark mode text |
+| `slate-700` | `#294D59` | Dark borders |
+| `slate-800` | `#173541` | Dark surfaces |
+| `slate-900` | `#0B202A` | Dark backgrounds |
+| `slate-950` | `#071820` | Darkest background |
 
 ### Semantic Colors
 
 | Token | Light | Dark | Usage |
 |-------|-------|------|-------|
-| `--background` | `hsl(0 0% 100%)` | `hsl(224 43% 7%)` | Page background |
-| `--foreground` | `hsl(215 28% 10%)` | `hsl(210 40% 96%)` | Primary text |
-| `--card` | `hsl(0 0% 100%)` | `hsl(222 47% 9%)` | Card surfaces |
-| `--muted` | `hsl(215 16% 95%)` | `hsl(217 25% 18%)` | Muted backgrounds |
-| `--muted-foreground` | `hsl(215 10% 46%)` | `hsl(215 16% 57%)` | Secondary text |
-| `--border` | `hsl(215 16% 85%)` | `hsl(215 25% 22%)` | Borders |
-| `--primary` | `hsl(39 91% 44%)` | `hsl(39 91% 44%)` | Amber accent |
-| `--destructive` | `hsl(0 84% 60%)` | `hsl(0 84% 60%)` | Error/danger |
-| `--ring` | `hsl(39 91% 44%)` | `hsl(39 91% 44%)` | Focus ring |
+| `--background` | `hsl(200 23% 97%)` | `hsl(199 64% 8%)` | Page background |
+| `--foreground` | `hsl(199 58% 10%)` | `hsl(192 26% 96%)` | Primary text |
+| `--card` | `hsl(0 0% 100%)` | `hsl(199 58% 10%)` | Card surfaces |
+| `--muted` | `hsl(197 21% 94%)` | `hsl(197 48% 17%)` | Muted backgrounds |
+| `--muted-foreground` | `hsl(195 13% 46%)` | `hsl(196 12% 61%)` | Secondary text |
+| `--border` | `hsl(195 16% 85%)` | `hsl(195 37% 25%)` | Borders |
+| `--primary` | `hsl(181 86% 34%)` | `hsl(180 54% 46%)` | Loupe teal accent |
+| `--destructive` | `hsl(355 49% 54%)` | `hsl(355 55% 60%)` | Error/danger |
+| `--ring` | `hsl(181 86% 34%)` | `hsl(180 54% 46%)` | Focus ring |
 
 ### Graph Node Palette
 
@@ -61,16 +61,16 @@ Each entity type has a dedicated color:
 
 | Entity Type | Color | Hex |
 |-------------|-------|-----|
-| Person | 🟣 Indigo | `#6366F1` |
-| Organization | 🟣 Violet | `#8B5CF6` |
-| Location | 🟢 Teal | `#14B8A6` |
-| Financial | 🟡 Amber | `#F59E0B` |
-| Document | ⚫ Slate | `#64748B` |
-| Event | 🔴 Pink | `#EC4899` |
-| Communication | 🔵 Cyan | `#06B6D4` |
-| Vehicle | 🟢 Lime | `#84CC16` |
-| Digital | 🟣 Purple | `#A855F7` |
-| Evidence | 🟠 Orange | `#F97316` |
+| Person | Indigo | `#4F69C6` |
+| Organization | Violet | `#7458A6` |
+| Location | Teal | `#0C9DA0` |
+| Financial | Ochre | `#B7791F` |
+| Document | Slate | `#667D85` |
+| Event | Rose | `#B55473` |
+| Communication | Cyan | `#17879E` |
+| Vehicle | Olive | `#6F8D3C` |
+| Digital | Purple | `#7A5BA7` |
+| Evidence | Orange | `#C66A32` |
 
 ### Status Badge Colors
 
@@ -89,12 +89,13 @@ Each entity type has a dedicated color:
 
 ### Font Families
 
-- **Sans-serif** (`font-sans`): `Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
-- **Monospace** (`font-mono`): `JetBrains Mono, Fira Code, SF Mono, monospace`
+- **Body and interface** (`font-sans`): `Source Sans 3, "Segoe UI", sans-serif`
+- **Headings**: `Manrope, "Segoe UI", sans-serif`
+- **Monospace** (`font-mono`): `IBM Plex Mono, "SFMono-Regular", Consolas, monospace`
 
 ### Font Scale (Data-Dense)
 
-Owl uses a compact type scale optimized for information density:
+Loupe uses a compact type scale optimized for information density:
 
 | Class | Size | Line Height | Usage |
 |-------|------|-------------|-------|

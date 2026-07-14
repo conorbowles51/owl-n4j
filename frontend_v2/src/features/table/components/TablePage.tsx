@@ -432,7 +432,7 @@ export function TablePage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-background">
       <TableToolbar
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}

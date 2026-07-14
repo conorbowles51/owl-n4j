@@ -61,7 +61,7 @@ export function MapPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-canvas">
       <MapToolbar caseId={caseId!} locations={safeLocations} />
 
       <div className="relative flex-1">

@@ -275,7 +275,7 @@ export function TimelinePage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-background">
       {/* Toolbar: search + date presets + filter toggle */}
       <TimelineToolbar
         ref={searchInputRef}
@@ -321,7 +321,7 @@ export function TimelinePage() {
               defaultSize="20"
               minSize="15"
               maxSize="30"
-              className="border-r border-border"
+              className="border-r border-border bg-panel"
             >
               <FilterSidebar
                 eventTypes={eventTypes}

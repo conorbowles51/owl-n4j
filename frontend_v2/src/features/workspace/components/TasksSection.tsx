@@ -15,7 +15,7 @@ interface TasksSectionProps {
 
 const PRIORITY_STYLE: Record<string, { label: string; className: string }> = {
   URGENT: { label: "Urgent", className: "bg-red-500/10 text-red-500 border-red-500/20" },
-  HIGH: { label: "High", className: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
+  HIGH: { label: "High", className: "border-yellow-500/20 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300" },
   STANDARD: { label: "Standard", className: "" },
 }
 

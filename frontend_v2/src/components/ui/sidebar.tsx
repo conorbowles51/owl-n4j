@@ -24,6 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/cn"
+import { LoupeLogo } from "@/components/brand/LoupeLogo"
 import { useAppStore } from "@/stores/app.store"
 import { Button } from "@/components/ui/button"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
@@ -93,8 +94,8 @@ function ShortcutHint({ value, active = false }: { value: string; active?: boole
       className={cn(
         "ml-auto rounded px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums",
         active
-          ? "bg-white/80 text-amber-700 dark:bg-slate-950/50 dark:text-amber-300"
-          : "text-slate-400 dark:text-slate-500"
+          ? "bg-brand-100 text-brand-700 dark:bg-brand-400/15 dark:text-brand-200"
+          : "text-sidebar-muted"
       )}
     >
       Ctrl+{value}
@@ -118,25 +119,21 @@ function SidebarLink({
       aria-label={!expanded ? item.label : undefined}
       className={cn(
         "group relative flex items-center rounded-lg text-sm font-medium outline-none",
-        "transition-[background-color,color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.2,0,0,1)]",
-        "focus-visible:ring-2 focus-visible:ring-amber-500/35 focus-visible:ring-offset-2 focus-visible:ring-offset-white active:scale-[0.96]",
-        "dark:focus-visible:ring-amber-400/40 dark:focus-visible:ring-offset-slate-950",
+        "transition-[background-color,color,box-shadow,transform] duration-150 ease-[var(--ease-loupe)]",
+        "focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar active:scale-[0.97]",
         expanded ? "h-9 w-full gap-3 px-3" : "mx-auto h-9 w-9 justify-center px-0",
-        "text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-50",
-        expanded
-          ? "hover:bg-slate-100/75 dark:hover:bg-slate-800/80"
-          : "hover:bg-slate-100/80 dark:hover:bg-slate-800/80",
+        "text-sidebar-muted hover:bg-slate-50 hover:text-sidebar-foreground dark:hover:bg-white/[0.055]",
         active &&
           (expanded
-            ? "bg-amber-50 text-slate-950 shadow-[inset_0_0_0_1px_rgba(212,146,10,0.16)] before:absolute before:left-1.5 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-amber-500 dark:bg-amber-500/10 dark:text-slate-50 dark:shadow-[inset_0_0_0_1px_rgba(212,146,10,0.24)]"
-            : "bg-slate-900 text-white shadow-[0_10px_20px_-12px_rgba(17,24,39,0.9)] dark:bg-slate-100 dark:text-slate-950")
+            ? "bg-brand-50 text-slate-950 shadow-[inset_0_0_0_1px_rgba(12,157,160,0.2)] before:absolute before:left-1.5 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-brand-500 dark:bg-brand-400/10 dark:text-slate-50 dark:shadow-[inset_0_0_0_1px_rgba(54,179,178,0.22)] dark:before:bg-brand-300"
+            : "bg-slate-900 text-white shadow-[0_10px_20px_-12px_rgba(7,24,32,0.72)] dark:bg-brand-400/15 dark:text-brand-100 dark:shadow-[0_10px_22px_-14px_rgba(0,0,0,0.8)]")
       )}
     >
       <item.icon
         className={cn(
           "size-4 shrink-0 transition-[color,transform] duration-150",
           !expanded && "size-[17px]",
-          active && expanded && "text-amber-600 dark:text-amber-400",
+          active && expanded && "text-brand-600 dark:text-brand-300",
           !active && "group-hover:scale-105"
         )}
       />
@@ -190,13 +187,13 @@ function SidebarSection({
       aria-label={label}
     >
       {expanded ? (
-        <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+        <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.11em] text-sidebar-muted/75">
           {label}
         </p>
       ) : (
         separated && (
           <div
-            className="mx-auto mb-2 h-px w-6 bg-slate-200 dark:bg-slate-800"
+            className="mx-auto mb-2 h-px w-6 bg-sidebar-border"
             aria-hidden="true"
           />
         )
@@ -220,25 +217,16 @@ function LogoMark({ expanded }: { expanded: boolean }) {
       to="/cases"
       aria-label="Loupe cases"
       className={cn(
-        "group flex min-w-0 items-center rounded-lg outline-none",
-        "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]",
-        "focus-visible:ring-2 focus-visible:ring-amber-500/35 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-        "dark:focus-visible:ring-amber-400/40 dark:focus-visible:ring-offset-slate-950",
-        expanded ? "h-10 w-full gap-2.5 px-2" : "mx-auto h-10 w-10 justify-center"
+        "group flex min-w-0 items-center overflow-hidden rounded-md outline-none",
+        "transition-[box-shadow,transform] duration-150 ease-[var(--ease-loupe)] active:scale-[0.98]",
+        "focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
+        expanded ? "h-12 w-44" : "mx-auto h-12 w-12"
       )}
     >
-      <span
-        className="relative flex size-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-[0_8px_18px_-14px_rgba(17,24,39,0.65)] dark:border-slate-700 dark:bg-slate-900"
-        aria-hidden="true"
-      >
-        <span className="size-[18px] rounded-full border-[3px] border-amber-500 transition-[transform,border-color] duration-150 group-hover:scale-105 dark:border-amber-400" />
-        <span className="absolute size-1.5 rounded-full bg-slate-950 dark:bg-slate-50" />
-      </span>
-      {expanded && (
-        <span className="min-w-0 text-[15px] font-black leading-none tracking-[0.18em] text-slate-950 dark:text-slate-50">
-          Loupe
-        </span>
-      )}
+      <LoupeLogo
+        alt=""
+        className="transition-transform duration-200 ease-[var(--ease-loupe)] group-hover:scale-[1.01]"
+      />
     </Link>
   )
 
@@ -271,7 +259,7 @@ export function AppSidebar() {
       className={cn(
         "mt-1 w-full transition-[background-color,color,box-shadow,transform] active:scale-[0.96]",
         sidebarExpanded
-          ? "justify-start text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+          ? "justify-start text-sidebar-muted hover:bg-slate-50 hover:text-sidebar-foreground dark:hover:bg-white/[0.055]"
           : "mx-auto h-10 w-10 justify-center"
       )}
       onClick={toggleSidebar}
@@ -291,16 +279,15 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "flex h-screen shrink-0 flex-col border-r border-slate-200/80 shadow-[1px_0_0_rgba(17,24,39,0.02)]",
-        "bg-[linear-gradient(180deg,#fff_0%,#fbfcfd_45%,#f8fafc_100%)] transition-[width] duration-200 ease-[cubic-bezier(0.2,0,0,1)]",
-        "dark:border-slate-800 dark:bg-[linear-gradient(180deg,#0b0f1a_0%,#0e1422_100%)]",
-        sidebarExpanded ? "w-60" : "w-16"
+        "flex h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[1px_0_0_rgba(7,24,32,0.025)] dark:shadow-[1px_0_0_rgba(0,0,0,0.2)]",
+        "transition-[width] duration-200 ease-[var(--ease-loupe)]",
+        sidebarExpanded ? "w-56" : "w-16"
       )}
     >
       <div
         className={cn(
-          "flex items-center border-b border-slate-200/80 dark:border-slate-800",
-          sidebarExpanded ? "h-14 px-3" : "h-14 px-2"
+          "flex h-14 items-center border-b border-sidebar-border",
+          sidebarExpanded ? "px-4" : "px-2"
         )}
       >
         <LogoMark expanded={sidebarExpanded} />
@@ -371,7 +358,7 @@ export function AppSidebar() {
         )}
       </nav>
 
-      <div className="border-t border-slate-200/80 p-2 dark:border-slate-800">
+      <div className="border-t border-sidebar-border p-2">
         <SidebarLink
           item={settingsItem}
           expanded={sidebarExpanded}

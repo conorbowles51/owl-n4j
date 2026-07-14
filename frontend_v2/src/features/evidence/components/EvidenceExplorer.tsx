@@ -116,7 +116,7 @@ export function EvidenceExplorer() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex h-full flex-col overflow-hidden bg-background">
         <ResizablePanelGroup orientation="horizontal" className="flex-1">
           {/* Left sidebar: Folder tree */}
           <ResizablePanel

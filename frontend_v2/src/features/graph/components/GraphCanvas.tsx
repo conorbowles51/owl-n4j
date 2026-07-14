@@ -196,7 +196,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         if (isSelected) {
           ctx.beginPath()
           ctx.arc(x, y, sz + 2.5, 0, 2 * Math.PI)
-          ctx.strokeStyle = "#3B82F6"
+          ctx.strokeStyle = canvasColors.selectionStroke
           ctx.lineWidth = 2 / globalScale
           ctx.stroke()
         }
@@ -211,7 +211,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         if (isSelected) {
           ctx.beginPath()
           ctx.arc(x, y, sz + 2.5, 0, 2 * Math.PI)
-          ctx.strokeStyle = "#3B82F6"
+          ctx.strokeStyle = canvasColors.selectionStroke
           ctx.lineWidth = 2 / globalScale
           ctx.stroke()
         }
@@ -226,7 +226,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         const showLabel = (node._degree ?? 0) > 5 || isSelected || isHovered
         if (showLabel) {
           const fontSize = Math.max(10 / globalScale, 2)
-          ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+          ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
           ctx.textAlign = "center"
           ctx.textBaseline = "top"
           ctx.fillStyle = canvasColors.labelText
@@ -244,7 +244,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       if (isSelected) {
         ctx.beginPath()
         ctx.arc(x, y, sz + 2.5, 0, 2 * Math.PI)
-        ctx.strokeStyle = "#3B82F6"
+        ctx.strokeStyle = canvasColors.selectionStroke
         ctx.lineWidth = 2 / globalScale
         ctx.stroke()
       }
@@ -266,7 +266,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
       // Label
       const fontSize = Math.max(10 / globalScale, 2)
-      ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+      ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
       ctx.textAlign = "center"
       ctx.textBaseline = "top"
       ctx.fillStyle = canvasColors.labelText
@@ -344,7 +344,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         const midX = (src.x + tgt.x) / 2
         const midY = (src.y! + tgt.y!) / 2
         const fontSize = Math.max(8 / globalScale, 1.5)
-        ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+        ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
         ctx.textAlign = "center"
         ctx.textBaseline = "middle"
 

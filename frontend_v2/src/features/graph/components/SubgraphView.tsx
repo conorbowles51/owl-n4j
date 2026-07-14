@@ -134,7 +134,7 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
           graphData={fgData}
           width={dimensions.width}
           height={dimensions.height}
-          backgroundColor={isDark ? "#0B0F1A" : "#F8FAFC"}
+          backgroundColor={isDark ? "#071820" : "#F4F7F8"}
           nodeCanvasObject={(node: ForceNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
             const x = node.x ?? 0
             const y = node.y ?? 0
@@ -144,17 +144,17 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
             ctx.fillStyle = getNodeColor(node.type)
             ctx.fill()
             const fontSize = Math.max(9 / globalScale, 2)
-            ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+            ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
             ctx.textAlign = "center"
             ctx.textBaseline = "top"
-            ctx.fillStyle = isDark ? "#AAB7C7" : "#475569"
+            ctx.fillStyle = isDark ? "#B6C2C6" : "#46656F"
             const label = (node.label || "").length > 15
               ? (node.label || "").slice(0, 13) + "..."
               : node.label || ""
             ctx.fillText(label, x, y + sz + 2)
           }}
           onNodeClick={handleNodeClick}
-          linkColor={() => isDark ? "#2D3A4F" : "#CBD5E1"}
+          linkColor={() => isDark ? "#294D59" : "#D3DCDF"}
           linkDirectionalArrowLength={3}
           linkCanvasObjectMode={() => (showRelationshipLabels ? "after" : undefined)}
           linkCanvasObject={(link: ForceLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -165,7 +165,7 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
             const midX = (src.x + tgt.x) / 2
             const midY = (src.y + tgt.y) / 2
             const fontSize = Math.max(8 / globalScale, 1.5)
-            ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+            ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
             ctx.textAlign = "center"
             ctx.textBaseline = "middle"
 

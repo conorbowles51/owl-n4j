@@ -171,10 +171,10 @@ function SnapshotRow({
   isDeleting: boolean
 }) {
   return (
-    <div className="rounded-md border border-border bg-card">
+    <div className="border-b border-border bg-transparent last:border-b-0">
       <button
         onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/30"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-card"
       >
         {isExpanded ? (
           <ChevronDown className="size-3 text-muted-foreground" />
@@ -183,7 +183,7 @@ function SnapshotRow({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="truncate text-xs font-medium">{snapshot.name}</p>
+            <p className="font-display truncate text-xs font-semibold">{snapshot.name}</p>
             {isLatest && (
               <Badge variant="amber" className="text-[9px]">
                 Latest
@@ -204,7 +204,7 @@ function SnapshotRow({
       </button>
 
       {isExpanded && (
-        <div className="border-t border-border px-3 py-2 text-xs">
+        <div className="ml-8 border-l-2 border-brand-400 bg-card px-4 py-3 text-xs">
           {snapshot.ai_overview && (
             <div className="mb-2">
               <p className="mb-0.5 font-medium text-muted-foreground">

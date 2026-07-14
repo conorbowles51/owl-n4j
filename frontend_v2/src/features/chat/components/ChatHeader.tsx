@@ -16,9 +16,9 @@ export function ChatHeader({ caseId }: ChatHeaderProps) {
   const title = activeConversation?.name || "New Conversation"
 
   return (
-    <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
       <MessageSquare className="size-4 text-amber-500" />
-      <span className="text-sm font-semibold truncate">{title}</span>
+      <span className="truncate font-display text-sm font-semibold">{title}</span>
       <div className="flex-1" />
     </div>
   )

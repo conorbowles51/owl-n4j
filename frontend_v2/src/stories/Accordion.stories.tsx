@@ -17,9 +17,9 @@ export const Default = {
   render: () => (
     <Accordion type="single" collapsible className="w-[400px]">
       <AccordionItem value="item-1">
-        <AccordionTrigger>What is OWL?</AccordionTrigger>
+        <AccordionTrigger>What is Loupe?</AccordionTrigger>
         <AccordionContent>
-          OWL is an investigation console built on top of a Neo4j graph database
+          Loupe is an investigation console built on top of a Neo4j graph database
           for analyzing complex relationships.
         </AccordionContent>
       </AccordionItem>

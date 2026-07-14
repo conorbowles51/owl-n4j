@@ -24,7 +24,7 @@ export function EntityCard({
         "bg-card",
         "border-border",
         "transition-colors duration-200",
-        "hover:border-slate-300 dark:hover:border-slate-600",
+        "hover:border-primary/35",
         onClick && "cursor-pointer",
         className
       )}

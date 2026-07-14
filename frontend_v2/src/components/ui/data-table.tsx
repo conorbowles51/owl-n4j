@@ -36,10 +36,10 @@ function DataTable<T>({
   getRowKey,
 }: DataTableProps<T>) {
   return (
-    <div className={cn("overflow-auto rounded-lg border", className)}>
+    <div className={cn("overflow-auto rounded-lg border border-border bg-card", className)}>
       <Table>
         <TableHeader>
-          <TableRow className="hover:bg-transparent">
+          <TableRow className="bg-muted/35 hover:bg-muted/35">
             {columns.map((col) => (
               <TableHead
                 key={col.key}
