@@ -46,7 +46,7 @@ That will:
 
 1. Install `owl-backend-v2` and `owl-frontend-v2`
 2. Install backend and `frontend_v2` dependencies
-3. Build and start the v2 Docker stack
+3. Build the frontend production bundle and start the v2 Docker stack
 4. Start the v2 backend and frontend services
 
 ## Deploying Updates
@@ -60,11 +60,16 @@ The script will:
 
 1. Pull latest `main`
 2. Install backend and `frontend_v2` dependencies
-3. Rebuild and refresh the v2 Docker stack
-4. Run Alembic migrations
-5. Restart `owl-backend-v2` and `owl-frontend-v2`
-6. Health-check the v2 backend
-7. Roll back automatically if the v2 health check fails
+3. Build the frontend and configure its service to serve compiled assets
+4. Rebuild and refresh the v2 Docker stack
+5. Run Alembic migrations
+6. Restart `owl-backend-v2` and `owl-frontend-v2`
+7. Health-check the v2 backend
+8. Roll back automatically if the v2 health check fails
+
+The deployed frontend serves `frontend_v2/dist`; it does not expose Vite's
+development `/src` module graph. The production server retains the `/api`
+and WebSocket proxy used by the application.
 
 ## Admin-Triggered Updates
 

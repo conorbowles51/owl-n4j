@@ -41,8 +41,16 @@ set +a
 
 API_PORT="${API_PORT:-8002}"
 HEALTH_URL="http://127.0.0.1:${API_PORT}/health"
+FRONTEND_PORT="${FRONTEND_PORT:-5174}"
+FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}/"
 HEALTH_RETRIES=30
 HEALTH_DELAY=5
+
+is_compiled_frontend() {
+    local html="$1"
+    echo "${html}" | grep -Eq 'src="/assets/[^" ]+\.js"' &&
+        ! echo "${html}" | grep -Eq '/@vite/client|/src/main\.(js|jsx|ts|tsx)'
+}
 
 mkdir -p "${LOG_DIR}"
 exec > >(tee -a "${LOG_FILE}") 2>&1
@@ -154,6 +162,14 @@ $RUN_AS npm run build
 success "Frontend V2 dependencies installed and production build passed"
 cd "${PROJECT_DIR}"
 
+step "Installing production frontend service"
+if [ "$(id -u)" -eq 0 ]; then
+    bash "${PROJECT_DIR}/deploy/install-frontend-service.sh"
+else
+    sudo bash "${PROJECT_DIR}/deploy/install-frontend-service.sh"
+fi
+success "Frontend service configured to serve the compiled bundle"
+
 step "Refreshing Docker stack"
 docker compose up -d --build
 success "Docker stack refreshed"
@@ -178,13 +194,17 @@ HEALTHY=false
 for i in $(seq 1 ${HEALTH_RETRIES}); do
     sleep "${HEALTH_DELAY}"
     RESPONSE="$(curl -fsS --max-time 5 "${HEALTH_URL}" 2>/dev/null || true)"
-    if echo "${RESPONSE}" | grep -q '"status":"ok"' && ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"'; then
+    FRONTEND_RESPONSE="$(curl -fsS --max-time 5 "${FRONTEND_URL}" 2>/dev/null || true)"
+    if echo "${RESPONSE}" | grep -q '"status":"ok"' &&
+        ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
+        is_compiled_frontend "${FRONTEND_RESPONSE}"; then
         success "Health check passed"
-        echo "  Response: ${RESPONSE}"
+        echo "  Backend: ${RESPONSE}"
+        echo "  Frontend: compiled assets served on port ${FRONTEND_PORT}"
         HEALTHY=true
         break
     fi
-    echo "  Attempt ${i}/${HEALTH_RETRIES}: ${RESPONSE:-<no response>} - waiting..."
+    echo "  Attempt ${i}/${HEALTH_RETRIES}: backend=${RESPONSE:-<no response>}, frontend compiled=$([[ -n "${FRONTEND_RESPONSE}" ]] && is_compiled_frontend "${FRONTEND_RESPONSE}" && echo yes || echo no) - waiting..."
 done
 
 if [ "${HEALTHY}" = true ]; then
@@ -226,7 +246,10 @@ FRONTEND_STOPPED=false
 
 sleep 15
 RESPONSE="$(curl -fsS --max-time 5 "${HEALTH_URL}" 2>/dev/null || true)"
-if echo "${RESPONSE}" | grep -q '"status":"ok"' && ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"'; then
+FRONTEND_RESPONSE="$(curl -fsS --max-time 5 "${FRONTEND_URL}" 2>/dev/null || true)"
+if echo "${RESPONSE}" | grep -q '"status":"ok"' &&
+    ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
+    is_compiled_frontend "${FRONTEND_RESPONSE}"; then
     warn "Rollback successful - running ${PREV_COMMIT_SHORT}"
     warn "See log: ${LOG_FILE}"
 else

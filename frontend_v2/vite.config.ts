@@ -8,6 +8,15 @@ const buildInfo = generateBuildName()
 const frontendPort = Number(process.env.FRONTEND_PORT || "5174")
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://0.0.0.0:8002"
 const apiProxyTimeout = Number(process.env.VITE_API_PROXY_TIMEOUT_MS || "3600000")
+const apiProxy = {
+  "/api": {
+    target: apiProxyTarget,
+    changeOrigin: true,
+    ws: true,
+    timeout: apiProxyTimeout,
+    proxyTimeout: apiProxyTimeout,
+  },
+}
 console.log(`\n  🦉 Build: ${buildInfo.full}\n`)
 
 export default defineConfig({
@@ -30,14 +39,12 @@ export default defineConfig({
   },
   server: {
     port: frontendPort,
-    proxy: {
-      "/api": {
-        target: apiProxyTarget,
-        changeOrigin: true,
-        ws: true,
-        timeout: apiProxyTimeout,
-        proxyTimeout: apiProxyTimeout,
-      },
-    },
+    proxy: apiProxy,
+  },
+  // The deployed service serves the compiled bundle. Keeping the same proxy
+  // here preserves the frontend's relative /api URLs and WebSocket endpoint.
+  preview: {
+    port: frontendPort,
+    proxy: apiProxy,
   },
 })

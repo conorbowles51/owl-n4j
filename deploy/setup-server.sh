@@ -82,28 +82,7 @@ WantedBy=multi-user.target
 SERVICE_EOF
 success "Installed owl-backend-v2.service"
 
-cat > /etc/systemd/system/owl-frontend-v2.service << SERVICE_EOF
-[Unit]
-Description=Owl V2 Frontend (Vite Dev Server)
-After=network.target
-
-[Service]
-Type=simple
-User=${DEPLOY_USER}
-Group=${DEPLOY_GROUP}
-WorkingDirectory=${PROJECT_DIR}/frontend_v2
-Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-EnvironmentFile=${ENV_FILE}
-ExecStart=/bin/bash -lc 'exec /usr/bin/npm run dev -- --force --host 0.0.0.0 --port \${FRONTEND_PORT:-5174}'
-Restart=on-failure
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=owl-frontend-v2
-
-[Install]
-WantedBy=multi-user.target
-SERVICE_EOF
+bash "${PROJECT_DIR}/deploy/install-frontend-service.sh"
 success "Installed owl-frontend-v2.service"
 
 systemctl daemon-reload
@@ -144,7 +123,8 @@ success "Backend dependencies installed"
 
 cd "${PROJECT_DIR}/frontend_v2"
 sudo -u "${DEPLOY_USER}" npm ci --silent
-success "Frontend V2 dependencies installed"
+sudo -u "${DEPLOY_USER}" npm run build
+success "Frontend V2 dependencies installed and production bundle built"
 
 step "Starting Docker stack"
 cd "${PROJECT_DIR}"

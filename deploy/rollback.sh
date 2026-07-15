@@ -89,8 +89,9 @@ step "Reinstalling dependencies"
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
 cd "${FRONTEND_DIR}"
 $RUN_AS npm ci --silent
+$RUN_AS npm run build
 cd "${PROJECT_DIR}"
-success "Dependencies installed"
+success "Dependencies installed and frontend production bundle rebuilt"
 
 step "Rebuilding Docker stack"
 docker compose up -d --build
