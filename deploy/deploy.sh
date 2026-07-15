@@ -66,6 +66,15 @@ else
     success "Running as user ${DEPLOY_USER}"
 fi
 
+FRONTEND_STOPPED=false
+restore_frontend_on_exit() {
+    if [ "${FRONTEND_STOPPED}" = true ]; then
+        warn "Deployment exited while the frontend was stopped - attempting restart"
+        $SYSTEMCTL start owl-frontend-v2 || true
+    fi
+}
+trap restore_frontend_on_exit EXIT
+
 step "Pre-flight checks"
 
 AVAIL_KB=$(df -k "${PROJECT_DIR}" | tail -1 | awk '{print $4}')
@@ -132,10 +141,17 @@ step "Installing backend dependencies"
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
 success "Backend dependencies installed"
 
-step "Installing frontend dependencies"
+step "Stopping frontend for dependency installation"
+$SYSTEMCTL stop owl-frontend-v2
+FRONTEND_STOPPED=true
+success "Frontend stopped"
+
+step "Installing and validating frontend dependencies"
 cd "${FRONTEND_DIR}"
 $RUN_AS npm ci --silent
-success "Frontend V2 dependencies installed"
+$RUN_AS rm -rf "${FRONTEND_DIR}/node_modules/.vite"
+$RUN_AS npm run build
+success "Frontend V2 dependencies installed and production build passed"
 cd "${PROJECT_DIR}"
 
 step "Refreshing Docker stack"
@@ -151,6 +167,7 @@ cd "${PROJECT_DIR}"
 step "Restarting services"
 $SYSTEMCTL restart owl-backend-v2
 $SYSTEMCTL restart owl-frontend-v2
+FRONTEND_STOPPED=false
 success "V2 services restarted"
 
 step "Running health check"
@@ -190,9 +207,13 @@ cd "${PROJECT_DIR}"
 $RUN_AS git reset --hard "${PREV_COMMIT}"
 
 step "Rollback: reinstalling dependencies"
+$SYSTEMCTL stop owl-frontend-v2 || true
+FRONTEND_STOPPED=true
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet || true
 cd "${FRONTEND_DIR}"
 $RUN_AS npm ci --silent || true
+$RUN_AS rm -rf "${FRONTEND_DIR}/node_modules/.vite" || true
+$RUN_AS npm run build || true
 cd "${PROJECT_DIR}"
 
 step "Rollback: rebuilding Docker stack"
@@ -201,6 +222,7 @@ docker compose up -d --build || true
 step "Rollback: restarting services"
 $SYSTEMCTL restart owl-backend-v2 || true
 $SYSTEMCTL restart owl-frontend-v2 || true
+FRONTEND_STOPPED=false
 
 sleep 15
 RESPONSE="$(curl -fsS --max-time 5 "${HEALTH_URL}" 2>/dev/null || true)"

@@ -12,6 +12,12 @@ console.log(`\n  🦉 Build: ${buildInfo.full}\n`)
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Timeline is lazy-loaded, so its virtualizer may otherwise be discovered
+  // after the dev server has already served modules. Pre-bundle it at startup
+  // to avoid Vite invalidating the first Timeline import with a 504.
+  optimizeDeps: {
+    include: ["@tanstack/react-virtual"],
+  },
   define: {
     __BUILD_NAME__: JSON.stringify(buildInfo.displayName),
     __BUILD_COMMIT__: JSON.stringify(buildInfo.commit),

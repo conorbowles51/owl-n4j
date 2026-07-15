@@ -94,7 +94,7 @@ Group=${DEPLOY_GROUP}
 WorkingDirectory=${PROJECT_DIR}/frontend_v2
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=${ENV_FILE}
-ExecStart=/bin/bash -lc 'exec /usr/bin/npm run dev -- --host 0.0.0.0 --port \${FRONTEND_PORT:-5174}'
+ExecStart=/bin/bash -lc 'exec /usr/bin/npm run dev -- --force --host 0.0.0.0 --port \${FRONTEND_PORT:-5174}'
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

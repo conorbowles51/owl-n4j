@@ -16,6 +16,14 @@ interface ErrorBoundaryState {
   error: Error | null
 }
 
+export function isDynamicImportError(error: Error | null): boolean {
+  if (!error) return false
+
+  return /failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed|unable to preload css/i.test(
+    error.message
+  )
+}
+
 export class ErrorBoundary extends Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
@@ -35,6 +43,14 @@ export class ErrorBoundary extends Component<
   }
 
   private handleRetry = () => {
+    // React.lazy caches a rejected import promise, so resetting boundary state
+    // immediately throws the same error again. A reload creates a fresh module
+    // graph after a deployment or Vite dependency re-optimization.
+    if (isDynamicImportError(this.state.error)) {
+      window.location.reload()
+      return
+    }
+
     this.setState({ hasError: false, error: null })
   }
 
