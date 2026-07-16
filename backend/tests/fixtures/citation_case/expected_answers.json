@@ -1,0 +1,87 @@
+{
+  "case_id": "11111111-1111-4111-8111-111111111111",
+  "questions": [
+    {
+      "id": "q-transfer-amount",
+      "question": "How much did Fintan Doyle transfer to Meridian Holdings?",
+      "supported": true,
+      "scripted_answer": "Two transfers were made to **Meridian Holdings Ltd**:\n\n- EUR 48,500.00 on 12 March 2025 [USA-ET-000021.pdf, p.3]\n- EUR 12,000.00 on 19 March 2025 [USA-ET-000021.pdf, p.4]",
+      "required_citations": [
+        {
+          "filename": "USA-ET-000021.pdf",
+          "page": 3,
+          "chunk_id": "chunk-0001",
+          "quote": "an electronic transfer of EUR 48,500.00 was made from account IE29 AIBK 9311 5212 3456 78, held by Fintan Doyle, to Meridian Holdings Ltd"
+        },
+        {
+          "filename": "USA-ET-000021.pdf",
+          "page": 4,
+          "chunk_id": "chunk-0002",
+          "quote": "The same account shows a further transfer of EUR 12,000.00 to Meridian Holdings Ltd on 19 March 2025"
+        }
+      ]
+    },
+    {
+      "id": "q-doyle-denial",
+      "question": "What did Doyle say about Meridian Holdings when interviewed?",
+      "supported": true,
+      "scripted_answer": "Doyle denied any knowledge of the company [Interview_Transcript_Doyle.pdf, p.7].",
+      "required_citations": [
+        {
+          "filename": "Interview_Transcript_Doyle.pdf",
+          "page": 7,
+          "chunk_id": "chunk-0003",
+          "quote": "I have no knowledge of Meridian."
+        }
+      ]
+    },
+    {
+      "id": "q-invoice-amount",
+      "question": "What amount did Meridian Holdings invoice for?",
+      "supported": true,
+      "note": "The only supporting chunk has the page_start sentinel -1 (unpaginated spreadsheet). The citation must locate the chunk without inventing a page number.",
+      "scripted_answer": "Meridian Holdings Ltd invoiced EUR 48,500.00 for Q1 2025 strategic consultancy [Vendor_Invoice_Meridian.xlsx].",
+      "required_citations": [
+        {
+          "filename": "Vendor_Invoice_Meridian.xlsx",
+          "page": null,
+          "chunk_id": "chunk-0005",
+          "quote": "Invoice MH-2025-014. Services: strategic consultancy, Q1 2025. Amount due: EUR 48,500.00."
+        }
+      ]
+    },
+    {
+      "id": "q-tax-number",
+      "question": "What is Meridian Holdings' registered tax number?",
+      "supported": false,
+      "note": "Nothing in the corpus records a tax number. The answer must carry an explicit unsupported marker rather than a citation.",
+      "scripted_answer": "The case evidence does not record a registered tax number for Meridian Holdings Ltd.",
+      "required_citations": []
+    },
+    {
+      "id": "q-minister-meeting",
+      "question": "Did Doyle ever meet the Minister for Finance?",
+      "supported": false,
+      "note": "Absence of evidence. The answer must qualify the absence rather than assert the negative as fact.",
+      "scripted_answer": "No meeting between Fintan Doyle and the Minister for Finance is recorded in the evidence reviewed. This is not evidence that no such meeting occurred.",
+      "unqualified_absence_answer": "Doyle never met the Minister for Finance.",
+      "required_citations": []
+    },
+    {
+      "id": "q-fabricated-citation",
+      "question": "Who opened the account used for the transfers?",
+      "supported": true,
+      "note": "The scripted answer cites Bank_Mandate_2019.pdf, which was never retrieved. The contract must reject or flag the fabricated citation.",
+      "scripted_answer": "The account was opened by Fintan Doyle on 4 January 2019 [Bank_Mandate_2019.pdf, p.2].",
+      "fabricated_filename": "Bank_Mandate_2019.pdf",
+      "required_citations": [
+        {
+          "filename": "USA-ET-000021.pdf",
+          "page": 1,
+          "chunk_id": "chunk-0006",
+          "quote": "Account IE29 AIBK 9311 5212 3456 78 was opened on 4 January 2019 in the sole name of Fintan Doyle."
+        }
+      ]
+    }
+  ]
+}
