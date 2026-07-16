@@ -90,6 +90,7 @@ class TheoryCreate(BaseModel):
 
 
 class NoteCreate(BaseModel):
+    note_id: Optional[str] = None
     title: Optional[str] = None
     content: str
     tags: Optional[List[str]] = None
@@ -989,6 +990,7 @@ async def update_note(
             raise HTTPException(status_code=404, detail="Note not found")
 
         note_data = {**existing, **note.dict(exclude_unset=True)}
+        note_data["note_id"] = note_id
         workspace_service.save_note(case_id, note_data)
 
         return note_data

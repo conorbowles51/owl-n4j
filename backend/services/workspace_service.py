@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 from sqlalchemy import select, delete
+from sqlalchemy.exc import IntegrityError
 
 from postgres.session import get_background_session
 from postgres.models.workspace import (
@@ -429,6 +430,18 @@ class WorkspaceService:
                 row.data = note
             else:
                 db.add(WorkspaceNote(case_id=case_id, note_id=note_id, data=note))
+                try:
+                    db.flush()
+                except IntegrityError:
+                    db.rollback()
+                    row = db.execute(
+                        select(WorkspaceNote).where(
+                            WorkspaceNote.case_id == case_id,
+                            WorkspaceNote.note_id == note_id,
+                        )
+                    ).scalar_one_or_none()
+                    if not row:
+                        raise
         return note_id
 
     def delete_note(self, case_id: str, note_id: str) -> bool:

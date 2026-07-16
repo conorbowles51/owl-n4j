@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { StickyNote, Plus, Tag } from "lucide-react"
+import { AlertCircle, Plus, RefreshCw, StickyNote, Tag } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -12,6 +12,13 @@ interface InvestigativeNotesSectionProps {
   caseId: string
 }
 
+function createDraftNoteId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `note_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`
+  }
+  return `note_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
+}
+
 export function InvestigativeNotesSection({ caseId }: InvestigativeNotesSectionProps) {
   const { data: notes = [], isLoading } = useNotes(caseId)
   const createMutation = useCreateNote(caseId)
@@ -21,25 +28,43 @@ export function InvestigativeNotesSection({ caseId }: InvestigativeNotesSectionP
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [tagsInput, setTagsInput] = useState("")
+  const [draftNoteId, setDraftNoteId] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const selectedNote = selectedNoteId
     ? notes.find((note) => note.id === selectedNoteId) ?? null
     : null
+
+  const resetDraft = () => {
+    setShowAdd(false)
+    setTitle("")
+    setContent("")
+    setTagsInput("")
+    setDraftNoteId(null)
+    setSaveError(null)
+  }
 
   const handleAdd = () => {
     const tags = tagsInput
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean)
+    const noteId = draftNoteId ?? createDraftNoteId()
+    setDraftNoteId(noteId)
+    setSaveError(null)
     createMutation.mutate(
-      { title, content, tags },
+      { note_id: noteId, title, content, tags },
       {
         onSuccess: () => {
-            setShowAdd(false)
-            setTitle("")
-            setContent("")
-            setTagsInput("")
-          },
+          resetDraft()
+        },
+        onError: (error) => {
+          setSaveError(
+            error instanceof Error
+              ? error.message
+              : "Save was not confirmed. Retry to recover this note.",
+          )
+        },
       },
     )
   }
@@ -82,8 +107,26 @@ export function InvestigativeNotesSection({ caseId }: InvestigativeNotesSectionP
             onChange={(e) => setTagsInput(e.target.value)}
             className="h-7 text-xs"
           />
+          {saveError && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 p-2 text-[11px] text-red-700 dark:text-red-300"
+            >
+              <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">Note was not confirmed saved.</p>
+                <p className="mt-0.5 text-red-700/80 dark:text-red-300/80">
+                  Retry keeps the same recovery key so the note is not duplicated.
+                </p>
+                <p className="mt-1 break-words text-red-700/70 dark:text-red-300/70">
+                  {saveError}
+                </p>
+              </div>
+            </div>
+          )}
           <div className="flex justify-end gap-1">
-            <Button variant="ghost" size="sm" onClick={() => setShowAdd(false)}>
+            <Button variant="ghost" size="sm" onClick={resetDraft}>
               Cancel
             </Button>
             <Button
@@ -92,7 +135,14 @@ export function InvestigativeNotesSection({ caseId }: InvestigativeNotesSectionP
               onClick={handleAdd}
               disabled={!content.trim() || createMutation.isPending}
             >
-              Save
+              {saveError ? (
+                <>
+                  <RefreshCw className="size-3" />
+                  Retry
+                </>
+              ) : (
+                "Save"
+              )}
             </Button>
           </div>
         </div>
