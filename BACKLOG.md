@@ -78,10 +78,12 @@
 ### BUG-007 · [HIGH] Fix: Notes disappearing from workspace
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** User creates investigative notes but they keep disappearing from the workspace. The audit log shows the notes were created but they don't appear in the Notes section. May be a display/fetch issue or a data persistence problem. Needs investigation.
+- **DKT-448 evidence:** Closed with legacy workspace-note coverage against PostgreSQL atomic upsert behavior, case-scoped visibility, refresh/restart durability, rollback-on-failure, and jsdom browser create/failure assertions.
 
 ### BUG-008 · [HIGH] Fix: Failure to save notes
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** User gets "Failed to save note" error when trying to save an investigative note. Screenshot shows the error occurs during the save operation. Related to BUG-007 — notes system needs reliability audit.
+- **DKT-448 evidence:** Closed with durable database assertions for concurrent create/edit, no duplicate rows after retries/failures, permission rejection for non-members, and browser assertions that failed creates preserve visible notes and draft content.
 
 ### BUG-009 · [HIGH] Fix: Snapshots not showing and crash on save
 - **Source:** Platform Feedback PDF (18 Mar)

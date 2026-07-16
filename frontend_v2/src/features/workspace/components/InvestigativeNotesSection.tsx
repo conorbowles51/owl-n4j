@@ -55,7 +55,12 @@ export function InvestigativeNotesSection({ caseId }: InvestigativeNotesSectionP
             {notes.length}
           </Badge>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => setShowAdd(!showAdd)}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowAdd(!showAdd)}
+          aria-label="Add note"
+        >
           <Plus className="size-3" />
         </Button>
       </div>

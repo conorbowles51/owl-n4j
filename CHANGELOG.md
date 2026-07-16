@@ -100,6 +100,7 @@ The old ingestion pipeline (`ingestion/scripts/`) worked, but had real limitatio
 
 ### Workspace Storage — JSON to PostgreSQL
 - **Replaced all 7 JSON-on-disk storage operations with PostgreSQL.** Case contexts, witnesses, theories, tasks, notes, pinned items, and deadline configs were previously stored as individual JSON files in `data/`. This caused race conditions under concurrent access — BUG-007 (notes disappearing) and BUG-008 (failed to save notes) were both caused by two requests writing to the same file simultaneously.
+- **DKT-448 verification:** Workspace notes now save through a single PostgreSQL upsert on `(case_id, note_id)` and are covered by durable database tests for concurrent create/edit, refresh/restart case scoping, permission denial, rollback-on-failure, empty-case reads, and jsdom browser create/failure assertions.
 - PostgreSQL provides proper transactional safety and concurrent access protection. Uses JSONB columns to preserve the flexible schema while gaining database guarantees.
 - **Idempotent migration script** (`scripts/migrate_workspace_to_postgres.py`) safely moves existing JSON data into the new tables. Uses upsert pattern so it's safe to re-run.
 - All method signatures are identical — zero router changes needed.
