@@ -32,10 +32,15 @@ from services.agent.schemas import (
 import services.agent.storage as storage
 from services.ai_costs_service import CostOperationKind, record_cost
 from services.case_service import check_case_access
+from services.provider_resilience import ProviderUnavailableError
 from services.system_log_service import LogOrigin, LogType, system_log_service
 
 
 DEFAULT_AGENT_MAX_TOOL_CALLS = 28
+PROVIDER_FAILURE_MESSAGE = (
+    "The AI provider is temporarily unavailable. Your message has been saved, "
+    "along with any completed investigation steps, so you can retry when the provider recovers."
+)
 
 
 class AgentService:
@@ -103,6 +108,8 @@ class AgentService:
         history = self._build_history(db, thread=thread)
         runner = AgentGraphRunner(provider=provider, model_id=model.id)
         final_result: dict[str, Any] | None = None
+        partial_tool_trace: list[dict[str, Any]] = []
+        partial_artifacts: list[dict[str, Any]] = []
 
         try:
             for event in runner.stream(
@@ -117,6 +124,10 @@ class AgentService:
                 if event.get("type") == "final":
                     final_result = event.get("result") or {}
                     continue
+                if event.get("type") == "tool_result" and isinstance(event.get("tool"), dict):
+                    partial_tool_trace.append(event["tool"])
+                if event.get("type") == "artifact" and isinstance(event.get("artifact"), dict):
+                    partial_artifacts.append(event["artifact"])
                 yield event
 
             if is_cancelled(run_id):
@@ -233,6 +244,71 @@ class AgentService:
             )
             clear_cancel(run_id)
             yield {"type": "done", "response": response.model_dump(mode="json")}
+        except ProviderUnavailableError as exc:
+            db.rollback()
+            try:
+                run = db.merge(run)
+                thread = db.merge(thread)
+                artifact_records = (
+                    storage.persist_artifacts(
+                        db,
+                        thread=thread,
+                        run=run,
+                        artifacts=self._with_refinement_metadata(
+                            partial_artifacts[:5],
+                            request_message=request.message,
+                            thread=thread,
+                        ),
+                    )
+                    if partial_artifacts
+                    else []
+                )
+                storage.persist_tool_trace(db, run=run, trace=partial_tool_trace)
+                storage.finish_run(
+                    db,
+                    run=run,
+                    status="failed",
+                    final_answer=PROVIDER_FAILURE_MESSAGE,
+                    error=str(exc),
+                )
+                assistant_message = storage.append_message(
+                    db,
+                    thread=thread,
+                    role="assistant",
+                    content=PROVIDER_FAILURE_MESSAGE,
+                    run=run,
+                    provider=provider,
+                    model_id=model.id,
+                    artifact_ids=[str(record.id) for record in artifact_records],
+                    tool_trace_summary=[
+                        self._trace_summary_item(item)
+                        for item in partial_tool_trace
+                    ],
+                )
+                self._log_agent_event(
+                    db,
+                    action="agent_provider_unavailable",
+                    user=user,
+                    run=run,
+                    success=False,
+                    error=str(exc),
+                    details={
+                        "streaming": True,
+                        "tool_count": len(partial_tool_trace),
+                        "artifact_count": len(artifact_records),
+                        "assistant_message_id": str(assistant_message.id),
+                    },
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+            clear_cancel(run_id)
+            yield {
+                "type": "error",
+                "run_id": run_id,
+                "thread_id": str(thread.id),
+                "message": PROVIDER_FAILURE_MESSAGE,
+            }
         except AgentRunCancelled as exc:
             db.rollback()
             run = db.merge(run)
@@ -324,6 +400,11 @@ class AgentService:
             run=run,
             details={"thread_id": str(thread.id), "streaming": False},
         )
+        db.commit()
+        db.refresh(thread)
+        if user_message:
+            db.refresh(user_message)
+        db.refresh(run)
 
         history = self._build_history(db, thread=thread)
         runner = AgentGraphRunner(provider=provider, model_id=model.id)
@@ -452,23 +533,29 @@ class AgentService:
             db.rollback()
             # Re-open a small transaction so failed runs are still visible when possible.
             try:
-                check_case_access(db, request.case_id, user, required_permission=("case", "view"))
-                thread = self._resolve_thread(db, user=user, request=request)
-                failed_run = storage.create_run(
-                    db,
-                    thread=thread,
-                    user=user,
-                    provider=provider,
-                    model_id=model.id,
-                    input_message=request.message,
-                    extra_metadata={"artifact_preference": request.artifact_preference},
-                )
-                storage.finish_run(db, run=failed_run, status="failed", error=str(exc))
+                run = db.merge(run)
+                thread = db.merge(thread)
+                answer = PROVIDER_FAILURE_MESSAGE if isinstance(exc, ProviderUnavailableError) else None
+                storage.finish_run(db, run=run, status="failed", final_answer=answer, error=str(exc))
+                if isinstance(exc, ProviderUnavailableError):
+                    storage.append_message(
+                        db,
+                        thread=thread,
+                        role="assistant",
+                        content=PROVIDER_FAILURE_MESSAGE,
+                        run=run,
+                        provider=provider,
+                        model_id=model.id,
+                    )
                 self._log_agent_event(
                     db,
-                    action="agent_run_failed",
+                    action=(
+                        "agent_provider_unavailable"
+                        if isinstance(exc, ProviderUnavailableError)
+                        else "agent_run_failed"
+                    ),
                     user=user,
-                    run=failed_run,
+                    run=run,
                     success=False,
                     error=str(exc),
                     details={"streaming": False},

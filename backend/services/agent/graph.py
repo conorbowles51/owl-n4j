@@ -16,6 +16,7 @@ from langgraph.graph import END, START, StateGraph, add_messages
 from config import OPENAI_API_KEY
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
 from services.agent.tools import AgentToolContext, make_agent_tools
+from services.provider_resilience import guard_provider_call
 
 
 class AgentRunCancelled(Exception):
@@ -446,8 +447,11 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
 """
 
         def agent_node(state: AgentState) -> dict[str, Any]:
-            response = model_with_tools.invoke(
-                [SystemMessage(content=build_system_prompt(state)), *state["messages"]]
+            response = guard_provider_call(
+                self.provider,
+                lambda: model_with_tools.invoke(
+                    [SystemMessage(content=build_system_prompt(state)), *state["messages"]]
+                ),
             )
             return {"messages": [response]}
 
@@ -557,11 +561,14 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 return {"final_answer": message_content_to_text(last_message.content)}
 
             final_messages = _messages_for_finalizer(state)
-            response = self.base_model.invoke(
-                [
-                    SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
-                    *final_messages,
-                ]
+            response = guard_provider_call(
+                self.provider,
+                lambda: self.base_model.invoke(
+                    [
+                        SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
+                        *final_messages,
+                    ]
+                ),
             )
             return {"messages": [response], "final_answer": message_content_to_text(response.content)}
 
@@ -680,8 +687,11 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
         def agent_node(state: AgentState) -> dict[str, Any]:
             if should_cancel and should_cancel():
                 raise AgentRunCancelled("Agent run cancelled")
-            response = model_with_tools.invoke(
-                [SystemMessage(content=build_system_prompt(state)), *state["messages"]]
+            response = guard_provider_call(
+                self.provider,
+                lambda: model_with_tools.invoke(
+                    [SystemMessage(content=build_system_prompt(state)), *state["messages"]]
+                ),
             )
             return {"messages": [response]}
 
@@ -797,11 +807,14 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 return {"final_answer": message_content_to_text(last_message.content)}
 
             final_messages = _messages_for_finalizer(state)
-            response = self.base_model.invoke(
-                [
-                    SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
-                    *final_messages,
-                ]
+            response = guard_provider_call(
+                self.provider,
+                lambda: self.base_model.invoke(
+                    [
+                        SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
+                        *final_messages,
+                    ]
+                ),
             )
             return {"messages": [response], "final_answer": message_content_to_text(response.content)}
 

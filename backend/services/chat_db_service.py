@@ -203,6 +203,89 @@ def conversation_prompt_history(
     return history
 
 
+def _next_message_sequence(db: Session, conversation: ChatConversation) -> int:
+    current = (
+        db.query(func.max(ChatMessage.sequence_number))
+        .filter(ChatMessage.conversation_id == conversation.id)
+        .scalar()
+    ) or 0
+    return int(current) + 1
+
+
+def _touch_conversation(conversation: ChatConversation, user_question: str | None = None) -> None:
+    now = datetime.now(timezone.utc)
+    conversation.last_message_at = now
+    conversation.updated_at = now
+    if user_question and (not conversation.title or conversation.title == "New conversation"):
+        conversation.title = summarize_title(user_question)
+
+
+def append_user_message(
+    db: Session,
+    *,
+    conversation: ChatConversation,
+    revision: CaseRevision | None,
+    user_question: str,
+    context_scope: str,
+    selected_entity_keys: list[str] | None,
+    snapshot_id: str | None = None,
+) -> ChatMessage:
+    revision_id = revision.id if revision else None
+    selected_keys_payload = sanitize_json(selected_entity_keys) if selected_entity_keys else None
+    message = ChatMessage(
+        conversation_id=conversation.id,
+        sequence_number=_next_message_sequence(db, conversation),
+        role="user",
+        content=sanitize_text(user_question or ""),
+        context_scope=context_scope,
+        selected_entity_keys=selected_keys_payload,
+        case_revision_id=revision_id,
+        snapshot_id=snapshot_id,
+    )
+    db.add(message)
+    _touch_conversation(conversation, user_question)
+    db.flush()
+    return message
+
+
+def append_assistant_message(
+    db: Session,
+    *,
+    conversation: ChatConversation,
+    revision: CaseRevision | None,
+    assistant_answer: str,
+    context_scope: str,
+    selected_entity_keys: list[str] | None,
+    sources: list[dict[str, Any]] | None,
+    provider: str,
+    model_id: str,
+    result_graph: dict[str, Any] | None,
+    cost_record: CostRecord | None,
+    snapshot_id: str | None = None,
+) -> ChatMessage:
+    revision_id = revision.id if revision else None
+    selected_keys_payload = sanitize_json(selected_entity_keys) if selected_entity_keys else None
+    message = ChatMessage(
+        conversation_id=conversation.id,
+        sequence_number=_next_message_sequence(db, conversation),
+        role="assistant",
+        content=sanitize_text(assistant_answer or ""),
+        context_scope=context_scope,
+        selected_entity_keys=selected_keys_payload,
+        source_payload=sanitize_json(sources) if sources else None,
+        model_provider=provider,
+        model_id=model_id,
+        cost_record_id=cost_record.id if cost_record else None,
+        result_graph_json=sanitize_json(result_graph) if result_graph else None,
+        case_revision_id=revision_id,
+        snapshot_id=snapshot_id,
+    )
+    db.add(message)
+    _touch_conversation(conversation)
+    db.flush()
+    return message
+
+
 def append_conversation_turn(
     db: Session,
     conversation: ChatConversation,
@@ -218,12 +301,6 @@ def append_conversation_turn(
     cost_record: CostRecord | None,
     snapshot_id: str | None = None,
 ) -> tuple[ChatMessage, ChatMessage]:
-    next_sequence = (
-        db.query(func.max(ChatMessage.sequence_number))
-        .filter(ChatMessage.conversation_id == conversation.id)
-        .scalar()
-    ) or 0
-
     revision_id = revision.id if revision else None
     selected_keys_payload = sanitize_json(selected_entity_keys) if selected_entity_keys else None
     sanitized_user_question = sanitize_text(user_question or "")
@@ -233,7 +310,7 @@ def append_conversation_turn(
 
     user_message = ChatMessage(
         conversation_id=conversation.id,
-        sequence_number=next_sequence + 1,
+        sequence_number=_next_message_sequence(db, conversation),
         role="user",
         content=sanitized_user_question,
         context_scope=context_scope,
@@ -243,7 +320,7 @@ def append_conversation_turn(
     )
     assistant_message = ChatMessage(
         conversation_id=conversation.id,
-        sequence_number=next_sequence + 2,
+        sequence_number=user_message.sequence_number + 1,
         role="assistant",
         content=sanitized_assistant_answer,
         context_scope=context_scope,
@@ -259,11 +336,7 @@ def append_conversation_turn(
     db.add(user_message)
     db.add(assistant_message)
 
-    now = datetime.now(timezone.utc)
-    conversation.last_message_at = now
-    conversation.updated_at = now
-    if not conversation.title or conversation.title == "New conversation":
-        conversation.title = summarize_title(user_question)
+    _touch_conversation(conversation, user_question)
 
     db.flush()
     return user_message, assistant_message

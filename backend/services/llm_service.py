@@ -19,6 +19,7 @@ from config import (
 )
 from models.llm_models import LLMProvider, get_default_model, get_model_by_id
 from profile_loader import get_chat_config
+from services.provider_resilience import guard_provider_call
 from utils.prompt_trace import log_section
 
 
@@ -60,9 +61,15 @@ class LLMExecutionContext:
         self.last_usage = None
 
         if self.provider == "ollama":
-            result = self._call_ollama(prompt, temperature, json_mode, timeout)
+            result = guard_provider_call(
+                self.provider,
+                lambda: self._call_ollama(prompt, temperature, json_mode, timeout),
+            )
         elif self.provider == "openai":
-            result = self._call_openai(prompt, temperature, json_mode, timeout)
+            result = guard_provider_call(
+                self.provider,
+                lambda: self._call_openai(prompt, temperature, json_mode, timeout),
+            )
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
 

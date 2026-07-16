@@ -19,7 +19,9 @@ from postgres.models.user import User
 from postgres.session import get_db
 from routers.users import get_current_db_user
 from services.chat_db_service import (
+    append_assistant_message,
     append_conversation_turn,
+    append_user_message,
     build_cost_payload,
     conversation_prompt_history,
     create_case_revision,
@@ -31,6 +33,7 @@ from services.chat_db_service import (
 )
 from services.ai_costs_service import CostOperationKind, ai_cost_context
 from services.cost_tracking_service import CostJobType, record_cost
+from services.provider_resilience import ProviderUnavailableError
 from services.rag_service import rag_service
 from services.system_log_service import LogOrigin, LogType, system_log_service
 from utils.prompt_trace import log_section, start_trace
@@ -184,6 +187,31 @@ async def chat(
 
     assistant_message_id = str(uuid.uuid4())
     persisted_revision = get_latest_case_revision(db, request.case_id)
+    pre_persisted_user_message = None
+    if request.persist and conversation is not None:
+        persisted_revision = create_case_revision(
+            db=db,
+            case_id=request.case_id,
+            user_id=current_user.id,
+            extra_metadata={
+                "scope": request.scope,
+                "selected_entity_keys": selected_entity_keys,
+                "conversation_id": str(conversation.id),
+                "view_context": request.view_context,
+                "status": "submitted",
+            },
+        )
+        pre_persisted_user_message = append_user_message(
+            db=db,
+            conversation=conversation,
+            revision=persisted_revision,
+            user_question=question,
+            context_scope=request.scope,
+            selected_entity_keys=selected_entity_keys,
+        )
+        db.commit()
+        db.refresh(conversation)
+        db.refresh(pre_persisted_user_message)
 
     try:
         log_section(
@@ -265,31 +293,46 @@ async def chat(
             )
 
         if request.persist and conversation is not None:
-            persisted_revision = create_case_revision(
-                db=db,
-                case_id=request.case_id,
-                user_id=current_user.id,
-                extra_metadata={
-                    "scope": request.scope,
-                    "selected_entity_keys": selected_entity_keys,
-                    "conversation_id": str(conversation.id),
-                    "view_context": request.view_context,
-                },
-            )
-            _, assistant_message = append_conversation_turn(
-                db=db,
-                conversation=conversation,
-                revision=persisted_revision,
-                user_question=question,
-                assistant_answer=result["answer"],
-                context_scope=request.scope,
-                selected_entity_keys=selected_entity_keys,
-                sources=result.get("sources"),
-                provider=llm.provider,
-                model_id=llm.model_id,
-                result_graph=result.get("result_graph"),
-                cost_record=cost_record,
-            )
+            if pre_persisted_user_message is None:
+                persisted_revision = create_case_revision(
+                    db=db,
+                    case_id=request.case_id,
+                    user_id=current_user.id,
+                    extra_metadata={
+                        "scope": request.scope,
+                        "selected_entity_keys": selected_entity_keys,
+                        "conversation_id": str(conversation.id),
+                        "view_context": request.view_context,
+                    },
+                )
+                _, assistant_message = append_conversation_turn(
+                    db=db,
+                    conversation=conversation,
+                    revision=persisted_revision,
+                    user_question=question,
+                    assistant_answer=result["answer"],
+                    context_scope=request.scope,
+                    selected_entity_keys=selected_entity_keys,
+                    sources=result.get("sources"),
+                    provider=llm.provider,
+                    model_id=llm.model_id,
+                    result_graph=result.get("result_graph"),
+                    cost_record=cost_record,
+                )
+            else:
+                assistant_message = append_assistant_message(
+                    db=db,
+                    conversation=conversation,
+                    revision=persisted_revision,
+                    assistant_answer=result["answer"],
+                    context_scope=request.scope,
+                    selected_entity_keys=selected_entity_keys,
+                    sources=result.get("sources"),
+                    provider=llm.provider,
+                    model_id=llm.model_id,
+                    result_graph=result.get("result_graph"),
+                    cost_record=cost_record,
+                )
             assistant_message_id = str(assistant_message.id)
             db.commit()
             db.refresh(conversation)
@@ -349,6 +392,47 @@ async def chat(
             used_node_keys=result.get("used_node_keys"),
             document_summary=result.get("document_summary"),
         )
+    except ProviderUnavailableError as exc:
+        db.rollback()
+        failure_answer = (
+            "The AI provider is temporarily unavailable. Your question has been saved, "
+            "so you can retry when the provider recovers."
+        )
+        if request.persist and conversation is not None:
+            try:
+                assistant_message = append_assistant_message(
+                    db=db,
+                    conversation=conversation,
+                    revision=persisted_revision,
+                    assistant_answer=failure_answer,
+                    context_scope=request.scope,
+                    selected_entity_keys=selected_entity_keys,
+                    sources=None,
+                    provider=llm.provider,
+                    model_id=llm.model_id,
+                    result_graph=None,
+                    cost_record=None,
+                )
+                assistant_message_id = str(assistant_message.id)
+                db.commit()
+            except Exception:
+                db.rollback()
+        system_log_service.log(
+            log_type=LogType.AI_ASSISTANT,
+            origin=LogOrigin.BACKEND,
+            action=f"AI Assistant Provider Unavailable: {question[:100]}",
+            details={
+                "question": question,
+                "error": str(exc),
+                "provider": exc.provider,
+                "conversation_id": str(conversation.id) if conversation else None,
+                "message_id": assistant_message_id,
+            },
+            user=current_user.email,
+            success=False,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=503, detail=failure_answer) from exc
     except Exception as exc:
         db.rollback()
         system_log_service.log(

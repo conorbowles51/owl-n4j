@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 
 from app.config import settings
 from app.services.cost_tracking import CostOperationKind, record_openai_cost
+from app.services.provider_resilience import guard_provider_call
 
 _client: AsyncOpenAI | None = None
 _semaphore = asyncio.Semaphore(10)
@@ -55,7 +56,10 @@ async def chat_completion(
             kwargs["temperature"] = temperature
         if response_format is not None:
             kwargs["response_format"] = response_format
-        resp = await client.chat.completions.create(**kwargs)
+        resp = await guard_provider_call(
+            "openai",
+            lambda: client.chat.completions.create(**kwargs),
+        )
     resolved_model = kwargs["model"]
     operation_kind = CostOperationKind.CHAT_COMPLETION
     if any(
@@ -143,9 +147,12 @@ async def _request_embedding_batch(
     batch_chars = _embedding_batch_char_count(batch)
     try:
         async with _semaphore:
-            resp = await client.embeddings.create(
-                model=model,
-                input=batch,
+            resp = await guard_provider_call(
+                "openai",
+                lambda: client.embeddings.create(
+                    model=model,
+                    input=batch,
+                ),
             )
     except Exception as exc:
         if _is_oversized_openai_request(exc):
@@ -232,7 +239,10 @@ async def transcribe_audio(file_path: str, prompt: str | None = None) -> str:
             }
             if prompt:
                 kwargs["prompt"] = prompt
-            resp = await client.audio.transcriptions.create(**kwargs)
+            resp = await guard_provider_call(
+                "openai",
+                lambda: client.audio.transcriptions.create(**kwargs),
+            )
     duration_seconds = None
     try:
         result = subprocess.run(
