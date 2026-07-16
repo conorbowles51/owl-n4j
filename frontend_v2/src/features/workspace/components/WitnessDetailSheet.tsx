@@ -73,6 +73,7 @@ export function WitnessDetailSheet({
   const deleteWitness = useDeleteWitness(caseId)
   const buildGraph = useBuildWorkspaceGraph(caseId)
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Sheet draft fields reset when a different witness is selected. */
   useEffect(() => {
     if (witness) {
       setName(witness.name ?? "")
@@ -85,6 +86,7 @@ export function WitnessDetailSheet({
       setStrategyNotes(witness.strategy_notes ?? "")
     }
   }, [witness])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const isDirty = useMemo(
     () =>

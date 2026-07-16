@@ -61,6 +61,7 @@ export function CaseProcessingProfileDialog({
   const [newEntityName, setNewEntityName] = useState("")
   const [newEntityDesc, setNewEntityDesc] = useState("")
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Dialog draft fields reset from the loaded case profile when opened. */
   useEffect(() => {
     if (!open) return
 
@@ -76,6 +77,7 @@ export function CaseProcessingProfileDialog({
     setNewEntityName("")
     setNewEntityDesc("")
   }, [caseProfile, open])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const selectedLibraryProfile = useMemo(
     () =>

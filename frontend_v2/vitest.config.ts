@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 import { playwright } from '@vitest/browser-playwright';
 const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const runStorybookTests = process.env.VITEST_STORYBOOK === '1';
 
 // More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
 export default defineConfig({
@@ -25,7 +26,7 @@ export default defineConfig({
           setupFiles: ['./src/test/setup.ts'],
         },
       },
-      {
+      ...(runStorybookTests ? [{
         extends: true,
         plugins: [
         // The plugin will run tests for the stories defined in your Storybook config
@@ -45,7 +46,7 @@ export default defineConfig({
           },
           setupFiles: ['.storybook/vitest.setup.ts']
         },
-      },
+      }] : []),
     ]
   },
   resolve: {

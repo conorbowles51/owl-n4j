@@ -52,6 +52,7 @@ export function FolderContextDialog({
   const [newEntityName, setNewEntityName] = useState("")
   const [newEntityDesc, setNewEntityDesc] = useState("")
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Dialog draft fields reset from the loaded folder profile when opened. */
   useEffect(() => {
     if (!open) return
 
@@ -66,6 +67,7 @@ export function FolderContextDialog({
     setNewEntityName("")
     setNewEntityDesc("")
   }, [open, profile])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const addEntityType = useCallback(() => {
     const name = newEntityName.trim()

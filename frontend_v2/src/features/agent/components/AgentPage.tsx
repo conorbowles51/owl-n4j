@@ -71,7 +71,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Switch } from "@/components/ui/switch"
 import { downloadProtectedFile } from "@/lib/protected-file"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
-import { useTheme } from "@/lib/theme-provider"
+import { useTheme } from "@/lib/use-theme"
 import { useGraphStore } from "@/stores/graph.store"
 import { useUIStore } from "@/stores/ui.store"
 import { EditNodeDialog } from "@/features/graph/components/EditNodeDialog"

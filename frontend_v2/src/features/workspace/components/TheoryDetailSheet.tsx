@@ -71,6 +71,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
   const deleteTheory = useDeleteTheory(caseId)
   const buildGraph = useBuildWorkspaceGraph(caseId)
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Sheet draft fields reset when a different theory is selected. */
   useEffect(() => {
     if (theory) {
       setTitle(theory.title ?? "")
@@ -83,6 +84,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
       setNextSteps(theory.next_steps ?? [])
     }
   }, [theory])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const isDirty = useMemo(
     () =>

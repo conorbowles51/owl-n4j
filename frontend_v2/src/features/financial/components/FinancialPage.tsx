@@ -94,12 +94,14 @@ export function FinancialPage() {
     currentPage: store.currentPage,
   })
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Entity-flow selections must clear when leaving transaction mode. */
   useEffect(() => {
     if (!isTransactionsMode) {
       setSelectedSenders(new Set())
       setSelectedBeneficiaries(new Set())
     }
   }, [isTransactionsMode])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const senderRows = useMemo(
     () => buildEntityFlowRows(baseFilteredTransactions, "from", selectedBeneficiaries),

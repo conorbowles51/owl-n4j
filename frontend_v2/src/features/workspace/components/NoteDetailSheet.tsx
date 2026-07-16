@@ -43,12 +43,14 @@ export function NoteDetailSheet({
   const [content, setContent] = useState("")
   const [tagsInput, setTagsInput] = useState("")
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Sheet draft fields reset when a different note is selected. */
   useEffect(() => {
     if (!note) return
     setTitle(note.title ?? "")
     setContent(note.content ?? "")
     setTagsInput((note.tags ?? []).join(", "))
   }, [note])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const isDirty = useMemo(() => {
     if (!note) return false

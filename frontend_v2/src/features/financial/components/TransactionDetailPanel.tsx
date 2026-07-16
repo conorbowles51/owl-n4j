@@ -24,11 +24,13 @@ export function TransactionDetailPanel({
   )
   const [notes, setNotes] = useState(transaction.notes || "")
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Editable draft fields reset when the expanded transaction changes. */
   useEffect(() => {
     setPurpose(transaction.purpose || "")
     setCounterparty(transaction.counterparty_details || "")
     setNotes(transaction.notes || "")
   }, [transaction.key, transaction.purpose, transaction.counterparty_details, transaction.notes])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleBlur = (
     field: "purpose" | "counterpartyDetails" | "notes",
