@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from sqlalchemy import DateTime, Enum, ForeignKey
+from sqlalchemy import DateTime, Enum, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -31,8 +31,11 @@ class CaseMembership(Base, TimestampMixin):
         nullable=False,
     )
 
-     # JSON permissions object
-    permissions: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # JSON permissions object
+    permissions: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"),
+        nullable=False,
+    )
 
     # Who added/invited this person
     added_by_user_id: Mapped[uuid.UUID] = mapped_column(

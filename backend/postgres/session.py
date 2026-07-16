@@ -54,7 +54,13 @@ def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        if db.in_transaction():
+            db.rollback()
+        raise
     finally:
+        if db.in_transaction():
+            db.rollback()
         db.close()
 
 
