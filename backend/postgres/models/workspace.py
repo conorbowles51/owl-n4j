@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, JSON, String, Text, Integer
+from sqlalchemy import ForeignKey, JSON, String, Text, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -91,6 +91,9 @@ class WorkspaceNote(Base, TimestampMixin):
     """Investigative note."""
 
     __tablename__ = "workspace_notes"
+    __table_args__ = (
+        UniqueConstraint("case_id", "note_id", name="uq_workspace_notes_case_note"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

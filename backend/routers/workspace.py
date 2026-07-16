@@ -95,6 +95,12 @@ class NoteCreate(BaseModel):
     tags: Optional[List[str]] = None
 
 
+class NoteUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
 class FindingCreate(BaseModel):
     title: str
     content: Optional[str] = None
@@ -973,7 +979,7 @@ async def create_note(
 async def update_note(
     case_id: str,
     note_id: str,
-    note: NoteCreate,
+    note: NoteUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -988,8 +994,13 @@ async def update_note(
         if not existing:
             raise HTTPException(status_code=404, detail="Note not found")
 
-        note_data = {**existing, **note.dict(exclude_unset=True)}
-        workspace_service.save_note(case_id, note_data)
+        note_data = workspace_service.update_note(
+            case_id,
+            note_id,
+            note.dict(exclude_unset=True),
+        )
+        if not note_data:
+            raise HTTPException(status_code=404, detail="Note not found")
 
         return note_data
     except HTTPException:

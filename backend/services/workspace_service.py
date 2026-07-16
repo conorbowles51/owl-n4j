@@ -16,7 +16,9 @@ import uuid
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-from sqlalchemy import select, delete
+from sqlalchemy import bindparam, select, delete, func, update
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from postgres.session import get_background_session
 from postgres.models.workspace import (
@@ -419,17 +421,49 @@ class WorkspaceService:
             note["created_at"] = datetime.now().isoformat()
 
         with get_background_session() as db:
-            row = db.execute(
-                select(WorkspaceNote).where(
+            stmt = pg_insert(WorkspaceNote).values(
+                case_id=case_id,
+                note_id=note_id,
+                data=note,
+            )
+            db.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=[WorkspaceNote.case_id, WorkspaceNote.note_id],
+                    set_={
+                        "data": stmt.excluded.data,
+                        "updated_at": func.now(),
+                    },
+                )
+            )
+        return note_id
+
+    def update_note(self, case_id: str, note_id: str, updates: Dict) -> Optional[Dict]:
+        patch = {
+            key: value
+            for key, value in updates.items()
+            if key not in {"case_id", "note_id", "created_at"}
+        }
+        patch["case_id"] = case_id
+        patch["note_id"] = note_id
+        patch["updated_at"] = datetime.now().isoformat()
+
+        with get_background_session() as db:
+            stmt = (
+                update(WorkspaceNote)
+                .where(
                     WorkspaceNote.case_id == case_id,
                     WorkspaceNote.note_id == note_id,
                 )
-            ).scalar_one_or_none()
-            if row:
-                row.data = note
-            else:
-                db.add(WorkspaceNote(case_id=case_id, note_id=note_id, data=note))
-        return note_id
+                .values(
+                    data=WorkspaceNote.data.op("||")(
+                        bindparam("patch", patch, type_=JSONB)
+                    ),
+                    updated_at=func.now(),
+                )
+                .returning(WorkspaceNote.data)
+            )
+            data = db.execute(stmt).scalar_one_or_none()
+            return dict(data) if data else None
 
     def delete_note(self, case_id: str, note_id: str) -> bool:
         with get_background_session() as db:
