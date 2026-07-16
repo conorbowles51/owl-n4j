@@ -13,6 +13,7 @@ from postgres.models.user import User
 from postgres.session import get_db
 from routers.users import get_current_db_user
 from services.agent.schemas import (
+    AgentArtifact,
     AgentMessageRequest,
     AgentMessageResponse,
     AgentRunDetail,
@@ -158,6 +159,52 @@ async def cancel_agent_run(
         return agent_service.cancel_run(db=db, user=current_user, run_id=run_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/artifacts/{artifact_id}:approve", response_model=AgentArtifact)
+async def approve_agent_artifact(
+    artifact_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        return agent_service.approve_artifact(
+            db=db,
+            user=current_user,
+            artifact_id=artifact_id,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/artifacts/{artifact_id}:revert", response_model=AgentArtifact)
+async def revert_agent_artifact_to_draft(
+    artifact_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        return agent_service.revert_artifact_to_draft(
+            db=db,
+            user=current_user,
+            artifact_id=artifact_id,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except CaseNotFound as exc:

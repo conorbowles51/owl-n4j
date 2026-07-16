@@ -515,6 +515,42 @@ class AgentService:
     def get_run(self, *, db: Session, user: User, run_id: UUID) -> AgentRunDetail:
         return storage.get_run_detail(db, run_id=run_id, user=user)
 
+    def approve_artifact(self, *, db: Session, user: User, artifact_id: UUID) -> AgentArtifact:
+        artifact = storage.approve_artifact(db, artifact_id=artifact_id, user=user)
+        self._log_agent_event(
+            db,
+            action="agent_artifact_approved",
+            user=user,
+            run=artifact.run,
+            details={
+                "artifact_id": str(artifact.id),
+                "artifact_type": artifact.type,
+                "artifact_status": artifact.status,
+                "version": artifact.version,
+            },
+        )
+        db.commit()
+        db.refresh(artifact)
+        return storage.to_api_artifact(artifact)
+
+    def revert_artifact_to_draft(self, *, db: Session, user: User, artifact_id: UUID) -> AgentArtifact:
+        artifact = storage.revert_artifact_to_draft(db, artifact_id=artifact_id, user=user)
+        self._log_agent_event(
+            db,
+            action="agent_artifact_reverted_to_draft",
+            user=user,
+            run=artifact.run,
+            details={
+                "artifact_id": str(artifact.id),
+                "artifact_type": artifact.type,
+                "artifact_status": artifact.status,
+                "version": artifact.version,
+            },
+        )
+        db.commit()
+        db.refresh(artifact)
+        return storage.to_api_artifact(artifact)
+
     def get_cost_summary(self, *, db: Session, user: User) -> dict[str, Any]:
         records = (
             db.query(CostRecord)

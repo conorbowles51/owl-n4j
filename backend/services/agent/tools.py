@@ -310,12 +310,17 @@ class MapArtifactArgs(BaseModel):
 
 
 def _artifact(artifact_type: str, title: str, data: dict[str, Any], metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    safe_metadata = to_jsonable(metadata or {})
+    citations = safe_metadata.get("citations") if isinstance(safe_metadata, dict) else []
     return {
         "id": str(uuid.uuid4()),
         "type": artifact_type,
         "title": title,
         "data": to_jsonable(data),
-        "metadata": to_jsonable(metadata or {}),
+        "metadata": safe_metadata,
+        "status": "draft",
+        "version": 1,
+        "citations": to_jsonable(citations or []),
     }
 
 

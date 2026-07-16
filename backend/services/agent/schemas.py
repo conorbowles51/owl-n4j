@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 AgentArtifactType = Literal["graph", "table", "map", "report", "chart"]
+AgentArtifactStatus = Literal["draft", "approved"]
 AgentToolStatus = Literal["success", "error"]
 AgentRunStatus = Literal["running", "completed", "failed", "cancelled", "clarification_required"]
 AgentArtifactPreference = Literal[
@@ -65,6 +66,12 @@ class AgentArtifact(BaseModel):
     title: str
     data: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    status: AgentArtifactStatus = "draft"
+    version: int = 1
+    citations: list[dict[str, Any]] = Field(default_factory=list)
+    approved_by_user_id: str | None = None
+    approved_at: datetime | None = None
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentToolTraceItem(BaseModel):

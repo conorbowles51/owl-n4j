@@ -29,6 +29,9 @@ from services.agent.schemas import (
 from services.case_service import check_case_access
 
 SUPPORTED_ARTIFACT_TYPES = {"graph", "table", "map", "report", "chart"}
+ARTIFACT_STATUS_DRAFT = "draft"
+ARTIFACT_STATUS_APPROVED = "approved"
+ARTIFACT_STATUSES = {ARTIFACT_STATUS_DRAFT, ARTIFACT_STATUS_APPROVED}
 
 
 def summarize_title(message: str) -> str:
@@ -58,6 +61,7 @@ def get_thread_for_user(
     thread_id: UUID,
     user: User,
     case_id: UUID | None = None,
+    required_permission: tuple[str, str] = ("case", "view"),
 ) -> AgentThread:
     query = db.query(AgentThread).filter(AgentThread.id == thread_id)
     if case_id is not None:
@@ -65,7 +69,7 @@ def get_thread_for_user(
     thread = query.first()
     if not thread:
         raise ValueError("Agent thread not found")
-    check_case_access(db, thread.case_id, user, required_permission=("case", "view"))
+    check_case_access(db, thread.case_id, user, required_permission=required_permission)
     if thread.owner_user_id != user.id:
         raise PermissionError("Agent thread belongs to another user")
     return thread
@@ -81,11 +85,127 @@ def get_run_for_user(db: Session, *, run_id: UUID, user: User) -> AgentRun:
     return run
 
 
-def get_artifact_for_user(db: Session, *, artifact_id: UUID, user: User) -> AgentArtifactRecord:
+def get_artifact_for_user(
+    db: Session,
+    *,
+    artifact_id: UUID,
+    user: User,
+    required_permission: tuple[str, str] = ("case", "view"),
+) -> AgentArtifactRecord:
     artifact = db.query(AgentArtifactRecord).filter(AgentArtifactRecord.id == artifact_id).first()
     if not artifact:
         raise ValueError("Agent artifact not found")
-    get_thread_for_user(db, thread_id=artifact.thread_id, user=user)
+    get_thread_for_user(
+        db,
+        thread_id=artifact.thread_id,
+        user=user,
+        required_permission=required_permission,
+    )
+    return artifact
+
+
+def _citation_from_value(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        compact = truncate_payload(value, max_items=20, max_text_chars=600)
+        return compact if isinstance(compact, dict) and compact else None
+    text = sanitize_text(str(value)).strip()
+    if not text:
+        return None
+    return {"label": text[:600]}
+
+
+def _extend_citations(target: list[dict[str, Any]], raw_value: Any) -> None:
+    if raw_value is None:
+        return
+    values = raw_value if isinstance(raw_value, list) else [raw_value]
+    seen = {str(item) for item in target}
+    for value in values:
+        citation = _citation_from_value(value)
+        if not citation:
+            continue
+        marker = str(citation)
+        if marker not in seen:
+            target.append(citation)
+            seen.add(marker)
+        if len(target) >= 50:
+            break
+
+
+def extract_artifact_citations(artifact: dict[str, Any]) -> list[dict[str, Any]]:
+    metadata = artifact.get("metadata") if isinstance(artifact.get("metadata"), dict) else {}
+    data = artifact.get("data") if isinstance(artifact.get("data"), dict) else {}
+    citations: list[dict[str, Any]] = []
+
+    _extend_citations(citations, artifact.get("citations"))
+    _extend_citations(citations, metadata.get("citations"))
+    _extend_citations(citations, data.get("citations"))
+
+    source_result_ids = metadata.get("source_result_ids")
+    if source_result_ids is not None and not isinstance(source_result_ids, list):
+        source_result_ids = [source_result_ids]
+    for result_id in source_result_ids or []:
+        text = sanitize_text(str(result_id)).strip()
+        if text:
+            _extend_citations(citations, {"type": "tool_result", "result_id": text})
+
+    embedded_artifacts = data.get("embedded_artifacts")
+    if embedded_artifacts is not None and not isinstance(embedded_artifacts, list):
+        embedded_artifacts = [embedded_artifacts]
+    for embedded in embedded_artifacts or []:
+        if not isinstance(embedded, dict):
+            continue
+        artifact_id = sanitize_text(str(embedded.get("artifact_id") or "")).strip()
+        if artifact_id:
+            _extend_citations(
+                citations,
+                {
+                    "type": "artifact",
+                    "artifact_id": artifact_id,
+                    "artifact_type": embedded.get("type"),
+                    "title": embedded.get("title"),
+                },
+            )
+
+    return to_jsonable(citations)
+
+
+def approve_artifact(db: Session, *, artifact_id: UUID, user: User) -> AgentArtifactRecord:
+    artifact = get_artifact_for_user(
+        db,
+        artifact_id=artifact_id,
+        user=user,
+        required_permission=("case", "edit"),
+    )
+    if artifact.status == ARTIFACT_STATUS_APPROVED:
+        return artifact
+    if artifact.status not in ARTIFACT_STATUSES:
+        raise ValueError(f"Cannot approve artifact with status {artifact.status}")
+    artifact.status = ARTIFACT_STATUS_APPROVED
+    artifact.approved_by_user_id = user.id
+    artifact.approved_at = datetime.now(timezone.utc)
+    db.flush()
+    db.refresh(artifact)
+    return artifact
+
+
+def revert_artifact_to_draft(db: Session, *, artifact_id: UUID, user: User) -> AgentArtifactRecord:
+    artifact = get_artifact_for_user(
+        db,
+        artifact_id=artifact_id,
+        user=user,
+        required_permission=("case", "edit"),
+    )
+    if artifact.status == ARTIFACT_STATUS_DRAFT:
+        return artifact
+    if artifact.status not in ARTIFACT_STATUSES:
+        raise ValueError(f"Cannot revert artifact with status {artifact.status}")
+    artifact.status = ARTIFACT_STATUS_DRAFT
+    artifact.approved_by_user_id = None
+    artifact.approved_at = None
+    db.flush()
+    db.refresh(artifact)
     return artifact
 
 
@@ -260,6 +380,9 @@ def persist_artifacts(
             title=sanitize_text(artifact.get("title") or "Agent artifact"),
             payload=to_jsonable(artifact.get("data") or {}),
             extra_metadata=to_jsonable(artifact.get("metadata") or {}),
+            status=ARTIFACT_STATUS_DRAFT,
+            version=1,
+            citations=extract_artifact_citations(artifact),
         )
         db.add(record)
         records.append(record)
@@ -272,12 +395,41 @@ def supported_artifacts(records: list[AgentArtifactRecord]) -> list[AgentArtifac
 
 
 def to_api_artifact(record: AgentArtifactRecord) -> AgentArtifact:
+    run = record.run
+    status = record.status if record.status in ARTIFACT_STATUSES else ARTIFACT_STATUS_DRAFT
+    tool_calls = [
+        {
+            "id": str(tool_call.id),
+            "name": tool_call.name,
+            "status": tool_call.status,
+            "duration_ms": tool_call.duration_ms,
+            "result_id": tool_call.result_id,
+            "summary": tool_call.summary,
+            "error": tool_call.error,
+        }
+        for tool_call in (run.tool_calls if run else [])
+    ]
     return AgentArtifact(
         id=str(record.id),
         type=record.type,
         title=record.title,
         data=record.payload or {},
         metadata=record.extra_metadata or {},
+        status=status,
+        version=record.version or 1,
+        citations=record.citations or [],
+        approved_by_user_id=str(record.approved_by_user_id) if record.approved_by_user_id else None,
+        approved_at=record.approved_at,
+        provenance={
+            "thread_id": str(record.thread_id),
+            "run_id": str(record.run_id),
+            "creator_user_id": str(run.user_id) if run and run.user_id else None,
+            "provider": run.provider if run else None,
+            "model_id": run.model_id if run else None,
+            "tool_calls": tool_calls,
+            "created_at": record.created_at.isoformat() if record.created_at else None,
+            "updated_at": record.updated_at.isoformat() if record.updated_at else None,
+        },
     )
 
 

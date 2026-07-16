@@ -536,6 +536,35 @@ function chartSeries(artifact: AgentArtifact) {
   })
 }
 
+function artifactStatus(artifact: AgentArtifact) {
+  return artifact.status ?? "draft"
+}
+
+function artifactVersion(artifact: AgentArtifact) {
+  return artifact.version ?? 1
+}
+
+function artifactProvenanceLabel(artifact: AgentArtifact) {
+  const toolCount = artifact.provenance?.tool_calls?.length ?? 0
+  const citationCount = artifact.citations?.length ?? 0
+  const items = [
+    `v${artifactVersion(artifact)}`,
+    artifact.provenance?.model_id,
+    toolCount > 0 ? `${toolCount} tool${toolCount === 1 ? "" : "s"}` : null,
+    citationCount > 0 ? `${citationCount} citation${citationCount === 1 ? "" : "s"}` : null,
+  ].filter(Boolean)
+  return items.join(" - ")
+}
+
+function ArtifactStatusBadge({ artifact }: { artifact: AgentArtifact }) {
+  const status = artifactStatus(artifact)
+  return (
+    <Badge variant={status === "approved" ? "success" : "warning"} className="capitalize">
+      {status}
+    </Badge>
+  )
+}
+
 export function AgentPage() {
   const { id: caseId } = useParams()
   const [threads, setThreads] = useState<AgentThreadSummary[]>([])
@@ -552,6 +581,7 @@ export function AgentPage() {
   const [selectedModelId, setSelectedModelId] = useState<AgentModelId>("gpt-5-mini")
   const [showInvestigationTrail, setShowInvestigationTrail] = useState(loadInvestigationTrailSetting)
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
+  const [approvingArtifactId, setApprovingArtifactId] = useState<string | null>(null)
   const [detailsPanelOpen, setDetailsPanelOpen] = useState(false)
   const [detailsPanelTab, setDetailsPanelTab] = useState<"details" | "notebook">("details")
   const selectNodes = useGraphStore((s) => s.selectNodes)
@@ -850,6 +880,27 @@ export function AgentPage() {
     }
   }
 
+  const approveArtifact = useCallback(
+    async (artifact: AgentArtifact) => {
+      if (artifactStatus(artifact) === "approved" || approvingArtifactId) return
+      setApprovingArtifactId(artifact.id)
+      try {
+        const updated = await agentAPI.approveArtifact(artifact.id)
+        setArtifacts((current) =>
+          current.map((item) => (item.id === updated.id ? updated : item))
+        )
+        setSelectedArtifactId(updated.id)
+        toast.success("Artifact approved")
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to approve artifact"
+        toast.error(message)
+      } finally {
+        setApprovingArtifactId((current) => (current === artifact.id ? null : current))
+      }
+    },
+    [approvingArtifactId]
+  )
+
   const activeThreadTitle =
     threads.find((thread) => thread.id === activeThreadId)?.title ?? "New agent thread"
 
@@ -1079,6 +1130,8 @@ export function AgentPage() {
             selectedArtifact={selectedArtifact}
             selectedArtifactId={selectedArtifactId}
             onSelectArtifact={handleArtifactSelect}
+            onApproveArtifact={approveArtifact}
+            approvingArtifactId={approvingArtifactId}
             exportEnabled={!isLoading}
             onEntitySelect={handleEntitySelect}
           />
@@ -1599,6 +1652,8 @@ function ArtifactWorkspace({
   selectedArtifact,
   selectedArtifactId,
   onSelectArtifact,
+  onApproveArtifact,
+  approvingArtifactId,
   exportEnabled,
   onEntitySelect,
 }: {
@@ -1606,12 +1661,14 @@ function ArtifactWorkspace({
   selectedArtifact: AgentArtifact | null
   selectedArtifactId: string | null
   onSelectArtifact: (artifact: AgentArtifact) => void
+  onApproveArtifact: (artifact: AgentArtifact) => void
+  approvingArtifactId: string | null
   exportEnabled: boolean
   onEntitySelect: (key: string) => void
 }) {
   return (
     <section className="flex h-full min-w-0 flex-col bg-muted/10">
-      <header className="flex items-center justify-between border-b border-border px-4 py-3">
+      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           <PanelRight className="size-4 text-muted-foreground" />
           <div className="min-w-0">
@@ -1623,6 +1680,29 @@ function ArtifactWorkspace({
             </p>
           </div>
         </div>
+        {selectedArtifact && (
+          <div className="flex shrink-0 items-center gap-2">
+            <ArtifactStatusBadge artifact={selectedArtifact} />
+            {artifactStatus(selectedArtifact) !== "approved" && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => onApproveArtifact(selectedArtifact)}
+                disabled={!exportEnabled || approvingArtifactId !== null}
+                title={exportEnabled ? "Approve artifact" : "Artifacts can be approved when the run finishes"}
+              >
+                {approvingArtifactId === selectedArtifact.id ? (
+                  <Loader2 className="mr-1 size-3 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="mr-1 size-3" />
+                )}
+                Approve
+              </Button>
+            )}
+          </div>
+        )}
       </header>
 
       {artifacts.length === 0 ? (
@@ -1650,14 +1730,19 @@ function ArtifactWorkspace({
                   type="button"
                   onClick={() => onSelectArtifact(artifact)}
                   className={cn(
-                    "flex min-w-36 items-center gap-2 rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
+                    "flex min-w-44 max-w-64 items-center gap-2 rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
                     selectedArtifactId === artifact.id
                       ? "border-primary/40 bg-primary/10 text-foreground"
                       : "border-border bg-background text-muted-foreground hover:text-foreground"
                   )}
                 >
                   <Icon className="size-3.5 shrink-0" />
-                  <span className="truncate font-medium">{artifact.title}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium">{artifact.title}</span>
+                  {artifactStatus(artifact) === "draft" && (
+                    <Badge variant="warning" className="px-1.5 py-0 text-[9px]">
+                      Draft
+                    </Badge>
+                  )}
                 </button>
               )
             })}
@@ -1735,9 +1820,14 @@ function ArtifactShell({
       <div className="flex shrink-0 items-center justify-between border-b border-border/70 px-1 pb-2">
         <div className="flex min-w-0 items-center gap-2">
           <Icon className="size-4 text-muted-foreground" />
-          <h3 className="truncate text-sm font-semibold text-foreground">
-            {artifact.title}
-          </h3>
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold text-foreground">
+              {artifact.title}
+            </h3>
+            <p className="truncate text-[11px] text-muted-foreground">
+              {artifactProvenanceLabel(artifact)}
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {headerActions}
@@ -1763,6 +1853,7 @@ function ArtifactShell({
           <Badge variant="secondary" className="capitalize">
             {artifact.type}
           </Badge>
+          <ArtifactStatusBadge artifact={artifact} />
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col pt-3">{children}</div>

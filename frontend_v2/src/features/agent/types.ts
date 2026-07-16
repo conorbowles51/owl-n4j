@@ -5,12 +5,41 @@ export type AgentArtifactType =
   | "report"
   | "chart"
 
+export type AgentArtifactStatus = "draft" | "approved"
+
+export interface AgentArtifactToolProvenance {
+  id: string
+  name: string
+  status: "success" | "error" | string
+  duration_ms: number
+  result_id?: string | null
+  summary?: string | null
+  error?: string | null
+}
+
+export interface AgentArtifactProvenance {
+  thread_id: string
+  run_id: string
+  creator_user_id?: string | null
+  provider?: string | null
+  model_id?: string | null
+  tool_calls: AgentArtifactToolProvenance[]
+  created_at?: string | null
+  updated_at?: string | null
+}
+
 export interface AgentArtifact {
   id: string
   type: AgentArtifactType
   title: string
   data: Record<string, unknown>
   metadata: Record<string, unknown>
+  status?: AgentArtifactStatus
+  version?: number
+  citations?: Array<Record<string, unknown>>
+  approved_by_user_id?: string | null
+  approved_at?: string | null
+  provenance?: AgentArtifactProvenance
 }
 
 export interface AgentToolTraceItem {

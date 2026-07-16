@@ -1,5 +1,6 @@
 import { fetchAPI } from "@/lib/api-client"
 import type {
+  AgentArtifact,
   AgentMessageResponse,
   AgentRunStatus,
   AgentStreamEvent,
@@ -111,6 +112,16 @@ export const agentAPI = {
 
   cancelRun: (runId: string) =>
     fetchAPI<AgentRunStatus>(`/api/agent/runs/${runId}:cancel`, {
+      method: "POST",
+    }),
+
+  approveArtifact: (artifactId: string) =>
+    fetchAPI<AgentArtifact>(`/api/agent/artifacts/${artifactId}:approve`, {
+      method: "POST",
+    }),
+
+  revertArtifact: (artifactId: string) =>
+    fetchAPI<AgentArtifact>(`/api/agent/artifacts/${artifactId}:revert`, {
       method: "POST",
     }),
 
