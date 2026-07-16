@@ -16,7 +16,8 @@ import uuid
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from postgres.session import get_background_session
 from postgres.models.workspace import (
@@ -419,16 +420,20 @@ class WorkspaceService:
             note["created_at"] = datetime.now().isoformat()
 
         with get_background_session() as db:
-            row = db.execute(
-                select(WorkspaceNote).where(
-                    WorkspaceNote.case_id == case_id,
-                    WorkspaceNote.note_id == note_id,
+            stmt = pg_insert(WorkspaceNote).values(
+                case_id=case_id,
+                note_id=note_id,
+                data=note,
+            )
+            db.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=[WorkspaceNote.case_id, WorkspaceNote.note_id],
+                    set_={
+                        "data": stmt.excluded.data,
+                        "updated_at": func.now(),
+                    },
                 )
-            ).scalar_one_or_none()
-            if row:
-                row.data = note
-            else:
-                db.add(WorkspaceNote(case_id=case_id, note_id=note_id, data=note))
+            )
         return note_id
 
     def delete_note(self, case_id: str, note_id: str) -> bool:

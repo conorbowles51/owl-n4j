@@ -39,12 +39,13 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["author_user_id"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["case_id"], ["cases.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        if_not_exists=True,
     )
-    op.create_index("ix_notebook_notes_case_id", "notebook_notes", ["case_id"], unique=False)
-    op.create_index("ix_notebook_notes_author_user_id", "notebook_notes", ["author_user_id"], unique=False)
-    op.create_index("ix_notebook_notes_deleted_at", "notebook_notes", ["deleted_at"], unique=False)
-    op.create_index("ix_notebook_notes_case_updated", "notebook_notes", ["case_id", "updated_at"], unique=False)
-    op.create_index("ix_notebook_notes_author_case", "notebook_notes", ["author_user_id", "case_id"], unique=False)
+    op.create_index("ix_notebook_notes_case_id", "notebook_notes", ["case_id"], unique=False, if_not_exists=True)
+    op.create_index("ix_notebook_notes_author_user_id", "notebook_notes", ["author_user_id"], unique=False, if_not_exists=True)
+    op.create_index("ix_notebook_notes_deleted_at", "notebook_notes", ["deleted_at"], unique=False, if_not_exists=True)
+    op.create_index("ix_notebook_notes_case_updated", "notebook_notes", ["case_id", "updated_at"], unique=False, if_not_exists=True)
+    op.create_index("ix_notebook_notes_author_case", "notebook_notes", ["author_user_id", "case_id"], unique=False, if_not_exists=True)
 
     op.create_table(
         "notebook_note_links",
@@ -61,14 +62,16 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["note_id"], ["notebook_notes.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("note_id", "target_type", "target_id", name="uq_notebook_note_target"),
+        if_not_exists=True,
     )
-    op.create_index("ix_notebook_note_links_note_id", "notebook_note_links", ["note_id"], unique=False)
-    op.create_index("ix_notebook_note_links_case_id", "notebook_note_links", ["case_id"], unique=False)
+    op.create_index("ix_notebook_note_links_note_id", "notebook_note_links", ["note_id"], unique=False, if_not_exists=True)
+    op.create_index("ix_notebook_note_links_case_id", "notebook_note_links", ["case_id"], unique=False, if_not_exists=True)
     op.create_index(
         "ix_notebook_links_case_target",
         "notebook_note_links",
         ["case_id", "target_type", "target_id"],
         unique=False,
+        if_not_exists=True,
     )
 
 

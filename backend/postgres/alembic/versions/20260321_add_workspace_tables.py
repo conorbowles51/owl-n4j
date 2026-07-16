@@ -32,8 +32,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['case_id'], ['cases.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('case_id', name='uq_workspace_contexts_case_id'),
+        if_not_exists=True,
     )
-    op.create_index('ix_workspace_contexts_case_id', 'workspace_contexts', ['case_id'], unique=True)
+    op.create_index('ix_workspace_contexts_case_id', 'workspace_contexts', ['case_id'], unique=True, if_not_exists=True)
 
     # --- workspace_witnesses ---
     op.create_table(
@@ -47,8 +48,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['case_id'], ['cases.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('case_id', 'witness_id', name='uq_workspace_witnesses_case_witness'),
+        if_not_exists=True,
     )
-    op.create_index('ix_workspace_witnesses_case_id', 'workspace_witnesses', ['case_id'], unique=False)
+    op.create_index('ix_workspace_witnesses_case_id', 'workspace_witnesses', ['case_id'], unique=False, if_not_exists=True)
 
     # --- workspace_theories ---
     op.create_table(
@@ -62,8 +64,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['case_id'], ['cases.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('case_id', 'theory_id', name='uq_workspace_theories_case_theory'),
+        if_not_exists=True,
     )
-    op.create_index('ix_workspace_theories_case_id', 'workspace_theories', ['case_id'], unique=False)
+    op.create_index('ix_workspace_theories_case_id', 'workspace_theories', ['case_id'], unique=False, if_not_exists=True)
 
     # --- workspace_tasks ---
     op.create_table(
@@ -77,8 +80,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['case_id'], ['cases.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('case_id', 'task_id', name='uq_workspace_tasks_case_task'),
+        if_not_exists=True,
     )
-    op.create_index('ix_workspace_tasks_case_id', 'workspace_tasks', ['case_id'], unique=False)
+    op.create_index('ix_workspace_tasks_case_id', 'workspace_tasks', ['case_id'], unique=False, if_not_exists=True)
 
     # --- workspace_notes ---
     op.create_table(
@@ -92,8 +96,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['case_id'], ['cases.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('case_id', 'note_id', name='uq_workspace_notes_case_note'),
+        if_not_exists=True,
     )
-    op.create_index('ix_workspace_notes_case_id', 'workspace_notes', ['case_id'], unique=False)
+    op.create_index('ix_workspace_notes_case_id', 'workspace_notes', ['case_id'], unique=False, if_not_exists=True)
 
     # --- workspace_pinned_items ---
     op.create_table(
@@ -110,8 +115,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['case_id'], ['cases.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('case_id', 'pin_id', name='uq_workspace_pinned_items_case_pin'),
+        if_not_exists=True,
     )
-    op.create_index('ix_workspace_pinned_items_case_id', 'workspace_pinned_items', ['case_id'], unique=False)
+    op.create_index('ix_workspace_pinned_items_case_id', 'workspace_pinned_items', ['case_id'], unique=False, if_not_exists=True)
 
     # --- workspace_deadline_configs (one per case) ---
     op.create_table(
@@ -124,8 +130,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['case_id'], ['cases.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('case_id', name='uq_workspace_deadline_configs_case_id'),
+        if_not_exists=True,
     )
-    op.create_index('ix_workspace_deadline_configs_case_id', 'workspace_deadline_configs', ['case_id'], unique=True)
+    op.create_index('ix_workspace_deadline_configs_case_id', 'workspace_deadline_configs', ['case_id'], unique=True, if_not_exists=True)
 
 
 def downgrade() -> None:
