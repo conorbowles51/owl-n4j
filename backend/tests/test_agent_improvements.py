@@ -4,12 +4,18 @@ from unittest.mock import patch
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from services.agent.graph import (
+    AgentRunTimeout,
     _budget_continuation_clarification,
+    _budget_stop_note,
     _looks_like_tool_planning_text,
     _messages_for_finalizer,
     _messages_without_dangling_tool_calls,
+    _raise_if_timed_out,
     _tool_budget_exhausted,
+    _tool_budget_continuations_exhausted,
+    _tool_error_budget_exhausted,
     _used_tools,
+    _with_stop_note,
 )
 from services.agent.service import AgentService
 from services.agent.tools import AgentToolContext, _extract_graph_selection, _filter_graph, make_agent_tools
@@ -100,7 +106,51 @@ class AgentImprovementTests(unittest.TestCase):
         self.assertEqual(clarification.options[1].label, "Stop here")
         self.assertEqual(clarification.context["reason"], "tool_budget_exhausted")
         self.assertEqual(clarification.context["max_tool_calls"], 28)
+        self.assertEqual(clarification.context["continuations_used"], 0)
+        self.assertEqual(clarification.context["max_continuations"], 1)
         self.assertTrue(AgentService._is_tool_budget_clarification(clarification))
+
+    def test_tool_budget_continuation_cap_forces_terminal_stop(self):
+        state = {
+            "continuations_used": 1,
+            "max_continuations": 1,
+        }
+
+        self.assertTrue(_tool_budget_continuations_exhausted(state))
+        note = _budget_stop_note(28, 1)
+        self.assertIn("28 tool call(s)", note)
+        self.assertIn("1 continuation(s)", note)
+        self.assertTrue(_with_stop_note("Partial answer", note).endswith(note))
+
+    def test_consecutive_tool_error_budget_detects_retry_boundary(self):
+        self.assertFalse(
+            _tool_error_budget_exhausted(
+                {"consecutive_tool_errors": 2, "max_consecutive_tool_errors": 3}
+            )
+        )
+        self.assertTrue(
+            _tool_error_budget_exhausted(
+                {"consecutive_tool_errors": 3, "max_consecutive_tool_errors": 3}
+            )
+        )
+
+    def test_deadline_check_raises_timeout_without_sleeping(self):
+        with self.assertRaises(AgentRunTimeout):
+            _raise_if_timed_out(10.0, lambda: 10.0)
+
+    def test_thread_counts_prior_tool_budget_continuations(self):
+        class Run:
+            def __init__(self, metadata):
+                self.extra_metadata = metadata
+
+        class Thread:
+            runs = [
+                Run({"clarification": {"context": {"reason": "tool_budget_exhausted"}}}),
+                Run({"clarification": {"context": {"reason": "agent_requested_clarification"}}}),
+                Run(None),
+            ]
+
+        self.assertEqual(AgentService._tool_budget_continuations_used(Thread()), 1)
 
     def test_runner_clarification_payload_preserves_pending_context(self):
         clarification = AgentService._clarification_from_runner(

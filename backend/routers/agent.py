@@ -20,7 +20,8 @@ from services.agent.schemas import (
     AgentThreadDetail,
     AgentThreadSummary,
 )
-from services.agent.service import agent_service
+from services.agent.concurrency import AgentConcurrencyLimitExceeded
+from services.agent.service import AgentSpendLimitExceeded, agent_service
 from services.case_service import CaseAccessDenied, CaseNotFound
 
 
@@ -71,6 +72,8 @@ async def create_agent_message(
 ):
     try:
         return agent_service.handle_message(db=db, user=current_user, request=request)
+    except (AgentConcurrencyLimitExceeded, AgentSpendLimitExceeded) as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PermissionError as exc:
@@ -93,6 +96,8 @@ async def stream_agent_message(
         events = agent_service.stream_message(db=db, user=current_user, request=request)
         event_iterator = iter(events)
         first_event = next(event_iterator)
+    except (AgentConcurrencyLimitExceeded, AgentSpendLimitExceeded) as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PermissionError as exc:

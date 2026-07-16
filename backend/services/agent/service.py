@@ -1,17 +1,29 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
 from langchain_core.messages import AIMessage, HumanMessage
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from config import (
+    AGENT_DAILY_SPEND_CAP_USD,
+    AGENT_MAX_CONCURRENT_RUNS_GLOBAL,
+    AGENT_MAX_CONCURRENT_RUNS_PER_USER,
+    AGENT_MAX_CONSECUTIVE_TOOL_ERRORS,
+    AGENT_MAX_RUN_SECONDS,
+    AGENT_MAX_TOOL_CALL_CONTINUATIONS,
+    AGENT_MAX_TOOL_CALLS,
+)
 from models.llm_models import get_model_by_id
 from postgres.models.agent import AgentThread
 from postgres.models.cost_record import CostRecord
 from postgres.models.cost_record import CostJobType
 from postgres.models.user import User
 from services.agent.cancellation import clear_cancel, is_cancelled, request_cancel
+from services.agent.concurrency import acquire_run_slot, release_run_slot
 from services.agent.exports import AgentArtifactExport, AgentExportFormat, render_artifact_export
 from services.agent.graph import AgentGraphRunner, AgentRunCancelled
 from services.agent.json_utils import truncate_payload
@@ -35,7 +47,11 @@ from services.case_service import check_case_access
 from services.system_log_service import LogOrigin, LogType, system_log_service
 
 
-DEFAULT_AGENT_MAX_TOOL_CALLS = 28
+DEFAULT_AGENT_MAX_TOOL_CALLS = AGENT_MAX_TOOL_CALLS
+
+
+class AgentSpendLimitExceeded(RuntimeError):
+    """Raised when a user has reached the rolling agent spend cap."""
 
 
 class AgentService:
@@ -58,6 +74,40 @@ class AgentService:
         if request.provider and request.provider != provider:
             raise ValueError(f"Model {request.model} belongs to provider {provider}, not {request.provider}")
 
+        self._enforce_daily_spend_cap(db, user)
+        run_slot_user_id = str(user.id)
+        acquire_run_slot(
+            run_slot_user_id,
+            max_per_user=AGENT_MAX_CONCURRENT_RUNS_PER_USER,
+            max_global=AGENT_MAX_CONCURRENT_RUNS_GLOBAL,
+        )
+        yield from self._stream_with_slot_release(
+            self._stream_message_with_slot(
+                db=db,
+                user=user,
+                request=request,
+                model=model,
+                provider=provider,
+            ),
+            run_slot_user_id,
+        )
+
+    @staticmethod
+    def _stream_with_slot_release(events, run_slot_user_id: str):
+        try:
+            yield from events
+        finally:
+            release_run_slot(run_slot_user_id)
+
+    def _stream_message_with_slot(
+        self,
+        *,
+        db: Session,
+        user: User,
+        request: AgentMessageRequest,
+        model,
+        provider: str,
+    ):
         thread = self._resolve_thread(db, user=user, request=request)
         user_message = storage.append_message(
             db,
@@ -110,6 +160,10 @@ class AgentService:
                 messages=history,
                 artifact_preference=request.artifact_preference,
                 max_tool_calls=DEFAULT_AGENT_MAX_TOOL_CALLS,
+                max_consecutive_tool_errors=AGENT_MAX_CONSECUTIVE_TOOL_ERRORS,
+                max_run_seconds=AGENT_MAX_RUN_SECONDS,
+                continuations_used=self._tool_budget_continuations_used(thread),
+                max_continuations=AGENT_MAX_TOOL_CALL_CONTINUATIONS,
                 thread_id=str(thread.id),
                 available_artifacts=self._available_artifacts_for_runner(thread),
                 should_cancel=lambda: is_cancelled(run_id),
@@ -277,7 +331,6 @@ class AgentService:
                 "thread_id": str(thread.id),
                 "message": str(exc),
             }
-
     def handle_message(
         self,
         *,
@@ -297,6 +350,33 @@ class AgentService:
         if request.provider and request.provider != provider:
             raise ValueError(f"Model {request.model} belongs to provider {provider}, not {request.provider}")
 
+        self._enforce_daily_spend_cap(db, user)
+        run_slot_user_id = str(user.id)
+        acquire_run_slot(
+            run_slot_user_id,
+            max_per_user=AGENT_MAX_CONCURRENT_RUNS_PER_USER,
+            max_global=AGENT_MAX_CONCURRENT_RUNS_GLOBAL,
+        )
+        try:
+            return self._handle_message_with_slot(
+                db=db,
+                user=user,
+                request=request,
+                model=model,
+                provider=provider,
+            )
+        finally:
+            release_run_slot(run_slot_user_id)
+
+    def _handle_message_with_slot(
+        self,
+        *,
+        db: Session,
+        user: User,
+        request: AgentMessageRequest,
+        model,
+        provider: str,
+    ) -> AgentMessageResponse:
         thread = self._resolve_thread(db, user=user, request=request)
         user_message = None
         if request.persist:
@@ -334,8 +414,13 @@ class AgentService:
                 messages=history,
                 artifact_preference=request.artifact_preference,
                 max_tool_calls=DEFAULT_AGENT_MAX_TOOL_CALLS,
+                max_consecutive_tool_errors=AGENT_MAX_CONSECUTIVE_TOOL_ERRORS,
+                max_run_seconds=AGENT_MAX_RUN_SECONDS,
+                continuations_used=self._tool_budget_continuations_used(thread),
+                max_continuations=AGENT_MAX_TOOL_CALL_CONTINUATIONS,
                 thread_id=str(thread.id),
                 available_artifacts=self._available_artifacts_for_runner(thread),
+                should_cancel=lambda: is_cancelled(str(run.id)),
             )
             runner_clarification = self._clarification_from_runner(
                 result.get("clarification"),
@@ -421,6 +506,7 @@ class AgentService:
             db.commit()
             db.refresh(thread)
             db.refresh(run)
+            clear_cancel(str(run.id))
 
             return AgentMessageResponse(
                 thread_id=str(thread.id),
@@ -448,6 +534,56 @@ class AgentService:
                 clarification=runner_clarification,
                 status="clarification_required" if runner_clarification else "completed",
             )
+        except AgentRunCancelled as exc:
+            db.rollback()
+            clear_cancel(str(run.id))
+            try:
+                check_case_access(db, request.case_id, user, required_permission=("case", "view"))
+                thread = self._resolve_thread(db, user=user, request=request)
+                cancelled_run = storage.create_run(
+                    db,
+                    thread=thread,
+                    user=user,
+                    provider=provider,
+                    model_id=model.id,
+                    input_message=request.message,
+                    extra_metadata={"artifact_preference": request.artifact_preference},
+                )
+                storage.finish_run(db, run=cancelled_run, status="cancelled", error=str(exc))
+                self._log_agent_event(
+                    db,
+                    action="agent_run_cancelled",
+                    user=user,
+                    run=cancelled_run,
+                    success=False,
+                    error=str(exc),
+                    details={"streaming": False},
+                )
+                db.commit()
+                db.refresh(thread)
+                db.refresh(cancelled_run)
+                clear_cancel(str(cancelled_run.id))
+                return AgentMessageResponse(
+                    thread_id=str(thread.id),
+                    run_id=str(cancelled_run.id),
+                    user_message_id=None,
+                    assistant_message_id=None,
+                    answer=str(exc),
+                    artifacts=[],
+                    tool_trace=[],
+                    model_info=AgentModelInfo(
+                        provider=provider,
+                        model_id=model.id,
+                        model_name=model.name,
+                        server="OpenAI (remote)" if provider == "openai" else "Ollama (local)",
+                    ),
+                    cost=None,
+                    clarification=None,
+                    status="cancelled",
+                )
+            except Exception:
+                db.rollback()
+                raise
         except Exception as exc:
             db.rollback()
             # Re-open a small transaction so failed runs are still visible when possible.
@@ -476,6 +612,7 @@ class AgentService:
                 db.commit()
             except Exception:
                 db.rollback()
+            clear_cancel(str(run.id))
             raise
 
     def cancel_run(self, *, db: Session, user: User, run_id: UUID) -> AgentRunStatusResponse:
@@ -589,6 +726,44 @@ class AgentService:
             elif message.role == "assistant":
                 history.append(AIMessage(content=message.content))
         return history
+
+    @staticmethod
+    def _tool_budget_continuations_used(thread: AgentThread) -> int:
+        count = 0
+        for run in thread.runs or []:
+            metadata = run.extra_metadata if isinstance(run.extra_metadata, dict) else {}
+            clarification = metadata.get("clarification")
+            context = clarification.get("context") if isinstance(clarification, dict) else {}
+            if isinstance(context, dict) and context.get("reason") == "tool_budget_exhausted":
+                count += 1
+        return count
+
+    @staticmethod
+    def _daily_agent_spend_usd(db: Session, user: User) -> float:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        total = (
+            db.query(func.coalesce(func.sum(CostRecord.cost_usd), 0))
+            .filter(CostRecord.job_type == CostJobType.AI_ASSISTANT.value)
+            .filter(CostRecord.user_id == user.id)
+            .filter(CostRecord.created_at >= cutoff)
+            .scalar()
+        )
+        return float(total or 0)
+
+    @classmethod
+    def _enforce_daily_spend_cap(
+        cls,
+        db: Session,
+        user: User,
+        *,
+        cap_usd: float = AGENT_DAILY_SPEND_CAP_USD,
+    ) -> None:
+        spent_usd = cls._daily_agent_spend_usd(db, user)
+        if spent_usd >= float(cap_usd):
+            raise AgentSpendLimitExceeded(
+                "Daily AI agent spend cap reached for this user "
+                f"(${spent_usd:.2f} of ${float(cap_usd):.2f} used in the last 24 hours)."
+            )
 
     @staticmethod
     def _available_artifacts_for_runner(thread: AgentThread) -> list[dict[str, Any]]:

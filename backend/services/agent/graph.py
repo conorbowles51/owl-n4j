@@ -22,6 +22,15 @@ class AgentRunCancelled(Exception):
     """Raised when an in-flight agent run is cancelled by the caller."""
 
 
+class AgentRunTimeout(AgentRunCancelled):
+    """Raised when an agent run exceeds its configured wall-clock deadline."""
+
+
+def _raise_if_timed_out(deadline: float | None, now_fn: Callable[[], float]) -> None:
+    if deadline is not None and now_fn() >= deadline:
+        raise AgentRunTimeout("Agent run timed out")
+
+
 def message_content_to_text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -282,6 +291,10 @@ class AgentState(TypedDict, total=False):
     artifact_preference: str
     case_context: dict[str, Any]
     max_tool_calls: int
+    max_consecutive_tool_errors: int
+    consecutive_tool_errors: int
+    continuations_used: int
+    max_continuations: int
     tool_iterations: int
     tool_trace: Annotated[list[dict[str, Any]], operator.add]
     tool_results: Annotated[dict[str, Any], _merge_dict]
@@ -314,6 +327,17 @@ def _tool_budget_exhausted(state: AgentState) -> bool:
     return int(state.get("tool_iterations") or 0) >= max_tool_calls and _last_message_wants_more_tools(state)
 
 
+def _tool_budget_continuations_exhausted(state: AgentState) -> bool:
+    configured_max = state.get("max_continuations")
+    max_continuations = int(configured_max if configured_max is not None else 1)
+    return int(state.get("continuations_used") or 0) >= max_continuations
+
+
+def _tool_error_budget_exhausted(state: AgentState) -> bool:
+    max_errors = int(state.get("max_consecutive_tool_errors") or 0)
+    return max_errors > 0 and int(state.get("consecutive_tool_errors") or 0) >= max_errors
+
+
 def _messages_for_finalizer(state: AgentState) -> list[AnyMessage]:
     messages = _messages_without_dangling_tool_calls(state.get("messages") or [])
     if not messages:
@@ -328,7 +352,12 @@ def _messages_for_finalizer(state: AgentState) -> list[AnyMessage]:
     return messages
 
 
-def _budget_continuation_clarification(max_tool_calls: int) -> dict[str, Any]:
+def _budget_continuation_clarification(
+    max_tool_calls: int,
+    *,
+    continuations_used: int = 0,
+    max_continuations: int = 1,
+) -> dict[str, Any]:
     return {
         "question": "I reached the investigation step limit before I could finish cleanly. Would you like me to continue?",
         "options": [
@@ -347,8 +376,31 @@ def _budget_continuation_clarification(max_tool_calls: int) -> dict[str, Any]:
         "context": {
             "reason": "tool_budget_exhausted",
             "max_tool_calls": max_tool_calls,
+            "continuations_used": continuations_used,
+            "max_continuations": max_continuations,
         },
     }
+
+
+def _budget_stop_note(max_tool_calls: int, max_continuations: int) -> str:
+    return (
+        "Stopped here: the agent reached the configured investigation budget "
+        f"({max_tool_calls} tool call(s) and {max_continuations} continuation(s))."
+    )
+
+
+def _tool_error_stop_note(max_consecutive_tool_errors: int) -> str:
+    return (
+        "Stopped here: repeated tool failures reached the configured retry limit "
+        f"({max_consecutive_tool_errors} consecutive error(s))."
+    )
+
+
+def _with_stop_note(answer: str, note: str) -> str:
+    answer = answer.strip()
+    if not answer:
+        return note
+    return f"{answer}\n\n{note}"
 
 
 class AgentGraphRunner:
@@ -375,9 +427,16 @@ class AgentGraphRunner:
         messages: list[HumanMessage | AIMessage],
         artifact_preference: str = "auto",
         max_tool_calls: int = 28,
+        max_consecutive_tool_errors: int = 3,
+        max_run_seconds: float | None = 300,
+        continuations_used: int = 0,
+        max_continuations: int = 1,
         thread_id: str | None = None,
         available_artifacts: list[dict[str, Any]] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+        now_fn: Callable[[], float] = time.monotonic,
     ) -> dict[str, Any]:
+        deadline = now_fn() + float(max_run_seconds) if max_run_seconds and max_run_seconds > 0 else None
         available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
             case_id=case_id,
@@ -387,6 +446,11 @@ class AgentGraphRunner:
         tools = make_agent_tools(tool_context)
         tools_by_name = {tool.name: tool for tool in tools}
         model_with_tools = self.base_model.bind_tools(tools)
+
+        def check_run_bounds() -> None:
+            _raise_if_timed_out(deadline, now_fn)
+            if should_cancel and should_cancel():
+                raise AgentRunCancelled("Agent run cancelled")
 
         def build_system_prompt(state: AgentState) -> str:
             return f"""You are the OWL AI Agent, an investigative graph analyst.
@@ -446,6 +510,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
 """
 
         def agent_node(state: AgentState) -> dict[str, Any]:
+            check_run_bounds()
             response = model_with_tools.invoke(
                 [SystemMessage(content=build_system_prompt(state)), *state["messages"]]
             )
@@ -459,8 +524,10 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
             artifacts: list[dict[str, Any]] = []
             clarifications: list[dict[str, Any]] = []
             tool_results: dict[str, Any] = {}
+            consecutive_tool_errors = int(state.get("consecutive_tool_errors") or 0)
 
             for tool_call in tool_calls:
+                check_run_bounds()
                 name = tool_call.get("name")
                 args = tool_call.get("args") or {}
                 call_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:12]}"
@@ -526,6 +593,10 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                         ),
                     )
                 )
+                if status == "error":
+                    consecutive_tool_errors += 1
+                else:
+                    consecutive_tool_errors = 0
 
             return {
                 "messages": tool_messages,
@@ -534,9 +605,13 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 "clarifications": clarifications,
                 "tool_results": tool_results,
                 "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls),
+                "consecutive_tool_errors": consecutive_tool_errors,
             }
 
         def route_after_agent(state: AgentState) -> str:
+            check_run_bounds()
+            if _tool_error_budget_exhausted(state):
+                return "finalize"
             last_message = state["messages"][-1]
             tool_calls = getattr(last_message, "tool_calls", []) or []
             if tool_calls and int(state.get("tool_iterations") or 0) < int(state.get("max_tool_calls") or max_tool_calls):
@@ -544,14 +619,44 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
             return "finalize"
 
         def finalize_node(state: AgentState) -> dict[str, Any]:
+            check_run_bounds()
             last_message = state["messages"][-1]
             tool_calls = getattr(last_message, "tool_calls", []) or []
             if state.get("clarifications"):
                 return {"final_answer": ""}
+            stop_note: str | None = None
             if _tool_budget_exhausted(state):
+                effective_max_tool_calls = int(state.get("max_tool_calls") or max_tool_calls)
+                effective_continuations_used = int(state.get("continuations_used") or 0)
+                effective_max_continuations = int(state.get("max_continuations") or max_continuations)
+                if _tool_budget_continuations_exhausted(state):
+                    stop_note = _budget_stop_note(effective_max_tool_calls, effective_max_continuations)
+                else:
+                    return {
+                        "clarifications": [
+                            _budget_continuation_clarification(
+                                effective_max_tool_calls,
+                                continuations_used=effective_continuations_used,
+                                max_continuations=effective_max_continuations,
+                            )
+                        ],
+                        "final_answer": "",
+                    }
+            elif _tool_error_budget_exhausted(state):
+                stop_note = _tool_error_stop_note(
+                    int(state.get("max_consecutive_tool_errors") or max_consecutive_tool_errors)
+                )
+            if stop_note is not None:
+                final_messages = _messages_for_finalizer(state)
+                response = self.base_model.invoke(
+                    [
+                        SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
+                        *final_messages,
+                    ]
+                )
                 return {
-                    "clarifications": [_budget_continuation_clarification(int(state.get("max_tool_calls") or max_tool_calls))],
-                    "final_answer": "",
+                    "messages": [response],
+                    "final_answer": _with_stop_note(message_content_to_text(response.content), stop_note),
                 }
             if not _used_tools(state) and isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
                 return {"final_answer": message_content_to_text(last_message.content)}
@@ -581,6 +686,10 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 "case_id": case_id,
                 "artifact_preference": artifact_preference,
                 "max_tool_calls": max_tool_calls,
+                "max_consecutive_tool_errors": max_consecutive_tool_errors,
+                "consecutive_tool_errors": 0,
+                "continuations_used": continuations_used,
+                "max_continuations": max_continuations,
                 "tool_iterations": 0,
                 "tool_trace": [],
                 "tool_results": {},
@@ -606,10 +715,16 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
         messages: list[HumanMessage | AIMessage],
         artifact_preference: str = "auto",
         max_tool_calls: int = 28,
+        max_consecutive_tool_errors: int = 3,
+        max_run_seconds: float | None = 300,
+        continuations_used: int = 0,
+        max_continuations: int = 1,
         thread_id: str | None = None,
         available_artifacts: list[dict[str, Any]] | None = None,
         should_cancel: Callable[[], bool] | None = None,
+        now_fn: Callable[[], float] = time.monotonic,
     ):
+        deadline = now_fn() + float(max_run_seconds) if max_run_seconds and max_run_seconds > 0 else None
         available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
             case_id=case_id,
@@ -619,6 +734,11 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
         tools = make_agent_tools(tool_context)
         tools_by_name = {tool.name: tool for tool in tools}
         model_with_tools = self.base_model.bind_tools(tools)
+
+        def check_run_bounds() -> None:
+            _raise_if_timed_out(deadline, now_fn)
+            if should_cancel and should_cancel():
+                raise AgentRunCancelled("Agent run cancelled")
 
         def build_system_prompt(state: AgentState) -> str:
             return f"""You are the OWL AI Agent, an investigative graph analyst.
@@ -678,8 +798,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
 """
 
         def agent_node(state: AgentState) -> dict[str, Any]:
-            if should_cancel and should_cancel():
-                raise AgentRunCancelled("Agent run cancelled")
+            check_run_bounds()
             response = model_with_tools.invoke(
                 [SystemMessage(content=build_system_prompt(state)), *state["messages"]]
             )
@@ -693,10 +812,10 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
             artifacts: list[dict[str, Any]] = []
             clarifications: list[dict[str, Any]] = []
             tool_results: dict[str, Any] = {}
+            consecutive_tool_errors = int(state.get("consecutive_tool_errors") or 0)
 
             for tool_call in tool_calls:
-                if should_cancel and should_cancel():
-                    raise AgentRunCancelled("Agent run cancelled")
+                check_run_bounds()
                 name = tool_call.get("name")
                 args = tool_call.get("args") or {}
                 call_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:12]}"
@@ -762,6 +881,10 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                         ),
                     )
                 )
+                if status == "error":
+                    consecutive_tool_errors += 1
+                else:
+                    consecutive_tool_errors = 0
 
             return {
                 "messages": tool_messages,
@@ -770,11 +893,13 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 "clarifications": clarifications,
                 "tool_results": tool_results,
                 "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls),
+                "consecutive_tool_errors": consecutive_tool_errors,
             }
 
         def route_after_agent(state: AgentState) -> str:
-            if should_cancel and should_cancel():
-                raise AgentRunCancelled("Agent run cancelled")
+            check_run_bounds()
+            if _tool_error_budget_exhausted(state):
+                return "finalize"
             last_message = state["messages"][-1]
             tool_calls = getattr(last_message, "tool_calls", []) or []
             if tool_calls and int(state.get("tool_iterations") or 0) < int(state.get("max_tool_calls") or max_tool_calls):
@@ -782,16 +907,44 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
             return "finalize"
 
         def finalize_node(state: AgentState) -> dict[str, Any]:
-            if should_cancel and should_cancel():
-                raise AgentRunCancelled("Agent run cancelled")
+            check_run_bounds()
             last_message = state["messages"][-1]
             tool_calls = getattr(last_message, "tool_calls", []) or []
             if state.get("clarifications"):
                 return {"final_answer": ""}
+            stop_note: str | None = None
             if _tool_budget_exhausted(state):
+                effective_max_tool_calls = int(state.get("max_tool_calls") or max_tool_calls)
+                effective_continuations_used = int(state.get("continuations_used") or 0)
+                effective_max_continuations = int(state.get("max_continuations") or max_continuations)
+                if _tool_budget_continuations_exhausted(state):
+                    stop_note = _budget_stop_note(effective_max_tool_calls, effective_max_continuations)
+                else:
+                    return {
+                        "clarifications": [
+                            _budget_continuation_clarification(
+                                effective_max_tool_calls,
+                                continuations_used=effective_continuations_used,
+                                max_continuations=effective_max_continuations,
+                            )
+                        ],
+                        "final_answer": "",
+                    }
+            elif _tool_error_budget_exhausted(state):
+                stop_note = _tool_error_stop_note(
+                    int(state.get("max_consecutive_tool_errors") or max_consecutive_tool_errors)
+                )
+            if stop_note is not None:
+                final_messages = _messages_for_finalizer(state)
+                response = self.base_model.invoke(
+                    [
+                        SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
+                        *final_messages,
+                    ]
+                )
                 return {
-                    "clarifications": [_budget_continuation_clarification(int(state.get("max_tool_calls") or max_tool_calls))],
-                    "final_answer": "",
+                    "messages": [response],
+                    "final_answer": _with_stop_note(message_content_to_text(response.content), stop_note),
                 }
             if not _used_tools(state) and isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
                 return {"final_answer": message_content_to_text(last_message.content)}
@@ -820,6 +973,10 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
             "case_id": case_id,
             "artifact_preference": artifact_preference,
             "max_tool_calls": max_tool_calls,
+            "max_consecutive_tool_errors": max_consecutive_tool_errors,
+            "consecutive_tool_errors": 0,
+            "continuations_used": continuations_used,
+            "max_continuations": max_continuations,
             "tool_iterations": 0,
             "tool_trace": [],
             "tool_results": {},

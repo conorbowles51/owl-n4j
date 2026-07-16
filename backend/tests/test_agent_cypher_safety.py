@@ -30,6 +30,14 @@ class AgentCypherSafetyTests(unittest.TestCase):
 
         self.assertTrue(query.endswith("LIMIT 50"))
 
+    def test_clamps_requested_limit_to_hard_cap(self):
+        query = validate_readonly_cypher(
+            "MATCH (n {case_id: $case_id}) RETURN n LIMIT 500",
+            limit=500,
+        )
+
+        self.assertTrue(query.endswith("LIMIT 200"))
+
     def test_replaces_parameterized_limit_with_numeric_cap(self):
         query = validate_readonly_cypher(
             "MATCH (n {case_id: $case_id}) RETURN n LIMIT $limit",

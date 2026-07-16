@@ -83,6 +83,15 @@ RERANK_TOP_CHUNKS = int(os.getenv("RERANK_TOP_CHUNKS", "15"))
 RERANK_TOP_ENTITIES = int(os.getenv("RERANK_TOP_ENTITIES", "10"))
 CONTEXT_TOKEN_BUDGET = int(os.getenv("CONTEXT_TOKEN_BUDGET", "80000"))  # Raised from 12K→80K for GPT-4 128K context. For Ollama <32K context, reduce to 15000.
 
+# Agent run bounds
+AGENT_MAX_TOOL_CALLS = int(os.getenv("AGENT_MAX_TOOL_CALLS", "28"))
+AGENT_MAX_TOOL_CALL_CONTINUATIONS = int(os.getenv("AGENT_MAX_TOOL_CALL_CONTINUATIONS", "1"))
+AGENT_MAX_CONSECUTIVE_TOOL_ERRORS = int(os.getenv("AGENT_MAX_CONSECUTIVE_TOOL_ERRORS", "3"))
+AGENT_MAX_RUN_SECONDS = int(os.getenv("AGENT_MAX_RUN_SECONDS", "300"))
+AGENT_MAX_CONCURRENT_RUNS_PER_USER = int(os.getenv("AGENT_MAX_CONCURRENT_RUNS_PER_USER", "2"))
+AGENT_MAX_CONCURRENT_RUNS_GLOBAL = int(os.getenv("AGENT_MAX_CONCURRENT_RUNS_GLOBAL", "8"))
+AGENT_DAILY_SPEND_CAP_USD = float(os.getenv("AGENT_DAILY_SPEND_CAP_USD", "20.0"))
+
 # Text chunking configuration used by backend backfill utilities.
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "8000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "1600"))
