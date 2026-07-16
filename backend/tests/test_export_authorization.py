@@ -12,6 +12,35 @@ from services.case_service import CaseAccessDenied
 
 
 class ExportAuthorizationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_filesystem_list_denies_non_member_before_directory_access(self):
+        case_id = uuid4()
+        current_user = SimpleNamespace(id=uuid4(), email="outsider@example.com")
+
+        with (
+            patch("routers.filesystem.check_case_access", side_effect=CaseAccessDenied("denied")) as check_access,
+            patch("pathlib.Path.resolve") as resolve_path,
+            patch("pathlib.Path.exists") as path_exists,
+            patch("pathlib.Path.iterdir") as iterdir,
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await filesystem.list_directory(
+                    case_id=str(case_id),
+                    path=None,
+                    current_user=current_user,
+                    db=object(),
+                )
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        check_access.assert_called_once_with(
+            ANY,
+            case_id,
+            current_user,
+            required_permission=("case", "view"),
+        )
+        resolve_path.assert_not_called()
+        path_exists.assert_not_called()
+        iterdir.assert_not_called()
+
     async def test_filesystem_read_denies_non_member_before_path_access(self):
         case_id = uuid4()
         current_user = SimpleNamespace(id=uuid4(), email="outsider@example.com")
@@ -250,6 +279,113 @@ class ExportAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         rendered_transactions = render_export.call_args.args[0]
         self.assertEqual([t["name"] for t in rendered_transactions], ["Included transfer"])
         self.assertEqual(render_export.call_args.args[1], "DB Case Name")
+
+    async def test_evidence_by_filename_requires_case_view_before_lookup(self):
+        case_id = uuid4()
+        current_user = SimpleNamespace(id=uuid4(), email="outsider@example.com")
+
+        with (
+            patch("services.case_service.check_case_access", side_effect=CaseAccessDenied("denied")) as check_access,
+            patch.object(evidence.EvidenceDBStorage, "find_by_filename") as find_by_filename,
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await evidence.get_evidence_by_filename(
+                    "report.pdf",
+                    case_id=str(case_id),
+                    current_user=current_user,
+                    db=object(),
+                )
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        check_access.assert_called_once_with(
+            ANY,
+            case_id,
+            current_user,
+            required_permission=("case", "view"),
+        )
+        find_by_filename.assert_not_called()
+
+    async def test_evidence_by_filename_scopes_lookup_to_authorized_case(self):
+        case_id = uuid4()
+        record = SimpleNamespace(
+            id=uuid4(),
+            case_id=case_id,
+            original_filename="report.pdf",
+            stored_path="/tmp/report.pdf",
+            summary="summary",
+        )
+        current_user = SimpleNamespace(id=uuid4(), email="investigator@example.com")
+
+        with (
+            patch("services.case_service.check_case_access", return_value=(object(), None)),
+            patch.object(evidence.EvidenceDBStorage, "find_by_filename", return_value=record) as find_by_filename,
+        ):
+            response = await evidence.get_evidence_by_filename(
+                "report.pdf",
+                case_id=str(case_id),
+                current_user=current_user,
+                db=object(),
+            )
+
+        self.assertTrue(response["found"])
+        self.assertEqual(find_by_filename.call_args.kwargs["case_id"], case_id)
+
+    async def test_document_summary_requires_case_view_before_lookup(self):
+        case_id = uuid4()
+        current_user = SimpleNamespace(id=uuid4(), email="outsider@example.com")
+
+        with (
+            patch("services.case_service.check_case_access", side_effect=CaseAccessDenied("denied")),
+            patch.object(evidence.EvidenceDBStorage, "find_by_filename") as find_by_filename,
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await evidence.get_document_summary(
+                    "report.pdf",
+                    case_id=str(case_id),
+                    current_user=current_user,
+                    db=object(),
+                )
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        find_by_filename.assert_not_called()
+
+    async def test_folder_summary_requires_case_view_before_neo4j_lookup(self):
+        case_id = uuid4()
+        current_user = SimpleNamespace(id=uuid4(), email="outsider@example.com")
+
+        with (
+            patch("services.case_service.check_case_access", side_effect=CaseAccessDenied("denied")),
+            patch.object(evidence.neo4j_service, "get_folder_summary") as get_folder_summary,
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await evidence.get_folder_summary(
+                    "00000128",
+                    case_id=str(case_id),
+                    current_user=current_user,
+                    db=object(),
+                )
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        get_folder_summary.assert_not_called()
+
+    async def test_transcription_translation_requires_case_view_before_neo4j_lookup(self):
+        case_id = uuid4()
+        current_user = SimpleNamespace(id=uuid4(), email="outsider@example.com")
+
+        with (
+            patch("services.case_service.check_case_access", side_effect=CaseAccessDenied("denied")),
+            patch.object(evidence.neo4j_service, "get_transcription_translation") as get_transcription_translation,
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await evidence.get_transcription_translation(
+                    case_id=str(case_id),
+                    folder_name="00000128",
+                    current_user=current_user,
+                    db=object(),
+                )
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        get_transcription_translation.assert_not_called()
 
 
 if __name__ == "__main__":

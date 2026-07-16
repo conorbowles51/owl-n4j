@@ -36,6 +36,11 @@ class _FakeRouteSession:
         return _ScalarResult(self.job)
 
 
+class _NoQuerySession:
+    async def execute(self, statement, params=None):
+        pytest.fail("database query happened before case authorization")
+
+
 class _FakeAuthSession:
     def __init__(self, *, user, case_exists=True, membership=None):
         self.user = user
@@ -59,6 +64,30 @@ def _token(email="user@example.test"):
         settings.auth_secret_key,
         algorithm=settings.auth_algorithm,
     )
+
+
+@pytest.mark.asyncio
+async def test_list_files_requires_case_view_before_job_query(monkeypatch):
+    case_id = str(uuid4())
+
+    async def current_user(db, token):
+        return {"id": uuid4(), "global_role": "user", "is_active": True}
+
+    async def deny_case_view(db, authorized_case_id, user):
+        assert authorized_case_id == case_id
+        raise HTTPException(status_code=403, detail="denied")
+
+    monkeypatch.setattr(files, "_get_current_user_row", current_user)
+    monkeypatch.setattr(files, "_require_case_view", deny_case_view)
+
+    with pytest.raises(HTTPException) as exc:
+        await files.list_files(
+            case_id=case_id,
+            token="token",
+            db=_NoQuerySession(),
+        )
+
+    assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio

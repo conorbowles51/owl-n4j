@@ -2322,8 +2322,8 @@ async def list_wiretap_processed(
 @router.get("/by-filename/{filename}")
 async def get_evidence_by_filename(
     filename: str,
-    case_id: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    case_id: str = Query(..., description="Case ID"),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -2333,10 +2333,14 @@ async def get_evidence_by_filename(
     stored in entity citations.
     """
     from services.evidence_db_storage import EvidenceDBStorage
-    from uuid import UUID
 
     try:
-        case_uuid = UUID(case_id) if case_id else None
+        case_uuid = _verify_evidence_case_access(
+            case_id,
+            current_user,
+            db,
+            required_permission=("case", "view"),
+        )
         record = EvidenceDBStorage.find_by_filename(db, filename, case_id=case_uuid)
         if record:
             return {
@@ -2349,6 +2353,8 @@ async def get_evidence_by_filename(
             }
 
         return {"found": False, "message": f"No evidence file found with name: {filename}"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2357,7 +2363,7 @@ async def get_evidence_by_filename(
 async def get_document_summary(
     filename: str,
     case_id: str = Query(..., description="Case ID"),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -2366,18 +2372,24 @@ async def get_document_summary(
     Returns the summary stored on the EvidenceFile record in Postgres.
     """
     from services.evidence_db_storage import EvidenceDBStorage
-    from uuid import UUID
 
     try:
-        case_uuid = UUID(case_id)
+        case_uuid = _verify_evidence_case_access(
+            case_id,
+            current_user,
+            db,
+            required_permission=("case", "view"),
+        )
         record = EvidenceDBStorage.find_by_filename(db, filename, case_id=case_uuid)
         summary = record.summary if record else None
         return {
             "filename": filename,
-            "case_id": case_id,
+            "case_id": str(case_uuid),
             "summary": summary,
             "has_summary": summary is not None,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2386,7 +2398,8 @@ async def get_document_summary(
 async def get_folder_summary(
     folder_name: str,
     case_id: str = Query(..., description="Case ID"),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get the AI-generated summary for a processed folder by folder name.
@@ -2399,33 +2412,50 @@ async def get_folder_summary(
         Folder summary if found
     """
     try:
-        summary = neo4j_service.get_folder_summary(folder_name, case_id)
+        case_uuid = _verify_evidence_case_access(
+            case_id,
+            current_user,
+            db,
+            required_permission=("case", "view"),
+        )
+        summary = neo4j_service.get_folder_summary(folder_name, str(case_uuid))
         return {
             "folder_name": folder_name,
-            "case_id": case_id,
+            "case_id": str(case_uuid),
             "summary": summary,
             "has_summary": summary is not None,
         }
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/transcription-translation")
 async def get_transcription_translation(
     case_id: str = Query(..., description="Case ID"),
     folder_name: str = Query(..., description="Wiretap folder name (e.g. 00000128)"),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get wiretap Spanish transcription and English translation for a folder, when available.
     """
     try:
-        result = neo4j_service.get_transcription_translation(folder_name, case_id)
+        case_uuid = _verify_evidence_case_access(
+            case_id,
+            current_user,
+            db,
+            required_permission=("case", "view"),
+        )
+        result = neo4j_service.get_transcription_translation(folder_name, str(case_uuid))
         return {
             "folder_name": folder_name,
-            "case_id": case_id,
+            "case_id": str(case_uuid),
             **result,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

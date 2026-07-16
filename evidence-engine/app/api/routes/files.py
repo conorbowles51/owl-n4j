@@ -145,9 +145,13 @@ async def _require_case_view(
 @router.get("/cases/{case_id}/files", response_model=list[JobResponse])
 async def list_files(
     case_id: str,
+    token: str = Depends(_extract_token),
     db: AsyncSession = Depends(get_db),
 ):
     """List all uploaded files (jobs) for a case, ordered by creation date descending."""
+    current_user = await _get_current_user_row(db, token)
+    await _require_case_view(db, case_id, current_user)
+
     result = await db.execute(
         select(Job)
         .where(Job.case_id == case_id)

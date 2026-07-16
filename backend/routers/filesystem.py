@@ -9,14 +9,13 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from config import EVIDENCE_DATA_ROOT
 from postgres.models.user import User
 from postgres.session import get_db
-from routers.auth import get_current_user
 from routers.users import get_current_db_user
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 
@@ -69,9 +68,10 @@ class FileSystemListResponse(BaseModel):
 
 @router.get("/list", response_model=FileSystemListResponse)
 async def list_directory(
-    case_id: Optional[str] = None,
+    case_id: str = Query(..., description="Case ID"),
     path: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     List files and directories in a given path for a specific case.
@@ -85,11 +85,10 @@ async def list_directory(
         List of files and directories in the specified path
     """
     try:
-        if not case_id:
-            raise HTTPException(status_code=400, detail="case_id is required")
-        
+        authorized_case_id = _require_case_view(db, case_id, current_user)
+
         # Case-specific root: {EVIDENCE_DATA_ROOT}/{case_id}
-        case_root = FILESYSTEM_ROOT / case_id
+        case_root = FILESYSTEM_ROOT / str(authorized_case_id)
         
         # Normalize path
         path_normalized = path.strip().strip('/') if path and path.strip() else ''
