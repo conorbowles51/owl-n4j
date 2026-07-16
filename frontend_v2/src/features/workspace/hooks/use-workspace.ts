@@ -258,6 +258,17 @@ export function useDeleteFinding(caseId: string) {
   })
 }
 
+export function useReorderFindings(caseId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (findingIds: string[]) =>
+      workspaceAPI.reorderFindings(caseId, findingIds),
+    onSuccess: (findings) =>
+      qc.setQueryData(keys.findings(caseId), findings),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.findings(caseId) }),
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Case Context
 // ---------------------------------------------------------------------------

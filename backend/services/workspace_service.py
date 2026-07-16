@@ -13,12 +13,15 @@ Storage: PostgreSQL via JSONB columns (replaced JSON-on-disk in March 2026).
 """
 
 import uuid
-from typing import Dict, List, Optional, Any
-from datetime import datetime
+from contextlib import contextmanager
+from typing import Dict, List, Optional, Any, Iterator, Sequence
+from datetime import datetime, timezone
 
 from sqlalchemy import select, delete
+from sqlalchemy.orm import Session
 
 from postgres.session import get_background_session
+from postgres.models.evidence import EvidenceFile
 from postgres.models.workspace import (
     WorkspaceContext,
     WorkspaceWitness,
@@ -29,10 +32,21 @@ from postgres.models.workspace import (
     WorkspacePinnedItem,
     WorkspaceDeadlineConfig,
 )
+from services.neo4j_service import neo4j_service
+from services.system_log_service import LogType, LogOrigin, system_log_service
 
 
 class WorkspaceService:
     """Service for managing workspace data backed by PostgreSQL."""
+
+    @contextmanager
+    def _session_scope(self, db: Session | None = None) -> Iterator[tuple[Session, bool]]:
+        if db is not None:
+            yield db, False
+            return
+
+        with get_background_session() as session:
+            yield session, True
 
     def reload(self):
         """No-op — data is always fresh from the database."""
@@ -445,68 +459,373 @@ class WorkspaceService:
     # Findings
     # ------------------------------------------------------------------ #
 
-    def get_findings(self, case_id: str) -> List[Dict]:
-        with get_background_session() as db:
-            rows = db.execute(
-                select(WorkspaceFinding).where(WorkspaceFinding.case_id == case_id)
-            ).scalars().all()
-            findings = [dict(r.data) for r in rows]
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc)
 
-        priority_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
-        return sorted(
-            findings,
-            key=lambda finding: (
-                priority_order.get((finding.get("priority") or "MEDIUM").upper(), 1),
-                -self._iso_to_ts(finding.get("updated_at")),
-            ),
+    @staticmethod
+    def _clean_string_list(values: Sequence[Any] | None) -> List[str]:
+        if not values:
+            return []
+        cleaned: List[str] = []
+        seen: set[str] = set()
+        for value in values:
+            item = str(value or "").strip()
+            if not item or item in seen:
+                continue
+            cleaned.append(item)
+            seen.add(item)
+        return cleaned
+
+    @staticmethod
+    def _normalise_case_id(case_id: str | uuid.UUID) -> uuid.UUID:
+        return case_id if isinstance(case_id, uuid.UUID) else uuid.UUID(str(case_id))
+
+    def _active_finding_rows(self, db: Session, case_id: uuid.UUID) -> List[WorkspaceFinding]:
+        return list(
+            db.scalars(
+                select(WorkspaceFinding)
+                .where(
+                    WorkspaceFinding.case_id == case_id,
+                    WorkspaceFinding.deleted_at.is_(None),
+                )
+                .order_by(
+                    WorkspaceFinding.position.asc(),
+                    WorkspaceFinding.created_at.asc(),
+                    WorkspaceFinding.finding_id.asc(),
+                )
+            ).all()
         )
 
-    def get_finding(self, case_id: str, finding_id: str) -> Optional[Dict]:
-        with get_background_session() as db:
-            row = db.execute(
-                select(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
-                    WorkspaceFinding.finding_id == finding_id,
-                )
-            ).scalar_one_or_none()
-            return dict(row.data) if row else None
+    def _get_active_finding_row(
+        self,
+        db: Session,
+        case_id: uuid.UUID,
+        finding_id: str,
+    ) -> WorkspaceFinding | None:
+        return db.scalars(
+            select(WorkspaceFinding).where(
+                WorkspaceFinding.case_id == case_id,
+                WorkspaceFinding.finding_id == finding_id,
+                WorkspaceFinding.deleted_at.is_(None),
+            )
+        ).first()
 
-    def save_finding(self, case_id: str, finding: Dict) -> str:
-        finding_id = finding.get("finding_id") or f"finding_{uuid.uuid4().hex[:12]}"
-        finding["finding_id"] = finding_id
-        finding["case_id"] = case_id
-        finding["updated_at"] = datetime.now().isoformat()
-        if "created_at" not in finding:
-            finding["created_at"] = datetime.now().isoformat()
+    def _renumber_active_findings(self, db: Session, case_id: uuid.UUID) -> None:
+        for position, row in enumerate(self._active_finding_rows(db, case_id)):
+            row.position = position
 
-        with get_background_session() as db:
-            row = db.execute(
-                select(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
-                    WorkspaceFinding.finding_id == finding_id,
+    def _validate_evidence_ids(
+        self,
+        db: Session,
+        *,
+        case_id: uuid.UUID,
+        values: Sequence[Any] | None,
+        label: str,
+    ) -> List[str]:
+        ids = self._clean_string_list(values)
+        if not ids:
+            return []
+
+        uuids: List[uuid.UUID] = []
+        for item_id in ids:
+            try:
+                uuids.append(uuid.UUID(item_id))
+            except ValueError as exc:
+                raise ValueError(f"Linked {label} {item_id} not found in this case") from exc
+
+        rows = db.scalars(
+            select(EvidenceFile).where(
+                EvidenceFile.case_id == case_id,
+                EvidenceFile.id.in_(uuids),
+            )
+        ).all()
+        found = {str(row.id) for row in rows}
+        missing = [str(item_id) for item_id in uuids if str(item_id) not in found]
+        if missing:
+            raise ValueError(f"Linked {label} {missing[0]} not found in this case")
+        return [str(item_id) for item_id in uuids]
+
+    def _validate_entity_keys(
+        self,
+        *,
+        case_id: uuid.UUID,
+        values: Sequence[Any] | None,
+    ) -> List[str]:
+        keys = self._clean_string_list(values)
+        for key in keys:
+            node = neo4j_service.get_node_details(key, case_id=str(case_id))
+            if not node:
+                raise ValueError(f"Linked entity {key} not found in this case")
+        return keys
+
+    def _linked_evidence_by_id(
+        self,
+        db: Session,
+        *,
+        case_id: uuid.UUID,
+        ids: Sequence[str],
+    ) -> Dict[str, Dict[str, Any]]:
+        valid_ids: List[uuid.UUID] = []
+        for item_id in self._clean_string_list(ids):
+            try:
+                valid_ids.append(uuid.UUID(item_id))
+            except ValueError:
+                continue
+        if not valid_ids:
+            return {}
+
+        rows = db.scalars(
+            select(EvidenceFile).where(
+                EvidenceFile.case_id == case_id,
+                EvidenceFile.id.in_(valid_ids),
+            )
+        ).all()
+        return {
+            str(row.id): {
+                "id": str(row.id),
+                "case_id": str(row.case_id),
+                "original_filename": row.original_filename,
+                "status": row.status,
+                "summary": row.summary,
+                "processed_at": row.processed_at.isoformat() if row.processed_at else None,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "url": f"/api/evidence/{row.id}/file",
+            }
+            for row in rows
+        }
+
+    def _finding_to_dict(
+        self,
+        row: WorkspaceFinding,
+        *,
+        evidence_by_id: Dict[str, Dict[str, Any]] | None = None,
+    ) -> Dict[str, Any]:
+        data = dict(row.data or {})
+        linked_evidence_ids = self._clean_string_list(data.get("linked_evidence_ids"))
+        linked_document_ids = self._clean_string_list(data.get("linked_document_ids"))
+        linked_entity_keys = self._clean_string_list(data.get("linked_entity_keys"))
+        evidence_by_id = evidence_by_id or {}
+
+        data.update(
+            {
+                "finding_id": row.finding_id,
+                "case_id": str(row.case_id),
+                "position": row.position,
+                "linked_evidence_ids": linked_evidence_ids,
+                "linked_document_ids": linked_document_ids,
+                "linked_entity_keys": linked_entity_keys,
+                "linked_evidence": [
+                    evidence_by_id[item_id]
+                    for item_id in linked_evidence_ids
+                    if item_id in evidence_by_id
+                ],
+                "linked_documents": [
+                    evidence_by_id[item_id]
+                    for item_id in linked_document_ids
+                    if item_id in evidence_by_id
+                ],
+            }
+        )
+        if row.deleted_at:
+            data["deleted_at"] = row.deleted_at.isoformat()
+            data["deleted_by"] = row.deleted_by
+        return data
+
+    def get_findings(self, case_id: str, db: Session | None = None) -> List[Dict]:
+        case_uuid = self._normalise_case_id(case_id)
+        with self._session_scope(db) as (session, _):
+            rows = self._active_finding_rows(session, case_uuid)
+            linked_ids: List[str] = []
+            for row in rows:
+                data = dict(row.data or {})
+                linked_ids.extend(self._clean_string_list(data.get("linked_evidence_ids")))
+                linked_ids.extend(self._clean_string_list(data.get("linked_document_ids")))
+            evidence_by_id = self._linked_evidence_by_id(session, case_id=case_uuid, ids=linked_ids)
+            return [self._finding_to_dict(row, evidence_by_id=evidence_by_id) for row in rows]
+
+    def get_finding(
+        self,
+        case_id: str,
+        finding_id: str,
+        db: Session | None = None,
+    ) -> Optional[Dict]:
+        case_uuid = self._normalise_case_id(case_id)
+        with self._session_scope(db) as (session, _):
+            row = self._get_active_finding_row(session, case_uuid, finding_id)
+            if row is None:
+                return None
+            data = dict(row.data or {})
+            linked_ids = [
+                *self._clean_string_list(data.get("linked_evidence_ids")),
+                *self._clean_string_list(data.get("linked_document_ids")),
+            ]
+            evidence_by_id = self._linked_evidence_by_id(session, case_id=case_uuid, ids=linked_ids)
+            return self._finding_to_dict(row, evidence_by_id=evidence_by_id)
+
+    def save_finding(
+        self,
+        case_id: str,
+        finding: Dict,
+        *,
+        db: Session | None = None,
+        user_email: str | None = None,
+    ) -> str:
+        case_uuid = self._normalise_case_id(case_id)
+        finding_data = dict(finding or {})
+        for derived_field in ("linked_evidence", "linked_documents", "position", "deleted_at", "deleted_by"):
+            finding_data.pop(derived_field, None)
+        finding_id = str(finding_data.get("finding_id") or f"finding_{uuid.uuid4().hex[:12]}")
+        now = self._now().isoformat()
+
+        with self._session_scope(db) as (session, owns_session):
+            try:
+                row = self._get_active_finding_row(session, case_uuid, finding_id)
+                is_create = row is None
+                existing_data = dict(row.data or {}) if row else {}
+                linked_evidence_ids = self._validate_evidence_ids(
+                    session,
+                    case_id=case_uuid,
+                    values=finding_data.get("linked_evidence_ids"),
+                    label="evidence",
                 )
-            ).scalar_one_or_none()
-            if row:
-                row.data = finding
-            else:
-                db.add(
-                    WorkspaceFinding(
-                        case_id=case_id,
+                linked_document_ids = self._validate_evidence_ids(
+                    session,
+                    case_id=case_uuid,
+                    values=finding_data.get("linked_document_ids"),
+                    label="document",
+                )
+                linked_entity_keys = self._validate_entity_keys(
+                    case_id=case_uuid,
+                    values=finding_data.get("linked_entity_keys"),
+                )
+
+                finding_data["finding_id"] = finding_id
+                finding_data["case_id"] = str(case_uuid)
+                finding_data["created_at"] = (
+                    finding_data.get("created_at")
+                    or existing_data.get("created_at")
+                    or now
+                )
+                finding_data["updated_at"] = now
+                finding_data["linked_evidence_ids"] = linked_evidence_ids
+                finding_data["linked_document_ids"] = linked_document_ids
+                finding_data["linked_entity_keys"] = linked_entity_keys
+
+                if row:
+                    row.data = finding_data
+                else:
+                    row = WorkspaceFinding(
+                        case_id=case_uuid,
                         finding_id=finding_id,
-                        data=finding,
+                        position=len(self._active_finding_rows(session, case_uuid)),
+                        data=finding_data,
                     )
+                    session.add(row)
+                    session.flush()
+
+                self._renumber_active_findings(session, case_uuid)
+                system_log_service.log(
+                    log_type=LogType.CASE_OPERATION,
+                    origin=LogOrigin.FRONTEND,
+                    action="Create Finding" if is_create else "Update Finding",
+                    details={
+                        "case_id": str(case_uuid),
+                        "finding_id": finding_id,
+                        "title": finding_data.get("title"),
+                    },
+                    user=user_email,
+                    success=True,
+                    db=session,
                 )
+                if not owns_session:
+                    session.commit()
+            except Exception:
+                if not owns_session:
+                    session.rollback()
+                raise
         return finding_id
 
-    def delete_finding(self, case_id: str, finding_id: str) -> bool:
-        with get_background_session() as db:
-            result = db.execute(
-                delete(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
-                    WorkspaceFinding.finding_id == finding_id,
+    def delete_finding(
+        self,
+        case_id: str,
+        finding_id: str,
+        *,
+        db: Session | None = None,
+        user_email: str | None = None,
+    ) -> bool:
+        case_uuid = self._normalise_case_id(case_id)
+        with self._session_scope(db) as (session, owns_session):
+            try:
+                row = self._get_active_finding_row(session, case_uuid, finding_id)
+                if row is None:
+                    return False
+
+                row.deleted_at = self._now()
+                row.deleted_by = user_email
+                session.flush()
+                self._renumber_active_findings(session, case_uuid)
+                system_log_service.log(
+                    log_type=LogType.CASE_OPERATION,
+                    origin=LogOrigin.FRONTEND,
+                    action="Recycle Finding",
+                    details={"case_id": str(case_uuid), "finding_id": finding_id},
+                    user=user_email,
+                    success=True,
+                    db=session,
                 )
-            )
-            return result.rowcount > 0
+                if not owns_session:
+                    session.commit()
+                return True
+            except Exception:
+                if not owns_session:
+                    session.rollback()
+                raise
+
+    def reorder_findings(
+        self,
+        case_id: str,
+        ordered_finding_ids: Sequence[str],
+        *,
+        db: Session | None = None,
+        user_email: str | None = None,
+    ) -> List[Dict]:
+        case_uuid = self._normalise_case_id(case_id)
+        ordered_ids = self._clean_string_list(ordered_finding_ids)
+        with self._session_scope(db) as (session, owns_session):
+            try:
+                rows = self._active_finding_rows(session, case_uuid)
+                existing_ids = [row.finding_id for row in rows]
+                if (
+                    len(ordered_ids) != len(existing_ids)
+                    or set(ordered_ids) != set(existing_ids)
+                ):
+                    raise ValueError("Finding order must include every active finding exactly once")
+
+                row_by_id = {row.finding_id: row for row in rows}
+                for position, finding_id in enumerate(ordered_ids):
+                    row_by_id[finding_id].position = position
+
+                session.flush()
+                system_log_service.log(
+                    log_type=LogType.CASE_OPERATION,
+                    origin=LogOrigin.FRONTEND,
+                    action="Reorder Findings",
+                    details={
+                        "case_id": str(case_uuid),
+                        "finding_ids": ordered_ids,
+                    },
+                    user=user_email,
+                    success=True,
+                    db=session,
+                )
+                if not owns_session:
+                    session.commit()
+                return self.get_findings(str(case_uuid), db=session)
+            except Exception:
+                if not owns_session:
+                    session.rollback()
+                raise
 
     # ------------------------------------------------------------------ #
     # Investigation Timeline (read-only aggregation)

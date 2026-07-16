@@ -104,6 +104,19 @@ class FindingCreate(BaseModel):
     linked_entity_keys: Optional[List[str]] = None
 
 
+class FindingUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    priority: Optional[str] = None
+    linked_evidence_ids: Optional[List[str]] = None
+    linked_document_ids: Optional[List[str]] = None
+    linked_entity_keys: Optional[List[str]] = None
+
+
+class FindingReorder(BaseModel):
+    finding_ids: List[str]
+
+
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
@@ -1036,7 +1049,7 @@ async def get_findings(
         except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
 
-        findings = workspace_service.get_findings(case_id)
+        findings = workspace_service.get_findings(case_id, db=db)
         return {"findings": findings}
     except HTTPException:
         raise
@@ -1059,20 +1072,47 @@ async def create_finding(
             raise HTTPException(status_code=404, detail="Case not found")
 
         finding_data = finding.dict()
-        finding_id = workspace_service.save_finding(case_id, finding_data)
-
-        system_log_service.log(
-            log_type=LogType.CASE_OPERATION,
-            origin=LogOrigin.FRONTEND,
-            action="Create Finding",
-            details={"case_id": case_id, "finding_id": finding_id, "title": finding.title},
-            user=current_user.email,
-            success=True,
+        finding_id = workspace_service.save_finding(
+            case_id,
+            finding_data,
+            db=db,
+            user_email=current_user.email,
         )
-
-        return {"finding_id": finding_id, **finding_data}
+        created = workspace_service.get_finding(case_id, finding_id, db=db)
+        return created or {"finding_id": finding_id, **finding_data}
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{case_id}/findings/reorder")
+async def reorder_findings(
+    case_id: str,
+    payload: FindingReorder,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Reorder active findings for a case."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        findings = workspace_service.reorder_findings(
+            case_id,
+            payload.finding_ids,
+            db=db,
+            user_email=current_user.email,
+        )
+        return {"findings": findings}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1081,7 +1121,7 @@ async def create_finding(
 async def update_finding(
     case_id: str,
     finding_id: str,
-    finding: FindingCreate,
+    finding: FindingUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -1092,15 +1132,23 @@ async def update_finding(
         except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
 
-        existing = workspace_service.get_finding(case_id, finding_id)
+        existing = workspace_service.get_finding(case_id, finding_id, db=db)
         if not existing:
             raise HTTPException(status_code=404, detail="Finding not found")
 
         finding_data = {**existing, **finding.dict(exclude_unset=True)}
-        workspace_service.save_finding(case_id, finding_data)
-        return finding_data
+        workspace_service.save_finding(
+            case_id,
+            finding_data,
+            db=db,
+            user_email=current_user.email,
+        )
+        updated = workspace_service.get_finding(case_id, finding_id, db=db)
+        return updated or finding_data
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1119,12 +1167,19 @@ async def delete_finding(
         except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
 
-        if not workspace_service.delete_finding(case_id, finding_id):
+        if not workspace_service.delete_finding(
+            case_id,
+            finding_id,
+            db=db,
+            user_email=current_user.email,
+        ):
             raise HTTPException(status_code=404, detail="Finding not found")
 
         return {"success": True}
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

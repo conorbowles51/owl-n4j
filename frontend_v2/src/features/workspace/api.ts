@@ -61,15 +61,29 @@ export interface InvestigativeNote {
   [key: string]: unknown
 }
 
+export interface LinkedEvidenceReference {
+  id: string
+  case_id?: string
+  original_filename: string
+  status?: string
+  summary?: string | null
+  processed_at?: string | null
+  created_at?: string | null
+  url?: string
+}
+
 export interface Finding {
   id: string
   finding_id?: string
   title: string
   content?: string
   priority?: "HIGH" | "MEDIUM" | "LOW" | string
+  position?: number
   linked_evidence_ids?: string[]
   linked_document_ids?: string[]
   linked_entity_keys?: string[]
+  linked_evidence?: LinkedEvidenceReference[]
+  linked_documents?: LinkedEvidenceReference[]
   created_at?: string
   updated_at?: string
   [key: string]: unknown
@@ -288,6 +302,15 @@ export const workspaceAPI = {
     fetchAPI<void>(`/api/workspace/${caseId}/findings/${findingId}`, {
       method: "DELETE",
     }),
+
+  reorderFindings: (caseId: string, findingIds: string[]) =>
+    fetchAPI<{ findings: Finding[] }>(
+      `/api/workspace/${caseId}/findings/reorder`,
+      {
+        method: "PUT",
+        body: { finding_ids: findingIds },
+      },
+    ).then((r) => (r.findings ?? []).map((f) => withId(f, "finding_id"))),
 
   // -- Theories (wrapped: {"theories": [...]}) ------------------------------
   getTheories: (caseId: string) =>

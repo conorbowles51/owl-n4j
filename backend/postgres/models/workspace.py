@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, JSON, String, Text, Integer
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -109,6 +110,9 @@ class WorkspaceFinding(Base, TimestampMixin):
     """Workspace finding / investigative conclusion."""
 
     __tablename__ = "workspace_findings"
+    __table_args__ = (
+        Index("ix_workspace_findings_case_active_position", "case_id", "deleted_at", "position"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -120,6 +124,9 @@ class WorkspaceFinding(Base, TimestampMixin):
         index=True,
     )
     finding_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 
