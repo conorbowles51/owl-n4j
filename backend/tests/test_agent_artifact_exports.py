@@ -2,7 +2,13 @@ import csv
 import io
 import unittest
 import zipfile
+from types import SimpleNamespace
+from unittest.mock import patch
+from uuid import uuid4
 
+from fastapi import HTTPException
+from routers import agent
+from services.case_service import CaseAccessDenied
 from services.agent.exports import render_artifact_csv, render_report_docx, render_report_pdf
 
 
@@ -176,6 +182,45 @@ class AgentArtifactExportTests(unittest.TestCase):
 
         self.assertEqual(exported.media_type, "application/pdf")
         self.assertTrue(exported.content.startswith(b"%PDF"))
+
+
+class AgentArtifactRouterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_export_agent_artifact_sets_download_security_headers(self):
+        exported = SimpleNamespace(
+            content=b"a,b\n1,2\n",
+            filename="Evidence Résumé.csv",
+            media_type="text/csv; charset=utf-8",
+        )
+
+        with patch.object(agent.agent_service, "export_artifact", return_value=exported) as export_artifact:
+            response = await agent.export_agent_artifact(
+                artifact_id=uuid4(),
+                format="csv",
+                db=object(),
+                current_user=object(),
+            )
+
+        export_artifact.assert_called_once()
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(response.headers["x-agent-export-format"], "csv")
+        self.assertIn("filename*=UTF-8''Evidence%20R%C3%A9sum%C3%A9.csv", response.headers["content-disposition"])
+
+    async def test_export_agent_artifact_permission_denied_does_not_build_response(self):
+        with patch.object(
+            agent.agent_service,
+            "export_artifact",
+            side_effect=CaseAccessDenied("denied"),
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                await agent.export_agent_artifact(
+                    artifact_id=uuid4(),
+                    format="csv",
+                    db=object(),
+                    current_user=object(),
+                )
+
+        self.assertEqual(caught.exception.status_code, 403)
 
 
 if __name__ == "__main__":

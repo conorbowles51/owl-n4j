@@ -1,7 +1,6 @@
 """Timeline Router - endpoints for timeline visualization data."""
 
 from typing import Any, Literal, Optional
-from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -23,6 +22,7 @@ from services.timeline_view_service import (
     list_timeline_views,
     update_timeline_view,
 )
+from utils.http_export import EXPORT_SECURITY_HEADERS, content_disposition
 
 router = APIRouter(prefix="/api/timeline", tags=["timeline"])
 
@@ -288,15 +288,13 @@ def export_case_timeline(
             fields=request.fields,
             footer_label=request.footer_label,
         )
-        ascii_filename = exported.filename.encode("ascii", "ignore").decode("ascii") or "timeline-export"
-        disposition = (
-            f'attachment; filename="{ascii_filename}"; '
-            f"filename*=UTF-8''{quote(exported.filename)}"
-        )
         return Response(
             content=exported.content,
             media_type=exported.media_type,
-            headers={"Content-Disposition": disposition},
+            headers={
+                "Content-Disposition": content_disposition(exported.filename),
+                **EXPORT_SECURITY_HEADERS,
+            },
         )
     except Exception as exc:
         _handle_error(exc)

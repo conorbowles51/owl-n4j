@@ -43,6 +43,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from config import BASE_DIR, EVIDENCE_DATA_ROOT, USE_EVIDENCE_ENGINE
 from datetime import datetime
+from utils.http_export import EXPORT_SECURITY_HEADERS, content_disposition
 
 logger = logging.getLogger(__name__)
 EVIDENCE_ROOT_DIR = EVIDENCE_DATA_ROOT
@@ -1832,7 +1833,10 @@ async def get_evidence_file(
             path=file_path,
             filename=filename,
             media_type=content_type,
-            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+            headers={
+                "Content-Disposition": content_disposition(filename, disposition="inline"),
+                **EXPORT_SECURITY_HEADERS,
+            },
         )
     except HTTPException:
         raise

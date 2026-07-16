@@ -17,6 +17,7 @@ from routers.users import get_current_db_user
 from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
+from utils.http_export import EXPORT_SECURITY_HEADERS, content_disposition
 
 router = APIRouter(prefix="/api/financial", tags=["financial"])
 
@@ -629,6 +630,8 @@ async def export_financial_pdf(
     from_entities: Optional[str] = Query(None, description="Comma-separated sender entity keys"),
     to_entities: Optional[str] = Query(None, description="Comma-separated beneficiary entity keys"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """Export filtered financial transactions as a PDF report.
 
@@ -637,6 +640,13 @@ async def export_financial_pdf(
     Includes transaction names, AI summaries, and entity notes appendix.
     """
     try:
+        case_uuid = UUID(case_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid case_id") from exc
+
+    try:
+        check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+
         result = neo4j_service.get_financial_transactions(case_id=case_id, mode=mode)
         transactions = result.get("transactions", []) if isinstance(result, dict) else result
         filters = []
@@ -732,7 +742,16 @@ async def export_financial_pdf(
         return Response(
             content=rendered["content"],
             media_type=rendered["media_type"],
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={
+                "Content-Disposition": content_disposition(filename),
+                **EXPORT_SECURITY_HEADERS,
+            },
         )
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

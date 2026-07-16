@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db
 from app.models.job import Job
 from app.schemas.job import JobResponse
+from app.utils.http_export import EXPORT_SECURITY_HEADERS, content_disposition
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,8 @@ async def serve_file(
         filename=job.file_name,
         media_type=media_type,
         headers={
-            "Content-Disposition": f'inline; filename="{job.file_name}"',
+            "Content-Disposition": content_disposition(job.file_name, disposition="inline"),
+            **EXPORT_SECURITY_HEADERS,
         },
     )
 

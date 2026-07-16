@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from typing import Literal
-from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,6 +21,7 @@ from services.agent.schemas import (
 )
 from services.agent.service import agent_service
 from services.case_service import CaseAccessDenied, CaseNotFound
+from utils.http_export import EXPORT_SECURITY_HEADERS, content_disposition
 
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -180,17 +180,13 @@ async def export_agent_artifact(
             artifact_id=artifact_id,
             export_format=format,
         )
-        ascii_filename = exported.filename.encode("ascii", "ignore").decode("ascii") or "agent-artifact.csv"
-        disposition = (
-            f'attachment; filename="{ascii_filename}"; '
-            f"filename*=UTF-8''{quote(exported.filename)}"
-        )
         return Response(
             content=exported.content,
             media_type=exported.media_type,
             headers={
-                "Content-Disposition": disposition,
+                "Content-Disposition": content_disposition(exported.filename),
                 "X-Agent-Export-Format": format,
+                **EXPORT_SECURITY_HEADERS,
             },
         )
     except ValueError as exc:
