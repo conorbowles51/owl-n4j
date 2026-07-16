@@ -392,29 +392,38 @@ class WorkspaceService:
     # Investigative Notes
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _case_uuid(case_id) -> uuid.UUID:
+        # UUID(as_uuid=True) columns reject str binds on non-native-UUID
+        # backends (e.g. sqlite in tests), so coerce before querying.
+        return case_id if isinstance(case_id, uuid.UUID) else uuid.UUID(str(case_id))
+
     def get_notes(self, case_id: str) -> List[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             rows = db.execute(
-                select(WorkspaceNote).where(WorkspaceNote.case_id == case_id)
+                select(WorkspaceNote).where(WorkspaceNote.case_id == case_uuid)
             ).scalars().all()
             notes = [dict(r.data) for r in rows]
 
         return sorted(notes, key=lambda n: n.get("created_at", ""), reverse=True)
 
     def get_note(self, case_id: str, note_id: str) -> Optional[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceNote).where(
-                    WorkspaceNote.case_id == case_id,
+                    WorkspaceNote.case_id == case_uuid,
                     WorkspaceNote.note_id == note_id,
                 )
             ).scalar_one_or_none()
             return dict(row.data) if row else None
 
     def save_note(self, case_id: str, note: Dict) -> str:
+        case_uuid = self._case_uuid(case_id)
         note_id = note.get("note_id") or f"note_{uuid.uuid4().hex[:12]}"
         note["note_id"] = note_id
-        note["case_id"] = case_id
+        note["case_id"] = str(case_id)
         note["updated_at"] = datetime.now().isoformat()
         if "created_at" not in note:
             note["created_at"] = datetime.now().isoformat()
@@ -422,21 +431,21 @@ class WorkspaceService:
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceNote).where(
-                    WorkspaceNote.case_id == case_id,
+                    WorkspaceNote.case_id == case_uuid,
                     WorkspaceNote.note_id == note_id,
                 )
             ).scalar_one_or_none()
             if row:
                 row.data = note
             else:
-                db.add(WorkspaceNote(case_id=case_id, note_id=note_id, data=note))
+                db.add(WorkspaceNote(case_id=case_uuid, note_id=note_id, data=note))
                 try:
                     db.flush()
                 except IntegrityError:
                     db.rollback()
                     row = db.execute(
                         select(WorkspaceNote).where(
-                            WorkspaceNote.case_id == case_id,
+                            WorkspaceNote.case_id == case_uuid,
                             WorkspaceNote.note_id == note_id,
                         )
                     ).scalar_one_or_none()
@@ -445,10 +454,11 @@ class WorkspaceService:
         return note_id
 
     def delete_note(self, case_id: str, note_id: str) -> bool:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             result = db.execute(
                 delete(WorkspaceNote).where(
-                    WorkspaceNote.case_id == case_id,
+                    WorkspaceNote.case_id == case_uuid,
                     WorkspaceNote.note_id == note_id,
                 )
             )
