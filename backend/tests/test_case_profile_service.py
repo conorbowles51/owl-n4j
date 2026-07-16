@@ -3,9 +3,11 @@ import unittest
 import importlib.util
 import sys
 import types
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import create_engine
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from postgres.base import Base
@@ -218,6 +220,53 @@ class CaseProfileServiceTests(unittest.TestCase):
             self.assertEqual(context["profile"]["display_name"], "Silver Bridge Club")
             self.assertEqual(context["evidence_links"][0]["evidence"]["id"], str(self.evidence_id))
             self.assertEqual(context["notes"], [])
+            self.assertEqual(context["findings"], [])
+
+    def test_deleted_findings_are_not_linkable_or_returned(self):
+        with self.SessionLocal() as db:
+            user = db.get(User, self.user_id)
+            db.add(
+                WorkspaceFinding(
+                    case_id=self.case_id,
+                    finding_id="finding_deleted",
+                    data={"title": "Deleted finding", "content": "Recycled"},
+                    deleted_at=datetime.now(timezone.utc),
+                    deleted_by_user_id=self.user_id,
+                )
+            )
+            db.commit()
+
+            with self.assertRaises(ValueError):
+                create_case_profile(
+                    db,
+                    case_id=self.case_id,
+                    user=user,
+                    data={
+                        "profile_type": "other",
+                        "display_name": "Deleted Finding Profile",
+                        "finding_links": [{"finding_id": "finding_deleted"}],
+                    },
+                )
+
+            created = create_case_profile(
+                db,
+                case_id=self.case_id,
+                user=user,
+                data={
+                    "profile_type": "other",
+                    "display_name": "Active Finding Profile",
+                    "finding_links": [{"finding_id": "finding_456"}],
+                },
+            )
+            finding = db.scalars(
+                select(WorkspaceFinding).where(WorkspaceFinding.finding_id == "finding_456")
+            ).one()
+            finding.deleted_at = datetime.now(timezone.utc)
+            finding.deleted_by_user_id = self.user_id
+            db.commit()
+
+            context = get_case_profile_context(db, profile_id=uuid.UUID(created["id"]), user=user)
+
             self.assertEqual(context["findings"], [])
 
 

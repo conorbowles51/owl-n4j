@@ -14,11 +14,12 @@ Storage: PostgreSQL via JSONB columns (replaced JSON-on-disk in March 2026).
 
 import uuid
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select, delete
 
 from postgres.session import get_background_session
+from postgres.models.user import User
 from postgres.models.workspace import (
     WorkspaceContext,
     WorkspaceWitness,
@@ -29,6 +30,16 @@ from postgres.models.workspace import (
     WorkspacePinnedItem,
     WorkspaceDeadlineConfig,
 )
+from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+from services.system_log_service import LogOrigin, LogType, system_log_service
+
+
+class FindingVersionConflict(Exception):
+    """Raised when a finding write uses a stale expected version."""
+
+    def __init__(self, current_version: int):
+        self.current_version = current_version
+        super().__init__("Finding version conflict")
 
 
 class WorkspaceService:
@@ -50,6 +61,117 @@ class WorkspaceService:
     @staticmethod
     def _safe_date_sort(event: Dict[str, Any]) -> tuple[str, str]:
         return (event.get("date") or "", event.get("id") or "")
+
+    @staticmethod
+    def _utc_now() -> datetime:
+        return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _case_uuid(case_id: str | uuid.UUID) -> uuid.UUID:
+        return case_id if isinstance(case_id, uuid.UUID) else uuid.UUID(str(case_id))
+
+    @staticmethod
+    def _serialize_dt(value: Optional[datetime]) -> Optional[str]:
+        return value.isoformat() if value else None
+
+    @staticmethod
+    def _serialize_finding(row: WorkspaceFinding) -> Dict:
+        data = dict(row.data or {})
+        data["finding_id"] = row.finding_id
+        data.setdefault("id", row.finding_id)
+        data["case_id"] = str(row.case_id)
+        data["version"] = int(row.version or 1)
+        data.setdefault("created_at", WorkspaceService._serialize_dt(row.created_at))
+        data.setdefault("updated_at", WorkspaceService._serialize_dt(row.updated_at))
+        if row.deleted_at is not None:
+            data["deleted_at"] = WorkspaceService._serialize_dt(row.deleted_at)
+            data["deleted_by_user_id"] = (
+                str(row.deleted_by_user_id) if row.deleted_by_user_id else None
+            )
+        else:
+            data.pop("deleted_at", None)
+            data.pop("deleted_by_user_id", None)
+        return data
+
+    @staticmethod
+    def _log_finding_event(
+        *,
+        action: str,
+        case_id: str,
+        finding_id: Optional[str] = None,
+        user: Optional[User] = None,
+        success: bool,
+        error: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        db=None,
+    ) -> None:
+        payload = {"case_id": case_id, **(details or {})}
+        if finding_id:
+            payload["finding_id"] = finding_id
+        system_log_service.log(
+            log_type=LogType.CASE_OPERATION,
+            origin=LogOrigin.BACKEND,
+            action=action,
+            details=payload,
+            user=user.email if user else None,
+            success=success,
+            error=error,
+            db=db,
+        )
+
+    def _require_finding_permission(
+        self,
+        db,
+        *,
+        case_id: uuid.UUID,
+        user: Optional[User],
+        required_permission: tuple[str, str],
+        action: str,
+        finding_id: Optional[str] = None,
+    ) -> None:
+        if user is None:
+            return
+        try:
+            check_case_access(
+                db=db,
+                case_id=case_id,
+                user=user,
+                required_permission=required_permission,
+            )
+        except (CaseNotFound, CaseAccessDenied) as exc:
+            self._log_finding_event(
+                action=action,
+                case_id=str(case_id),
+                finding_id=finding_id,
+                user=user,
+                success=False,
+                error=str(exc),
+            )
+            raise
+
+    def _check_finding_version(
+        self,
+        row: WorkspaceFinding,
+        *,
+        expected_version: Optional[int],
+        action: str,
+        user: Optional[User],
+    ) -> None:
+        current_version = int(row.version or 1)
+        if expected_version is not None and expected_version != current_version:
+            self._log_finding_event(
+                action=action,
+                case_id=str(row.case_id),
+                finding_id=row.finding_id,
+                user=user,
+                success=False,
+                error="Finding version conflict",
+                details={
+                    "expected_version": expected_version,
+                    "current_version": current_version,
+                },
+            )
+            raise FindingVersionConflict(current_version)
 
     @staticmethod
     def _is_case_document_filename(filename: Optional[str]) -> bool:
@@ -445,12 +567,32 @@ class WorkspaceService:
     # Findings
     # ------------------------------------------------------------------ #
 
-    def get_findings(self, case_id: str) -> List[Dict]:
+    def get_findings(self, case_id: str, *, user: Optional[User] = None) -> List[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
+            self._require_finding_permission(
+                db,
+                case_id=case_uuid,
+                user=user,
+                required_permission=("case", "view"),
+                action="List Findings",
+            )
             rows = db.execute(
-                select(WorkspaceFinding).where(WorkspaceFinding.case_id == case_id)
+                select(WorkspaceFinding).where(
+                    WorkspaceFinding.case_id == case_uuid,
+                    WorkspaceFinding.deleted_at.is_(None),
+                )
             ).scalars().all()
-            findings = [dict(r.data) for r in rows]
+            findings = [self._serialize_finding(r) for r in rows]
+            if user is not None:
+                self._log_finding_event(
+                    action="List Findings",
+                    case_id=str(case_uuid),
+                    user=user,
+                    success=True,
+                    details={"count": len(findings)},
+                    db=db,
+                )
 
         priority_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
         return sorted(
@@ -461,52 +603,242 @@ class WorkspaceService:
             ),
         )
 
-    def get_finding(self, case_id: str, finding_id: str) -> Optional[Dict]:
+    def get_finding(
+        self,
+        case_id: str,
+        finding_id: str,
+        *,
+        user: Optional[User] = None,
+        required_permission: tuple[str, str] = ("case", "view"),
+    ) -> Optional[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
+            self._require_finding_permission(
+                db,
+                case_id=case_uuid,
+                user=user,
+                required_permission=required_permission,
+                action="Get Finding",
+                finding_id=finding_id,
+            )
             row = db.execute(
                 select(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
+                    WorkspaceFinding.case_id == case_uuid,
                     WorkspaceFinding.finding_id == finding_id,
+                    WorkspaceFinding.deleted_at.is_(None),
                 )
             ).scalar_one_or_none()
-            return dict(row.data) if row else None
+            return self._serialize_finding(row) if row else None
 
-    def save_finding(self, case_id: str, finding: Dict) -> str:
+    def save_finding(
+        self,
+        case_id: str,
+        finding: Dict,
+        *,
+        user: Optional[User] = None,
+        expected_version: Optional[int] = None,
+    ) -> str:
+        case_uuid = self._case_uuid(case_id)
+        action = "Update Finding" if finding.get("finding_id") else "Create Finding"
         finding_id = finding.get("finding_id") or f"finding_{uuid.uuid4().hex[:12]}"
         finding["finding_id"] = finding_id
-        finding["case_id"] = case_id
-        finding["updated_at"] = datetime.now().isoformat()
+        finding["id"] = finding_id
+        finding["case_id"] = str(case_uuid)
+        now = self._utc_now()
+        finding["updated_at"] = now.isoformat()
         if "created_at" not in finding:
-            finding["created_at"] = datetime.now().isoformat()
+            finding["created_at"] = now.isoformat()
 
         with get_background_session() as db:
+            self._require_finding_permission(
+                db,
+                case_id=case_uuid,
+                user=user,
+                required_permission=("case", "edit"),
+                action=action,
+                finding_id=finding_id,
+            )
             row = db.execute(
                 select(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
+                    WorkspaceFinding.case_id == case_uuid,
                     WorkspaceFinding.finding_id == finding_id,
                 )
             ).scalar_one_or_none()
-            if row:
-                row.data = finding
-            else:
-                db.add(
-                    WorkspaceFinding(
-                        case_id=case_id,
-                        finding_id=finding_id,
-                        data=finding,
-                    )
+            if row and row.deleted_at is None:
+                self._check_finding_version(
+                    row,
+                    expected_version=expected_version,
+                    action="Update Finding",
+                    user=user,
                 )
+                row.version = int(row.version or 1) + 1
+                finding["version"] = row.version
+                row.data = finding
+                if user is not None:
+                    self._log_finding_event(
+                        action="Update Finding",
+                        case_id=str(case_uuid),
+                        finding_id=finding_id,
+                        user=user,
+                        success=True,
+                        details={"version": row.version, "title": finding.get("title")},
+                        db=db,
+                    )
+            elif row and row.deleted_at is not None:
+                self._log_finding_event(
+                    action="Create Finding",
+                    case_id=str(case_uuid),
+                    finding_id=finding_id,
+                    user=user,
+                    success=False,
+                    error="Finding has been deleted",
+                )
+                raise ValueError("Finding has been deleted")
+            else:
+                finding["version"] = 1
+                row = WorkspaceFinding(
+                    case_id=case_uuid,
+                    finding_id=finding_id,
+                    data=finding,
+                    version=1,
+                )
+                db.add(row)
+                if user is not None:
+                    self._log_finding_event(
+                        action="Create Finding",
+                        case_id=str(case_uuid),
+                        finding_id=finding_id,
+                        user=user,
+                        success=True,
+                        details={"version": 1, "title": finding.get("title")},
+                        db=db,
+                    )
         return finding_id
 
-    def delete_finding(self, case_id: str, finding_id: str) -> bool:
+    def update_finding(
+        self,
+        case_id: str,
+        finding_id: str,
+        updates: Dict,
+        *,
+        user: Optional[User] = None,
+        expected_version: Optional[int] = None,
+    ) -> Optional[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
-            result = db.execute(
-                delete(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
-                    WorkspaceFinding.finding_id == finding_id,
-                )
+            self._require_finding_permission(
+                db,
+                case_id=case_uuid,
+                user=user,
+                required_permission=("case", "edit"),
+                action="Update Finding",
+                finding_id=finding_id,
             )
-            return result.rowcount > 0
+            row = db.execute(
+                select(WorkspaceFinding).where(
+                    WorkspaceFinding.case_id == case_uuid,
+                    WorkspaceFinding.finding_id == finding_id,
+                    WorkspaceFinding.deleted_at.is_(None),
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                self._log_finding_event(
+                    action="Update Finding",
+                    case_id=str(case_uuid),
+                    finding_id=finding_id,
+                    user=user,
+                    success=False,
+                    error="Finding not found",
+                )
+                return None
+
+            self._check_finding_version(
+                row,
+                expected_version=expected_version,
+                action="Update Finding",
+                user=user,
+            )
+            now = self._utc_now()
+            finding = {**self._serialize_finding(row), **updates}
+            finding["finding_id"] = finding_id
+            finding["id"] = finding_id
+            finding["case_id"] = str(case_uuid)
+            finding["updated_at"] = now.isoformat()
+            row.version = int(row.version or 1) + 1
+            finding["version"] = row.version
+            row.data = finding
+            if user is not None:
+                self._log_finding_event(
+                    action="Update Finding",
+                    case_id=str(case_uuid),
+                    finding_id=finding_id,
+                    user=user,
+                    success=True,
+                    details={"version": row.version, "title": finding.get("title")},
+                    db=db,
+                )
+            return dict(finding)
+
+    def delete_finding(
+        self,
+        case_id: str,
+        finding_id: str,
+        *,
+        user: Optional[User] = None,
+        expected_version: Optional[int] = None,
+    ) -> bool:
+        case_uuid = self._case_uuid(case_id)
+        with get_background_session() as db:
+            self._require_finding_permission(
+                db,
+                case_id=case_uuid,
+                user=user,
+                required_permission=("case", "edit"),
+                action="Delete Finding",
+                finding_id=finding_id,
+            )
+            row = db.execute(
+                select(WorkspaceFinding).where(
+                    WorkspaceFinding.case_id == case_uuid,
+                    WorkspaceFinding.finding_id == finding_id,
+                    WorkspaceFinding.deleted_at.is_(None),
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                self._log_finding_event(
+                    action="Delete Finding",
+                    case_id=str(case_uuid),
+                    finding_id=finding_id,
+                    user=user,
+                    success=False,
+                    error="Finding not found",
+                )
+                return False
+
+            self._check_finding_version(
+                row,
+                expected_version=expected_version,
+                action="Delete Finding",
+                user=user,
+            )
+            row.version = int(row.version or 1) + 1
+            row.deleted_at = self._utc_now()
+            row.deleted_by_user_id = user.id if user else None
+            data = self._serialize_finding(row)
+            data["version"] = row.version
+            data["updated_at"] = row.deleted_at.isoformat()
+            row.data = data
+            if user is not None:
+                self._log_finding_event(
+                    action="Delete Finding",
+                    case_id=str(case_uuid),
+                    finding_id=finding_id,
+                    user=user,
+                    success=True,
+                    details={"version": row.version},
+                    db=db,
+                )
+            return True
 
     # ------------------------------------------------------------------ #
     # Investigation Timeline (read-only aggregation)

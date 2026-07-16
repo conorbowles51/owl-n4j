@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, JSON, String, Text, Integer
+from sqlalchemy import DateTime, ForeignKey, JSON, String, Text, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -121,6 +122,13 @@ class WorkspaceFinding(Base, TimestampMixin):
     )
     finding_id: Mapped[str] = mapped_column(String(64), nullable=False)
     data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
 
 
 class WorkspacePinnedItem(Base, TimestampMixin):

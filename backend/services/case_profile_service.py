@@ -355,6 +355,7 @@ def _replace_finding_links(
             select(WorkspaceFinding).where(
                 WorkspaceFinding.case_id == profile.case_id,
                 WorkspaceFinding.finding_id == finding_id,
+                WorkspaceFinding.deleted_at.is_(None),
             )
         ).first()
         if finding is None:
@@ -597,7 +598,10 @@ def _linked_workspace_rows(
     if not ids:
         return []
     column = getattr(model, id_attr)
-    rows = db.scalars(select(model).where(model.case_id == case_id, column.in_(list(ids)))).all()
+    statement = select(model).where(model.case_id == case_id, column.in_(list(ids)))
+    if hasattr(model, "deleted_at"):
+        statement = statement.where(model.deleted_at.is_(None))
+    rows = db.scalars(statement).all()
     serialized = []
     for row in rows:
         data = dict(row.data or {})

@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, WebSocket, WebSock
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from services.workspace_service import workspace_service
+from services.workspace_service import FindingVersionConflict, workspace_service
 from services.presence_service import presence_service
 from services.system_log_service import system_log_service, LogType, LogOrigin
 from services.case_service import get_case_if_allowed, CaseNotFound, CaseAccessDenied
@@ -102,6 +102,7 @@ class FindingCreate(BaseModel):
     linked_evidence_ids: Optional[List[str]] = None
     linked_document_ids: Optional[List[str]] = None
     linked_entity_keys: Optional[List[str]] = None
+    expected_version: Optional[int] = None
 
 
 class TaskCreate(BaseModel):
@@ -1031,13 +1032,12 @@ async def get_findings(
 ):
     """Get all findings for a case."""
     try:
-        try:
-            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
-        except (CaseNotFound, CaseAccessDenied):
-            raise HTTPException(status_code=404, detail="Case not found")
-
-        findings = workspace_service.get_findings(case_id)
+        findings = workspace_service.get_findings(case_id, user=current_user)
         return {"findings": findings}
+    except CaseNotFound:
+        raise HTTPException(status_code=404, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=403, detail="Access denied - case.view permission required")
     except HTTPException:
         raise
     except Exception as e:
@@ -1053,24 +1053,24 @@ async def create_finding(
 ):
     """Create a finding."""
     try:
-        try:
-            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
-        except (CaseNotFound, CaseAccessDenied):
-            raise HTTPException(status_code=404, detail="Case not found")
-
-        finding_data = finding.dict()
-        finding_id = workspace_service.save_finding(case_id, finding_data)
-
-        system_log_service.log(
-            log_type=LogType.CASE_OPERATION,
-            origin=LogOrigin.FRONTEND,
-            action="Create Finding",
-            details={"case_id": case_id, "finding_id": finding_id, "title": finding.title},
-            user=current_user.email,
-            success=True,
+        finding_data = finding.dict(exclude={"expected_version"})
+        finding_id = workspace_service.save_finding(
+            case_id,
+            finding_data,
+            user=current_user,
+            expected_version=finding.expected_version,
         )
 
         return {"finding_id": finding_id, **finding_data}
+    except CaseNotFound:
+        raise HTTPException(status_code=404, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=403, detail="Access denied - case.edit permission required")
+    except FindingVersionConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": str(exc), "current_version": exc.current_version},
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -1087,18 +1087,25 @@ async def update_finding(
 ):
     """Update a finding."""
     try:
-        try:
-            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
-        except (CaseNotFound, CaseAccessDenied):
-            raise HTTPException(status_code=404, detail="Case not found")
-
-        existing = workspace_service.get_finding(case_id, finding_id)
-        if not existing:
+        finding_data = workspace_service.update_finding(
+            case_id,
+            finding_id,
+            finding.dict(exclude_unset=True, exclude={"expected_version"}),
+            user=current_user,
+            expected_version=finding.expected_version,
+        )
+        if finding_data is None:
             raise HTTPException(status_code=404, detail="Finding not found")
-
-        finding_data = {**existing, **finding.dict(exclude_unset=True)}
-        workspace_service.save_finding(case_id, finding_data)
         return finding_data
+    except CaseNotFound:
+        raise HTTPException(status_code=404, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=403, detail="Access denied - case.edit permission required")
+    except FindingVersionConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": str(exc), "current_version": exc.current_version},
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -1109,20 +1116,30 @@ async def update_finding(
 async def delete_finding(
     case_id: str,
     finding_id: str,
+    expected_version: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
     """Delete a finding."""
     try:
-        try:
-            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
-        except (CaseNotFound, CaseAccessDenied):
-            raise HTTPException(status_code=404, detail="Case not found")
-
-        if not workspace_service.delete_finding(case_id, finding_id):
+        if not workspace_service.delete_finding(
+            case_id,
+            finding_id,
+            user=current_user,
+            expected_version=expected_version,
+        ):
             raise HTTPException(status_code=404, detail="Finding not found")
 
         return {"success": True}
+    except CaseNotFound:
+        raise HTTPException(status_code=404, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=403, detail="Access denied - case.edit permission required")
+    except FindingVersionConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": str(exc), "current_version": exc.current_version},
+        )
     except HTTPException:
         raise
     except Exception as e:
