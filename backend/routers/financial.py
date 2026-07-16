@@ -17,6 +17,7 @@ from routers.users import get_current_db_user
 from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
+from services.system_log_service import LogOrigin, LogType, system_log_service
 
 router = APIRouter(prefix="/api/financial", tags=["financial"])
 
@@ -56,6 +57,31 @@ def _matches_text_search(transaction: dict, query: str) -> bool:
         _entity_name(transaction.get("to_entity")),
     ]
     return any(q in (field or "").lower() for field in fields)
+
+
+def _log_financial_export_event(
+    *,
+    current_user: User,
+    case_id: UUID | str,
+    scope: dict,
+    result: str,
+    error: str | None = None,
+) -> None:
+    """Best-effort export audit breadcrumb; DKT-505 owns the full audit schema."""
+    system_log_service.log(
+        log_type=LogType.CASE_OPERATION,
+        origin=LogOrigin.BACKEND,
+        action="Export Access",
+        details={
+            "case_id": str(case_id),
+            "export_type": "financial_pdf",
+            "scope": scope,
+            "result": result,
+        },
+        user=getattr(current_user, "email", None),
+        success=result == "success",
+        error=error,
+    )
 
 
 def _apply_directional_filters(
@@ -617,7 +643,7 @@ async def get_transaction_children(
 async def export_financial_pdf(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
     mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
-    case_name: str = Query("Case", description="Case name for the header"),
+    case_name: str = Query("Case", description="Legacy display name; server uses the database case title"),
     categories: Optional[str] = Query(None, description="Comma-separated categories to filter"),
     start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
@@ -629,6 +655,8 @@ async def export_financial_pdf(
     from_entities: Optional[str] = Query(None, description="Comma-separated sender entity keys"),
     to_entities: Optional[str] = Query(None, description="Comma-separated beneficiary entity keys"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """Export filtered financial transactions as a PDF report.
 
@@ -636,8 +664,31 @@ async def export_financial_pdf(
     where laptops and internet are unavailable (e.g., jail visits).
     Includes transaction names, AI summaries, and entity notes appendix.
     """
+    scope = {
+        "mode": mode,
+        "categories": categories,
+        "start_date": start_date,
+        "end_date": end_date,
+        "entity_key": entity_key,
+        "entity_name": entity_name,
+        "entity": entity,
+        "search": search,
+        "search_header": search_header,
+        "from_entities": from_entities,
+        "to_entities": to_entities,
+        "include_entity_notes": include_entity_notes,
+    }
     try:
-        result = neo4j_service.get_financial_transactions(case_id=case_id, mode=mode)
+        case_uuid = UUID(case_id)
+        case, _ = check_case_access(
+            db,
+            case_uuid,
+            current_user,
+            required_permission=("case", "view"),
+        )
+        report_case_name = case.title or "Case"
+
+        result = neo4j_service.get_financial_transactions(case_id=str(case_uuid), mode=mode)
         transactions = result.get("transactions", []) if isinstance(result, dict) else result
         filters = []
         category_list = _parse_csv_param(categories)
@@ -709,30 +760,51 @@ async def export_financial_pdf(
         entity_notes = []
         if include_entity_notes:
             try:
-                entity_notes = _collect_entity_notes(case_id, transactions)
+                entity_notes = _collect_entity_notes(str(case_uuid), transactions)
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).warning(f"Failed to fetch entity notes: {e}")
 
         rendered = render_financial_export(
             transactions,
-            case_name,
+            report_case_name,
             filters_description,
             entity_notes=entity_notes,
             entity_flow=entity_flow,
         )
 
-        safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
+        safe_name = report_case_name.replace(" ", "_").replace("/", "-")[:50]
         mode_label = "Transactions" if mode != "intelligence" else "Financial_Intelligence"
         filename = (
             f"Financial_Report_{mode_label}_{safe_name}_{datetime.now().strftime('%Y%m%d')}."
             f"{rendered['extension']}"
         )
 
+        _log_financial_export_event(
+            current_user=current_user,
+            case_id=case_uuid,
+            scope=scope,
+            result="success",
+        )
         return Response(
             content=rendered["content"],
             media_type=rendered["media_type"],
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid case_id") from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        _log_financial_export_event(
+            current_user=current_user,
+            case_id=case_id,
+            scope=scope,
+            result="denied",
+            error=str(exc),
+        )
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

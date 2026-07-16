@@ -10,6 +10,7 @@ import hashlib
 import os
 import logging
 import mimetypes
+import re
 import subprocess
 import shutil
 import uuid as uuid_mod
@@ -39,6 +40,8 @@ from fastapi import Query, status
 from postgres.session import get_db
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.user import User
+from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+from services.system_log_service import LogOrigin, LogType, system_log_service
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from config import BASE_DIR, EVIDENCE_DATA_ROOT, USE_EVIDENCE_ENGINE
@@ -123,6 +126,67 @@ def _uuid_or_none(value: Optional[str]) -> Optional[UUID]:
         return UUID(str(value))
     except (TypeError, ValueError):
         return None
+
+
+def _get_authorized_evidence_record(
+    evidence_id: str,
+    current_user: User,
+    db: Session,
+    required_permission: tuple[str, str] = ("case", "view"),
+    export_type: str = "evidence_file",
+) -> EvidenceFile:
+    """Load an evidence row and authorize against the row's case_id."""
+    evidence_uuid = _uuid_or_none(evidence_id)
+    if evidence_uuid:
+        record = EvidenceDBStorage.get(db, evidence_uuid)
+    else:
+        record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
+
+    if not record:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    try:
+        check_case_access(db, record.case_id, current_user, required_permission=required_permission)
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except CaseAccessDenied as exc:
+        _log_export_event(
+            current_user=current_user,
+            case_id=record.case_id,
+            export_type=export_type,
+            scope={"evidence_id": str(record.id), "requested_evidence_id": evidence_id},
+            result="denied",
+            error=str(exc),
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+    return record
+
+
+def _log_export_event(
+    *,
+    current_user: User,
+    case_id: UUID | str,
+    export_type: str,
+    scope: dict,
+    result: str,
+    error: str | None = None,
+) -> None:
+    """Best-effort export audit breadcrumb; DKT-505 owns the full audit schema."""
+    system_log_service.log(
+        log_type=LogType.CASE_OPERATION,
+        origin=LogOrigin.BACKEND,
+        action="Export Access",
+        details={
+            "case_id": str(case_id),
+            "export_type": export_type,
+            "scope": scope,
+            "result": result,
+        },
+        user=getattr(current_user, "email", None),
+        success=result == "success",
+        error=error,
+    )
 
 
 def add_evidence_log(
@@ -1799,7 +1863,7 @@ async def delete_evidence_file(
 @router.get("/{evidence_id}/file")
 async def get_evidence_file(
     evidence_id: str,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -1808,16 +1872,12 @@ async def get_evidence_file(
     All files are served from the backend's local disk (EVIDENCE_ROOT_DIR).
     """
     try:
-        # Look up by UUID or legacy ID
-        record = None
-        try:
-            from uuid import UUID
-            record = EvidenceDBStorage.get(db, UUID(evidence_id))
-        except (ValueError, AttributeError):
-            record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
-
-        if not record:
-            raise HTTPException(status_code=404, detail="Evidence not found")
+        record = _get_authorized_evidence_record(
+            evidence_id,
+            current_user,
+            db,
+            export_type="evidence_file",
+        )
 
         # Primary path: serve from backend disk
         filename = record.original_filename or "file"
@@ -1828,6 +1888,13 @@ async def get_evidence_file(
             raise HTTPException(status_code=404, detail="File not found on disk")
 
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        _log_export_event(
+            current_user=current_user,
+            case_id=record.case_id,
+            export_type="evidence_file",
+            scope={"evidence_id": str(record.id), "requested_evidence_id": evidence_id},
+            result="success",
+        )
         return FileResponse(
             path=file_path,
             filename=filename,
@@ -1894,23 +1961,19 @@ async def get_video_frames(
     evidence_id: str,
     interval: int = Query(30, description="Seconds between frame captures"),
     max_frames: int = Query(50, description="Maximum number of frames"),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
     Extract and return key frames from a video evidence file.
     Frames are cached so subsequent requests are instant.
     """
-    from services.evidence_db_storage import EvidenceDBStorage
-    from uuid import UUID
-
-    record = None
-    try:
-        record = EvidenceDBStorage.get(db, UUID(evidence_id))
-    except (ValueError, AttributeError):
-        record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Evidence not found")
+    record = _get_authorized_evidence_record(
+        evidence_id,
+        current_user,
+        db,
+        export_type="evidence_frames",
+    )
 
     stored_path = record.stored_path
     if not stored_path:
@@ -1924,7 +1987,7 @@ async def get_video_frames(
     if video_path.suffix.lower() not in video_exts:
         raise HTTPException(status_code=400, detail="File is not a video")
 
-    cache_dir = FRAMES_CACHE_DIR / evidence_id
+    cache_dir = FRAMES_CACHE_DIR / str(record.id)
     frames_meta = []
 
     if cache_dir.exists() and any(cache_dir.glob("frame_*.jpg")):
@@ -1943,6 +2006,18 @@ async def get_video_frames(
             _extract_video_frames, video_path, cache_dir, interval, max_frames
         )
 
+    _log_export_event(
+        current_user=current_user,
+        case_id=record.case_id,
+        export_type="evidence_frames",
+        scope={
+            "evidence_id": str(record.id),
+            "requested_evidence_id": evidence_id,
+            "interval": interval,
+            "max_frames": max_frames,
+        },
+        result="success",
+    )
     return {
         "evidence_id": evidence_id,
         "filename": record.original_filename or video_path.name,
@@ -1955,16 +2030,39 @@ async def get_video_frames(
 async def get_video_frame_image(
     evidence_id: str,
     filename: str,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """Serve an individual extracted frame image."""
-    if not filename.startswith("frame_") or not filename.endswith(".jpg"):
+    if not re.fullmatch(r"frame_\d{4}\.jpg", filename):
         raise HTTPException(status_code=400, detail="Invalid frame filename")
 
-    frame_path = FRAMES_CACHE_DIR / evidence_id / filename
+    record = _get_authorized_evidence_record(
+        evidence_id,
+        current_user,
+        db,
+        export_type="evidence_frame_image",
+    )
+
+    frame_path = FRAMES_CACHE_DIR / str(record.id) / filename
+    legacy_frame_path = FRAMES_CACHE_DIR / evidence_id / filename
+    if not frame_path.exists() and legacy_frame_path != frame_path:
+        frame_path = legacy_frame_path
+
     if not frame_path.exists():
         raise HTTPException(status_code=404, detail="Frame not found. Extract frames first via GET /{evidence_id}/frames")
 
+    _log_export_event(
+        current_user=current_user,
+        case_id=record.case_id,
+        export_type="evidence_frame_image",
+        scope={
+            "evidence_id": str(record.id),
+            "requested_evidence_id": evidence_id,
+            "filename": filename,
+        },
+        result="success",
+    )
     return FileResponse(frame_path, media_type="image/jpeg")
 
 
