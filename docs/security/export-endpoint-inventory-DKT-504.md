@@ -14,6 +14,7 @@ Decision: server-side download, print, file, and export endpoints that expose ca
 | `GET /api/financial/export/pdf` | `backend/routers/financial.py` | Parse `case_id` as UUID, require `case.view`, fetch/render transactions only after authorization, and use the database case title for report label and filename instead of trusting `case_name`. |
 | `POST /api/timeline/export` | `backend/routers/timeline.py` | Verified already protected: `export_case_timeline` calls `get_case_if_allowed(..., case_id=request.case_id, user=current_user)` before `export_timeline`, and `export_timeline` writes a case-operation audit log. No DKT-504 code change required. |
 | `GET /api/agent/artifacts/{artifact_id}/export` | `backend/routers/agent.py` | Verified already protected: `agent_service.export_artifact` loads the artifact through `storage.get_artifact_for_user`, which resolves the owning thread and calls `check_case_access(..., required_permission=("case", "view"))`; the service logs `agent_artifact_exported`. No DKT-504 code change required. |
+| `GET /cases/{case_id}/files/{job_id}` | `evidence-engine/app/api/routes/files.py` | Require a backend JWT, load the engine `Job`, require `case.view` against `Job.case_id` in shared Postgres, then check disk and serve bytes. This closes the active engine file-serving route that bypassed the main backend. |
 
 ## Exclusions
 
@@ -23,11 +24,12 @@ Decision: server-side download, print, file, and export endpoints that expose ca
 | Testing hub `FileResponse` | Serves a non-case static shell, not case data or export content. | Excluded for DKT-504. |
 | Graph `StreamingResponse` | Server-sent event stream, not a file/download/print/export endpoint. | Excluded for DKT-504. |
 | Browser-generated v2 table/map CSV exports | Generated client-side from data already returned by case-scoped APIs; no server file/export endpoint to protect in this task. | Product/security approval required before release, or open a release-blocking follow-up if the CSV promise must be treated as an export surface. |
+| Evidence-engine upload/list/delete file management routes | These do not generate or fetch export bytes. They remain backend-mediated operational endpoints and are explicitly outside this DKT-504 export-byte corrective pass. | Product/security approval required before release if these must be treated as export surfaces; otherwise track broader service-to-service hardening outside DKT-504. |
 | Other artifact/report export concerns from text search | No additional mounted server file/export route requiring a DKT-504 permission change was found beyond the rows above. | IDOR, cached artifact boundaries, and full regression coverage remain owned by DKT-506 and DKT-508. |
 
 ## Implementation Evidence
 
-DKT-504 implemented server-side `case.view` checks for the evidence file/frame and financial PDF endpoints that lacked them. Timeline and agent artifact exports were verified to already have server-side case authorization and audit logging. The evidence endpoints authorize from `EvidenceFile.case_id`, not caller input, and authorization now happens before disk path resolution, frame extraction, or cached frame lookup. The financial PDF endpoint authorizes before Neo4j reads and renders with the trusted `Case.title`.
+DKT-504 implemented server-side `case.view` checks for the evidence file/frame, financial PDF, and evidence-engine file-byte endpoints that lacked them. Timeline and agent artifact exports were verified to already have server-side case authorization and audit logging. The backend evidence endpoints authorize from `EvidenceFile.case_id`, not caller input, and authorization now happens before disk path resolution, frame extraction, or cached frame lookup. The evidence-engine download endpoint authorizes from `Job.case_id` before disk lookup or `FileResponse`. The financial PDF endpoint authorizes before Neo4j reads and renders with the trusted `Case.title`.
 
 Minimal audit breadcrumbs were added via `system_log_service.log` with actor email, case ID, export type, scope parameters, and result. Evidence content, file bytes, transaction contents, and report bodies are not logged.
 

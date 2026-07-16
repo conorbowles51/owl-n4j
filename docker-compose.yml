@@ -88,6 +88,8 @@ services:
       VIDEO_MAX_FRAMES: ${VIDEO_MAX_FRAMES:-50}
       STORAGE_PATH: ${STORAGE_PATH:-/data/files}
       CELLEBRITE_DATA_ROOT: /data/evidence
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-supersecretchange}
+      AUTH_ALGORITHM: ${AUTH_ALGORITHM:-HS256}
     volumes:
       - evidence-files:/data/files
       - ./evidence-data:/data/evidence
@@ -132,6 +134,8 @@ services:
       VIDEO_MAX_FRAMES: ${VIDEO_MAX_FRAMES:-50}
       STORAGE_PATH: ${STORAGE_PATH:-/data/files}
       CELLEBRITE_DATA_ROOT: /data/evidence
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-supersecretchange}
+      AUTH_ALGORITHM: ${AUTH_ALGORITHM:-HS256}
     volumes:
       - evidence-files:/data/files
       - ./evidence-data:/data/evidence

@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     storage_path: str = "/data/files"
     cellebrite_data_root: str = "evidence-data"
 
+    # Authentication (must match the main backend)
+    auth_secret_key: str = "supersecretchange"
+    auth_algorithm: str = "HS256"
+
     # Image processing
     image_provider: str = "tesseract"  # "tesseract" or "openai"
     tesseract_lang: str = "eng"

@@ -106,7 +106,7 @@ The Evidence Engine solves all of this by running as a separate service with its
 |---|---|---|
 | API Server | Python 3.12 + FastAPI | REST endpoints + WebSocket |
 | Task Queue | Redis + arq | Async background job processing |
-| Job Database | PostgreSQL 16 | Job tracking (separate from main DB) |
+| Job Database | PostgreSQL 16 | Job tracking plus shared case/user tables for permission checks |
 | Graph Database | Neo4j 5 | Knowledge graph (shared with platform) |
 | Vector Database | ChromaDB | Document chunks + entity embeddings |
 | LLM (extraction) | GPT-4o-mini | Entity/relationship extraction, dedup confirmation |
@@ -403,7 +403,7 @@ The ontology configures which entity categories power each frontend view:
 
 ## API Reference
 
-**Base URL:** `http://evidence-engine:8000` (internal) or `http://localhost:8001` (dev)
+**Base URL:** `http://evidence-engine:8000` (internal) or `http://localhost:8003` (dev)
 
 ### Upload File
 
@@ -555,8 +555,8 @@ The Evidence Engine connects to four external services via thin async wrapper cl
 All configuration is via environment variables, loaded by Pydantic Settings in `app/config.py`:
 
 ```bash
-# PostgreSQL (evidence-engine job tracking — separate from main DB)
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@evidence-postgres:5432/ingestion
+# PostgreSQL (shared with backend so file routes can enforce case permissions)
+DATABASE_URL=postgresql+asyncpg://owl_us:owl_pw@postgres:5432/owl_db
 
 # Neo4j (shared with main platform)
 NEO4J_URI=bolt://neo4j:7687
@@ -569,6 +569,10 @@ CHROMA_PORT=8000
 
 # Redis (shared — job queue + pub/sub)
 REDIS_URL=redis://redis:6379
+
+# Authentication (must match main backend)
+AUTH_SECRET_KEY=supersecretchange
+AUTH_ALGORITHM=HS256
 
 # OpenAI
 OPENAI_API_KEY=sk-...
@@ -708,7 +712,7 @@ The Evidence Engine replaces an older evidence handling system that was built di
 
 ```bash
 # Start infrastructure services
-docker compose up neo4j postgres redis chromadb evidence-postgres -d
+docker compose up neo4j postgres redis chromadb -d
 
 # Run database migrations
 alembic upgrade head
@@ -727,12 +731,12 @@ arq app.worker.WorkerSettings
 docker compose up
 
 # Services:
-#   evidence-engine-api    → localhost:8001
+#   evidence-engine-api    → localhost:8003
 #   evidence-engine-worker → (background, no port)
-#   evidence-postgres      → localhost:5433
-#   neo4j                  → localhost:7687
-#   chromadb               → localhost:8100
-#   redis                  → localhost:6379
+#   postgres               → localhost:5434
+#   neo4j                  → localhost:7688
+#   chromadb               → localhost:8101
+#   redis                  → localhost:6380
 ```
 
 ### Running Tests
