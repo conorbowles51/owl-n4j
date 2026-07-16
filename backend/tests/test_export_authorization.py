@@ -7,11 +7,40 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from routers import evidence, financial
+from routers import evidence, financial, filesystem
 from services.case_service import CaseAccessDenied
 
 
 class ExportAuthorizationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_filesystem_read_denies_non_member_before_path_access(self):
+        case_id = uuid4()
+        current_user = SimpleNamespace(id=uuid4(), email="outsider@example.com")
+
+        with (
+            patch("routers.filesystem.check_case_access", side_effect=CaseAccessDenied("denied")) as check_access,
+            patch("pathlib.Path.resolve") as resolve_path,
+            patch("pathlib.Path.exists") as path_exists,
+            patch("pathlib.Path.read_text") as read_text,
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await filesystem.read_file(
+                    case_id=str(case_id),
+                    path="notes.txt",
+                    current_user=current_user,
+                    db=object(),
+                )
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        check_access.assert_called_once_with(
+            ANY,
+            case_id,
+            current_user,
+            required_permission=("case", "view"),
+        )
+        resolve_path.assert_not_called()
+        path_exists.assert_not_called()
+        read_text.assert_not_called()
+
     async def test_evidence_file_denies_non_member_before_file_resolution(self):
         case_id = uuid4()
         record = SimpleNamespace(

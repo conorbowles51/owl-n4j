@@ -4,20 +4,51 @@ File System Router
 API endpoints for browsing the file system starting from the data folder.
 """
 
-from typing import List, Optional
 from pathlib import Path
 from datetime import datetime
+from typing import List, Optional
+from uuid import UUID
+
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from config import EVIDENCE_DATA_ROOT
+from postgres.models.user import User
+from postgres.session import get_db
 from routers.auth import get_current_user
+from routers.users import get_current_db_user
+from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 
 router = APIRouter(prefix="/api/filesystem", tags=["filesystem"])
 
 # Root directory for case-file browsing.
 # For case-specific browsing, we'll use {EVIDENCE_DATA_ROOT}/{case_id}
 FILESYSTEM_ROOT = EVIDENCE_DATA_ROOT
+
+
+def _require_case_view(db: Session, case_id: str, current_user: User) -> UUID:
+    try:
+        case_uuid = UUID(str(case_id))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid case_id")
+
+    try:
+        case, _ = check_case_access(
+            db,
+            case_uuid,
+            current_user,
+            required_permission=("case", "view"),
+        )
+    except CaseNotFound:
+        raise HTTPException(status_code=404, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied - case.view permission required",
+        )
+
+    return case.id
 
 
 class FileSystemItem(BaseModel):
@@ -154,7 +185,8 @@ async def list_directory(
 async def read_file(
     case_id: str,
     path: str,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Read a file's contents (for text files only).
@@ -169,9 +201,11 @@ async def read_file(
     try:
         if not case_id:
             raise HTTPException(status_code=400, detail="case_id is required")
+
+        authorized_case_id = _require_case_view(db, case_id, current_user)
         
         # Case-specific root: {EVIDENCE_DATA_ROOT}/{case_id}
-        case_root = FILESYSTEM_ROOT / case_id
+        case_root = FILESYSTEM_ROOT / str(authorized_case_id)
         
         # Build target path
         path = path.strip().strip('/')
@@ -210,4 +244,3 @@ async def read_file(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
