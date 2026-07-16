@@ -68,7 +68,8 @@ class WorkspaceService:
             return is_simple_name or has_quick_action_pattern
         return False
 
-    def _list_evidence_records(self, case_id: str):
+    def _list_evidence_records(self, case_id: str) -> List[Dict[str, Any]]:
+        """Return timeline-safe evidence field snapshots for a case."""
         from services.evidence_db_storage import EvidenceDBStorage
 
         try:
@@ -77,7 +78,18 @@ class WorkspaceService:
             return []
 
         with get_background_session() as db:
-            return EvidenceDBStorage.list_files(db, case_id=case_uuid)
+            files = EvidenceDBStorage.list_files(db, case_id=case_uuid)
+            return [
+                {
+                    "id": str(f.id),
+                    "original_filename": f.original_filename,
+                    "created_at": f.created_at.isoformat() if f.created_at else None,
+                    "status": f.status,
+                    "processed_at": f.processed_at.isoformat() if f.processed_at else None,
+                    "upload_method": getattr(f, "upload_method", None),
+                }
+                for f in files
+            ]
 
     # ------------------------------------------------------------------ #
     # Case Context
@@ -674,10 +686,10 @@ class WorkspaceService:
 
         evidence_files = self._list_evidence_records(case_id)
         for evidence in evidence_files:
-            evidence_id = str(evidence.id)
-            filename = evidence.original_filename or "Unknown"
-            thread = "Documents" if self._is_case_document_filename(filename) or getattr(evidence, "upload_method", None) == "quick_action" else "Case Files"
-            uploaded_at = evidence.created_at.isoformat() if evidence.created_at else None
+            evidence_id = evidence["id"]
+            filename = evidence["original_filename"] or "Unknown"
+            thread = "Documents" if self._is_case_document_filename(filename) or evidence.get("upload_method") == "quick_action" else "Case Files"
+            uploaded_at = evidence["created_at"]
             if uploaded_at:
                 events.append({
                     "id": f"{thread.lower().replace(' ', '_')}_uploaded_{evidence_id}",
@@ -688,12 +700,12 @@ class WorkspaceService:
                     "description": f"File uploaded: {filename}",
                     "metadata": {"evidence_id": evidence_id, "filename": filename},
                 })
-            if evidence.status == "processed" and evidence.processed_at:
+            if evidence["status"] == "processed" and evidence["processed_at"]:
                 events.append({
                     "id": f"{thread.lower().replace(' ', '_')}_processed_{evidence_id}",
                     "type": "document_processed" if thread == "Documents" else "evidence_processed",
                     "thread": thread,
-                    "date": evidence.processed_at.isoformat(),
+                    "date": evidence["processed_at"],
                     "title": f"{'Document' if thread == 'Documents' else 'Evidence'} Processed: {filename}",
                     "description": f"Processing completed for {filename}",
                     "metadata": {"evidence_id": evidence_id, "filename": filename},
@@ -880,14 +892,14 @@ class WorkspaceService:
                 })
 
         for evidence in self._list_evidence_records(case_id):
-            evidence_id = str(evidence.id)
-            filename = evidence.original_filename or "Unknown"
+            evidence_id = evidence["id"]
+            filename = evidence["original_filename"] or "Unknown"
             is_document = evidence_id in attached_document_ids
             is_evidence = evidence_id in attached_evidence_ids
             if not (is_document or is_evidence):
                 continue
             thread = "Documents" if is_document else "Evidence"
-            uploaded_at = evidence.created_at.isoformat() if evidence.created_at else None
+            uploaded_at = evidence["created_at"]
             if uploaded_at:
                 events.append({
                     "id": f"{thread.lower()}_uploaded_{evidence_id}",
@@ -898,12 +910,12 @@ class WorkspaceService:
                     "description": f"File uploaded: {filename}",
                     "metadata": {"evidence_id": evidence_id, "filename": filename},
                 })
-            if evidence.status == "processed" and evidence.processed_at:
+            if evidence["status"] == "processed" and evidence["processed_at"]:
                 events.append({
                     "id": f"{thread.lower()}_processed_{evidence_id}",
                     "type": "document_processed" if is_document else "evidence_processed",
                     "thread": thread,
-                    "date": evidence.processed_at.isoformat(),
+                    "date": evidence["processed_at"],
                     "title": f"{'Document' if is_document else 'Evidence'} Processed: {filename}",
                     "description": f"Processing completed for {filename}",
                     "metadata": {"evidence_id": evidence_id, "filename": filename},
