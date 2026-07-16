@@ -3,12 +3,16 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, JSON
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from postgres.base import Base
 from postgres.models.mixins import TimestampMixin
+
+
+def _jsonb_column():
+    return JSONB().with_variant(JSON(), "sqlite")
 
 
 class CaseRevision(Base):
@@ -26,7 +30,7 @@ class CaseRevision(Base):
     )
     revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
     source: Mapped[str] = mapped_column(String(64), nullable=False, default="chat_turn")
-    extra_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    extra_metadata: Mapped[dict] = mapped_column(_jsonb_column(), nullable=False, default=dict)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -95,8 +99,8 @@ class ChatMessage(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     context_scope: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    selected_entity_keys: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    source_payload: Mapped[list | dict | None] = mapped_column(JSONB, nullable=True)
+    selected_entity_keys: Mapped[list | None] = mapped_column(_jsonb_column(), nullable=True)
+    source_payload: Mapped[list | dict | None] = mapped_column(_jsonb_column(), nullable=True)
     model_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     model_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     cost_record_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -105,7 +109,7 @@ class ChatMessage(Base):
         nullable=True,
         index=True,
     )
-    result_graph_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    result_graph_json: Mapped[dict | None] = mapped_column(_jsonb_column(), nullable=True)
     case_revision_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("case_revisions.id", ondelete="SET NULL"),
@@ -122,3 +126,52 @@ class ChatMessage(Base):
     conversation = relationship("ChatConversation", back_populates="messages")
     cost_record = relationship("CostRecord", foreign_keys=[cost_record_id])
     case_revision = relationship("CaseRevision", foreign_keys=[case_revision_id])
+
+
+class ChatCitationSnapshot(Base):
+    __tablename__ = "chat_citation_snapshots"
+    __table_args__ = (
+        Index("ix_chat_citation_snapshots_case_id", "case_id"),
+        Index("ix_chat_citation_snapshots_conversation_id", "conversation_id"),
+        Index("ix_chat_citation_snapshots_assistant_message_id", "assistant_message_id"),
+        Index("ix_chat_citation_snapshots_created_by_user_id", "created_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    case_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("case_revisions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    assistant_message_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    model_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    model_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    context_scope: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    selected_entity_keys: Mapped[list | None] = mapped_column(_jsonb_column(), nullable=True)
+    context_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    final_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retrieval_payload: Mapped[dict] = mapped_column(_jsonb_column(), nullable=False, default=dict)
+    source_payload: Mapped[list] = mapped_column(_jsonb_column(), nullable=False, default=list)
+    answer_citations: Mapped[list] = mapped_column(_jsonb_column(), nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    case = relationship("Case", foreign_keys=[case_id])
+    case_revision = relationship("CaseRevision", foreign_keys=[case_revision_id])
+    created_by = relationship("User", foreign_keys=[created_by_user_id])

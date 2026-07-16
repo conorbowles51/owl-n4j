@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,8 @@ from services.chat_db_service import (
     summarize_title,
 )
 from services.ai_costs_service import CostOperationKind, ai_cost_context
+from services.case_service import CaseAccessDenied, CaseNotFound
+from services.citation_snapshot_service import citation_snapshot_service
 from services.cost_tracking_service import CostJobType, record_cost
 from services.rag_service import rag_service
 from services.system_log_service import LogOrigin, LogType, system_log_service
@@ -57,9 +60,26 @@ class ChatRequest(BaseModel):
 
 
 class ChatSource(BaseModel):
+    source_id: Optional[str] = None
     filename: str
     excerpt: Optional[str] = None
     page: Optional[int] = None
+    page_end: Optional[int] = None
+    chunk_id: Optional[str] = None
+    doc_id: Optional[str] = None
+    doc_name: Optional[str] = None
+    evidence_id: Optional[str] = None
+    engine_job_id: Optional[str] = None
+    chunk_index: Optional[int] = None
+    start_char: Optional[int] = None
+    end_char: Optional[int] = None
+    content_sha256: Optional[str] = None
+    evidence_sha256: Optional[str] = None
+    status: Optional[str] = None
+    status_reason: Optional[str] = None
+    openable: bool = False
+    open_url: Optional[str] = None
+    warning: Optional[str] = None
 
 
 class ChatCost(BaseModel):
@@ -182,8 +202,10 @@ async def chat(
     )
     trace_cm.__enter__()
 
-    assistant_message_id = str(uuid.uuid4())
+    assistant_message_uuid = uuid.uuid4()
+    assistant_message_id = str(assistant_message_uuid)
     persisted_revision = get_latest_case_revision(db, request.case_id)
+    snapshot_id = None
 
     try:
         log_section(
@@ -276,6 +298,27 @@ async def chat(
                     "view_context": request.view_context,
                 },
             )
+
+        snapshot = citation_snapshot_service.create_snapshot(
+            db=db,
+            case_id=request.case_id,
+            case_revision_id=persisted_revision.id if persisted_revision else None,
+            conversation_id=conversation.id if conversation else None,
+            assistant_message_id=assistant_message_uuid,
+            created_by_user_id=current_user.id,
+            question=question,
+            answer=result["answer"],
+            model_provider=llm.provider,
+            model_id=llm.model_id,
+            context_scope=request.scope,
+            selected_entity_keys=selected_entity_keys,
+            citation_context=result.get("citation_context"),
+            sources=result.get("sources"),
+        )
+        snapshot_id = str(snapshot.id)
+        result["sources"] = snapshot.source_payload or []
+
+        if request.persist and conversation is not None:
             _, assistant_message = append_conversation_turn(
                 db=db,
                 conversation=conversation,
@@ -289,6 +332,8 @@ async def chat(
                 model_id=llm.model_id,
                 result_graph=result.get("result_graph"),
                 cost_record=cost_record,
+                snapshot_id=snapshot_id,
+                assistant_message_id=assistant_message_uuid,
             )
             assistant_message_id = str(assistant_message.id)
             db.commit()
@@ -339,7 +384,7 @@ async def chat(
             provenance=ChatProvenance(
                 case_id=str(request.case_id),
                 case_revision_id=str(persisted_revision.id) if persisted_revision else None,
-                snapshot_id=None,
+                snapshot_id=snapshot_id,
             ),
             suggestions=suggestions,
             context_mode=result.get("context_mode", request.scope),
@@ -366,6 +411,35 @@ async def chat(
             trace_cm.__exit__(None, None, None)
         except Exception:
             pass
+
+
+@router.get("/citation-snapshots/{snapshot_id}")
+async def get_citation_snapshot(
+    snapshot_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    snapshot = citation_snapshot_service.get_snapshot_for_user(db, snapshot_id)
+    try:
+        require_case_access(db, current_user, snapshot.case_id)
+    except (CaseAccessDenied, CaseNotFound) as exc:
+        raise HTTPException(status_code=404, detail="Citation snapshot not found") from exc
+    return citation_snapshot_service.snapshot_payload(db, snapshot)
+
+
+@router.get("/citation-snapshots/{snapshot_id}/sources/{source_id}/file", response_class=FileResponse)
+async def open_citation_snapshot_source(
+    snapshot_id: UUID,
+    source_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    snapshot = citation_snapshot_service.get_snapshot_for_user(db, snapshot_id)
+    try:
+        require_case_access(db, current_user, snapshot.case_id)
+    except (CaseAccessDenied, CaseNotFound) as exc:
+        raise HTTPException(status_code=404, detail="Citation snapshot not found") from exc
+    return citation_snapshot_service.file_response(db, snapshot, source_id)
 
 
 @router.post("/suggestions", response_model=SuggestionsResponse)

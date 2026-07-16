@@ -9,6 +9,7 @@ Handles:
 - Answer synthesis with citation support
 """
 
+import hashlib
 import json
 import sys
 import time
@@ -2182,6 +2183,22 @@ Only include candidates with score >= 5."""
         used_node_keys = [e.get("key") for e in entity_results if e.get("key")]
 
         sources = self._build_sources(chunk_results)
+        citation_context = {
+            "context": context,
+            "final_prompt": final_prompt,
+            "retrieval_payload": {
+                "reranked_chunks": chunk_results,
+                "reranked_entities": entity_results,
+                "graph_context": graph_context,
+                "cypher_context": cypher_context,
+                "document_summary_input": chunk_results,
+                "view_context_input": view_context,
+                "view_context_text": view_context_block,
+                "doc_keys": doc_keys,
+                "entity_keys": entity_keys,
+                "doc_entity_keys": doc_entity_keys,
+            },
+        }
 
         return {
             "answer": answer,
@@ -2193,6 +2210,7 @@ Only include candidates with score >= 5."""
             "result_graph": result_graph,
             "document_summary": doc_summary_text or None,
             "sources": sources,
+            "citation_context": citation_context,
         }
         
         
@@ -2212,18 +2230,49 @@ Only include candidates with score >= 5."""
         for chunk in chunk_results:
             metadata = chunk.get("metadata", {}) or {}
             filename = metadata.get("filename") or metadata.get("doc_name") or chunk.get("id")
-            if not filename or filename in seen:
+            chunk_id = metadata.get("chunk_id") or chunk.get("id")
+            text = (chunk.get("text") or "").strip()
+            page = metadata.get("page_start")
+            page_end = metadata.get("page_end")
+            source_identity = "|".join(
+                str(value or "")
+                for value in (
+                    chunk_id,
+                    metadata.get("engine_job_id"),
+                    metadata.get("evidence_file_id") or metadata.get("doc_id"),
+                    filename,
+                    page,
+                    hashlib.sha256(text.encode("utf-8")).hexdigest() if text else "",
+                )
+            )
+            source_id = "src_" + hashlib.sha256(source_identity.encode("utf-8")).hexdigest()[:24]
+            if not filename or source_id in seen:
                 continue
-            seen.add(str(filename))
-            excerpt = (chunk.get("text") or "").strip()
+            seen.add(source_id)
+            excerpt = text
             if len(excerpt) > 240:
                 excerpt = excerpt[:237] + "..."
-            source_payload: Dict[str, Any] = {"filename": str(filename)}
+            source_payload: Dict[str, Any] = {
+                "source_id": source_id,
+                "filename": str(filename),
+                "chunk_id": chunk_id,
+                "doc_id": metadata.get("doc_id"),
+                "doc_name": metadata.get("doc_name"),
+                "evidence_id": metadata.get("evidence_file_id") or metadata.get("evidence_id"),
+                "engine_job_id": metadata.get("engine_job_id"),
+                "chunk_index": metadata.get("chunk_index"),
+                "start_char": metadata.get("start_char"),
+                "end_char": metadata.get("end_char"),
+                "content_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest() if text else None,
+                "evidence_sha256": metadata.get("sha256") or metadata.get("file_sha256"),
+            }
             if excerpt:
                 source_payload["excerpt"] = excerpt
-            if metadata.get("page_start") not in (None, "", -1, "-1"):
-                source_payload["page"] = metadata.get("page_start")
-            sources.append(source_payload)
+            if page not in (None, "", -1, "-1"):
+                source_payload["page"] = page
+            if page_end not in (None, "", -1, "-1"):
+                source_payload["page_end"] = page_end
+            sources.append({key: value for key, value in source_payload.items() if value is not None})
             if len(sources) >= 5:
                 break
         return sources

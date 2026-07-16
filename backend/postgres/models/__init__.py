@@ -10,7 +10,7 @@ from postgres.models.notebook import NotebookNote, NotebookNoteLink
 from postgres.models.timeline_view import TimelineView, TimelineViewEvent
 from postgres.models.processing_profile import ProcessingProfile, CaseProcessingConfig
 from postgres.models.geocoding_cache import GeocodingCacheEntry
-from postgres.models.chat import CaseRevision, ChatConversation, ChatMessage
+from postgres.models.chat import CaseRevision, ChatConversation, ChatMessage, ChatCitationSnapshot
 from postgres.models.agent import (
     AgentArtifactRecord,
     AgentMessage,
@@ -54,7 +54,7 @@ __all__ = [
     "NotebookNote", "NotebookNoteLink", "TimelineView", "TimelineViewEvent",
     "ProcessingProfile", "CaseProcessingConfig",
     "GeocodingCacheEntry",
-    "CaseRevision", "ChatConversation", "ChatMessage",
+    "CaseRevision", "ChatConversation", "ChatMessage", "ChatCitationSnapshot",
     "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall",
     "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "CaseProfile", "CaseProfileAttribute", "CaseProfileEvidenceLink",

@@ -13,6 +13,7 @@ from postgres.models.cost_record import CostRecord
 from postgres.models.user import User
 from models.llm_models import get_model_by_id
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+from services.citation_snapshot_service import citation_snapshot_service
 from utils.text_sanitize import sanitize_json, sanitize_text
 
 
@@ -217,6 +218,7 @@ def append_conversation_turn(
     result_graph: dict[str, Any] | None,
     cost_record: CostRecord | None,
     snapshot_id: str | None = None,
+    assistant_message_id: UUID | None = None,
 ) -> tuple[ChatMessage, ChatMessage]:
     next_sequence = (
         db.query(func.max(ChatMessage.sequence_number))
@@ -241,7 +243,9 @@ def append_conversation_turn(
         case_revision_id=revision_id,
         snapshot_id=snapshot_id,
     )
+    assistant_kwargs = {"id": assistant_message_id} if assistant_message_id else {}
     assistant_message = ChatMessage(
+        **assistant_kwargs,
         conversation_id=conversation.id,
         sequence_number=next_sequence + 2,
         role="assistant",
@@ -321,20 +325,25 @@ def build_cost_payload(cost_record: CostRecord | None) -> dict[str, Any] | None:
     }
 
 
-def build_message_payload(message: ChatMessage, case_id: UUID) -> dict[str, Any]:
+def build_message_payload(message: ChatMessage, case_id: UUID, db: Session | None = None) -> dict[str, Any]:
     model = get_model_by_id(message.model_id) if message.model_id else None
     provenance = {
         "case_id": str(case_id),
         "case_revision_id": str(message.case_revision_id) if message.case_revision_id else None,
         "snapshot_id": message.snapshot_id,
     }
+    sources = message.source_payload or []
+    if db is not None and message.role == "assistant" and message.snapshot_id:
+        refreshed_sources = citation_snapshot_service.sources_for_snapshot_id(db, message.snapshot_id)
+        if refreshed_sources is not None:
+            sources = refreshed_sources
     return {
         "id": str(message.id),
         "role": message.role,
         "content": message.content,
         "scope": message.context_scope,
         "selected_entity_keys": message.selected_entity_keys or [],
-        "sources": message.source_payload or [],
+        "sources": sources,
         "cost": build_cost_payload(message.cost_record),
         "timestamp": message.created_at.isoformat(),
         "model_info": (
@@ -352,7 +361,7 @@ def build_message_payload(message: ChatMessage, case_id: UUID) -> dict[str, Any]
     }
 
 
-def build_conversation_payload(conversation: ChatConversation) -> dict[str, Any]:
+def build_conversation_payload(conversation: ChatConversation, db: Session | None = None) -> dict[str, Any]:
     ordered_messages = sorted(conversation.messages, key=lambda item: item.sequence_number)
     latest_snapshot_id = next(
         (message.snapshot_id for message in reversed(ordered_messages) if message.snapshot_id),
@@ -365,7 +374,7 @@ def build_conversation_payload(conversation: ChatConversation) -> dict[str, Any]
     return {
         "id": str(conversation.id),
         "name": conversation.title,
-        "messages": [build_message_payload(message, conversation.case_id) for message in ordered_messages],
+        "messages": [build_message_payload(message, conversation.case_id, db=db) for message in ordered_messages],
         "timestamp": conversation.updated_at.isoformat(),
         "created_at": conversation.created_at.isoformat(),
         "updated_at": conversation.updated_at.isoformat(),

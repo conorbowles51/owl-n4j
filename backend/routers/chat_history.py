@@ -76,8 +76,8 @@ class ChatHistorySummary(BaseModel):
     message_count: int
 
 
-def _to_response(conversation: ChatConversation) -> ChatHistoryResponse:
-    return ChatHistoryResponse(**build_conversation_payload(conversation))
+def _to_response(conversation: ChatConversation, db: Session) -> ChatHistoryResponse:
+    return ChatHistoryResponse(**build_conversation_payload(conversation, db=db))
 
 
 def _to_summary(conversation: ChatConversation) -> ChatHistorySummary:
@@ -111,7 +111,7 @@ async def create_chat_history(
     db.commit()
     db.refresh(conversation)
     conversation = get_conversation_for_user(db, conversation.id, current_user, case_id=chat.case_id)
-    return _to_response(conversation)
+    return _to_response(conversation, db)
 
 
 @router.get("", response_model=List[ChatHistorySummary])
@@ -164,7 +164,7 @@ async def get_chat_histories_by_snapshot(
             continue
         visible.append(conversation)
 
-    return [_to_response(conversation) for conversation in visible]
+    return [_to_response(conversation, db) for conversation in visible]
 
 
 @router.get("/{chat_id}", response_model=ChatHistoryResponse)
@@ -177,7 +177,7 @@ async def get_chat_history(
         conversation = get_conversation_for_case_reader(db, chat_id, current_user)
     except (CaseNotFound, CaseAccessDenied) as exc:
         raise HTTPException(status_code=404, detail="Chat history not found") from exc
-    return _to_response(conversation)
+    return _to_response(conversation, db)
 
 
 @router.put("/{chat_id}", response_model=ChatHistoryResponse)
@@ -207,7 +207,7 @@ async def update_chat_history(
 
     db.commit()
     conversation = get_conversation_for_user(db, chat_id, current_user)
-    return _to_response(conversation)
+    return _to_response(conversation, db)
 
 
 @router.delete("/{chat_id}")
