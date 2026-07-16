@@ -114,8 +114,11 @@ class JobStatusSubscriber:
                             EvidenceDBStorage.mark_processed(db, [ef.id], error=err)
                             if engine_status == "completed":
                                 doc_summary = job.get("document_summary")
-                                if doc_summary:
+                                if doc_summary and ef.summary_source != "human":
                                     ef.summary = doc_summary
+                                    ef.summary_source = "ai"
+                                    ef.summary_edited_by = None
+                                    ef.summary_edited_at = None
                                 transcription = job.get("transcription")
                                 if transcription is not None:
                                     ef.transcription = transcription
@@ -256,8 +259,11 @@ class JobStatusSubscriber:
 
             if status == "completed":
                 doc_summary = job_detail.get("document_summary")
-                if doc_summary:
+                if doc_summary and db_rec.summary_source != "human":
                     db_rec.summary = doc_summary
+                    db_rec.summary_source = "ai"
+                    db_rec.summary_edited_by = None
+                    db_rec.summary_edited_at = None
 
                 transcription = job_detail.get("transcription")
                 if transcription is not None:

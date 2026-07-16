@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { evidenceAPI } from "@/features/evidence/api"
-import { usePinnedItems, useUnpinItem } from "../hooks/use-workspace"
+import { usePinnedItems, useUnpinItem, workspaceKeys } from "../hooks/use-workspace"
+import { EvidenceSummaryInline, OpenEvidenceFileButton } from "./EvidenceSummaryInline"
 import { formatWorkspaceDateTime } from "../lib/format-date"
 
 interface PinnedEvidenceSectionProps {
@@ -15,7 +16,7 @@ export function PinnedEvidenceSection({ caseId }: PinnedEvidenceSectionProps) {
   const { data: pinned = [] } = usePinnedItems(caseId)
   const unpinItem = useUnpinItem(caseId)
   const { data: evidenceFiles = [] } = useQuery({
-    queryKey: ["workspace", caseId, "pinned-evidence-files"],
+    queryKey: workspaceKeys.pinnedEvidenceFiles(caseId),
     queryFn: () => evidenceAPI.list(caseId),
   })
 
@@ -26,6 +27,7 @@ export function PinnedEvidenceSection({ caseId }: PinnedEvidenceSectionProps) {
         const evidence = evidenceById.get(item.item_id)
         return {
           ...item,
+          evidence,
           label: evidence?.original_filename || item.item_id,
           created_at: evidence?.created_at || item.created_at,
         }
@@ -59,9 +61,9 @@ export function PinnedEvidenceSection({ caseId }: PinnedEvidenceSectionProps) {
             return (
               <div
                 key={item.id}
-                className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2"
+                className="flex items-start gap-2 rounded-md border border-border/60 px-3 py-2"
               >
-                <Icon className="size-3.5 text-muted-foreground" />
+                <Icon className="mt-0.5 size-3.5 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium">{item.label}</p>
                   {item.created_at && (
@@ -69,18 +71,22 @@ export function PinnedEvidenceSection({ caseId }: PinnedEvidenceSectionProps) {
                       {formatWorkspaceDateTime(item.created_at)}
                     </p>
                   )}
+                  {item.evidence && <EvidenceSummaryInline file={item.evidence} />}
                 </div>
-                <Badge variant="outline" className="text-[10px] uppercase">
-                  {item.item_type}
-                </Badge>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => unpinItem.mutate(item.id)}
-                  aria-label={`Unpin ${item.label}`}
-                >
-                  <PinOff className="size-3.5" />
-                </Button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Badge variant="outline" className="text-[10px] uppercase">
+                    {item.item_type}
+                  </Badge>
+                  {item.evidence && <OpenEvidenceFileButton file={item.evidence} />}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => unpinItem.mutate(item.id)}
+                    aria-label={`Unpin ${item.label}`}
+                  >
+                    <PinOff className="size-3.5" />
+                  </Button>
+                </div>
               </div>
             )
           })}

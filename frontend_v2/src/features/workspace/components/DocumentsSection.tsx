@@ -4,7 +4,13 @@ import { FileText, Pin, PinOff } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { evidenceAPI } from "@/features/evidence/api"
-import { usePinItem, usePinnedItems, useUnpinItem } from "../hooks/use-workspace"
+import {
+  usePinItem,
+  usePinnedItems,
+  useUnpinItem,
+  workspaceKeys,
+} from "../hooks/use-workspace"
+import { EvidenceSummaryInline, OpenEvidenceFileButton } from "./EvidenceSummaryInline"
 import { formatWorkspaceDateTime } from "../lib/format-date"
 
 interface DocumentsSectionProps {
@@ -28,7 +34,7 @@ function isDocumentFile(filename: string) {
 
 export function DocumentsSection({ caseId }: DocumentsSectionProps) {
   const { data: evidenceFiles = [] } = useQuery({
-    queryKey: ["workspace", caseId, "documents"],
+    queryKey: workspaceKeys.documents(caseId),
     queryFn: () => evidenceAPI.list(caseId),
   })
   const { data: pinned = [] } = usePinnedItems(caseId)
@@ -61,26 +67,38 @@ export function DocumentsSection({ caseId }: DocumentsSectionProps) {
             return (
               <div
                 key={doc.id}
-                className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2"
+                className="flex items-start gap-3 rounded-md border border-border/60 px-3 py-2"
               >
-                <FileText className="size-3.5 text-muted-foreground" />
+                <FileText className="mt-0.5 size-3.5 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium">{doc.original_filename}</p>
                   <p className="text-[10px] text-muted-foreground">
                     {formatWorkspaceDateTime(doc.created_at)}
                   </p>
+                  <EvidenceSummaryInline file={doc} />
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() =>
-                    pinnedEntry
-                      ? unpinItem.mutate(pinnedEntry.id)
-                      : pinItem.mutate({ itemType: "document", itemId: doc.id })
-                  }
-                >
-                  {pinnedEntry ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
-                </Button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Badge variant="outline" className="text-[10px]">
+                    {doc.status}
+                  </Badge>
+                  <OpenEvidenceFileButton file={doc} />
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() =>
+                      pinnedEntry
+                        ? unpinItem.mutate(pinnedEntry.id)
+                        : pinItem.mutate({ itemType: "document", itemId: doc.id })
+                    }
+                    aria-label={
+                      pinnedEntry
+                        ? `Unpin ${doc.original_filename}`
+                        : `Pin ${doc.original_filename}`
+                    }
+                  >
+                    {pinnedEntry ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+                  </Button>
+                </div>
               </div>
             )
           })}

@@ -109,6 +109,9 @@ def _evidence_record_from_db(record) -> dict:
         "last_error": record.last_error,
         "engine_job_id": record.engine_job_id,
         "summary": record.summary,
+        "summary_source": record.summary_source,
+        "summary_edited_by": record.summary_edited_by,
+        "summary_edited_at": record.summary_edited_at.isoformat() if record.summary_edited_at else None,
         "transcription": record.transcription,
         "entity_count": record.entity_count,
         "relationship_count": record.relationship_count,
@@ -574,6 +577,9 @@ class EvidenceRecord(BaseModel):
     processed_at: Optional[str] = None
     last_error: Optional[str] = None
     summary: Optional[str] = None  # Document summary if available
+    summary_source: str = "ai"
+    summary_edited_by: Optional[str] = None
+    summary_edited_at: Optional[str] = None
     transcription: Optional[str] = None  # Full audio transcript if available
     entity_count: Optional[int] = None
     relationship_count: Optional[int] = None
@@ -633,7 +639,7 @@ async def list_evidence(
     case_id: Optional[str] = None,
     status_filter: Optional[str] = Query(None, alias="status"),
     include_cellebrite_artifacts: bool = False,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -647,10 +653,24 @@ async def list_evidence(
     try:
         if not case_id:
             return {"files": []}
-        db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id), status=status_filter)
+        from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+
+        try:
+            case_uuid = UUID(case_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        try:
+            check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        db_files = EvidenceDBStorage.list_files(db, case_id=case_uuid, status=status_filter)
         if not include_cellebrite_artifacts:
             db_files = [row for row in db_files if row.source_type != "cellebrite"]
         return {"files": [_evidence_record_from_db(f) for f in db_files]}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2225,7 +2245,7 @@ async def list_wiretap_processed(
 async def get_evidence_by_filename(
     filename: str,
     case_id: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -2235,10 +2255,17 @@ async def get_evidence_by_filename(
     stored in entity citations.
     """
     from services.evidence_db_storage import EvidenceDBStorage
+    from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
     from uuid import UUID
 
     try:
         case_uuid = UUID(case_id) if case_id else None
+        if case_uuid:
+            try:
+                check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+            except (CaseNotFound, CaseAccessDenied):
+                raise HTTPException(status_code=404, detail="Case not found")
+
         record = EvidenceDBStorage.find_by_filename(db, filename, case_id=case_uuid)
         if record:
             return {
@@ -2248,9 +2275,16 @@ async def get_evidence_by_filename(
                 "original_filename": record.original_filename,
                 "stored_path": record.stored_path,
                 "summary": record.summary,
+                "summary_source": record.summary_source,
+                "summary_edited_by": record.summary_edited_by,
+                "summary_edited_at": record.summary_edited_at.isoformat() if record.summary_edited_at else None,
             }
 
         return {"found": False, "message": f"No evidence file found with name: {filename}"}
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Case not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2259,27 +2293,44 @@ async def get_evidence_by_filename(
 async def get_document_summary(
     filename: str,
     case_id: str = Query(..., description="Case ID"),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
-    Get the AI-generated summary for a document.
+    Get the source-aware summary for a document.
 
     Returns the summary stored on the EvidenceFile record in Postgres.
     """
     from services.evidence_db_storage import EvidenceDBStorage
+    from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
     from uuid import UUID
 
     try:
         case_uuid = UUID(case_id)
+        try:
+            check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
         record = EvidenceDBStorage.find_by_filename(db, filename, case_id=case_uuid)
         summary = record.summary if record else None
         return {
             "filename": filename,
             "case_id": case_id,
             "summary": summary,
+            "summary_source": record.summary_source if record else "ai",
+            "summary_edited_by": record.summary_edited_by if record else None,
+            "summary_edited_at": (
+                record.summary_edited_at.isoformat()
+                if record and record.summary_edited_at
+                else None
+            ),
             "has_summary": summary is not None,
         }
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Case not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -51,9 +51,19 @@ def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
             changed = True
 
         document_summary = job.get("document_summary")
-        if document_summary and db_rec.summary != document_summary:
-            db_rec.summary = document_summary
-            changed = True
+        if document_summary and db_rec.summary_source != "human":
+            if db_rec.summary != document_summary:
+                db_rec.summary = document_summary
+                changed = True
+            if db_rec.summary_source != "ai":
+                db_rec.summary_source = "ai"
+                changed = True
+            if db_rec.summary_edited_by is not None:
+                db_rec.summary_edited_by = None
+                changed = True
+            if db_rec.summary_edited_at is not None:
+                db_rec.summary_edited_at = None
+                changed = True
 
         transcription = job.get("transcription")
         if transcription is not None and db_rec.transcription != transcription:

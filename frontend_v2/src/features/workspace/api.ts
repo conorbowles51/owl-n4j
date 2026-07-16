@@ -1,4 +1,5 @@
 import { fetchAPI } from "@/lib/api-client"
+import type { EvidenceFile } from "@/types/evidence.types"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -178,6 +179,16 @@ export interface TimelineEvent {
   metadata?: Record<string, unknown>
 }
 
+export type EvidenceSummaryUpdateResult = Pick<
+  EvidenceFile,
+  | "id"
+  | "original_filename"
+  | "summary"
+  | "summary_source"
+  | "summary_edited_by"
+  | "summary_edited_at"
+>
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -288,6 +299,16 @@ export const workspaceAPI = {
     fetchAPI<void>(`/api/workspace/${caseId}/findings/${findingId}`, {
       method: "DELETE",
     }),
+
+  updateEvidenceSummary: (
+    caseId: string,
+    fileId: string,
+    summary: string,
+  ) =>
+    fetchAPI<EvidenceSummaryUpdateResult>(
+      `/api/workspace/${caseId}/evidence/${fileId}/summary`,
+      { method: "PATCH", body: { summary } },
+    ),
 
   // -- Theories (wrapped: {"theories": [...]}) ------------------------------
   getTheories: (caseId: string) =>

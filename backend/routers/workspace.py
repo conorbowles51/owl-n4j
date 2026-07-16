@@ -11,7 +11,7 @@ Handles workspace-specific endpoints for case workspaces including:
 - Presence tracking
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect
@@ -102,6 +102,10 @@ class FindingCreate(BaseModel):
     linked_evidence_ids: Optional[List[str]] = None
     linked_document_ids: Optional[List[str]] = None
     linked_entity_keys: Optional[List[str]] = None
+
+
+class EvidenceSummaryUpdate(BaseModel):
+    summary: str
 
 
 class TaskCreate(BaseModel):
@@ -1016,6 +1020,71 @@ async def delete_note(
             raise HTTPException(status_code=404, detail="Note not found")
 
         return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Evidence Summary Endpoints
+@router.patch("/{case_id}/evidence/{file_id}/summary")
+async def update_evidence_summary(
+    case_id: str,
+    file_id: str,
+    payload: EvidenceSummaryUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Replace an evidence file summary with a human-authored summary."""
+    try:
+        try:
+            case_uuid = UUID(case_id)
+            file_uuid = UUID(file_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Evidence file not found")
+
+        try:
+            get_case_if_allowed(db=db, case_id=case_uuid, user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        summary = payload.summary.strip()
+        if not summary:
+            raise HTTPException(status_code=400, detail="Summary cannot be empty")
+
+        record = EvidenceDBStorage.get(db, file_uuid)
+        if not record or record.case_id != case_uuid:
+            raise HTTPException(status_code=404, detail="Evidence file not found")
+
+        record.summary = summary
+        record.summary_source = "human"
+        record.summary_edited_by = current_user.email
+        record.summary_edited_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(record)
+
+        system_log_service.log(
+            log_type=LogType.CASE_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Edit File Summary",
+            details={
+                "case_id": case_id,
+                "evidence_file_id": file_id,
+                "summary_source": record.summary_source,
+            },
+            user=current_user.email,
+            success=True,
+        )
+
+        return {
+            "id": str(record.id),
+            "case_id": str(record.case_id),
+            "original_filename": record.original_filename,
+            "summary": record.summary,
+            "summary_source": record.summary_source,
+            "summary_edited_by": record.summary_edited_by,
+            "summary_edited_at": record.summary_edited_at.isoformat() if record.summary_edited_at else None,
+        }
     except HTTPException:
         raise
     except Exception as e:

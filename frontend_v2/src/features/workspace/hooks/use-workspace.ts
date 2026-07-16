@@ -24,6 +24,10 @@ const keys = {
   pinned: (caseId: string) => ["workspace", caseId, "pinned"] as const,
   presence: (caseId: string) => ["workspace", caseId, "presence"] as const,
   timeline: (caseId: string) => ["workspace", caseId, "timeline"] as const,
+  caseFiles: (caseId: string) => ["workspace", caseId, "case-files"] as const,
+  documents: (caseId: string) => ["workspace", caseId, "documents"] as const,
+  pinnedEvidenceFiles: (caseId: string) =>
+    ["workspace", caseId, "pinned-evidence-files"] as const,
 }
 
 export { keys as workspaceKeys }
@@ -255,6 +259,19 @@ export function useDeleteFinding(caseId: string) {
     mutationFn: (findingId: string) =>
       workspaceAPI.deleteFinding(caseId, findingId),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.findings(caseId) }),
+  })
+}
+
+export function useUpdateEvidenceSummary(caseId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ fileId, summary }: { fileId: string; summary: string }) =>
+      workspaceAPI.updateEvidenceSummary(caseId, fileId, summary),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.caseFiles(caseId) })
+      qc.invalidateQueries({ queryKey: keys.documents(caseId) })
+      qc.invalidateQueries({ queryKey: keys.pinnedEvidenceFiles(caseId) })
+    },
   })
 }
 

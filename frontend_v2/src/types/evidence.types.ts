@@ -11,8 +11,12 @@ export interface EvidenceFile {
   processed_at?: string | null
   last_error?: string | null
   summary?: string | null
+  summary_source?: "ai" | "human" | string
+  summary_edited_by?: string | null
+  summary_edited_at?: string | null
   transcription?: string | null
   entity_count?: number
+  relationship_count?: number
   engine_job_id?: string | null
 }
 
@@ -126,6 +130,9 @@ export interface LLMModel {
 export interface EvidenceSummary {
   has_summary: boolean
   summary?: string | null
+  summary_source?: "ai" | "human" | string
+  summary_edited_by?: string | null
+  summary_edited_at?: string | null
   filename?: string
 }
 
@@ -187,6 +194,9 @@ export interface EvidenceFileRecord {
   last_error: string | null
   legacy_id: string | null
   summary: string | null
+  summary_source: "ai" | "human" | string
+  summary_edited_by: string | null
+  summary_edited_at: string | null
   transcription: string | null
   entity_count: number | null
   relationship_count: number | null
