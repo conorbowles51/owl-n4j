@@ -31,7 +31,8 @@ from services.agent.schemas import (
 )
 import services.agent.storage as storage
 from services.ai_costs_service import CostOperationKind, record_cost
-from services.case_service import check_case_access
+from services.case_service import CaseAccessDenied, check_case_access
+from services.export_security import audit_export_event, deterministic_hash
 from services.system_log_service import LogOrigin, LogType, system_log_service
 
 
@@ -552,15 +553,69 @@ class AgentService:
         user: User,
         artifact_id: UUID,
         export_format: AgentExportFormat,
+        correlation_id: str | None = None,
     ) -> AgentArtifactExport:
-        artifact = storage.get_artifact_for_user(db, artifact_id=artifact_id, user=user)
-        exported = render_artifact_export(artifact, export_format)
-        self._log_agent_event(
-            db,
-            action="agent_artifact_exported",
+        correlation_id = correlation_id or ""
+        try:
+            artifact = storage.get_artifact_for_export(db, artifact_id=artifact_id, user=user)
+        except CaseAccessDenied as exc:
+            audit_export_event(
+                db=db,
+                user=user,
+                action="agent_artifact_export",
+                case_id=storage.get_artifact_case_id(db, artifact_id=artifact_id),
+                export_type=f"agent_artifact.{export_format}",
+                resource_type="agent_artifact",
+                resource_id=str(artifact_id),
+                scope={"format": export_format},
+                result="denied",
+                correlation_id=correlation_id,
+                error_class=exc.__class__.__name__,
+                success=False,
+            )
+            db.commit()
+            raise
+        try:
+            exported = render_artifact_export(artifact, export_format)
+        except Exception as exc:
+            case_id = artifact.run.case_id if artifact.run is not None else artifact.thread.case_id
+            audit_export_event(
+                db=db,
+                user=user,
+                action="agent_artifact_export",
+                case_id=case_id,
+                export_type=f"agent_artifact.{export_format}",
+                resource_type="agent_artifact",
+                resource_id=str(artifact.id),
+                scope={"artifact_type": artifact.type},
+                result="failure",
+                correlation_id=correlation_id,
+                error_class=exc.__class__.__name__,
+            )
+            db.commit()
+            raise
+        case_id = artifact.run.case_id if artifact.run is not None else artifact.thread.case_id
+        audit_export_event(
+            db=db,
             user=user,
-            run=artifact.run,
-            details={"artifact_id": str(artifact.id), "artifact_type": artifact.type, "format": export_format},
+            action="agent_artifact_export",
+            case_id=case_id,
+            export_type=f"agent_artifact.{export_format}",
+            resource_type="agent_artifact",
+            resource_id=str(artifact.id),
+            scope={"artifact_type": artifact.type},
+            result="success",
+            correlation_id=correlation_id,
+            row_count=1,
+            content_hash=deterministic_hash(
+                {
+                    "artifact_id": str(artifact.id),
+                    "artifact_type": artifact.type,
+                    "format": export_format,
+                    "content_hash": deterministic_hash(exported.content.hex()),
+                }
+            ),
+            content_type=exported.media_type,
         )
         db.commit()
         return exported

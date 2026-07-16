@@ -5,7 +5,7 @@ from typing import Literal
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from services.agent.schemas import (
 )
 from services.agent.service import agent_service
 from services.case_service import CaseAccessDenied, CaseNotFound
+from services.export_security import correlation_id_from_request
 
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -168,17 +169,20 @@ async def cancel_agent_run(
 
 @router.get("/artifacts/{artifact_id}/export")
 async def export_agent_artifact(
+    request: Request,
     artifact_id: UUID,
     format: Literal["csv", "pdf", "docx"] = Query(default="csv"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
+    correlation_id = correlation_id_from_request(request)
     try:
         exported = agent_service.export_artifact(
             db=db,
             user=current_user,
             artifact_id=artifact_id,
             export_format=format,
+            correlation_id=correlation_id,
         )
         ascii_filename = exported.filename.encode("ascii", "ignore").decode("ascii") or "agent-artifact.csv"
         disposition = (
@@ -191,6 +195,9 @@ async def export_agent_artifact(
             headers={
                 "Content-Disposition": disposition,
                 "X-Agent-Export-Format": format,
+                "X-Correlation-ID": correlation_id,
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
             },
         )
     except ValueError as exc:

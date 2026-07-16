@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -16,6 +16,12 @@ from postgres.session import get_db
 from routers.users import get_current_db_user
 from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+from services.export_security import (
+    audit_export_event,
+    correlation_id_from_request,
+    deterministic_hash,
+    parse_case_uuid,
+)
 from services.financial_export_service import render_financial_export
 
 router = APIRouter(prefix="/api/financial", tags=["financial"])
@@ -615,6 +621,7 @@ async def get_transaction_children(
 
 @router.get("/export/pdf")
 async def export_financial_pdf(
+    request: Request,
     case_id: str = Query(..., description="REQUIRED: Case ID"),
     mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
     case_name: str = Query("Case", description="Case name for the header"),
@@ -629,6 +636,8 @@ async def export_financial_pdf(
     from_entities: Optional[str] = Query(None, description="Comma-separated sender entity keys"),
     to_entities: Optional[str] = Query(None, description="Comma-separated beneficiary entity keys"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """Export filtered financial transactions as a PDF report.
 
@@ -636,6 +645,43 @@ async def export_financial_pdf(
     where laptops and internet are unavailable (e.g., jail visits).
     Includes transaction names, AI summaries, and entity notes appendix.
     """
+    correlation_id = correlation_id_from_request(request)
+    scope = {
+        "mode": mode,
+        "categories": _parse_csv_param(categories),
+        "start_date": start_date,
+        "end_date": end_date,
+        "entity_key": entity_key,
+        "entity_name": entity_name,
+        "entity": entity,
+        "search": search_header or search,
+        "from_entities": _parse_csv_param(from_entities),
+        "to_entities": _parse_csv_param(to_entities),
+        "include_entity_notes": include_entity_notes,
+    }
+    try:
+        case_uuid = parse_case_uuid(case_id)
+        check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid case_id") from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        audit_export_event(
+            db=db,
+            user=current_user,
+            action="financial_pdf_export",
+            case_id=case_id,
+            export_type="financial.pdf",
+            result="denied",
+            correlation_id=correlation_id,
+            scope=scope,
+            error_class=exc.__class__.__name__,
+            success=False,
+        )
+        db.commit()
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
     try:
         result = neo4j_service.get_financial_transactions(case_id=case_id, mode=mode)
         transactions = result.get("transactions", []) if isinstance(result, dict) else result
@@ -721,6 +767,7 @@ async def export_financial_pdf(
             entity_notes=entity_notes,
             entity_flow=entity_flow,
         )
+        row_hash = deterministic_hash(transactions)
 
         safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
         mode_label = "Transactions" if mode != "intelligence" else "Financial_Intelligence"
@@ -728,11 +775,43 @@ async def export_financial_pdf(
             f"Financial_Report_{mode_label}_{safe_name}_{datetime.now().strftime('%Y%m%d')}."
             f"{rendered['extension']}"
         )
+        audit_export_event(
+            db=db,
+            user=current_user,
+            action="financial_pdf_export",
+            case_id=case_id,
+            export_type="financial.pdf",
+            result="success",
+            correlation_id=correlation_id,
+            scope=scope,
+            row_count=len(transactions),
+            content_hash=row_hash,
+            content_type=rendered["media_type"],
+        )
+        db.commit()
 
         return Response(
             content=rendered["content"],
             media_type=rendered["media_type"],
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Correlation-ID": correlation_id,
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
     except Exception as e:
+        audit_export_event(
+            db=db,
+            user=current_user,
+            action="financial_pdf_export",
+            case_id=case_id,
+            export_type="financial.pdf",
+            result="failure",
+            correlation_id=correlation_id,
+            scope=scope,
+            error_class=e.__class__.__name__,
+            success=False,
+        )
+        db.commit()
         raise HTTPException(status_code=500, detail=str(e))

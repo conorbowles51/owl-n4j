@@ -633,7 +633,7 @@ async def list_evidence(
     case_id: Optional[str] = None,
     status_filter: Optional[str] = Query(None, alias="status"),
     include_cellebrite_artifacts: bool = False,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -647,10 +647,13 @@ async def list_evidence(
     try:
         if not case_id:
             return {"files": []}
+        _verify_evidence_case_access(case_id, current_user, db, required_permission=("case", "view"))
         db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id), status=status_filter)
         if not include_cellebrite_artifacts:
             db_files = [row for row in db_files if row.source_type != "cellebrite"]
         return {"files": [_evidence_record_from_db(f) for f in db_files]}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1216,7 +1219,22 @@ async def get_engine_job(
         job = await reconcile_job_by_id(db, job_id)
         db_rec = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
         if db_rec:
+            _verify_evidence_case_access(
+                str(db_rec.case_id),
+                current_user,
+                db,
+                required_permission=("case", "view"),
+            )
             job["evidence_file_id"] = str(db_rec.id)
+        elif job.get("case_id"):
+            _verify_evidence_case_access(
+                str(job["case_id"]),
+                current_user,
+                db,
+                required_permission=("case", "view"),
+            )
+        else:
+            raise HTTPException(status_code=404, detail="Job not found")
         return job
     except HTTPException:
         raise
@@ -1799,7 +1817,7 @@ async def delete_evidence_file(
 @router.get("/{evidence_id}/file")
 async def get_evidence_file(
     evidence_id: str,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -1818,6 +1836,12 @@ async def get_evidence_file(
 
         if not record:
             raise HTTPException(status_code=404, detail="Evidence not found")
+        _verify_evidence_case_access(
+            str(record.case_id),
+            current_user,
+            db,
+            required_permission=("case", "view"),
+        )
 
         # Primary path: serve from backend disk
         filename = record.original_filename or "file"
@@ -1832,7 +1856,11 @@ async def get_evidence_file(
             path=file_path,
             filename=filename,
             media_type=content_type,
-            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
     except HTTPException:
         raise
@@ -1894,7 +1922,7 @@ async def get_video_frames(
     evidence_id: str,
     interval: int = Query(30, description="Seconds between frame captures"),
     max_frames: int = Query(50, description="Maximum number of frames"),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -1911,6 +1939,12 @@ async def get_video_frames(
         record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
     if not record:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    _verify_evidence_case_access(
+        str(record.case_id),
+        current_user,
+        db,
+        required_permission=("case", "view"),
+    )
 
     stored_path = record.stored_path
     if not stored_path:
@@ -1924,7 +1958,7 @@ async def get_video_frames(
     if video_path.suffix.lower() not in video_exts:
         raise HTTPException(status_code=400, detail="File is not a video")
 
-    cache_dir = FRAMES_CACHE_DIR / evidence_id
+    cache_dir = FRAMES_CACHE_DIR / str(record.case_id) / evidence_id
     frames_meta = []
 
     if cache_dir.exists() and any(cache_dir.glob("frame_*.jpg")):
@@ -1955,17 +1989,36 @@ async def get_video_frames(
 async def get_video_frame_image(
     evidence_id: str,
     filename: str,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """Serve an individual extracted frame image."""
     if not filename.startswith("frame_") or not filename.endswith(".jpg"):
         raise HTTPException(status_code=400, detail="Invalid frame filename")
 
-    frame_path = FRAMES_CACHE_DIR / evidence_id / filename
+    record = None
+    try:
+        record = EvidenceDBStorage.get(db, UUID(evidence_id))
+    except (ValueError, AttributeError):
+        record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    _verify_evidence_case_access(
+        str(record.case_id),
+        current_user,
+        db,
+        required_permission=("case", "view"),
+    )
+
+    frame_path = FRAMES_CACHE_DIR / str(record.case_id) / evidence_id / filename
     if not frame_path.exists():
         raise HTTPException(status_code=404, detail="Frame not found. Extract frames first via GET /{evidence_id}/frames")
 
-    return FileResponse(frame_path, media_type="image/jpeg")
+    return FileResponse(
+        frame_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 class SetRelevanceRequest(BaseModel):
@@ -2609,7 +2662,7 @@ async def test_folder_profile(
 async def get_file_entities(
     evidence_id: str,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Return entities extracted from a specific evidence file."""
     from services.evidence_db_storage import EvidenceDBStorage
@@ -2623,6 +2676,12 @@ async def get_file_entities(
     file_rec = EvidenceDBStorage.get(db, eid)
     if not file_rec:
         raise HTTPException(status_code=404, detail="File not found")
+    _verify_evidence_case_access(
+        str(file_rec.case_id),
+        current_user,
+        db,
+        required_permission=("case", "view"),
+    )
 
     filename = file_rec.original_filename
     case_id = str(file_rec.case_id)
@@ -2654,7 +2713,7 @@ async def get_file_entities(
 async def get_file_relationships(
     evidence_id: str,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Return relationships extracted from a specific evidence file."""
     from services.evidence_db_storage import EvidenceDBStorage
@@ -2668,6 +2727,12 @@ async def get_file_relationships(
     file_rec = EvidenceDBStorage.get(db, eid)
     if not file_rec:
         raise HTTPException(status_code=404, detail="File not found")
+    _verify_evidence_case_access(
+        str(file_rec.case_id),
+        current_user,
+        db,
+        required_permission=("case", "view"),
+    )
 
     filename = file_rec.original_filename
     case_id = str(file_rec.case_id)

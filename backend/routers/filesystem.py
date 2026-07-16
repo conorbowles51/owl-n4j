@@ -9,9 +9,14 @@ from pathlib import Path
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from config import EVIDENCE_DATA_ROOT
-from routers.auth import get_current_user
+from postgres.models.user import User
+from postgres.session import get_db
+from routers.users import get_current_db_user
+from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+from services.export_security import parse_case_uuid
 
 router = APIRouter(prefix="/api/filesystem", tags=["filesystem"])
 
@@ -40,7 +45,8 @@ class FileSystemListResponse(BaseModel):
 async def list_directory(
     case_id: Optional[str] = None,
     path: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     List files and directories in a given path for a specific case.
@@ -56,6 +62,16 @@ async def list_directory(
     try:
         if not case_id:
             raise HTTPException(status_code=400, detail="case_id is required")
+        try:
+            case_uuid = parse_case_uuid(case_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid case_id") from exc
+        try:
+            check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+        except CaseNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except CaseAccessDenied as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         
         # Case-specific root: {EVIDENCE_DATA_ROOT}/{case_id}
         case_root = FILESYSTEM_ROOT / case_id
@@ -154,7 +170,8 @@ async def list_directory(
 async def read_file(
     case_id: str,
     path: str,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Read a file's contents (for text files only).
@@ -169,6 +186,16 @@ async def read_file(
     try:
         if not case_id:
             raise HTTPException(status_code=400, detail="case_id is required")
+        try:
+            case_uuid = parse_case_uuid(case_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid case_id") from exc
+        try:
+            check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+        except CaseNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except CaseAccessDenied as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         
         # Case-specific root: {EVIDENCE_DATA_ROOT}/{case_id}
         case_root = FILESYSTEM_ROOT / case_id
@@ -210,4 +237,3 @@ async def read_file(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-

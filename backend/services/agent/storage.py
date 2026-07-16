@@ -89,6 +89,24 @@ def get_artifact_for_user(db: Session, *, artifact_id: UUID, user: User) -> Agen
     return artifact
 
 
+def get_artifact_for_export(db: Session, *, artifact_id: UUID, user: User) -> AgentArtifactRecord:
+    artifact = db.query(AgentArtifactRecord).filter(AgentArtifactRecord.id == artifact_id).first()
+    if not artifact:
+        raise ValueError("Agent artifact not found")
+    case_id = artifact.run.case_id if artifact.run is not None else artifact.thread.case_id
+    if artifact.thread.case_id != case_id:
+        raise ValueError("Agent artifact case mismatch")
+    check_case_access(db, case_id, user, required_permission=("case", "view"))
+    return artifact
+
+
+def get_artifact_case_id(db: Session, *, artifact_id: UUID) -> UUID | None:
+    artifact = db.query(AgentArtifactRecord).filter(AgentArtifactRecord.id == artifact_id).first()
+    if not artifact:
+        return None
+    return artifact.run.case_id if artifact.run is not None else artifact.thread.case_id
+
+
 def list_threads(db: Session, *, user: User, case_id: UUID | None = None) -> list[AgentThreadSummary]:
     query = db.query(AgentThread).filter(AgentThread.owner_user_id == user.id)
     if case_id is not None:
