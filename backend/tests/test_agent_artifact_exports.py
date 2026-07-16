@@ -11,6 +11,15 @@ def read_csv(content: bytes) -> list[dict[str, str]]:
     return list(csv.DictReader(io.StringIO(text)))
 
 
+def read_csv_sections(content: bytes) -> list[list[dict[str, str]]]:
+    text = content.decode("utf-8-sig").strip()
+    return [
+        list(csv.DictReader(io.StringIO(section)))
+        for section in text.split("\n\n")
+        if section.strip()
+    ]
+
+
 class AgentArtifactExportTests(unittest.TestCase):
     def test_table_artifact_exports_csv_with_explicit_columns_and_escaping(self):
         exported = render_artifact_csv(
@@ -34,6 +43,37 @@ class AgentArtifactExportTests(unittest.TestCase):
         self.assertEqual(rows[0]["name"], 'Acme, "North"')
         self.assertEqual(rows[0]["amount"], "1250")
         self.assertEqual(rows[0]["extra"], "included")
+
+    def test_csv_export_appends_sources_section(self):
+        exported = render_artifact_csv(
+            artifact_type="table",
+            title="Payments",
+            payload={
+                "columns": [{"key": "name"}],
+                "rows": [{"name": "Acme"}],
+            },
+            citations=[
+                {
+                    "label": "Bank statement",
+                    "type": "document",
+                    "artifact_id": "artifact-1",
+                    "result_id": "result-1",
+                }
+            ],
+        )
+
+        sections = read_csv_sections(exported.content)
+
+        self.assertEqual(sections[0][0]["name"], "Acme")
+        self.assertEqual(
+            sections[1][0],
+            {
+                "label": "Bank statement",
+                "type": "document",
+                "artifact_id": "artifact-1",
+                "result_id": "result-1",
+            },
+        )
 
     def test_table_artifact_flattens_nested_counterparties(self):
         exported = render_artifact_csv(
@@ -131,6 +171,7 @@ class AgentArtifactExportTests(unittest.TestCase):
                                 "title": "Payments by person",
                                 "caption": "Totals by person",
                                 "available": True,
+                                "citations": [{"label": "Ledger extract", "result_id": "result-ledger"}],
                                 "data": {
                                     "chart_type": "bar",
                                     "x_key": "person",
@@ -145,7 +186,9 @@ class AgentArtifactExportTests(unittest.TestCase):
                         ],
                     }
                 ],
+                "citations": [{"label": "Report source", "page": 7}],
             },
+            citations=[{"label": "Run citation", "type": "tool_result", "result_id": "run-1"}],
         )
 
         with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
@@ -154,6 +197,10 @@ class AgentArtifactExportTests(unittest.TestCase):
         self.assertIn("Embedded chart: Payments by person", document_xml)
         self.assertIn("Chart type: bar; 2 source row(s)", document_xml)
         self.assertIn("Daniel Rook", document_xml)
+        self.assertIn("Sources", document_xml)
+        self.assertIn("Report source", document_xml)
+        self.assertIn("Run citation", document_xml)
+        self.assertIn("Ledger extract", document_xml)
 
     def test_report_artifact_exports_pdf(self):
         exported = render_report_pdf(

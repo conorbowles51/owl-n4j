@@ -518,6 +518,7 @@ function reportEmbeddedArtifact(embed: Dict, artifacts: AgentArtifact[]): AgentA
     title: valueText(embed.title || "Embedded artifact"),
     data,
     metadata: asRecord(embed.metadata),
+    citations: asArray<Record<string, unknown>>(embed.citations),
   }
 }
 
@@ -1793,17 +1794,18 @@ function ArtifactShell({
   exportEnabled: boolean
   headerActions?: ReactNode
 }) {
+  const { id: caseId } = useParams()
   const Icon = artifactIcons[artifact.type] ?? FileText
   const [isDownloading, setIsDownloading] = useState(false)
   const exportFormats: AgentArtifactExportFormat[] =
     artifact.type === "report" ? ["pdf", "docx"] : ["csv"]
 
   const downloadArtifact = async (format: AgentArtifactExportFormat) => {
-    if (!exportEnabled || isDownloading) return
+    if (!exportEnabled || isDownloading || !caseId) return
     setIsDownloading(true)
     try {
       await downloadProtectedFile(
-        agentAPI.artifactExportUrl(artifact.id, format),
+        agentAPI.artifactExportUrl(caseId, artifact.id, format),
         artifactFilename(artifact, format)
       )
       toast.success(`${format.toUpperCase()} export downloaded`)
@@ -1839,8 +1841,8 @@ function ArtifactShell({
               size="sm"
               className="h-7 px-2 text-xs"
               onClick={() => downloadArtifact(format)}
-              disabled={!exportEnabled || isDownloading}
-              title={exportEnabled ? `Download ${format.toUpperCase()}` : "Exports are available when the run finishes"}
+              disabled={!exportEnabled || isDownloading || !caseId}
+              title={exportEnabled && caseId ? `Download ${format.toUpperCase()}` : "Exports are available when the run finishes"}
             >
               {isDownloading ? (
                 <Loader2 className="mr-1 size-3 animate-spin" />

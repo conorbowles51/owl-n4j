@@ -514,6 +514,7 @@ class AgentImprovementTests(unittest.TestCase):
                         "rows": [{"severity": "High", "note": "Control account differs."}],
                     },
                     "metadata": {"direct_rows": True},
+                    "citations": [{"label": "Witness statement", "result_id": "res-witness"}],
                 }
             },
         )
@@ -544,6 +545,10 @@ class AgentImprovementTests(unittest.TestCase):
         self.assertTrue(embed["available"])
         self.assertEqual(embed["type"], "table")
         self.assertEqual(embed["data"]["rows"][0]["severity"], "High")
+        self.assertEqual(
+            embed["citations"],
+            [{"label": "Witness statement", "result_id": "res-witness"}],
+        )
 
     def test_report_artifact_embeds_available_chart_snapshot(self):
         context = AgentToolContext(

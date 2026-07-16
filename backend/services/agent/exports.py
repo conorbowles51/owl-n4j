@@ -28,17 +28,26 @@ def render_artifact_export(
     if export_format == "pdf":
         if artifact.type != "report":
             raise ValueError("PDF export is only supported for report artifacts")
-        return render_report_pdf(title=artifact.title, payload=artifact.payload or {})
+        return render_report_pdf(
+            title=artifact.title,
+            payload=artifact.payload or {},
+            citations=artifact.citations or [],
+        )
     if export_format == "docx":
         if artifact.type != "report":
             raise ValueError("Word export is only supported for report artifacts")
-        return render_report_docx(title=artifact.title, payload=artifact.payload or {})
+        return render_report_docx(
+            title=artifact.title,
+            payload=artifact.payload or {},
+            citations=artifact.citations or [],
+        )
     if export_format != "csv":
         raise ValueError(f"Unsupported artifact export format: {export_format}")
     return render_artifact_csv(
         artifact_type=artifact.type,
         title=artifact.title,
         payload=artifact.payload or {},
+        citations=artifact.citations or [],
     )
 
 
@@ -47,10 +56,15 @@ def render_artifact_csv(
     artifact_type: str,
     title: str,
     payload: dict[str, Any],
+    citations: list[dict[str, Any]] | None = None,
 ) -> AgentArtifactExport:
     rows = _rows_for_artifact(artifact_type, payload)
     columns = _columns_for_artifact(artifact_type, payload, rows)
     csv_text = _write_csv(columns, rows)
+    csv_text += "\n" + _write_csv(
+        ["label", "type", "artifact_id", "result_id"],
+        _citation_rows(citations),
+    )
     filename = f"{_safe_filename(title or 'agent-artifact')}-{artifact_type}.csv"
     return AgentArtifactExport(
         content=csv_text.encode("utf-8-sig"),
@@ -151,6 +165,66 @@ def _write_csv(columns: list[str], rows: list[dict[str, Any]]) -> str:
     return buffer.getvalue()
 
 
+def _citation_rows(citations: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for citation in _dict_rows(citations):
+        rows.append(
+            {
+                "label": _citation_label(citation),
+                "type": citation.get("type") or citation.get("artifact_type") or "",
+                "artifact_id": citation.get("artifact_id") or "",
+                "result_id": citation.get("result_id") or "",
+            }
+        )
+    return rows
+
+
+def _citation_label(citation: dict[str, Any]) -> str:
+    for key in ("label", "title", "name", "source", "url", "link", "artifact_id", "result_id"):
+        value = citation.get(key)
+        text = _cell_value(value).strip()
+        if text:
+            return text
+    return "Source"
+
+
+def _merge_citations(*values: Any) -> list[dict[str, Any]]:
+    citations: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for value in values:
+        for citation in _dict_rows(value):
+            marker = json.dumps(citation, ensure_ascii=False, sort_keys=True, default=str)
+            if marker in seen:
+                continue
+            citations.append(citation)
+            seen.add(marker)
+    return citations
+
+
+def _citation_text(citation: dict[str, Any]) -> str:
+    parts = [_citation_label(citation)]
+    for label, key in (
+        ("type", "type"),
+        ("page", "page"),
+        ("result", "result_id"),
+        ("artifact", "artifact_id"),
+    ):
+        value = _cell_value(citation.get(key)).strip()
+        if value:
+            parts.append(f"{label}: {value}")
+    link = _cell_value(citation.get("url") or citation.get("link")).strip()
+    if link:
+        parts.append(link)
+    return " | ".join(parts)
+
+
+def _citation_html(citations: list[dict[str, Any]]) -> str:
+    if not citations:
+        return ""
+    items = "; ".join(html.escape(_citation_text(citation)) for citation in citations)
+    return f"<p class='muted'>Sources: {items}</p>"
+
+
 def _flattened_keys(rows: list[dict[str, Any]]) -> list[str]:
     keys: list[str] = []
     for row in rows:
@@ -202,13 +276,18 @@ def _safe_filename(value: str) -> str:
     return (normalized or "agent-artifact")[:80]
 
 
-def render_report_pdf(*, title: str, payload: dict[str, Any]) -> AgentArtifactExport:
+def render_report_pdf(
+    *,
+    title: str,
+    payload: dict[str, Any],
+    citations: list[dict[str, Any]] | None = None,
+) -> AgentArtifactExport:
     try:
         from weasyprint import HTML
     except Exception as exc:
         raise ValueError(f"PDF export is unavailable: {exc}") from exc
 
-    html_text = _report_html(title=title, payload=payload)
+    html_text = _report_html(title=title, payload=payload, citations=citations)
     return AgentArtifactExport(
         content=HTML(string=html_text).write_pdf(),
         filename=f"{_safe_filename(title or 'agent-report')}-report.pdf",
@@ -216,7 +295,12 @@ def render_report_pdf(*, title: str, payload: dict[str, Any]) -> AgentArtifactEx
     )
 
 
-def render_report_docx(*, title: str, payload: dict[str, Any]) -> AgentArtifactExport:
+def render_report_docx(
+    *,
+    title: str,
+    payload: dict[str, Any],
+    citations: list[dict[str, Any]] | None = None,
+) -> AgentArtifactExport:
     try:
         from docx import Document
     except Exception as exc:
@@ -246,6 +330,11 @@ def render_report_docx(*, title: str, payload: dict[str, Any]) -> AgentArtifactE
             _add_embed_docx(document, embed)
 
     open_questions = [str(item) for item in payload.get("open_questions") or [] if str(item).strip()]
+    report_citations = _merge_citations(payload.get("citations"), citations)
+    if report_citations:
+        document.add_heading("Sources", level=1)
+        for citation in report_citations:
+            document.add_paragraph(_citation_text(citation), style="List Bullet")
     if open_questions:
         document.add_heading("Open Questions", level=1)
         for item in open_questions:
@@ -260,7 +349,12 @@ def render_report_docx(*, title: str, payload: dict[str, Any]) -> AgentArtifactE
     )
 
 
-def _report_html(*, title: str, payload: dict[str, Any]) -> str:
+def _report_html(
+    *,
+    title: str,
+    payload: dict[str, Any],
+    citations: list[dict[str, Any]] | None = None,
+) -> str:
     report_title = str(payload.get("title") or title or "Agent report")
     sections = _dict_rows(payload.get("sections"))
     included = [str(item) for item in payload.get("included_items") or [] if str(item).strip()]
@@ -268,6 +362,7 @@ def _report_html(*, title: str, payload: dict[str, Any]) -> str:
     purpose = str(payload.get("purpose") or "").strip()
     scope = str(payload.get("scope") or "").strip()
     audience = str(payload.get("audience") or "").strip()
+    report_citations = _merge_citations(payload.get("citations"), citations)
 
     parts = [
         "<!doctype html><html><head><meta charset='utf-8'>",
@@ -302,6 +397,11 @@ def _report_html(*, title: str, payload: dict[str, Any]) -> str:
         for embed in _dict_rows(section.get("embeds")):
             parts.append(_embed_html(embed))
         parts.append("</div>")
+
+    if report_citations:
+        parts.append("<h2>Sources</h2><ul>")
+        parts.extend(f"<li>{html.escape(_citation_text(citation))}</li>" for citation in report_citations)
+        parts.append("</ul>")
 
     if open_questions:
         parts.append("<h2>Open Questions</h2><ul>")
@@ -356,8 +456,9 @@ def _embed_html(embed: dict[str, Any]) -> str:
     caption = html.escape(str(embed.get("caption") or ""))
     artifact_type = str(embed.get("type") or "unknown")
     data = embed.get("data") if isinstance(embed.get("data"), dict) else {}
+    sources = _citation_html(_dict_rows(embed.get("citations")))
     if not embed.get("available", True):
-        return f"<div class='embed'><div class='embed-title'>{title}</div><p class='muted'>Referenced artifact is not available in this report export.</p></div>"
+        return f"<div class='embed'><div class='embed-title'>{title}</div><p class='muted'>Referenced artifact is not available in this report export.</p>{sources}</div>"
     if artifact_type == "table":
         rows = _dict_rows(data.get("rows"))[:20]
         columns = _columns_for_artifact("table", data, rows)[:8]
@@ -365,6 +466,7 @@ def _embed_html(embed: dict[str, Any]) -> str:
             f"<div class='embed'><div class='embed-title'>Table: {title}</div>"
             + (f"<p class='muted'>{caption}</p>" if caption else "")
             + _html_table(columns, rows)
+            + sources
             + "</div>"
         )
     if artifact_type == "graph":
@@ -376,6 +478,7 @@ def _embed_html(embed: dict[str, Any]) -> str:
             + (f"<p class='muted'>{caption}</p>" if caption else "")
             + f"<p class='graph-list'>{len(nodes)} shown node(s), {len(links)} shown relationship(s).</p>"
             + (f"<p class='graph-list'>Key nodes: {html.escape(node_names)}</p>" if node_names else "")
+            + sources
             + "</div>"
         )
     if artifact_type == "chart":
@@ -390,9 +493,10 @@ def _embed_html(embed: dict[str, Any]) -> str:
             + (f" Series: {html.escape(series)}." if series else "")
             + "</p>"
             + _html_table(columns, rows)
+            + sources
             + "</div>"
         )
-    return f"<div class='embed'><div class='embed-title'>{title}</div><p class='muted'>Unsupported embedded artifact type: {html.escape(artifact_type)}</p></div>"
+    return f"<div class='embed'><div class='embed-title'>{title}</div><p class='muted'>Unsupported embedded artifact type: {html.escape(artifact_type)}</p>{sources}</div>"
 
 
 def _html_table(columns: list[str], rows: list[dict[str, Any]]) -> str:
@@ -458,3 +562,8 @@ def _add_embed_docx(document: Any, embed: dict[str, Any]) -> None:
                 flattened = _flatten_dict(row)
                 for index, column in enumerate(columns):
                     cells[index].text = _cell_value(flattened.get(column))
+    embed_citations = _dict_rows(embed.get("citations"))
+    if embed_citations:
+        document.add_paragraph(
+            "Sources: " + "; ".join(_citation_text(citation) for citation in embed_citations)
+        )

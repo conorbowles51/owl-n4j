@@ -177,6 +177,10 @@ export const agentAPI = {
       }
     ),
 
-  artifactExportUrl: (artifactId: string, format: AgentArtifactExportFormat = "csv") =>
-    `/api/agent/artifacts/${artifactId}/export?format=${format}`,
+  artifactExportUrl: (
+    caseId: string,
+    artifactId: string,
+    format: AgentArtifactExportFormat = "csv"
+  ) =>
+    `/api/agent/artifacts/${artifactId}/export?case_id=${caseId}&format=${format}`,
 }

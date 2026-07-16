@@ -270,6 +270,52 @@ class AgentArtifactLifecycleTests(unittest.TestCase):
         self.assertFalse(failure_call.kwargs["success"])
         self.assertEqual(failure_call.kwargs["error"], "artifact version conflict")
 
+    def test_service_exports_with_case_scope_for_case_member(self):
+        with self.SessionLocal() as db, patch(
+            "services.agent.storage.check_case_access",
+            return_value=(object(), None),
+        ) as access, patch("services.agent.service.system_log_service.log") as audit_log:
+            member = db.get(User, self.member_id)
+            exported = agent_service.export_artifact(
+                db=db,
+                user=member,
+                case_id=self.case_id,
+                artifact_id=self.artifact_id,
+                export_format="csv",
+            )
+
+        self.assertEqual(exported.media_type, "text/csv; charset=utf-8")
+        self.assertIn(b"res_doc", exported.content)
+        self.assertEqual(access.call_args.kwargs["required_permission"], ("case", "view"))
+        success_call = audit_log.call_args_list[-1]
+        self.assertEqual(success_call.args[2], "agent_artifact_exported")
+        self.assertTrue(success_call.kwargs["success"])
+        self.assertEqual(success_call.kwargs["details"]["case_id"], str(self.case_id))
+        self.assertEqual(success_call.kwargs["details"]["format"], "csv")
+
+    def test_service_export_rejects_wrong_case_scope_and_audits_failure(self):
+        wrong_case_id = uuid.uuid4()
+        with self.SessionLocal() as db, patch(
+            "services.agent.storage.check_case_access",
+            return_value=(object(), None),
+        ) as access, patch("services.agent.service.system_log_service.log") as audit_log:
+            member = db.get(User, self.member_id)
+            with self.assertRaises(storage.ArtifactNotFoundError):
+                agent_service.export_artifact(
+                    db=db,
+                    user=member,
+                    case_id=wrong_case_id,
+                    artifact_id=self.artifact_id,
+                    export_format="csv",
+                )
+
+        access.assert_not_called()
+        failure_call = audit_log.call_args_list[-1]
+        self.assertEqual(failure_call.args[2], "agent_artifact_exported")
+        self.assertFalse(failure_call.kwargs["success"])
+        self.assertEqual(failure_call.kwargs["details"]["case_id"], str(wrong_case_id))
+        self.assertEqual(failure_call.kwargs["details"]["artifact_id"], str(self.artifact_id))
+
     def test_router_maps_version_conflict_to_409(self):
         with self.assertRaises(HTTPException) as raised:
             _raise_case_artifact_http_error(storage.ArtifactConcurrencyError(current_version=7))

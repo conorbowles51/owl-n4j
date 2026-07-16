@@ -339,6 +339,7 @@ async def revert_agent_artifact_to_draft(
 @router.get("/artifacts/{artifact_id}/export")
 async def export_agent_artifact(
     artifact_id: UUID,
+    case_id: UUID = Query(...),
     format: Literal["csv", "pdf", "docx"] = Query(default="csv"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -347,6 +348,7 @@ async def export_agent_artifact(
         exported = agent_service.export_artifact(
             db=db,
             user=current_user,
+            case_id=case_id,
             artifact_id=artifact_id,
             export_format=format,
         )
@@ -363,12 +365,5 @@ async def export_agent_artifact(
                 "X-Agent-Export-Format": format,
             },
         )
-    except ValueError as exc:
-        status_code = 404 if "not found" in str(exc).lower() else 400
-        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except CaseNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except CaseAccessDenied as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_case_artifact_http_error(exc)

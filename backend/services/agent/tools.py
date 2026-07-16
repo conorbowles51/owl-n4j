@@ -650,6 +650,7 @@ def _snapshot_report_embed(context: AgentToolContext, embed: ReportEmbedArgs) ->
         "title": str(artifact.get("title") or "Embedded artifact"),
         "data": truncate_payload(artifact.get("data") or {}, max_items=120, max_text_chars=2000),
         "metadata": truncate_payload(artifact.get("metadata") or {}, max_items=30, max_text_chars=1000),
+        "citations": truncate_payload(artifact.get("citations") or [], max_items=50, max_text_chars=1000),
     }
 
 

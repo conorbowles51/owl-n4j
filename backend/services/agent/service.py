@@ -793,20 +793,40 @@ class AgentService:
         *,
         db: Session,
         user: User,
+        case_id: UUID,
         artifact_id: UUID,
         export_format: AgentExportFormat,
     ) -> AgentArtifactExport:
-        artifact = storage.get_artifact_for_user(db, artifact_id=artifact_id, user=user)
-        exported = render_artifact_export(artifact, export_format)
-        self._log_agent_event(
-            db,
-            action="agent_artifact_exported",
-            user=user,
-            run=artifact.run,
-            details={"artifact_id": str(artifact.id), "artifact_type": artifact.type, "format": export_format},
-        )
-        db.commit()
-        return exported
+        try:
+            artifact = storage.get_artifact_in_case(
+                db,
+                artifact_id=artifact_id,
+                case_id=case_id,
+                user=user,
+                required_permission=("case", "view"),
+            )
+            exported = render_artifact_export(artifact, export_format)
+            self._log_case_artifact_event(
+                db,
+                action="agent_artifact_exported",
+                user=user,
+                case_id=case_id,
+                artifact=artifact,
+                details={"format": export_format},
+            )
+            db.commit()
+            return exported
+        except Exception as exc:
+            self._log_case_artifact_failure(
+                db,
+                action="agent_artifact_exported",
+                user=user,
+                case_id=case_id,
+                artifact_id=artifact_id,
+                error=str(exc),
+                details={"format": export_format},
+            )
+            raise
 
     def _log_case_artifact_failure(
         self,
