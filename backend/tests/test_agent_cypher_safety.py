@@ -14,6 +14,18 @@ class AgentCypherSafetyTests(unittest.TestCase):
                 "MATCH (n {case_id: $case_id}) SET n.name = 'bad' RETURN n"
             )
 
+    def test_rejects_procedure_calls(self):
+        with self.assertRaises(UnsafeCypherError):
+            validate_readonly_cypher(
+                "MATCH (n {case_id: $case_id}) CALL apoc.export.csv.all('x', {}) RETURN n"
+            )
+
+    def test_rejects_unallowlisted_function_calls(self):
+        with self.assertRaises(UnsafeCypherError):
+            validate_readonly_cypher(
+                "MATCH (n {case_id: $case_id}) RETURN apoc.text.join(collect(n.name), ',') AS names"
+            )
+
     def test_appends_limit_when_missing(self):
         query = validate_readonly_cypher(
             "MATCH (n {case_id: $case_id}) RETURN n",
@@ -44,6 +56,23 @@ class AgentCypherSafetyTests(unittest.TestCase):
             validate_readonly_cypher(
                 "MATCH (n) WHERE $case_id IS NOT NULL RETURN n",
             )
+
+    def test_rejects_unscoped_neighbor_variable(self):
+        with self.assertRaises(UnsafeCypherError):
+            validate_readonly_cypher(
+                "MATCH (a {case_id: $case_id})-[r {case_id: $case_id}]-(b) RETURN b",
+            )
+
+    def test_allows_scoped_relationship_query(self):
+        query = validate_readonly_cypher(
+            """
+            MATCH (a {case_id: $case_id})-[r {case_id: $case_id}]-(b {case_id: $case_id})
+            RETURN a.name, type(r) AS relationship, b.name
+            """,
+            limit=10,
+        )
+
+        self.assertTrue(query.endswith("LIMIT 10"))
 
     def test_rejects_unsupported_null_ordering(self):
         with self.assertRaises(UnsafeCypherError):

@@ -305,7 +305,8 @@ CRITICAL RULES:
 4. If you cannot find the exact entity key in the list, return can_query: false
 5. Use only the entity types and relationship types from the schema
 6. Return relevant properties (name, key, type, summary)
-7. Keep queries simple and readable
+7. Every named node or relationship variable in MATCH patterns MUST be scoped to the active case using case_id: $case_id or variable.case_id = $case_id
+8. Keep queries simple and readable
 
 Return ONLY valid JSON with this structure:
 {{

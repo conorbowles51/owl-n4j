@@ -114,14 +114,6 @@ class SuggestionsResponse(BaseModel):
     suggestions: List[ChatSuggestion]
 
 
-class ExtractNodesRequest(BaseModel):
-    answer: str
-
-
-class ExtractNodesResponse(BaseModel):
-    node_keys: List[str]
-
-
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -383,17 +375,3 @@ async def get_suggestions(
         suggestions=[ChatSuggestion(question=question) for question in suggestions]
     )
 
-
-@router.post("/extract-nodes", response_model=ExtractNodesResponse)
-async def extract_nodes_from_answer(
-    request: ExtractNodesRequest,
-    current_user: User = Depends(get_current_db_user),
-):
-    if not request.answer or not request.answer.strip():
-        raise HTTPException(status_code=400, detail="Answer is required")
-
-    try:
-        node_keys = rag_service.extract_nodes_from_answer(request.answer.strip())
-        return ExtractNodesResponse(node_keys=node_keys)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc

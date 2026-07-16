@@ -14,7 +14,6 @@ from routers import (
     graph_router,
     chat_router,
     agent_router,
-    query_router,
     timeline_router,
     snapshots_router,
     cases_router,
@@ -130,7 +129,6 @@ app.add_middleware(
 app.include_router(graph_router)
 app.include_router(chat_router)
 app.include_router(agent_router)
-app.include_router(query_router)
 app.include_router(timeline_router)
 app.include_router(snapshots_router)
 app.include_router(cases_router)
