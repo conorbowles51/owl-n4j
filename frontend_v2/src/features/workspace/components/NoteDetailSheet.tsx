@@ -45,9 +45,19 @@ export function NoteDetailSheet({
 
   useEffect(() => {
     if (!note) return
-    setTitle(note.title ?? "")
-    setContent(note.content ?? "")
-    setTagsInput((note.tags ?? []).join(", "))
+
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled) return
+
+      setTitle(note.title ?? "")
+      setContent(note.content ?? "")
+      setTagsInput((note.tags ?? []).join(", "))
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [note])
 
   const isDirty = useMemo(() => {

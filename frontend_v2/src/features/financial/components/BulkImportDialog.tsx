@@ -97,8 +97,6 @@ export function BulkImportDialog({
   const [error, setError] = useState("")
   const [fileName, setFileName] = useState("")
 
-  const txMap = new Map(transactions.map((t) => [t.key, t]))
-
   const handleFile = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
@@ -116,6 +114,7 @@ export function BulkImportDialog({
         }
 
         const { keyCol, amountCol, reasonCol } = detectColumns(rows[0])
+        const txMap = new Map(transactions.map((t) => [t.key, t]))
         const corrections: ParsedCorrection[] = []
 
         for (let i = 1; i < rows.length; i++) {
@@ -146,7 +145,7 @@ export function BulkImportDialog({
         setError("Failed to parse file")
       }
     },
-    [txMap]
+    [transactions]
   )
 
   const matchedCount = parsed.filter((c) => c.matched).length

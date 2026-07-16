@@ -64,17 +64,26 @@ export function CaseProcessingProfileDialog({
   useEffect(() => {
     if (!open) return
 
-    setSelectedProfileName(caseProfile?.source_profile_name ?? NONE_PROFILE_VALUE)
-    setContextInstructions(caseProfile?.context_instructions ?? "")
-    setMandatoryInstructions(caseProfile?.mandatory_instructions ?? [])
-    setEntityTypes(
-      (caseProfile?.special_entity_types ?? []).map((entity) => ({
-        name: entity.name,
-        description: entity.description ?? "",
-      }))
-    )
-    setNewEntityName("")
-    setNewEntityDesc("")
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled) return
+
+      setSelectedProfileName(caseProfile?.source_profile_name ?? NONE_PROFILE_VALUE)
+      setContextInstructions(caseProfile?.context_instructions ?? "")
+      setMandatoryInstructions(caseProfile?.mandatory_instructions ?? [])
+      setEntityTypes(
+        (caseProfile?.special_entity_types ?? []).map((entity) => ({
+          name: entity.name,
+          description: entity.description ?? "",
+        }))
+      )
+      setNewEntityName("")
+      setNewEntityDesc("")
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [caseProfile, open])
 
   const selectedLibraryProfile = useMemo(

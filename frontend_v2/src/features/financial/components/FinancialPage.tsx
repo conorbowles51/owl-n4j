@@ -96,8 +96,17 @@ export function FinancialPage() {
 
   useEffect(() => {
     if (!isTransactionsMode) {
-      setSelectedSenders(new Set())
-      setSelectedBeneficiaries(new Set())
+      let cancelled = false
+      queueMicrotask(() => {
+        if (cancelled) return
+
+        setSelectedSenders(new Set())
+        setSelectedBeneficiaries(new Set())
+      })
+
+      return () => {
+        cancelled = true
+      }
     }
   }, [isTransactionsMode])
 

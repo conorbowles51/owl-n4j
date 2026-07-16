@@ -10,7 +10,7 @@ import { Trash2, ChevronDown, ChevronRight } from "lucide-react"
 import { useGraphStore } from "@/stores/graph.store"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
 import { SubgraphAnalysisPanel } from "./SubgraphAnalysisPanel"
-import { useTheme } from "@/lib/theme-provider"
+import { useTheme } from "@/lib/use-theme"
 import type { GraphData } from "@/types/graph.types"
 
 interface SubgraphViewProps {

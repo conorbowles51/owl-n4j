@@ -55,16 +55,25 @@ export function FolderContextDialog({
   useEffect(() => {
     if (!open) return
 
-    setContextInstructions(profile?.context_instructions ?? "")
-    setMandatoryInstructions(profile?.mandatory_instructions ?? [])
-    setEntityTypes(
-      (profile?.profile_overrides?.special_entity_types ?? []).map((entity) => ({
-        name: entity.name,
-        description: entity.description ?? "",
-      }))
-    )
-    setNewEntityName("")
-    setNewEntityDesc("")
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled) return
+
+      setContextInstructions(profile?.context_instructions ?? "")
+      setMandatoryInstructions(profile?.mandatory_instructions ?? [])
+      setEntityTypes(
+        (profile?.profile_overrides?.special_entity_types ?? []).map((entity) => ({
+          name: entity.name,
+          description: entity.description ?? "",
+        }))
+      )
+      setNewEntityName("")
+      setNewEntityDesc("")
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [open, profile])
 
   const addEntityType = useCallback(() => {

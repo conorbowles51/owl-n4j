@@ -25,9 +25,18 @@ export function TransactionDetailPanel({
   const [notes, setNotes] = useState(transaction.notes || "")
 
   useEffect(() => {
-    setPurpose(transaction.purpose || "")
-    setCounterparty(transaction.counterparty_details || "")
-    setNotes(transaction.notes || "")
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled) return
+
+      setPurpose(transaction.purpose || "")
+      setCounterparty(transaction.counterparty_details || "")
+      setNotes(transaction.notes || "")
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [transaction.key, transaction.purpose, transaction.counterparty_details, transaction.notes])
 
   const handleBlur = (

@@ -75,14 +75,23 @@ export function WitnessDetailSheet({
 
   useEffect(() => {
     if (witness) {
-      setName(witness.name ?? "")
-      setRole(witness.role ?? "")
-      setOrganization(witness.organization ?? "")
-      setCategory(witness.category ?? "NEUTRAL")
-      setCredibilityRating(witness.credibility_rating ?? 0)
-      setStatementSummary(witness.statement_summary ?? "")
-      setRiskAssessment(witness.risk_assessment ?? "")
-      setStrategyNotes(witness.strategy_notes ?? "")
+      let cancelled = false
+      queueMicrotask(() => {
+        if (cancelled) return
+
+        setName(witness.name ?? "")
+        setRole(witness.role ?? "")
+        setOrganization(witness.organization ?? "")
+        setCategory(witness.category ?? "NEUTRAL")
+        setCredibilityRating(witness.credibility_rating ?? 0)
+        setStatementSummary(witness.statement_summary ?? "")
+        setRiskAssessment(witness.risk_assessment ?? "")
+        setStrategyNotes(witness.strategy_notes ?? "")
+      })
+
+      return () => {
+        cancelled = true
+      }
     }
   }, [witness])
 

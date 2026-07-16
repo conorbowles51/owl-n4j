@@ -73,14 +73,23 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
 
   useEffect(() => {
     if (theory) {
-      setTitle(theory.title ?? "")
-      setType(theory.type ?? "PRIMARY")
-      setPrivilegeLevel(theory.privilege_level ?? "PUBLIC")
-      setConfidence(theory.confidence_score ?? 50)
-      setHypothesis(theory.hypothesis ?? "")
-      setSupportingEvidence(theory.supporting_evidence ?? [])
-      setCounterArguments(theory.counter_arguments ?? [])
-      setNextSteps(theory.next_steps ?? [])
+      let cancelled = false
+      queueMicrotask(() => {
+        if (cancelled) return
+
+        setTitle(theory.title ?? "")
+        setType(theory.type ?? "PRIMARY")
+        setPrivilegeLevel(theory.privilege_level ?? "PUBLIC")
+        setConfidence(theory.confidence_score ?? 50)
+        setHypothesis(theory.hypothesis ?? "")
+        setSupportingEvidence(theory.supporting_evidence ?? [])
+        setCounterArguments(theory.counter_arguments ?? [])
+        setNextSteps(theory.next_steps ?? [])
+      })
+
+      return () => {
+        cancelled = true
+      }
     }
   }, [theory])
 
