@@ -73,6 +73,11 @@ export function ChatMessage({ message, onDocumentClick }: ChatMessageProps) {
                 {message.model_info.model_name}
               </Badge>
             )}
+            {!isUser && message.unsupported && (
+              <Badge variant="outline" className="border-amber-500/40 py-0 text-[10px] text-amber-600">
+                Unsupported
+              </Badge>
+            )}
           </div>
 
           {isUser ? (
@@ -115,13 +120,21 @@ export function ChatMessage({ message, onDocumentClick }: ChatMessageProps) {
                   {message.sources.map((src, i) => (
                     <button
                       key={i}
-                      onClick={() => onDocumentClick?.(src.filename, src.page)}
-                      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-muted"
+                      onClick={() => onDocumentClick?.(src.filename, src.page ?? undefined)}
+                      className="flex w-full items-start gap-1.5 rounded-md px-2 py-1 text-left text-xs hover:bg-muted"
                     >
-                      <FileText className="size-3 text-amber-500" />
-                      <span className="truncate">
-                        {src.filename}
-                        {src.page ? ` p.${src.page}` : ""}
+                      <FileText className="mt-0.5 size-3 shrink-0 text-amber-500" />
+                      <span className="min-w-0">
+                        <span className="block truncate">
+                          {src.filename}
+                          {src.page ? ` p.${src.page}` : ""}
+                          {src.chunk_id ? ` - ${src.chunk_id}` : ""}
+                        </span>
+                        {src.quote && (
+                          <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                            {src.quote}
+                          </span>
+                        )}
                       </span>
                     </button>
                   ))}

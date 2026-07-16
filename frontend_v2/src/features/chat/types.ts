@@ -4,8 +4,12 @@ export type ChatScope = "case_overview" | "selection"
 
 export interface ChatSource {
   filename: string
+  chunk_id: string
+  doc_key: string
   excerpt?: string
-  page?: number
+  page?: number | null
+  quote: string
+  resolved: boolean
 }
 
 export interface ChatCost {
@@ -78,6 +82,8 @@ export interface ChatMessageData {
   scope?: ChatScope
   selected_entity_keys?: string[]
   sources?: ChatSource[]
+  has_citations?: boolean
+  unsupported?: boolean
   cost?: ChatCost | null
   timestamp?: string
   model_info?: ChatModelInfo | null

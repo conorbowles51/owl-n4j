@@ -106,6 +106,8 @@ export function useChat(caseId: string) {
           role: "assistant",
           content: response.answer,
           sources: response.sources,
+          has_citations: response.has_citations,
+          unsupported: response.unsupported,
           cost: response.cost,
           timestamp: new Date().toISOString(),
           model_info: response.model_info,

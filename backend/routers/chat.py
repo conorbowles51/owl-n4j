@@ -58,8 +58,12 @@ class ChatRequest(BaseModel):
 
 class ChatSource(BaseModel):
     filename: str
+    chunk_id: str
+    doc_key: str
     excerpt: Optional[str] = None
     page: Optional[int] = None
+    quote: str
+    resolved: bool = False
 
 
 class ChatCost(BaseModel):
@@ -92,6 +96,8 @@ class ChatResponse(BaseModel):
     message_id: str
     answer: str
     sources: List[ChatSource] = Field(default_factory=list)
+    has_citations: bool = False
+    unsupported: bool = False
     cost: Optional[ChatCost] = None
     model_info: ChatModelInfo
     result_graph: Optional[Dict[str, Any]] = None
@@ -333,6 +339,8 @@ async def chat(
             message_id=assistant_message_id,
             answer=result["answer"],
             sources=[ChatSource(**source) for source in result.get("sources", [])],
+            has_citations=bool(result.get("has_citations")),
+            unsupported=bool(result.get("unsupported")),
             cost=ChatCost(**build_cost_payload(cost_record)) if cost_record else None,
             model_info=model_info,
             result_graph=result.get("result_graph"),

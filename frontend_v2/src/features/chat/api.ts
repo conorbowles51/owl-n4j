@@ -5,6 +5,7 @@ import type {
   ChatModelInfo,
   ChatProvenance,
   ChatScope,
+  ChatSource,
   Conversation,
   CreateChatHistory,
   ChatMessageData,
@@ -32,7 +33,9 @@ export interface ChatResponse {
   conversation_id?: string | null
   message_id: string
   answer: string
-  sources: { filename: string; excerpt?: string; page?: number }[]
+  sources: ChatSource[]
+  has_citations?: boolean
+  unsupported?: boolean
   cost?: ChatCost | null
   model_info: ChatModelInfo
   result_graph?: ResultGraph

@@ -10,10 +10,12 @@ Handles:
 """
 
 import json
+import re
 import sys
 import time
 from contextvars import ContextVar
 from typing import Dict, List, Optional, Any
+from urllib.parse import quote, unquote
 
 from services.neo4j_service import neo4j_service
 from services.llm_service import llm_service
@@ -212,10 +214,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 
             # Extract page number from chunk metadata
             page_start = metadata.get("page_start")
-            if page_start and page_start != -1 and page_start != "-1":
-                page_start = int(page_start) if isinstance(page_start, str) else page_start
-            else:
-                page_start = 1
+            page_start = self._coerce_page(page_start)
 
             if filename not in doc_info:
                 doc_info[filename] = {
@@ -261,10 +260,12 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             else:
                 relevance_score = None
 
-            from urllib.parse import quote
-            best_page = info.get("best_page", 1)
-            doc_link = f"doc://{quote(filename, safe='')}/{best_page}"
-            line = f"{i}. [**{filename}**]({doc_link})"
+            best_page = info.get("best_page")
+            if best_page is not None:
+                doc_link = f"doc://{quote(filename, safe='')}/{best_page}"
+                line = f"{i}. [**{filename}**]({doc_link})"
+            else:
+                line = f"{i}. **{filename}**"
             if relevance_score is not None:
                 line += f" (Relevance: {relevance_score:.1f}%)"
             if info["doc_scoped"]:
@@ -2089,15 +2090,9 @@ Only include candidates with score >= 5."""
             conversation_history=conversation_history,
         )
 
-        # Post-process: convert plain [docname, p.N] citations to doc:// links
-        # (catches cases where the LLM didn't follow the link format)
-        import re
-        from urllib.parse import quote
-        answer = re.sub(
-            r'\[([^]]+?),\s*p\.?\s*(\d+)\](?!\()',
-            lambda m: f'[{m.group(1)}, p.{m.group(2)}](doc://{quote(m.group(1).strip(), safe="")}/{m.group(2)})',
-            answer
-        )
+        citation_targets = self._build_citation_target_map(chunk_results)
+        answer = self._sanitize_doc_links(answer, citation_targets)
+        answer = self._link_retrieved_plain_citations(answer, citation_targets)
 
         debug_log["final_prompt"] = final_prompt
         _add_stage(
@@ -2182,6 +2177,12 @@ Only include candidates with score >= 5."""
         used_node_keys = [e.get("key") for e in entity_results if e.get("key")]
 
         sources = self._build_sources(chunk_results)
+        has_citations = bool(sources)
+        unsupported = (
+            not has_citations
+            or context.strip() == "No relevant context found."
+            or context_description == "No relevant context found"
+        )
 
         return {
             "answer": answer,
@@ -2193,6 +2194,8 @@ Only include candidates with score >= 5."""
             "result_graph": result_graph,
             "document_summary": doc_summary_text or None,
             "sources": sources,
+            "has_citations": has_citations,
+            "unsupported": unsupported,
         }
         
         
@@ -2208,25 +2211,160 @@ Only include candidates with score >= 5."""
 
     def _build_sources(self, chunk_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         sources: List[Dict[str, Any]] = []
-        seen: set[str] = set()
         for chunk in chunk_results:
             metadata = chunk.get("metadata", {}) or {}
-            filename = metadata.get("filename") or metadata.get("doc_name") or chunk.get("id")
-            if not filename or filename in seen:
+            filename = self._source_filename(chunk, metadata)
+            if not filename:
                 continue
-            seen.add(str(filename))
-            excerpt = (chunk.get("text") or "").strip()
+            text = str(chunk.get("text") or "")
+            quote_text = self._quote_from_chunk_text(text)
+            doc_key = self._source_doc_key(chunk, metadata, filename)
+            chunk_index = self._source_chunk_index(chunk, metadata)
+            chunk_id = f"{doc_key}:{chunk_index}"
+            page = self._coerce_page(metadata.get("page_start"))
+            excerpt = quote_text
             if len(excerpt) > 240:
-                excerpt = excerpt[:237] + "..."
-            source_payload: Dict[str, Any] = {"filename": str(filename)}
+                excerpt = self._quote_from_chunk_text(excerpt, max_chars=240)
+            source_payload: Dict[str, Any] = {
+                "filename": str(filename),
+                "chunk_id": chunk_id,
+                "doc_key": str(doc_key),
+                "quote": quote_text,
+                "resolved": True,
+            }
             if excerpt:
                 source_payload["excerpt"] = excerpt
-            if metadata.get("page_start") not in (None, "", -1, "-1"):
-                source_payload["page"] = metadata.get("page_start")
+            source_payload["page"] = page
             sources.append(source_payload)
             if len(sources) >= 5:
                 break
         return sources
+
+    @staticmethod
+    def _source_filename(chunk: Dict[str, Any], metadata: Dict[str, Any]) -> Optional[str]:
+        filename = (
+            metadata.get("filename")
+            or metadata.get("doc_name")
+            or metadata.get("file_name")
+            or chunk.get("filename")
+        )
+        return str(filename) if filename else None
+
+    @staticmethod
+    def _source_doc_key(chunk: Dict[str, Any], metadata: Dict[str, Any], filename: str) -> str:
+        return str(
+            metadata.get("doc_id")
+            or metadata.get("document_id")
+            or metadata.get("file_id")
+            or metadata.get("file_name")
+            or metadata.get("filename")
+            or metadata.get("doc_name")
+            or chunk.get("doc_id")
+            or filename
+        )
+
+    @staticmethod
+    def _source_chunk_index(chunk: Dict[str, Any], metadata: Dict[str, Any]) -> str:
+        chunk_index = metadata.get("chunk_index")
+        if chunk_index not in (None, ""):
+            return str(chunk_index)
+        chunk_id = str(chunk.get("id") or "")
+        match = re.search(r"(?:chunk[_:-]?)(\d+)$", chunk_id)
+        if match:
+            return match.group(1)
+        return chunk_id or "0"
+
+    @staticmethod
+    def _coerce_page(value: Any) -> Optional[int]:
+        if value in (None, "", -1, "-1"):
+            return None
+        try:
+            page = int(value)
+        except (TypeError, ValueError):
+            return None
+        return page if page > 0 else None
+
+    @staticmethod
+    def _quote_from_chunk_text(text: str, max_chars: int = 500) -> str:
+        stripped = text.strip()
+        if len(stripped) <= max_chars:
+            return stripped
+        candidate = stripped[:max_chars]
+        sentence_end = max(candidate.rfind("."), candidate.rfind("!"), candidate.rfind("?"))
+        if sentence_end >= 80:
+            return candidate[: sentence_end + 1].strip()
+        whitespace = candidate.rfind(" ")
+        if whitespace >= 80:
+            return candidate[:whitespace].strip()
+        return candidate.strip()
+
+    def _build_citation_target_map(
+        self,
+        chunk_results: List[Dict[str, Any]],
+    ) -> Dict[tuple[str, int], str]:
+        targets: Dict[tuple[str, int], str] = {}
+        for chunk in chunk_results:
+            metadata = chunk.get("metadata", {}) or {}
+            filename = self._source_filename(chunk, metadata)
+            page_start = self._coerce_page(metadata.get("page_start"))
+            page_end = self._coerce_page(metadata.get("page_end")) or page_start
+            if not filename or page_start is None:
+                continue
+            if page_end is None or page_end < page_start:
+                page_end = page_start
+            for page in range(page_start, page_end + 1):
+                targets[(filename.strip().casefold(), page)] = filename
+        return targets
+
+    @staticmethod
+    def _label_citation_target(label: str) -> Optional[tuple[str, int]]:
+        match = re.fullmatch(r"\s*(.+?),\s*p\.?\s*(\d+)\s*", label)
+        if not match:
+            return None
+        return match.group(1).strip().casefold(), int(match.group(2))
+
+    def _sanitize_doc_links(
+        self,
+        answer: str,
+        citation_targets: Dict[tuple[str, int], str],
+    ) -> str:
+        def replace(match: re.Match[str]) -> str:
+            label = match.group(1)
+            raw_target = match.group(2)
+            if "/" not in raw_target:
+                return label
+            raw_filename, raw_page = raw_target.rsplit("/", 1)
+            try:
+                filename = unquote(raw_filename).strip()
+                page = int(raw_page)
+            except (TypeError, ValueError):
+                return label
+            target = (filename.casefold(), page)
+            if target in citation_targets:
+                return match.group(0)
+            label_target = self._label_citation_target(label)
+            if label_target and label_target in citation_targets:
+                canonical_filename = citation_targets[label_target]
+                return f"[{label}](doc://{quote(canonical_filename, safe='')}/{label_target[1]})"
+            return label
+
+        return re.sub(r"\[([^\]]+)\]\(doc://([^)]+)\)", replace, answer)
+
+    def _link_retrieved_plain_citations(
+        self,
+        answer: str,
+        citation_targets: Dict[tuple[str, int], str],
+    ) -> str:
+        def replace(match: re.Match[str]) -> str:
+            filename = match.group(1).strip()
+            page = int(match.group(2))
+            target = (filename.casefold(), page)
+            if target not in citation_targets:
+                return match.group(0)
+            canonical_filename = citation_targets[target]
+            return f"[{filename}, p.{page}](doc://{quote(canonical_filename, safe='')}/{page})"
+
+        return re.sub(r"\[([^]]+?),\s*p\.?\s*(\d+)\](?!\()", replace, answer)
 
     # =====================
     # Extract Nodes from Answer (preserved from original)

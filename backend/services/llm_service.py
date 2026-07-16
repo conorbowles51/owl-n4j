@@ -362,12 +362,13 @@ Guidelines:
 - {self.analysis_guidance}
 - Format your response using markdown (use **bold** for emphasis, bullet points with -)
 - Do NOT use tables - use bullet points or numbered lists instead for structured data
-- CITE SOURCES: When referencing specific facts, create a clickable markdown link using the format [document name, p.N](doc://document_filename.pdf/N) where N is the page number. For example: [Financial Report, p.3](doc://Financial_Report.pdf/3). Use the exact filename from the passage headers above (e.g., "USA-ET-000021.pdf"). If no page number is available, use page 1.
+- CITE SOURCES: When referencing specific facts, create a clickable markdown link using the format [document name, p.N](doc://document_filename.pdf/N) only when the passage header includes a page number. For example: [Financial Report, p.3](doc://Financial_Report.pdf/3). Use the exact filename from the passage headers above (e.g., "USA-ET-000021.pdf"). If no page number is available, cite the document name and passage/chunk in plain text without inventing a page.
 - When verified facts are provided with quotes, reference the original quote to support your answer
 - Be specific and cite document names when relevant
 - If you identify patterns or important information, explain them
 - Use ALL available information from the context above - extract and synthesize details from text passages, entity information, graph connections, and any query results
 - If specific details (like exact dates, amounts, or names) are mentioned, include them in your answer
+- If the context does not support a factual claim, mark it explicitly as Unsupported by the provided sources instead of presenting it as fact
 - Only say "insufficient information" if the context truly contains NO relevant information about the question
 - If the context has related information (even if incomplete), provide what you can find and note what additional details would be helpful
 - Keep your response focused and professional
