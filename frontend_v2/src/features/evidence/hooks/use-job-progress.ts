@@ -83,7 +83,7 @@ export function useJobProgress(options: UseJobProgressOptions) {
   )
 
   const connectToJob = useCallback(
-    (jobId: string) => {
+    function connect(jobId: string) {
       // Don't connect if already connected
       if (socketsRef.current.has(jobId)) return
 
@@ -123,7 +123,7 @@ export function useJobProgress(options: UseJobProgressOptions) {
           if (retries < 3) {
             retriesRef.current.set(jobId, retries + 1)
             const delay = Math.pow(2, retries) * 1000 // 1s, 2s, 4s
-            setTimeout(() => connectToJob(jobId), delay)
+            setTimeout(() => connect(jobId), delay)
           }
         }
       } catch {
