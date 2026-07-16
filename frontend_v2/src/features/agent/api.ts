@@ -1,6 +1,11 @@
 import { fetchAPI } from "@/lib/api-client"
 import type {
   AgentArtifact,
+  AgentArtifactListResponse,
+  AgentArtifactMutationResponse,
+  AgentArtifactRecycleRequest,
+  AgentArtifactRenameRequest,
+  AgentArtifactUpdateRequest,
   AgentMessageResponse,
   AgentRunStatus,
   AgentStreamEvent,
@@ -124,6 +129,53 @@ export const agentAPI = {
     fetchAPI<AgentArtifact>(`/api/agent/artifacts/${artifactId}:revert`, {
       method: "POST",
     }),
+
+  listCaseArtifacts: (caseId: string, includeDeleted = false) => {
+    const query = includeDeleted ? "?include_deleted=true" : ""
+    return fetchAPI<AgentArtifactListResponse>(`/api/agent/cases/${caseId}/artifacts${query}`)
+  },
+
+  openCaseArtifact: (caseId: string, artifactId: string) =>
+    fetchAPI<AgentArtifact>(`/api/agent/cases/${caseId}/artifacts/${artifactId}`),
+
+  renameCaseArtifact: (
+    caseId: string,
+    artifactId: string,
+    request: AgentArtifactRenameRequest
+  ) =>
+    fetchAPI<AgentArtifactMutationResponse>(
+      `/api/agent/cases/${caseId}/artifacts/${artifactId}/rename`,
+      {
+        method: "PATCH",
+        body: request,
+      }
+    ),
+
+  updateCaseArtifact: (
+    caseId: string,
+    artifactId: string,
+    request: AgentArtifactUpdateRequest
+  ) =>
+    fetchAPI<AgentArtifactMutationResponse>(
+      `/api/agent/cases/${caseId}/artifacts/${artifactId}`,
+      {
+        method: "PATCH",
+        body: request,
+      }
+    ),
+
+  recycleCaseArtifact: (
+    caseId: string,
+    artifactId: string,
+    request: AgentArtifactRecycleRequest = {}
+  ) =>
+    fetchAPI<AgentArtifactMutationResponse>(
+      `/api/agent/cases/${caseId}/artifacts/${artifactId}/recycle`,
+      {
+        method: "POST",
+        body: request,
+      }
+    ),
 
   artifactExportUrl: (artifactId: string, format: AgentArtifactExportFormat = "csv") =>
     `/api/agent/artifacts/${artifactId}/export?format=${format}`,

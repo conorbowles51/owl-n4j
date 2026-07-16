@@ -26,6 +26,8 @@ export interface AgentArtifactProvenance {
   tool_calls: AgentArtifactToolProvenance[]
   created_at?: string | null
   updated_at?: string | null
+  deleted_at?: string | null
+  deleted_by_user_id?: string | null
 }
 
 export interface AgentArtifact {
@@ -39,7 +41,33 @@ export interface AgentArtifact {
   citations?: Array<Record<string, unknown>>
   approved_by_user_id?: string | null
   approved_at?: string | null
+  deleted_at?: string | null
+  deleted_by_user_id?: string | null
   provenance?: AgentArtifactProvenance
+}
+
+export interface AgentArtifactRenameRequest {
+  title: string
+  expected_version?: number | null
+}
+
+export interface AgentArtifactUpdateRequest {
+  artifact?: Record<string, unknown> | null
+  citations?: Array<Record<string, unknown>> | null
+  note?: string | null
+  expected_version?: number | null
+}
+
+export interface AgentArtifactRecycleRequest {
+  expected_version?: number | null
+}
+
+export interface AgentArtifactListResponse {
+  artifacts: AgentArtifact[]
+}
+
+export interface AgentArtifactMutationResponse {
+  artifact: AgentArtifact
 }
 
 export interface AgentToolTraceItem {

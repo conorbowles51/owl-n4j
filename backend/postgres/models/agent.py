@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -183,6 +183,9 @@ class AgentToolCall(Base):
 
 class AgentArtifactRecord(Base):
     __tablename__ = "agent_artifacts"
+    __table_args__ = (
+        Index("ix_agent_artifacts_case_deleted", "thread_id", "deleted_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     thread_id: Mapped[uuid.UUID] = mapped_column(
@@ -210,6 +213,12 @@ class AgentArtifactRecord(Base):
         nullable=True,
     )
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -225,3 +234,4 @@ class AgentArtifactRecord(Base):
     thread = relationship("AgentThread", back_populates="artifacts")
     run = relationship("AgentRun", back_populates="artifacts")
     approved_by = relationship("User", foreign_keys=[approved_by_user_id])
+    deleted_by_user = relationship("User", foreign_keys=[deleted_by_user_id])

@@ -17,6 +17,11 @@ from services.agent.graph import AgentGraphRunner, AgentRunCancelled
 from services.agent.json_utils import truncate_payload
 from services.agent.schemas import (
     AgentArtifact,
+    AgentArtifactListResponse,
+    AgentArtifactMutationResponse,
+    AgentArtifactRecycleRequest,
+    AgentArtifactRenameRequest,
+    AgentArtifactUpdateRequest,
     AgentClarification,
     AgentClarificationOption,
     AgentCost,
@@ -515,6 +520,208 @@ class AgentService:
     def get_run(self, *, db: Session, user: User, run_id: UUID) -> AgentRunDetail:
         return storage.get_run_detail(db, run_id=run_id, user=user)
 
+    def list_case_artifacts(
+        self,
+        *,
+        db: Session,
+        user: User,
+        case_id: UUID,
+        include_deleted: bool = False,
+    ) -> AgentArtifactListResponse:
+        try:
+            artifacts = storage.list_artifacts_for_case(
+                db,
+                case_id=case_id,
+                user=user,
+                include_deleted=include_deleted,
+            )
+            self._log_case_artifact_event(
+                db,
+                action="agent_artifacts_listed",
+                user=user,
+                case_id=case_id,
+                details={"include_deleted": include_deleted, "artifact_count": len(artifacts)},
+            )
+            db.commit()
+            return AgentArtifactListResponse(
+                artifacts=[storage.to_api_artifact(artifact) for artifact in artifacts],
+            )
+        except Exception as exc:
+            self._log_case_artifact_failure(
+                db,
+                action="agent_artifacts_listed",
+                user=user,
+                case_id=case_id,
+                error=str(exc),
+                details={"include_deleted": include_deleted},
+            )
+            raise
+
+    def open_case_artifact(
+        self,
+        *,
+        db: Session,
+        user: User,
+        case_id: UUID,
+        artifact_id: UUID,
+    ) -> AgentArtifact:
+        try:
+            artifact = storage.get_artifact_in_case(
+                db,
+                artifact_id=artifact_id,
+                case_id=case_id,
+                user=user,
+                required_permission=("case", "view"),
+            )
+            self._log_case_artifact_event(
+                db,
+                action="agent_artifact_opened",
+                user=user,
+                case_id=case_id,
+                artifact=artifact,
+            )
+            db.commit()
+            return storage.to_api_artifact(artifact)
+        except Exception as exc:
+            self._log_case_artifact_failure(
+                db,
+                action="agent_artifact_opened",
+                user=user,
+                case_id=case_id,
+                artifact_id=artifact_id,
+                error=str(exc),
+            )
+            raise
+
+    def rename_case_artifact(
+        self,
+        *,
+        db: Session,
+        user: User,
+        case_id: UUID,
+        artifact_id: UUID,
+        request: AgentArtifactRenameRequest,
+    ) -> AgentArtifactMutationResponse:
+        try:
+            artifact = storage.rename_artifact_in_case(
+                db,
+                artifact_id=artifact_id,
+                case_id=case_id,
+                user=user,
+                title=request.title,
+                expected_version=request.expected_version,
+            )
+            self._log_case_artifact_event(
+                db,
+                action="agent_artifact_renamed",
+                user=user,
+                case_id=case_id,
+                artifact=artifact,
+                details={"expected_version": request.expected_version},
+            )
+            db.commit()
+            db.refresh(artifact)
+            return AgentArtifactMutationResponse(artifact=storage.to_api_artifact(artifact))
+        except Exception as exc:
+            self._log_case_artifact_failure(
+                db,
+                action="agent_artifact_renamed",
+                user=user,
+                case_id=case_id,
+                artifact_id=artifact_id,
+                error=str(exc),
+                details={"expected_version": request.expected_version},
+            )
+            raise
+
+    def update_case_artifact(
+        self,
+        *,
+        db: Session,
+        user: User,
+        case_id: UUID,
+        artifact_id: UUID,
+        request: AgentArtifactUpdateRequest,
+    ) -> AgentArtifactMutationResponse:
+        try:
+            artifact = storage.update_artifact_in_case(
+                db,
+                artifact_id=artifact_id,
+                case_id=case_id,
+                user=user,
+                artifact=request.artifact,
+                citations=request.citations,
+                note=request.note,
+                expected_version=request.expected_version,
+            )
+            self._log_case_artifact_event(
+                db,
+                action="agent_artifact_updated",
+                user=user,
+                case_id=case_id,
+                artifact=artifact,
+                details={
+                    "expected_version": request.expected_version,
+                    "updated_artifact": request.artifact is not None,
+                    "updated_citations": request.citations is not None,
+                    "note": request.note,
+                },
+            )
+            db.commit()
+            db.refresh(artifact)
+            return AgentArtifactMutationResponse(artifact=storage.to_api_artifact(artifact))
+        except Exception as exc:
+            self._log_case_artifact_failure(
+                db,
+                action="agent_artifact_updated",
+                user=user,
+                case_id=case_id,
+                artifact_id=artifact_id,
+                error=str(exc),
+                details={"expected_version": request.expected_version},
+            )
+            raise
+
+    def recycle_case_artifact(
+        self,
+        *,
+        db: Session,
+        user: User,
+        case_id: UUID,
+        artifact_id: UUID,
+        request: AgentArtifactRecycleRequest,
+    ) -> AgentArtifactMutationResponse:
+        try:
+            artifact = storage.recycle_artifact_in_case(
+                db,
+                artifact_id=artifact_id,
+                case_id=case_id,
+                user=user,
+                expected_version=request.expected_version,
+            )
+            self._log_case_artifact_event(
+                db,
+                action="agent_artifact_recycled",
+                user=user,
+                case_id=case_id,
+                artifact=artifact,
+                details={"expected_version": request.expected_version},
+            )
+            db.commit()
+            db.refresh(artifact)
+            return AgentArtifactMutationResponse(artifact=storage.to_api_artifact(artifact))
+        except Exception as exc:
+            self._log_case_artifact_failure(
+                db,
+                action="agent_artifact_recycled",
+                user=user,
+                case_id=case_id,
+                artifact_id=artifact_id,
+                error=str(exc),
+                details={"expected_version": request.expected_version},
+            )
+            raise
+
     def approve_artifact(self, *, db: Session, user: User, artifact_id: UUID) -> AgentArtifact:
         artifact = storage.approve_artifact(db, artifact_id=artifact_id, user=user)
         self._log_agent_event(
@@ -600,6 +807,73 @@ class AgentService:
         )
         db.commit()
         return exported
+
+    def _log_case_artifact_failure(
+        self,
+        db: Session,
+        *,
+        action: str,
+        user: User,
+        case_id: UUID,
+        error: str,
+        artifact_id: UUID | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            db.rollback()
+            self._log_case_artifact_event(
+                db,
+                action=action,
+                user=user,
+                case_id=case_id,
+                artifact_id=artifact_id,
+                success=False,
+                error=error,
+                details={"error": error, **(details or {})},
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    @staticmethod
+    def _log_case_artifact_event(
+        db: Session,
+        *,
+        action: str,
+        user: User,
+        case_id: UUID,
+        artifact=None,
+        artifact_id: UUID | None = None,
+        success: bool = True,
+        error: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {"case_id": str(case_id), **(details or {})}
+        if artifact is not None:
+            payload.update(
+                {
+                    "artifact_id": str(artifact.id),
+                    "artifact_type": artifact.type,
+                    "artifact_status": artifact.status,
+                    "version": artifact.version,
+                    "thread_id": str(artifact.thread_id),
+                    "run_id": str(artifact.run_id),
+                    "deleted_at": artifact.deleted_at.isoformat() if artifact.deleted_at else None,
+                }
+            )
+        elif artifact_id is not None:
+            payload["artifact_id"] = str(artifact_id)
+
+        system_log_service.log(
+            LogType.AI_ASSISTANT,
+            LogOrigin.BACKEND,
+            action,
+            details=payload,
+            user=user.email,
+            success=success,
+            error=error,
+            db=db,
+        )
 
     def _resolve_thread(self, db: Session, *, user: User, request: AgentMessageRequest) -> AgentThread:
         if request.thread_id:

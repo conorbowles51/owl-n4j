@@ -34,6 +34,20 @@ ARTIFACT_STATUS_APPROVED = "approved"
 ARTIFACT_STATUSES = {ARTIFACT_STATUS_DRAFT, ARTIFACT_STATUS_APPROVED}
 
 
+class ArtifactNotFoundError(ValueError):
+    """Raised when an artifact is not available in the requested case scope."""
+
+
+class ArtifactValidationError(ValueError):
+    """Raised when an artifact lifecycle request is invalid."""
+
+
+class ArtifactConcurrencyError(Exception):
+    def __init__(self, current_version: int) -> None:
+        self.current_version = current_version
+        super().__init__("artifact version conflict")
+
+
 def summarize_title(message: str) -> str:
     words = sanitize_text(message).strip().split()
     title = " ".join(words[:10]) if words else "New agent thread"
@@ -204,6 +218,151 @@ def revert_artifact_to_draft(db: Session, *, artifact_id: UUID, user: User) -> A
     artifact.status = ARTIFACT_STATUS_DRAFT
     artifact.approved_by_user_id = None
     artifact.approved_at = None
+    db.flush()
+    db.refresh(artifact)
+    return artifact
+
+
+def get_artifact_in_case(
+    db: Session,
+    *,
+    artifact_id: UUID,
+    case_id: UUID,
+    user: User,
+    required_permission: tuple[str, str] = ("case", "view"),
+    include_deleted: bool = False,
+) -> AgentArtifactRecord:
+    query = (
+        db.query(AgentArtifactRecord)
+        .join(AgentThread, AgentArtifactRecord.thread_id == AgentThread.id)
+        .filter(
+            AgentArtifactRecord.id == artifact_id,
+            AgentThread.case_id == case_id,
+        )
+    )
+    if not include_deleted:
+        query = query.filter(AgentArtifactRecord.deleted_at.is_(None))
+    artifact = query.first()
+    if not artifact:
+        raise ArtifactNotFoundError("Agent artifact not found")
+    check_case_access(db, case_id, user, required_permission=required_permission)
+    return artifact
+
+
+def list_artifacts_for_case(
+    db: Session,
+    *,
+    case_id: UUID,
+    user: User,
+    include_deleted: bool = False,
+) -> list[AgentArtifactRecord]:
+    check_case_access(db, case_id, user, required_permission=("case", "view"))
+    query = (
+        db.query(AgentArtifactRecord)
+        .join(AgentThread, AgentArtifactRecord.thread_id == AgentThread.id)
+        .filter(
+            AgentThread.case_id == case_id,
+            AgentArtifactRecord.status == ARTIFACT_STATUS_APPROVED,
+        )
+    )
+    if not include_deleted:
+        query = query.filter(AgentArtifactRecord.deleted_at.is_(None))
+    return (
+        query.order_by(
+            AgentArtifactRecord.updated_at.desc(),
+            AgentArtifactRecord.created_at.desc(),
+            AgentArtifactRecord.id.desc(),
+        )
+        .limit(500)
+        .all()
+    )
+
+
+def _check_expected_version(record: AgentArtifactRecord, expected_version: int | None) -> None:
+    if expected_version is not None and (record.version or 1) != expected_version:
+        raise ArtifactConcurrencyError(record.version or 1)
+
+
+def rename_artifact_in_case(
+    db: Session,
+    *,
+    artifact_id: UUID,
+    case_id: UUID,
+    user: User,
+    title: str,
+    expected_version: int | None = None,
+) -> AgentArtifactRecord:
+    cleaned_title = sanitize_text(title).strip()
+    if not cleaned_title:
+        raise ArtifactValidationError("Artifact title is required")
+    artifact = get_artifact_in_case(
+        db,
+        artifact_id=artifact_id,
+        case_id=case_id,
+        user=user,
+        required_permission=("case", "edit"),
+    )
+    _check_expected_version(artifact, expected_version)
+    artifact.title = cleaned_title
+    artifact.version = (artifact.version or 1) + 1
+    artifact.updated_at = datetime.now(timezone.utc)
+    db.flush()
+    db.refresh(artifact)
+    return artifact
+
+
+def update_artifact_in_case(
+    db: Session,
+    *,
+    artifact_id: UUID,
+    case_id: UUID,
+    user: User,
+    artifact: dict[str, Any] | None = None,
+    citations: list[dict[str, Any]] | None = None,
+    note: str | None = None,
+    expected_version: int | None = None,
+) -> AgentArtifactRecord:
+    if artifact is None and citations is None:
+        raise ArtifactValidationError("Artifact data or citations are required")
+    record = get_artifact_in_case(
+        db,
+        artifact_id=artifact_id,
+        case_id=case_id,
+        user=user,
+        required_permission=("case", "edit"),
+    )
+    _check_expected_version(record, expected_version)
+    if artifact is not None:
+        record.payload = to_jsonable(artifact)
+    if citations is not None:
+        record.citations = to_jsonable(citations)
+    record.version = (record.version or 1) + 1
+    record.updated_at = datetime.now(timezone.utc)
+    db.flush()
+    db.refresh(record)
+    return record
+
+
+def recycle_artifact_in_case(
+    db: Session,
+    *,
+    artifact_id: UUID,
+    case_id: UUID,
+    user: User,
+    expected_version: int | None = None,
+) -> AgentArtifactRecord:
+    artifact = get_artifact_in_case(
+        db,
+        artifact_id=artifact_id,
+        case_id=case_id,
+        user=user,
+        required_permission=("case", "edit"),
+    )
+    _check_expected_version(artifact, expected_version)
+    artifact.deleted_at = datetime.now(timezone.utc)
+    artifact.deleted_by_user_id = user.id
+    artifact.version = (artifact.version or 1) + 1
+    artifact.updated_at = artifact.deleted_at
     db.flush()
     db.refresh(artifact)
     return artifact
@@ -391,7 +550,11 @@ def persist_artifacts(
 
 
 def supported_artifacts(records: list[AgentArtifactRecord]) -> list[AgentArtifactRecord]:
-    return [record for record in records if record.type in SUPPORTED_ARTIFACT_TYPES]
+    return [
+        record
+        for record in records
+        if record.type in SUPPORTED_ARTIFACT_TYPES and record.deleted_at is None
+    ]
 
 
 def to_api_artifact(record: AgentArtifactRecord) -> AgentArtifact:
@@ -420,6 +583,8 @@ def to_api_artifact(record: AgentArtifactRecord) -> AgentArtifact:
         citations=record.citations or [],
         approved_by_user_id=str(record.approved_by_user_id) if record.approved_by_user_id else None,
         approved_at=record.approved_at,
+        deleted_at=record.deleted_at,
+        deleted_by_user_id=str(record.deleted_by_user_id) if record.deleted_by_user_id else None,
         provenance={
             "thread_id": str(record.thread_id),
             "run_id": str(record.run_id),
@@ -429,6 +594,8 @@ def to_api_artifact(record: AgentArtifactRecord) -> AgentArtifact:
             "tool_calls": tool_calls,
             "created_at": record.created_at.isoformat() if record.created_at else None,
             "updated_at": record.updated_at.isoformat() if record.updated_at else None,
+            "deleted_at": record.deleted_at.isoformat() if record.deleted_at else None,
+            "deleted_by_user_id": str(record.deleted_by_user_id) if record.deleted_by_user_id else None,
         },
     )
 

@@ -71,7 +71,33 @@ class AgentArtifact(BaseModel):
     citations: list[dict[str, Any]] = Field(default_factory=list)
     approved_by_user_id: str | None = None
     approved_at: datetime | None = None
+    deleted_at: datetime | None = None
+    deleted_by_user_id: str | None = None
     provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentArtifactRenameRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    expected_version: int | None = Field(default=None, ge=1)
+
+
+class AgentArtifactUpdateRequest(BaseModel):
+    artifact: dict[str, Any] | None = None
+    citations: list[dict[str, Any]] | None = None
+    note: str | None = Field(default=None, max_length=2000)
+    expected_version: int | None = Field(default=None, ge=1)
+
+
+class AgentArtifactRecycleRequest(BaseModel):
+    expected_version: int | None = Field(default=None, ge=1)
+
+
+class AgentArtifactListResponse(BaseModel):
+    artifacts: list[AgentArtifact]
+
+
+class AgentArtifactMutationResponse(BaseModel):
+    artifact: AgentArtifact
 
 
 class AgentToolTraceItem(BaseModel):
