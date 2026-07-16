@@ -1,0 +1,48 @@
+[
+  {
+    "key": "person:fintan-doyle",
+    "name": "Fintan Doyle",
+    "type": "Person",
+    "summary": "Account holder of IE29 AIBK 9311 5212 3456 78.",
+    "distance": 0.12,
+    "verified_facts": [
+      {
+        "text": "Transferred EUR 48,500.00 to Meridian Holdings Ltd on 12 March 2025.",
+        "source_doc": "USA-ET-000021.pdf",
+        "page": 3,
+        "quote": "an electronic transfer of EUR 48,500.00 was made from account IE29 AIBK 9311 5212 3456 78, held by Fintan Doyle, to Meridian Holdings Ltd",
+        "importance": 5
+      },
+      {
+        "text": "Denied any knowledge of Meridian Holdings Ltd when interviewed.",
+        "source_doc": "Interview_Transcript_Doyle.pdf",
+        "page": 7,
+        "quote": "I have no knowledge of Meridian.",
+        "importance": 4
+      }
+    ],
+    "ai_insights": [
+      {
+        "text": "Doyle's denial of knowledge conflicts with two transfers from his sole-name account.",
+        "confidence": "medium"
+      }
+    ]
+  },
+  {
+    "key": "org:meridian-holdings",
+    "name": "Meridian Holdings Ltd",
+    "type": "Organization",
+    "summary": "Payee of two consultancy transfers in March 2025.",
+    "distance": 0.16,
+    "verified_facts": [
+      {
+        "text": "Invoiced EUR 48,500.00 for Q1 2025 strategic consultancy.",
+        "source_doc": "Vendor_Invoice_Meridian.xlsx",
+        "page": null,
+        "quote": "Invoice MH-2025-014. Services: strategic consultancy, Q1 2025. Amount due: EUR 48,500.00.",
+        "importance": 4
+      }
+    ],
+    "ai_insights": []
+  }
+]

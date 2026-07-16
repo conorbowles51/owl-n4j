@@ -10,6 +10,7 @@ Handles:
 """
 
 import json
+import re
 import sys
 import time
 from contextvars import ContextVar
@@ -2091,7 +2092,6 @@ Only include candidates with score >= 5."""
 
         # Post-process: convert plain [docname, p.N] citations to doc:// links
         # (catches cases where the LLM didn't follow the link format)
-        import re
         from urllib.parse import quote
         answer = re.sub(
             r'\[([^]]+?),\s*p\.?\s*(\d+)\](?!\()',
@@ -2182,6 +2182,7 @@ Only include candidates with score >= 5."""
         used_node_keys = [e.get("key") for e in entity_results if e.get("key")]
 
         sources = self._build_sources(chunk_results)
+        claims = self._extract_claims(clean_answer_text, chunk_results)
 
         return {
             "answer": answer,
@@ -2193,6 +2194,7 @@ Only include candidates with score >= 5."""
             "result_graph": result_graph,
             "document_summary": doc_summary_text or None,
             "sources": sources,
+            "claims": claims,
         }
         
         
@@ -2227,6 +2229,95 @@ Only include candidates with score >= 5."""
             if len(sources) >= 5:
                 break
         return sources
+
+    def _extract_claims(self, answer_text: str, chunk_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Classify answer fragments and attach retrieved chunk ids where cited."""
+        if not answer_text or not answer_text.strip():
+            return []
+
+        chunks_by_doc: Dict[str, List[Dict[str, Any]]] = {}
+        chunks_by_doc_page: Dict[tuple[str, int], List[Dict[str, Any]]] = {}
+        for chunk in chunk_results:
+            chunk_id = chunk.get("id")
+            if not chunk_id:
+                continue
+            metadata = chunk.get("metadata", {}) or {}
+            filename = metadata.get("filename") or metadata.get("doc_name")
+            if not filename:
+                continue
+            filename = str(filename).strip()
+            chunks_by_doc.setdefault(filename, []).append(chunk)
+            page_start = metadata.get("page_start")
+            if page_start not in (None, "", -1, "-1"):
+                try:
+                    chunks_by_doc_page.setdefault((filename, int(page_start)), []).append(chunk)
+                except (TypeError, ValueError):
+                    pass
+
+        def citation_chunk_ids(segment: str) -> List[str]:
+            ids: List[str] = []
+            for match in re.finditer(r"\[([^\]]+?)(?:,\s*p\.?\s*(\d+))?\]", segment):
+                filename = match.group(1).strip()
+                page = match.group(2)
+                matches: List[Dict[str, Any]] = []
+                if page is not None:
+                    matches = chunks_by_doc_page.get((filename, int(page)), [])
+                elif len(chunks_by_doc.get(filename, [])) == 1:
+                    matches = chunks_by_doc[filename]
+                for chunk in matches:
+                    chunk_id = chunk.get("id")
+                    if chunk_id and chunk_id not in ids:
+                        ids.append(str(chunk_id))
+            return ids
+
+        def split_claims(text: str) -> List[str]:
+            fragments: List[str] = []
+            for block in re.split(r"\n\s*\n+", text):
+                block = block.strip()
+                if not block:
+                    continue
+                list_parts = re.split(r"(?:^|\n)\s*[-*]\s+", block)
+                for part in list_parts:
+                    part = part.strip()
+                    if not part:
+                        continue
+                    fragments.extend(
+                        sentence.strip()
+                        for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z\[])", part)
+                        if sentence.strip()
+                    )
+            return fragments
+
+        def classify(fragment: str, citations: List[str]) -> str:
+            if citations:
+                return "evidence"
+            lowered = fragment.lower()
+            reasoning_markers = (
+                "because",
+                "therefore",
+                "this suggests",
+                "suggests that",
+                "indicates that",
+                "likely",
+                "appears to",
+                "consistent with",
+                "not evidence that",
+            )
+            if any(marker in lowered for marker in reasoning_markers):
+                return "reasoning"
+            return "assertion"
+
+        claims: List[Dict[str, Any]] = []
+        for fragment in split_claims(answer_text):
+            citations = citation_chunk_ids(fragment)
+            kind = classify(fragment, citations)
+            claims.append({
+                "text": fragment,
+                "kind": kind,
+                "supported": bool(citations),
+                "citations": citations,
+            })
+        return claims
 
     # =====================
     # Extract Nodes from Answer (preserved from original)

@@ -1,0 +1,80 @@
+[
+  {
+    "id": "chunk-0001",
+    "text": "On 12 March 2025 an electronic transfer of EUR 48,500.00 was made from account IE29 AIBK 9311 5212 3456 78, held by Fintan Doyle, to Meridian Holdings Ltd. The narrative field recorded the reference \"CONSULTANCY Q1\".",
+    "metadata": {
+      "filename": "USA-ET-000021.pdf",
+      "doc_name": "USA-ET-000021.pdf",
+      "doc_key": "doc:usa-et-000021",
+      "page_start": 3,
+      "page_end": 3,
+      "case_id": "11111111-1111-4111-8111-111111111111"
+    },
+    "distance": 0.11
+  },
+  {
+    "id": "chunk-0002",
+    "text": "The same account shows a further transfer of EUR 12,000.00 to Meridian Holdings Ltd on 19 March 2025, again referenced \"CONSULTANCY Q1\". No supporting invoice is attached to the statement.",
+    "metadata": {
+      "filename": "USA-ET-000021.pdf",
+      "doc_name": "USA-ET-000021.pdf",
+      "doc_key": "doc:usa-et-000021",
+      "page_start": 4,
+      "page_end": 4,
+      "case_id": "11111111-1111-4111-8111-111111111111"
+    },
+    "distance": 0.19
+  },
+  {
+    "id": "chunk-0003",
+    "text": "INVESTIGATOR: Are you familiar with Meridian Holdings Limited?\nDOYLE: I have no knowledge of Meridian. I have never dealt with them and I could not tell you who runs it.",
+    "metadata": {
+      "filename": "Interview_Transcript_Doyle.pdf",
+      "doc_name": "Interview_Transcript_Doyle.pdf",
+      "doc_key": "doc:interview-doyle",
+      "page_start": 7,
+      "page_end": 7,
+      "case_id": "11111111-1111-4111-8111-111111111111"
+    },
+    "distance": 0.23
+  },
+  {
+    "id": "chunk-0004",
+    "text": "DOYLE: The consultancy payments were signed off by the finance team. I did not personally authorise any of them.",
+    "metadata": {
+      "filename": "Interview_Transcript_Doyle.pdf",
+      "doc_name": "Interview_Transcript_Doyle.pdf",
+      "doc_key": "doc:interview-doyle",
+      "page_start": 8,
+      "page_end": 8,
+      "case_id": "11111111-1111-4111-8111-111111111111"
+    },
+    "distance": 0.31
+  },
+  {
+    "id": "chunk-0005",
+    "text": "Meridian Holdings Ltd — Invoice MH-2025-014. Services: strategic consultancy, Q1 2025. Amount due: EUR 48,500.00. Remit to account GB12 BARC 2000 0012 3456 78.",
+    "metadata": {
+      "filename": "Vendor_Invoice_Meridian.xlsx",
+      "doc_name": "Vendor_Invoice_Meridian.xlsx",
+      "doc_key": "doc:vendor-invoice-meridian",
+      "page_start": -1,
+      "page_end": -1,
+      "case_id": "11111111-1111-4111-8111-111111111111"
+    },
+    "distance": 0.27
+  },
+  {
+    "id": "chunk-0006",
+    "text": "Account IE29 AIBK 9311 5212 3456 78 was opened on 4 January 2019 in the sole name of Fintan Doyle. The registered correspondence address is 14 Clareville Road, Dublin 6.",
+    "metadata": {
+      "filename": "USA-ET-000021.pdf",
+      "doc_name": "USA-ET-000021.pdf",
+      "doc_key": "doc:usa-et-000021",
+      "page_start": 1,
+      "page_end": 1,
+      "case_id": "11111111-1111-4111-8111-111111111111"
+    },
+    "distance": 0.38
+  }
+]
