@@ -38,6 +38,18 @@ from services.system_log_service import LogOrigin, LogType, system_log_service
 DEFAULT_AGENT_MAX_TOOL_CALLS = 28
 
 
+class ExportConfirmationRequired(Exception):
+    def __init__(self, *, artifact_id: str, artifact_type: str, title: str, export_format: str):
+        self.payload = {
+            "confirmation_required": True,
+            "artifact_id": artifact_id,
+            "artifact_type": artifact_type,
+            "title": title,
+            "format": export_format,
+        }
+        super().__init__("Artifact export requires confirmation")
+
+
 class AgentService:
     def stream_message(
         self,
@@ -59,6 +71,7 @@ class AgentService:
             raise ValueError(f"Model {request.model} belongs to provider {provider}, not {request.provider}")
 
         thread = self._resolve_thread(db, user=user, request=request)
+        approved_tool_signature = self._approved_tool_signature_for_reply(thread, request.message)
         user_message = storage.append_message(
             db,
             thread=thread,
@@ -112,6 +125,7 @@ class AgentService:
                 max_tool_calls=DEFAULT_AGENT_MAX_TOOL_CALLS,
                 thread_id=str(thread.id),
                 available_artifacts=self._available_artifacts_for_runner(thread),
+                approved_tool_signature=approved_tool_signature,
                 should_cancel=lambda: is_cancelled(run_id),
             ):
                 if event.get("type") == "final":
@@ -298,6 +312,7 @@ class AgentService:
             raise ValueError(f"Model {request.model} belongs to provider {provider}, not {request.provider}")
 
         thread = self._resolve_thread(db, user=user, request=request)
+        approved_tool_signature = self._approved_tool_signature_for_reply(thread, request.message)
         user_message = None
         if request.persist:
             user_message = storage.append_message(
@@ -336,6 +351,7 @@ class AgentService:
                 max_tool_calls=DEFAULT_AGENT_MAX_TOOL_CALLS,
                 thread_id=str(thread.id),
                 available_artifacts=self._available_artifacts_for_runner(thread),
+                approved_tool_signature=approved_tool_signature,
             )
             runner_clarification = self._clarification_from_runner(
                 result.get("clarification"),
@@ -552,8 +568,24 @@ class AgentService:
         user: User,
         artifact_id: UUID,
         export_format: AgentExportFormat,
+        confirmed: bool = False,
     ) -> AgentArtifactExport:
         artifact = storage.get_artifact_for_user(db, artifact_id=artifact_id, user=user)
+        if not confirmed:
+            self._log_agent_event(
+                db,
+                action="agent_artifact_export_confirmation_required",
+                user=user,
+                run=artifact.run,
+                details={"artifact_id": str(artifact.id), "artifact_type": artifact.type, "format": export_format},
+            )
+            db.commit()
+            raise ExportConfirmationRequired(
+                artifact_id=str(artifact.id),
+                artifact_type=artifact.type,
+                title=artifact.title,
+                export_format=export_format,
+            )
         exported = render_artifact_export(artifact, export_format)
         self._log_agent_event(
             db,
@@ -564,6 +596,35 @@ class AgentService:
         )
         db.commit()
         return exported
+
+    @staticmethod
+    def _pending_tool_confirmation(thread: AgentThread) -> dict[str, Any] | None:
+        runs = list(thread.runs or [])
+        if not runs:
+            return None
+        run = runs[-1]
+        if run.status != "clarification_required" or not isinstance(run.extra_metadata, dict):
+            return None
+        clarification = run.extra_metadata.get("clarification")
+        if not isinstance(clarification, dict):
+            return None
+        context = clarification.get("context")
+        if isinstance(context, dict) and context.get("reason") == "tool_confirmation_required":
+            return context
+        return None
+
+    @classmethod
+    def _approved_tool_signature_for_reply(cls, thread: AgentThread, message: str) -> str | None:
+        pending = cls._pending_tool_confirmation(thread)
+        if not pending or not cls._is_approval_reply(message):
+            return None
+        signature = pending.get("signature")
+        return str(signature) if signature else None
+
+    @staticmethod
+    def _is_approval_reply(message: str) -> bool:
+        normalized = " ".join((message or "").strip().lower().split())
+        return normalized in {"approve", "approve this tool call", "approve tool call"}
 
     def _resolve_thread(self, db: Session, *, user: User, request: AgentMessageRequest) -> AgentThread:
         if request.thread_id:

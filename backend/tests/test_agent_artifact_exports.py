@@ -2,8 +2,11 @@ import csv
 import io
 import unittest
 import zipfile
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from services.agent.exports import render_artifact_csv, render_report_docx, render_report_pdf
+from services.agent.service import AgentService, ExportConfirmationRequired
 
 
 def read_csv(content: bytes) -> list[dict[str, str]]:
@@ -176,6 +179,75 @@ class AgentArtifactExportTests(unittest.TestCase):
 
         self.assertEqual(exported.media_type, "application/pdf")
         self.assertTrue(exported.content.startswith(b"%PDF"))
+
+    def test_export_artifact_requires_confirmation_before_rendering(self):
+        artifact = SimpleNamespace(
+            id="artifact-1",
+            type="table",
+            title="Transactions",
+            run=SimpleNamespace(id="run-1", thread_id="thread-1", case_id="case-1", status="completed"),
+        )
+        service = AgentService()
+        db = Mock()
+
+        with patch("services.agent.service.storage.get_artifact_for_user", return_value=artifact), patch(
+            "services.agent.service.render_artifact_export"
+        ) as render, patch.object(service, "_log_agent_event"):
+            with self.assertRaises(ExportConfirmationRequired) as raised:
+                service.export_artifact(
+                    db=db,
+                    user=SimpleNamespace(email="user@example.com"),
+                    artifact_id="artifact-1",
+                    export_format="csv",
+                )
+
+        self.assertEqual(raised.exception.payload["artifact_id"], "artifact-1")
+        render.assert_not_called()
+        db.commit.assert_called_once()
+
+    def test_export_artifact_confirmed_renders_once(self):
+        artifact = SimpleNamespace(
+            id="artifact-1",
+            type="table",
+            title="Transactions",
+            run=SimpleNamespace(id="run-1", thread_id="thread-1", case_id="case-1", status="completed"),
+        )
+        exported = SimpleNamespace(content=b"a,b\n", media_type="text/csv", filename="transactions.csv")
+        service = AgentService()
+        db = Mock()
+
+        with patch("services.agent.service.storage.get_artifact_for_user", return_value=artifact), patch(
+            "services.agent.service.render_artifact_export", return_value=exported
+        ) as render, patch.object(service, "_log_agent_event"):
+            result = service.export_artifact(
+                db=db,
+                user=SimpleNamespace(email="user@example.com"),
+                artifact_id="artifact-1",
+                export_format="csv",
+                confirmed=True,
+            )
+
+        self.assertIs(result, exported)
+        render.assert_called_once_with(artifact, "csv")
+        db.commit.assert_called_once()
+
+    def test_export_artifact_wrong_case_raises_before_confirmation(self):
+        service = AgentService()
+
+        with patch(
+            "services.agent.service.storage.get_artifact_for_user",
+            side_effect=PermissionError("Agent artifact belongs to another user"),
+        ), patch("services.agent.service.render_artifact_export") as render:
+            with self.assertRaises(PermissionError):
+                service.export_artifact(
+                    db=Mock(),
+                    user=SimpleNamespace(email="user@example.com"),
+                    artifact_id="artifact-1",
+                    export_format="csv",
+                    confirmed=True,
+                )
+
+        render.assert_not_called()
 
 
 if __name__ == "__main__":

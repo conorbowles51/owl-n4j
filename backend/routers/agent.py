@@ -6,7 +6,7 @@ from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from postgres.models.user import User
@@ -20,7 +20,7 @@ from services.agent.schemas import (
     AgentThreadDetail,
     AgentThreadSummary,
 )
-from services.agent.service import agent_service
+from services.agent.service import ExportConfirmationRequired, agent_service
 from services.case_service import CaseAccessDenied, CaseNotFound
 
 
@@ -170,6 +170,7 @@ async def cancel_agent_run(
 async def export_agent_artifact(
     artifact_id: UUID,
     format: Literal["csv", "pdf", "docx"] = Query(default="csv"),
+    confirm: bool = Query(default=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -179,6 +180,7 @@ async def export_agent_artifact(
             user=current_user,
             artifact_id=artifact_id,
             export_format=format,
+            confirmed=confirm,
         )
         ascii_filename = exported.filename.encode("ascii", "ignore").decode("ascii") or "agent-artifact.csv"
         disposition = (
@@ -193,6 +195,8 @@ async def export_agent_artifact(
                 "X-Agent-Export-Format": format,
             },
         )
+    except ExportConfirmationRequired as exc:
+        return JSONResponse(status_code=428, content=exc.payload)
     except ValueError as exc:
         status_code = 404 if "not found" in str(exc).lower() else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc

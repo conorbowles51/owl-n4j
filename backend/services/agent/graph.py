@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph, add_messages
 
 from config import OPENAI_API_KEY
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
+from services.agent.tool_policy import requires_confirmation, tier_for_tool, tool_call_signature
 from services.agent.tools import AgentToolContext, make_agent_tools
 
 
@@ -288,6 +289,8 @@ class AgentState(TypedDict, total=False):
     artifacts: Annotated[list[dict[str, Any]], operator.add]
     clarifications: Annotated[list[dict[str, Any]], operator.add]
     final_answer: str
+    approved_tool_signature: str | None
+    approved_tool_signature_consumed: bool
 
 
 def _used_tools(state: AgentState) -> bool:
@@ -351,6 +354,149 @@ def _budget_continuation_clarification(max_tool_calls: int) -> dict[str, Any]:
     }
 
 
+def _confirmation_clarification(name: str | None, args: dict[str, Any] | None) -> dict[str, Any]:
+    safe_name = name or "unknown"
+    safe_args = to_jsonable(args or {})
+    return {
+        "question": f"Approve {safe_name} for this exact request?",
+        "options": [
+            {
+                "id": "approve",
+                "label": "Approve",
+                "description": "Run this tool once with the shown arguments.",
+            },
+            {
+                "id": "cancel",
+                "label": "Cancel",
+                "description": "Do not run this tool.",
+            },
+        ],
+        "allow_free_text": False,
+        "context": {
+            "reason": "tool_confirmation_required",
+            "tool_name": safe_name,
+            "risk_tier": tier_for_tool(name),
+            "signature": tool_call_signature(name, args or {}),
+            "args_preview": truncate_payload(safe_args, max_items=12, max_text_chars=500),
+        },
+    }
+
+
+def _execute_tool_calls(
+    *,
+    tool_calls: list[dict[str, Any]],
+    tools_by_name: dict[str, Any],
+    state: AgentState,
+    approved_tool_signature: str | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
+    tool_messages: list[ToolMessage] = []
+    trace: list[dict[str, Any]] = []
+    artifacts: list[dict[str, Any]] = []
+    clarifications: list[dict[str, Any]] = []
+    tool_results: dict[str, Any] = {}
+    approval_consumed = bool(state.get("approved_tool_signature_consumed"))
+
+    for tool_call in tool_calls:
+        if should_cancel and should_cancel():
+            raise AgentRunCancelled("Agent run cancelled")
+        name = tool_call.get("name")
+        args = tool_call.get("args") or {}
+        call_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:12]}"
+        activity = activity_for_tool_call(name, args, call_id)
+        started = time.perf_counter()
+        status = "success"
+        error = None
+        output: dict[str, Any]
+
+        signature = tool_call_signature(name, args)
+        approval_matches = (
+            bool(approved_tool_signature)
+            and signature == approved_tool_signature
+            and not approval_consumed
+        )
+        if requires_confirmation(name) and not approval_matches:
+            status = "error"
+            error = "Tool call requires explicit confirmation."
+            clarification = _confirmation_clarification(name, args)
+            output = {
+                "status": "error",
+                "summary": f"{name or 'Tool'} requires confirmation before it can run.",
+                "data": {"error": error, "confirmation_required": True},
+                "clarification": clarification,
+                "error": error,
+            }
+        else:
+            if approval_matches:
+                approval_consumed = True
+            try:
+                if name not in tools_by_name:
+                    raise ValueError(f"Unknown tool: {name}")
+                raw = tools_by_name[name].invoke(args)
+                output = raw if isinstance(raw, dict) else {"summary": str(raw), "data": raw}
+                status = str(output.get("status") or "success")
+                error = output.get("error")
+            except Exception as exc:
+                status = "error"
+                error = str(exc)
+                output = {"summary": f"{name} failed: {error}", "data": {"error": error}}
+
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        result_id = output.get("result_id")
+        if result_id:
+            tool_results[result_id] = output.get("data")
+
+        artifact = output.get("artifact")
+        if isinstance(artifact, dict):
+            artifacts.append(to_jsonable(artifact))
+        clarification = output.get("clarification")
+        if isinstance(clarification, dict):
+            clarifications.append(to_jsonable(clarification))
+
+        summary = str(output.get("summary") or "")
+        trace.append(
+            {
+                "id": call_id,
+                "name": name or "unknown",
+                "arguments": to_jsonable(args),
+                "status": "error" if status == "error" else "success",
+                "duration_ms": duration_ms,
+                "summary": summary,
+                "result_id": result_id,
+                "error": error,
+                "result_preview": truncate_payload(output.get("data")),
+                "activity": activity,
+            }
+        )
+        tool_messages.append(
+            ToolMessage(
+                tool_call_id=call_id,
+                name=name,
+                content=json.dumps(
+                    {
+                        "result_id": result_id,
+                        "summary": summary,
+                        "data": truncate_payload(output.get("data"), max_items=20, max_text_chars=1500),
+                        "artifact": truncate_payload(artifact, max_items=20, max_text_chars=1500)
+                        if artifact
+                        else None,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
+
+    return {
+        "messages": tool_messages,
+        "tool_trace": trace,
+        "artifacts": artifacts,
+        "clarifications": clarifications,
+        "tool_results": tool_results,
+        "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls),
+        "approved_tool_signature_consumed": approval_consumed,
+    }
+
+
 class AgentGraphRunner:
     def __init__(self, *, provider: str, model_id: str):
         if provider != "openai":
@@ -377,6 +523,7 @@ class AgentGraphRunner:
         max_tool_calls: int = 28,
         thread_id: str | None = None,
         available_artifacts: list[dict[str, Any]] | None = None,
+        approved_tool_signature: str | None = None,
     ) -> dict[str, Any]:
         available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
@@ -454,87 +601,12 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
         def tool_node(state: AgentState) -> dict[str, Any]:
             last_message = state["messages"][-1]
             tool_calls = getattr(last_message, "tool_calls", []) or []
-            tool_messages: list[ToolMessage] = []
-            trace: list[dict[str, Any]] = []
-            artifacts: list[dict[str, Any]] = []
-            clarifications: list[dict[str, Any]] = []
-            tool_results: dict[str, Any] = {}
-
-            for tool_call in tool_calls:
-                name = tool_call.get("name")
-                args = tool_call.get("args") or {}
-                call_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:12]}"
-                activity = activity_for_tool_call(name, args, call_id)
-                started = time.perf_counter()
-                status = "success"
-                error = None
-                output: dict[str, Any]
-
-                try:
-                    if name not in tools_by_name:
-                        raise ValueError(f"Unknown tool: {name}")
-                    raw = tools_by_name[name].invoke(args)
-                    output = raw if isinstance(raw, dict) else {"summary": str(raw), "data": raw}
-                    status = str(output.get("status") or "success")
-                    error = output.get("error")
-                except Exception as exc:
-                    status = "error"
-                    error = str(exc)
-                    output = {"summary": f"{name} failed: {error}", "data": {"error": error}}
-
-                duration_ms = int((time.perf_counter() - started) * 1000)
-                result_id = output.get("result_id")
-                if result_id:
-                    tool_results[result_id] = output.get("data")
-
-                artifact = output.get("artifact")
-                if isinstance(artifact, dict):
-                    artifacts.append(to_jsonable(artifact))
-                clarification = output.get("clarification")
-                if isinstance(clarification, dict):
-                    clarifications.append(to_jsonable(clarification))
-
-                summary = str(output.get("summary") or "")
-                trace.append(
-                    {
-                        "id": call_id,
-                        "name": name or "unknown",
-                        "arguments": to_jsonable(args),
-                        "status": "error" if status == "error" else "success",
-                        "duration_ms": duration_ms,
-                        "summary": summary,
-                        "result_id": result_id,
-                        "error": error,
-                        "result_preview": truncate_payload(output.get("data")),
-                        "activity": activity,
-                    }
-                )
-                tool_messages.append(
-                    ToolMessage(
-                        tool_call_id=call_id,
-                        name=name,
-                        content=json.dumps(
-                            {
-                                "result_id": result_id,
-                                "summary": summary,
-                                "data": truncate_payload(output.get("data"), max_items=20, max_text_chars=1500),
-                                "artifact": truncate_payload(artifact, max_items=20, max_text_chars=1500)
-                                if artifact
-                                else None,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    )
-                )
-
-            return {
-                "messages": tool_messages,
-                "tool_trace": trace,
-                "artifacts": artifacts,
-                "clarifications": clarifications,
-                "tool_results": tool_results,
-                "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls),
-            }
+            return _execute_tool_calls(
+                tool_calls=tool_calls,
+                tools_by_name=tools_by_name,
+                state=state,
+                approved_tool_signature=state.get("approved_tool_signature"),
+            )
 
         def route_after_agent(state: AgentState) -> str:
             last_message = state["messages"][-1]
@@ -586,6 +658,8 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 "tool_results": {},
                 "artifacts": [],
                 "clarifications": [],
+                "approved_tool_signature": approved_tool_signature,
+                "approved_tool_signature_consumed": False,
             },
             config={"configurable": {"thread_id": thread_id or f"agent_{uuid.uuid4().hex}"}},
         )
@@ -608,6 +682,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
         max_tool_calls: int = 28,
         thread_id: str | None = None,
         available_artifacts: list[dict[str, Any]] | None = None,
+        approved_tool_signature: str | None = None,
         should_cancel: Callable[[], bool] | None = None,
     ):
         available_artifact_context = _format_available_artifacts(available_artifacts)
@@ -688,89 +763,13 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
         def tool_node(state: AgentState) -> dict[str, Any]:
             last_message = state["messages"][-1]
             tool_calls = getattr(last_message, "tool_calls", []) or []
-            tool_messages: list[ToolMessage] = []
-            trace: list[dict[str, Any]] = []
-            artifacts: list[dict[str, Any]] = []
-            clarifications: list[dict[str, Any]] = []
-            tool_results: dict[str, Any] = {}
-
-            for tool_call in tool_calls:
-                if should_cancel and should_cancel():
-                    raise AgentRunCancelled("Agent run cancelled")
-                name = tool_call.get("name")
-                args = tool_call.get("args") or {}
-                call_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:12]}"
-                activity = activity_for_tool_call(name, args, call_id)
-                started = time.perf_counter()
-                status = "success"
-                error = None
-                output: dict[str, Any]
-
-                try:
-                    if name not in tools_by_name:
-                        raise ValueError(f"Unknown tool: {name}")
-                    raw = tools_by_name[name].invoke(args)
-                    output = raw if isinstance(raw, dict) else {"summary": str(raw), "data": raw}
-                    status = str(output.get("status") or "success")
-                    error = output.get("error")
-                except Exception as exc:
-                    status = "error"
-                    error = str(exc)
-                    output = {"summary": f"{name} failed: {error}", "data": {"error": error}}
-
-                duration_ms = int((time.perf_counter() - started) * 1000)
-                result_id = output.get("result_id")
-                if result_id:
-                    tool_results[result_id] = output.get("data")
-
-                artifact = output.get("artifact")
-                if isinstance(artifact, dict):
-                    artifacts.append(to_jsonable(artifact))
-                clarification = output.get("clarification")
-                if isinstance(clarification, dict):
-                    clarifications.append(to_jsonable(clarification))
-
-                summary = str(output.get("summary") or "")
-                trace.append(
-                    {
-                        "id": call_id,
-                        "name": name or "unknown",
-                        "arguments": to_jsonable(args),
-                        "status": "error" if status == "error" else "success",
-                        "duration_ms": duration_ms,
-                        "summary": summary,
-                        "result_id": result_id,
-                        "error": error,
-                        "result_preview": truncate_payload(output.get("data")),
-                        "activity": activity,
-                    }
-                )
-                tool_messages.append(
-                    ToolMessage(
-                        tool_call_id=call_id,
-                        name=name,
-                        content=json.dumps(
-                            {
-                                "result_id": result_id,
-                                "summary": summary,
-                                "data": truncate_payload(output.get("data"), max_items=20, max_text_chars=1500),
-                                "artifact": truncate_payload(artifact, max_items=20, max_text_chars=1500)
-                                if artifact
-                                else None,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    )
-                )
-
-            return {
-                "messages": tool_messages,
-                "tool_trace": trace,
-                "artifacts": artifacts,
-                "clarifications": clarifications,
-                "tool_results": tool_results,
-                "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls),
-            }
+            return _execute_tool_calls(
+                tool_calls=tool_calls,
+                tools_by_name=tools_by_name,
+                state=state,
+                approved_tool_signature=state.get("approved_tool_signature"),
+                should_cancel=should_cancel,
+            )
 
         def route_after_agent(state: AgentState) -> str:
             if should_cancel and should_cancel():
@@ -825,6 +824,8 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
             "tool_results": {},
             "artifacts": [],
             "clarifications": [],
+            "approved_tool_signature": approved_tool_signature,
+            "approved_tool_signature_consumed": False,
         }
         config = {"configurable": {"thread_id": thread_id or f"agent_{uuid.uuid4().hex}"}}
         collected_messages: list[AnyMessage] = []

@@ -114,6 +114,10 @@ export const agentAPI = {
       method: "POST",
     }),
 
-  artifactExportUrl: (artifactId: string, format: AgentArtifactExportFormat = "csv") =>
-    `/api/agent/artifacts/${artifactId}/export?format=${format}`,
+  artifactExportUrl: (
+    artifactId: string,
+    format: AgentArtifactExportFormat = "csv",
+    confirmed = false
+  ) =>
+    `/api/agent/artifacts/${artifactId}/export?format=${format}${confirmed ? "&confirm=true" : ""}`,
 }

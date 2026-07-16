@@ -5,6 +5,18 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+export class ProtectedFileError extends Error {
+  status: number
+  detail: unknown
+
+  constructor(status: number, detail: unknown) {
+    super(typeof detail === "string" ? detail : `File request failed: ${status}`)
+    this.name = "ProtectedFileError"
+    this.status = status
+    this.detail = detail
+  }
+}
+
 export async function fetchProtectedBlob(
   url: string,
   signal?: AbortSignal
@@ -16,7 +28,14 @@ export async function fetchProtectedBlob(
   })
 
   if (!response.ok) {
-    throw new Error(`File request failed: ${response.status}`)
+    let detail: unknown = null
+    try {
+      const body = await response.json()
+      detail = body?.detail ?? body
+    } catch {
+      detail = `File request failed: ${response.status}`
+    }
+    throw new ProtectedFileError(response.status, detail)
   }
 
   return response.blob()

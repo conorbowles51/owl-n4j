@@ -69,7 +69,15 @@ import {
 } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
-import { downloadProtectedFile } from "@/lib/protected-file"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { downloadProtectedFile, ProtectedFileError } from "@/lib/protected-file"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-provider"
 import { useGraphStore } from "@/stores/graph.store"
@@ -96,6 +104,14 @@ import type {
 } from "../types"
 
 type Dict = Record<string, unknown>
+
+interface ExportConfirmationDetail {
+  confirmation_required?: boolean
+  artifact_id?: string
+  artifact_type?: string
+  title?: string
+  format?: AgentArtifactExportFormat
+}
 
 const AGENT_MODEL_OPTIONS = [
   { id: "gpt-5-mini", name: "GPT-5 Mini", provider: "openai" },
@@ -1710,6 +1726,10 @@ function ArtifactShell({
 }) {
   const Icon = artifactIcons[artifact.type] ?? FileText
   const [isDownloading, setIsDownloading] = useState(false)
+  const [pendingExport, setPendingExport] = useState<{
+    format: AgentArtifactExportFormat
+    detail: ExportConfirmationDetail
+  } | null>(null)
   const exportFormats: AgentArtifactExportFormat[] =
     artifact.type === "report" ? ["pdf", "docx"] : ["csv"]
 
@@ -1723,6 +1743,34 @@ function ArtifactShell({
       )
       toast.success(`${format.toUpperCase()} export downloaded`)
     } catch (error) {
+      if (
+        error instanceof ProtectedFileError &&
+        error.status === 428 &&
+        error.detail &&
+        typeof error.detail === "object"
+      ) {
+        setPendingExport({ format, detail: error.detail as ExportConfirmationDetail })
+        return
+      }
+      const message = error instanceof Error ? error.message : `Failed to download ${format.toUpperCase()}`
+      toast.error(message)
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
+  const confirmExport = async () => {
+    if (!pendingExport || isDownloading) return
+    const { format } = pendingExport
+    setIsDownloading(true)
+    try {
+      await downloadProtectedFile(
+        agentAPI.artifactExportUrl(artifact.id, format, true),
+        artifactFilename(artifact, format)
+      )
+      toast.success(`${format.toUpperCase()} export downloaded`)
+      setPendingExport(null)
+    } catch (error) {
       const message = error instanceof Error ? error.message : `Failed to download ${format.toUpperCase()}`
       toast.error(message)
     } finally {
@@ -1731,42 +1779,76 @@ function ArtifactShell({
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border/70 px-1 pb-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Icon className="size-4 text-muted-foreground" />
-          <h3 className="truncate text-sm font-semibold text-foreground">
-            {artifact.title}
-          </h3>
+    <>
+      <div className="flex h-full min-h-0 w-full flex-col">
+        <div className="flex shrink-0 items-center justify-between border-b border-border/70 px-1 pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Icon className="size-4 text-muted-foreground" />
+            <h3 className="truncate text-sm font-semibold text-foreground">
+              {artifact.title}
+            </h3>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {headerActions}
+            {exportFormats.map((format) => (
+              <Button
+                key={format}
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => downloadArtifact(format)}
+                disabled={!exportEnabled || isDownloading}
+                title={exportEnabled ? `Download ${format.toUpperCase()}` : "Exports are available when the run finishes"}
+              >
+                {isDownloading ? (
+                  <Loader2 className="mr-1 size-3 animate-spin" />
+                ) : (
+                  <Download className="mr-1 size-3" />
+                )}
+                {format === "docx" ? "Word" : format.toUpperCase()}
+              </Button>
+            ))}
+            <Badge variant="secondary" className="capitalize">
+              {artifact.type}
+            </Badge>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {headerActions}
-          {exportFormats.map((format) => (
-            <Button
-              key={format}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => downloadArtifact(format)}
-              disabled={!exportEnabled || isDownloading}
-              title={exportEnabled ? `Download ${format.toUpperCase()}` : "Exports are available when the run finishes"}
-            >
-              {isDownloading ? (
-                <Loader2 className="mr-1 size-3 animate-spin" />
-              ) : (
-                <Download className="mr-1 size-3" />
-              )}
-              {format === "docx" ? "Word" : format.toUpperCase()}
-            </Button>
-          ))}
-          <Badge variant="secondary" className="capitalize">
-            {artifact.type}
-          </Badge>
-        </div>
+        <div className="flex min-h-0 flex-1 flex-col pt-3">{children}</div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col pt-3">{children}</div>
-    </div>
+      <Dialog
+        open={Boolean(pendingExport)}
+        onOpenChange={(open) => !open && setPendingExport(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm export</DialogTitle>
+            <DialogDescription>
+              Export {pendingExport?.detail.title ?? artifact.title} as{" "}
+              {(pendingExport?.detail.format ?? pendingExport?.format ?? "csv").toUpperCase()}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingExport(null)}
+              disabled={isDownloading}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={confirmExport} disabled={isDownloading}>
+              {isDownloading ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 size-4" />
+              )}
+              Export
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

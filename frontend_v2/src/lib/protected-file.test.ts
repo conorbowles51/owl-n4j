@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { fetchProtectedBlob } from "./protected-file"
+import { fetchProtectedBlob, ProtectedFileError } from "./protected-file"
 
 describe("fetchProtectedBlob", () => {
   const originalFetch = globalThis.fetch
@@ -48,5 +48,26 @@ describe("fetchProtectedBlob", () => {
     await expect(fetchProtectedBlob("/api/evidence/missing/file")).rejects.toThrow(
       "File request failed: 404"
     )
+  })
+
+  it("preserves structured confirmation-required errors", async () => {
+    const detail = {
+      confirmation_required: true,
+      artifact_id: "artifact-1",
+      title: "Transactions",
+      format: "csv",
+    }
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ detail }), {
+        status: 428,
+        headers: { "Content-Type": "application/json" },
+      })
+    )
+
+    await expect(fetchProtectedBlob("/api/agent/artifacts/artifact-1/export?format=csv")).rejects.toMatchObject({
+      name: "ProtectedFileError",
+      status: 428,
+      detail,
+    } satisfies Partial<ProtectedFileError>)
   })
 })
