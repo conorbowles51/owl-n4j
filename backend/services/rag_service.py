@@ -2182,7 +2182,7 @@ Only include candidates with score >= 5."""
 
         used_node_keys = [e.get("key") for e in entity_results if e.get("key")]
 
-        sources = self._build_sources(chunk_results)
+        sources = self._build_sources(chunk_results, entity_results)
         citation_context = {
             "context": context,
             "final_prompt": final_prompt,
@@ -2224,9 +2224,28 @@ Only include candidates with score >= 5."""
     # Source helpers
     # =====================
 
-    def _build_sources(self, chunk_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _build_sources(
+        self,
+        chunk_results: List[Dict[str, Any]],
+        entity_results: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
         sources: List[Dict[str, Any]] = []
         seen: set[str] = set()
+        max_chunk_sources = 5
+        max_total_sources = 10
+
+        def add_source(source_payload: Dict[str, Any], identity_parts: tuple[Any, ...]) -> bool:
+            source_identity = "|".join(str(value or "") for value in identity_parts)
+            source_id = source_payload.get("source_id") or (
+                "src_" + hashlib.sha256(source_identity.encode("utf-8")).hexdigest()[:24]
+            )
+            if not source_payload.get("filename") or source_id in seen:
+                return False
+            source_payload["source_id"] = source_id
+            seen.add(source_id)
+            sources.append({key: value for key, value in source_payload.items() if value is not None})
+            return True
+
         for chunk in chunk_results:
             metadata = chunk.get("metadata", {}) or {}
             filename = metadata.get("filename") or metadata.get("doc_name") or chunk.get("id")
@@ -2234,27 +2253,17 @@ Only include candidates with score >= 5."""
             text = (chunk.get("text") or "").strip()
             page = metadata.get("page_start")
             page_end = metadata.get("page_end")
-            source_identity = "|".join(
-                str(value or "")
-                for value in (
-                    chunk_id,
-                    metadata.get("engine_job_id"),
-                    metadata.get("evidence_file_id") or metadata.get("doc_id"),
-                    filename,
-                    page,
-                    hashlib.sha256(text.encode("utf-8")).hexdigest() if text else "",
-                )
+            content_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest() if text else None
+            entity_key = (
+                metadata.get("entity_key")
+                or metadata.get("source_entity_key")
+                or metadata.get("node_key")
             )
-            source_id = "src_" + hashlib.sha256(source_identity.encode("utf-8")).hexdigest()[:24]
-            if not filename or source_id in seen:
-                continue
-            seen.add(source_id)
             excerpt = text
             if len(excerpt) > 240:
                 excerpt = excerpt[:237] + "..."
             source_payload: Dict[str, Any] = {
-                "source_id": source_id,
-                "filename": str(filename),
+                "filename": str(filename) if filename else None,
                 "chunk_id": chunk_id,
                 "doc_id": metadata.get("doc_id"),
                 "doc_name": metadata.get("doc_name"),
@@ -2263,8 +2272,10 @@ Only include candidates with score >= 5."""
                 "chunk_index": metadata.get("chunk_index"),
                 "start_char": metadata.get("start_char"),
                 "end_char": metadata.get("end_char"),
-                "content_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest() if text else None,
+                "content_sha256": content_sha256,
                 "evidence_sha256": metadata.get("sha256") or metadata.get("file_sha256"),
+                "entity_key": entity_key,
+                "source_entity_key": metadata.get("source_entity_key"),
             }
             if excerpt:
                 source_payload["excerpt"] = excerpt
@@ -2272,9 +2283,61 @@ Only include candidates with score >= 5."""
                 source_payload["page"] = page
             if page_end not in (None, "", -1, "-1"):
                 source_payload["page_end"] = page_end
-            sources.append({key: value for key, value in source_payload.items() if value is not None})
-            if len(sources) >= 5:
+            add_source(
+                source_payload,
+                (
+                    entity_key,
+                    chunk_id,
+                    metadata.get("engine_job_id"),
+                    metadata.get("evidence_file_id") or metadata.get("doc_id"),
+                    filename,
+                    page,
+                    content_sha256,
+                ),
+            )
+            if len(sources) >= max_chunk_sources:
                 break
+
+        for entity in entity_results or []:
+            if len(sources) >= max_total_sources:
+                break
+            entity_key = entity.get("key") or entity.get("entity_key") or entity.get("id")
+            verified_facts = entity.get("verified_facts") or []
+            if not entity_key or not isinstance(verified_facts, list):
+                continue
+            for fact_index, fact in enumerate(verified_facts):
+                if len(sources) >= max_total_sources:
+                    break
+                if not isinstance(fact, dict):
+                    continue
+                filename = fact.get("source_doc") or fact.get("filename") or fact.get("doc_name")
+                if not filename:
+                    continue
+                page = fact.get("page")
+                excerpt = str(fact.get("quote") or fact.get("text") or "").strip()
+                if len(excerpt) > 240:
+                    excerpt = excerpt[:237] + "..."
+                content_sha256 = hashlib.sha256(excerpt.encode("utf-8")).hexdigest() if excerpt else None
+                source_payload = {
+                    "filename": str(filename),
+                    "doc_name": str(filename),
+                    "page": page,
+                    "excerpt": excerpt or None,
+                    "content_sha256": content_sha256,
+                    "entity_key": entity_key,
+                    "source_entity_key": entity_key,
+                    "source_type": "entity_fact",
+                }
+                add_source(
+                    source_payload,
+                    (
+                        entity_key,
+                        filename,
+                        page,
+                        fact_index,
+                        content_sha256,
+                    ),
+                )
         return sources
 
     # =====================

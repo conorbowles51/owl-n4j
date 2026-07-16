@@ -70,6 +70,8 @@ class ChatSource(BaseModel):
     doc_name: Optional[str] = None
     evidence_id: Optional[str] = None
     engine_job_id: Optional[str] = None
+    entity_key: Optional[str] = None
+    source_entity_key: Optional[str] = None
     chunk_index: Optional[int] = None
     start_char: Optional[int] = None
     end_char: Optional[int] = None

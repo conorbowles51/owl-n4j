@@ -3,9 +3,18 @@ import type { EntityType } from "@/lib/theme"
 export type ChatScope = "case_overview" | "selection"
 
 export interface ChatSource {
+  source_id?: string
   filename: string
   excerpt?: string
   page?: number
+  page_end?: number | null
+  entity_key?: string | null
+  source_entity_key?: string | null
+  status?: string | null
+  status_reason?: string | null
+  openable?: boolean
+  open_url?: string | null
+  warning?: string | null
 }
 
 export interface ChatCost {

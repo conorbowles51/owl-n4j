@@ -2,6 +2,7 @@ import hashlib
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -111,6 +112,56 @@ class CitationSnapshotServiceTests(unittest.TestCase):
             self.assertTrue(snapshot.source_payload[0]["openable"])
             self.assertEqual(snapshot.answer_citations[0]["source_id"], snapshot.source_payload[0]["source_id"])
             self.assertFalse(snapshot.answer_citations[0]["unsupported"])
+
+    def test_recycled_source_status_survives_source_normalization(self):
+        with TemporaryDirectory() as tmp, self.SessionLocal() as db:
+            file_path = f"{tmp}/report.pdf"
+            with open(file_path, "wb") as f:
+                f.write(b"evidence bytes")
+            evidence = EvidenceFile(
+                case_id=self.case_id,
+                original_filename="report.pdf",
+                stored_path=file_path,
+                size=14,
+                sha256=hashlib.sha256(b"evidence bytes").hexdigest(),
+                status="processed",
+            )
+            db.add(evidence)
+            db.flush()
+
+            def fake_recycle_check(_db, _case_id, source):
+                return source.get("entity_key") == "person:alice"
+
+            with patch("services.citation_snapshot_service._is_recycled", side_effect=fake_recycle_check):
+                snapshot = citation_snapshot_service.create_snapshot(
+                    db,
+                    case_id=self.case_id,
+                    case_revision_id=None,
+                    conversation_id=None,
+                    assistant_message_id=None,
+                    created_by_user_id=self.user_id,
+                    question="What happened?",
+                    answer="See [report.pdf, p.1](doc://report.pdf/1).",
+                    model_provider="openai",
+                    model_id="gpt-5-mini",
+                    context_scope="case_overview",
+                    selected_entity_keys=["person:alice"],
+                    citation_context={},
+                    sources=[
+                        {
+                            "filename": "report.pdf",
+                            "page": 1,
+                            "evidence_id": str(evidence.id),
+                            "entity_key": "person:alice",
+                        }
+                    ],
+                )
+
+            source = snapshot.source_payload[0]
+            self.assertEqual(source["entity_key"], "person:alice")
+            self.assertEqual(source["status"], "recycled")
+            self.assertFalse(source["openable"])
+            self.assertEqual(source["warning"], "The cited graph source is currently in the recycle bin.")
 
     def test_snapshot_payload_refreshes_broken_and_deleted_sources(self):
         with TemporaryDirectory() as tmp, self.SessionLocal() as db:

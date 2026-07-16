@@ -140,7 +140,12 @@ def _find_evidence(db: Session, case_id: uuid.UUID, source: dict[str, Any]) -> t
 
 
 def _is_recycled(db: Session, case_id: uuid.UUID, source: dict[str, Any]) -> bool:
-    entity_key = source.get("entity_key") or source.get("key")
+    entity_key = (
+        source.get("entity_key")
+        or source.get("source_entity_key")
+        or source.get("node_key")
+        or source.get("key")
+    )
     if not entity_key:
         return False
     row = (
@@ -164,6 +169,7 @@ class CitationSnapshotService:
     def compute_source_id(self, source: dict[str, Any]) -> str:
         return "src_" + _source_hash(
             [
+                source.get("entity_key") or source.get("source_entity_key"),
                 source.get("chunk_id"),
                 source.get("engine_job_id"),
                 source.get("evidence_id") or source.get("doc_id"),
@@ -182,6 +188,12 @@ class CitationSnapshotService:
                 continue
             filename = raw.get("filename") or raw.get("doc_name") or raw.get("name")
             excerpt = sanitize_text(str(raw.get("excerpt") or raw.get("text") or ""))
+            entity_key = (
+                raw.get("entity_key")
+                or raw.get("source_entity_key")
+                or raw.get("node_key")
+                or raw.get("key")
+            )
             source = {
                 "source_id": raw.get("source_id"),
                 "filename": str(filename) if filename else "Unknown",
@@ -198,6 +210,8 @@ class CitationSnapshotService:
                 "end_char": raw.get("end_char"),
                 "content_sha256": raw.get("content_sha256") or _content_sha256(str(raw.get("text") or excerpt)),
                 "evidence_sha256": raw.get("evidence_sha256") or raw.get("file_sha256") or raw.get("sha256"),
+                "entity_key": str(entity_key) if entity_key else None,
+                "source_entity_key": raw.get("source_entity_key"),
             }
             source["source_id"] = str(source["source_id"] or self.compute_source_id(source))
             if source["source_id"] in seen:
