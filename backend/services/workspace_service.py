@@ -13,12 +13,14 @@ Storage: PostgreSQL via JSONB columns (replaced JSON-on-disk in March 2026).
 """
 
 import uuid
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Iterable
 from datetime import datetime
 
 from sqlalchemy import select, delete
 
 from postgres.session import get_background_session
+from postgres.models.evidence import EvidenceFile
+from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 from postgres.models.workspace import (
     WorkspaceContext,
     WorkspaceWitness,
@@ -29,6 +31,9 @@ from postgres.models.workspace import (
     WorkspacePinnedItem,
     WorkspaceDeadlineConfig,
 )
+
+
+COMPUTED_FINDING_FIELDS = {"linked_item_summary"}
 
 
 class WorkspaceService:
@@ -50,6 +55,43 @@ class WorkspaceService:
     @staticmethod
     def _safe_date_sort(event: Dict[str, Any]) -> tuple[str, str]:
         return (event.get("date") or "", event.get("id") or "")
+
+    @staticmethod
+    def _case_uuid(case_id: str) -> uuid.UUID | str:
+        try:
+            return uuid.UUID(str(case_id))
+        except (TypeError, ValueError):
+            return case_id
+
+    @staticmethod
+    def _chunked(values: Iterable[Any], size: int = 500) -> Iterable[List[Any]]:
+        chunk: List[Any] = []
+        for value in values:
+            chunk.append(value)
+            if len(chunk) >= size:
+                yield chunk
+                chunk = []
+        if chunk:
+            yield chunk
+
+    @staticmethod
+    def _clean_link_ids(values: Optional[List[str] | str]) -> List[str]:
+        if not values:
+            return []
+        if isinstance(values, str):
+            values = [values]
+        return [
+            str(value).strip()
+            for value in values
+            if value is not None and str(value).strip()
+        ]
+
+    @staticmethod
+    def _as_uuid(value: str) -> Optional[uuid.UUID]:
+        try:
+            return uuid.UUID(str(value))
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _is_case_document_filename(filename: Optional[str]) -> bool:
@@ -78,6 +120,172 @@ class WorkspaceService:
 
         with get_background_session() as db:
             return EvidenceDBStorage.list_files(db, case_id=case_uuid)
+
+    def _resolve_file_links(
+        self,
+        db,
+        *,
+        case_id: str,
+        linked_ids: List[str],
+        kind: str,
+    ) -> List[Dict[str, Any]]:
+        if not linked_ids:
+            return []
+
+        case_key = self._case_uuid(case_id)
+        uuid_ids: List[uuid.UUID] = []
+        legacy_ids: List[str] = []
+        for linked_id in dict.fromkeys(linked_ids):
+            parsed = self._as_uuid(linked_id)
+            if parsed:
+                uuid_ids.append(parsed)
+            else:
+                legacy_ids.append(linked_id)
+
+        records_by_requested_id: Dict[str, EvidenceFile] = {}
+        for chunk in self._chunked(uuid_ids):
+            rows = db.execute(
+                select(EvidenceFile).where(
+                    EvidenceFile.case_id == case_key,
+                    EvidenceFile.id.in_(chunk),
+                )
+            ).scalars().all()
+            for row in rows:
+                records_by_requested_id[str(row.id)] = row
+
+        for chunk in self._chunked(legacy_ids):
+            rows = db.execute(
+                select(EvidenceFile).where(
+                    EvidenceFile.case_id == case_key,
+                    EvidenceFile.legacy_id.in_(chunk),
+                )
+            ).scalars().all()
+            for row in rows:
+                if row.legacy_id:
+                    records_by_requested_id[row.legacy_id] = row
+
+        resolved: List[Dict[str, Any]] = []
+        for linked_id in linked_ids:
+            record = records_by_requested_id.get(linked_id)
+            if not record:
+                resolved.append({
+                    "kind": kind,
+                    "id": linked_id,
+                    "requested_id": linked_id,
+                    "title": linked_id,
+                    "resolution_status": "missing",
+                })
+                continue
+
+            resolved.append({
+                "kind": kind,
+                "id": str(record.id),
+                "requested_id": linked_id,
+                "title": record.original_filename or linked_id,
+                "filename": record.original_filename,
+                "summary": record.summary,
+                "processing_status": record.status,
+                "source_open_url": f"/api/evidence/{record.id}/file",
+                "created_at": record.created_at.isoformat() if record.created_at else None,
+                "processed_at": record.processed_at.isoformat() if record.processed_at else None,
+                "entity_count": record.entity_count,
+                "relationship_count": record.relationship_count,
+                "resolution_status": "resolved",
+            })
+        return resolved
+
+    def _resolve_entity_links(
+        self,
+        db,
+        *,
+        case_id: str,
+        entity_keys: List[str],
+    ) -> List[Dict[str, Any]]:
+        if not entity_keys:
+            return []
+
+        case_key = self._case_uuid(case_id)
+        recycled_by_key: Dict[str, GraphRecycleBinItem] = {}
+        for chunk in self._chunked(dict.fromkeys(entity_keys)):
+            rows = db.execute(
+                select(GraphRecycleBinItem).where(
+                    GraphRecycleBinItem.case_id == case_key,
+                    GraphRecycleBinItem.status == "active",
+                    GraphRecycleBinItem.original_key.in_(chunk),
+                )
+            ).scalars().all()
+            for row in rows:
+                recycled_by_key[row.original_key] = row
+
+        resolved: List[Dict[str, Any]] = []
+        for entity_key in entity_keys:
+            recycled = recycled_by_key.get(entity_key)
+            if recycled:
+                resolved.append({
+                    "kind": "entity",
+                    "id": entity_key,
+                    "requested_id": entity_key,
+                    "title": recycled.original_name or entity_key,
+                    "entity_type": recycled.original_type,
+                    "recycle_key": recycled.recycle_key,
+                    "deleted_at": recycled.deleted_at.isoformat() if recycled.deleted_at else None,
+                    "reason": recycled.reason,
+                    "resolution_status": "recycled",
+                })
+                continue
+
+            resolved.append({
+                "kind": "entity",
+                "id": entity_key,
+                "requested_id": entity_key,
+                "title": entity_key,
+                "resolution_status": "unverified",
+            })
+        return resolved
+
+    def _build_finding_link_summary(self, db, case_id: str, finding: Dict[str, Any]) -> Dict[str, Any]:
+        evidence = self._resolve_file_links(
+            db,
+            case_id=case_id,
+            linked_ids=self._clean_link_ids(finding.get("linked_evidence_ids")),
+            kind="evidence",
+        )
+        documents = self._resolve_file_links(
+            db,
+            case_id=case_id,
+            linked_ids=self._clean_link_ids(finding.get("linked_document_ids")),
+            kind="document",
+        )
+        entities = self._resolve_entity_links(
+            db,
+            case_id=case_id,
+            entity_keys=self._clean_link_ids(finding.get("linked_entity_keys")),
+        )
+        all_items = [*evidence, *documents, *entities]
+        counts = {
+            "total": len(all_items),
+            "evidence": len(evidence),
+            "documents": len(documents),
+            "entities": len(entities),
+            "resolved": sum(1 for item in all_items if item["resolution_status"] == "resolved"),
+            "missing": sum(1 for item in all_items if item["resolution_status"] == "missing"),
+            "recycled": sum(1 for item in all_items if item["resolution_status"] == "recycled"),
+            "unverified": sum(1 for item in all_items if item["resolution_status"] == "unverified"),
+        }
+        return {
+            "counts": counts,
+            "has_broken_links": counts["missing"] > 0,
+            "has_recycled_links": counts["recycled"] > 0,
+            "evidence": evidence,
+            "documents": documents,
+            "files": [*evidence, *documents],
+            "entities": entities,
+        }
+
+    def _with_finding_link_summary(self, db, case_id: str, finding: Dict[str, Any]) -> Dict[str, Any]:
+        enriched = dict(finding)
+        enriched["linked_item_summary"] = self._build_finding_link_summary(db, case_id, enriched)
+        return enriched
 
     # ------------------------------------------------------------------ #
     # Case Context
@@ -446,11 +654,15 @@ class WorkspaceService:
     # ------------------------------------------------------------------ #
 
     def get_findings(self, case_id: str) -> List[Dict]:
+        case_key = self._case_uuid(case_id)
         with get_background_session() as db:
             rows = db.execute(
-                select(WorkspaceFinding).where(WorkspaceFinding.case_id == case_id)
+                select(WorkspaceFinding).where(WorkspaceFinding.case_id == case_key)
             ).scalars().all()
-            findings = [dict(r.data) for r in rows]
+            findings = [
+                self._with_finding_link_summary(db, case_id, dict(r.data))
+                for r in rows
+            ]
 
         priority_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
         return sorted(
@@ -462,16 +674,21 @@ class WorkspaceService:
         )
 
     def get_finding(self, case_id: str, finding_id: str) -> Optional[Dict]:
+        case_key = self._case_uuid(case_id)
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
+                    WorkspaceFinding.case_id == case_key,
                     WorkspaceFinding.finding_id == finding_id,
                 )
             ).scalar_one_or_none()
-            return dict(row.data) if row else None
+            return self._with_finding_link_summary(db, case_id, dict(row.data)) if row else None
 
     def save_finding(self, case_id: str, finding: Dict) -> str:
+        case_key = self._case_uuid(case_id)
+        finding = dict(finding)
+        for field in COMPUTED_FINDING_FIELDS:
+            finding.pop(field, None)
         finding_id = finding.get("finding_id") or f"finding_{uuid.uuid4().hex[:12]}"
         finding["finding_id"] = finding_id
         finding["case_id"] = case_id
@@ -482,7 +699,7 @@ class WorkspaceService:
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
+                    WorkspaceFinding.case_id == case_key,
                     WorkspaceFinding.finding_id == finding_id,
                 )
             ).scalar_one_or_none()
@@ -491,7 +708,7 @@ class WorkspaceService:
             else:
                 db.add(
                     WorkspaceFinding(
-                        case_id=case_id,
+                        case_id=case_key,
                         finding_id=finding_id,
                         data=finding,
                     )
@@ -499,10 +716,11 @@ class WorkspaceService:
         return finding_id
 
     def delete_finding(self, case_id: str, finding_id: str) -> bool:
+        case_key = self._case_uuid(case_id)
         with get_background_session() as db:
             result = db.execute(
                 delete(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
+                    WorkspaceFinding.case_id == case_key,
                     WorkspaceFinding.finding_id == finding_id,
                 )
             )

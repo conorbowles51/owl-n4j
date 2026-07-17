@@ -1,5 +1,16 @@
 import { useMemo, useState } from "react"
-import { AlertCircle, Plus, Trash2, Link2, FileText, Database, Orbit } from "lucide-react"
+import {
+  AlertCircle,
+  AlertTriangle,
+  ExternalLink,
+  Plus,
+  RotateCcw,
+  Trash2,
+  Link2,
+  FileText,
+  Database,
+  Orbit,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -33,17 +44,21 @@ function countLinkedItems(finding: Finding) {
 }
 
 function LinkedSummary({ finding }: { finding: Finding }) {
-  const evidenceCount = finding.linked_evidence_ids?.length ?? 0
-  const documentCount = finding.linked_document_ids?.length ?? 0
-  const entityCount = finding.linked_entity_keys?.length ?? 0
+  const counts = finding.linked_item_summary?.counts
+  const evidenceCount = counts?.evidence ?? finding.linked_evidence_ids?.length ?? 0
+  const documentCount = counts?.documents ?? finding.linked_document_ids?.length ?? 0
+  const entityCount = counts?.entities ?? finding.linked_entity_keys?.length ?? 0
+  const totalCount = counts?.total ?? countLinkedItems(finding)
+  const missingCount = counts?.missing ?? 0
+  const recycledCount = counts?.recycled ?? 0
 
-  if (evidenceCount + documentCount + entityCount === 0) return null
+  if (totalCount === 0) return null
 
   return (
     <>
       <span className="inline-flex items-center gap-1">
         <Link2 className="size-3" />
-        {countLinkedItems(finding)} linked items
+        {totalCount} linked items
       </span>
       {evidenceCount > 0 && (
         <span className="inline-flex items-center gap-1">
@@ -63,7 +78,76 @@ function LinkedSummary({ finding }: { finding: Finding }) {
           {entityCount} entities
         </span>
       )}
+      {missingCount > 0 && (
+        <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
+          <AlertTriangle className="size-3" />
+          {missingCount} broken
+        </span>
+      )}
+      {recycledCount > 0 && (
+        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-300">
+          <RotateCcw className="size-3" />
+          {recycledCount} recycled
+        </span>
+      )}
     </>
+  )
+}
+
+function LinkedFileSummaries({ finding }: { finding: Finding }) {
+  const files = finding.linked_item_summary?.files ?? []
+  const resolvedFiles = files.filter((file) => file.resolution_status === "resolved")
+  const visibleFiles = resolvedFiles.slice(0, 4)
+  const hiddenCount = Math.max(0, resolvedFiles.length - visibleFiles.length)
+
+  if (visibleFiles.length === 0) return null
+
+  return (
+    <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
+      {visibleFiles.map((file) => {
+        const title = file.filename || file.title || file.requested_id
+        return (
+          <div key={`${file.kind}-${file.requested_id}`} className="min-w-0">
+            <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium">
+              {file.kind === "document" ? (
+                <FileText className="size-3 shrink-0 text-muted-foreground" />
+              ) : (
+                <Database className="size-3 shrink-0 text-muted-foreground" />
+              )}
+              {file.source_open_url ? (
+                <a
+                  href={file.source_open_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 truncate text-foreground underline-offset-2 hover:underline"
+                >
+                  {title}
+                </a>
+              ) : (
+                <span className="min-w-0 truncate text-foreground">{title}</span>
+              )}
+              {file.source_open_url && (
+                <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+              )}
+            </div>
+            {file.summary ? (
+              <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
+                {file.summary}
+              </p>
+            ) : (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {file.processing_status ? `${file.processing_status} file` : "No summary available"}
+              </p>
+            )}
+          </div>
+        )
+      })}
+      {hiddenCount > 0 && (
+        <p className="text-[10px] text-muted-foreground">
+          +{hiddenCount} more linked file{hiddenCount === 1 ? "" : "s"}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -248,6 +332,7 @@ export function FindingsSection({ caseId, previewLimit }: FindingsSectionProps) 
                       <LinkedSummary finding={finding} />
                       {finding.updated_at && <span>{formatWorkspaceDate(finding.updated_at)}</span>}
                     </div>
+                    <LinkedFileSummaries finding={finding} />
                   </div>
                   {!previewLimit && (
                     <div className="flex items-center gap-1">

@@ -70,9 +70,55 @@ export interface Finding {
   linked_evidence_ids?: string[]
   linked_document_ids?: string[]
   linked_entity_keys?: string[]
+  linked_item_summary?: FindingLinkedItemSummary
   created_at?: string
   updated_at?: string
   [key: string]: unknown
+}
+
+export type FindingLinkResolutionStatus = "resolved" | "missing" | "recycled" | "unverified"
+
+export interface FindingLinkedFile {
+  kind: "evidence" | "document"
+  id: string
+  requested_id: string
+  title: string
+  filename?: string | null
+  summary?: string | null
+  processing_status?: string | null
+  source_open_url?: string
+  resolution_status: FindingLinkResolutionStatus
+}
+
+export interface FindingLinkedEntity {
+  kind: "entity"
+  id: string
+  requested_id: string
+  title: string
+  entity_type?: string | null
+  recycle_key?: string
+  deleted_at?: string | null
+  reason?: string | null
+  resolution_status: FindingLinkResolutionStatus
+}
+
+export interface FindingLinkedItemSummary {
+  counts: {
+    total: number
+    evidence: number
+    documents: number
+    entities: number
+    resolved: number
+    missing: number
+    recycled: number
+    unverified: number
+  }
+  has_broken_links: boolean
+  has_recycled_links: boolean
+  evidence: FindingLinkedFile[]
+  documents: FindingLinkedFile[]
+  files: FindingLinkedFile[]
+  entities: FindingLinkedEntity[]
 }
 
 export interface Theory {

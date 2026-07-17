@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,6 +49,6 @@ class GraphRecycleBinItem(Base, TimestampMixin):
     deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     relationship_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending_delete")
-    snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    snapshot: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
 
     case = relationship("Case", foreign_keys=[case_id])
