@@ -111,6 +111,7 @@ class SystemLog(Base, TimestampMixin):
 
     __tablename__ = "system_logs"
     __table_args__ = (
+        Index("ix_system_logs_case_timestamp", "case_id", "timestamp"),
         Index("ix_system_logs_timestamp", "timestamp"),
         Index("ix_system_logs_type_timestamp", "log_type", "timestamp"),
         Index("ix_system_logs_origin_timestamp", "origin", "timestamp"),
@@ -124,6 +125,7 @@ class SystemLog(Base, TimestampMixin):
     origin: Mapped[str] = mapped_column(String(64), nullable=False)
     action: Mapped[str] = mapped_column(Text, nullable=False)
     user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    case_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     details: Mapped[dict] = mapped_column(_jsonb_column(), server_default="{}", nullable=False)

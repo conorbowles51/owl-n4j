@@ -14,7 +14,7 @@ from enum import Enum
 from threading import RLock
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
-from sqlalchemy import delete, desc, func, select
+from sqlalchemy import delete, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from postgres.models.runtime_state import SystemLog
@@ -56,6 +56,16 @@ def _format_datetime(value: datetime | str | None) -> str:
 
 def _enum_value(value: Enum | str) -> str:
     return value.value if isinstance(value, Enum) else str(value)
+
+
+def _case_id_from_details(details: Optional[Dict[str, Any]]) -> str | None:
+    if not isinstance(details, dict):
+        return None
+    value = details.get("case_id")
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned[:64] or None
 
 
 class SystemLogService:
@@ -136,6 +146,7 @@ class SystemLogService:
             origin=_enum_value(origin),
             action=action,
             user=user,
+            case_id=_case_id_from_details(details),
             success=success,
             error=error,
             details=details or {},
@@ -216,6 +227,51 @@ class SystemLogService:
                 }
         except Exception as exc:
             print(f"[SystemLog] Error reading logs: {exc}")
+            return {"logs": [], "total": 0, "limit": limit, "offset": offset}
+
+    def get_case_logs(
+        self,
+        case_id: str,
+        *,
+        limit: int = 500,
+        offset: int = 0,
+        db: Session | None = None,
+    ) -> Dict[str, Any]:
+        """Retrieve audit log entries scoped to one case.
+
+        The JSON details fallback keeps pre-migration records visible until all
+        writers have populated the indexed column.
+        """
+        case_id = str(case_id or "").strip()
+        limit = max(1, min(limit, self._max_logs))
+        offset = max(0, offset)
+        if not case_id:
+            return {"logs": [], "total": 0, "limit": limit, "offset": offset}
+
+        try:
+            with self._session_scope(db) as session:
+                case_filter = or_(
+                    SystemLog.case_id == case_id,
+                    SystemLog.details["case_id"].as_string() == case_id,
+                )
+                statement = select(SystemLog).where(case_filter)
+                count_statement = select(func.count()).select_from(SystemLog).where(case_filter)
+
+                total = session.scalar(count_statement) or 0
+                records = session.scalars(
+                    statement.order_by(desc(SystemLog.timestamp), desc(SystemLog.id))
+                    .offset(offset)
+                    .limit(limit)
+                ).all()
+
+                return {
+                    "logs": [self._to_dict(record) for record in records],
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                }
+        except Exception as exc:
+            print(f"[SystemLog] Error reading case logs: {exc}")
             return {"logs": [], "total": 0, "limit": limit, "offset": offset}
 
     def get_log_statistics(self, *, db: Session | None = None) -> Dict[str, Any]:

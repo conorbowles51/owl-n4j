@@ -225,7 +225,7 @@ class RuntimeStateServiceTests(unittest.TestCase):
             LogType.GRAPH_OPERATION,
             LogOrigin.FRONTEND,
             "Expand Nodes",
-            details={"nodes": 3},
+            details={"case_id": "case-1", "nodes": 3},
             user="investigator@example.com",
         )
         service.log(
@@ -239,17 +239,43 @@ class RuntimeStateServiceTests(unittest.TestCase):
 
         graph_logs = service.get_logs(log_type=LogType.GRAPH_OPERATION)
         self.assertEqual(graph_logs["total"], 1)
-        self.assertEqual(graph_logs["logs"][0]["details"], {"nodes": 3})
+        self.assertEqual(graph_logs["logs"][0]["details"], {"case_id": "case-1", "nodes": 3})
+
+        case_logs = service.get_case_logs("case-1")
+        self.assertEqual(case_logs["total"], 1)
+        self.assertEqual(case_logs["logs"][0]["action"], "Expand Nodes")
+
+        with self.SessionLocal() as db:
+            legacy_log = SystemLog(
+                id="legacy-case-log",
+                timestamp=datetime.now(timezone.utc),
+                log_type=LogType.CASE_OPERATION.value,
+                origin=LogOrigin.FRONTEND.value,
+                action="Legacy Case Action",
+                user="investigator@example.com",
+                success=True,
+                details={"case_id": "case-1"},
+            )
+            db.add(legacy_log)
+            db.commit()
+
+        case_logs = service.get_case_logs("case-1")
+        self.assertEqual(case_logs["total"], 2)
+        self.assertEqual(
+            {log["action"] for log in case_logs["logs"]},
+            {"Expand Nodes", "Legacy Case Action"},
+        )
 
         failed_logs = service.get_logs(success_only=False)
         self.assertEqual(failed_logs["total"], 1)
         self.assertEqual(failed_logs["logs"][0]["error"], "boom")
 
         stats = service.get_log_statistics()
-        self.assertEqual(stats["total_logs"], 2)
+        self.assertEqual(stats["total_logs"], 3)
         self.assertEqual(stats["by_type"]["graph_operation"], 1)
+        self.assertEqual(stats["by_type"]["case_operation"], 1)
         self.assertEqual(stats["by_origin"]["backend"], 1)
-        self.assertEqual(stats["successful"], 1)
+        self.assertEqual(stats["successful"], 2)
         self.assertEqual(stats["failed"], 1)
 
         service.clear_logs()

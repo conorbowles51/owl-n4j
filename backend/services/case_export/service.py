@@ -196,6 +196,76 @@ def _render_html(
             .fact-table td {{
                 overflow-wrap: anywhere;
             }}
+            .data-table {{
+                border-collapse: collapse;
+                margin-top: 12px;
+                width: 100%;
+            }}
+            .data-table th,
+            .data-table td {{
+                border-bottom: 1px solid #e5e7eb;
+                padding: 7px 6px;
+                text-align: left;
+                vertical-align: top;
+            }}
+            .data-table th {{
+                color: #475569;
+                font-size: 9px;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }}
+            .data-table td {{
+                overflow-wrap: anywhere;
+            }}
+            .item-card {{
+                border: 1px solid #e5e7eb;
+                border-radius: 4px;
+                break-inside: avoid;
+                margin: 0 0 12px;
+                padding: 12px;
+            }}
+            .item-title {{
+                color: #0f172a;
+                font-size: 13px;
+                font-weight: 700;
+                margin-bottom: 4px;
+            }}
+            .item-meta {{
+                color: #64748b;
+                font-size: 9px;
+                margin-bottom: 8px;
+            }}
+            .subsection-title {{
+                color: #0f172a;
+                font-size: 14px;
+                margin: 16px 0 8px;
+            }}
+            .badge-list {{
+                margin: 5px 0 0;
+            }}
+            .badge {{
+                background: #f1f5f9;
+                border: 1px solid #cbd5e1;
+                border-radius: 999px;
+                color: #334155;
+                display: inline-block;
+                font-size: 9px;
+                margin: 0 4px 4px 0;
+                padding: 1px 6px;
+            }}
+            .preformatted {{
+                overflow-wrap: anywhere;
+                white-space: pre-wrap;
+            }}
+            .empty-state {{
+                border: 1px dashed #cbd5e1;
+                border-radius: 4px;
+                color: #64748b;
+                padding: 12px;
+            }}
+            .muted {{
+                color: #64748b;
+            }}
         </style>
     </head>
     <body>
