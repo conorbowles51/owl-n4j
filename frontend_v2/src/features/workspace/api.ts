@@ -316,6 +316,37 @@ export const workspaceAPI = {
       method: "DELETE",
     }),
 
+  downloadTheoryExport: async (caseId: string, theoryId: string) => {
+    const token = localStorage.getItem("authToken")
+    const response = await fetch(
+      `/api/workspace/${encodeURIComponent(caseId)}/theories/${encodeURIComponent(theoryId)}/export`,
+      {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        credentials: "include",
+      },
+    )
+    if (!response.ok) {
+      let message = `Theory export failed: ${response.status}`
+      try {
+        const data = (await response.json()) as { detail?: unknown }
+        if (typeof data.detail === "string") message = data.detail
+      } catch {
+        // Keep status fallback.
+      }
+      throw new Error(message)
+    }
+    const blob = await response.blob()
+    const disposition = response.headers.get("Content-Disposition") ?? ""
+    const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1]
+    const quoted = disposition.match(/filename="([^"]+)"/)?.[1]
+    const filename = encoded
+      ? decodeURIComponent(encoded)
+      : quoted || "theory-export.pdf"
+    return { blob, filename }
+  },
+
   buildTheoryGraph: (
     caseId: string,
     theoryId: string,

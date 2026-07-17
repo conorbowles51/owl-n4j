@@ -13,12 +13,14 @@ Handles workspace-specific endpoints for case workspaces including:
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+from urllib.parse import quote
 from uuid import UUID
-from fastapi import APIRouter, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Depends, Query, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from services.workspace_service import workspace_service
+from services.theory_export import TheoryAccessDenied, render_theory_pdf
 from services.presence_service import presence_service
 from services.system_log_service import system_log_service, LogType, LogOrigin
 from services.case_service import get_case_if_allowed, CaseNotFound, CaseAccessDenied
@@ -676,6 +678,50 @@ async def get_theory_timeline(
 
         events = workspace_service.get_theory_timeline(case_id, theory_id)
         return {"events": events, "total": len(events)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{case_id}/theories/{theory_id}/export")
+async def export_theory(
+    case_id: str,
+    theory_id: str,
+    footer_label: str = Query("Confidential", max_length=80),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Export a theory with its narrative, scoped events, and attached records."""
+    try:
+        try:
+            case = get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        exported = render_theory_pdf(
+            db,
+            case=case,
+            theory_id=theory_id,
+            current_user=current_user,
+            footer_label=footer_label,
+        )
+        ascii_filename = exported.filename.encode("ascii", "ignore").decode("ascii") or "theory-export.pdf"
+        disposition = (
+            f'attachment; filename="{ascii_filename}"; '
+            f"filename*=UTF-8''{quote(exported.filename)}"
+        )
+        return Response(
+            content=exported.content,
+            media_type=exported.media_type,
+            headers={"Content-Disposition": disposition},
+        )
+    except TheoryAccessDenied:
+        raise HTTPException(status_code=403, detail="Theory export is attorney-only")
+    except ValueError as e:
+        if str(e) == "Theory not found":
+            raise HTTPException(status_code=404, detail="Theory not found")
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:

@@ -912,6 +912,61 @@ class WorkspaceService:
         events.sort(key=self._safe_date_sort)
         return events
 
+    def get_theory_scoped_evidence(self, case_id: str, theory_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        """Resolve raw records attached to a theory for export display."""
+        theory = self.get_theory(case_id, theory_id)
+        if not theory:
+            return {"witnesses": [], "notes": [], "evidence": [], "documents": []}
+
+        attached_evidence_ids = set(theory.get("attached_evidence_ids") or [])
+        attached_witness_ids = set(theory.get("attached_witness_ids") or [])
+        attached_note_ids = set(theory.get("attached_note_ids") or [])
+        attached_document_ids = set(theory.get("attached_document_ids") or [])
+
+        witnesses = [
+            {
+                "witness_id": witness.get("witness_id"),
+                "name": witness.get("name"),
+                "category": witness.get("category"),
+                "credibility_rating": witness.get("credibility_rating"),
+                "statement_summary": witness.get("statement_summary"),
+            }
+            for witness in self.get_witnesses(case_id)
+            if witness.get("witness_id") in attached_witness_ids
+        ]
+
+        notes = [
+            {
+                "note_id": note.get("note_id"),
+                "title": note.get("title"),
+                "content": note.get("content"),
+                "tags": note.get("tags") or [],
+            }
+            for note in self.get_notes(case_id)
+            if note.get("note_id") in attached_note_ids
+        ]
+
+        evidence_records: List[Dict[str, Any]] = []
+        document_records: List[Dict[str, Any]] = []
+        for record in self._list_evidence_records(case_id):
+            record_id = str(record.id)
+            record_data = {
+                "id": record_id,
+                "original_filename": record.original_filename,
+                "created_at": record.created_at.isoformat() if record.created_at else None,
+            }
+            if record_id in attached_evidence_ids:
+                evidence_records.append(record_data)
+            if record_id in attached_document_ids:
+                document_records.append(record_data)
+
+        return {
+            "witnesses": witnesses,
+            "notes": notes,
+            "evidence": evidence_records,
+            "documents": document_records,
+        }
+
 
 # Singleton instance
 workspace_service = WorkspaceService()

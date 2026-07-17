@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
+import { toast } from "sonner"
 import {
   Sheet,
   SheetContent,
@@ -38,6 +39,7 @@ import {
   StickyNote,
   CheckSquare,
   File,
+  Download,
 } from "lucide-react"
 import { useUpdateTheory, useDeleteTheory, useBuildWorkspaceGraph } from "../hooks/use-workspace"
 import { workspaceAPI, type Theory } from "../api"
@@ -66,6 +68,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
   const [supportingEvidence, setSupportingEvidence] = useState<string[]>([])
   const [counterArguments, setCounterArguments] = useState<string[]>([])
   const [nextSteps, setNextSteps] = useState<string[]>([])
+  const [isExporting, setIsExporting] = useState(false)
 
   const updateTheory = useUpdateTheory(caseId)
   const deleteTheory = useDeleteTheory(caseId)
@@ -151,6 +154,27 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
         },
       },
     )
+  }
+
+  const handleExport = async () => {
+    if (!theory) return
+    setIsExporting(true)
+    try {
+      const { blob, filename } = await workspaceAPI.downloadTheoryExport(caseId, theory.id)
+      const objectUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = objectUrl
+      anchor.download = filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+      toast.success("Theory export downloaded")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Theory export failed")
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   // --- Editable list helpers ---
@@ -457,6 +481,19 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
             )}
             Delete
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={!theory || isExporting}
+          >
+            {isExporting ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Export
           </Button>
           <Button
             size="sm"
