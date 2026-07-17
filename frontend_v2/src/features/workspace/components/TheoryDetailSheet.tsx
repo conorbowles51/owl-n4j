@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
+import { toast } from "sonner"
 import {
   Sheet,
   SheetContent,
@@ -40,8 +41,14 @@ import {
   File,
 } from "lucide-react"
 import { useUpdateTheory, useDeleteTheory, useBuildWorkspaceGraph } from "../hooks/use-workspace"
-import { workspaceAPI, type Theory } from "../api"
+import {
+  getWorkspaceVersionConflict,
+  workspaceAPI,
+  type Theory,
+  type WorkspaceVersionConflict,
+} from "../api"
 import { formatWorkspaceDateTime } from "../lib/format-date"
+import { WorkspaceConflictDialog } from "./WorkspaceConflictDialog"
 
 interface TheoryDetailSheetProps {
   theory: Theory | null
@@ -56,6 +63,37 @@ const PRIVILEGE_ICONS = {
   PRIVATE: Lock,
 } as const
 
+function formatTheoryConflictSummary(theory: Partial<Theory>) {
+  const list = (label: string, values?: string[]) =>
+    values?.length ? `${label}:\n${values.join("\n")}` : `${label}: None`
+
+  return [
+    theory.title ? `Title: ${theory.title}` : "Title: Untitled",
+    theory.type ? `Type: ${theory.type}` : "Type: None",
+    theory.privilege_level
+      ? `Privilege: ${theory.privilege_level}`
+      : "Privilege: None",
+    `Confidence: ${theory.confidence_score ?? 0}%`,
+    theory.hypothesis ? `Hypothesis:\n${theory.hypothesis}` : "Hypothesis: Empty",
+    list("Supporting evidence", theory.supporting_evidence),
+    list("Counter arguments", theory.counter_arguments),
+    list("Next steps", theory.next_steps),
+  ].join("\n\n")
+}
+
+function theoryDraftSignature(draft: {
+  title: string
+  type: "PRIMARY" | "SECONDARY" | "NOTE"
+  privilegeLevel: "PUBLIC" | "ATTORNEY_ONLY" | "PRIVATE"
+  confidence: number
+  hypothesis: string
+  supportingEvidence: string[]
+  counterArguments: string[]
+  nextSteps: string[]
+}) {
+  return JSON.stringify(draft)
+}
+
 export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: TheoryDetailSheetProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState("")
@@ -66,6 +104,10 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
   const [supportingEvidence, setSupportingEvidence] = useState<string[]>([])
   const [counterArguments, setCounterArguments] = useState<string[]>([])
   const [nextSteps, setNextSteps] = useState<string[]>([])
+  const [baseVersion, setBaseVersion] = useState<number | undefined>()
+  const [baselineSignature, setBaselineSignature] = useState("")
+  const [conflict, setConflict] =
+    useState<WorkspaceVersionConflict<Theory> | null>(null)
 
   const updateTheory = useUpdateTheory(caseId)
   const deleteTheory = useDeleteTheory(caseId)
@@ -73,29 +115,53 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
 
   useEffect(() => {
     if (theory) {
-      setTitle(theory.title ?? "")
-      setType(theory.type ?? "PRIMARY")
-      setPrivilegeLevel(theory.privilege_level ?? "PUBLIC")
-      setConfidence(theory.confidence_score ?? 50)
-      setHypothesis(theory.hypothesis ?? "")
-      setSupportingEvidence(theory.supporting_evidence ?? [])
-      setCounterArguments(theory.counter_arguments ?? [])
-      setNextSteps(theory.next_steps ?? [])
+      const nextTitle = theory.title ?? ""
+      const nextType = theory.type ?? "PRIMARY"
+      const nextPrivilegeLevel = theory.privilege_level ?? "PUBLIC"
+      const nextConfidence = theory.confidence_score ?? 50
+      const nextHypothesis = theory.hypothesis ?? ""
+      const nextSupportingEvidence = theory.supporting_evidence ?? []
+      const nextCounterArguments = theory.counter_arguments ?? []
+      const nextNextSteps = theory.next_steps ?? []
+      setTitle(nextTitle)
+      setType(nextType)
+      setPrivilegeLevel(nextPrivilegeLevel)
+      setConfidence(nextConfidence)
+      setHypothesis(nextHypothesis)
+      setSupportingEvidence(nextSupportingEvidence)
+      setCounterArguments(nextCounterArguments)
+      setNextSteps(nextNextSteps)
+      setBaseVersion(theory.version)
+      setBaselineSignature(
+        theoryDraftSignature({
+          title: nextTitle,
+          type: nextType,
+          privilegeLevel: nextPrivilegeLevel,
+          confidence: nextConfidence,
+          hypothesis: nextHypothesis,
+          supportingEvidence: nextSupportingEvidence,
+          counterArguments: nextCounterArguments,
+          nextSteps: nextNextSteps,
+        }),
+      )
+      setConflict(null)
     }
   }, [theory])
 
   const isDirty = useMemo(
     () =>
       !!theory &&
-      (title !== (theory.title ?? "") ||
-        type !== (theory.type ?? "PRIMARY") ||
-        privilegeLevel !== (theory.privilege_level ?? "PUBLIC") ||
-        confidence !== (theory.confidence_score ?? 50) ||
-        hypothesis !== (theory.hypothesis ?? "") ||
-        JSON.stringify(supportingEvidence) !== JSON.stringify(theory.supporting_evidence ?? []) ||
-        JSON.stringify(counterArguments) !== JSON.stringify(theory.counter_arguments ?? []) ||
-        JSON.stringify(nextSteps) !== JSON.stringify(theory.next_steps ?? [])),
-    [confidence, counterArguments, hypothesis, nextSteps, privilegeLevel, supportingEvidence, theory, title, type],
+      theoryDraftSignature({
+        title,
+        type,
+        privilegeLevel,
+        confidence,
+        hypothesis,
+        supportingEvidence,
+        counterArguments,
+        nextSteps,
+      }) !== baselineSignature,
+    [baselineSignature, confidence, counterArguments, hypothesis, nextSteps, privilegeLevel, supportingEvidence, theory, title, type],
   )
 
   const { data: theoryTimeline = [] } = useQuery({
@@ -103,6 +169,58 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
     queryFn: () => workspaceAPI.getTheoryTimeline(caseId, theory!.id),
     enabled: open && !!theory?.id,
   })
+
+  const handleMutationError = (error: unknown) => {
+    const versionConflict = getWorkspaceVersionConflict<Theory>(error)
+    if (versionConflict) {
+      setConflict(versionConflict)
+      return
+    }
+    toast.error(error instanceof Error ? error.message : "Could not save theory")
+  }
+
+  const handleReloadConflict = () => {
+    const current = conflict?.current
+    if (current) {
+      const nextTitle = current.title ?? ""
+      const nextType = current.type ?? "PRIMARY"
+      const nextPrivilegeLevel = current.privilege_level ?? "PUBLIC"
+      const nextConfidence = current.confidence_score ?? 50
+      const nextHypothesis = current.hypothesis ?? ""
+      const nextSupportingEvidence = current.supporting_evidence ?? []
+      const nextCounterArguments = current.counter_arguments ?? []
+      const nextNextSteps = current.next_steps ?? []
+      setTitle(nextTitle)
+      setType(nextType)
+      setPrivilegeLevel(nextPrivilegeLevel)
+      setConfidence(nextConfidence)
+      setHypothesis(nextHypothesis)
+      setSupportingEvidence(nextSupportingEvidence)
+      setCounterArguments(nextCounterArguments)
+      setNextSteps(nextNextSteps)
+      setBaseVersion(current.version ?? conflict.current_version)
+      setBaselineSignature(
+        theoryDraftSignature({
+          title: nextTitle,
+          type: nextType,
+          privilegeLevel: nextPrivilegeLevel,
+          confidence: nextConfidence,
+          hypothesis: nextHypothesis,
+          supportingEvidence: nextSupportingEvidence,
+          counterArguments: nextCounterArguments,
+          nextSteps: nextNextSteps,
+        }),
+      )
+    } else {
+      setBaseVersion(conflict?.current_version)
+    }
+    setConflict(null)
+  }
+
+  const handleMergeConflict = () => {
+    setBaseVersion(conflict?.current?.version ?? conflict?.current_version)
+    setConflict(null)
+  }
 
   const handleSave = () => {
     if (!theory) return
@@ -118,18 +236,26 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
           supporting_evidence: supportingEvidence,
           counter_arguments: counterArguments,
           next_steps: nextSteps,
+          expected_version: baseVersion,
         },
       },
-      { onSuccess: () => onOpenChange(false) },
+      {
+        onSuccess: () => onOpenChange(false),
+        onError: handleMutationError,
+      },
     )
   }
 
   const handleDelete = () => {
     if (!theory) return
     if (!window.confirm("Are you sure you want to delete this theory? This action cannot be undone.")) return
-    deleteTheory.mutate(theory.id, {
-      onSuccess: () => onOpenChange(false),
-    })
+    deleteTheory.mutate(
+      { theoryId: theory.id, expectedVersion: baseVersion },
+      {
+        onSuccess: () => onOpenChange(false),
+        onError: handleMutationError,
+      },
+    )
   }
 
   const handleBuildGraph = () => {
@@ -472,6 +598,23 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
           </Button>
         </SheetFooter>
       </SheetContent>
+      <WorkspaceConflictDialog
+        open={!!conflict}
+        itemLabel="Theory"
+        localSummary={formatTheoryConflictSummary({
+          title,
+          type,
+          privilege_level: privilegeLevel,
+          confidence_score: confidence,
+          hypothesis,
+          supporting_evidence: supportingEvidence,
+          counter_arguments: counterArguments,
+          next_steps: nextSteps,
+        })}
+        serverSummary={formatTheoryConflictSummary(conflict?.current ?? {})}
+        onMerge={handleMergeConflict}
+        onReload={handleReloadConflict}
+      />
     </Sheet>
   )
 }

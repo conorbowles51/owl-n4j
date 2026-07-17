@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, WebSocket, WebSock
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from services.workspace_service import workspace_service
+from services.workspace_service import WorkspaceVersionConflict, workspace_service
 from services.presence_service import presence_service
 from services.system_log_service import system_log_service, LogType, LogOrigin
 from services.case_service import get_case_if_allowed, CaseNotFound, CaseAccessDenied
@@ -70,6 +70,7 @@ class WitnessCreate(BaseModel):
     risk_assessment: Optional[str] = None
     strategy_notes: Optional[str] = None
     interviews: Optional[List[WitnessInterview]] = None
+    expected_version: Optional[int] = None
 
 
 class TheoryCreate(BaseModel):
@@ -87,12 +88,14 @@ class TheoryCreate(BaseModel):
     attached_note_ids: Optional[List[str]] = None  # Investigative note IDs linked to this theory
     attached_document_ids: Optional[List[str]] = None  # Document IDs linked to this theory
     attached_task_ids: Optional[List[str]] = None  # Task IDs linked to this theory
+    expected_version: Optional[int] = None
 
 
 class NoteCreate(BaseModel):
     title: Optional[str] = None
     content: str
     tags: Optional[List[str]] = None
+    expected_version: Optional[int] = None
 
 
 class FindingCreate(BaseModel):
@@ -138,6 +141,21 @@ class BuildWorkspaceGraphRequest(BaseModel):
     source_id: str
     include_attached_items: bool = True
     top_k: int = 20
+
+
+def _raise_version_conflict(
+    conflict: WorkspaceVersionConflict,
+    current: Optional[Dict[str, Any]] = None,
+) -> None:
+    detail: Dict[str, Any] = {
+        "code": "workspace_version_conflict",
+        "entity": conflict.entity,
+        "current_version": conflict.current_version,
+        "message": "This item was changed by another user. Reload the saved version or merge your draft.",
+    }
+    if current is not None:
+        detail["current"] = current
+    raise HTTPException(status_code=409, detail=detail)
 
 
 def _build_workspace_graph_result(
@@ -376,7 +394,7 @@ async def create_witness(
         except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
 
-        witness_data = witness.dict()
+        witness_data = witness.dict(exclude={"expected_version"})
         witness_id = workspace_service.save_witness(case_id, witness_data)
 
         system_log_service.log(
@@ -414,10 +432,19 @@ async def update_witness(
         if not existing:
             raise HTTPException(status_code=404, detail="Witness not found")
 
-        witness_data = {**existing, **witness.dict(exclude_unset=True)}
-        workspace_service.save_witness(case_id, witness_data)
+        witness_data = {
+            **existing,
+            **witness.dict(exclude_unset=True, exclude={"expected_version"}),
+        }
+        workspace_service.save_witness(
+            case_id,
+            witness_data,
+            expected_version=witness.expected_version,
+        )
 
         return witness_data
+    except WorkspaceVersionConflict as conflict:
+        _raise_version_conflict(conflict, workspace_service.get_witness(case_id, witness_id))
     except HTTPException:
         raise
     except Exception as e:
@@ -428,6 +455,7 @@ async def update_witness(
 async def delete_witness(
     case_id: str,
     witness_id: str,
+    expected_version: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -438,10 +466,16 @@ async def delete_witness(
         except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
 
-        if not workspace_service.delete_witness(case_id, witness_id):
+        if not workspace_service.delete_witness(
+            case_id,
+            witness_id,
+            expected_version=expected_version,
+        ):
             raise HTTPException(status_code=404, detail="Witness not found")
 
         return {"success": True}
+    except WorkspaceVersionConflict as conflict:
+        _raise_version_conflict(conflict, workspace_service.get_witness(case_id, witness_id))
     except HTTPException:
         raise
     except Exception as e:
@@ -486,7 +520,7 @@ async def create_theory(
         except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
 
-        theory_data = theory.dict()
+        theory_data = theory.dict(exclude={"expected_version"})
         theory_data["author_id"] = current_user.email
         theory_id = workspace_service.save_theory(case_id, theory_data)
 
@@ -525,10 +559,19 @@ async def update_theory(
         if not existing:
             raise HTTPException(status_code=404, detail="Theory not found")
 
-        theory_data = {**existing, **theory.dict(exclude_unset=True)}
-        workspace_service.save_theory(case_id, theory_data)
+        theory_data = {
+            **existing,
+            **theory.dict(exclude_unset=True, exclude={"expected_version"}),
+        }
+        workspace_service.save_theory(
+            case_id,
+            theory_data,
+            expected_version=theory.expected_version,
+        )
 
         return theory_data
+    except WorkspaceVersionConflict as conflict:
+        _raise_version_conflict(conflict, workspace_service.get_theory(case_id, theory_id))
     except HTTPException:
         raise
     except Exception as e:
@@ -539,6 +582,7 @@ async def update_theory(
 async def delete_theory(
     case_id: str,
     theory_id: str,
+    expected_version: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -549,10 +593,16 @@ async def delete_theory(
         except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
 
-        if not workspace_service.delete_theory(case_id, theory_id):
+        if not workspace_service.delete_theory(
+            case_id,
+            theory_id,
+            expected_version=expected_version,
+        ):
             raise HTTPException(status_code=404, detail="Theory not found")
 
         return {"success": True}
+    except WorkspaceVersionConflict as conflict:
+        _raise_version_conflict(conflict, workspace_service.get_theory(case_id, theory_id))
     except HTTPException:
         raise
     except Exception as e:
@@ -950,7 +1000,7 @@ async def create_note(
         except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
 
-        note_data = note.dict()
+        note_data = note.dict(exclude={"expected_version"})
         note_id = workspace_service.save_note(case_id, note_data)
 
         system_log_service.log(
@@ -988,10 +1038,19 @@ async def update_note(
         if not existing:
             raise HTTPException(status_code=404, detail="Note not found")
 
-        note_data = {**existing, **note.dict(exclude_unset=True)}
-        workspace_service.save_note(case_id, note_data)
+        note_data = {
+            **existing,
+            **note.dict(exclude_unset=True, exclude={"expected_version"}),
+        }
+        workspace_service.save_note(
+            case_id,
+            note_data,
+            expected_version=note.expected_version,
+        )
 
         return note_data
+    except WorkspaceVersionConflict as conflict:
+        _raise_version_conflict(conflict, workspace_service.get_note(case_id, note_id))
     except HTTPException:
         raise
     except Exception as e:
@@ -1002,6 +1061,7 @@ async def update_note(
 async def delete_note(
     case_id: str,
     note_id: str,
+    expected_version: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -1012,10 +1072,16 @@ async def delete_note(
         except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
 
-        if not workspace_service.delete_note(case_id, note_id):
+        if not workspace_service.delete_note(
+            case_id,
+            note_id,
+            expected_version=expected_version,
+        ):
             raise HTTPException(status_code=404, detail="Note not found")
 
         return {"success": True}
+    except WorkspaceVersionConflict as conflict:
+        _raise_version_conflict(conflict, workspace_service.get_note(case_id, note_id))
     except HTTPException:
         raise
     except Exception as e:

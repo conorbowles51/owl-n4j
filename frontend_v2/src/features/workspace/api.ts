@@ -1,4 +1,4 @@
-import { fetchAPI } from "@/lib/api-client"
+import { ApiError, fetchAPI } from "@/lib/api-client"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +35,8 @@ export interface WitnessInterview {
 export interface Witness {
   id: string
   witness_id?: string
+  version?: number
+  expected_version?: number
   name: string
   role?: string
   organization?: string
@@ -53,6 +55,8 @@ export interface Witness {
 export interface InvestigativeNote {
   id: string
   note_id?: string
+  version?: number
+  expected_version?: number
   title?: string
   content: string
   tags?: string[]
@@ -78,6 +82,8 @@ export interface Finding {
 export interface Theory {
   id: string
   theory_id?: string
+  version?: number
+  expected_version?: number
   title: string
   type?: "PRIMARY" | "SECONDARY" | "NOTE"
   confidence_score?: number
@@ -178,6 +184,14 @@ export interface TimelineEvent {
   metadata?: Record<string, unknown>
 }
 
+export interface WorkspaceVersionConflict<T> {
+  code?: string
+  entity?: string
+  current_version?: number
+  message?: string
+  current?: T
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -188,6 +202,25 @@ function withId<T extends Record<string, unknown>>(
   field: string,
 ): T & { id: string } {
   return { ...item, id: (item[field] as string) ?? (item.id as string) }
+}
+
+function deleteUrl(path: string, expectedVersion?: number) {
+  if (expectedVersion === undefined) return path
+  const qs = new URLSearchParams({ expected_version: String(expectedVersion) })
+  return `${path}?${qs}`
+}
+
+export function getWorkspaceVersionConflict<T>(
+  error: unknown,
+): WorkspaceVersionConflict<T> | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null
+
+  const detail = (error.data as { detail?: unknown } | undefined)?.detail
+  if (!detail || typeof detail !== "object") return null
+
+  const conflict = detail as WorkspaceVersionConflict<T>
+  if (conflict.code !== "workspace_version_conflict") return null
+  return conflict
 }
 
 // ---------------------------------------------------------------------------
@@ -227,10 +260,15 @@ export const workspaceAPI = {
       { method: "PUT", body: witness },
     ).then((w) => withId(w, "witness_id")),
 
-  deleteWitness: (caseId: string, witnessId: string) =>
-    fetchAPI<void>(`/api/workspace/${caseId}/witnesses/${witnessId}`, {
-      method: "DELETE",
-    }),
+  deleteWitness: (
+    caseId: string,
+    witnessId: string,
+    expectedVersion?: number,
+  ) =>
+    fetchAPI<void>(
+      deleteUrl(`/api/workspace/${caseId}/witnesses/${witnessId}`, expectedVersion),
+      { method: "DELETE" },
+    ),
 
   // -- Investigative Notes (wrapped: {"notes": [...]}) ----------------------
   getNotes: (caseId: string) =>
@@ -257,10 +295,11 @@ export const workspaceAPI = {
       { method: "PUT", body: note },
     ).then((n) => withId(n, "note_id")),
 
-  deleteNote: (caseId: string, noteId: string) =>
-    fetchAPI<void>(`/api/workspace/${caseId}/notes/${noteId}`, {
-      method: "DELETE",
-    }),
+  deleteNote: (caseId: string, noteId: string, expectedVersion?: number) =>
+    fetchAPI<void>(
+      deleteUrl(`/api/workspace/${caseId}/notes/${noteId}`, expectedVersion),
+      { method: "DELETE" },
+    ),
 
   // -- Findings (wrapped: {"findings": [...]}) -----------------------------
   getFindings: (caseId: string) =>
@@ -311,10 +350,15 @@ export const workspaceAPI = {
       { method: "PUT", body: theory },
     ).then((t) => withId(t, "theory_id")),
 
-  deleteTheory: (caseId: string, theoryId: string) =>
-    fetchAPI<void>(`/api/workspace/${caseId}/theories/${theoryId}`, {
-      method: "DELETE",
-    }),
+  deleteTheory: (
+    caseId: string,
+    theoryId: string,
+    expectedVersion?: number,
+  ) =>
+    fetchAPI<void>(
+      deleteUrl(`/api/workspace/${caseId}/theories/${theoryId}`, expectedVersion),
+      { method: "DELETE" },
+    ),
 
   buildTheoryGraph: (
     caseId: string,

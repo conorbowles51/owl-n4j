@@ -48,6 +48,7 @@ class WorkspaceWitness(Base, TimestampMixin):
         index=True,
     )
     witness_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 
@@ -66,6 +67,7 @@ class WorkspaceTheory(Base, TimestampMixin):
         index=True,
     )
     theory_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 
@@ -102,6 +104,7 @@ class WorkspaceNote(Base, TimestampMixin):
         index=True,
     )
     note_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 

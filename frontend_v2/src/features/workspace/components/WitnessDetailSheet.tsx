@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 import {
   Sheet,
   SheetContent,
@@ -22,8 +23,13 @@ import {
 } from "@/components/ui/select"
 import { Save, Trash2, Star, Network, Loader2 } from "lucide-react"
 import { useUpdateWitness, useDeleteWitness, useBuildWorkspaceGraph } from "../hooks/use-workspace"
-import type { Witness } from "../api"
+import {
+  getWorkspaceVersionConflict,
+  type Witness,
+  type WorkspaceVersionConflict,
+} from "../api"
 import { formatWorkspaceDate } from "../lib/format-date"
+import { WorkspaceConflictDialog } from "./WorkspaceConflictDialog"
 
 interface WitnessDetailSheetProps {
   witness: Witness | null
@@ -51,6 +57,38 @@ const categoryBadge = (category: string) => {
   }
 }
 
+function formatWitnessConflictSummary(witness: Partial<Witness>) {
+  return [
+    witness.name ? `Name: ${witness.name}` : "Name: Unnamed",
+    witness.role ? `Role: ${witness.role}` : "Role: None",
+    witness.organization ? `Organization: ${witness.organization}` : "Organization: None",
+    witness.category ? `Category: ${witness.category}` : "Category: None",
+    `Credibility: ${witness.credibility_rating ?? 0}/5`,
+    witness.statement_summary
+      ? `Statement:\n${witness.statement_summary}`
+      : "Statement: Empty",
+    witness.risk_assessment
+      ? `Risk assessment:\n${witness.risk_assessment}`
+      : "Risk assessment: Empty",
+    witness.strategy_notes
+      ? `Strategy notes:\n${witness.strategy_notes}`
+      : "Strategy notes: Empty",
+  ].join("\n\n")
+}
+
+function witnessDraftSignature(draft: {
+  name: string
+  role: string
+  organization: string
+  category: "FRIENDLY" | "NEUTRAL" | "ADVERSE"
+  credibilityRating: number
+  statementSummary: string
+  riskAssessment: string
+  strategyNotes: string
+}) {
+  return JSON.stringify(draft)
+}
+
 export function WitnessDetailSheet({
   witness,
   open,
@@ -68,6 +106,10 @@ export function WitnessDetailSheet({
   const [statementSummary, setStatementSummary] = useState("")
   const [riskAssessment, setRiskAssessment] = useState("")
   const [strategyNotes, setStrategyNotes] = useState("")
+  const [baseVersion, setBaseVersion] = useState<number | undefined>()
+  const [baselineSignature, setBaselineSignature] = useState("")
+  const [conflict, setConflict] =
+    useState<WorkspaceVersionConflict<Witness> | null>(null)
 
   const updateWitness = useUpdateWitness(caseId)
   const deleteWitness = useDeleteWitness(caseId)
@@ -75,30 +117,106 @@ export function WitnessDetailSheet({
 
   useEffect(() => {
     if (witness) {
-      setName(witness.name ?? "")
-      setRole(witness.role ?? "")
-      setOrganization(witness.organization ?? "")
-      setCategory(witness.category ?? "NEUTRAL")
-      setCredibilityRating(witness.credibility_rating ?? 0)
-      setStatementSummary(witness.statement_summary ?? "")
-      setRiskAssessment(witness.risk_assessment ?? "")
-      setStrategyNotes(witness.strategy_notes ?? "")
+      const nextName = witness.name ?? ""
+      const nextRole = witness.role ?? ""
+      const nextOrganization = witness.organization ?? ""
+      const nextCategory = witness.category ?? "NEUTRAL"
+      const nextCredibilityRating = witness.credibility_rating ?? 0
+      const nextStatementSummary = witness.statement_summary ?? ""
+      const nextRiskAssessment = witness.risk_assessment ?? ""
+      const nextStrategyNotes = witness.strategy_notes ?? ""
+      setName(nextName)
+      setRole(nextRole)
+      setOrganization(nextOrganization)
+      setCategory(nextCategory)
+      setCredibilityRating(nextCredibilityRating)
+      setStatementSummary(nextStatementSummary)
+      setRiskAssessment(nextRiskAssessment)
+      setStrategyNotes(nextStrategyNotes)
+      setBaseVersion(witness.version)
+      setBaselineSignature(
+        witnessDraftSignature({
+          name: nextName,
+          role: nextRole,
+          organization: nextOrganization,
+          category: nextCategory,
+          credibilityRating: nextCredibilityRating,
+          statementSummary: nextStatementSummary,
+          riskAssessment: nextRiskAssessment,
+          strategyNotes: nextStrategyNotes,
+        }),
+      )
+      setConflict(null)
     }
   }, [witness])
 
   const isDirty = useMemo(
     () =>
       !!witness &&
-      (name !== (witness.name ?? "") ||
-        role !== (witness.role ?? "") ||
-        organization !== (witness.organization ?? "") ||
-        category !== (witness.category ?? "NEUTRAL") ||
-        credibilityRating !== (witness.credibility_rating ?? 0) ||
-        statementSummary !== (witness.statement_summary ?? "") ||
-        riskAssessment !== (witness.risk_assessment ?? "") ||
-        strategyNotes !== (witness.strategy_notes ?? "")),
-    [category, credibilityRating, name, organization, riskAssessment, role, statementSummary, strategyNotes, witness],
+      witnessDraftSignature({
+        name,
+        role,
+        organization,
+        category,
+        credibilityRating,
+        statementSummary,
+        riskAssessment,
+        strategyNotes,
+      }) !== baselineSignature,
+    [baselineSignature, category, credibilityRating, name, organization, riskAssessment, role, statementSummary, strategyNotes, witness],
   )
+
+  const handleMutationError = (error: unknown) => {
+    const versionConflict = getWorkspaceVersionConflict<Witness>(error)
+    if (versionConflict) {
+      setConflict(versionConflict)
+      return
+    }
+    toast.error(error instanceof Error ? error.message : "Could not save witness")
+  }
+
+  const handleReloadConflict = () => {
+    const current = conflict?.current
+    if (current) {
+      const nextName = current.name ?? ""
+      const nextRole = current.role ?? ""
+      const nextOrganization = current.organization ?? ""
+      const nextCategory = current.category ?? "NEUTRAL"
+      const nextCredibilityRating = current.credibility_rating ?? 0
+      const nextStatementSummary = current.statement_summary ?? ""
+      const nextRiskAssessment = current.risk_assessment ?? ""
+      const nextStrategyNotes = current.strategy_notes ?? ""
+      setName(nextName)
+      setRole(nextRole)
+      setOrganization(nextOrganization)
+      setCategory(nextCategory)
+      setCredibilityRating(nextCredibilityRating)
+      setStatementSummary(nextStatementSummary)
+      setRiskAssessment(nextRiskAssessment)
+      setStrategyNotes(nextStrategyNotes)
+      setBaseVersion(current.version ?? conflict.current_version)
+      setBaselineSignature(
+        witnessDraftSignature({
+          name: nextName,
+          role: nextRole,
+          organization: nextOrganization,
+          category: nextCategory,
+          credibilityRating: nextCredibilityRating,
+          statementSummary: nextStatementSummary,
+          riskAssessment: nextRiskAssessment,
+          strategyNotes: nextStrategyNotes,
+        }),
+      )
+    } else {
+      setBaseVersion(conflict?.current_version)
+    }
+    setConflict(null)
+  }
+
+  const handleMergeConflict = () => {
+    setBaseVersion(conflict?.current?.version ?? conflict?.current_version)
+    setConflict(null)
+  }
 
   const handleSave = () => {
     if (!witness) return
@@ -114,18 +232,26 @@ export function WitnessDetailSheet({
           statement_summary: statementSummary,
           risk_assessment: riskAssessment,
           strategy_notes: strategyNotes,
+          expected_version: baseVersion,
         },
       },
-      { onSuccess: () => onOpenChange(false) },
+      {
+        onSuccess: () => onOpenChange(false),
+        onError: handleMutationError,
+      },
     )
   }
 
   const handleDelete = () => {
     if (!witness) return
     if (!window.confirm("Are you sure you want to delete this witness?")) return
-    deleteWitness.mutate(witness.id, {
-      onSuccess: () => onOpenChange(false),
-    })
+    deleteWitness.mutate(
+      { witnessId: witness.id, expectedVersion: baseVersion },
+      {
+        onSuccess: () => onOpenChange(false),
+        onError: handleMutationError,
+      },
+    )
   }
 
   const handleBuildGraph = () => {
@@ -375,6 +501,23 @@ export function WitnessDetailSheet({
           </Button>
         </SheetFooter>
       </SheetContent>
+      <WorkspaceConflictDialog
+        open={!!conflict}
+        itemLabel="Witness"
+        localSummary={formatWitnessConflictSummary({
+          name,
+          role,
+          organization,
+          category,
+          credibility_rating: credibilityRating,
+          statement_summary: statementSummary,
+          risk_assessment: riskAssessment,
+          strategy_notes: strategyNotes,
+        })}
+        serverSummary={formatWitnessConflictSummary(conflict?.current ?? {})}
+        onMerge={handleMergeConflict}
+        onReload={handleReloadConflict}
+      />
     </Sheet>
   )
 }

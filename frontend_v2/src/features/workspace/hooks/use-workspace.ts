@@ -65,8 +65,16 @@ export function useUpdateTheory(caseId: string) {
 export function useDeleteTheory(caseId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (theoryId: string) =>
-      workspaceAPI.deleteTheory(caseId, theoryId),
+    mutationFn: (
+      input: string | { theoryId: string; expectedVersion?: number },
+    ) =>
+      typeof input === "string"
+        ? workspaceAPI.deleteTheory(caseId, input)
+        : workspaceAPI.deleteTheory(
+            caseId,
+            input.theoryId,
+            input.expectedVersion,
+          ),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.theories(caseId) }),
   })
 }
@@ -166,8 +174,16 @@ export function useUpdateWitness(caseId: string) {
 export function useDeleteWitness(caseId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (witnessId: string) =>
-      workspaceAPI.deleteWitness(caseId, witnessId),
+    mutationFn: (
+      input: string | { witnessId: string; expectedVersion?: number },
+    ) =>
+      typeof input === "string"
+        ? workspaceAPI.deleteWitness(caseId, input)
+        : workspaceAPI.deleteWitness(
+            caseId,
+            input.witnessId,
+            input.expectedVersion,
+          ),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: keys.witnesses(caseId) }),
   })
@@ -210,7 +226,10 @@ export function useUpdateNote(caseId: string) {
 export function useDeleteNote(caseId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (noteId: string) => workspaceAPI.deleteNote(caseId, noteId),
+    mutationFn: (input: string | { noteId: string; expectedVersion?: number }) =>
+      typeof input === "string"
+        ? workspaceAPI.deleteNote(caseId, input)
+        : workspaceAPI.deleteNote(caseId, input.noteId, input.expectedVersion),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.notes(caseId) }),
   })
 }

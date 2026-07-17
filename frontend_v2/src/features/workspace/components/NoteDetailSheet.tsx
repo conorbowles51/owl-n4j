@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Loader2, Network, Save, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 import {
   Sheet,
   SheetContent,
@@ -13,19 +14,40 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import type { InvestigativeNote } from "../api"
+import {
+  getWorkspaceVersionConflict,
+  type InvestigativeNote,
+  type WorkspaceVersionConflict,
+} from "../api"
 import {
   useBuildWorkspaceGraph,
   useDeleteNote,
   useUpdateNote,
 } from "../hooks/use-workspace"
 import { formatWorkspaceDateTime } from "../lib/format-date"
+import { WorkspaceConflictDialog } from "./WorkspaceConflictDialog"
 
 interface NoteDetailSheetProps {
   caseId: string
   note: InvestigativeNote | null
   open: boolean
   onOpenChange: (open: boolean) => void
+}
+
+function formatNoteConflictSummary(note: Partial<InvestigativeNote>) {
+  return [
+    note.title ? `Title: ${note.title}` : "Title: Untitled",
+    note.content ? `Content:\n${note.content}` : "Content: Empty",
+    note.tags?.length ? `Tags: ${note.tags.join(", ")}` : "Tags: None",
+  ].join("\n\n")
+}
+
+function noteDraftSignature(draft: {
+  title: string
+  content: string
+  tagsInput: string
+}) {
+  return JSON.stringify(draft)
 }
 
 export function NoteDetailSheet({
@@ -42,22 +64,34 @@ export function NoteDetailSheet({
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [tagsInput, setTagsInput] = useState("")
+  const [baseVersion, setBaseVersion] = useState<number | undefined>()
+  const [baselineSignature, setBaselineSignature] = useState("")
+  const [conflict, setConflict] =
+    useState<WorkspaceVersionConflict<InvestigativeNote> | null>(null)
 
   useEffect(() => {
     if (!note) return
-    setTitle(note.title ?? "")
-    setContent(note.content ?? "")
-    setTagsInput((note.tags ?? []).join(", "))
+    const nextTitle = note.title ?? ""
+    const nextContent = note.content ?? ""
+    const nextTagsInput = (note.tags ?? []).join(", ")
+    setTitle(nextTitle)
+    setContent(nextContent)
+    setTagsInput(nextTagsInput)
+    setBaseVersion(note.version)
+    setBaselineSignature(
+      noteDraftSignature({
+        title: nextTitle,
+        content: nextContent,
+        tagsInput: nextTagsInput,
+      }),
+    )
+    setConflict(null)
   }, [note])
 
   const isDirty = useMemo(() => {
     if (!note) return false
-    return (
-      title !== (note.title ?? "") ||
-      content !== (note.content ?? "") ||
-      tagsInput !== (note.tags ?? []).join(", ")
-    )
-  }, [content, note, tagsInput, title])
+    return noteDraftSignature({ title, content, tagsInput }) !== baselineSignature
+  }, [baselineSignature, content, note, tagsInput, title])
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && isDirty) return
@@ -69,6 +103,44 @@ export function NoteDetailSheet({
     .map((tag) => tag.trim())
     .filter(Boolean)
 
+  const handleMutationError = (error: unknown) => {
+    const versionConflict =
+      getWorkspaceVersionConflict<InvestigativeNote>(error)
+    if (versionConflict) {
+      setConflict(versionConflict)
+      return
+    }
+    toast.error(error instanceof Error ? error.message : "Could not save note")
+  }
+
+  const handleReloadConflict = () => {
+    const current = conflict?.current
+    if (current) {
+      const nextTitle = current.title ?? ""
+      const nextContent = current.content ?? ""
+      const nextTagsInput = (current.tags ?? []).join(", ")
+      setTitle(nextTitle)
+      setContent(nextContent)
+      setTagsInput(nextTagsInput)
+      setBaseVersion(current.version ?? conflict.current_version)
+      setBaselineSignature(
+        noteDraftSignature({
+          title: nextTitle,
+          content: nextContent,
+          tagsInput: nextTagsInput,
+        }),
+      )
+    } else {
+      setBaseVersion(conflict?.current_version)
+    }
+    setConflict(null)
+  }
+
+  const handleMergeConflict = () => {
+    setBaseVersion(conflict?.current?.version ?? conflict?.current_version)
+    setConflict(null)
+  }
+
   const handleSave = () => {
     if (!note) return
     updateNote.mutate(
@@ -78,9 +150,13 @@ export function NoteDetailSheet({
           title: title.trim() || undefined,
           content,
           tags,
+          expected_version: baseVersion,
         },
       },
-      { onSuccess: () => onOpenChange(false) },
+      {
+        onSuccess: () => onOpenChange(false),
+        onError: handleMutationError,
+      },
     )
   }
 
@@ -180,7 +256,13 @@ export function NoteDetailSheet({
             variant="danger"
             size="sm"
             onClick={() =>
-              deleteNote.mutate(note.id, { onSuccess: () => onOpenChange(false) })
+              deleteNote.mutate(
+                { noteId: note.id, expectedVersion: baseVersion },
+                {
+                  onSuccess: () => onOpenChange(false),
+                  onError: handleMutationError,
+                },
+              )
             }
           >
             <Trash2 className="mr-1.5 size-3.5" />
@@ -210,6 +292,18 @@ export function NoteDetailSheet({
           </Button>
         </SheetFooter>
       </SheetContent>
+      <WorkspaceConflictDialog
+        open={!!conflict}
+        itemLabel="Note"
+        localSummary={formatNoteConflictSummary({
+          title,
+          content,
+          tags,
+        })}
+        serverSummary={formatNoteConflictSummary(conflict?.current ?? {})}
+        onMerge={handleMergeConflict}
+        onReload={handleReloadConflict}
+      />
     </Sheet>
   )
 }

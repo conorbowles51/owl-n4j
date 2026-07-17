@@ -31,6 +31,13 @@ from postgres.models.workspace import (
 )
 
 
+class WorkspaceVersionConflict(Exception):
+    def __init__(self, entity: str, current_version: int):
+        self.entity = entity
+        self.current_version = current_version
+        super().__init__(f"{entity} version conflict")
+
+
 class WorkspaceService:
     """Service for managing workspace data backed by PostgreSQL."""
 
@@ -68,12 +75,27 @@ class WorkspaceService:
             return is_simple_name or has_quick_action_pattern
         return False
 
+    @staticmethod
+    def _with_version(row) -> Dict:
+        return {**dict(row.data), "version": row.version}
+
+    @staticmethod
+    def _check_version(row, expected_version: Optional[int], entity: str) -> None:
+        if expected_version is not None and expected_version != row.version:
+            raise WorkspaceVersionConflict(entity, row.version)
+
+    @staticmethod
+    def _case_uuid(case_id: str | uuid.UUID) -> uuid.UUID:
+        if isinstance(case_id, uuid.UUID):
+            return case_id
+        return uuid.UUID(str(case_id))
+
     def _list_evidence_records(self, case_id: str):
         from services.evidence_db_storage import EvidenceDBStorage
 
         try:
-            case_uuid = uuid.UUID(case_id)
-        except ValueError:
+            case_uuid = self._case_uuid(case_id)
+        except (TypeError, ValueError):
             return []
 
         with get_background_session() as db:
@@ -84,48 +106,58 @@ class WorkspaceService:
     # ------------------------------------------------------------------ #
 
     def get_case_context(self, case_id: str) -> Optional[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             row = db.execute(
-                select(WorkspaceContext).where(WorkspaceContext.case_id == case_id)
+                select(WorkspaceContext).where(WorkspaceContext.case_id == case_uuid)
             ).scalar_one_or_none()
             return dict(row.data) if row else None
 
     def save_case_context(self, case_id: str, context: Dict):
+        case_uuid = self._case_uuid(case_id)
         context["updated_at"] = datetime.now().isoformat()
         with get_background_session() as db:
             row = db.execute(
-                select(WorkspaceContext).where(WorkspaceContext.case_id == case_id)
+                select(WorkspaceContext).where(WorkspaceContext.case_id == case_uuid)
             ).scalar_one_or_none()
             if row:
                 row.data = context
             else:
-                db.add(WorkspaceContext(case_id=case_id, data=context))
+                db.add(WorkspaceContext(case_id=case_uuid, data=context))
 
     # ------------------------------------------------------------------ #
     # Witnesses
     # ------------------------------------------------------------------ #
 
     def get_witnesses(self, case_id: str) -> List[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             rows = db.execute(
-                select(WorkspaceWitness).where(WorkspaceWitness.case_id == case_id)
+                select(WorkspaceWitness).where(WorkspaceWitness.case_id == case_uuid)
             ).scalars().all()
-            return [dict(r.data) for r in rows]
+            return [self._with_version(r) for r in rows]
 
     def get_witness(self, case_id: str, witness_id: str) -> Optional[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceWitness).where(
-                    WorkspaceWitness.case_id == case_id,
+                    WorkspaceWitness.case_id == case_uuid,
                     WorkspaceWitness.witness_id == witness_id,
                 )
             ).scalar_one_or_none()
-            return dict(row.data) if row else None
+            return self._with_version(row) if row else None
 
-    def save_witness(self, case_id: str, witness: Dict) -> str:
+    def save_witness(
+        self,
+        case_id: str,
+        witness: Dict,
+        expected_version: Optional[int] = None,
+    ) -> str:
+        case_uuid = self._case_uuid(case_id)
         witness_id = witness.get("witness_id") or f"witness_{uuid.uuid4().hex[:12]}"
         witness["witness_id"] = witness_id
-        witness["case_id"] = case_id
+        witness["case_id"] = str(case_id)
         witness["updated_at"] = datetime.now().isoformat()
         if "created_at" not in witness:
             witness["created_at"] = datetime.now().isoformat()
@@ -133,36 +165,52 @@ class WorkspaceService:
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceWitness).where(
-                    WorkspaceWitness.case_id == case_id,
+                    WorkspaceWitness.case_id == case_uuid,
                     WorkspaceWitness.witness_id == witness_id,
                 )
+                .with_for_update()
             ).scalar_one_or_none()
             if row:
+                self._check_version(row, expected_version, "witness")
+                row.version += 1
+                witness["version"] = row.version
                 row.data = witness
             else:
-                db.add(WorkspaceWitness(case_id=case_id, witness_id=witness_id, data=witness))
+                db.add(WorkspaceWitness(case_id=case_uuid, witness_id=witness_id, data=witness))
         return witness_id
 
-    def delete_witness(self, case_id: str, witness_id: str) -> bool:
+    def delete_witness(
+        self,
+        case_id: str,
+        witness_id: str,
+        expected_version: Optional[int] = None,
+    ) -> bool:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
-            result = db.execute(
-                delete(WorkspaceWitness).where(
-                    WorkspaceWitness.case_id == case_id,
+            row = db.execute(
+                select(WorkspaceWitness).where(
+                    WorkspaceWitness.case_id == case_uuid,
                     WorkspaceWitness.witness_id == witness_id,
                 )
-            )
-            return result.rowcount > 0
+                .with_for_update()
+            ).scalar_one_or_none()
+            if not row:
+                return False
+            self._check_version(row, expected_version, "witness")
+            db.delete(row)
+            return True
 
     # ------------------------------------------------------------------ #
     # Theories
     # ------------------------------------------------------------------ #
 
     def get_theories(self, case_id: str, user_role: Optional[str] = None) -> List[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             rows = db.execute(
-                select(WorkspaceTheory).where(WorkspaceTheory.case_id == case_id)
+                select(WorkspaceTheory).where(WorkspaceTheory.case_id == case_uuid)
             ).scalars().all()
-            theories = [dict(r.data) for r in rows]
+            theories = [self._with_version(r) for r in rows]
 
         if user_role != "attorney":
             theories = [
@@ -173,19 +221,26 @@ class WorkspaceService:
         return sorted(theories, key=lambda t: t.get("created_at", ""), reverse=True)
 
     def get_theory(self, case_id: str, theory_id: str) -> Optional[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceTheory).where(
-                    WorkspaceTheory.case_id == case_id,
+                    WorkspaceTheory.case_id == case_uuid,
                     WorkspaceTheory.theory_id == theory_id,
                 )
             ).scalar_one_or_none()
-            return dict(row.data) if row else None
+            return self._with_version(row) if row else None
 
-    def save_theory(self, case_id: str, theory: Dict) -> str:
+    def save_theory(
+        self,
+        case_id: str,
+        theory: Dict,
+        expected_version: Optional[int] = None,
+    ) -> str:
+        case_uuid = self._case_uuid(case_id)
         theory_id = theory.get("theory_id") or f"theory_{uuid.uuid4().hex[:12]}"
         theory["theory_id"] = theory_id
-        theory["case_id"] = case_id
+        theory["case_id"] = str(case_id)
         theory["updated_at"] = datetime.now().isoformat()
         if "created_at" not in theory:
             theory["created_at"] = datetime.now().isoformat()
@@ -193,34 +248,50 @@ class WorkspaceService:
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceTheory).where(
-                    WorkspaceTheory.case_id == case_id,
+                    WorkspaceTheory.case_id == case_uuid,
                     WorkspaceTheory.theory_id == theory_id,
                 )
+                .with_for_update()
             ).scalar_one_or_none()
             if row:
+                self._check_version(row, expected_version, "theory")
+                row.version += 1
+                theory["version"] = row.version
                 row.data = theory
             else:
-                db.add(WorkspaceTheory(case_id=case_id, theory_id=theory_id, data=theory))
+                db.add(WorkspaceTheory(case_id=case_uuid, theory_id=theory_id, data=theory))
         return theory_id
 
-    def delete_theory(self, case_id: str, theory_id: str) -> bool:
+    def delete_theory(
+        self,
+        case_id: str,
+        theory_id: str,
+        expected_version: Optional[int] = None,
+    ) -> bool:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
-            result = db.execute(
-                delete(WorkspaceTheory).where(
-                    WorkspaceTheory.case_id == case_id,
+            row = db.execute(
+                select(WorkspaceTheory).where(
+                    WorkspaceTheory.case_id == case_uuid,
                     WorkspaceTheory.theory_id == theory_id,
                 )
-            )
-            return result.rowcount > 0
+                .with_for_update()
+            ).scalar_one_or_none()
+            if not row:
+                return False
+            self._check_version(row, expected_version, "theory")
+            db.delete(row)
+            return True
 
     # ------------------------------------------------------------------ #
     # Tasks
     # ------------------------------------------------------------------ #
 
     def get_tasks(self, case_id: str) -> List[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             rows = db.execute(
-                select(WorkspaceTask).where(WorkspaceTask.case_id == case_id)
+                select(WorkspaceTask).where(WorkspaceTask.case_id == case_uuid)
             ).scalars().all()
             tasks = [dict(r.data) for r in rows]
 
@@ -233,19 +304,21 @@ class WorkspaceService:
         )
 
     def get_task(self, case_id: str, task_id: str) -> Optional[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceTask).where(
-                    WorkspaceTask.case_id == case_id,
+                    WorkspaceTask.case_id == case_uuid,
                     WorkspaceTask.task_id == task_id,
                 )
             ).scalar_one_or_none()
             return dict(row.data) if row else None
 
     def save_task(self, case_id: str, task: Dict) -> str:
+        case_uuid = self._case_uuid(case_id)
         task_id = task.get("task_id") or f"task_{uuid.uuid4().hex[:12]}"
         task["task_id"] = task_id
-        task["case_id"] = case_id
+        task["case_id"] = str(case_id)
         task["updated_at"] = datetime.now().isoformat()
         if "created_at" not in task:
             task["created_at"] = datetime.now().isoformat()
@@ -253,21 +326,22 @@ class WorkspaceService:
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceTask).where(
-                    WorkspaceTask.case_id == case_id,
+                    WorkspaceTask.case_id == case_uuid,
                     WorkspaceTask.task_id == task_id,
                 )
             ).scalar_one_or_none()
             if row:
                 row.data = task
             else:
-                db.add(WorkspaceTask(case_id=case_id, task_id=task_id, data=task))
+                db.add(WorkspaceTask(case_id=case_uuid, task_id=task_id, data=task))
         return task_id
 
     def delete_task(self, case_id: str, task_id: str) -> bool:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             result = db.execute(
                 delete(WorkspaceTask).where(
-                    WorkspaceTask.case_id == case_id,
+                    WorkspaceTask.case_id == case_uuid,
                     WorkspaceTask.task_id == task_id,
                 )
             )
@@ -284,33 +358,35 @@ class WorkspaceService:
         return config.get("deadlines", [])
 
     def get_deadline_config(self, case_id: str) -> Optional[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceDeadlineConfig).where(
-                    WorkspaceDeadlineConfig.case_id == case_id
+                    WorkspaceDeadlineConfig.case_id == case_uuid
                 )
             ).scalar_one_or_none()
             return dict(row.data) if row else None
 
     def save_deadline_config(self, case_id: str, config: Dict):
+        case_uuid = self._case_uuid(case_id)
         if "deadlines" in config:
             for deadline in config.get("deadlines", []):
                 if "deadline_id" not in deadline:
                     deadline["deadline_id"] = f"deadline_{uuid.uuid4().hex[:12]}"
 
-        config["case_id"] = case_id
+        config["case_id"] = str(case_id)
         config["updated_at"] = datetime.now().isoformat()
 
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceDeadlineConfig).where(
-                    WorkspaceDeadlineConfig.case_id == case_id
+                    WorkspaceDeadlineConfig.case_id == case_uuid
                 )
             ).scalar_one_or_none()
             if row:
                 row.data = config
             else:
-                db.add(WorkspaceDeadlineConfig(case_id=case_id, data=config))
+                db.add(WorkspaceDeadlineConfig(case_id=case_uuid, data=config))
 
     def save_deadline(self, case_id: str, deadline: Dict) -> str:
         config = self.get_deadline_config(case_id) or {}
@@ -337,8 +413,9 @@ class WorkspaceService:
     # ------------------------------------------------------------------ #
 
     def get_pinned_items(self, case_id: str, user_id: Optional[str] = None) -> List[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
-            stmt = select(WorkspacePinnedItem).where(WorkspacePinnedItem.case_id == case_id)
+            stmt = select(WorkspacePinnedItem).where(WorkspacePinnedItem.case_id == case_uuid)
             if user_id:
                 stmt = stmt.where(WorkspacePinnedItem.user_id == user_id)
             rows = db.execute(stmt).scalars().all()
@@ -354,10 +431,11 @@ class WorkspaceService:
         user_id: str,
         annotations_count: int = 0,
     ) -> str:
+        case_uuid = self._case_uuid(case_id)
         pin_id = f"pin_{uuid.uuid4().hex[:12]}"
         data = {
             "pin_id": pin_id,
-            "case_id": case_id,
+            "case_id": str(case_id),
             "item_type": item_type,
             "item_id": item_id,
             "user_id": user_id,
@@ -367,7 +445,7 @@ class WorkspaceService:
         with get_background_session() as db:
             db.add(
                 WorkspacePinnedItem(
-                    case_id=case_id,
+                    case_id=case_uuid,
                     pin_id=pin_id,
                     item_type=item_type,
                     item_id=item_id,
@@ -378,10 +456,11 @@ class WorkspaceService:
         return pin_id
 
     def unpin_item(self, case_id: str, pin_id: str) -> bool:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             result = db.execute(
                 delete(WorkspacePinnedItem).where(
-                    WorkspacePinnedItem.case_id == case_id,
+                    WorkspacePinnedItem.case_id == case_uuid,
                     WorkspacePinnedItem.pin_id == pin_id,
                 )
             )
@@ -392,28 +471,36 @@ class WorkspaceService:
     # ------------------------------------------------------------------ #
 
     def get_notes(self, case_id: str) -> List[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             rows = db.execute(
-                select(WorkspaceNote).where(WorkspaceNote.case_id == case_id)
+                select(WorkspaceNote).where(WorkspaceNote.case_id == case_uuid)
             ).scalars().all()
-            notes = [dict(r.data) for r in rows]
+            notes = [self._with_version(r) for r in rows]
 
         return sorted(notes, key=lambda n: n.get("created_at", ""), reverse=True)
 
     def get_note(self, case_id: str, note_id: str) -> Optional[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceNote).where(
-                    WorkspaceNote.case_id == case_id,
+                    WorkspaceNote.case_id == case_uuid,
                     WorkspaceNote.note_id == note_id,
                 )
             ).scalar_one_or_none()
-            return dict(row.data) if row else None
+            return self._with_version(row) if row else None
 
-    def save_note(self, case_id: str, note: Dict) -> str:
+    def save_note(
+        self,
+        case_id: str,
+        note: Dict,
+        expected_version: Optional[int] = None,
+    ) -> str:
+        case_uuid = self._case_uuid(case_id)
         note_id = note.get("note_id") or f"note_{uuid.uuid4().hex[:12]}"
         note["note_id"] = note_id
-        note["case_id"] = case_id
+        note["case_id"] = str(case_id)
         note["updated_at"] = datetime.now().isoformat()
         if "created_at" not in note:
             note["created_at"] = datetime.now().isoformat()
@@ -421,34 +508,50 @@ class WorkspaceService:
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceNote).where(
-                    WorkspaceNote.case_id == case_id,
+                    WorkspaceNote.case_id == case_uuid,
                     WorkspaceNote.note_id == note_id,
                 )
+                .with_for_update()
             ).scalar_one_or_none()
             if row:
+                self._check_version(row, expected_version, "note")
+                row.version += 1
+                note["version"] = row.version
                 row.data = note
             else:
-                db.add(WorkspaceNote(case_id=case_id, note_id=note_id, data=note))
+                db.add(WorkspaceNote(case_id=case_uuid, note_id=note_id, data=note))
         return note_id
 
-    def delete_note(self, case_id: str, note_id: str) -> bool:
+    def delete_note(
+        self,
+        case_id: str,
+        note_id: str,
+        expected_version: Optional[int] = None,
+    ) -> bool:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
-            result = db.execute(
-                delete(WorkspaceNote).where(
-                    WorkspaceNote.case_id == case_id,
+            row = db.execute(
+                select(WorkspaceNote).where(
+                    WorkspaceNote.case_id == case_uuid,
                     WorkspaceNote.note_id == note_id,
                 )
-            )
-            return result.rowcount > 0
+                .with_for_update()
+            ).scalar_one_or_none()
+            if not row:
+                return False
+            self._check_version(row, expected_version, "note")
+            db.delete(row)
+            return True
 
     # ------------------------------------------------------------------ #
     # Findings
     # ------------------------------------------------------------------ #
 
     def get_findings(self, case_id: str) -> List[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             rows = db.execute(
-                select(WorkspaceFinding).where(WorkspaceFinding.case_id == case_id)
+                select(WorkspaceFinding).where(WorkspaceFinding.case_id == case_uuid)
             ).scalars().all()
             findings = [dict(r.data) for r in rows]
 
@@ -462,19 +565,21 @@ class WorkspaceService:
         )
 
     def get_finding(self, case_id: str, finding_id: str) -> Optional[Dict]:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
+                    WorkspaceFinding.case_id == case_uuid,
                     WorkspaceFinding.finding_id == finding_id,
                 )
             ).scalar_one_or_none()
             return dict(row.data) if row else None
 
     def save_finding(self, case_id: str, finding: Dict) -> str:
+        case_uuid = self._case_uuid(case_id)
         finding_id = finding.get("finding_id") or f"finding_{uuid.uuid4().hex[:12]}"
         finding["finding_id"] = finding_id
-        finding["case_id"] = case_id
+        finding["case_id"] = str(case_id)
         finding["updated_at"] = datetime.now().isoformat()
         if "created_at" not in finding:
             finding["created_at"] = datetime.now().isoformat()
@@ -482,7 +587,7 @@ class WorkspaceService:
         with get_background_session() as db:
             row = db.execute(
                 select(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
+                    WorkspaceFinding.case_id == case_uuid,
                     WorkspaceFinding.finding_id == finding_id,
                 )
             ).scalar_one_or_none()
@@ -491,7 +596,7 @@ class WorkspaceService:
             else:
                 db.add(
                     WorkspaceFinding(
-                        case_id=case_id,
+                        case_id=case_uuid,
                         finding_id=finding_id,
                         data=finding,
                     )
@@ -499,10 +604,11 @@ class WorkspaceService:
         return finding_id
 
     def delete_finding(self, case_id: str, finding_id: str) -> bool:
+        case_uuid = self._case_uuid(case_id)
         with get_background_session() as db:
             result = db.execute(
                 delete(WorkspaceFinding).where(
-                    WorkspaceFinding.case_id == case_id,
+                    WorkspaceFinding.case_id == case_uuid,
                     WorkspaceFinding.finding_id == finding_id,
                 )
             )
