@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import { useNavigate, useParams } from "react-router-dom"
+import { CASE_VIEW_SHORTCUTS } from "@/lib/shortcuts-registry"
 import { useKeyboardShortcuts } from "./use-keyboard-shortcuts"
 
 export function useGlobalShortcuts(caseIdOverride?: string | null) {
@@ -13,40 +14,18 @@ export function useGlobalShortcuts(caseIdOverride?: string | null) {
       meta?: boolean
       ctrl?: boolean
       shift?: boolean
+      code?: string
       handler: () => void
-    }[] = [
-      {
-        key: "k",
-        meta: true,
-        handler: () => {
-          document.dispatchEvent(new CustomEvent("owl:toggle-command-palette"))
-        },
-      },
-      {
-        key: "Escape",
-        handler: () => {
-          document.dispatchEvent(new CustomEvent("owl:escape"))
-        },
-      },
-    ]
+    }[] = []
 
     if (caseId) {
-      const views = [
-        "graph",
-        "timeline",
-        "map",
-        "table",
-        "financial",
-        "cellebrite",
-        "profiles",
-        "evidence",
-      ]
-
-      views.forEach((view, i) => {
+      CASE_VIEW_SHORTCUTS.forEach((shortcut) => {
         base.push({
-          key: String(i + 1),
+          key: shortcut.key,
+          code: shortcut.code,
           meta: true,
-          handler: () => navigate(`/cases/${caseId}/${view}`),
+          shift: true,
+          handler: () => navigate(`/cases/${caseId}/${shortcut.view}`),
         })
       })
     }

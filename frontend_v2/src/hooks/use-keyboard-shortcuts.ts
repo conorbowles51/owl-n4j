@@ -2,6 +2,7 @@ import { useEffect } from "react"
 
 interface ShortcutHandler {
   key: string
+  code?: string
   ctrl?: boolean
   meta?: boolean
   shift?: boolean
@@ -17,9 +18,12 @@ export function useKeyboardShortcuts(shortcuts: ShortcutHandler[]) {
           ? e.metaKey || e.ctrlKey
           : !e.metaKey && !e.ctrlKey
         const shiftMatch = shortcut.shift ? e.shiftKey : !e.shiftKey
+        const keyMatch = shortcut.code
+          ? e.code === shortcut.code
+          : e.key.toLowerCase() === shortcut.key.toLowerCase()
 
         if (
-          e.key.toLowerCase() === shortcut.key.toLowerCase() &&
+          keyMatch &&
           metaMatch &&
           shiftMatch
         ) {

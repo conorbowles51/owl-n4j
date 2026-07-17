@@ -95,13 +95,13 @@ export function useKeyboardNavigation({
           focusIndexRef.current = -1
           break
         case "ArrowLeft":
-          if (e.altKey) {
+          if (e.ctrlKey && e.shiftKey) {
             e.preventDefault()
             onPrevCluster()
           }
           break
         case "ArrowRight":
-          if (e.altKey) {
+          if (e.ctrlKey && e.shiftKey) {
             e.preventDefault()
             onNextCluster()
           }

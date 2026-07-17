@@ -33,6 +33,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  CASE_VIEW_SHORTCUTS,
+  type CaseViewId,
+} from "@/lib/shortcuts-registry"
 
 interface NavItem {
   label: string
@@ -40,6 +44,7 @@ interface NavItem {
   to: string
   end?: boolean
   shortcut?: string
+  ariaKeyShortcuts?: string
 }
 
 const mainNav: NavItem[] = [
@@ -47,17 +52,25 @@ const mainNav: NavItem[] = [
   { label: "Triage", icon: ShieldCheck, to: "/triage", end: true },
 ]
 
+const caseViewIcons: Record<CaseViewId, LucideIcon> = {
+  graph: Network,
+  timeline: Clock,
+  map: Map,
+  table: TableProperties,
+  financial: DollarSign,
+  cellebrite: Smartphone,
+  profiles: UserRoundSearch,
+  evidence: FileText,
+}
+
 function getCaseInvestigationNav(caseId: string): NavItem[] {
-  return [
-    { label: "Graph", icon: Network, to: `/cases/${caseId}/graph`, shortcut: "1" },
-    { label: "Timeline", icon: Clock, to: `/cases/${caseId}/timeline`, shortcut: "2" },
-    { label: "Map", icon: Map, to: `/cases/${caseId}/map`, shortcut: "3" },
-    { label: "Table", icon: TableProperties, to: `/cases/${caseId}/table`, shortcut: "4" },
-    { label: "Financial", icon: DollarSign, to: `/cases/${caseId}/financial`, shortcut: "5" },
-    { label: "Cellebrite", icon: Smartphone, to: `/cases/${caseId}/cellebrite`, shortcut: "6" },
-    { label: "Profiles", icon: UserRoundSearch, to: `/cases/${caseId}/profiles`, shortcut: "7" },
-    { label: "Evidence", icon: FileText, to: `/cases/${caseId}/evidence`, shortcut: "8" },
-  ]
+  return CASE_VIEW_SHORTCUTS.map((shortcut) => ({
+    label: shortcut.label,
+    icon: caseViewIcons[shortcut.view],
+    to: `/cases/${caseId}/${shortcut.view}`,
+    shortcut: shortcut.keys,
+    ariaKeyShortcuts: shortcut.ariaKeyShortcuts,
+  }))
 }
 
 function getCaseAiNav(caseId: string): NavItem[] {
@@ -92,13 +105,13 @@ function ShortcutHint({ value, active = false }: { value: string; active?: boole
   return (
     <kbd
       className={cn(
-        "ml-auto rounded px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums",
+        "ml-auto whitespace-nowrap rounded px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums",
         active
           ? "bg-brand-100 text-brand-700 dark:bg-brand-400/15 dark:text-brand-200"
           : "text-sidebar-muted"
       )}
     >
-      Ctrl+{value}
+      {value}
     </kbd>
   )
 }
@@ -117,6 +130,7 @@ function SidebarLink({
       to={item.to}
       aria-current={active ? "page" : undefined}
       aria-label={!expanded ? item.label : undefined}
+      aria-keyshortcuts={item.ariaKeyShortcuts}
       className={cn(
         "group relative flex items-center rounded-lg text-sm font-medium outline-none",
         "transition-[background-color,color,box-shadow,transform] duration-150 ease-[var(--ease-loupe)]",
@@ -154,8 +168,8 @@ function SidebarLink({
           <span className="flex items-center gap-2">
             <span>{item.label}</span>
             {item.shortcut && (
-              <kbd className="rounded bg-background/15 px-1.5 py-0.5 font-mono text-[10px] text-background/80">
-                Ctrl+{item.shortcut}
+              <kbd className="whitespace-nowrap rounded bg-background/15 px-1.5 py-0.5 font-mono text-[10px] text-background/80">
+                {item.shortcut}
               </kbd>
             )}
           </span>

@@ -12,21 +12,17 @@ import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useTheme } from "@/lib/theme-provider"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import {
+  SETTINGS_SHORTCUTS,
+  type ShortcutScope,
+} from "@/lib/shortcuts-registry"
 
-const SHORTCUTS = [
-  { keys: "Ctrl+K", description: "Open command palette" },
-  { keys: "Ctrl+1", description: "Graph view" },
-  { keys: "Ctrl+2", description: "Timeline view" },
-  { keys: "Ctrl+3", description: "Map view" },
-  { keys: "Ctrl+4", description: "Table view" },
-  { keys: "Ctrl+5", description: "Financial view" },
-  { keys: "Ctrl+6", description: "Cellebrite view" },
-  { keys: "Ctrl+7", description: "Profiles view" },
-  { keys: "Ctrl+8", description: "Evidence view" },
-  { keys: "Escape", description: "Close modal / panel" },
-  { keys: "Ctrl+S", description: "Save (context-dependent)" },
-  { keys: "Delete", description: "Delete selected (with confirmation)" },
-]
+const scopeLabels: Record<ShortcutScope, string> = {
+  global: "Global",
+  "page:graph": "Graph",
+  "page:timeline": "Timeline",
+  "page:table": "Table",
+}
 
 export function SettingsPage() {
   const { theme, setTheme } = useTheme()
@@ -36,7 +32,7 @@ export function SettingsPage() {
     <ScrollArea className="h-full bg-background">
       <div className="mx-auto max-w-2xl space-y-6 p-6">
         <div>
-        <h1 className="font-display text-lg font-semibold">Settings</h1>
+          <h1 className="font-display text-lg font-semibold">Settings</h1>
           <p className="text-xs text-muted-foreground">
             Manage your personal preferences
           </p>
@@ -119,15 +115,20 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
-              {SHORTCUTS.map((shortcut) => (
+              {SETTINGS_SHORTCUTS.map((shortcut) => (
                 <div
-                  key={shortcut.keys}
-                  className="flex items-center justify-between py-1"
+                  key={shortcut.id}
+                  className="flex items-center justify-between gap-3 py-1"
                 >
-                  <span className="text-xs text-muted-foreground">
-                    {shortcut.description}
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {shortcut.description}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground/70">
+                      {scopeLabels[shortcut.scope]}
+                    </span>
                   </span>
-                  <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                  <kbd className="shrink-0 whitespace-nowrap rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
                     {shortcut.keys}
                   </kbd>
                 </div>
