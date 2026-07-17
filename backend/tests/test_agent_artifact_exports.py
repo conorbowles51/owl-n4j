@@ -31,6 +31,9 @@ class AgentArtifactExportTests(unittest.TestCase):
 
         self.assertEqual(exported.media_type, "text/csv; charset=utf-8")
         self.assertEqual(exported.filename, "payments-priority-table.csv")
+        self.assertRegex(rows[0]["Export ID"], r"^exp_[0-9a-f]{12}$")
+        self.assertIn("Agent table export", rows[0]["Filters / Scope"])
+        self.assertIn("AI-generated summaries", rows[0]["AI Disclosure"])
         self.assertEqual(rows[0]["name"], 'Acme, "North"')
         self.assertEqual(rows[0]["amount"], "1250")
         self.assertEqual(rows[0]["extra"], "included")
@@ -94,6 +97,9 @@ class AgentArtifactExportTests(unittest.TestCase):
                 "title": "Defense report",
                 "purpose": "Summarize contradictions.",
                 "scope": "Witness statements and communications.",
+                "source_citations": [
+                    {"title": "Witness statement", "source_file": "witness.pdf", "page": 2}
+                ],
                 "included_items": ["Witness contradictions"],
                 "sections": [
                     {
@@ -112,6 +118,14 @@ class AgentArtifactExportTests(unittest.TestCase):
         )
         self.assertTrue(exported.content.startswith(b"PK"))
         self.assertEqual(exported.filename, "defense-report-report.docx")
+        self.assertRegex(exported.export_id, r"^exp_[0-9a-f]{12}$")
+
+        with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+
+        self.assertIn("Export Metadata", document_xml)
+        self.assertIn("AI-generated summaries", document_xml)
+        self.assertIn("Witness statement | witness.pdf | p.2", document_xml)
 
     def test_report_artifact_exports_docx_with_embedded_chart(self):
         exported = render_report_docx(
@@ -176,6 +190,7 @@ class AgentArtifactExportTests(unittest.TestCase):
 
         self.assertEqual(exported.media_type, "application/pdf")
         self.assertTrue(exported.content.startswith(b"%PDF"))
+        self.assertRegex(exported.export_id, r"^exp_[0-9a-f]{12}$")
 
 
 if __name__ == "__main__":

@@ -2,9 +2,17 @@
 Financial export rendering for PDF and printable HTML fallbacks.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape
 from typing import Any
+
+from services.export_common import (
+    AIDisclosureLevel,
+    ExportMetadata,
+    format_export_datetime,
+    generate_export_id,
+    render_metadata_block_html,
+)
 
 
 def _esc(val: Any) -> str:
@@ -34,6 +42,47 @@ def _provenance_label(transaction: dict) -> str:
     if page:
         parts.append(f"p.{page}")
     return " | ".join(parts) if parts else "Legacy"
+
+
+def _financial_source_citations(transactions: list[dict]) -> tuple[str, ...]:
+    citations: list[str] = []
+    for transaction in transactions:
+        label = _provenance_label(transaction)
+        if label == "Legacy" or label in citations:
+            continue
+        citations.append(label)
+    return tuple(citations)
+
+
+def _has_ai_summaries(transactions: list[dict], entity_notes: list[dict] | None) -> bool:
+    if any(str(transaction.get("summary") or "").strip() for transaction in transactions):
+        return True
+    return any(str(entry.get("summary") or "").strip() for entry in (entity_notes or []))
+
+
+def _build_export_metadata(
+    *,
+    transactions: list[dict],
+    case_id: str,
+    filters_description: str,
+    generated_by: str,
+    entity_notes: list[dict] | None,
+) -> ExportMetadata:
+    ai_disclosure = (
+        AIDisclosureLevel.AI_GENERATED
+        if _has_ai_summaries(transactions, entity_notes)
+        else AIDisclosureLevel.NONE
+    )
+    return ExportMetadata(
+        export_id=generate_export_id(),
+        case_id=str(case_id or "unknown"),
+        generated_at=datetime.now(timezone.utc),
+        generated_by=generated_by or "Unknown user",
+        filters_description=filters_description or None,
+        scope_description="Financial transactions included in this export.",
+        ai_disclosure=ai_disclosure,
+        source_citations=_financial_source_citations(transactions),
+    )
 
 
 def _group_transactions_for_export(transactions: list[dict]) -> list[dict]:
@@ -136,8 +185,19 @@ def build_financial_export_html(
     filters_description: str = "",
     entity_notes: list[dict] | None = None,
     entity_flow: dict | None = None,
+    case_id: str = "unknown",
+    generated_by: str = "Unknown user",
+    export_metadata: ExportMetadata | None = None,
 ) -> str:
-    now = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+    metadata = export_metadata or _build_export_metadata(
+        transactions=transactions,
+        case_id=case_id,
+        filters_description=filters_description,
+        generated_by=generated_by,
+        entity_notes=entity_notes,
+    )
+    now = format_export_datetime(metadata.generated_at)
+    metadata_block = render_metadata_block_html(metadata)
     ordered_transactions = _group_transactions_for_export(transactions)
     total_count = len(ordered_transactions)
     total_value = sum(abs(float(t.get("amount") or 0)) for t in ordered_transactions)
@@ -406,7 +466,7 @@ def build_financial_export_html(
             </div>
         </div>
 
-        {f'<div class="filters">Active filters: {_esc(filters_description)}</div>' if filters_description else ''}
+        {metadata_block}
 
         {_render_entity_flow_section(entity_flow)}
 
@@ -439,6 +499,8 @@ def generate_financial_pdf(
     filters_description: str = "",
     entity_notes: list[dict] | None = None,
     entity_flow: dict | None = None,
+    case_id: str = "unknown",
+    generated_by: str = "Unknown user",
 ) -> bytes:
     html = build_financial_export_html(
         transactions,
@@ -446,6 +508,8 @@ def generate_financial_pdf(
         filters_description=filters_description,
         entity_notes=entity_notes,
         entity_flow=entity_flow,
+        case_id=case_id,
+        generated_by=generated_by,
     )
     import weasyprint
 
@@ -458,13 +522,25 @@ def render_financial_export(
     filters_description: str = "",
     entity_notes: list[dict] | None = None,
     entity_flow: dict | None = None,
+    case_id: str = "unknown",
+    generated_by: str = "Unknown user",
 ) -> dict:
+    metadata = _build_export_metadata(
+        transactions=transactions,
+        case_id=case_id,
+        filters_description=filters_description,
+        generated_by=generated_by,
+        entity_notes=entity_notes,
+    )
     html = build_financial_export_html(
         transactions,
         case_name,
         filters_description=filters_description,
         entity_notes=entity_notes,
         entity_flow=entity_flow,
+        case_id=case_id,
+        generated_by=generated_by,
+        export_metadata=metadata,
     )
     try:
         import weasyprint
@@ -473,10 +549,12 @@ def render_financial_export(
             "content": weasyprint.HTML(string=html).write_pdf(),
             "media_type": "application/pdf",
             "extension": "pdf",
+            "export_id": metadata.export_id,
         }
     except Exception:
         return {
             "content": html.encode("utf-8"),
             "media_type": "text/html; charset=utf-8",
             "extension": "html",
+            "export_id": metadata.export_id,
         }

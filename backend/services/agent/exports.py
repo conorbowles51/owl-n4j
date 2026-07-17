@@ -6,9 +6,20 @@ import io
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from postgres.models.agent import AgentArtifactRecord
+from services.export_common import (
+    AIDisclosureLevel,
+    ExportMetadata,
+    generate_export_id,
+    render_metadata_block_docx,
+    render_metadata_block_html,
+    render_metadata_csv_columns,
+    render_metadata_csv_values,
+    safe_filename,
+)
 
 
 AgentExportFormat = Literal["csv", "pdf", "docx"]
@@ -19,27 +30,170 @@ class AgentArtifactExport:
     content: bytes
     filename: str
     media_type: str
+    export_id: str = ""
 
 
 def render_artifact_export(
     artifact: AgentArtifactRecord,
     export_format: AgentExportFormat,
+    *,
+    generated_by: str = "Unknown user",
 ) -> AgentArtifactExport:
+    payload = artifact.payload or {}
+    export_metadata = _build_agent_export_metadata(
+        artifact_type=artifact.type,
+        title=artifact.title,
+        payload=payload,
+        case_id=_artifact_case_id(artifact),
+        generated_by=generated_by,
+        extra_metadata=artifact.extra_metadata,
+    )
     if export_format == "pdf":
         if artifact.type != "report":
             raise ValueError("PDF export is only supported for report artifacts")
-        return render_report_pdf(title=artifact.title, payload=artifact.payload or {})
+        return render_report_pdf(
+            title=artifact.title,
+            payload=payload,
+            export_metadata=export_metadata,
+            extra_metadata=artifact.extra_metadata,
+        )
     if export_format == "docx":
         if artifact.type != "report":
             raise ValueError("Word export is only supported for report artifacts")
-        return render_report_docx(title=artifact.title, payload=artifact.payload or {})
+        return render_report_docx(
+            title=artifact.title,
+            payload=payload,
+            export_metadata=export_metadata,
+            extra_metadata=artifact.extra_metadata,
+        )
     if export_format != "csv":
         raise ValueError(f"Unsupported artifact export format: {export_format}")
     return render_artifact_csv(
         artifact_type=artifact.type,
         title=artifact.title,
-        payload=artifact.payload or {},
+        payload=payload,
+        export_metadata=export_metadata,
+        extra_metadata=artifact.extra_metadata,
     )
+
+
+def _build_agent_export_metadata(
+    *,
+    artifact_type: str,
+    title: str,
+    payload: dict[str, Any],
+    case_id: str,
+    generated_by: str,
+    extra_metadata: dict[str, Any] | None = None,
+) -> ExportMetadata:
+    scope = str(
+        payload.get("scope")
+        or (extra_metadata or {}).get("query")
+        or (extra_metadata or {}).get("notes")
+        or ""
+    ).strip()
+    return ExportMetadata(
+        export_id=generate_export_id(),
+        case_id=str(case_id or "unknown"),
+        generated_at=datetime.now(timezone.utc),
+        generated_by=generated_by or "Unknown user",
+        filters_description=scope or None,
+        scope_description=f"Agent {artifact_type or 'artifact'} export: {title or 'Untitled artifact'}.",
+        ai_disclosure=AIDisclosureLevel.AI_GENERATED,
+        source_citations=_source_citations_from_payload(payload, extra_metadata),
+    )
+
+
+def _artifact_case_id(artifact: AgentArtifactRecord) -> str:
+    run = getattr(artifact, "run", None)
+    if run is not None and getattr(run, "case_id", None):
+        return str(run.case_id)
+    thread = getattr(artifact, "thread", None)
+    if thread is not None and getattr(thread, "case_id", None):
+        return str(thread.case_id)
+    return "unknown"
+
+
+def _source_citations_from_payload(
+    payload: dict[str, Any],
+    extra_metadata: dict[str, Any] | None = None,
+) -> tuple[str, ...]:
+    citations: list[str] = []
+
+    def add(text: str | None) -> None:
+        clean = str(text or "").strip()
+        if clean and clean not in citations:
+            citations.append(clean)
+
+    for key in ("source_citations", "citations", "sources", "source_references"):
+        for item in _citation_items(payload.get(key)):
+            add(item)
+
+    for result_id in _as_strings(payload.get("source_result_ids")):
+        add(f"Agent source result: {result_id}")
+    for result_id in _as_strings((extra_metadata or {}).get("source_result_ids")):
+        add(f"Agent source result: {result_id}")
+
+    for embed in _dict_rows(payload.get("embedded_artifacts")):
+        embed_title = str(embed.get("title") or embed.get("artifact_id") or "Embedded artifact")
+        embed_metadata = embed.get("metadata") if isinstance(embed.get("metadata"), dict) else {}
+        for result_id in _as_strings(embed_metadata.get("source_result_ids")):
+            add(f"{embed_title}: Agent source result {result_id}")
+
+    for section in _dict_rows(payload.get("sections")):
+        for embed in _dict_rows(section.get("embeds")):
+            if not embed.get("available", True):
+                add(f"Unavailable embedded artifact: {embed.get('artifact_id') or embed.get('title') or 'unknown'}")
+            embed_metadata = embed.get("metadata") if isinstance(embed.get("metadata"), dict) else {}
+            for result_id in _as_strings(embed_metadata.get("source_result_ids")):
+                title = str(embed.get("title") or embed.get("artifact_id") or "Embedded artifact")
+                add(f"{title}: Agent source result {result_id}")
+
+    return tuple(citations)
+
+
+def _citation_items(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        parts = [
+            str(value.get(key) or "").strip()
+            for key in (
+                "title",
+                "source",
+                "source_file",
+                "filename",
+                "file",
+                "document",
+                "id",
+                "result_id",
+            )
+            if str(value.get(key) or "").strip()
+        ]
+        page = str(value.get("page") or value.get("source_page") or "").strip()
+        if page:
+            parts.append(f"p.{page}")
+        quote = str(value.get("quote") or value.get("excerpt") or "").strip()
+        if quote:
+            parts.append(f"excerpt: {quote[:160]}")
+        return [" | ".join(parts)] if parts else []
+    if isinstance(value, (list, tuple, set)):
+        items: list[str] = []
+        for item in value:
+            items.extend(_citation_items(item))
+        return items
+    return [str(value)]
+
+
+def _as_strings(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    return [text] if text else []
 
 
 def render_artifact_csv(
@@ -47,15 +201,28 @@ def render_artifact_csv(
     artifact_type: str,
     title: str,
     payload: dict[str, Any],
+    case_id: str = "unknown",
+    generated_by: str = "Unknown user",
+    export_metadata: ExportMetadata | None = None,
+    extra_metadata: dict[str, Any] | None = None,
 ) -> AgentArtifactExport:
+    export_metadata = export_metadata or _build_agent_export_metadata(
+        artifact_type=artifact_type,
+        title=title,
+        payload=payload,
+        case_id=case_id,
+        generated_by=generated_by,
+        extra_metadata=extra_metadata,
+    )
     rows = _rows_for_artifact(artifact_type, payload)
     columns = _columns_for_artifact(artifact_type, payload, rows)
-    csv_text = _write_csv(columns, rows)
-    filename = f"{_safe_filename(title or 'agent-artifact')}-{artifact_type}.csv"
+    csv_text = _write_csv(columns, rows, export_metadata)
+    filename = f"{safe_filename(title or 'agent-artifact', fallback='agent-artifact')}-{artifact_type}.csv"
     return AgentArtifactExport(
         content=csv_text.encode("utf-8-sig"),
         filename=filename,
         media_type="text/csv; charset=utf-8",
+        export_id=export_metadata.export_id,
     )
 
 
@@ -138,16 +305,34 @@ def _graph_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def _write_csv(columns: list[str], rows: list[dict[str, Any]]) -> str:
+def _write_csv(
+    columns: list[str],
+    rows: list[dict[str, Any]],
+    export_metadata: ExportMetadata,
+) -> str:
     if not columns:
         columns = ["value"]
 
+    metadata_columns = render_metadata_csv_columns()
+    metadata_values = render_metadata_csv_values(export_metadata)
     buffer = io.StringIO(newline="")
-    writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore", lineterminator="\n")
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=[*columns, *metadata_columns],
+        extrasaction="ignore",
+        lineterminator="\n",
+    )
     writer.writeheader()
     for row in rows:
         flattened = _flatten_dict(row)
-        writer.writerow({column: _cell_value(flattened.get(column)) for column in columns})
+        writer.writerow(
+            {
+                **{column: _cell_value(flattened.get(column)) for column in columns},
+                **metadata_values,
+            }
+        )
+    if not rows:
+        writer.writerow(metadata_values)
     return buffer.getvalue()
 
 
@@ -196,34 +381,63 @@ def _dedupe(values: list[str]) -> list[str]:
     return result
 
 
-def _safe_filename(value: str) -> str:
-    normalized = re.sub(r"[^a-zA-Z0-9._-]+", "-", value.strip().lower())
-    normalized = re.sub(r"-{2,}", "-", normalized).strip("-._")
-    return (normalized or "agent-artifact")[:80]
-
-
-def render_report_pdf(*, title: str, payload: dict[str, Any]) -> AgentArtifactExport:
+def render_report_pdf(
+    *,
+    title: str,
+    payload: dict[str, Any],
+    export_metadata: ExportMetadata | None = None,
+    extra_metadata: dict[str, Any] | None = None,
+) -> AgentArtifactExport:
     try:
         from weasyprint import HTML
     except Exception as exc:
         raise ValueError(f"PDF export is unavailable: {exc}") from exc
 
-    html_text = _report_html(title=title, payload=payload)
+    export_metadata = export_metadata or _build_agent_export_metadata(
+        artifact_type="report",
+        title=title,
+        payload=payload,
+        case_id="unknown",
+        generated_by="Unknown user",
+        extra_metadata=extra_metadata,
+    )
+    html_text = _report_html(
+        title=title,
+        payload=payload,
+        export_metadata=export_metadata,
+        extra_metadata=extra_metadata,
+    )
     return AgentArtifactExport(
         content=HTML(string=html_text).write_pdf(),
-        filename=f"{_safe_filename(title or 'agent-report')}-report.pdf",
+        filename=f"{safe_filename(title or 'agent-report', fallback='agent-report')}-report.pdf",
         media_type="application/pdf",
+        export_id=export_metadata.export_id,
     )
 
 
-def render_report_docx(*, title: str, payload: dict[str, Any]) -> AgentArtifactExport:
+def render_report_docx(
+    *,
+    title: str,
+    payload: dict[str, Any],
+    export_metadata: ExportMetadata | None = None,
+    extra_metadata: dict[str, Any] | None = None,
+) -> AgentArtifactExport:
     try:
         from docx import Document
     except Exception as exc:
         raise ValueError(f"Word export is unavailable: {exc}") from exc
 
+    export_metadata = export_metadata or _build_agent_export_metadata(
+        artifact_type="report",
+        title=title,
+        payload=payload,
+        case_id="unknown",
+        generated_by="Unknown user",
+        extra_metadata=extra_metadata,
+    )
     document = Document()
     document.add_heading(str(payload.get("title") or title or "Agent report"), level=0)
+    render_metadata_block_docx(document, export_metadata)
     purpose = str(payload.get("purpose") or "").strip()
     if purpose:
         document.add_paragraph(purpose)
@@ -255,12 +469,27 @@ def render_report_docx(*, title: str, payload: dict[str, Any]) -> AgentArtifactE
     document.save(buffer)
     return AgentArtifactExport(
         content=buffer.getvalue(),
-        filename=f"{_safe_filename(title or 'agent-report')}-report.docx",
+        filename=f"{safe_filename(title or 'agent-report', fallback='agent-report')}-report.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        export_id=export_metadata.export_id,
     )
 
 
-def _report_html(*, title: str, payload: dict[str, Any]) -> str:
+def _report_html(
+    *,
+    title: str,
+    payload: dict[str, Any],
+    export_metadata: ExportMetadata | None = None,
+    extra_metadata: dict[str, Any] | None = None,
+) -> str:
+    export_metadata = export_metadata or _build_agent_export_metadata(
+        artifact_type="report",
+        title=title,
+        payload=payload,
+        case_id="unknown",
+        generated_by="Unknown user",
+        extra_metadata=extra_metadata,
+    )
     report_title = str(payload.get("title") or title or "Agent report")
     sections = _dict_rows(payload.get("sections"))
     included = [str(item) for item in payload.get("included_items") or [] if str(item).strip()]
@@ -281,6 +510,7 @@ def _report_html(*, title: str, payload: dict[str, Any]) -> str:
         ".graph-list{font-size:12px;color:#374151}.muted{color:#6b7280}",
         "</style></head><body>",
         f"<h1>{html.escape(report_title)}</h1>",
+        render_metadata_block_html(export_metadata),
     ]
     if audience:
         parts.append(f"<div class='meta'>Audience: {html.escape(audience)}</div>")
@@ -307,6 +537,14 @@ def _report_html(*, title: str, payload: dict[str, Any]) -> str:
         parts.append("<h2>Open Questions</h2><ul>")
         parts.extend(f"<li>{html.escape(item)}</li>" for item in open_questions)
         parts.append("</ul>")
+
+    citations = list(export_metadata.source_citations)
+    if citations:
+        parts.append("<h2>Source Citations</h2><ol>")
+        parts.extend(f"<li>{html.escape(citation)}</li>" for citation in citations[:50])
+        if len(citations) > 50:
+            parts.append(f"<li>{len(citations) - 50} additional source citation(s) omitted.</li>")
+        parts.append("</ol>")
 
     parts.append("</body></html>")
     return "".join(parts)

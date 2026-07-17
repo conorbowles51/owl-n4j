@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.users import get_current_db_user
+from services.export_common import safe_filename
 from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
@@ -629,6 +630,8 @@ async def export_financial_pdf(
     from_entities: Optional[str] = Query(None, description="Comma-separated sender entity keys"),
     to_entities: Optional[str] = Query(None, description="Comma-separated beneficiary entity keys"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """Export filtered financial transactions as a PDF report.
 
@@ -637,6 +640,20 @@ async def export_financial_pdf(
     Includes transaction names, AI summaries, and entity notes appendix.
     """
     try:
+        try:
+            case_uuid = UUID(case_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid case_id") from exc
+
+        case, _membership = check_case_access(
+            db,
+            case_uuid,
+            current_user,
+            required_permission=("case", "view"),
+        )
+        effective_case_name = getattr(case, "title", None) or case_name
+        generated_by = current_user.name or current_user.email
+
         result = neo4j_service.get_financial_transactions(case_id=case_id, mode=mode)
         transactions = result.get("transactions", []) if isinstance(result, dict) else result
         filters = []
@@ -716,13 +733,15 @@ async def export_financial_pdf(
 
         rendered = render_financial_export(
             transactions,
-            case_name,
+            effective_case_name,
             filters_description,
             entity_notes=entity_notes,
             entity_flow=entity_flow,
+            case_id=case_id,
+            generated_by=generated_by,
         )
 
-        safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
+        safe_name = safe_filename(effective_case_name, fallback="case", max_length=50)
         mode_label = "Transactions" if mode != "intelligence" else "Financial_Intelligence"
         filename = (
             f"Financial_Report_{mode_label}_{safe_name}_{datetime.now().strftime('%Y%m%d')}."
@@ -732,7 +751,16 @@ async def export_financial_pdf(
         return Response(
             content=rendered["content"],
             media_type=rendered["media_type"],
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Export-ID": rendered["export_id"],
+            },
         )
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except CaseAccessDenied:
+        raise HTTPException(status_code=403, detail="Access denied - case.view permission required")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

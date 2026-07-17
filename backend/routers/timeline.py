@@ -296,7 +296,10 @@ def export_case_timeline(
         return Response(
             content=exported.content,
             media_type=exported.media_type,
-            headers={"Content-Disposition": disposition},
+            headers={
+                "Content-Disposition": disposition,
+                "X-Export-ID": exported.export_id,
+            },
         )
     except Exception as exc:
         _handle_error(exc)

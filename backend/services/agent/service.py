@@ -554,13 +554,22 @@ class AgentService:
         export_format: AgentExportFormat,
     ) -> AgentArtifactExport:
         artifact = storage.get_artifact_for_user(db, artifact_id=artifact_id, user=user)
-        exported = render_artifact_export(artifact, export_format)
+        exported = render_artifact_export(
+            artifact,
+            export_format,
+            generated_by=user.name or user.email,
+        )
         self._log_agent_event(
             db,
             action="agent_artifact_exported",
             user=user,
             run=artifact.run,
-            details={"artifact_id": str(artifact.id), "artifact_type": artifact.type, "format": export_format},
+            details={
+                "artifact_id": str(artifact.id),
+                "artifact_type": artifact.type,
+                "format": export_format,
+                "export_id": exported.export_id,
+            },
         )
         db.commit()
         return exported

@@ -29,7 +29,10 @@ class FinancialExportServiceTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("Active filters: Search: &quot;counsel&quot;", html)
+        self.assertRegex(html, r"exp_[0-9a-f]{12}")
+        self.assertIn("Search: &quot;counsel&quot; | Financial transactions included in this export.", html)
+        self.assertIn("AI-generated summaries", html)
+        self.assertIn("Source citations", html)
         self.assertIn("bank_statement.pdf", html)
         self.assertIn("Senders", html)
         self.assertIn("Beneficiaries", html)

@@ -191,6 +191,7 @@ async def export_agent_artifact(
             headers={
                 "Content-Disposition": disposition,
                 "X-Agent-Export-Format": format,
+                "X-Export-ID": exported.export_id,
             },
         )
     except ValueError as exc:

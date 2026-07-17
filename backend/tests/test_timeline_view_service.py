@@ -1,3 +1,5 @@
+import csv
+import io
 import unittest
 from unittest.mock import patch
 from uuid import UUID
@@ -144,8 +146,35 @@ class TimelineViewServiceTests(unittest.TestCase):
         )
 
         self.assertIn("Focused", html)
+        self.assertRegex(html, r"exp_[0-9a-f]{12}")
+        self.assertIn("AI-generated summaries", html)
+        self.assertIn("Source citations", html)
         self.assertIn("Source Appendix", html)
         self.assertIn("a.pdf", html)
+
+    def test_selection_csv_includes_export_metadata_and_source_citations(self):
+        with self.SessionLocal() as db, patch.object(
+            timeline_view_service.neo4j_service,
+            "get_timeline_events_by_keys",
+            return_value=[_event("a", time="10:00")],
+        ), patch.object(timeline_view_service.system_log_service, "log"):
+            exported = timeline_view_service.export_timeline(
+                db,
+                case_id=self.case_id,
+                case_name="Case Alpha",
+                current_user=self._user(db),
+                export_format="csv",
+                source="selection",
+                event_keys=["a"],
+            )
+
+        rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
+
+        self.assertEqual(rows[0]["Export ID"], exported.export_id)
+        self.assertRegex(rows[0]["Export ID"], r"^exp_[0-9a-f]{12}$")
+        self.assertIn("Source: Selected events", rows[0]["Filters / Scope"])
+        self.assertIn("AI-generated summaries", rows[0]["AI Disclosure"])
+        self.assertIn("a.pdf", rows[0]["Source Citations"])
 
     def test_snapshot_sort_time_falls_back_to_datetime_in_date_field(self):
         self.assertEqual(

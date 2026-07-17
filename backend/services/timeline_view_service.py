@@ -17,6 +17,16 @@ from sqlalchemy.orm import Session, selectinload
 from postgres.models.notebook import NotebookNote, NotebookNoteLink
 from postgres.models.timeline_view import TimelineView, TimelineViewEvent
 from postgres.models.user import User
+from services.export_common import (
+    AIDisclosureLevel,
+    ExportMetadata,
+    format_export_datetime,
+    generate_export_id,
+    render_metadata_block_html,
+    render_metadata_csv_columns,
+    render_metadata_csv_values,
+    safe_filename,
+)
 from services.neo4j_service import neo4j_service
 from services.system_log_service import LogOrigin, LogType, system_log_service
 
@@ -49,6 +59,7 @@ class TimelineExport:
     content: bytes
     filename: str
     media_type: str
+    export_id: str = ""
 
 
 def _now() -> datetime:
@@ -429,12 +440,6 @@ def batch_update_view_events(
     return timeline_view_to_dict(_get_view(db, case_id, view_id))
 
 
-def _safe_filename(value: str) -> str:
-    normalized = re.sub(r"[^a-zA-Z0-9._-]+", "-", value.strip().lower())
-    normalized = re.sub(r"-{2,}", "-", normalized).strip("-._")
-    return (normalized or "timeline")[:80]
-
-
 def _default_fields(detail_level: str) -> dict[str, bool]:
     fields = {
         "date": True,
@@ -555,7 +560,12 @@ def _csv_value(value: Any) -> str:
     return str(value)
 
 
-def _render_csv(events: list[dict[str, Any]], fields: dict[str, bool], notes_by_event: dict[str, list[dict[str, str | None]]]) -> bytes:
+def _render_csv(
+    events: list[dict[str, Any]],
+    fields: dict[str, bool],
+    notes_by_event: dict[str, list[dict[str, str | None]]],
+    export_metadata: ExportMetadata,
+) -> bytes:
     columns: list[tuple[str, str]] = []
     if fields["date"]:
         columns.append(("date", "Date"))
@@ -580,8 +590,14 @@ def _render_csv(events: list[dict[str, Any]], fields: dict[str, bool], notes_by_
     if fields["notebook_notes"]:
         columns.append(("notebook_notes", "Notebook notes"))
 
+    metadata_columns = render_metadata_csv_columns()
+    metadata_values = render_metadata_csv_values(export_metadata)
     buffer = io.StringIO(newline="")
-    writer = csv.DictWriter(buffer, fieldnames=[label for _, label in columns], lineterminator="\n")
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=[label for _, label in columns] + metadata_columns,
+        lineterminator="\n",
+    )
     writer.writeheader()
     for event in events:
         row: dict[str, str] = {}
@@ -603,7 +619,10 @@ def _render_csv(events: list[dict[str, Any]], fields: dict[str, bool], notes_by_
                 )
             else:
                 row[label] = _csv_value(event.get(key))
+        row.update(metadata_values)
         writer.writerow(row)
+    if not events:
+        writer.writerow(metadata_values)
     return buffer.getvalue().encode("utf-8-sig")
 
 
@@ -641,6 +660,70 @@ def _build_source_index(events: list[dict[str, Any]]) -> tuple[dict[str, int], l
     return index, refs
 
 
+def _has_ai_timeline_summaries(events: list[dict[str, Any]]) -> bool:
+    return any(str(event.get("summary") or "").strip() for event in events)
+
+
+def _timeline_filters_description(
+    *,
+    source: str,
+    detail_level: str,
+    fields: dict[str, bool],
+    event_count: int,
+    view_id: UUID | None,
+) -> str:
+    enabled_fields = ", ".join(key for key, enabled in fields.items() if enabled)
+    source_label = {
+        "view": "Saved view",
+        "selection": "Selected events",
+        "filtered": "Filtered timeline",
+    }.get(source, source)
+    parts = [
+        f"Source: {source_label}",
+        f"Detail: {detail_level}",
+        f"Events: {event_count}",
+    ]
+    if view_id:
+        parts.append(f"View ID: {view_id}")
+    if enabled_fields:
+        parts.append(f"Fields: {enabled_fields}")
+    return " | ".join(parts)
+
+
+def _build_timeline_export_metadata(
+    *,
+    case_id: UUID,
+    source: str,
+    detail_level: str,
+    fields: dict[str, bool],
+    event_count: int,
+    view_id: UUID | None,
+    generated_by: str,
+    source_citations: tuple[str, ...],
+    events: list[dict[str, Any]],
+) -> ExportMetadata:
+    return ExportMetadata(
+        export_id=generate_export_id(),
+        case_id=str(case_id),
+        generated_at=datetime.now(timezone.utc),
+        generated_by=generated_by or "Unknown user",
+        filters_description=_timeline_filters_description(
+            source=source,
+            detail_level=detail_level,
+            fields=fields,
+            event_count=event_count,
+            view_id=view_id,
+        ),
+        scope_description="Timeline events included in this export.",
+        ai_disclosure=(
+            AIDisclosureLevel.AI_GENERATED
+            if _has_ai_timeline_summaries(events)
+            else AIDisclosureLevel.NONE
+        ),
+        source_citations=source_citations,
+    )
+
+
 def _render_pdf_html(
     *,
     events: list[dict[str, Any]],
@@ -651,11 +734,28 @@ def _render_pdf_html(
     generated_by: str,
     footer_label: str,
     notes_by_event: dict[str, list[dict[str, str | None]]],
+    export_metadata: ExportMetadata | None = None,
 ) -> str:
-    generated_at = datetime.now().strftime("%B %d, %Y at %I:%M %p")
     dates = [str(event.get("date") or "")[:10] for event in events if event.get("date")]
     date_span = f"{min(dates)} to {max(dates)}" if dates else "No dated events"
     source_index, source_refs = _build_source_index(events)
+    export_metadata = export_metadata or ExportMetadata(
+        export_id=generate_export_id(),
+        case_id="unknown",
+        generated_at=datetime.now(timezone.utc),
+        generated_by=generated_by or "Unknown user",
+        filters_description=f"Detail: {detail_level} | Events: {len(events)}",
+        scope_description="Timeline events included in this export.",
+        ai_disclosure=(
+            AIDisclosureLevel.AI_GENERATED
+            if _has_ai_timeline_summaries(events)
+            else AIDisclosureLevel.NONE
+        ),
+        source_citations=tuple(source_refs),
+    )
+    generated_at = format_export_datetime(export_metadata.generated_at)
+    generated_by = export_metadata.generated_by
+    metadata_block = render_metadata_block_html(export_metadata)
 
     def source_marks(event: dict[str, Any]) -> str:
         refs = [source_index[ref] for ref in _source_refs(event) if ref in source_index]
@@ -944,6 +1044,7 @@ def _render_pdf_html(
                 <div class="summary-card"><span>Generated by</span><strong>{html.escape(generated_by)}</strong></div>
                 <div class="summary-card"><span>Generated</span><strong>{html.escape(generated_at)}</strong></div>
             </div>
+            {metadata_block}
         </section>
         {''.join(day_sections)}
         {appendix}
@@ -962,6 +1063,7 @@ def _render_pdf(
     generated_by: str,
     footer_label: str,
     notes_by_event: dict[str, list[dict[str, str | None]]],
+    export_metadata: ExportMetadata,
 ) -> bytes:
     from weasyprint import HTML
 
@@ -974,6 +1076,7 @@ def _render_pdf(
         generated_by=generated_by,
         footer_label=footer_label,
         notes_by_event=notes_by_event,
+        export_metadata=export_metadata,
     )
     return HTML(string=html_text).write_pdf()
 
@@ -1026,9 +1129,21 @@ def export_timeline(
         if merged_fields.get("notebook_notes")
         else {}
     )
+    _, source_refs = _build_source_index(events)
+    export_metadata = _build_timeline_export_metadata(
+        case_id=case_id,
+        source=source,
+        detail_level=detail_level,
+        fields=merged_fields,
+        event_count=len(events),
+        view_id=view_id if source == "view" else None,
+        generated_by=generated_by,
+        source_citations=tuple(source_refs),
+        events=events,
+    )
 
     if export_format == "csv":
-        content = _render_csv(events, merged_fields, note_map)
+        content = _render_csv(events, merged_fields, note_map, export_metadata)
         media_type = "text/csv; charset=utf-8"
         extension = "csv"
     else:
@@ -1041,6 +1156,7 @@ def export_timeline(
             generated_by=generated_by,
             footer_label=_clean_text(footer_label) or "Confidential",
             notes_by_event=note_map,
+            export_metadata=export_metadata,
         )
         media_type = "application/pdf"
         extension = "pdf"
@@ -1055,6 +1171,7 @@ def export_timeline(
             "view_id": str(view_id) if view_id else None,
             "format": export_format,
             "event_count": len(events),
+            "export_id": export_metadata.export_id,
         },
         user=current_user.email,
         success=True,
@@ -1063,5 +1180,10 @@ def export_timeline(
     db.flush()
     db.commit()
 
-    filename = f"{_safe_filename(final_title)}-{datetime.now().strftime('%Y%m%d')}.{extension}"
-    return TimelineExport(content=content, filename=filename, media_type=media_type)
+    filename = f"{safe_filename(final_title, fallback='timeline')}-{datetime.now().strftime('%Y%m%d')}.{extension}"
+    return TimelineExport(
+        content=content,
+        filename=filename,
+        media_type=media_type,
+        export_id=export_metadata.export_id,
+    )
