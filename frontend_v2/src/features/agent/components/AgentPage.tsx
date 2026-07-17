@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { MutableRefObject, ReactNode } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
 import ForceGraph2D, {
   type ForceGraphMethods,
@@ -48,6 +49,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
+  Save,
   Search,
   Send,
   Settings2,
@@ -59,6 +61,17 @@ import {
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Markdown } from "@/components/ui/markdown"
 import {
   Select,
@@ -69,9 +82,11 @@ import {
 } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import { downloadProtectedFile } from "@/lib/protected-file"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-provider"
+import { usePermissions } from "@/hooks/use-permissions"
 import { useGraphStore } from "@/stores/graph.store"
 import { useUIStore } from "@/stores/ui.store"
 import { EditNodeDialog } from "@/features/graph/components/EditNodeDialog"
@@ -90,6 +105,7 @@ import type {
   AgentActivityItem,
   AgentClarification,
   AgentClientMessage,
+  SavedAgentArtifactDestination,
   AgentStoredMessage,
   AgentThreadSummary,
   AgentToolTraceItem,
@@ -558,6 +574,7 @@ export function AgentPage() {
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const sharedPanelTab = useUIStore((s) => s.graphPanelTab)
   const sharedPanelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
+  const { canEdit } = usePermissions(caseId)
 
   const selectedArtifact = useMemo(
     () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0] ?? null,
@@ -1080,6 +1097,7 @@ export function AgentPage() {
             selectedArtifactId={selectedArtifactId}
             onSelectArtifact={handleArtifactSelect}
             exportEnabled={!isLoading}
+            canSaveArtifacts={canEdit}
             onEntitySelect={handleEntitySelect}
           />
         </ResizablePanel>
@@ -1600,6 +1618,7 @@ function ArtifactWorkspace({
   selectedArtifactId,
   onSelectArtifact,
   exportEnabled,
+  canSaveArtifacts,
   onEntitySelect,
 }: {
   artifacts: AgentArtifact[]
@@ -1607,6 +1626,7 @@ function ArtifactWorkspace({
   selectedArtifactId: string | null
   onSelectArtifact: (artifact: AgentArtifact) => void
   exportEnabled: boolean
+  canSaveArtifacts: boolean
   onEntitySelect: (key: string) => void
 }) {
   return (
@@ -1668,6 +1688,7 @@ function ArtifactWorkspace({
                 artifact={selectedArtifact}
                 artifacts={artifacts}
                 exportEnabled={exportEnabled}
+                canSaveArtifacts={canSaveArtifacts}
                 onEntitySelect={onEntitySelect}
               />
             )}
@@ -1682,18 +1703,65 @@ function ArtifactRenderer({
   artifact,
   artifacts,
   exportEnabled,
+  canSaveArtifacts,
   onEntitySelect,
 }: {
   artifact: AgentArtifact
   artifacts: AgentArtifact[]
   exportEnabled: boolean
+  canSaveArtifacts: boolean
   onEntitySelect: (key: string) => void
 }) {
-  if (artifact.type === "graph") return <GraphArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
-  if (artifact.type === "table") return <TableArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
-  if (artifact.type === "map") return <MapArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
-  if (artifact.type === "report") return <ReportArtifact artifact={artifact} artifacts={artifacts} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
-  if (artifact.type === "chart") return <ChartArtifact artifact={artifact} exportEnabled={exportEnabled} />
+  if (artifact.type === "graph") {
+    return (
+      <GraphArtifact
+        artifact={artifact}
+        exportEnabled={exportEnabled}
+        canSaveArtifacts={canSaveArtifacts}
+        onEntitySelect={onEntitySelect}
+      />
+    )
+  }
+  if (artifact.type === "table") {
+    return (
+      <TableArtifact
+        artifact={artifact}
+        exportEnabled={exportEnabled}
+        canSaveArtifacts={canSaveArtifacts}
+        onEntitySelect={onEntitySelect}
+      />
+    )
+  }
+  if (artifact.type === "map") {
+    return (
+      <MapArtifact
+        artifact={artifact}
+        exportEnabled={exportEnabled}
+        canSaveArtifacts={canSaveArtifacts}
+        onEntitySelect={onEntitySelect}
+      />
+    )
+  }
+  if (artifact.type === "report") {
+    return (
+      <ReportArtifact
+        artifact={artifact}
+        artifacts={artifacts}
+        exportEnabled={exportEnabled}
+        canSaveArtifacts={canSaveArtifacts}
+        onEntitySelect={onEntitySelect}
+      />
+    )
+  }
+  if (artifact.type === "chart") {
+    return (
+      <ChartArtifact
+        artifact={artifact}
+        exportEnabled={exportEnabled}
+        canSaveArtifacts={canSaveArtifacts}
+      />
+    )
+  }
   return <pre className="h-full overflow-auto text-xs">{JSON.stringify(artifact.data, null, 2)}</pre>
 }
 
@@ -1701,17 +1769,24 @@ function ArtifactShell({
   artifact,
   children,
   exportEnabled,
+  canSaveArtifacts,
   headerActions,
 }: {
   artifact: AgentArtifact
   children: ReactNode
   exportEnabled: boolean
+  canSaveArtifacts: boolean
   headerActions?: ReactNode
 }) {
   const Icon = artifactIcons[artifact.type] ?? FileText
   const [isDownloading, setIsDownloading] = useState(false)
   const exportFormats: AgentArtifactExportFormat[] =
     artifact.type === "report" ? ["pdf", "docx"] : ["csv"]
+  const saveDisabledReason = !exportEnabled
+    ? "Save is available when the run finishes"
+    : !canSaveArtifacts
+      ? "Saving requires case edit access"
+      : undefined
 
   const downloadArtifact = async (format: AgentArtifactExportFormat) => {
     if (!exportEnabled || isDownloading) return
@@ -1741,6 +1816,11 @@ function ArtifactShell({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {headerActions}
+          <SaveArtifactDialog
+            artifact={artifact}
+            disabled={Boolean(saveDisabledReason)}
+            disabledReason={saveDisabledReason}
+          />
           {exportFormats.map((format) => (
             <Button
               key={format}
@@ -1770,13 +1850,140 @@ function ArtifactShell({
   )
 }
 
+function SaveArtifactDialog({
+  artifact,
+  disabled,
+  disabledReason,
+}: {
+  artifact: AgentArtifact
+  disabled: boolean
+  disabledReason?: string
+}) {
+  const queryClient = useQueryClient()
+  const { id: caseId } = useParams()
+  const [open, setOpen] = useState(false)
+  const [destination, setDestination] = useState<SavedAgentArtifactDestination>(
+    artifact.type === "report" ? "report" : "workspace"
+  )
+  const [title, setTitle] = useState(artifact.title)
+  const [note, setNote] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setDestination(artifact.type === "report" ? "report" : "workspace")
+    setTitle(artifact.title)
+    setNote("")
+  }, [artifact.title, artifact.type, open])
+
+  const saveArtifact = async () => {
+    const cleanTitle = title.trim()
+    if (!cleanTitle || isSaving) return
+    setIsSaving(true)
+    try {
+      await agentAPI.saveArtifact(artifact.id, {
+        destination,
+        title: cleanTitle,
+        note: note.trim() || undefined,
+      })
+      if (caseId) {
+        await queryClient.invalidateQueries({ queryKey: ["agent", "saved", caseId] })
+      }
+      toast.success(destination === "report" ? "Saved to report" : "Saved to workspace")
+      setOpen(false)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save artifact"
+      toast.error(message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          disabled={disabled}
+          title={disabled ? disabledReason : "Save artifact"}
+        >
+          <Save className="mr-1 size-3" />
+          Save
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Save artifact</DialogTitle>
+          <DialogDescription className="sr-only">
+            Save this generated artifact to durable case work.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="artifact-save-destination">Destination</Label>
+            <Select
+              value={destination}
+              onValueChange={(value) => setDestination(value as SavedAgentArtifactDestination)}
+            >
+              <SelectTrigger id="artifact-save-destination">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="workspace">Workspace</SelectItem>
+                <SelectItem value="report">Report</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="artifact-save-title">Title</Label>
+            <Input
+              id="artifact-save-title"
+              value={title}
+              maxLength={255}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="artifact-save-note">Note</Label>
+            <Textarea
+              id="artifact-save-note"
+              value={note}
+              maxLength={2000}
+              rows={3}
+              onChange={(event) => setNote(event.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={saveArtifact}
+            disabled={!title.trim() || isSaving}
+          >
+            {isSaving && <Loader2 className="mr-2 size-3 animate-spin" />}
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function GraphArtifact({
   artifact,
   exportEnabled,
+  canSaveArtifacts,
   onEntitySelect,
 }: {
   artifact: AgentArtifact
   exportEnabled: boolean
+  canSaveArtifacts: boolean
   onEntitySelect: (key: string) => void
 }) {
   const rawNodes = asArray<Dict>(artifact.data.nodes)
@@ -2043,6 +2250,7 @@ function GraphArtifact({
     <ArtifactShell
       artifact={artifact}
       exportEnabled={exportEnabled}
+      canSaveArtifacts={canSaveArtifacts}
       headerActions={
         <Button
           type="button"
@@ -2265,9 +2473,11 @@ function ChartPreview({ artifact }: { artifact: AgentArtifact }) {
 function ChartArtifact({
   artifact,
   exportEnabled,
+  canSaveArtifacts,
 }: {
   artifact: AgentArtifact
   exportEnabled: boolean
+  canSaveArtifacts: boolean
 }) {
   const rows = asArray<Dict>(artifact.data.rows)
   const rawType = valueText(artifact.data.chart_type)
@@ -2279,7 +2489,11 @@ function ChartArtifact({
   const notes = valueText(artifact.data.notes).trim()
 
   return (
-    <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
+    <ArtifactShell
+      artifact={artifact}
+      exportEnabled={exportEnabled}
+      canSaveArtifacts={canSaveArtifacts}
+    >
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="grid shrink-0 grid-cols-3 gap-2 text-xs">
           <Stat label="Type" value={chartType.replace("_", " ")} />
@@ -2303,11 +2517,13 @@ function ReportArtifact({
   artifact,
   artifacts,
   exportEnabled,
+  canSaveArtifacts,
   onEntitySelect,
 }: {
   artifact: AgentArtifact
   artifacts: AgentArtifact[]
   exportEnabled: boolean
+  canSaveArtifacts: boolean
   onEntitySelect: (key: string) => void
 }) {
   const sections = asArray<Dict>(artifact.data.sections)
@@ -2319,7 +2535,11 @@ function ReportArtifact({
   const revisionNote = valueText(artifact.metadata.revision_note).trim()
 
   return (
-    <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
+    <ArtifactShell
+      artifact={artifact}
+      exportEnabled={exportEnabled}
+      canSaveArtifacts={canSaveArtifacts}
+    >
       <article className="min-h-0 flex-1 overflow-y-auto px-1 pb-6 pr-3">
         <div className="mx-auto max-w-3xl">
           <div className="border-b border-border/70 pb-4">
@@ -2686,16 +2906,22 @@ function ReportGraphEmbed({
 function TableArtifact({
   artifact,
   exportEnabled,
+  canSaveArtifacts,
   onEntitySelect,
 }: {
   artifact: AgentArtifact
   exportEnabled: boolean
+  canSaveArtifacts: boolean
   onEntitySelect: (key: string) => void
 }) {
   const columns = asArray<Dict>(artifact.data.columns)
   const rows = asArray<Dict>(artifact.data.rows)
   return (
-    <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
+    <ArtifactShell
+      artifact={artifact}
+      exportEnabled={exportEnabled}
+      canSaveArtifacts={canSaveArtifacts}
+    >
       {rows.length === 0 ? (
         <SmallEmpty label="No rows returned" />
       ) : (
@@ -2748,10 +2974,12 @@ function TableArtifact({
 function MapArtifact({
   artifact,
   exportEnabled,
+  canSaveArtifacts,
   onEntitySelect,
 }: {
   artifact: AgentArtifact
   exportEnabled: boolean
+  canSaveArtifacts: boolean
   onEntitySelect: (key: string) => void
 }) {
   const locations = asArray<Dict>(artifact.data.locations)
@@ -2771,7 +2999,11 @@ function MapArtifact({
   const lngSpan = Math.max(maxLng - minLng, 0.001)
 
   return (
-    <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
+    <ArtifactShell
+      artifact={artifact}
+      exportEnabled={exportEnabled}
+      canSaveArtifacts={canSaveArtifacts}
+    >
       <div className="relative min-h-[320px] flex-1 overflow-hidden rounded-md border border-border bg-slate-950">
         <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:32px_32px]" />
         {coords.map((location, index) => {

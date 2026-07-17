@@ -8,8 +8,6 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from postgres.models.agent import AgentArtifactRecord
-
 
 AgentExportFormat = Literal["csv", "pdf", "docx"]
 
@@ -22,23 +20,36 @@ class AgentArtifactExport:
 
 
 def render_artifact_export(
-    artifact: AgentArtifactRecord,
-    export_format: AgentExportFormat,
+    artifact: Any | None = None,
+    export_format: AgentExportFormat = "csv",
+    *,
+    artifact_type: str | None = None,
+    title: str | None = None,
+    payload: dict[str, Any] | None = None,
 ) -> AgentArtifactExport:
+    if artifact is not None:
+        artifact_type = artifact_type or str(getattr(artifact, "type", ""))
+        title = title or str(getattr(artifact, "title", ""))
+        payload = payload if payload is not None else (getattr(artifact, "payload", None) or {})
+    if not artifact_type:
+        raise ValueError("Artifact type is required for export")
+    title = title or "Agent artifact"
+    payload = payload or {}
+
     if export_format == "pdf":
-        if artifact.type != "report":
+        if artifact_type != "report":
             raise ValueError("PDF export is only supported for report artifacts")
-        return render_report_pdf(title=artifact.title, payload=artifact.payload or {})
+        return render_report_pdf(title=title, payload=payload)
     if export_format == "docx":
-        if artifact.type != "report":
+        if artifact_type != "report":
             raise ValueError("Word export is only supported for report artifacts")
-        return render_report_docx(title=artifact.title, payload=artifact.payload or {})
+        return render_report_docx(title=title, payload=payload)
     if export_format != "csv":
         raise ValueError(f"Unsupported artifact export format: {export_format}")
     return render_artifact_csv(
-        artifact_type=artifact.type,
-        title=artifact.title,
-        payload=artifact.payload or {},
+        artifact_type=artifact_type,
+        title=title,
+        payload=payload,
     )
 
 

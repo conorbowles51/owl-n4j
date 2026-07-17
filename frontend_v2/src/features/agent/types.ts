@@ -13,6 +13,25 @@ export interface AgentArtifact {
   metadata: Record<string, unknown>
 }
 
+export type SavedAgentArtifactDestination = "workspace" | "report"
+
+export interface SavedAgentArtifact {
+  id: string
+  case_id: string
+  destination: SavedAgentArtifactDestination
+  title: string
+  note?: string | null
+  artifact_type: AgentArtifactType
+  artifact: AgentArtifact
+  source_thread_id?: string | null
+  source_run_id?: string | null
+  source_artifact_id?: string | null
+  created_by_user_id?: string | null
+  provenance: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface AgentToolTraceItem {
   id: string
   name: string

@@ -17,6 +17,8 @@ from services.agent.schemas import (
     AgentMessageResponse,
     AgentRunDetail,
     AgentRunStatusResponse,
+    SavedAgentArtifact,
+    SaveAgentArtifactRequest,
     AgentThreadDetail,
     AgentThreadSummary,
 )
@@ -29,6 +31,22 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+def _artifact_download_response(exported, *, export_format: str) -> Response:
+    ascii_filename = exported.filename.encode("ascii", "ignore").decode("ascii") or "agent-artifact.csv"
+    disposition = (
+        f'attachment; filename="{ascii_filename}"; '
+        f"filename*=UTF-8''{quote(exported.filename)}"
+    )
+    return Response(
+        content=exported.content,
+        media_type=exported.media_type,
+        headers={
+            "Content-Disposition": disposition,
+            "X-Agent-Export-Format": export_format,
+        },
+    )
 
 
 @router.get("/threads", response_model=list[AgentThreadSummary])
@@ -180,24 +198,103 @@ async def export_agent_artifact(
             artifact_id=artifact_id,
             export_format=format,
         )
-        ascii_filename = exported.filename.encode("ascii", "ignore").decode("ascii") or "agent-artifact.csv"
-        disposition = (
-            f'attachment; filename="{ascii_filename}"; '
-            f"filename*=UTF-8''{quote(exported.filename)}"
-        )
-        return Response(
-            content=exported.content,
-            media_type=exported.media_type,
-            headers={
-                "Content-Disposition": disposition,
-                "X-Agent-Export-Format": format,
-            },
+        return _artifact_download_response(exported, export_format=format)
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/artifacts/{artifact_id}/save", response_model=SavedAgentArtifact, status_code=201)
+async def save_agent_artifact(
+    artifact_id: UUID,
+    request: SaveAgentArtifactRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        return agent_service.save_artifact(
+            db=db,
+            user=current_user,
+            artifact_id=artifact_id,
+            request=request,
         )
     except ValueError as exc:
         status_code = 404 if "not found" in str(exc).lower() else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/saved", response_model=list[SavedAgentArtifact])
+async def list_saved_agent_artifacts(
+    case_id: UUID = Query(...),
+    destination: Literal["workspace", "report"] | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        return agent_service.list_saved_artifacts(
+            db=db,
+            user=current_user,
+            case_id=case_id,
+            destination=destination,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/saved/{saved_artifact_id}", response_model=SavedAgentArtifact)
+async def get_saved_agent_artifact(
+    saved_artifact_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        return agent_service.get_saved_artifact(
+            db=db,
+            user=current_user,
+            saved_artifact_id=saved_artifact_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/saved/{saved_artifact_id}/export")
+async def export_saved_agent_artifact(
+    saved_artifact_id: UUID,
+    format: Literal["csv", "pdf", "docx"] = Query(default="csv"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        exported = agent_service.export_saved_artifact(
+            db=db,
+            user=current_user,
+            saved_artifact_id=saved_artifact_id,
+            export_format=format,
+        )
+        return _artifact_download_response(exported, export_format=format)
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     except CaseNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CaseAccessDenied as exc:

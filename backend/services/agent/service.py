@@ -25,6 +25,8 @@ from services.agent.schemas import (
     AgentModelInfo,
     AgentRunDetail,
     AgentRunStatusResponse,
+    SavedAgentArtifact,
+    SaveAgentArtifactRequest,
     AgentThreadDetail,
     AgentThreadSummary,
     AgentToolTraceItem,
@@ -554,13 +556,107 @@ class AgentService:
         export_format: AgentExportFormat,
     ) -> AgentArtifactExport:
         artifact = storage.get_artifact_for_user(db, artifact_id=artifact_id, user=user)
-        exported = render_artifact_export(artifact, export_format)
+        exported = render_artifact_export(
+            artifact_type=artifact.type,
+            title=artifact.title,
+            payload=artifact.payload or {},
+            export_format=export_format,
+        )
         self._log_agent_event(
             db,
             action="agent_artifact_exported",
             user=user,
             run=artifact.run,
             details={"artifact_id": str(artifact.id), "artifact_type": artifact.type, "format": export_format},
+        )
+        db.commit()
+        return exported
+
+    def save_artifact(
+        self,
+        *,
+        db: Session,
+        user: User,
+        artifact_id: UUID,
+        request: SaveAgentArtifactRequest,
+    ) -> SavedAgentArtifact:
+        saved = storage.save_artifact_for_user(
+            db,
+            artifact_id=artifact_id,
+            user=user,
+            destination=request.destination,
+            title=request.title,
+            note=request.note,
+        )
+        self._log_saved_artifact_event(
+            db,
+            action="agent_artifact_saved",
+            user=user,
+            saved=saved,
+            details={
+                "artifact_type": saved.artifact_type,
+                "destination": saved.destination,
+                "source_artifact_id": str(saved.source_artifact_id) if saved.source_artifact_id else None,
+            },
+        )
+        db.commit()
+        db.refresh(saved)
+        return storage.to_api_saved_artifact(saved)
+
+    def list_saved_artifacts(
+        self,
+        *,
+        db: Session,
+        user: User,
+        case_id: UUID,
+        destination: str | None = None,
+    ) -> list[SavedAgentArtifact]:
+        return storage.list_saved_artifacts(
+            db,
+            user=user,
+            case_id=case_id,
+            destination=destination,
+        )
+
+    def get_saved_artifact(
+        self,
+        *,
+        db: Session,
+        user: User,
+        saved_artifact_id: UUID,
+    ) -> SavedAgentArtifact:
+        saved = storage.get_saved_artifact_for_user(
+            db,
+            saved_artifact_id=saved_artifact_id,
+            user=user,
+        )
+        return storage.to_api_saved_artifact(saved)
+
+    def export_saved_artifact(
+        self,
+        *,
+        db: Session,
+        user: User,
+        saved_artifact_id: UUID,
+        export_format: AgentExportFormat,
+    ) -> AgentArtifactExport:
+        saved = storage.get_saved_artifact_for_user(
+            db,
+            saved_artifact_id=saved_artifact_id,
+            user=user,
+        )
+        exported = render_artifact_export(
+            artifact_type=saved.artifact_type,
+            title=saved.title,
+            payload=saved.artifact_payload or {},
+            export_format=export_format,
+        )
+        self._log_saved_artifact_event(
+            db,
+            action="saved_agent_artifact_exported",
+            user=user,
+            saved=saved,
+            details={"artifact_type": saved.artifact_type, "format": export_format},
         )
         db.commit()
         return exported
@@ -762,6 +858,35 @@ class AgentService:
             "thread_id": str(run.thread_id),
             "case_id": str(run.case_id),
             "status": run.status,
+            **(details or {}),
+        }
+        system_log_service.log(
+            LogType.AI_ASSISTANT,
+            LogOrigin.BACKEND,
+            action,
+            details=payload,
+            user=user.email,
+            success=success,
+            error=error,
+            db=db,
+        )
+
+    @staticmethod
+    def _log_saved_artifact_event(
+        db: Session,
+        *,
+        action: str,
+        user: User,
+        saved,
+        success: bool = True,
+        error: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        payload = {
+            "saved_artifact_id": str(saved.id),
+            "case_id": str(saved.case_id),
+            "source_thread_id": str(saved.source_thread_id) if saved.source_thread_id else None,
+            "source_run_id": str(saved.source_run_id) if saved.source_run_id else None,
             **(details or {}),
         }
         system_log_service.log(

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 AgentArtifactType = Literal["graph", "table", "map", "report", "chart"]
 AgentToolStatus = Literal["success", "error"]
 AgentRunStatus = Literal["running", "completed", "failed", "cancelled", "clarification_required"]
+SavedAgentArtifactDestination = Literal["workspace", "report"]
 AgentArtifactPreference = Literal[
     "auto",
     "none",
@@ -65,6 +66,45 @@ class AgentArtifact(BaseModel):
     title: str
     data: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SaveAgentArtifactRequest(BaseModel):
+    destination: SavedAgentArtifactDestination
+    title: str = Field(..., min_length=1, max_length=255)
+    note: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("title")
+    @classmethod
+    def _title_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Title is required")
+        return stripped
+
+    @field_validator("note")
+    @classmethod
+    def _normalize_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class SavedAgentArtifact(BaseModel):
+    id: str
+    case_id: str
+    destination: SavedAgentArtifactDestination
+    title: str
+    note: str | None = None
+    artifact_type: AgentArtifactType
+    artifact: AgentArtifact
+    source_thread_id: str | None = None
+    source_run_id: str | None = None
+    source_artifact_id: str | None = None
+    created_by_user_id: str | None = None
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
 
 
 class AgentToolTraceItem(BaseModel):

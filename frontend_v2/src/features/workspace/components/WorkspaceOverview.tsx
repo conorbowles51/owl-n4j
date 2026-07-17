@@ -22,6 +22,7 @@ import { DocumentsSection } from "./DocumentsSection"
 import { CaseFilesSection } from "./CaseFilesSection"
 import { FindingsSection } from "./FindingsSection"
 import { PinnedEvidenceSection } from "./PinnedEvidenceSection"
+import { SavedArtifactsSection } from "./SavedArtifactsSection"
 
 interface WorkspaceOverviewProps {
   caseId: string
@@ -272,6 +273,7 @@ export function WorkspaceOverview({ caseId }: WorkspaceOverviewProps) {
 
       {/* Secondary sections */}
       <div className="space-y-4 border-t border-border pt-4">
+        <SavedArtifactsSection caseId={caseId} />
         <PinnedEvidenceSection caseId={caseId} />
         <InvestigativeNotesSection caseId={caseId} />
         <DocumentsSection caseId={caseId} />

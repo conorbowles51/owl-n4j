@@ -3,7 +3,12 @@ import io
 import unittest
 import zipfile
 
-from services.agent.exports import render_artifact_csv, render_report_docx, render_report_pdf
+from services.agent.exports import (
+    render_artifact_csv,
+    render_artifact_export,
+    render_report_docx,
+    render_report_pdf,
+)
 
 
 def read_csv(content: bytes) -> list[dict[str, str]]:
@@ -86,6 +91,22 @@ class AgentArtifactExportTests(unittest.TestCase):
         self.assertEqual(rows[0]["person"], "Daniel Rook")
         self.assertEqual(rows[0]["total_amount"], "145000")
         self.assertEqual(rows[0]["count"], "3")
+
+    def test_snapshot_artifact_export_uses_type_title_and_payload(self):
+        exported = render_artifact_export(
+            artifact_type="table",
+            title="Saved payments",
+            payload={
+                "columns": [{"key": "person"}, {"key": "amount"}],
+                "rows": [{"person": "Daniel Rook", "amount": 145000}],
+            },
+            export_format="csv",
+        )
+
+        rows = read_csv(exported.content)
+
+        self.assertEqual(exported.filename, "saved-payments-table.csv")
+        self.assertEqual(rows[0]["person"], "Daniel Rook")
 
     def test_report_artifact_exports_docx(self):
         exported = render_report_docx(

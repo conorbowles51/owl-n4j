@@ -5,6 +5,8 @@ import type {
   AgentStreamEvent,
   AgentThreadDetail,
   AgentThreadSummary,
+  SavedAgentArtifact,
+  SavedAgentArtifactDestination,
 } from "./types"
 
 export type AgentArtifactExportFormat = "csv" | "pdf" | "docx"
@@ -16,6 +18,12 @@ export interface SendAgentMessageParams {
   artifactPreference?: "auto" | "none" | "graph" | "table" | "map" | "report" | "chart"
   provider?: string
   model?: string
+}
+
+export interface SaveAgentArtifactParams {
+  destination: SavedAgentArtifactDestination
+  title: string
+  note?: string | null
 }
 
 const AGENT_DEFAULTS = {
@@ -114,6 +122,31 @@ export const agentAPI = {
       method: "POST",
     }),
 
+  saveArtifact: (artifactId: string, params: SaveAgentArtifactParams) =>
+    fetchAPI<SavedAgentArtifact>(`/api/agent/artifacts/${artifactId}/save`, {
+      method: "POST",
+      body: {
+        destination: params.destination,
+        title: params.title,
+        note: params.note || undefined,
+      },
+    }),
+
+  listSavedArtifacts: (
+    caseId: string,
+    destination?: SavedAgentArtifactDestination
+  ) => {
+    const qs = new URLSearchParams({ case_id: caseId })
+    if (destination) qs.set("destination", destination)
+    return fetchAPI<SavedAgentArtifact[]>(`/api/agent/saved?${qs}`)
+  },
+
+  getSavedArtifact: (savedArtifactId: string) =>
+    fetchAPI<SavedAgentArtifact>(`/api/agent/saved/${savedArtifactId}`),
+
   artifactExportUrl: (artifactId: string, format: AgentArtifactExportFormat = "csv") =>
     `/api/agent/artifacts/${artifactId}/export?format=${format}`,
+
+  savedArtifactExportUrl: (savedArtifactId: string, format: AgentArtifactExportFormat = "csv") =>
+    `/api/agent/saved/${savedArtifactId}/export?format=${format}`,
 }

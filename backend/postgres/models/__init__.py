@@ -15,6 +15,7 @@ from postgres.models.agent import (
     AgentArtifactRecord,
     AgentMessage,
     AgentRun,
+    SavedAgentArtifact,
     AgentThread,
     AgentToolCall,
 )
@@ -55,7 +56,8 @@ __all__ = [
     "ProcessingProfile", "CaseProcessingConfig",
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",
-    "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall",
+    "AgentArtifactRecord", "AgentMessage", "AgentRun", "SavedAgentArtifact",
+    "AgentThread", "AgentToolCall",
     "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "CaseProfile", "CaseProfileAttribute", "CaseProfileEvidenceLink",
     "CaseProfileFindingLink", "CaseProfileGraphNodeLink", "CaseProfileNoteLink",

@@ -14,6 +14,7 @@ from postgres.models.agent import (
     AgentRun,
     AgentThread,
     AgentToolCall,
+    SavedAgentArtifact as SavedAgentArtifactRecord,
 )
 from postgres.models.user import User
 from services.agent.json_utils import sanitize_text, to_jsonable, truncate_payload
@@ -25,10 +26,12 @@ from services.agent.schemas import (
     AgentThreadDetail,
     AgentThreadSummary,
     AgentToolTraceItem,
+    SavedAgentArtifact,
 )
 from services.case_service import check_case_access
 
 SUPPORTED_ARTIFACT_TYPES = {"graph", "table", "map", "report", "chart"}
+SUPPORTED_SAVE_DESTINATIONS = {"workspace", "report"}
 
 
 def summarize_title(message: str) -> str:
@@ -87,6 +90,19 @@ def get_artifact_for_user(db: Session, *, artifact_id: UUID, user: User) -> Agen
         raise ValueError("Agent artifact not found")
     get_thread_for_user(db, thread_id=artifact.thread_id, user=user)
     return artifact
+
+
+def get_saved_artifact_for_user(
+    db: Session,
+    *,
+    saved_artifact_id: UUID,
+    user: User,
+) -> SavedAgentArtifactRecord:
+    saved = db.query(SavedAgentArtifactRecord).filter(SavedAgentArtifactRecord.id == saved_artifact_id).first()
+    if not saved:
+        raise ValueError("Saved artifact not found")
+    check_case_access(db, saved.case_id, user, required_permission=("case", "view"))
+    return saved
 
 
 def list_threads(db: Session, *, user: User, case_id: UUID | None = None) -> list[AgentThreadSummary]:
@@ -281,6 +297,87 @@ def to_api_artifact(record: AgentArtifactRecord) -> AgentArtifact:
     )
 
 
+def save_artifact_for_user(
+    db: Session,
+    *,
+    artifact_id: UUID,
+    user: User,
+    destination: str,
+    title: str,
+    note: str | None = None,
+) -> SavedAgentArtifactRecord:
+    if destination not in SUPPORTED_SAVE_DESTINATIONS:
+        raise ValueError("Unsupported save destination")
+    clean_title = sanitize_text(title).strip()
+    if not clean_title:
+        raise ValueError("Title is required")
+    clean_note = sanitize_text(note).strip()[:2000] if note else None
+
+    artifact = get_artifact_for_user(db, artifact_id=artifact_id, user=user)
+    check_case_access(db, artifact.thread.case_id, user, required_permission=("case", "edit"))
+
+    record = SavedAgentArtifactRecord(
+        case_id=artifact.thread.case_id,
+        created_by_user_id=user.id,
+        destination=destination,
+        title=clean_title[:255],
+        note=clean_note or None,
+        artifact_type=artifact.type,
+        artifact_payload=to_jsonable(artifact.payload or {}),
+        artifact_metadata=to_jsonable(artifact.extra_metadata or {}),
+        source_thread_id=artifact.thread_id,
+        source_run_id=artifact.run_id,
+        source_artifact_id=artifact.id,
+        provenance=to_jsonable(_saved_artifact_provenance(artifact, user=user)),
+    )
+    db.add(record)
+    db.flush()
+    db.refresh(record)
+    return record
+
+
+def list_saved_artifacts(
+    db: Session,
+    *,
+    user: User,
+    case_id: UUID,
+    destination: str | None = None,
+) -> list[SavedAgentArtifact]:
+    if destination is not None and destination not in SUPPORTED_SAVE_DESTINATIONS:
+        raise ValueError("Unsupported save destination")
+    check_case_access(db, case_id, user, required_permission=("case", "view"))
+    query = db.query(SavedAgentArtifactRecord).filter(SavedAgentArtifactRecord.case_id == case_id)
+    if destination:
+        query = query.filter(SavedAgentArtifactRecord.destination == destination)
+    rows = query.order_by(SavedAgentArtifactRecord.created_at.desc(), SavedAgentArtifactRecord.id.desc()).all()
+    return [to_api_saved_artifact(row) for row in rows]
+
+
+def to_api_saved_artifact(record: SavedAgentArtifactRecord) -> SavedAgentArtifact:
+    return SavedAgentArtifact(
+        id=str(record.id),
+        case_id=str(record.case_id),
+        destination=record.destination,
+        title=record.title,
+        note=record.note,
+        artifact_type=record.artifact_type,
+        artifact=AgentArtifact(
+            id=str(record.id),
+            type=record.artifact_type,
+            title=record.title,
+            data=record.artifact_payload or {},
+            metadata=record.artifact_metadata or {},
+        ),
+        source_thread_id=str(record.source_thread_id) if record.source_thread_id else None,
+        source_run_id=str(record.source_run_id) if record.source_run_id else None,
+        source_artifact_id=str(record.source_artifact_id) if record.source_artifact_id else None,
+        created_by_user_id=str(record.created_by_user_id) if record.created_by_user_id else None,
+        provenance=record.provenance or {},
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
 def to_api_tool_trace(record: AgentToolCall) -> AgentToolTraceItem:
     return AgentToolTraceItem(
         id=str(record.id),
@@ -292,6 +389,45 @@ def to_api_tool_trace(record: AgentToolCall) -> AgentToolTraceItem:
         result_id=record.result_id,
         error=record.error,
     )
+
+
+def _saved_artifact_provenance(artifact: AgentArtifactRecord, *, user: User) -> dict[str, Any]:
+    run = artifact.run
+    thread = artifact.thread
+    return {
+        "source": {
+            "artifact_id": str(artifact.id),
+            "artifact_type": artifact.type,
+            "artifact_title": artifact.title,
+            "artifact_created_at": _dt(artifact.created_at),
+            "thread_id": str(thread.id) if thread else str(artifact.thread_id),
+            "thread_title": thread.title if thread else None,
+            "run_id": str(run.id) if run else str(artifact.run_id),
+        },
+        "saved_by": {
+            "user_id": str(user.id),
+            "email": user.email,
+            "name": user.name,
+        },
+        "run": {
+            "provider": run.provider if run else None,
+            "model_id": run.model_id if run else None,
+            "status": run.status if run else None,
+            "started_at": _dt(run.started_at) if run else None,
+            "completed_at": _dt(run.completed_at) if run else None,
+            "input_message": sanitize_text(run.input_message)[:1000] if run and run.input_message else None,
+            "final_answer": sanitize_text(run.final_answer)[:1000] if run and run.final_answer else None,
+        },
+        "artifact_metadata": artifact.extra_metadata or {},
+        "tool_trace": [
+            to_api_tool_trace(tool_call).model_dump(mode="json")
+            for tool_call in (run.tool_calls if run else [])
+        ],
+    }
+
+
+def _dt(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
 
 
 def get_run_detail(db: Session, *, run_id: UUID, user: User) -> AgentRunDetail:
