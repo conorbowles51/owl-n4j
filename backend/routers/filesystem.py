@@ -12,8 +12,25 @@ from pydantic import BaseModel
 
 from config import EVIDENCE_DATA_ROOT
 from routers.auth import get_current_user
+from routers.case_access import case_access_dependency
+from routers.users import get_current_db_user
 
-router = APIRouter(prefix="/api/filesystem", tags=["filesystem"])
+
+def _filesystem_case_permission(request, payload: dict) -> tuple[str, str]:
+    return ("case", "view")
+
+
+_require_filesystem_case_access = case_access_dependency(_filesystem_case_permission)
+
+
+router = APIRouter(
+    prefix="/api/filesystem",
+    tags=["filesystem"],
+    dependencies=[
+        Depends(get_current_db_user),
+        Depends(_require_filesystem_case_access),
+    ],
+)
 
 # Root directory for case-file browsing.
 # For case-specific browsing, we'll use {EVIDENCE_DATA_ROOT}/{case_id}

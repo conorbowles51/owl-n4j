@@ -34,6 +34,11 @@ from services.cypher_generator import generate_cypher_from_graph
 from services.evidence_db_storage import EvidenceDBStorage
 from services import evidence_engine_client
 from .auth import get_current_user
+from routers.case_access import (
+    authorize_case,
+    case_access_dependency,
+    request_json_payload,
+)
 from routers.users import get_current_db_user
 from fastapi import Query, status
 from postgres.session import get_db
@@ -61,7 +66,67 @@ _CELLEBRITE_NS_MARKER = b"http://pa.cellebrite.com/report/2.0"
 # Clients must split larger batches into chunks of this size.
 MAX_BATCH_SIZE = 50
 
-router = APIRouter(prefix="/api/evidence", tags=["evidence"])
+
+def _evidence_case_permission(request: Request, payload: dict) -> tuple[str, str]:
+    if request.method == "GET":
+        return ("case", "view")
+    return ("evidence", "upload")
+
+
+_require_evidence_case_access = case_access_dependency(_evidence_case_permission)
+
+
+def _evidence_record_for_id(db: Session, evidence_id: str):
+    try:
+        return EvidenceDBStorage.get(db, UUID(evidence_id))
+    except (TypeError, ValueError, AttributeError):
+        return EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
+
+
+async def _require_evidence_object_access(
+    request: Request,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Authorize evidence IDs against the case stored on each DB record."""
+    payload = await request_json_payload(request)
+    evidence_ids: set[str] = set()
+
+    path_evidence_id = request.path_params.get("evidence_id")
+    if path_evidence_id:
+        evidence_ids.add(str(path_evidence_id))
+
+    payload_evidence_id = payload.get("evidence_id")
+    if payload_evidence_id:
+        evidence_ids.add(str(payload_evidence_id))
+    payload_evidence_ids = payload.get("evidence_ids")
+    if isinstance(payload_evidence_ids, list):
+        evidence_ids.update(str(value) for value in payload_evidence_ids if value)
+
+    permission = ("case", "view") if request.method == "GET" else ("evidence", "upload")
+    for evidence_id in evidence_ids:
+        record = _evidence_record_for_id(db, evidence_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Evidence not found")
+        authorize_case(db, record.case_id, current_user, permission)
+
+    if request.method == "GET" and request.url.path.startswith("/api/evidence/engine/jobs/"):
+        job_id = request.path_params.get("job_id")
+        record = EvidenceDBStorage.find_by_engine_job_id(db, str(job_id)) if job_id else None
+        if record is None:
+            raise HTTPException(status_code=404, detail="Evidence job not found")
+        authorize_case(db, record.case_id, current_user, permission)
+
+
+router = APIRouter(
+    prefix="/api/evidence",
+    tags=["evidence"],
+    dependencies=[
+        Depends(get_current_db_user),
+        Depends(_require_evidence_case_access),
+        Depends(_require_evidence_object_access),
+    ],
+)
 
 
 def _resolve_stored_path(stored_path: str | None) -> Optional[Path]:
@@ -630,7 +695,7 @@ class EvidenceLogListResponse(BaseModel):
 
 @router.get("", response_model=EvidenceListResponse)
 async def list_evidence(
-    case_id: Optional[str] = None,
+    case_id: str = Query(..., description="Case ID"),
     status_filter: Optional[str] = Query(None, alias="status"),
     include_cellebrite_artifacts: bool = False,
     user: dict = Depends(get_current_user),
@@ -640,13 +705,11 @@ async def list_evidence(
     List evidence files.
 
     Args:
-        case_id: Optional case ID to filter by.
+        case_id: Case ID to filter by.
         status_filter: Optional status filter
             ('unprocessed', 'processing', 'processed', 'duplicate', 'failed').
     """
     try:
-        if not case_id:
-            return {"files": []}
         db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id), status=status_filter)
         if not include_cellebrite_artifacts:
             db_files = [row for row in db_files if row.source_type != "cellebrite"]
@@ -791,6 +854,7 @@ async def sync_filesystem(
 @router.get("/duplicates/{sha256}", response_model=EvidenceListResponse)
 async def find_duplicates(
     sha256: str,
+    case_id: str = Query(..., description="Case ID"),
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
@@ -798,10 +862,11 @@ async def find_duplicates(
     Find all files with the same SHA256 hash (duplicates).
     """
     try:
+        case_uuid = UUID(case_id)
         files = [
             _evidence_record_from_db(f)
             for f in EvidenceDBStorage.find_all_by_hash(db, sha256)
-            if f.owner == current_user.email
+            if f.case_id == case_uuid
         ]
         return {"files": files}
     except Exception as e:
@@ -1114,26 +1179,18 @@ def _split_db_backed_legacy(file_ids: List[str], db: Session) -> tuple:
 
 @router.get("/logs", response_model=EvidenceLogListResponse)
 async def get_evidence_logs(
-    case_id: Optional[str] = None,
+    case_id: str = Query(..., description="Case ID"),
     limit: int = 200,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
-    Get recent evidence ingestion logs, optionally filtered by case_id.
+    Get recent evidence ingestion logs for a case.
     """
     try:
-        if case_id:
-            from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
-            from uuid import UUID
-            try:
-                check_case_access(db, UUID(case_id), current_user, required_permission=("case", "view"))
-            except (CaseNotFound, CaseAccessDenied) as e:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-
         from services.evidence_db_storage import EvidenceDBStorage
         from uuid import UUID
-        case_uuid = UUID(case_id) if case_id else None
+        case_uuid = UUID(case_id)
         db_logs = EvidenceDBStorage.list_logs(db, case_id=case_uuid, limit=limit)
         logs = []
         for log in db_logs:
@@ -2203,7 +2260,7 @@ def list_evidence_by_entity(
 
 @router.get("/wiretap/processed")
 async def list_wiretap_processed(
-    case_id: Optional[str] = Query(None, description="Case ID to filter by (optional)"),
+    case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
 ):
     """
@@ -2224,7 +2281,7 @@ async def list_wiretap_processed(
 @router.get("/by-filename/{filename}")
 async def get_evidence_by_filename(
     filename: str,
-    case_id: Optional[str] = None,
+    case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -2238,7 +2295,7 @@ async def get_evidence_by_filename(
     from uuid import UUID
 
     try:
-        case_uuid = UUID(case_id) if case_id else None
+        case_uuid = UUID(case_id)
         record = EvidenceDBStorage.find_by_filename(db, filename, case_id=case_uuid)
         if record:
             return {

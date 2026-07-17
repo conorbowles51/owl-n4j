@@ -13,12 +13,33 @@ from sqlalchemy.orm import Session
 
 from postgres.models.user import User
 from postgres.session import get_db
+from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
 from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
 
-router = APIRouter(prefix="/api/financial", tags=["financial"])
+
+def _financial_case_permission(request, payload: dict) -> tuple[str, str] | None:
+    if request.url.path == "/api/financial/auto-extract-from-to":
+        # This route already distinguishes a view-only dry run from mutation.
+        return None
+    if request.method == "GET":
+        return ("case", "view")
+    return ("case", "edit")
+
+
+_require_financial_case_access = case_access_dependency(_financial_case_permission)
+
+
+router = APIRouter(
+    prefix="/api/financial",
+    tags=["financial"],
+    dependencies=[
+        Depends(get_current_db_user),
+        Depends(_require_financial_case_access),
+    ],
+)
 
 
 def _parse_csv_param(value: Optional[str]) -> list[str]:

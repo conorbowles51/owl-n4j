@@ -157,8 +157,9 @@ def create_user(
 def list_users(
     include_inactive: bool = Query(False, description="Include inactive users"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
-    """List all users."""
+    """List all users. Requires admin or super_admin role."""
     query = db.query(User)
 
     if not include_inactive:
@@ -174,6 +175,7 @@ def list_users(
 def get_user(
     user_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
     """Get a single user by ID. Requires admin or super_admin role."""
     user = db.query(User).filter(User.id == user_id).first()

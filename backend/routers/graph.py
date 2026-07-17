@@ -22,10 +22,44 @@ from services.system_log_service import system_log_service, LogType, LogOrigin
 from services.rejected_pairs_service import RejectedPairsService
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from routers.auth import get_current_user
+from routers.case_access import authorize_case, case_access_dependency
 from routers.users import get_current_db_user
 from postgres.session import get_db
 
-router = APIRouter(prefix="/api/graph", tags=["graph"])
+_GRAPH_READ_ONLY_POST_PATHS = frozenset(
+    {
+        "/api/graph/nodes/bulk",
+        "/api/graph/expand-nodes",
+        "/api/graph/shortest-paths",
+        "/api/graph/pagerank",
+        "/api/graph/louvain",
+        "/api/graph/betweenness-centrality",
+        "/api/graph/find-similar-entities",
+    }
+)
+
+
+def _graph_case_permission(request: Request, _: dict) -> tuple[str, str]:
+    if (
+        request.method == "GET"
+        or request.url.path in _GRAPH_READ_ONLY_POST_PATHS
+        or request.url.path.endswith("/analyze-relationships")
+    ):
+        return ("case", "view")
+    return ("case", "edit")
+
+
+_require_graph_case_access = case_access_dependency(_graph_case_permission)
+
+
+router = APIRouter(
+    prefix="/api/graph",
+    tags=["graph"],
+    dependencies=[
+        Depends(get_current_db_user),
+        Depends(_require_graph_case_access),
+    ],
+)
 
 
 class ShortestPathsRequest(BaseModel):
@@ -236,6 +270,10 @@ class CreateRelationshipsRequest(BaseModel):
     """Request model for creating multiple relationships."""
     relationships: List[RelationshipRequest]
     case_id: str  # REQUIRED: Associate relationships with case
+
+
+class AnalyzeRelationshipsRequest(BaseModel):
+    case_id: str
 
 
 class CreateRelationshipsResponse(BaseModel):
@@ -682,7 +720,6 @@ async def get_betweenness_centrality(request: BetweennessCentralityRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/load-case")
 async def load_case(request: CaseLoadRequest, user: dict = Depends(get_current_user)):
     """
     Load a case by executing Cypher queries.
@@ -764,7 +801,6 @@ async def load_case(request: CaseLoadRequest, user: dict = Depends(get_current_u
     }
 
 
-@router.post("/execute-single-query")
 async def execute_single_query(request: SingleQueryRequest):
     """
     Execute a single Cypher query (for case loading with progress tracking).
@@ -795,7 +831,6 @@ async def execute_single_query(request: SingleQueryRequest):
         }
 
 
-@router.post("/execute-batch-queries")
 async def execute_batch_queries(request: BatchQueryRequest):
     """
     Execute multiple Cypher queries in batches for faster case loading.
@@ -886,7 +921,6 @@ async def execute_batch_queries(request: BatchQueryRequest):
     }
 
 
-@router.post("/clear-graph", response_model=LastGraphResponse)
 async def clear_graph():
     """
     Clear the current graph, after first saving its Cypher to 'last graph'
@@ -910,7 +944,6 @@ async def clear_graph():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/last-graph", response_model=LastGraphResponse)
 async def get_last_graph():
     """
     Get the last-cleared graph Cypher, if available.
@@ -1120,8 +1153,11 @@ async def create_relationships(request: CreateRelationshipsRequest, user: dict =
         )
 
 
-@router.post("/analyze-relationships/{node_key}")
-async def analyze_node_relationships(node_key: str):
+@router.post("/node/{node_key}/analyze-relationships")
+async def analyze_node_relationships(
+    node_key: str,
+    request: AnalyzeRelationshipsRequest,
+):
     """
     Analyze relationships for a specific node.
     
@@ -1133,12 +1169,12 @@ async def analyze_node_relationships(node_key: str):
     """
     try:
         # Get the node details
-        node_details = neo4j_service.get_node_details(node_key)
+        node_details = neo4j_service.get_node_details(node_key, case_id=request.case_id)
         if not node_details:
             raise HTTPException(status_code=404, detail=f"Node with key '{node_key}' not found")
         
         # Get all existing nodes from the graph (excluding the target node)
-        existing_graph = neo4j_service.get_full_graph()
+        existing_graph = neo4j_service.get_full_graph(case_id=request.case_id)
         existing_nodes = existing_graph.get("nodes", [])
         
         # Filter out the node we're analyzing
@@ -1790,6 +1826,7 @@ async def get_rejected_merges(
 async def undo_rejection(
     rejection_id: str,
     user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -1806,9 +1843,21 @@ async def undo_rejection(
         Success status
     """
     try:
+        from postgres.models.rejected_merge_pair import RejectedMergePair
+
+        rejection_uuid = UUID(rejection_id)
+        rejection = (
+            db.query(RejectedMergePair)
+            .filter(RejectedMergePair.id == rejection_uuid)
+            .first()
+        )
+        if rejection is None:
+            raise HTTPException(status_code=404, detail="Rejection not found")
+        authorize_case(db, rejection.case_id, current_user, ("case", "edit"))
+
         rejected_pairs_service = RejectedPairsService(db)
         success = rejected_pairs_service.undo_rejection(
-            rejection_id=UUID(rejection_id),
+            rejection_id=rejection_uuid,
             user_id=UUID(user.get("id")) if user.get("id") else None,
         )
 
