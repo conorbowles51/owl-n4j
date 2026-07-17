@@ -18,6 +18,7 @@ from routers import (
     timeline_router,
     snapshots_router,
     cases_router,
+    case_export_router,
     case_members_router,
     case_profiles_router,
     auth_router,
@@ -134,6 +135,7 @@ app.include_router(query_router)
 app.include_router(timeline_router)
 app.include_router(snapshots_router)
 app.include_router(cases_router)
+app.include_router(case_export_router)
 app.include_router(case_members_router)
 app.include_router(case_profiles_router)
 app.include_router(auth_router)
