@@ -15,6 +15,22 @@ from services.neo4j.driver import active_node_predicate, driver, parse_json_fiel
 logger = logging.getLogger(__name__)
 
 
+CREATION_PROVENANCE_FIELDS = (
+    "user_created",
+    "created_by",
+    "created_at",
+    "source",
+)
+
+
+def _creation_provenance_props(props: Dict) -> Dict:
+    return {
+        key: props.get(key)
+        for key in CREATION_PROVENANCE_FIELDS
+        if props.get(key) is not None
+    }
+
+
 class GraphService:
     """Graph visualization, search, and AI-context queries."""
 
@@ -222,6 +238,7 @@ class GraphService:
                             "confidence": record["confidence"],
                             "mentioned": node_props.get("mentioned"),
                             "aliases": node_props.get("aliases") or [],
+                            "properties": _creation_provenance_props(node_props),
                         })
 
                 links = []
@@ -303,6 +320,7 @@ class GraphService:
                         "confidence": record["confidence"],
                         "mentioned": node_props.get("mentioned"),
                         "aliases": node_props.get("aliases") or [],
+                        "properties": _creation_provenance_props(node_props),
                     })
 
             if node_keys and len(node_keys) > 0:

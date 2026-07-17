@@ -3,6 +3,13 @@ import type { GraphNode } from "@/types/graph.types"
 import type { TableColumn } from "./use-table-columns"
 import type { RelationshipInfo } from "./use-relationship-nodes"
 
+const PROVENANCE_EXPORT_COLUMNS: TableColumn[] = [
+  { key: "prop:user_created", label: "User Created", fixed: false, sortable: true, defaultVisible: false },
+  { key: "prop:created_by", label: "Created By", fixed: false, sortable: true, defaultVisible: false },
+  { key: "prop:created_at", label: "Created At", fixed: false, sortable: true, defaultVisible: false },
+  { key: "prop:source", label: "Source", fixed: false, sortable: true, defaultVisible: false },
+]
+
 function escapeCSV(value: string): string {
   if (value.includes(",") || value.includes('"') || value.includes("\n")) {
     return `"${value.replace(/"/g, '""')}"`
@@ -62,10 +69,15 @@ export function useCsvExport() {
       relationshipMap?: Map<string, RelationshipInfo>
     }) => {
       const visibleCols = columns.filter((c) => c.key !== "_checkbox")
+      const visibleKeys = new Set(visibleCols.map((c) => c.key))
+      const exportCols = [
+        ...visibleCols,
+        ...PROVENANCE_EXPORT_COLUMNS.filter((c) => !visibleKeys.has(c.key)),
+      ]
 
-      const header = visibleCols.map((c) => escapeCSV(c.label)).join(",")
+      const header = exportCols.map((c) => escapeCSV(c.label)).join(",")
       const rows = nodes.map((node) =>
-        visibleCols
+        exportCols
           .map((col) => escapeCSV(getCellValue(node, col, connectionCounts, sourceCounts, relationshipMap)))
           .join(",")
       )

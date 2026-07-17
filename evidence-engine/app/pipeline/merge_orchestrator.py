@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,9 @@ from app.services.redis_client import publish_progress
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+MANUAL_PROVENANCE_FIELDS = frozenset(
+    {"user_created", "created_by", "created_at", "source"}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +79,8 @@ def _collect_all_properties(entities: list[dict]) -> dict[str, Any]:
     all_keys: dict[str, list[Any]] = {}
     for entity in entities:
         for k, v in (entity.get("properties") or {}).items():
+            if k in MANUAL_PROVENANCE_FIELDS:
+                continue
             all_keys.setdefault(k, []).append(v)
     # Keep properties as-is; AI-merged ones will override later
     result: dict[str, Any] = {}
@@ -83,6 +89,62 @@ def _collect_all_properties(entities: list[dict]) -> dict[str, Any]:
         if non_none:
             result[k] = non_none[0]
     return result
+
+
+def _property_value(entity: dict, key: str) -> Any:
+    props = entity.get("properties") or {}
+    if key in props:
+        return props.get(key)
+    return entity.get(key)
+
+
+def _is_manual_entity(entity: dict) -> bool:
+    source = _property_value(entity, "source")
+    user_created = _property_value(entity, "user_created")
+    if isinstance(source, str) and source.lower() == "manual":
+        return True
+    if isinstance(user_created, bool):
+        return user_created
+    if isinstance(user_created, str):
+        return user_created.lower() == "true"
+    return False
+
+
+def _parse_created_at(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _manual_provenance_for_merge(entities: list[dict]) -> dict[str, Any]:
+    manual_entities = [entity for entity in entities if _is_manual_entity(entity)]
+    if not manual_entities:
+        return {}
+
+    def sort_key(entity: dict) -> tuple[int, datetime]:
+        created_at = _parse_created_at(_property_value(entity, "created_at"))
+        if created_at is None:
+            return (1, datetime.max.replace(tzinfo=timezone.utc))
+        return (0, created_at)
+
+    earliest = min(manual_entities, key=sort_key)
+    provenance: dict[str, Any] = {
+        "user_created": True,
+        "source": "manual",
+    }
+    created_by = _property_value(earliest, "created_by")
+    created_at = _property_value(earliest, "created_at")
+    if isinstance(created_by, str) and created_by.strip():
+        provenance["created_by"] = created_by
+    if isinstance(created_at, str) and created_at.strip():
+        provenance["created_at"] = created_at
+    return provenance
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +182,9 @@ async def _merge_properties(
         # Include key custom properties
         props = {
             k: v for k, v in (entity.get("properties") or {}).items()
-            if isinstance(v, (str, int, float, bool)) and k not in ("description", "aliases")
+            if isinstance(v, (str, int, float, bool))
+            and k not in ("description", "aliases")
+            and k not in MANUAL_PROVENANCE_FIELDS
         }
         if props:
             ctx["properties"] = props
@@ -184,13 +248,14 @@ async def _write_merged_entity(
     all_source_files = _union_lists(*[e.get("source_files") or [] for e in entities])
     all_source_quotes = _union_lists(*[e.get("source_quotes") or [] for e in entities])
     max_confidence = max((e.get("confidence") or 0.0 for e in entities), default=0.5)
+    manual_provenance = _manual_provenance_for_merge(entities)
 
     # Collect base properties from all entities
     base_props = _collect_all_properties(entities)
 
     # Overlay AI-merged custom properties
     for k, v in (merged.get("merged_properties") or {}).items():
-        if isinstance(v, (str, int, float, bool)):
+        if k not in MANUAL_PROVENANCE_FIELDS and isinstance(v, (str, int, float, bool)):
             base_props[k] = v
 
     # Build final node properties
@@ -210,6 +275,7 @@ async def _write_merged_entity(
         "verified_facts": json.dumps(merged.get("verified_facts", [])),
         "ai_insights": json.dumps(merged.get("ai_insights", [])),
     }
+    props.update(manual_provenance)
     # Add scalar custom properties
     for k, v in base_props.items():
         if k not in props and isinstance(v, (str, int, float, bool)):

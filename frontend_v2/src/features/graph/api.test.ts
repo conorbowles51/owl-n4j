@@ -65,4 +65,24 @@ describe("graphAPI edit helpers", () => {
       address: "London",
     })
   })
+
+  it("maps create-node backend node_key responses", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ success: true, node_key: "manual-node-1" }), {
+        status: 200,
+      })
+    )
+
+    const result = await graphAPI.createNode({ name: "Manual Node", type: "person" }, "case-1")
+
+    expect(result).toEqual({ key: "manual-node-1" })
+    const [url, options] = vi.mocked(globalThis.fetch).mock.calls[0]
+    expect(url).toBe("/api/graph/create-node")
+    expect(options?.method).toBe("POST")
+    expect(JSON.parse(options?.body as string)).toEqual({
+      name: "Manual Node",
+      type: "person",
+      case_id: "case-1",
+    })
+  })
 })

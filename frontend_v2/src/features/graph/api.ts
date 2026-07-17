@@ -172,11 +172,13 @@ export const graphAPI = {
 
   /* --- Node CRUD --- */
 
-  createNode: (nodeData: Record<string, unknown>, caseId: string) =>
-    fetchAPI<{ key: string }>("/api/graph/create-node", {
+  createNode: async (nodeData: Record<string, unknown>, caseId: string) => {
+    const raw = await fetchAPI<{ key?: string; node_key?: string }>("/api/graph/create-node", {
       method: "POST",
       body: { ...nodeData, case_id: caseId },
-    }),
+    })
+    return { key: raw.key ?? raw.node_key ?? "" }
+  },
 
   updateNode: (nodeKey: string, updates: UpdateNodePayload) =>
     fetchAPI<{ success: boolean; updated_fields: string[]; changes: Record<string, unknown> }>(

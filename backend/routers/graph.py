@@ -7,6 +7,7 @@ from uuid import UUID
 import hashlib
 import json
 import asyncio
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -959,6 +960,9 @@ async def create_node(request: CreateNodeRequest, user: dict = Depends(get_curre
             "notes": request.description.strip() if request.description else None,
         }
         
+        creator = user.get("username", "unknown")
+        created_at = datetime.now(timezone.utc).isoformat()
+
         # Add type-specific properties if provided
         if request.properties:
             # Put additional properties into a properties dict
@@ -968,6 +972,12 @@ async def create_node(request: CreateNodeRequest, user: dict = Depends(get_curre
                 # Skip standard fields that are already handled
                 if key not in ['key', 'id', 'name', 'type', 'summary', 'notes', 'case_id']:
                     node_data["properties"][key] = value
+
+        node_data.setdefault("properties", {})
+        node_data["properties"]["user_created"] = True
+        node_data["properties"]["created_by"] = creator
+        node_data["properties"]["created_at"] = created_at
+        node_data["properties"]["source"] = "manual"
 
         # Generate Cypher using the cypher generator (with case_id)
         from services.cypher_generator import generate_cypher_from_graph
@@ -991,8 +1001,12 @@ async def create_node(request: CreateNodeRequest, user: dict = Depends(get_curre
                 "node_name": request.name,
                 "node_type": request.type,
                 "node_key": node_key,
+                "user_created": True,
+                "created_by": creator,
+                "created_at": created_at,
+                "source": "manual",
             },
-            user=user.get("username", "unknown"),
+            user=creator,
             success=True,
         )
         

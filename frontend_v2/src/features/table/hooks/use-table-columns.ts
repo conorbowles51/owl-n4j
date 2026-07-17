@@ -16,6 +16,10 @@ const ALL_COLUMNS: TableColumn[] = [
   { key: "prop:date", label: "Date", fixed: false, sortable: true, defaultVisible: true },
   { key: "prop:file_name", label: "File Name", fixed: false, sortable: true, defaultVisible: true },
   { key: "prop:location_raw", label: "Location", fixed: false, sortable: true, defaultVisible: true },
+  { key: "prop:user_created", label: "User Created", fixed: false, sortable: true, defaultVisible: false },
+  { key: "prop:created_by", label: "Created By", fixed: false, sortable: true, defaultVisible: false },
+  { key: "prop:created_at", label: "Created At", fixed: false, sortable: true, defaultVisible: false },
+  { key: "prop:source", label: "Source", fixed: false, sortable: true, defaultVisible: false },
 ]
 
 export function useTableColumns() {
