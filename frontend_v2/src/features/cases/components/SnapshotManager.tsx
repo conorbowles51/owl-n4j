@@ -1,15 +1,32 @@
 import { useState } from "react"
-import { Camera, Trash2, Download, ChevronDown, ChevronRight, Clock } from "lucide-react"
+import {
+  Camera,
+  Trash2,
+  Download,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  FileDown,
+  Loader2,
+} from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { downloadProtectedFile } from "@/lib/protected-file"
 import { useSnapshots, useDeleteSnapshot, useCreateSnapshot } from "../hooks/use-snapshots"
-import type { Snapshot } from "../snapshots-api"
+import { snapshotsAPI, type Snapshot } from "../snapshots-api"
 
 interface SnapshotManagerProps {
   caseId: string
@@ -24,11 +41,28 @@ export function SnapshotManager({ caseId, onLoad }: SnapshotManagerProps) {
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState("")
   const [newNotes, setNewNotes] = useState("")
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const caseSnapshots = snapshots?.filter((s) => s.case_id === caseId) ?? []
 
   const handleDelete = (id: string) => {
     deleteMutation.mutate(id)
+  }
+
+  const handleExport = async (snapshot: Snapshot) => {
+    if (downloadingId) return
+    setDownloadingId(snapshot.id)
+    try {
+      await downloadProtectedFile(
+        snapshotsAPI.exportUrl(snapshot.id),
+        `${snapshot.name || "snapshot"}.pdf`
+      )
+      toast.success("Snapshot PDF downloaded")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Snapshot export failed")
+    } finally {
+      setDownloadingId(null)
+    }
   }
 
   const handleCreate = () => {
@@ -127,6 +161,19 @@ export function SnapshotManager({ caseId, onLoad }: SnapshotManagerProps) {
                         Load
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleExport(snapshot)}
+                      disabled={downloadingId !== null}
+                    >
+                      {downloadingId === snapshot.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <FileDown className="size-3.5" />
+                      )}
+                      PDF
+                    </Button>
                     <Button
                       variant="danger"
                       size="sm"

@@ -5,15 +5,19 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Download,
+  Loader2,
   Search,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { downloadProtectedFile } from "@/lib/protected-file"
 import { useSnapshots, useDeleteSnapshot } from "../hooks/use-snapshots"
-import type { Snapshot } from "../snapshots-api"
+import { snapshotsAPI, type Snapshot } from "../snapshots-api"
 
 interface SnapshotsSectionProps {
   caseId: string
@@ -170,6 +174,24 @@ function SnapshotRow({
   onDelete: () => void
   isDeleting: boolean
 }) {
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  const handleExport = async () => {
+    if (isDownloading) return
+    setIsDownloading(true)
+    try {
+      await downloadProtectedFile(
+        snapshotsAPI.exportUrl(snapshot.id),
+        `${snapshot.name || "snapshot"}.pdf`
+      )
+      toast.success("Snapshot PDF downloaded")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Snapshot export failed")
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
   return (
     <div className="border-b border-border bg-transparent last:border-b-0">
       <button
@@ -222,6 +244,23 @@ function SnapshotRow({
             )}
           </div>
           <div className="mt-2 flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 text-xs"
+              onClick={(e) => {
+                e.stopPropagation()
+                void handleExport()
+              }}
+              disabled={isDownloading}
+            >
+              {isDownloading ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Download className="size-3" />
+              )}
+              PDF
+            </Button>
             <Button
               variant="danger"
               size="sm"

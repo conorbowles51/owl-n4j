@@ -37,6 +37,9 @@ export const snapshotsAPI = {
   get: (snapshotId: string) =>
     fetchAPI<Snapshot>(`/api/snapshots/${snapshotId}`),
 
+  exportUrl: (snapshotId: string) =>
+    `/api/snapshots/${encodeURIComponent(snapshotId)}/export`,
+
   delete: (snapshotId: string) =>
     fetchAPI<void>(`/api/snapshots/${snapshotId}`, { method: "DELETE" }),
 }

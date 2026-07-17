@@ -8,10 +8,20 @@ import asyncio
 import time
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from urllib.parse import quote
+from uuid import UUID
 
+from fastapi import APIRouter, HTTPException, Depends, Response, status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from postgres.models.user import User
+from postgres.session import get_db
+from routers.users import get_current_db_user
+from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+from services.snapshot_exports import render_snapshot_pdf
 from services.snapshot_storage import snapshot_storage
+from services.system_log_service import LogOrigin, LogType, system_log_service
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
@@ -211,6 +221,59 @@ async def get_snapshot(snapshot_id: str, user: dict = Depends(get_current_user))
         raise HTTPException(status_code=500, detail=f"Failed to retrieve snapshot: {str(e)}")
 
 
+@router.get("/{snapshot_id}/export")
+async def export_snapshot_pdf(
+    snapshot_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Export a saved snapshot as a scoped PDF artifact."""
+    snapshot = snapshot_storage.get(snapshot_id, db=db)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    case_id = snapshot.get("case_id")
+    if not case_id:
+        raise HTTPException(status_code=403, detail="Snapshot is not associated with a case")
+
+    try:
+        check_case_access(
+            db=db,
+            case_id=UUID(str(case_id)),
+            user=current_user,
+            required_permission=("case", "view"),
+        )
+        exported = render_snapshot_pdf(snapshot)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found") from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied") from exc
+
+    system_log_service.log(
+        LogType.USER_ACTION,
+        LogOrigin.BACKEND,
+        "Export Snapshot PDF",
+        details={
+            "snapshot_id": snapshot_id,
+            "case_id": str(case_id),
+            "filename": exported.filename,
+        },
+        user=current_user.email,
+    )
+    ascii_filename = exported.filename.encode("ascii", "ignore").decode("ascii") or "snapshot.pdf"
+    disposition = (
+        f'attachment; filename="{ascii_filename}"; '
+        f"filename*=UTF-8''{quote(exported.filename)}"
+    )
+    return Response(
+        content=exported.content,
+        media_type=exported.media_type,
+        headers={"Content-Disposition": disposition},
+    )
+
+
 @router.delete("/{snapshot_id}")
 async def delete_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
     """Delete a snapshot owned by the current user."""
@@ -401,4 +464,3 @@ async def upload_snapshot_chunk(
             raise HTTPException(status_code=500, detail=f"Failed to assemble chunks: {str(e)}")
     
     return {"status": "chunk_received", "chunk_index": chunk.chunk_index}
-
