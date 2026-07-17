@@ -7,9 +7,11 @@ Handles CRUD operations for investigation cases with permission-based access con
 from __future__ import annotations
 
 from datetime import date, datetime
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -29,6 +31,11 @@ from services.case_service import (
     get_case_if_allowed,
     get_user_role_for_case,
     is_super_admin,
+)
+from services.case_export import (
+    ExportContext,
+    list_export_sections,
+    render_case_export_pdf,
 )
 from services.deadline_service import get_next_deadline_for_cases
 from services.evidence_db_storage import EvidenceDBStorage
@@ -108,6 +115,10 @@ class CaseProcessingProfileUpdateRequest(BaseModel):
     context_instructions: str | None = None
     mandatory_instructions: list[str] = []
     special_entity_types: list[SpecialEntityType] = []
+
+
+class CaseExportSectionsResponse(BaseModel):
+    sections: list[dict]
 
 
 # --- Routes ---
@@ -255,6 +266,96 @@ def get_case(
         archived=case.archived,
         next_deadline_date=deadline_info[0] if deadline_info else None,
         next_deadline_name=deadline_info[1] if deadline_info else None,
+    )
+
+
+@router.get("/{case_id}/export/sections", response_model=CaseExportSectionsResponse)
+def list_case_export_sections(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """List server-side sections available to the case PDF export."""
+    try:
+        check_case_access(
+            db=db,
+            case_id=case_id,
+            user=current_user,
+            required_permission=("case", "view"),
+        )
+    except CaseNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Case not found",
+        )
+    except CaseAccessDenied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+    return CaseExportSectionsResponse(sections=list_export_sections())
+
+
+@router.get("/{case_id}/export/pdf")
+def export_case_pdf(
+    case_id: UUID,
+    sections: str | None = Query(None, description="Optional comma-separated section keys"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Render a server-side case PDF with visualization sections embedded as images."""
+    try:
+        case, _ = check_case_access(
+            db=db,
+            case_id=case_id,
+            user=current_user,
+            required_permission=("case", "view"),
+        )
+    except CaseNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Case not found",
+        )
+    except CaseAccessDenied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+    selected_sections = [
+        item.strip()
+        for item in (sections or "").split(",")
+        if item.strip()
+    ] or None
+    try:
+        exported = render_case_export_pdf(
+            ExportContext(
+                case_id=case.id,
+                case_name=case.title,
+                current_user=current_user,
+                db=db,
+            ),
+            section_keys=selected_sections,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    ascii_filename = (
+        exported.filename.encode("ascii", "ignore").decode("ascii")
+        or "case-export.pdf"
+    )
+    return Response(
+        content=exported.content,
+        media_type=exported.media_type,
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"{ascii_filename}\"; "
+                f"filename*=UTF-8''{quote(exported.filename)}"
+            )
+        },
     )
 
 
