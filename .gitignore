@@ -109,6 +109,8 @@ desktop.ini
 # Testing
 .coverage
 .pytest_cache/
+frontend_v2/playwright-report/
+frontend_v2/test-results/
 htmlcov/
 .tox/
 .nox/

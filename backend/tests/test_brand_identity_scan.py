@@ -36,6 +36,13 @@ class BrandIdentityScanTests(unittest.TestCase):
             all(finding.status == "retained_internal" for finding in deduce_findings)
         )
 
+        retained_internal_paths = {
+            finding.path
+            for finding in result.findings
+            if finding.status == "retained_internal"
+        }
+        self.assertIn("frontend_v2/e2e/brand-smoke.spec.ts", retained_internal_paths)
+
     def test_new_customer_visible_legacy_name_is_a_regression(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -55,6 +55,8 @@ SKIP_DIRS = {
     "dist",
     "htmlcov",
     "node_modules",
+    "playwright-report",
+    "test-results",
 }
 SKIP_FILENAMES = {
     "package-lock.json",
@@ -120,6 +122,10 @@ INTERNAL_ONLY = (
     (re.compile(r"^frontend_v2/src/features/agent/components/AgentPage\.tsx$"), "Internal preference key."),
     (re.compile(r"^frontend_v2/src/styles/globals\.css$"), "Internal CSS variable alias."),
     (re.compile(r"^frontend_v2/src/stories/"), "Storybook-only developer surface."),
+    (
+        re.compile(r"^frontend_v2/e2e/brand-smoke\.spec\.ts$"),
+        "Brand smoke spec references legacy identifiers as scanner fixtures.",
+    ),
     (re.compile(r"^scripts/brand_identity_scan\.py$"), "The scan implementation and allowlist."),
 )
 

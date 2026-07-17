@@ -63,6 +63,7 @@ These identifiers are retained for stability and are not customer-visible releas
 | CSS compatibility alias | `frontend_v2/src/styles/globals.css:271` | `--ease-owl` aliases the Loupe easing token for compatibility | CSS variable only |
 | Persisted store and event keys | `frontend_v2/src/stores/ui.store.ts:90`, `frontend_v2/src/features/table/stores/table.store.ts:175`, `frontend_v2/src/features/financial/stores/financial.store.ts:222`, `frontend_v2/src/hooks/use-global-shortcuts.ts:22,28`, `frontend_v2/src/features/agent/components/AgentPage.tsx:107` | Browser state and internal event names | Hidden technical identifiers |
 | Storybook namespace | `frontend_v2/src/stories/*.tsx` using `@owl/ui` | Internal component-library namespace; not production app copy | Developer-only |
+| Brand smoke negative assertions | `frontend_v2/e2e/brand-smoke.spec.ts` | References Owl/Deduce/Arclight only as forbidden visible strings for release-smoke screenshots | Test-only |
 | Triage docstrings | `backend/routers/triage.py:654,678`, `backend/services/triage/ingest_bridge.py:4,29,125,129`, `backend/services/triage/triage_service.py:748` | Internal docstrings explaining legacy case terminology | Not API response copy |
 | Backend service docstrings/defaults | `backend/services/evidence_engine_client.py:6`, `backend/services/neo4j/cellebrite_service.py:5`, `backend/services/geocoder.py:11,322`, `backend/config.py:158`, `backend/services/platform_update_service.py:87` | Internal implementation names, defaults, and user-agent strings | Not customer branding |
 | Repository path | `owl-n4j` worktree path | Technical repository identifier | Not included in customer artifacts |
@@ -80,6 +81,14 @@ Repeatable command:
 ```bash
 python3 scripts/brand_identity_scan.py --strict
 ```
+
+Brand smoke screenshot command:
+
+```bash
+cd frontend_v2 && npm run test:e2e
+```
+
+The Playwright smoke suite mocks the backend in-browser and writes local screenshot artifacts under `frontend_v2/test-results/brand-smoke/`. The generated output directory is ignored by git and skipped by the scanner.
 
 The scanner records:
 
