@@ -1,4 +1,4 @@
-import { Crosshair, Layers, RefreshCw } from "lucide-react"
+import { Crosshair, Download, Layers, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -7,6 +7,7 @@ import { useMapStore } from "../stores/map.store"
 import { fetchAPI } from "@/lib/api-client"
 import { useQueryClient } from "@tanstack/react-query"
 import type { MapLocation } from "../hooks/use-map-data"
+import { useMapCsvExport } from "../hooks/use-map-csv-export"
 
 interface MapToolbarProps {
   caseId: string
@@ -15,6 +16,7 @@ interface MapToolbarProps {
 
 export function MapToolbar({ caseId, locations }: MapToolbarProps) {
   const queryClient = useQueryClient()
+  const { exportCSV } = useMapCsvExport()
   const showHeatmap = useMapStore((s) => s.showHeatmap)
   const toggleHeatmap = useMapStore((s) => s.toggleHeatmap)
   const proximityMode = useMapStore((s) => s.proximityMode)
@@ -70,6 +72,17 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
       </Button>
 
       <div className="flex-1" />
+
+      {/* Export button */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 text-xs"
+        onClick={() => exportCSV(locations, caseId)}
+      >
+        <Download className="mr-1 size-3.5" />
+        Export CSV
+      </Button>
 
       {/* Rescan button */}
       <Button
