@@ -41,6 +41,7 @@ class FakeGeocodingService(GeocodingService):
             longitude=self.provider_result.longitude,
             formatted_address=self.provider_result.formatted_address,
             confidence=self.provider_result.confidence,
+            location_granularity=self.provider_result.location_granularity,
             raw_response=self.provider_result.raw_response,
         )
 
@@ -171,4 +172,5 @@ async def test_fetch_from_provider_maps_nominatim_payload(monkeypatch: pytest.Mo
     assert result.longitude == 7.4246
     assert result.formatted_address == "Monaco, 98000, Monaco"
     assert result.confidence == "high"
+    assert result.location_granularity == "city"
     assert result.raw_response == payload[0]

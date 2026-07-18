@@ -93,6 +93,11 @@ async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
         entity.properties["longitude"] = result.longitude
         entity.properties["location_formatted"] = result.formatted_address
         entity.properties["geocoding_confidence"] = result.confidence
+        entity.properties["geocoding_provider"] = result.provider
+        entity.properties["geocoding_query"] = result.original_query
+        entity.properties["geocoding_formatted_address"] = result.formatted_address
+        if result.location_granularity:
+            entity.properties["location_granularity"] = result.location_granularity
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,8 @@ import { useGraphStore } from "@/stores/graph.store"
 import { useMapAnalysis, type MapLocation } from "../hooks/use-map-data"
 import { locationsToGeoJSON, createCircleGeoJSON } from "../lib/geojson"
 import {
+  approximateLocationAreaLayer,
+  approximateLocationOutlineLayer,
   pointLayer,
   heatmapLayer,
   proximityFillLayer,
@@ -19,6 +21,12 @@ import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
 interface MapCanvasProps {
   locations: MapLocation[]
 }
+
+const LOCATION_INTERACTIVE_LAYER_IDS = [
+  "unclustered-point",
+  "approximate-location-outline",
+  "approximate-location-area",
+]
 
 export function MapCanvas({ locations }: MapCanvasProps) {
   const mapRef = useRef<MapRef>(null)
@@ -153,7 +161,7 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       if (!map) return
 
       const features = map.queryRenderedFeatures(e.point, {
-        layers: ["unclustered-point"],
+        layers: LOCATION_INTERACTIVE_LAYER_IDS,
       })
 
       if (features.length > 0) {
@@ -182,12 +190,12 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       const map = mapRef.current?.getMap()
       if (!map) return
 
-      // Check for point click
-      const pointFeatures = map.queryRenderedFeatures(e.point, {
-        layers: ["unclustered-point"],
+      // Check for exact pin or approximate area click
+      const locationFeatures = map.queryRenderedFeatures(e.point, {
+        layers: LOCATION_INTERACTIVE_LAYER_IDS,
       })
-      if (pointFeatures.length > 0) {
-        const key = pointFeatures[0].properties?.key
+      if (locationFeatures.length > 0) {
+        const key = locationFeatures[0].properties?.key
         if (key) {
           if (proximityMode && !proximityAnchorKey) {
             setProximityAnchor(key)
@@ -215,7 +223,7 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       onMouseLeave={handleMouseLeave}
       onLoad={handleLoad}
       attributionControl={false}
-      interactiveLayerIds={["unclustered-point"]}
+      interactiveLayerIds={LOCATION_INTERACTIVE_LAYER_IDS}
     >
       <NavigationControl position="top-right" showCompass={false} visualizePitch={false} />
 
@@ -223,6 +231,10 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       <Source id="locations" type="geojson" data={geojson}>
         {/* Heatmap (below markers) */}
         {showHeatmap && <Layer {...heatmapLayer} />}
+
+        {/* Approximate locations */}
+        <Layer {...approximateLocationAreaLayer} />
+        <Layer {...approximateLocationOutlineLayer} />
 
         {/* Individual points */}
         <Layer {...pointLayer} />

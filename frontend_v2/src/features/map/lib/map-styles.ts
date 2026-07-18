@@ -1,5 +1,6 @@
 import { nodeColors, typeAliases } from "@/lib/theme"
 import type { LayerProps } from "react-map-gl/maplibre"
+import type { FilterSpecification } from "maplibre-gl"
 
 /** Entity type → color match expression for MapLibre */
 const entityColorMatch: unknown[] = [
@@ -10,9 +11,48 @@ const entityColorMatch: unknown[] = [
   "#667D85", // fallback
 ]
 
+const exactLocationFilter: FilterSpecification = ["!=", ["get", "isApproximate"], true]
+const approximateLocationFilter: FilterSpecification = ["==", ["get", "isApproximate"], true]
+
+export const approximateLocationAreaLayer: LayerProps = {
+  id: "approximate-location-area",
+  type: "circle",
+  filter: approximateLocationFilter,
+  paint: {
+    "circle-color": entityColorMatch as unknown as string,
+    "circle-radius": [
+      "case",
+      ["==", ["get", "locationGranularity"], "city"],
+      ["interpolate", ["linear"], ["zoom"], 0, 18, 8, 34, 14, 64],
+      ["interpolate", ["linear"], ["zoom"], 0, 10, 8, 22, 14, 38],
+    ],
+    "circle-blur": 0.75,
+    "circle-opacity": 0.28,
+  },
+}
+
+export const approximateLocationOutlineLayer: LayerProps = {
+  id: "approximate-location-outline",
+  type: "circle",
+  filter: approximateLocationFilter,
+  paint: {
+    "circle-color": "transparent",
+    "circle-radius": [
+      "case",
+      ["==", ["get", "locationGranularity"], "city"],
+      ["interpolate", ["linear"], ["zoom"], 0, 18, 8, 34, 14, 64],
+      ["interpolate", ["linear"], ["zoom"], 0, 10, 8, 22, 14, 38],
+    ],
+    "circle-stroke-color": entityColorMatch as unknown as string,
+    "circle-stroke-width": 1.5,
+    "circle-stroke-opacity": 0.58,
+  },
+}
+
 export const pointLayer: LayerProps = {
   id: "unclustered-point",
   type: "circle",
+  filter: exactLocationFilter,
   paint: {
     "circle-color": entityColorMatch as unknown as string,
     "circle-radius": [
@@ -30,6 +70,7 @@ export const pointLayer: LayerProps = {
 export const pointSelectedLayer: LayerProps = {
   id: "unclustered-point-selected",
   type: "circle",
+  filter: exactLocationFilter,
   paint: {
     "circle-color": "transparent",
     "circle-radius": 12,

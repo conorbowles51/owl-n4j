@@ -61,6 +61,7 @@ class GeocodeResult:
     longitude: float | None = None
     formatted_address: str | None = None
     confidence: str | None = None
+    location_granularity: str | None = None
     raw_response: dict[str, Any] | None = None
 
 
@@ -79,6 +80,26 @@ def _is_specific_location_text(value: str) -> bool:
     if not cleaned:
         return False
     return normalize_geocode_query(cleaned) not in _VAGUE_LOCATION_TERMS
+
+
+def _location_granularity(result: dict[str, Any] | None) -> str | None:
+    if not result:
+        return None
+    address = result.get("address") or {}
+    result_type = str(result.get("type") or result.get("addresstype") or "").lower()
+    if address.get("house_number") or result_type in {"house", "building"}:
+        return "address"
+    if address.get("road") or result_type in {"road", "street"}:
+        return "street"
+    if result_type in {"neighbourhood", "neighborhood", "suburb", "quarter", "hamlet"}:
+        return "neighborhood"
+    if result_type in {"city", "town", "village", "municipality", "borough"}:
+        return "city"
+    if result_type in {"county", "state", "region"}:
+        return "region"
+    if result_type == "country":
+        return "country"
+    return None
 
 
 def build_geocode_request(
@@ -175,6 +196,7 @@ class GeocodingService:
             longitude=record.longitude,
             formatted_address=record.formatted_address,
             confidence=record.confidence,
+            location_granularity=_location_granularity(record.raw_response),
             raw_response=record.raw_response,
         )
 
@@ -263,6 +285,7 @@ class GeocodingService:
             longitude=float(top_result["lon"]),
             formatted_address=top_result.get("display_name", original_query),
             confidence=confidence,
+            location_granularity=_location_granularity(top_result),
             raw_response=top_result,
         )
 
