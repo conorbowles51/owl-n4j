@@ -153,12 +153,15 @@ export function useJobProgress(options: UseJobProgressOptions) {
 
   // Cleanup on unmount
   useEffect(() => {
+    const sockets = socketsRef.current
+    const retries = retriesRef.current
+
     return () => {
-      for (const ws of socketsRef.current.values()) {
+      for (const ws of sockets.values()) {
         ws.close()
       }
-      socketsRef.current.clear()
-      retriesRef.current.clear()
+      sockets.clear()
+      retries.clear()
     }
   }, [])
 
