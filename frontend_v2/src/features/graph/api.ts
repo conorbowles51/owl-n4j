@@ -53,6 +53,22 @@ export interface UpdateNodePayload {
   source_view?: string
 }
 
+export interface LocationCorrectionResult {
+  success: boolean
+  latitude: number | null
+  longitude: number | null
+  formatted_address: string | null
+  confidence: string | null
+  geocoder_confidence?: string | null
+  applied?: boolean
+  undo_key?: string
+  corrected_at?: string
+  corrected_by?: string
+  previous_location?: Record<string, unknown>
+  properties?: Record<string, unknown>
+  error?: string
+}
+
 /* ------------------------------------------------------------------ */
 /*  Raw backend shape → frontend mapping                               */
 /* ------------------------------------------------------------------ */
@@ -404,18 +420,22 @@ export const graphAPI = {
 
   /* --- Geocoding --- */
 
-  geocodeNode: (nodeKey: string, caseId: string, address: string, apply = true) =>
-    fetchAPI<{
-      success: boolean
-      latitude: number
-      longitude: number
-      formatted_address: string
-      confidence: string
-      applied: boolean
-      error?: string
-    }>(
+  geocodeNode: (
+    nodeKey: string,
+    caseId: string,
+    address: string,
+    apply = true,
+    sourceView?: string
+  ) =>
+    fetchAPI<LocationCorrectionResult>(
       `/api/graph/node/${encodeURIComponent(nodeKey)}/geocode?apply=${apply}`,
-      { method: "POST", body: { case_id: caseId, address } }
+      { method: "POST", body: { case_id: caseId, address, source_view: sourceView } }
+    ),
+
+  undoLocationCorrection: (nodeKey: string, caseId: string, sourceView?: string) =>
+    fetchAPI<LocationCorrectionResult>(
+      `/api/graph/node/${encodeURIComponent(nodeKey)}/geocode/undo`,
+      { method: "POST", body: { case_id: caseId, source_view: sourceView } }
     ),
 
   /* --- Cypher --- */

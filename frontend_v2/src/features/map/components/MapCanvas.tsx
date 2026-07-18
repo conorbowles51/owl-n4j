@@ -1,7 +1,8 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from "react"
-import Map, { Source, Layer, NavigationControl } from "react-map-gl/maplibre"
+import Map, { Source, Layer, Marker, NavigationControl } from "react-map-gl/maplibre"
 import maplibregl from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
+import { MapPin } from "lucide-react"
 import { useMapTheme } from "../hooks/use-map-theme"
 import { useMapStore } from "../stores/map.store"
 import { useGraphStore } from "@/stores/graph.store"
@@ -14,19 +15,30 @@ import {
   proximityOutlineLayer,
 } from "../lib/map-styles"
 import { EntityPopup } from "./EntityPopup"
+import type { LocationCorrectionResult } from "@/features/graph/api"
 import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
 
 interface MapCanvasProps {
+  caseId: string
   locations: MapLocation[]
 }
 
-export function MapCanvas({ locations }: MapCanvasProps) {
+interface LocationOverride {
+  latitude: number
+  longitude: number
+  location_formatted?: string | null
+  geocoding_confidence?: string | null
+}
+
+export function MapCanvas({ caseId, locations }: MapCanvasProps) {
   const mapRef = useRef<MapRef>(null)
   const { styleUrl } = useMapTheme()
   const { bounds } = useMapAnalysis(locations)
 
   // Hover state for popup
   const [hoveredLocationKey, setHoveredLocationKey] = useState<string | null>(null)
+  const [previewLocation, setPreviewLocation] = useState<LocationOverride | null>(null)
+  const [locationOverrides, setLocationOverrides] = useState<Record<string, LocationOverride>>({})
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const showHeatmap = useMapStore((s) => s.showHeatmap)
@@ -46,9 +58,25 @@ export function MapCanvas({ locations }: MapCanvasProps) {
   const selectNodes = useGraphStore((s) => s.selectNodes)
 
   // GeoJSON data
+  const effectiveLocations = useMemo(
+    () =>
+      locations.map((location) => {
+        const override = locationOverrides[location.key]
+        if (!override) return location
+        return {
+          ...location,
+          latitude: override.latitude,
+          longitude: override.longitude,
+          location_formatted: override.location_formatted ?? location.location_formatted,
+          geocoding_confidence: override.geocoding_confidence ?? location.geocoding_confidence,
+        }
+      }),
+    [locations, locationOverrides]
+  )
+
   const visibleLocations = useMemo(
-    () => locations.filter((l) => !hiddenTypes.has(l.type)),
-    [locations, hiddenTypes]
+    () => effectiveLocations.filter((l) => !hiddenTypes.has(l.type)),
+    [effectiveLocations, hiddenTypes]
   )
   const geojson = useMemo(
     () => locationsToGeoJSON(visibleLocations),
@@ -57,8 +85,8 @@ export function MapCanvas({ locations }: MapCanvasProps) {
 
   // Proximity anchor
   const proximityAnchor = useMemo(
-    () => locations.find((l) => l.key === proximityAnchorKey) ?? null,
-    [locations, proximityAnchorKey]
+    () => effectiveLocations.find((l) => l.key === proximityAnchorKey) ?? null,
+    [effectiveLocations, proximityAnchorKey]
   )
 
   // Proximity circle GeoJSON
@@ -72,8 +100,65 @@ export function MapCanvas({ locations }: MapCanvasProps) {
 
   // Hovered location for popup
   const hoveredLocation = useMemo(
-    () => locations.find((l) => l.key === hoveredLocationKey) ?? null,
-    [locations, hoveredLocationKey]
+    () => effectiveLocations.find((l) => l.key === hoveredLocationKey) ?? null,
+    [effectiveLocations, hoveredLocationKey]
+  )
+
+  const resultToOverride = useCallback((result: LocationCorrectionResult): LocationOverride | null => {
+    if (typeof result.latitude !== "number" || typeof result.longitude !== "number") {
+      return null
+    }
+    return {
+      latitude: result.latitude,
+      longitude: result.longitude,
+      location_formatted: result.formatted_address,
+      geocoding_confidence: result.confidence,
+    }
+  }, [])
+
+  const handleLocationPreview = useCallback(
+    (_nodeKey: string, result: LocationCorrectionResult) => {
+      const next = resultToOverride(result)
+      setPreviewLocation(next)
+      if (next && mapRef.current) {
+        mapRef.current.flyTo({
+          center: [next.longitude, next.latitude],
+          zoom: Math.max(mapRef.current.getZoom(), 12),
+          duration: 500,
+        })
+      }
+    },
+    [resultToOverride]
+  )
+
+  const handleLocationApplied = useCallback(
+    (nodeKey: string, result: LocationCorrectionResult) => {
+      const next = resultToOverride(result)
+      setPreviewLocation(null)
+      if (!next) return
+      setLocationOverrides((current) => ({
+        ...current,
+        [nodeKey]: next,
+      }))
+    },
+    [resultToOverride]
+  )
+
+  const handleLocationUndone = useCallback(
+    (nodeKey: string, result: LocationCorrectionResult) => {
+      const next = resultToOverride(result)
+      setPreviewLocation(null)
+      setLocationOverrides((current) => {
+        const updated = { ...current }
+        if (next) {
+          updated[nodeKey] = next
+        } else {
+          delete updated[nodeKey]
+        }
+        return updated
+      })
+    },
+    [resultToOverride]
   )
 
   // Sticky hover helpers
@@ -88,6 +173,7 @@ export function MapCanvas({ locations }: MapCanvasProps) {
     cancelHide()
     hideTimeoutRef.current = setTimeout(() => {
       setHoveredLocationKey(null)
+      setPreviewLocation(null)
       hideTimeoutRef.current = null
     }, 150)
   }, [cancelHide])
@@ -160,6 +246,7 @@ export function MapCanvas({ locations }: MapCanvasProps) {
         const key = features[0].properties?.key as string | undefined
         if (key) {
           cancelHide()
+          if (hoveredLocationKey !== key) setPreviewLocation(null)
           setHoveredLocationKey(key)
           map.getCanvas().style.cursor = "pointer"
           return
@@ -169,7 +256,7 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       map.getCanvas().style.cursor = "default"
       startHide()
     },
-    [cancelHide, startHide]
+    [cancelHide, hoveredLocationKey, startHide]
   )
 
   const handleMouseLeave = useCallback(() => {
@@ -236,16 +323,33 @@ export function MapCanvas({ locations }: MapCanvasProps) {
         </Source>
       )}
 
+      {previewLocation && (
+        <Marker
+          latitude={previewLocation.latitude}
+          longitude={previewLocation.longitude}
+          anchor="bottom"
+        >
+          <MapPin className="size-8 fill-amber-500 text-amber-800 drop-shadow" />
+        </Marker>
+      )}
+
       {/* Hovered entity popup */}
       {hoveredLocation && (
         <EntityPopup
+          caseId={caseId}
           location={hoveredLocation}
-          onClose={() => setHoveredLocationKey(null)}
+          onClose={() => {
+            setHoveredLocationKey(null)
+            setPreviewLocation(null)
+          }}
           onSetProximityAnchor={(key) => {
             setProximityAnchor(key)
           }}
           onMouseEnter={cancelHide}
           onMouseLeave={startHide}
+          onLocationPreview={(result) => handleLocationPreview(hoveredLocation.key, result)}
+          onLocationApplied={(result) => handleLocationApplied(hoveredLocation.key, result)}
+          onLocationUndone={(result) => handleLocationUndone(hoveredLocation.key, result)}
         />
       )}
     </Map>

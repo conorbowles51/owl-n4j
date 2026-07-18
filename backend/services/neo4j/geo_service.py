@@ -69,6 +69,12 @@ class GeoService:
                     n.location_raw AS location_raw,
                     n.location_formatted AS location_formatted,
                     n.geocoding_confidence AS geocoding_confidence,
+                    n.location_source AS location_source,
+                    n.location_corrected_at AS location_corrected_at,
+                    n.location_corrected_by AS location_corrected_by,
+                    n.location_correction_source AS location_correction_source,
+                    n.location_correction_address AS location_correction_address,
+                    n.last_location_relocation_key AS last_location_relocation_key,
                     n.summary AS summary,
                     n.date AS date,
                     connections
@@ -88,6 +94,12 @@ class GeoService:
                     "location_raw": record["location_raw"],
                     "location_formatted": record["location_formatted"],
                     "geocoding_confidence": record["geocoding_confidence"],
+                    "location_source": record["location_source"],
+                    "location_corrected_at": record["location_corrected_at"],
+                    "location_corrected_by": record["location_corrected_by"],
+                    "location_correction_source": record["location_correction_source"],
+                    "location_correction_address": record["location_correction_address"],
+                    "last_location_relocation_key": record["last_location_relocation_key"],
                     "summary": record["summary"],
                     "date": record["date"],
                     "connections": [c for c in record["connections"] if c["key"]],
@@ -153,7 +165,9 @@ class GeoService:
                 WHERE NOT n:Document
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
                        n.latitude AS latitude, n.longitude AS longitude,
-                       n.location_raw AS location_raw
+                       n.location_raw AS location_raw,
+                       n.location_source AS location_source,
+                       n.geocoding_confidence AS geocoding_confidence
                 """,
                 case_id=case_id,
             )
@@ -174,13 +188,16 @@ class GeoService:
             result = session.run(
                 """
                 MATCH (n {key: $key, case_id: $case_id})
+                WHERE coalesce(n.location_source, '') <> 'manual'
+                  AND coalesce(n.geocoding_confidence, '') <> 'manual'
                 SET n.location_raw = $location_raw,
                     n.latitude = $latitude,
                     n.longitude = $longitude,
                     n.location_formatted = $location_formatted,
                     n.location_name = $location_formatted,
                     n.geocoding_status = 'success',
-                    n.geocoding_confidence = $geocoding_confidence
+                    n.geocoding_confidence = $geocoding_confidence,
+                    n.location_source = coalesce(n.location_source, 'auto')
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
                 """,
                 key=node_key,
@@ -221,6 +238,7 @@ class GeoService:
                     location_name: $location_formatted,
                     geocoding_status: 'success',
                     geocoding_confidence: $geocoding_confidence,
+                    location_source: 'auto',
                     summary: $context,
                     source: 'geo_rescan'
                 })

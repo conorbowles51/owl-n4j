@@ -42,6 +42,7 @@ import { JobsPanel } from "./JobsPanel"
 import { FileSummaryPanel } from "./FileSummaryPanel"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
+import { LocationCorrectionInline } from "@/features/graph/components/LocationCorrectionInline"
 import { evidenceAPI } from "../api"
 import { useProcessBackground } from "../hooks/use-evidence-detail"
 import { useFileEntities, useFileRelationships } from "../hooks/use-file-entities"
@@ -218,7 +219,15 @@ function getCategoryIcon(category: string): React.ElementType {
 
 // --- Entity list grouped by category ---
 
-function EntityList({ entities }: { entities: FileEntity[] }) {
+export function EntityList({
+  entities,
+  caseId,
+  evidenceId,
+}: {
+  entities: FileEntity[]
+  caseId: string
+  evidenceId: string
+}) {
   const grouped = useMemo(() => {
     const map = new Map<string, FileEntity[]>()
     for (const e of entities) {
@@ -251,24 +260,50 @@ function EntityList({ entities }: { entities: FileEntity[] }) {
               <span className="text-[10px] text-muted-foreground/50">({items.length})</span>
             </div>
             <div className="space-y-0.5">
-              {items.map((entity) => (
-                <div
-                  key={entity.id}
-                  className="flex items-center justify-between gap-2 rounded px-1.5 py-0.5 text-xs hover:bg-muted/40"
-                >
-                  <span className="min-w-0 truncate text-foreground">
-                    {entity.name}
-                  </span>
-                  {entity.confidence != null && (
-                    <Badge
-                      variant="outline"
-                      className="shrink-0 px-1 py-0 text-[9px] font-normal text-muted-foreground"
-                    >
-                      {Math.round(entity.confidence * 100)}%
-                    </Badge>
-                  )}
-                </div>
-              ))}
+              {items.map((entity) => {
+                const isLocation = entity.category.toLowerCase() === "location"
+                const address =
+                  entity.location_formatted ||
+                  entity.location_name ||
+                  entity.location_raw ||
+                  entity.name
+
+                return (
+                  <div
+                    key={entity.id}
+                    className="rounded px-1.5 py-1 text-xs hover:bg-muted/40"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-foreground">
+                        {entity.name}
+                      </span>
+                      {entity.confidence != null && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 px-1 py-0 text-[9px] font-normal text-muted-foreground"
+                        >
+                          {Math.round(entity.confidence * 100)}%
+                        </Badge>
+                      )}
+                    </div>
+                    {isLocation && entity.node_key && (
+                      <LocationCorrectionInline
+                        key={entity.node_key}
+                        caseId={caseId}
+                        nodeKey={entity.node_key}
+                        sourceView="evidence_panel"
+                        currentAddress={address}
+                        currentLatitude={entity.latitude}
+                        currentLongitude={entity.longitude}
+                        currentConfidence={entity.geocoding_confidence}
+                        extraInvalidateKeys={[["evidence-file-entities", evidenceId]]}
+                        compact
+                        className="mt-1.5"
+                      />
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         )
@@ -599,7 +634,7 @@ function DetailsPanelContent({
                     <span className="text-xs text-muted-foreground">Loading entities...</span>
                   </div>
                 ) : (
-                  <EntityList entities={entities || []} />
+                  <EntityList entities={entities || []} caseId={caseId} evidenceId={file.id} />
                 )}
               </CollapsibleSection>
 

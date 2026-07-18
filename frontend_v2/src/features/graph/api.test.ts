@@ -55,7 +55,7 @@ describe("graphAPI edit helpers", () => {
       )
     )
 
-    await graphAPI.geocodeNode("loc-1", "case-1", "London", false)
+    await graphAPI.geocodeNode("loc-1", "case-1", "London", false, "map_popup")
 
     const [url, options] = vi.mocked(globalThis.fetch).mock.calls[0]
     expect(url).toBe("/api/graph/node/loc-1/geocode?apply=false")
@@ -63,6 +63,32 @@ describe("graphAPI edit helpers", () => {
     expect(JSON.parse(options?.body as string)).toEqual({
       case_id: "case-1",
       address: "London",
+      source_view: "map_popup",
+    })
+  })
+
+  it("supports undoing the last location correction", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          latitude: 40.7,
+          longitude: -74,
+          formatted_address: "New York, NY",
+          confidence: "low",
+        }),
+        { status: 200 }
+      )
+    )
+
+    await graphAPI.undoLocationCorrection("loc-1", "case-1", "evidence_panel")
+
+    const [url, options] = vi.mocked(globalThis.fetch).mock.calls[0]
+    expect(url).toBe("/api/graph/node/loc-1/geocode/undo")
+    expect(options?.method).toBe("POST")
+    expect(JSON.parse(options?.body as string)).toEqual({
+      case_id: "case-1",
+      source_view: "evidence_panel",
     })
   })
 })

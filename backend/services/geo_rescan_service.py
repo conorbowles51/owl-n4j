@@ -326,8 +326,14 @@ def rescan_case_locations(
         if place_entity:
             node_key = place_entity["key"]
             existing_lat = place_entity.get("latitude")
-            if existing_lat is None or force_regeocode:
-                neo4j_service.update_entity_location_full(
+            is_manual_location = (
+                place_entity.get("location_source") == "manual"
+                or place_entity.get("geocoding_confidence") == "manual"
+            )
+            if is_manual_location:
+                print(f"[GeoRescan] Skipping manually corrected location: {node_key}")
+            elif existing_lat is None or force_regeocode:
+                updated = neo4j_service.update_entity_location_full(
                     node_key=node_key,
                     case_id=case_id,
                     location_raw=place,
@@ -336,7 +342,8 @@ def rescan_case_locations(
                     location_formatted=formatted,
                     geocoding_confidence=confidence,
                 )
-                entities_updated += 1
+                if updated:
+                    entities_updated += 1
         else:
             # Create a Location node in the graph
             node_key = neo4j_service.create_location_node(

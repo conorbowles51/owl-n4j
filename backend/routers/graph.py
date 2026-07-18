@@ -1976,6 +1976,7 @@ class UpdateLocationRequest(BaseModel):
     location_name: str
     latitude: float
     longitude: float
+    source_view: Optional[str] = None
 
 
 @router.put("/node/{node_key}/location")
@@ -1983,26 +1984,33 @@ async def update_entity_location(
     node_key: str,
     request: UpdateLocationRequest,
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Update the location of an entity node on the map."""
     try:
-        result = neo4j_service.update_location(
-            node_key=node_key,
+        result = neo4j_service.apply_geocoded_location(
+            node_key,
             case_id=request.case_id,
-            location_name=request.location_name,
+            address=request.location_name,
             latitude=request.latitude,
             longitude=request.longitude,
+            formatted_address=request.location_name,
+            geocoder_confidence=None,
             edited_by=user.get("username", "unknown"),
+            source_view=request.source_view or "legacy_location_endpoint",
+            db=db,
         )
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
-            action="Location Updated",
+            action="Location Corrected",
             details={
                 "node_key": node_key,
                 "location_name": request.location_name,
                 "latitude": request.latitude,
                 "longitude": request.longitude,
+                "source_view": request.source_view or "legacy_location_endpoint",
+                "undo_key": result.get("undo_key"),
             },
             user=user.get("username", "unknown"),
             success=True,
@@ -2282,6 +2290,12 @@ async def permanently_delete_recycled(
 class GeocodeNodeRequest(BaseModel):
     case_id: str
     address: str
+    source_view: Optional[str] = None
+
+
+class UndoGeocodeNodeRequest(BaseModel):
+    case_id: str
+    source_view: Optional[str] = None
 
 
 @router.post("/node/{node_key}/geocode")
@@ -2291,6 +2305,7 @@ async def geocode_node(
     body: GeocodeNodeRequest,
     apply: bool = Query(True, description="If true, persist the geocoded location to the node"),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Geocode a single entity address, optionally applying it to the node."""
     from services.geo_rescan_service import geocode_with_cache
@@ -2303,29 +2318,99 @@ async def geocode_node(
         if not result:
             return {"success": False, "error": "Could not geocode address", "address": body.address}
 
+        applied_result = None
         if apply:
-            neo4j_service.update_graph_node(
+            applied_result = neo4j_service.apply_geocoded_location(
                 node_key,
                 case_id=body.case_id,
-                properties={
-                    "latitude": result["latitude"],
-                    "longitude": result["longitude"],
-                    "location_raw": body.address.strip(),
-                    "location_formatted": result["formatted_address"],
-                    "location_name": result["formatted_address"],
-                },
+                address=body.address.strip(),
+                latitude=result["latitude"],
+                longitude=result["longitude"],
+                formatted_address=result["formatted_address"],
+                geocoder_confidence=result.get("confidence"),
                 edited_by=user.get("username", "unknown"),
-                source_view="map",
+                source_view=body.source_view or "map",
+                db=db,
             )
 
-        return {
+            system_log_service.log(
+                log_type=LogType.GRAPH_OPERATION,
+                origin=LogOrigin.FRONTEND,
+                action="Location Corrected",
+                details={
+                    "case_id": body.case_id,
+                    "node_key": node_key,
+                    "address": body.address.strip(),
+                    "latitude": result["latitude"],
+                    "longitude": result["longitude"],
+                    "formatted_address": result["formatted_address"],
+                    "geocoder_confidence": result.get("confidence"),
+                    "source_view": body.source_view or "map",
+                    "undo_key": applied_result.get("undo_key"),
+                },
+                user=user.get("username", "unknown"),
+                success=True,
+            )
+
+        response = {
             "success": True,
             "latitude": result["latitude"],
             "longitude": result["longitude"],
             "formatted_address": result["formatted_address"],
-            "confidence": result["confidence"],
+            "confidence": applied_result.get("confidence") if applied_result else result["confidence"],
+            "geocoder_confidence": result.get("confidence"),
             "applied": apply,
         }
+        if applied_result:
+            response.update(
+                {
+                    "undo_key": applied_result.get("undo_key"),
+                    "corrected_at": applied_result.get("corrected_at"),
+                    "corrected_by": applied_result.get("corrected_by"),
+                    "previous_location": applied_result.get("previous_location"),
+                    "properties": applied_result.get("properties"),
+                }
+            )
+        return response
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/node/{node_key}/geocode/undo")
+@router.post("/nodes/{node_key}/geocode/undo")
+async def undo_geocode_node(
+    node_key: str,
+    body: UndoGeocodeNodeRequest,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Undo the latest applied location correction for a node."""
+    try:
+        result = neo4j_service.undo_location_relocation(
+            node_key,
+            case_id=body.case_id,
+            edited_by=user.get("username", "unknown"),
+            source_view=body.source_view or "map",
+            db=db,
+        )
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Location Correction Undone",
+            details={
+                "case_id": body.case_id,
+                "node_key": node_key,
+                "source_view": body.source_view or "map",
+                "undo_key": result.get("undo_key"),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        return result
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:

@@ -1168,6 +1168,7 @@ class EntityService:
             .filter(
                 GraphRecycleBinItem.case_id == self._case_uuid(case_id),
                 GraphRecycleBinItem.status == "active",
+                GraphRecycleBinItem.item_type != "location_relocation",
             )
             .order_by(GraphRecycleBinItem.deleted_at.desc())
             .all()

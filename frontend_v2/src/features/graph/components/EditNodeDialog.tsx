@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import MapLibreMap, { Marker } from "react-map-gl/maplibre"
 import maplibregl from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
-import { CalendarClock, ChevronDown, LocateFixed, MapPin, Search, X } from "lucide-react"
+import { CalendarClock, ChevronDown, LocateFixed, MapPin, X } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -19,9 +19,9 @@ import {
 } from "@/components/ui/select"
 import { cn } from "@/lib/cn"
 import { useMapTheme } from "@/features/map/hooks/use-map-theme"
-import type { GraphEditPropertySchema } from "../api"
-import { graphAPI } from "../api"
+import { graphAPI, type GraphEditPropertySchema, type LocationCorrectionResult } from "../api"
 import { useGraphEditSchema, useNodeDetails } from "../hooks/use-node-details"
+import { LocationCorrectionInline } from "./LocationCorrectionInline"
 
 interface EditNodeDialogProps {
   open: boolean
@@ -132,7 +132,7 @@ function LocationPicker({
   className,
 }: {
   coordinates: Coordinates | null
-  onChange: (next: Coordinates) => void
+  onChange?: (next: Coordinates) => void
   className?: string
 }) {
   const { styleUrl } = useMapTheme()
@@ -151,23 +151,29 @@ function LocationPicker({
         }}
         style={{ width: "100%", height: "100%" }}
         attributionControl={false}
-        onClick={(event) =>
-          onChange({
-            latitude: event.lngLat.lat,
-            longitude: event.lngLat.lng,
-          })
+        onClick={
+          onChange
+            ? (event) =>
+                onChange({
+                  latitude: event.lngLat.lat,
+                  longitude: event.lngLat.lng,
+                })
+            : undefined
         }
       >
         {coordinates && (
           <Marker
             latitude={coordinates.latitude}
             longitude={coordinates.longitude}
-            draggable
-            onDragEnd={(event) =>
-              onChange({
-                latitude: event.lngLat.lat,
-                longitude: event.lngLat.lng,
-              })
+            draggable={Boolean(onChange)}
+            onDragEnd={
+              onChange
+                ? (event) =>
+                    onChange({
+                      latitude: event.lngLat.lat,
+                      longitude: event.lngLat.lng,
+                    })
+                : undefined
             }
           >
             <MapPin className="size-7 fill-amber-500 text-amber-700 drop-shadow" />
@@ -193,13 +199,11 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
   const [datePrecision, setDatePrecision] = useState("")
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null)
   const [locationName, setLocationName] = useState("")
-  const [locationSearch, setLocationSearch] = useState("")
   const [propertyValues, setPropertyValues] = useState<Record<string, string>>({})
   const [customProperties, setCustomProperties] = useState<EditableProperty[]>([])
   const [customKey, setCustomKey] = useState("")
   const [customValue, setCustomValue] = useState("")
   const [saving, setSaving] = useState(false)
-  const [geocoding, setGeocoding] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const hiddenKeys = useMemo(
@@ -249,7 +253,6 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
         scalarToString(props.location_name) ||
         scalarToString(props.location_raw)
     )
-    setLocationSearch("")
     setCustomProperties([])
     setCustomKey("")
     setCustomValue("")
@@ -290,23 +293,13 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
     setSaveError(null)
   }
 
-  const handleGeocode = async () => {
-    if (!node || !locationSearch.trim()) return
-    setGeocoding(true)
-    setSaveError(null)
-    try {
-      const result = await graphAPI.geocodeNode(node.key, caseId, locationSearch.trim(), false)
-      if (!result.success) {
-        setSaveError(result.error ?? "Could not geocode address.")
-        return
-      }
+  const handleLocationResult = (result: LocationCorrectionResult) => {
+    if (typeof result.latitude === "number" && typeof result.longitude === "number") {
       setCoordinates({ latitude: result.latitude, longitude: result.longitude })
-      setLocationName(result.formatted_address || locationSearch.trim())
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Could not geocode address.")
-    } finally {
-      setGeocoding(false)
+    } else {
+      setCoordinates(null)
     }
+    setLocationName(result.formatted_address || "")
   }
 
   const handleSave = async () => {
@@ -316,11 +309,6 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
       date: date || null,
       time: date && time ? time : null,
       date_precision: datePrecision || null,
-      latitude: coordinates?.latitude ?? null,
-      longitude: coordinates?.longitude ?? null,
-      location_raw: locationName || null,
-      location_formatted: locationName || null,
-      location_name: locationName || null,
     }
 
     for (const property of renderedProperties) {
@@ -500,49 +488,28 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
                   <LocateFixed className="size-3.5" />
                   Location
                 </div>
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,420px)]">
-                  <label className="space-y-1.5 text-xs font-medium">
-                    <span>Search</span>
-                    <div className="flex gap-2">
-                      <Input
-                        value={locationSearch}
-                        onChange={(event) => setLocationSearch(event.target.value)}
-                        placeholder="Search address or place"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={handleGeocode}
-                        disabled={!locationSearch.trim() || geocoding}
-                      >
-                        <Search className={cn("size-4", geocoding && "animate-spin")} />
-                      </Button>
-                    </div>
-                  </label>
-                  <label className="space-y-1.5 text-xs font-medium">
-                    <span>Location name</span>
-                    <Input value={locationName} onChange={(event) => setLocationName(event.target.value)} />
-                  </label>
+                <div className="max-w-3xl">
+                  <LocationCorrectionInline
+                    key={node.key}
+                    caseId={caseId}
+                    nodeKey={node.key}
+                    sourceView="entity_detail"
+                    currentAddress={locationName}
+                    currentLatitude={coordinates?.latitude}
+                    currentLongitude={coordinates?.longitude}
+                    currentConfidence={scalarToString(node.properties?.geocoding_confidence)}
+                    onPreview={handleLocationResult}
+                    onApplied={handleLocationResult}
+                    onUndone={handleLocationResult}
+                  />
                 </div>
-                <LocationPicker coordinates={coordinates} onChange={setCoordinates} />
+                <LocationPicker coordinates={coordinates} />
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-[11px] text-muted-foreground">
                     {coordinates
                       ? `${coordinates.latitude.toFixed(5)}, ${coordinates.longitude.toFixed(5)}`
                       : "No coordinates"}
                   </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setCoordinates(null)
-                      setLocationName("")
-                    }}
-                  >
-                    Clear
-                  </Button>
                 </div>
               </section>
 

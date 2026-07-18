@@ -12,6 +12,12 @@ export interface MapLocation {
   location_raw?: string
   location_formatted?: string
   geocoding_confidence?: string
+  location_source?: string
+  location_corrected_at?: string
+  location_corrected_by?: string
+  location_correction_source?: string
+  location_correction_address?: string
+  last_location_relocation_key?: string
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
@@ -27,6 +33,12 @@ interface RawMapLocation {
   location_raw?: string
   location_formatted?: string
   geocoding_confidence?: string
+  location_source?: string
+  location_corrected_at?: string
+  location_corrected_by?: string
+  location_correction_source?: string
+  location_correction_address?: string
+  last_location_relocation_key?: string
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]

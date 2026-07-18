@@ -4,23 +4,33 @@ import { Button } from "@/components/ui/button"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { Badge } from "@/components/ui/badge"
 import { markdownToPlainText } from "@/lib/markdown-text"
+import { LocationCorrectionInline } from "@/features/graph/components/LocationCorrectionInline"
+import type { LocationCorrectionResult } from "@/features/graph/api"
 import type { MapLocation } from "../hooks/use-map-data"
 import type { EntityType } from "@/lib/theme"
 
 interface EntityPopupProps {
+  caseId: string
   location: MapLocation
   onClose: () => void
   onSetProximityAnchor: (key: string) => void
   onMouseEnter?: () => void
   onMouseLeave?: () => void
+  onLocationPreview?: (result: LocationCorrectionResult) => void
+  onLocationApplied?: (result: LocationCorrectionResult) => void
+  onLocationUndone?: (result: LocationCorrectionResult) => void
 }
 
 export function EntityPopup({
+  caseId,
   location,
   onClose,
   onSetProximityAnchor,
   onMouseEnter,
   onMouseLeave,
+  onLocationPreview,
+  onLocationApplied,
+  onLocationUndone,
 }: EntityPopupProps) {
   const summaryText = location.summary ? markdownToPlainText(location.summary) : null
 
@@ -32,7 +42,7 @@ export function EntityPopup({
       closeOnClick={false}
       offset={12}
       className="map-entity-popup"
-      maxWidth="280px"
+      maxWidth="340px"
     >
       <div className="flex flex-col gap-2 p-1" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
         {/* Header */}
@@ -60,6 +70,23 @@ export function EntityPopup({
             {location.location_formatted}
           </p>
         )}
+
+        <div className="border-t border-border pt-2">
+          <LocationCorrectionInline
+            key={location.key}
+            caseId={caseId}
+            nodeKey={location.key}
+            sourceView="map_popup"
+            currentAddress={location.location_formatted || location.location_raw}
+            currentLatitude={location.latitude}
+            currentLongitude={location.longitude}
+            currentConfidence={location.geocoding_confidence}
+            onPreview={onLocationPreview}
+            onApplied={onLocationApplied}
+            onUndone={onLocationUndone}
+            compact
+          />
+        </div>
 
         {/* Summary */}
         {summaryText && (

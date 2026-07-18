@@ -65,7 +65,7 @@ export function MapPage() {
       <MapToolbar caseId={caseId!} locations={safeLocations} />
 
       <div className="relative flex-1">
-        <MapCanvas locations={safeLocations} />
+        <MapCanvas caseId={caseId!} locations={safeLocations} />
         <MapLegend locations={safeLocations} />
         <MapControls
           onZoomIn={zoomIn}
