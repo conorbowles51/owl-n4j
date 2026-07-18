@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any
 
 from app.ontology import load_ontology
@@ -13,8 +14,17 @@ from app.pipeline.property_canonicalization import (
 )
 from app.services import chroma_client, neo4j_client
 from app.services.geocoding import build_geocode_request, geocoding_service
+from app.services.location_validation import (
+    GEOCODING_STATUS_MAPPED,
+    GEOCODING_STATUS_UNMAPPED_RETRIABLE,
+    GeocodeProvenance,
+    strip_coordinate_properties,
+    validate_location,
+)
 from app.services.openai_client import embed_texts
 from app.utils.text_sanitize import sanitize_json
+
+logger = logging.getLogger(__name__)
 
 _ontology = load_ontology()
 ENTITY_CATEGORIES = _ontology.categories
@@ -71,11 +81,50 @@ def _has_coordinates(properties: dict[str, Any]) -> bool:
     return properties.get("latitude") is not None and properties.get("longitude") is not None
 
 
+def _validate_entity_coordinates(entity: ResolvedEntity) -> None:
+    if not _has_coordinates(entity.properties):
+        return
+
+    provenance = GeocodeProvenance(
+        geocoder=entity.properties.get("geocoding_provider") or entity.properties.get("geocode_source"),
+        query=entity.properties.get("geocoding_query") or entity.properties.get("location_raw"),
+        formatted_address=entity.properties.get("location_formatted"),
+        precision=entity.properties.get("geocoding_precision") or entity.properties.get("geocode_accuracy"),
+        confidence=entity.properties.get("geocoding_confidence"),
+        provider_status=entity.properties.get("geocoding_status"),
+    )
+    validated = validate_location(
+        latitude=entity.properties.get("latitude"),
+        longitude=entity.properties.get("longitude"),
+        entity_type=entity.category,
+        provenance=provenance,
+    )
+    if validated.is_valid:
+        entity.properties["latitude"] = validated.latitude
+        entity.properties["longitude"] = validated.longitude
+        return
+
+    strip_coordinate_properties(entity.properties)
+    entity.properties["geocoding_status"] = validated.status
+    if validated.rejection_reason:
+        entity.properties["geocoding_rejection_reason"] = validated.rejection_reason.value
+    logger.warning(
+        "Rejected coordinates before graph write",
+        extra={
+            "entity_id": entity.id,
+            "entity_type": entity.category,
+            "reason": validated.rejection_reason.value if validated.rejection_reason else None,
+        },
+    )
+
+
 async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
     for entity in entities:
         if entity.category not in GEOCODABLE_CATEGORIES:
+            _validate_entity_coordinates(entity)
             continue
         if _has_coordinates(entity.properties):
+            _validate_entity_coordinates(entity)
             continue
 
         request = build_geocode_request(entity.category, entity.name, entity.properties)
@@ -86,13 +135,36 @@ async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
         entity.properties["location_raw"] = request.location_raw
         entity.properties["geocoding_status"] = result.status
 
-        if result.status != "success":
+        if result.status == GEOCODING_STATUS_UNMAPPED_RETRIABLE:
+            entity.properties["geocoding_provider"] = result.provider
+            entity.properties["geocoding_query"] = result.original_query
+            entity.properties["geocoding_provider_error"] = result.provider_error
             continue
 
-        entity.properties["latitude"] = result.latitude
-        entity.properties["longitude"] = result.longitude
-        entity.properties["location_formatted"] = result.formatted_address
-        entity.properties["geocoding_confidence"] = result.confidence
+        if result.status != GEOCODING_STATUS_MAPPED:
+            entity.properties["geocoding_provider"] = result.provider
+            entity.properties["geocoding_query"] = result.original_query
+            entity.properties["geocoding_rejection_reason"] = result.rejection_reason
+            continue
+
+        validated = validate_location(
+            latitude=result.latitude,
+            longitude=result.longitude,
+            entity_type=entity.category,
+            provenance=result.provenance,
+        )
+        entity.properties.update(validated.as_node_properties())
+        if not validated.is_valid:
+            strip_coordinate_properties(entity.properties)
+            logger.warning(
+                "Rejected geocoded coordinates before graph write",
+                extra={
+                    "entity_id": entity.id,
+                    "entity_type": entity.category,
+                    "query": request.query,
+                    "reason": validated.rejection_reason.value if validated.rejection_reason else None,
+                },
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +178,7 @@ async def _write_entities(
 ) -> None:
     for entity in entities:
         entity.properties = canonicalize_properties(entity.category, entity.properties)
+        _validate_entity_coordinates(entity)
 
     await _apply_geocoding(entities)
 

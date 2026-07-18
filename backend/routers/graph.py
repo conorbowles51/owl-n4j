@@ -2294,36 +2294,69 @@ async def geocode_node(
 ):
     """Geocode a single entity address, optionally applying it to the node."""
     from services.geo_rescan_service import geocode_with_cache
+    from services.location_validation import GEOCODING_STATUS_MAPPED
 
     if not body.address.strip():
         raise HTTPException(status_code=400, detail="Address cannot be empty")
 
     try:
         result = geocode_with_cache(body.address)
-        if not result:
-            return {"success": False, "error": "Could not geocode address", "address": body.address}
+        if not result or result.get("status") != GEOCODING_STATUS_MAPPED:
+            return {
+                "success": False,
+                "error": "Could not geocode address",
+                "address": body.address,
+                "status": result.get("status") if result else None,
+                "rejection_reason": result.get("rejection_reason") if result else None,
+                "provider_error": result.get("provider_error") if result else None,
+                "geocoder": result.get("geocoder") if result else None,
+                "query": result.get("query") if result else body.address,
+                "formatted_address": result.get("formatted_address") if result else None,
+                "precision": result.get("precision") if result else None,
+                "confidence": result.get("confidence") if result else None,
+                "candidates": result.get("candidates") if result else [],
+                "applied": False,
+            }
 
         if apply:
-            neo4j_service.update_graph_node(
-                node_key,
+            update_result = neo4j_service.update_entity_location_full(
+                node_key=node_key,
                 case_id=body.case_id,
-                properties={
-                    "latitude": result["latitude"],
-                    "longitude": result["longitude"],
-                    "location_raw": body.address.strip(),
-                    "location_formatted": result["formatted_address"],
-                    "location_name": result["formatted_address"],
-                },
+                location_raw=body.address.strip(),
+                latitude=result["latitude"],
+                longitude=result["longitude"],
+                location_formatted=result["formatted_address"],
+                geocoding_confidence=result["confidence"],
+                geocoding_provider=result.get("geocoder"),
+                geocoding_query=result.get("query"),
+                geocoding_precision=result.get("precision"),
+                geocoding_candidates=json.dumps(result.get("candidates") or [], separators=(",", ":")),
                 edited_by=user.get("username", "unknown"),
                 source_view="map",
             )
+            if not update_result:
+                raise LookupError(f"Node not found: {node_key}")
+            if update_result.get("geocoding_status") != GEOCODING_STATUS_MAPPED:
+                return {
+                    "success": False,
+                    "error": "Rejected geocoded coordinates",
+                    "address": body.address,
+                    "status": update_result.get("geocoding_status"),
+                    "rejection_reason": update_result.get("geocoding_rejection_reason"),
+                    "applied": False,
+                }
 
         return {
             "success": True,
             "latitude": result["latitude"],
             "longitude": result["longitude"],
+            "geocoder": result.get("geocoder"),
+            "query": result.get("query"),
             "formatted_address": result["formatted_address"],
+            "precision": result.get("precision"),
             "confidence": result["confidence"],
+            "candidates": result.get("candidates") or [],
+            "status": result.get("status"),
             "applied": apply,
         }
     except LookupError as e:

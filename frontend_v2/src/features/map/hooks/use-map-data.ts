@@ -11,7 +11,14 @@ export interface MapLocation {
   longitude: number
   location_raw?: string
   location_formatted?: string
+  geocoding_provider?: string
+  geocoding_query?: string
+  geocoding_precision?: string
   geocoding_confidence?: string
+  geocoding_candidates?: string | unknown[]
+  geocoding_status?: string
+  geocoding_rejection_reason?: string
+  geocoding_provider_error?: string
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
@@ -26,7 +33,14 @@ interface RawMapLocation {
   longitude: number
   location_raw?: string
   location_formatted?: string
+  geocoding_provider?: string
+  geocoding_query?: string
+  geocoding_precision?: string
   geocoding_confidence?: string
+  geocoding_candidates?: string | unknown[]
+  geocoding_status?: string
+  geocoding_rejection_reason?: string
+  geocoding_provider_error?: string
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]

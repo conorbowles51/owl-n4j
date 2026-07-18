@@ -15,6 +15,17 @@ interface EntityPopupProps {
   onMouseLeave?: () => void
 }
 
+function ambiguityCandidateCount(value: MapLocation["geocoding_candidates"]): number {
+  if (Array.isArray(value)) return value.length
+  if (typeof value !== "string" || !value.trim()) return 0
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.length : 0
+  } catch {
+    return 0
+  }
+}
+
 export function EntityPopup({
   location,
   onClose,
@@ -23,6 +34,7 @@ export function EntityPopup({
   onMouseLeave,
 }: EntityPopupProps) {
   const summaryText = location.summary ? markdownToPlainText(location.summary) : null
+  const candidateCount = ambiguityCandidateCount(location.geocoding_candidates)
 
   return (
     <Popup
@@ -59,6 +71,15 @@ export function EntityPopup({
           <p className="text-[10px] text-muted-foreground">
             {location.location_formatted}
           </p>
+        )}
+
+        {(location.geocoding_provider || location.geocoding_query || location.geocoding_precision || candidateCount > 1) && (
+          <div className="grid gap-0.5 text-[10px] text-muted-foreground">
+            {location.geocoding_provider && <span>Geocoder: {location.geocoding_provider}</span>}
+            {location.geocoding_query && <span>Query: {location.geocoding_query}</span>}
+            {location.geocoding_precision && <span>Precision: {location.geocoding_precision}</span>}
+            {candidateCount > 1 && <span>Candidates: {candidateCount}</span>}
+          </div>
         )}
 
         {/* Summary */}

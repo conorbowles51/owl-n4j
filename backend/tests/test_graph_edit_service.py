@@ -91,12 +91,17 @@ class GraphGeocodeRouteTests(unittest.IsolatedAsyncioTestCase):
         with patch(
             "services.geo_rescan_service.geocode_with_cache",
             return_value={
+                "status": "mapped",
                 "latitude": 51.5,
                 "longitude": -0.12,
+                "geocoder": "nominatim",
+                "query": "London",
                 "formatted_address": "London, UK",
+                "precision": "city",
                 "confidence": "high",
+                "candidates": [],
             },
-        ), patch.object(graph.neo4j_service, "update_graph_node") as update:
+        ), patch.object(graph.neo4j_service, "update_entity_location_full") as update:
             result = await graph.geocode_node(
                 "loc-1",
                 graph.GeocodeNodeRequest(case_id="case-1", address="London"),
@@ -106,7 +111,41 @@ class GraphGeocodeRouteTests(unittest.IsolatedAsyncioTestCase):
 
         update.assert_not_called()
         self.assertEqual(result["latitude"], 51.5)
+        self.assertEqual(result["geocoder"], "nominatim")
+        self.assertEqual(result["precision"], "city")
         self.assertFalse(result["applied"])
+
+    async def test_geocode_apply_rejects_disallowed_entity_type(self):
+        with patch(
+            "services.geo_rescan_service.geocode_with_cache",
+            return_value={
+                "status": "mapped",
+                "latitude": 51.5,
+                "longitude": -0.12,
+                "geocoder": "nominatim",
+                "query": "London",
+                "formatted_address": "London, UK",
+                "precision": "city",
+                "confidence": "high",
+                "candidates": [],
+            },
+        ), patch.object(
+            graph.neo4j_service,
+            "update_entity_location_full",
+            return_value={
+                "geocoding_status": "rejected",
+                "geocoding_rejection_reason": "disallowed_entity_type",
+            },
+        ):
+            result = await graph.geocode_node(
+                "doc-1",
+                graph.GeocodeNodeRequest(case_id="case-1", address="London"),
+                apply=True,
+                user={"username": "investigator"},
+            )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["rejection_reason"], "disallowed_entity_type")
 
 
 class TimelineNormalisationTests(unittest.TestCase):

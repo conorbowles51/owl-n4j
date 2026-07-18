@@ -409,8 +409,15 @@ export const graphAPI = {
       success: boolean
       latitude: number
       longitude: number
+      geocoder?: string
+      query?: string
       formatted_address: string
+      precision?: string
       confidence: string
+      candidates?: unknown[]
+      status?: string
+      rejection_reason?: string
+      provider_error?: string
       applied: boolean
       error?: string
     }>(

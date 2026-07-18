@@ -7,6 +7,11 @@ from app.services.geocoding import (
     build_geocode_request,
     normalize_geocode_query,
 )
+from app.services.location_validation import (
+    GEOCODING_STATUS_MAPPED,
+    GEOCODING_STATUS_REJECTED,
+    GEOCODING_STATUS_UNMAPPED_RETRIABLE,
+)
 
 
 class FakeGeocodingService(GeocodingService):
@@ -21,7 +26,10 @@ class FakeGeocodingService(GeocodingService):
         provider: str,
         normalized_query: str,
     ) -> GeocodeResult | None:
-        return self.cache.get((provider, normalized_query))
+        result = self.cache.get((provider, normalized_query))
+        if result and result.status == GEOCODING_STATUS_UNMAPPED_RETRIABLE:
+            return None
+        return result
 
     async def _save_cached_result(self, result: GeocodeResult) -> None:
         self.cache[(result.provider, result.normalized_query)] = result
@@ -40,7 +48,11 @@ class FakeGeocodingService(GeocodingService):
             latitude=self.provider_result.latitude,
             longitude=self.provider_result.longitude,
             formatted_address=self.provider_result.formatted_address,
+            precision=self.provider_result.precision,
             confidence=self.provider_result.confidence,
+            candidates=self.provider_result.candidates,
+            rejection_reason=self.provider_result.rejection_reason,
+            provider_error=self.provider_result.provider_error,
             raw_response=self.provider_result.raw_response,
         )
 
@@ -93,10 +105,11 @@ async def test_geocode_uses_cache_after_first_success() -> None:
             provider="nominatim",
             normalized_query="ignored",
             original_query="ignored",
-            status="success",
+            status=GEOCODING_STATUS_MAPPED,
             latitude=51.5,
             longitude=-0.12,
             formatted_address="London, Greater London, England, United Kingdom",
+            precision="city",
             confidence="high",
             raw_response={"lat": "51.5", "lon": "-0.12"},
         )
@@ -105,27 +118,28 @@ async def test_geocode_uses_cache_after_first_success() -> None:
     first = await service.geocode("London")
     second = await service.geocode("  london  ")
 
-    assert first.status == "success"
-    assert second.status == "success"
+    assert first.status == GEOCODING_STATUS_MAPPED
+    assert second.status == GEOCODING_STATUS_MAPPED
     assert service.provider_calls == 1
 
 
 @pytest.mark.asyncio
-async def test_failed_geocode_is_cached_and_not_retried() -> None:
+async def test_invalid_address_is_cached_and_not_retried() -> None:
     service = FakeGeocodingService(
         GeocodeResult(
             provider="nominatim",
             normalized_query="ignored",
             original_query="ignored",
-            status="failed",
+            status=GEOCODING_STATUS_REJECTED,
+            rejection_reason="no_results",
         )
     )
 
     first = await service.geocode("Unknown Place XYZ")
     second = await service.geocode("unknown   place xyz")
 
-    assert first.status == "failed"
-    assert second.status == "failed"
+    assert first.status == GEOCODING_STATUS_REJECTED
+    assert second.status == GEOCODING_STATUS_REJECTED
     assert service.provider_calls == 1
 
 
@@ -138,6 +152,7 @@ async def test_fetch_from_provider_maps_nominatim_payload(monkeypatch: pytest.Mo
             "display_name": "Monaco, 98000, Monaco",
             "importance": 0.82,
             "type": "city",
+            "addresstype": "city",
         }
     ]
 
@@ -166,9 +181,182 @@ async def test_fetch_from_provider_maps_nominatim_payload(monkeypatch: pytest.Mo
     service = GeocodingService()
     result = await service._fetch_from_provider("Monaco", "monaco")
 
-    assert result.status == "success"
+    assert result.status == GEOCODING_STATUS_MAPPED
     assert result.latitude == 43.7384
     assert result.longitude == 7.4246
     assert result.formatted_address == "Monaco, 98000, Monaco"
+    assert result.precision == "city"
     assert result.confidence == "high"
-    assert result.raw_response == payload[0]
+    assert result.candidates == [
+        {
+            "latitude": 43.7384,
+            "longitude": 7.4246,
+            "formatted_address": "Monaco, 98000, Monaco",
+            "precision": "city",
+            "confidence": "high",
+        }
+    ]
+    assert result.raw_response == payload
+
+
+@pytest.mark.asyncio
+async def test_fetch_preserves_duplicate_place_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = [
+        {"lat": "39.9526", "lon": "-75.1652", "display_name": "Springfield, Pennsylvania", "importance": 0.66, "type": "city"},
+        {"lat": "39.7817", "lon": "-89.6501", "display_name": "Springfield, Illinois", "importance": 0.64, "type": "city"},
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(geocoding_module.httpx, "AsyncClient", FakeClient)
+
+    result = await GeocodingService()._fetch_from_provider("Springfield", "springfield")
+
+    assert result.status == GEOCODING_STATUS_MAPPED
+    assert len(result.candidates or []) == 2
+    assert result.candidates[0]["formatted_address"] == "Springfield, Pennsylvania"
+    assert result.candidates[1]["formatted_address"] == "Springfield, Illinois"
+
+
+@pytest.mark.asyncio
+async def test_country_only_value_records_country_precision(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = [
+        {"lat": "46.2276", "lon": "2.2137", "display_name": "France", "importance": 0.9, "type": "country"},
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(geocoding_module.httpx, "AsyncClient", FakeClient)
+
+    result = await GeocodingService()._fetch_from_provider("France", "france")
+
+    assert result.status == GEOCODING_STATUS_MAPPED
+    assert result.precision == "country"
+    assert result.confidence == "high"
+
+
+@pytest.mark.asyncio
+async def test_mixed_confidence_candidates_are_preserved(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = [
+        {"lat": "51.5", "lon": "-0.12", "display_name": "London, UK", "importance": 0.9, "type": "city"},
+        {"lat": "42.9849", "lon": "-81.2453", "display_name": "London, Ontario", "importance": 0.5, "type": "city"},
+        {"lat": "0.1", "lon": "32.5", "display_name": "London Road", "importance": 0.2, "type": "road"},
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(geocoding_module.httpx, "AsyncClient", FakeClient)
+
+    result = await GeocodingService()._fetch_from_provider("London", "london")
+
+    assert [candidate["confidence"] for candidate in result.candidates or []] == ["high", "medium", "low"]
+
+
+@pytest.mark.asyncio
+async def test_invalid_provider_coordinates_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = [
+        {"lat": "0", "lon": "0", "display_name": "Null Island", "importance": 0.9, "type": "place"},
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(geocoding_module.httpx, "AsyncClient", FakeClient)
+
+    result = await GeocodingService()._fetch_from_provider("Null Island", "null island")
+
+    assert result.status == GEOCODING_STATUS_REJECTED
+    assert result.latitude is None
+    assert result.longitude is None
+    assert result.rejection_reason == "null_island"
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_is_retriable_and_not_memoized() -> None:
+    service = FakeGeocodingService(
+        GeocodeResult(
+            provider="nominatim",
+            normalized_query="ignored",
+            original_query="ignored",
+            status=GEOCODING_STATUS_UNMAPPED_RETRIABLE,
+            provider_error="network down",
+        )
+    )
+
+    first = await service.geocode("London")
+    second = await service.geocode("london")
+
+    assert first.status == GEOCODING_STATUS_UNMAPPED_RETRIABLE
+    assert second.status == GEOCODING_STATUS_UNMAPPED_RETRIABLE
+    assert service.provider_calls == 2

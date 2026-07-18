@@ -16,6 +16,13 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 from services.llm_service import LLMService
+from services.location_validation import (
+    GEOCODING_STATUS_MAPPED,
+    GEOCODING_STATUS_REJECTED,
+    GEOCODING_STATUS_UNMAPPED_RETRIABLE,
+    GeocodeProvenance,
+    validate_location,
+)
 from services.neo4j_service import neo4j_service
 from postgres.models.geocoding_cache import GeocodingCacheEntry
 from postgres.session import get_background_session
@@ -33,38 +40,71 @@ def _get_cached_geocode(cache_key: str) -> tuple[bool, Optional[Dict]]:
         entry = db.get(GeocodingCacheEntry, ("nominatim", cache_key))
         if not entry:
             return False, None
-        if entry.status == "failed":
-            return True, None
-        return True, {
+        if entry.status == GEOCODING_STATUS_UNMAPPED_RETRIABLE:
+            return False, None
+        result = {
+            "status": entry.status,
             "latitude": entry.latitude,
             "longitude": entry.longitude,
+            "geocoder": entry.geocoder or entry.provider,
+            "query": entry.query or entry.original_query,
             "formatted_address": entry.formatted_address,
+            "precision": entry.precision,
             "confidence": entry.confidence,
+            "candidates": entry.candidates or [],
+            "rejection_reason": entry.rejection_reason,
+            "provider_error": entry.provider_error,
         }
+        if entry.status in {GEOCODING_STATUS_MAPPED, "success"}:
+            validated = validate_location(
+                latitude=entry.latitude,
+                longitude=entry.longitude,
+                entity_type="Location",
+                provenance=GeocodeProvenance(
+                    geocoder=result["geocoder"],
+                    query=result["query"],
+                    formatted_address=entry.formatted_address,
+                    precision=entry.precision,
+                    confidence=entry.confidence,
+                    candidates=result["candidates"],
+                    provider_status=entry.status,
+                ),
+            )
+            if not validated.is_valid:
+                result.update(
+                    {
+                        "status": validated.status,
+                        "latitude": None,
+                        "longitude": None,
+                        "rejection_reason": validated.rejection_reason.value if validated.rejection_reason else None,
+                    }
+                )
+            elif entry.status == "success":
+                result["status"] = GEOCODING_STATUS_MAPPED
+                result["latitude"] = validated.latitude
+                result["longitude"] = validated.longitude
+        return True, result
 
 
-def _save_geocode_cache(cache_key: str, original_query: str, result: Optional[Dict]) -> None:
+def _save_geocode_cache(cache_key: str, original_query: str, result: Dict) -> None:
     with get_background_session() as db:
-        if result:
-            entry = GeocodingCacheEntry(
-                provider="nominatim",
-                normalized_query=cache_key,
-                original_query=original_query,
-                status="success",
-                latitude=result.get("latitude"),
-                longitude=result.get("longitude"),
-                formatted_address=result.get("formatted_address"),
-                confidence=result.get("confidence"),
-                raw_response=result,
-            )
-        else:
-            entry = GeocodingCacheEntry(
-                provider="nominatim",
-                normalized_query=cache_key,
-                original_query=original_query,
-                status="failed",
-                raw_response={},
-            )
+        entry = GeocodingCacheEntry(
+            provider="nominatim",
+            normalized_query=cache_key,
+            original_query=original_query,
+            status=result.get("status", GEOCODING_STATUS_REJECTED),
+            latitude=result.get("latitude"),
+            longitude=result.get("longitude"),
+            geocoder=result.get("geocoder") or "nominatim",
+            query=result.get("query") or original_query,
+            formatted_address=result.get("formatted_address"),
+            precision=result.get("precision"),
+            confidence=result.get("confidence"),
+            candidates=result.get("candidates"),
+            rejection_reason=result.get("rejection_reason"),
+            provider_error=result.get("provider_error"),
+            raw_response=result.get("raw_response") or result,
+        )
         db.merge(entry)
 
 
@@ -88,28 +128,91 @@ def geocode_with_cache(location: str) -> Optional[Dict]:
 
     _rate_limit()
     encoded = quote(location.strip())
-    url = f"{NOMINATIM_URL}?q={encoded}&format=json&limit=1&addressdetails=1"
+    url = f"{NOMINATIM_URL}?q={encoded}&format=json&limit=5&addressdetails=1"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         if not data:
-            _save_geocode_cache(cache_key, location, None)
-            return None
+            result = {
+                "status": GEOCODING_STATUS_REJECTED,
+                "geocoder": "nominatim",
+                "query": location,
+                "rejection_reason": "no_results",
+                "raw_response": {"results": []},
+            }
+            _save_geocode_cache(cache_key, location, result)
+            return result
         r = data[0]
         importance = float(r.get("importance", 0))
         confidence = "high" if importance > 0.7 else ("medium" if importance > 0.4 else "low")
+        precision = _precision_from_nominatim(r)
+        candidates = [_candidate_from_nominatim(item) for item in data[:5]]
         result = {
-            "latitude": float(r["lat"]),
-            "longitude": float(r["lon"]),
+            "status": GEOCODING_STATUS_MAPPED,
+            "latitude": _safe_float(r.get("lat")),
+            "longitude": _safe_float(r.get("lon")),
+            "geocoder": "nominatim",
+            "query": location,
             "formatted_address": r.get("display_name", location),
+            "precision": precision,
             "confidence": confidence,
+            "candidates": candidates,
+            "raw_response": data,
         }
+        validated = validate_location(
+            latitude=result["latitude"],
+            longitude=result["longitude"],
+            entity_type="Location",
+            provenance=GeocodeProvenance(
+                geocoder="nominatim",
+                query=location,
+                formatted_address=result["formatted_address"],
+                precision=precision,
+                confidence=confidence,
+                candidates=candidates,
+                provider_status=GEOCODING_STATUS_MAPPED,
+            ),
+        )
+        if not validated.is_valid:
+            result["status"] = validated.status
+            result["latitude"] = None
+            result["longitude"] = None
+            result["rejection_reason"] = validated.rejection_reason.value if validated.rejection_reason else None
         _save_geocode_cache(cache_key, location, result)
         return result
     except Exception as e:
         print(f"[GeoRescan] Geocode error for '{location}': {e}")
-        _save_geocode_cache(cache_key, location, None)
+        result = {
+            "status": GEOCODING_STATUS_UNMAPPED_RETRIABLE,
+            "geocoder": "nominatim",
+            "query": location,
+            "provider_error": str(e),
+        }
+        _save_geocode_cache(cache_key, location, result)
+        return result
+
+
+def _precision_from_nominatim(item: Dict) -> Optional[str]:
+    return item.get("addresstype") or item.get("type") or item.get("class")
+
+
+def _candidate_from_nominatim(item: Dict) -> Dict:
+    importance = float(item.get("importance", 0) or 0)
+    confidence = "high" if importance > 0.7 else ("medium" if importance > 0.4 else "low")
+    return {
+        "latitude": _safe_float(item.get("lat")),
+        "longitude": _safe_float(item.get("lon")),
+        "formatted_address": item.get("display_name"),
+        "precision": _precision_from_nominatim(item),
+        "confidence": confidence,
+    }
+
+
+def _safe_float(value) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
         return None
 
 
@@ -287,14 +390,24 @@ def rescan_case_locations(
     for loc in unique_locations:
         place = loc["place"]
         result = geocode_with_cache(place)
-        if result:
+        if result and result.get("status") == GEOCODING_STATUS_MAPPED:
             loc["latitude"] = result["latitude"]
             loc["longitude"] = result["longitude"]
             loc["formatted_address"] = result["formatted_address"]
+            loc["geocoding_provider"] = result.get("geocoder")
+            loc["geocoding_query"] = result.get("query")
+            loc["geocoding_precision"] = result.get("precision")
             loc["geocoding_confidence"] = result["confidence"]
+            loc["geocoding_candidates"] = json.dumps(result.get("candidates") or [], separators=(",", ":"))
             geocoded.append(loc)
         else:
-            failed_geocode.append(place)
+            failed_geocode.append(
+                {
+                    "place": place,
+                    "status": result.get("status") if result else GEOCODING_STATUS_REJECTED,
+                    "reason": (result.get("rejection_reason") or result.get("provider_error")) if result else None,
+                }
+            )
 
     print(f"[GeoRescan] Geocoded: {len(geocoded)}, Failed: {len(failed_geocode)}")
 
@@ -316,7 +429,11 @@ def rescan_case_locations(
         lat = loc["latitude"]
         lng = loc["longitude"]
         formatted = loc.get("formatted_address", place)
+        provider = loc.get("geocoding_provider")
+        query = loc.get("geocoding_query") or place
+        precision = loc.get("geocoding_precision")
         confidence = loc.get("geocoding_confidence", "medium")
+        candidates = loc.get("geocoding_candidates")
         context = loc.get("context", "")
         associated = loc.get("associated_entities", [])
 
@@ -335,6 +452,10 @@ def rescan_case_locations(
                     longitude=lng,
                     location_formatted=formatted,
                     geocoding_confidence=confidence,
+                    geocoding_provider=provider,
+                    geocoding_query=query,
+                    geocoding_precision=precision,
+                    geocoding_candidates=candidates,
                 )
                 entities_updated += 1
         else:
@@ -346,6 +467,10 @@ def rescan_case_locations(
                 longitude=lng,
                 location_formatted=formatted,
                 geocoding_confidence=confidence,
+                geocoding_provider=provider,
+                geocoding_query=query,
+                geocoding_precision=precision,
+                geocoding_candidates=candidates,
                 context=context,
             )
             if node_key:

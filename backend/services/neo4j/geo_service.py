@@ -6,6 +6,7 @@ location updates, location node creation, and relationship management.
 import logging
 from typing import Any, Dict, List, Optional
 
+from services.location_validation import GeocodeProvenance, validate_location
 from services.neo4j.driver import driver
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,14 @@ class GeoService:
                     n.longitude AS longitude,
                     n.location_raw AS location_raw,
                     n.location_formatted AS location_formatted,
+                    n.geocoding_provider AS geocoding_provider,
+                    n.geocoding_query AS geocoding_query,
+                    n.geocoding_precision AS geocoding_precision,
                     n.geocoding_confidence AS geocoding_confidence,
+                    n.geocoding_candidates AS geocoding_candidates,
+                    n.geocoding_status AS geocoding_status,
+                    n.geocoding_rejection_reason AS geocoding_rejection_reason,
+                    n.geocoding_provider_error AS geocoding_provider_error,
                     n.summary AS summary,
                     n.date AS date,
                     connections
@@ -78,16 +86,48 @@ class GeoService:
 
             entities = []
             for record in result:
+                validated = validate_location(
+                    latitude=record["latitude"],
+                    longitude=record["longitude"],
+                    entity_type=record["type"],
+                    provenance=GeocodeProvenance(
+                        geocoder=record["geocoding_provider"],
+                        query=record["geocoding_query"] or record["location_raw"],
+                        formatted_address=record["location_formatted"],
+                        precision=record["geocoding_precision"],
+                        confidence=record["geocoding_confidence"],
+                        provider_status=record["geocoding_status"],
+                        failure_reason=record["geocoding_provider_error"],
+                    ),
+                )
+                if not validated.is_valid:
+                    logger.warning(
+                        "Rejected map-visible coordinates",
+                        extra={
+                            "node_key": record["key"],
+                            "entity_type": record["type"],
+                            "reason": validated.rejection_reason.value if validated.rejection_reason else None,
+                        },
+                    )
+                    continue
+
                 entity = {
                     "id": record["id"],
                     "key": record["key"],
                     "name": record["name"],
                     "type": record["type"],
-                    "latitude": record["latitude"],
-                    "longitude": record["longitude"],
+                    "latitude": validated.latitude,
+                    "longitude": validated.longitude,
                     "location_raw": record["location_raw"],
                     "location_formatted": record["location_formatted"],
+                    "geocoding_provider": record["geocoding_provider"],
+                    "geocoding_query": record["geocoding_query"],
+                    "geocoding_precision": record["geocoding_precision"],
                     "geocoding_confidence": record["geocoding_confidence"],
+                    "geocoding_candidates": record["geocoding_candidates"],
+                    "geocoding_status": record["geocoding_status"],
+                    "geocoding_rejection_reason": record["geocoding_rejection_reason"],
+                    "geocoding_provider_error": record["geocoding_provider_error"],
                     "summary": record["summary"],
                     "date": record["date"],
                     "connections": [c for c in record["connections"] if c["key"]],
@@ -130,7 +170,10 @@ class GeoService:
                 """
                 MATCH (n {key: $key, case_id: $case_id})
                 REMOVE n.latitude, n.longitude, n.location_name, n.location_formatted,
-                       n.location_raw, n.geocoding_confidence
+                       n.location_raw, n.geocoding_confidence, n.geocoding_provider,
+                       n.geocoding_query, n.geocoding_precision, n.geocoding_candidates,
+                       n.geocoding_status, n.geocoding_rejection_reason,
+                       n.geocoding_provider_error
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
                 """,
                 key=node_key,
@@ -168,19 +211,82 @@ class GeoService:
         longitude: float,
         location_formatted: str,
         geocoding_confidence: str,
+        geocoding_provider: str | None = None,
+        geocoding_query: str | None = None,
+        geocoding_precision: str | None = None,
+        geocoding_candidates: str | None = None,
+        geocoding_status: str | None = None,
+        geocoding_rejection_reason: str | None = None,
+        geocoding_provider_error: str | None = None,
+        edited_by: str | None = None,
+        source_view: str | None = None,
     ) -> Dict:
         """Set all location properties on an entity node."""
         with driver.session() as session:
-            result = session.run(
+            current = session.run(
                 """
                 MATCH (n {key: $key, case_id: $case_id})
+                RETURN labels(n)[0] AS type
+                """,
+                key=node_key,
+                case_id=case_id,
+            ).single()
+            if not current:
+                return {}
+            provenance = GeocodeProvenance(
+                geocoder=geocoding_provider,
+                query=geocoding_query or location_raw,
+                formatted_address=location_formatted,
+                precision=geocoding_precision,
+                confidence=geocoding_confidence,
+                provider_status=geocoding_status,
+                failure_reason=geocoding_provider_error,
+            )
+            validated = validate_location(
+                latitude=latitude,
+                longitude=longitude,
+                entity_type=current["type"],
+                provenance=provenance,
+            )
+            provenance_props = validated.provenance.as_node_properties(
+                status=validated.status,
+                rejection_reason=validated.rejection_reason.value if validated.rejection_reason else geocoding_rejection_reason,
+            )
+            if geocoding_candidates:
+                provenance_props["geocoding_candidates"] = geocoding_candidates
+            if validated.is_valid:
+                coordinate_clause = "SET n.latitude = $latitude, n.longitude = $longitude"
+            else:
+                coordinate_clause = "REMOVE n.latitude, n.longitude"
+                logger.warning(
+                    "Rejected location update before graph write",
+                    extra={
+                        "node_key": node_key,
+                        "entity_type": current["type"],
+                        "reason": validated.rejection_reason.value if validated.rejection_reason else None,
+                    },
+                )
+            audit_clause = ""
+            if edited_by:
+                audit_clause = """
+                SET n.manual_fields = reduce(
+                        acc = coalesce(n.manual_fields, []),
+                        field IN $manual_fields |
+                        CASE WHEN field IN acc THEN acc ELSE acc + field END
+                    ),
+                    n.last_edited_at = datetime(),
+                    n.last_edited_by = $edited_by,
+                    n.last_edit_source = $source_view
+                """
+            result = session.run(
+                f"""
+                MATCH (n {{key: $key, case_id: $case_id}})
                 SET n.location_raw = $location_raw,
-                    n.latitude = $latitude,
-                    n.longitude = $longitude,
                     n.location_formatted = $location_formatted,
                     n.location_name = $location_formatted,
-                    n.geocoding_status = 'success',
-                    n.geocoding_confidence = $geocoding_confidence
+                    n += $provenance_props
+                {coordinate_clause}
+                {audit_clause}
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
                 """,
                 key=node_key,
@@ -189,10 +295,24 @@ class GeoService:
                 latitude=latitude,
                 longitude=longitude,
                 location_formatted=location_formatted,
-                geocoding_confidence=geocoding_confidence,
+                provenance_props=provenance_props,
+                manual_fields=[
+                    "latitude",
+                    "longitude",
+                    "location_raw",
+                    "location_formatted",
+                    "location_name",
+                ],
+                edited_by=edited_by,
+                source_view=source_view,
             )
             record = result.single()
-            return dict(record) if record else {}
+            response = dict(record) if record else {}
+            response["geocoding_status"] = validated.status
+            response["geocoding_rejection_reason"] = (
+                validated.rejection_reason.value if validated.rejection_reason else None
+            )
+            return response
 
     def create_location_node(
         self,
@@ -202,11 +322,40 @@ class GeoService:
         longitude: float,
         location_formatted: str,
         geocoding_confidence: str,
+        geocoding_provider: str | None = None,
+        geocoding_query: str | None = None,
+        geocoding_precision: str | None = None,
+        geocoding_candidates: str | None = None,
         context: str = "",
     ) -> Optional[str]:
         """Create a new Location node in the graph and return its key."""
         import uuid
         node_key = f"loc_{uuid.uuid4().hex[:12]}"
+        provenance = GeocodeProvenance(
+            geocoder=geocoding_provider,
+            query=geocoding_query or name,
+            formatted_address=location_formatted,
+            precision=geocoding_precision,
+            confidence=geocoding_confidence,
+        )
+        validated = validate_location(
+            latitude=latitude,
+            longitude=longitude,
+            entity_type="Location",
+            provenance=provenance,
+        )
+        if not validated.is_valid:
+            logger.warning(
+                "Rejected location node before graph write",
+                extra={
+                    "name": name,
+                    "reason": validated.rejection_reason.value if validated.rejection_reason else None,
+                },
+            )
+            return None
+        provenance_props = validated.provenance.as_node_properties(status=validated.status)
+        if geocoding_candidates:
+            provenance_props["geocoding_candidates"] = geocoding_candidates
         with driver.session() as session:
             result = session.run(
                 """
@@ -224,16 +373,18 @@ class GeoService:
                     summary: $context,
                     source: 'geo_rescan'
                 })
+                SET n += $provenance_props
                 RETURN n.key AS key
                 """,
                 key=node_key,
                 name=name,
                 case_id=case_id,
-                latitude=latitude,
-                longitude=longitude,
+                latitude=validated.latitude,
+                longitude=validated.longitude,
                 location_formatted=location_formatted,
                 geocoding_confidence=geocoding_confidence,
                 context=context,
+                provenance_props=provenance_props,
             )
             record = result.single()
             return record["key"] if record else None

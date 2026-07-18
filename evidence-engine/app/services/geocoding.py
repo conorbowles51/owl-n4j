@@ -13,6 +13,13 @@ from sqlalchemy.dialects.postgresql import insert
 from app.config import settings
 from app.dependencies import async_session
 from app.models.geocoding_cache import GeocodingCacheEntry
+from app.services.location_validation import (
+    GEOCODING_STATUS_MAPPED,
+    GEOCODING_STATUS_REJECTED,
+    GEOCODING_STATUS_UNMAPPED_RETRIABLE,
+    GeocodeProvenance,
+    validate_location,
+)
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _VAGUE_LOCATION_TERMS = {
@@ -60,8 +67,25 @@ class GeocodeResult:
     latitude: float | None = None
     longitude: float | None = None
     formatted_address: str | None = None
+    precision: str | None = None
     confidence: str | None = None
-    raw_response: dict[str, Any] | None = None
+    candidates: list[dict[str, Any]] | None = None
+    rejection_reason: str | None = None
+    provider_error: str | None = None
+    raw_response: Any | None = None
+
+    @property
+    def provenance(self) -> GeocodeProvenance:
+        return GeocodeProvenance(
+            geocoder=self.provider,
+            query=self.original_query,
+            formatted_address=self.formatted_address,
+            precision=self.precision,
+            confidence=self.confidence,
+            candidates=self.candidates or [],
+            provider_status=self.status,
+            failure_reason=self.provider_error,
+        )
 
 
 def normalize_geocode_query(query: str) -> str:
@@ -134,7 +158,8 @@ class GeocodingService:
                 provider=self.provider,
                 normalized_query="",
                 original_query="",
-                status="failed",
+                status=GEOCODING_STATUS_REJECTED,
+                rejection_reason="empty_query",
             )
 
         memo_key = (self.provider, normalized_query)
@@ -148,7 +173,8 @@ class GeocodingService:
 
         result = await self._fetch_from_provider(original_query, normalized_query)
         await self._save_cached_result(result)
-        self._memoized_results[memo_key] = result
+        if result.status != GEOCODING_STATUS_UNMAPPED_RETRIABLE:
+            self._memoized_results[memo_key] = result
         return result
 
     async def _load_cached_result(
@@ -165,8 +191,10 @@ class GeocodingService:
 
         if record is None:
             return None
+        if record.status == GEOCODING_STATUS_UNMAPPED_RETRIABLE:
+            return None
 
-        return GeocodeResult(
+        result = GeocodeResult(
             provider=record.provider,
             normalized_query=record.normalized_query,
             original_query=record.original_query,
@@ -174,9 +202,48 @@ class GeocodingService:
             latitude=record.latitude,
             longitude=record.longitude,
             formatted_address=record.formatted_address,
+            precision=record.precision,
             confidence=record.confidence,
+            candidates=record.candidates,
+            rejection_reason=record.rejection_reason,
+            provider_error=record.provider_error,
             raw_response=record.raw_response,
         )
+        if result.status in {GEOCODING_STATUS_MAPPED, "success"}:
+            validated = validate_location(
+                latitude=result.latitude,
+                longitude=result.longitude,
+                entity_type="Location",
+                provenance=result.provenance,
+            )
+            if not validated.is_valid:
+                return GeocodeResult(
+                    provider=result.provider,
+                    normalized_query=result.normalized_query,
+                    original_query=result.original_query,
+                    status=validated.status,
+                    formatted_address=result.formatted_address,
+                    precision=result.precision,
+                    confidence=result.confidence,
+                    candidates=result.candidates,
+                    rejection_reason=validated.rejection_reason.value if validated.rejection_reason else None,
+                    raw_response=result.raw_response,
+                )
+            if result.status == "success":
+                return GeocodeResult(
+                    provider=result.provider,
+                    normalized_query=result.normalized_query,
+                    original_query=result.original_query,
+                    status=GEOCODING_STATUS_MAPPED,
+                    latitude=validated.latitude,
+                    longitude=validated.longitude,
+                    formatted_address=result.formatted_address,
+                    precision=result.precision,
+                    confidence=result.confidence,
+                    candidates=result.candidates,
+                    raw_response=result.raw_response,
+                )
+        return result
 
     async def _save_cached_result(self, result: GeocodeResult) -> None:
         async with async_session() as session:
@@ -187,8 +254,14 @@ class GeocodingService:
                 status=result.status,
                 latitude=result.latitude,
                 longitude=result.longitude,
+                geocoder=result.provider,
+                query=result.original_query,
                 formatted_address=result.formatted_address,
+                precision=result.precision,
                 confidence=result.confidence,
+                candidates=result.candidates,
+                rejection_reason=result.rejection_reason,
+                provider_error=result.provider_error,
                 raw_response=result.raw_response,
             )
             stmt = stmt.on_conflict_do_update(
@@ -198,8 +271,14 @@ class GeocodingService:
                     "status": result.status,
                     "latitude": result.latitude,
                     "longitude": result.longitude,
+                    "geocoder": result.provider,
+                    "query": result.original_query,
                     "formatted_address": result.formatted_address,
+                    "precision": result.precision,
                     "confidence": result.confidence,
+                    "candidates": result.candidates,
+                    "rejection_reason": result.rejection_reason,
+                    "provider_error": result.provider_error,
                     "raw_response": result.raw_response,
                     "updated_at": func.now(),
                 },
@@ -234,12 +313,13 @@ class GeocodingService:
                 )
                 response.raise_for_status()
                 payload = response.json()
-        except Exception:
+        except Exception as exc:
             return GeocodeResult(
                 provider=self.provider,
                 normalized_query=normalized_query,
                 original_query=original_query,
-                status="failed",
+                status=GEOCODING_STATUS_UNMAPPED_RETRIABLE,
+                provider_error=str(exc),
             )
 
         if not payload:
@@ -247,24 +327,49 @@ class GeocodingService:
                 provider=self.provider,
                 normalized_query=normalized_query,
                 original_query=original_query,
-                status="failed",
+                status=GEOCODING_STATUS_REJECTED,
+                rejection_reason="no_results",
                 raw_response={"results": []},
             )
 
+        candidates = [self._candidate_from_nominatim(item) for item in payload[:5]]
         top_result = payload[0]
         importance = float(top_result.get("importance", 0) or 0)
         confidence = self._confidence_from_importance(importance)
-        return GeocodeResult(
+        precision = self._precision_from_nominatim(top_result)
+        result = GeocodeResult(
             provider=self.provider,
             normalized_query=normalized_query,
             original_query=original_query,
-            status="success",
-            latitude=float(top_result["lat"]),
-            longitude=float(top_result["lon"]),
+            status=GEOCODING_STATUS_MAPPED,
+            latitude=self._safe_float(top_result.get("lat")),
+            longitude=self._safe_float(top_result.get("lon")),
             formatted_address=top_result.get("display_name", original_query),
+            precision=precision,
             confidence=confidence,
-            raw_response=top_result,
+            candidates=candidates,
+            raw_response=payload,
         )
+        validated = validate_location(
+            latitude=result.latitude,
+            longitude=result.longitude,
+            entity_type="Location",
+            provenance=result.provenance,
+        )
+        if not validated.is_valid:
+            return GeocodeResult(
+                provider=result.provider,
+                normalized_query=result.normalized_query,
+                original_query=result.original_query,
+                status=validated.status,
+                formatted_address=result.formatted_address,
+                precision=result.precision,
+                confidence=result.confidence,
+                candidates=result.candidates,
+                rejection_reason=validated.rejection_reason.value if validated.rejection_reason else None,
+                raw_response=result.raw_response,
+            )
+        return result
 
     async def _respect_rate_limit(self) -> None:
         async with self._rate_limit_lock:
@@ -280,6 +385,27 @@ class GeocodingService:
         if importance > 0.4:
             return "medium"
         return "low"
+
+    def _candidate_from_nominatim(self, item: dict[str, Any]) -> dict[str, Any]:
+        importance = float(item.get("importance", 0) or 0)
+        return {
+            "latitude": self._safe_float(item.get("lat")),
+            "longitude": self._safe_float(item.get("lon")),
+            "formatted_address": item.get("display_name"),
+            "precision": self._precision_from_nominatim(item),
+            "confidence": self._confidence_from_importance(importance),
+        }
+
+    @staticmethod
+    def _precision_from_nominatim(item: dict[str, Any]) -> str | None:
+        return item.get("addresstype") or item.get("type") or item.get("class")
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
 
 geocoding_service = GeocodingService()
