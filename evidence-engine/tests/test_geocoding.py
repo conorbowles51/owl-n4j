@@ -20,7 +20,14 @@ class FakeGeocodingService(GeocodingService):
         self,
         provider: str,
         normalized_query: str,
+        required_limit: int = 1,
     ) -> GeocodeResult | None:
+        cached = self.cache.get((provider, normalized_query))
+        if cached and required_limit > 1 and not self._cache_satisfies_limit(
+            cached.raw_response,
+            required_limit,
+        ):
+            return None
         return self.cache.get((provider, normalized_query))
 
     async def _save_cached_result(self, result: GeocodeResult) -> None:
@@ -30,6 +37,7 @@ class FakeGeocodingService(GeocodingService):
         self,
         original_query: str,
         normalized_query: str,
+        limit: int = 1,
     ) -> GeocodeResult:
         self.provider_calls += 1
         return GeocodeResult(
@@ -171,4 +179,43 @@ async def test_fetch_from_provider_maps_nominatim_payload(monkeypatch: pytest.Mo
     assert result.longitude == 7.4246
     assert result.formatted_address == "Monaco, 98000, Monaco"
     assert result.confidence == "high"
-    assert result.raw_response == payload[0]
+    assert result.raw_response == {"results": payload, "requested_limit": 1}
+
+
+@pytest.mark.asyncio
+async def test_geocode_candidates_refetches_legacy_single_result_cache() -> None:
+    service = FakeGeocodingService(
+        GeocodeResult(
+            provider="nominatim",
+            normalized_query="ignored",
+            original_query="ignored",
+            status="success",
+            latitude=51.5,
+            longitude=-0.12,
+            formatted_address="London",
+            confidence="high",
+            raw_response={
+                "results": [
+                    {"lat": "51.5", "lon": "-0.12", "display_name": "London", "importance": 0.8},
+                    {"lat": "51.49", "lon": "-0.11", "display_name": "City of London", "importance": 0.7},
+                ],
+                "requested_limit": 5,
+            },
+        )
+    )
+    service.cache[("nominatim", "london")] = GeocodeResult(
+        provider="nominatim",
+        normalized_query="london",
+        original_query="London",
+        status="success",
+        latitude=51.5,
+        longitude=-0.12,
+        formatted_address="London",
+        confidence="high",
+        raw_response={"lat": "51.5", "lon": "-0.12", "display_name": "London"},
+    )
+
+    candidates = await service.geocode_candidates("London", limit=5)
+
+    assert len(candidates) == 2
+    assert service.provider_calls == 1

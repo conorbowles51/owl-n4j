@@ -119,6 +119,7 @@ def build_geocode_request(
 class GeocodingService:
     def __init__(self) -> None:
         self._memoized_results: dict[tuple[str, str], GeocodeResult] = {}
+        self._memoized_candidates: dict[tuple[str, str, int], list[GeocodeResult]] = {}
         self._rate_limit_lock = asyncio.Lock()
         self._last_request_time = 0.0
 
@@ -141,20 +142,47 @@ class GeocodingService:
         if memo_key in self._memoized_results:
             return self._memoized_results[memo_key]
 
-        cached = await self._load_cached_result(self.provider, normalized_query)
+        cached = await self._load_cached_result(self.provider, normalized_query, required_limit=1)
         if cached is not None:
             self._memoized_results[memo_key] = cached
             return cached
 
-        result = await self._fetch_from_provider(original_query, normalized_query)
+        result = await self._fetch_from_provider(original_query, normalized_query, limit=1)
         await self._save_cached_result(result)
         self._memoized_results[memo_key] = result
         return result
+
+    async def geocode_candidates(self, query: str, limit: int = 5) -> list[GeocodeResult]:
+        original_query = _clean_geo_value(query)
+        normalized_query = normalize_geocode_query(original_query)
+        limit = max(1, min(int(limit or 1), 10))
+        if not normalized_query:
+            return []
+
+        memo_key = (self.provider, normalized_query, limit)
+        if memo_key in self._memoized_candidates:
+            return self._memoized_candidates[memo_key]
+
+        result = await self._load_cached_result(
+            self.provider,
+            normalized_query,
+            required_limit=limit,
+        )
+        if result is None:
+            result = await self._fetch_from_provider(original_query, normalized_query, limit=limit)
+            await self._save_cached_result(result)
+
+        candidates = self._candidate_results_from_response(result, limit)
+        self._memoized_candidates[memo_key] = candidates
+        if candidates:
+            self._memoized_results[(self.provider, normalized_query)] = candidates[0]
+        return candidates
 
     async def _load_cached_result(
         self,
         provider: str,
         normalized_query: str,
+        required_limit: int = 1,
     ) -> GeocodeResult | None:
         async with async_session() as session:
             stmt = select(GeocodingCacheEntry).where(
@@ -166,6 +194,10 @@ class GeocodingService:
         if record is None:
             return None
 
+        raw_response = record.raw_response
+        if required_limit > 1 and not self._cache_satisfies_limit(raw_response, required_limit):
+            return None
+
         return GeocodeResult(
             provider=record.provider,
             normalized_query=record.normalized_query,
@@ -175,7 +207,7 @@ class GeocodingService:
             longitude=record.longitude,
             formatted_address=record.formatted_address,
             confidence=record.confidence,
-            raw_response=record.raw_response,
+            raw_response=raw_response,
         )
 
     async def _save_cached_result(self, result: GeocodeResult) -> None:
@@ -211,6 +243,7 @@ class GeocodingService:
         self,
         original_query: str,
         normalized_query: str,
+        limit: int = 1,
     ) -> GeocodeResult:
         if self.provider != "nominatim":
             raise ValueError(f"Unsupported geocoding provider: {self.provider}")
@@ -224,7 +257,7 @@ class GeocodingService:
                     params={
                         "q": original_query,
                         "format": "json",
-                        "limit": 1,
+                        "limit": limit,
                         "addressdetails": 1,
                     },
                     headers={
@@ -240,6 +273,7 @@ class GeocodingService:
                 normalized_query=normalized_query,
                 original_query=original_query,
                 status="failed",
+                raw_response={"results": [], "requested_limit": limit},
             )
 
         if not payload:
@@ -248,7 +282,7 @@ class GeocodingService:
                 normalized_query=normalized_query,
                 original_query=original_query,
                 status="failed",
-                raw_response={"results": []},
+                raw_response={"results": [], "requested_limit": limit},
             )
 
         top_result = payload[0]
@@ -263,8 +297,54 @@ class GeocodingService:
             longitude=float(top_result["lon"]),
             formatted_address=top_result.get("display_name", original_query),
             confidence=confidence,
-            raw_response=top_result,
+            raw_response={"results": payload, "requested_limit": limit},
         )
+
+    def _candidate_results_from_response(
+        self,
+        result: GeocodeResult,
+        limit: int,
+    ) -> list[GeocodeResult]:
+        raw = result.raw_response or {}
+        if isinstance(raw, dict) and isinstance(raw.get("results"), list):
+            rows = raw.get("results", [])[:limit]
+        elif isinstance(raw, dict) and raw:
+            rows = [raw]
+        else:
+            rows = []
+
+        candidates: list[GeocodeResult] = []
+        for row in rows:
+            try:
+                lat = float(row["lat"])
+                lon = float(row["lon"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            importance = float(row.get("importance", 0) or 0)
+            candidates.append(
+                GeocodeResult(
+                    provider=result.provider,
+                    normalized_query=result.normalized_query,
+                    original_query=result.original_query,
+                    status="success",
+                    latitude=lat,
+                    longitude=lon,
+                    formatted_address=row.get("display_name", result.original_query),
+                    confidence=self._confidence_from_importance(importance),
+                    raw_response=row,
+                )
+            )
+        return candidates
+
+    @staticmethod
+    def _cache_satisfies_limit(raw_response: dict[str, Any] | None, required_limit: int) -> bool:
+        if required_limit <= 1:
+            return True
+        if not isinstance(raw_response, dict):
+            return False
+        results = raw_response.get("results")
+        requested_limit = int(raw_response.get("requested_limit") or 0)
+        return isinstance(results, list) and requested_limit >= required_limit
 
     async def _respect_rate_limit(self) -> None:
         async with self._rate_limit_lock:

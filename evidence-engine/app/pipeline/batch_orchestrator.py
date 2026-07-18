@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import async_session
 from app.models.job import Job, JobStatus
-from app.pipeline.chunk_embed import chunk_and_embed
+from app.pipeline.chunk_embed import TextChunk, chunk_and_embed
 from app.pipeline.consolidate_entities import consolidate_entities
 from app.pipeline.context_injector import build_enriched_context
 from app.pipeline.extract_entities import (
@@ -59,6 +59,7 @@ async def _update_job_status(
     relationship_count: int | None = None,
     document_summary: str | None = None,
     transcription: str | None = None,
+    processing_info: dict | None = None,
 ) -> None:
     async with async_session() as db:
         result = await db.execute(select(Job).where(Job.id == job_id))
@@ -75,6 +76,8 @@ async def _update_job_status(
             job.document_summary = document_summary
         if transcription is not None:
             job.transcription = transcription
+        if processing_info is not None:
+            job.processing_info = processing_info
         await db.commit()
     await _publish_job_status(
         job_id,
@@ -99,7 +102,7 @@ async def _extract_file(
     effective_context: str | None = None,
     effective_mandatory_instructions: list | None = None,
     effective_special_entity_types: list | None = None,
-) -> tuple[list[RawEntity], list[RawRelationship], str | None, str | None]:
+) -> tuple[list[RawEntity], list[RawRelationship], list[TextChunk], str | None, str | None]:
     async with ingestion_cost_context(
         case_id=case_id,
         requested_by_user_id=requested_by_user_id,
@@ -157,7 +160,38 @@ async def _extract_file(
             f"Extracted {len(raw_entities)} entities, {len(raw_rels)} relationships",
         )
 
-        return raw_entities, raw_rels, doc_summary, transcription
+        return raw_entities, raw_rels, chunks, doc_summary, transcription
+
+
+def _processing_info_for_file(processing_info: dict, file_name: str) -> dict:
+    geocoding = dict((processing_info or {}).get("geocoding") or {})
+    decisions = [
+        decision
+        for decision in geocoding.get("decisions", []) or []
+        if file_name in (decision.get("source_files") or [])
+    ]
+    counts = {
+        "accepted": 0,
+        "approximate": 0,
+        "deduped": 0,
+        "needs_review": 0,
+        "rejected": 0,
+    }
+    for decision in decisions:
+        if decision.get("decision") == "deduped":
+            counts["deduped"] += 1
+        elif decision.get("status") == "success":
+            counts["accepted"] += 1
+            if decision.get("precision") == "approximate":
+                counts["approximate"] += 1
+        elif decision.get("status") == "needs_review":
+            counts["needs_review"] += 1
+        elif decision.get("status") == "rejected":
+            counts["rejected"] += 1
+
+    geocoding["counts"] = counts
+    geocoding["decisions"] = decisions
+    return {"geocoding": geocoding}
 
 
 async def _force_fail_unfinished_batch_rows(batch_id: str, reason: str) -> None:
@@ -255,6 +289,7 @@ async def run_batch_pipeline(
 
         all_raw_entities: list[RawEntity] = []
         all_raw_rels: list[RawRelationship] = []
+        all_chunks: list[TextChunk] = []
         active_job_ids: list[uuid.UUID] = []
         active_file_names: list[str] = []
         job_summaries: dict[uuid.UUID, str | None] = {}
@@ -272,7 +307,7 @@ async def run_batch_pipeline(
                 )
                 continue
 
-            raw_ents, raw_rels, doc_summary, transcription = extraction_result
+            raw_ents, raw_rels, chunks, doc_summary, transcription = extraction_result
             job_summaries[ji["id"]] = doc_summary
             job_transcriptions[ji["id"]] = transcription
 
@@ -285,6 +320,7 @@ async def run_batch_pipeline(
 
             all_raw_entities.extend(raw_ents)
             all_raw_rels.extend(raw_rels)
+            all_chunks.extend(chunks)
             active_job_ids.append(ji["id"])
             active_file_names.append(ji["file_name"])
 
@@ -366,7 +402,13 @@ async def run_batch_pipeline(
             for jid in active_job_ids:
                 await _update_job_status(jid, JobStatus.WRITING_GRAPH, 0.85, "Writing graph...")
 
-            await write_graph(resolved_ents, resolved_rels, case_id, batch_id)
+            processing_info = await write_graph(
+                resolved_ents,
+                resolved_rels,
+                case_id,
+                str(batch_id),
+                chunks=all_chunks,
+            )
 
         for jid, fname in zip(active_job_ids, active_file_names):
             ent_count = len([entity for entity in resolved_ents if fname in entity.source_files])
@@ -379,6 +421,7 @@ async def run_batch_pipeline(
                 relationship_count=len(resolved_rels),
                 document_summary=job_summaries.get(jid),
                 transcription=job_transcriptions.get(jid),
+                processing_info=_processing_info_for_file(processing_info, fname),
             )
 
         logger.info("Batch %s complete: %d entities, %d relationships", batch_id, len(resolved_ents), len(resolved_rels))

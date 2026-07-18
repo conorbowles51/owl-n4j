@@ -69,6 +69,8 @@ class GeoService:
                     n.location_raw AS location_raw,
                     n.location_formatted AS location_formatted,
                     n.geocoding_confidence AS geocoding_confidence,
+                    n.geocoding_granularity AS geocoding_granularity,
+                    n.geocoding_precision AS geocoding_precision,
                     n.summary AS summary,
                     n.date AS date,
                     connections
@@ -88,6 +90,8 @@ class GeoService:
                     "location_raw": record["location_raw"],
                     "location_formatted": record["location_formatted"],
                     "geocoding_confidence": record["geocoding_confidence"],
+                    "geocoding_granularity": record["geocoding_granularity"],
+                    "geocoding_precision": record["geocoding_precision"],
                     "summary": record["summary"],
                     "date": record["date"],
                     "connections": [c for c in record["connections"] if c["key"]],

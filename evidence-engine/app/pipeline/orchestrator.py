@@ -147,10 +147,17 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
 
             # Stage 7: Write to Neo4j + embed for RAG -> 85-100%
             await _update_job(job, JobStatus.WRITING_GRAPH, 0.85, db, "Writing graph...")
-            await write_graph(resolved_ents, resolved_rels, job.case_id, str(job.id))
+            processing_info = await write_graph(
+                resolved_ents,
+                resolved_rels,
+                job.case_id,
+                str(job.id),
+                chunks=chunks,
+            )
 
         job.entity_count = len(resolved_ents)
         job.relationship_count = len(resolved_rels)
+        job.processing_info = processing_info
         job.status = JobStatus.COMPLETED
         job.progress = 1.0
         await db.commit()

@@ -25,6 +25,7 @@ class JobResponse(BaseModel):
     mime_type: str | None = None
     sha256: str | None = None
     document_summary: str | None = None
+    processing_info: dict | None = None
     created_at: datetime
     updated_at: datetime
 

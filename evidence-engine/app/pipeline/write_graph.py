@@ -7,12 +7,13 @@ from app.pipeline.resolve_entities import (
     ResolvedRelationship,
     coalesce_resolved_entities_by_id,
 )
+from app.pipeline.chunk_embed import TextChunk
+from app.pipeline.contextual_geocoding import apply_contextual_geocoding
 from app.pipeline.property_canonicalization import (
     canonicalize_properties,
     is_neo4j_primitive_list,
 )
 from app.services import chroma_client, neo4j_client
-from app.services.geocoding import build_geocode_request, geocoding_service
 from app.services.openai_client import embed_texts
 from app.utils.text_sanitize import sanitize_json
 
@@ -63,39 +64,6 @@ async def _ensure_indexes() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Geocoding
-# ---------------------------------------------------------------------------
-
-
-def _has_coordinates(properties: dict[str, Any]) -> bool:
-    return properties.get("latitude") is not None and properties.get("longitude") is not None
-
-
-async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
-    for entity in entities:
-        if entity.category not in GEOCODABLE_CATEGORIES:
-            continue
-        if _has_coordinates(entity.properties):
-            continue
-
-        request = build_geocode_request(entity.category, entity.name, entity.properties)
-        if request is None:
-            continue
-
-        result = await geocoding_service.geocode(request.query)
-        entity.properties["location_raw"] = request.location_raw
-        entity.properties["geocoding_status"] = result.status
-
-        if result.status != "success":
-            continue
-
-        entity.properties["latitude"] = result.latitude
-        entity.properties["longitude"] = result.longitude
-        entity.properties["location_formatted"] = result.formatted_address
-        entity.properties["geocoding_confidence"] = result.confidence
-
-
-# ---------------------------------------------------------------------------
 # Write entities
 # ---------------------------------------------------------------------------
 
@@ -106,8 +74,6 @@ async def _write_entities(
 ) -> None:
     for entity in entities:
         entity.properties = canonicalize_properties(entity.category, entity.properties)
-
-    await _apply_geocoding(entities)
 
     # Group by category and batch-write
     by_cat: dict[str, list[dict[str, Any]]] = {}
@@ -323,9 +289,35 @@ async def write_graph(
     relationships: list[ResolvedRelationship],
     case_id: str,
     job_id: str,
-) -> None:
+    chunks: list[TextChunk] | None = None,
+) -> dict[str, Any]:
     entities = coalesce_resolved_entities_by_id(entities)
     await _ensure_indexes()
+
+    for entity in entities:
+        entity.properties = canonicalize_properties(entity.category, entity.properties)
+
+    processing_summary, id_remaps = await apply_contextual_geocoding(
+        entities,
+        relationships,
+        case_id,
+        chunks=chunks,
+    )
+    if id_remaps:
+        for entity in entities:
+            entity.id = id_remaps.get(entity.id, entity.id)
+        for relationship in relationships:
+            relationship.source_entity_id = id_remaps.get(
+                relationship.source_entity_id,
+                relationship.source_entity_id,
+            )
+            relationship.target_entity_id = id_remaps.get(
+                relationship.target_entity_id,
+                relationship.target_entity_id,
+            )
+        entities = coalesce_resolved_entities_by_id(entities)
+
     await _write_entities(entities, case_id, job_id)
     await _write_relationships(relationships, case_id)
     await _embed_entities(entities, case_id)
+    return processing_summary

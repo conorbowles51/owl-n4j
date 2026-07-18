@@ -12,6 +12,8 @@ export interface MapLocation {
   location_raw?: string
   location_formatted?: string
   geocoding_confidence?: string
+  geocoding_granularity?: string
+  geocoding_precision?: string
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
@@ -27,6 +29,8 @@ interface RawMapLocation {
   location_raw?: string
   location_formatted?: string
   geocoding_confidence?: string
+  geocoding_granularity?: string
+  geocoding_precision?: string
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
