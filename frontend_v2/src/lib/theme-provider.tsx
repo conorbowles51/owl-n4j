@@ -1,18 +1,7 @@
-import { createContext, useContext, useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
+import { ThemeContext, type Theme } from "./theme-context"
 
-type Theme = "dark" | "light" | "system"
-
-interface ThemeContextValue {
-  theme: Theme
-  setTheme: (theme: Theme) => void
-}
-
-const ThemeContext = createContext<ThemeContextValue>({
-  theme: "dark",
-  setTheme: () => {},
-})
-
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem("owl-theme") as Theme) ?? "dark"
   )
@@ -39,5 +28,3 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     </ThemeContext.Provider>
   )
 }
-
-export const useTheme = () => useContext(ThemeContext)
