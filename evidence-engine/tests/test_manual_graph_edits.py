@@ -69,3 +69,24 @@ async def test_write_entities_canonicalizes_temporal_aliases_and_preserves_lists
     assert node["time"] == "06:21"
     assert node["end_time"] == "06:23"
     assert node["participants"] == ["Timothy Valentin", "Unknown recipient"]
+
+
+@pytest.mark.asyncio
+async def test_apply_geocoding_marks_vague_locations_ambiguous(monkeypatch):
+    monkeypatch.setattr(write_graph, "GEOCODABLE_CATEGORIES", {"Communication"})
+
+    entity = ResolvedEntity(
+        id="comm-1",
+        category="Communication",
+        specific_type="Message",
+        name="Message mentioning location",
+        properties={"location_raw": "overseas"},
+        summary="A message mentioning a vague location.",
+    )
+
+    await write_graph._apply_geocoding([entity])
+
+    assert entity.properties["location_raw"] == "overseas"
+    assert entity.properties["geocoding_status"] == "ambiguous"
+    assert "latitude" not in entity.properties
+    assert "longitude" not in entity.properties

@@ -105,6 +105,7 @@ class Neo4jServiceFacade:
 
     # ── Geo ────────────────────────────────────────────────────────────
     get_entities_with_locations = staticmethod(geo_service.get_entities_with_locations)
+    get_locations_needing_review = staticmethod(geo_service.get_locations_needing_review)
     update_entity_location = staticmethod(geo_service.update_entity_location)
     remove_entity_location = staticmethod(geo_service.remove_entity_location)
     update_location = staticmethod(graph_edit_service.update_location)

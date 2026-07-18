@@ -584,6 +584,20 @@ async def get_entities_with_locations(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/locations/needs-review")
+async def get_locations_needing_review(
+    case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
+):
+    """
+    Get entities flagged at ingestion with no coordinates so the map review
+    queue can list them alongside low-confidence geocodes.
+    """
+    try:
+        return neo4j_service.get_locations_needing_review(case_id=case_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/shortest-paths")
 async def get_shortest_paths_subgraph(request: ShortestPathsRequest):
     """
