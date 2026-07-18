@@ -2154,15 +2154,20 @@ async def get_case_insights(case_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/cases/{case_id}/rescan-locations")
+@router.post(
+    "/cases/{case_id}/rescan-locations",
+    deprecated=True,
+    summary="Deprecated legacy location rescan",
+)
 async def rescan_locations(
     case_id: str,
     force_regeocode: bool = Query(False, description="Re-geocode entities that already have coordinates"),
     user: dict = Depends(get_current_user),
 ):
     """
-    Rescan all document chunks for a case, extract geographic locations
-    using GPT-5.2, geocode them, and link them to graph entities.
+    Deprecated legacy case-wide location rescan.
+
+    Superseded by agentic ingestion-time geocoding and per-node geocoding.
     """
     try:
         result = rescan_case_locations(case_id, force_regeocode=force_regeocode)
