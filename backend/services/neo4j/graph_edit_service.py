@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -12,12 +13,31 @@ from services.graph_edit_schema import (
     get_graph_edit_schema,
     ontology_category_names,
 )
+from services.location_validation import (
+    GEOCODING_STATUS_MAPPED,
+    GeocodeProvenance,
+    validate_location,
+)
 from services.neo4j.driver import active_node_predicate, driver
 
 
 SAFE_PROPERTY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 DATE_PRECISIONS = {"day", "month", "year", "approximate"}
+COORDINATE_PROPERTY_KEYS = frozenset({"latitude", "longitude"})
+GEOCODING_PROVENANCE_KEYS = frozenset(
+    {
+        "geocoding_provider",
+        "geocoding_query",
+        "geocoding_precision",
+        "geocoding_confidence",
+        "geocoding_candidates",
+        "geocoding_status",
+        "geocoding_rejection_reason",
+        "geocoding_provider_error",
+    }
+)
+logger = logging.getLogger(__name__)
 
 
 def _escape_label(label: str) -> str:
@@ -90,21 +110,88 @@ class GraphEditService:
             if text not in DATE_PRECISIONS:
                 raise ValueError("date_precision must be day, month, year, or approximate")
             return text
-        if key in {"latitude", "longitude"}:
+        if key in COORDINATE_PROPERTY_KEYS:
             if value is None or value == "":
                 return None
-            try:
-                number = float(value)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"{key} must be a number") from exc
-            if key == "latitude" and not -90 <= number <= 90:
-                raise ValueError("latitude must be between -90 and 90")
-            if key == "longitude" and not -180 <= number <= 180:
-                raise ValueError("longitude must be between -180 and 180")
-            return number
+            return value
         if isinstance(value, (str, int, float, bool)) or value is None:
             return value
         raise ValueError(f"Property '{key}' must be a scalar value")
+
+    def _location_value(self, properties: dict[str, Any], current_props: dict[str, Any], key: str) -> Any:
+        return properties[key] if key in properties else current_props.get(key)
+
+    def _location_label(self, properties: dict[str, Any], current_props: dict[str, Any]) -> str | None:
+        for key in ("location_formatted", "location_name", "location_raw", "name"):
+            value = self._location_value(properties, current_props, key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return None
+
+    def _guard_location_update(
+        self,
+        *,
+        node_key: str,
+        case_id: str,
+        current_props: dict[str, Any],
+        target_category: str | None,
+        properties: dict[str, Any],
+        category_changed: bool,
+    ) -> None:
+        location_touched = bool(LOCATION_PROPERTY_KEYS.intersection(properties))
+        coordinate_touched = bool(COORDINATE_PROPERTY_KEYS.intersection(properties))
+        if not location_touched and not category_changed:
+            return
+
+        latitude = self._location_value(properties, current_props, "latitude")
+        longitude = self._location_value(properties, current_props, "longitude")
+        has_target_coordinate = latitude is not None or longitude is not None
+
+        if not has_target_coordinate:
+            if coordinate_touched:
+                for key in GEOCODING_PROVENANCE_KEYS:
+                    properties.setdefault(key, None)
+            return
+
+        location_label = self._location_label(properties, current_props)
+        provenance = GeocodeProvenance(
+            geocoder="manual",
+            query=self._location_value(properties, current_props, "location_raw") or location_label,
+            formatted_address=location_label,
+            precision="manual",
+            confidence="high",
+            candidates=[],
+        )
+        validated = validate_location(
+            latitude=latitude,
+            longitude=longitude,
+            entity_type=target_category,
+            provenance=provenance,
+        )
+        if not validated.is_valid:
+            reason = validated.rejection_reason.value if validated.rejection_reason else "unknown"
+            logger.warning(
+                "Rejected manual location update before graph write",
+                extra={
+                    "node_key": node_key,
+                    "case_id": case_id,
+                    "entity_type": target_category,
+                    "reason": reason,
+                },
+            )
+            raise ValueError(f"Invalid location coordinates: {reason}")
+
+        if not location_touched and current_props.get("geocoding_provider"):
+            return
+
+        properties["latitude"] = validated.latitude
+        properties["longitude"] = validated.longitude
+        properties.update(
+            validated.provenance.as_node_properties(
+                status=GEOCODING_STATUS_MAPPED,
+                rejection_reason=None,
+            )
+        )
 
     def _fetch_node(self, node_key: str, case_id: str) -> dict[str, Any] | None:
         with driver.session() as session:
@@ -154,13 +241,19 @@ class GraphEditService:
         changes: dict[str, dict[str, Any]] = {}
         manual_fields: list[str] = []
 
-        def add_update(field: str, value: Any, before: Any | None = None) -> None:
+        def add_update(
+            field: str,
+            value: Any,
+            before: Any | None = None,
+            mark_manual: bool = True,
+        ) -> None:
             old_value = current_props.get(field) if before is None else before
             if old_value == value:
                 return
             updates[field] = value
             changes[field] = {"before": _json_safe(old_value), "after": _json_safe(value)}
-            manual_fields.append(field)
+            if mark_manual:
+                manual_fields.append(field)
 
         if name is not None:
             clean_name = name.strip()
@@ -174,20 +267,40 @@ class GraphEditService:
         if specific_type is not None:
             add_update("specific_type", specific_type.strip() or None)
 
+        coerced_properties: dict[str, Any] = {}
         if properties:
             for key, value in properties.items():
                 clean_key = key.strip()
                 self._validate_property_key(clean_key)
-                add_update(clean_key, self._coerce_scalar(clean_key, value))
+                coerced_properties[clean_key] = self._coerce_scalar(clean_key, value)
 
         category_changed = False
+        target_category = current_category
         if category is not None:
             if category not in self.categories:
                 raise ValueError(f"Unknown entity category: {category}")
+            target_category = category
             if category != current_category:
                 category_changed = True
                 changes["category"] = {"before": current_category, "after": category}
-                manual_fields.append("category")
+
+        self._guard_location_update(
+            node_key=node_key,
+            case_id=case_id,
+            current_props=current_props,
+            target_category=target_category,
+            properties=coerced_properties,
+            category_changed=category_changed,
+        )
+
+        for clean_key, value in coerced_properties.items():
+            add_update(
+                clean_key,
+                value,
+                mark_manual=clean_key not in GEOCODING_PROVENANCE_KEYS,
+            )
+        if category_changed:
+            manual_fields.append("category")
 
         if not updates and not category_changed:
             return {

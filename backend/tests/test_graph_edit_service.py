@@ -85,6 +85,112 @@ class GraphEditServiceTests(unittest.TestCase):
             ["date", "category"],
         )
 
+    def test_update_node_rejects_document_coordinates_before_write(self):
+        service = GraphEditService()
+        service._fetch_node = Mock(
+            return_value={
+                "labels": ["Document"],
+                "category": "Document",
+                "properties": {"key": "doc-1", "case_id": "case-1", "name": "Source document"},
+            }
+        )
+
+        with patch("services.neo4j.graph_edit_service.driver.session") as session:
+            with self.assertRaisesRegex(ValueError, "disallowed_entity_type"):
+                service.update_node(
+                    "doc-1",
+                    case_id="case-1",
+                    properties={
+                        "latitude": 0,
+                        "longitude": 0,
+                        "location_name": "Null Island",
+                    },
+                )
+
+        session.assert_not_called()
+
+    def test_update_node_rejects_null_island_before_write(self):
+        service = GraphEditService()
+        service._fetch_node = Mock(
+            return_value={
+                "labels": ["Location"],
+                "category": "Location",
+                "properties": {"key": "loc-1", "case_id": "case-1", "name": "Bad pin"},
+            }
+        )
+
+        with patch("services.neo4j.graph_edit_service.driver.session") as session:
+            with self.assertRaisesRegex(ValueError, "null_island"):
+                service.update_node(
+                    "loc-1",
+                    case_id="case-1",
+                    properties={
+                        "latitude": 0,
+                        "longitude": 0,
+                        "location_name": "Null Island",
+                    },
+                )
+
+        session.assert_not_called()
+
+    def test_update_location_rejects_document_before_write(self):
+        service = GraphEditService()
+        service._fetch_node = Mock(
+            return_value={
+                "labels": ["Document"],
+                "category": "Document",
+                "properties": {"key": "doc-1", "case_id": "case-1", "name": "Source document"},
+            }
+        )
+
+        with patch("services.neo4j.graph_edit_service.driver.session") as session:
+            with self.assertRaisesRegex(ValueError, "disallowed_entity_type"):
+                service.update_location(
+                    "doc-1",
+                    case_id="case-1",
+                    location_name="Null Island",
+                    latitude=0,
+                    longitude=0,
+                )
+
+        session.assert_not_called()
+
+    def test_update_node_writes_manual_location_provenance(self):
+        service = GraphEditService()
+        service._fetch_node = Mock(
+            return_value={
+                "labels": ["Location"],
+                "category": "Location",
+                "properties": {"key": "loc-1", "case_id": "case-1", "name": "London"},
+            }
+        )
+        captured = {}
+
+        with patch(
+            "services.neo4j.graph_edit_service.driver.session",
+            return_value=_FakeSession(captured),
+        ):
+            service.update_node(
+                "loc-1",
+                case_id="case-1",
+                properties={
+                    "latitude": "51.5",
+                    "longitude": "-0.12",
+                    "location_raw": "London",
+                    "location_name": "London, UK",
+                },
+            )
+
+        updates = captured["params"]["updates"]
+        self.assertEqual(updates["latitude"], 51.5)
+        self.assertEqual(updates["longitude"], -0.12)
+        self.assertEqual(updates["geocoding_provider"], "manual")
+        self.assertEqual(updates["geocoding_query"], "London")
+        self.assertEqual(updates["location_formatted"], "London, UK")
+        self.assertEqual(updates["geocoding_precision"], "manual")
+        self.assertEqual(updates["geocoding_confidence"], "high")
+        self.assertEqual(updates["geocoding_status"], "mapped")
+
 
 class GraphGeocodeRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_geocode_preview_does_not_persist(self):
