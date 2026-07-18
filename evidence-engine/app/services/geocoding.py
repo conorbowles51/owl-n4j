@@ -50,6 +50,7 @@ _VAGUE_LOCATION_TERMS = {
     "warehouse",
     "worldwide",
 }
+GEOCODING_CANDIDATE_LIMIT = 5
 
 
 @dataclass(frozen=True)
@@ -303,7 +304,7 @@ class GeocodingService:
                     params={
                         "q": original_query,
                         "format": "json",
-                        "limit": 1,
+                        "limit": GEOCODING_CANDIDATE_LIMIT,
                         "addressdetails": 1,
                     },
                     headers={
@@ -332,7 +333,7 @@ class GeocodingService:
                 raw_response={"results": []},
             )
 
-        candidates = [self._candidate_from_nominatim(item) for item in payload[:5]]
+        candidates = [self._candidate_from_nominatim(item) for item in payload[:GEOCODING_CANDIDATE_LIMIT]]
         top_result = payload[0]
         importance = float(top_result.get("importance", 0) or 0)
         confidence = self._confidence_from_importance(importance)

@@ -15,15 +15,67 @@ interface EntityPopupProps {
   onMouseLeave?: () => void
 }
 
-function ambiguityCandidateCount(value: MapLocation["geocoding_candidates"]): number {
-  if (Array.isArray(value)) return value.length
-  if (typeof value !== "string" || !value.trim()) return 0
-  try {
-    const parsed = JSON.parse(value)
-    return Array.isArray(parsed) ? parsed.length : 0
-  } catch {
-    return 0
+interface GeocodingCandidate {
+  latitude?: number
+  longitude?: number
+  formatted_address?: string
+  precision?: string
+  confidence?: string
+}
+
+function textValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
   }
+  return undefined
+}
+
+function parseCandidate(value: unknown): GeocodingCandidate | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const candidate = value as Record<string, unknown>
+  const parsed = {
+    latitude: numberValue(candidate.latitude),
+    longitude: numberValue(candidate.longitude),
+    formatted_address: textValue(candidate.formatted_address),
+    precision: textValue(candidate.precision),
+    confidence: textValue(candidate.confidence),
+  }
+  return parsed.formatted_address || parsed.latitude !== undefined || parsed.longitude !== undefined ? parsed : null
+}
+
+export function parseGeocodingCandidates(value: MapLocation["geocoding_candidates"]): GeocodingCandidate[] {
+  let rawCandidates: unknown
+  if (Array.isArray(value)) {
+    rawCandidates = value
+  } else if (typeof value === "string" && value.trim()) {
+    try {
+      rawCandidates = JSON.parse(value)
+    } catch {
+      return []
+    }
+  } else {
+    return []
+  }
+
+  if (!Array.isArray(rawCandidates)) return []
+  return rawCandidates.map(parseCandidate).filter((candidate): candidate is GeocodingCandidate => candidate !== null)
+}
+
+function formatCandidateCoordinates(candidate: GeocodingCandidate): string | null {
+  if (candidate.latitude === undefined || candidate.longitude === undefined) return null
+  return `${candidate.latitude.toFixed(4)}, ${candidate.longitude.toFixed(4)}`
+}
+
+function formatCandidateMeta(candidate: GeocodingCandidate): string | null {
+  const coordinates = formatCandidateCoordinates(candidate)
+  const parts = [candidate.precision, candidate.confidence, coordinates].filter(Boolean)
+  return parts.length > 0 ? parts.join(" / ") : null
 }
 
 export function EntityPopup({
@@ -34,7 +86,8 @@ export function EntityPopup({
   onMouseLeave,
 }: EntityPopupProps) {
   const summaryText = location.summary ? markdownToPlainText(location.summary) : null
-  const candidateCount = ambiguityCandidateCount(location.geocoding_candidates)
+  const candidates = parseGeocodingCandidates(location.geocoding_candidates)
+  const candidateCount = candidates.length
 
   return (
     <Popup
@@ -44,7 +97,7 @@ export function EntityPopup({
       closeOnClick={false}
       offset={12}
       className="map-entity-popup"
-      maxWidth="280px"
+      maxWidth="340px"
     >
       <div className="flex flex-col gap-2 p-1" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
         {/* Header */}
@@ -79,6 +132,25 @@ export function EntityPopup({
             {location.geocoding_query && <span>Query: {location.geocoding_query}</span>}
             {location.geocoding_precision && <span>Precision: {location.geocoding_precision}</span>}
             {candidateCount > 1 && <span>Candidates: {candidateCount}</span>}
+          </div>
+        )}
+
+        {candidateCount > 1 && (
+          <div className="grid gap-1 border-t border-border pt-1.5 text-[10px] text-muted-foreground">
+            <span className="font-semibold text-foreground">Candidate details</span>
+            <ol className="grid gap-1">
+              {candidates.map((candidate, index) => {
+                const meta = formatCandidateMeta(candidate)
+                return (
+                  <li key={`${candidate.formatted_address ?? "candidate"}-${index}`} className="grid gap-0.5">
+                    <span className="line-clamp-2">
+                      {index + 1}. {candidate.formatted_address ?? "Unnamed candidate"}
+                    </span>
+                    {meta && <span>{meta}</span>}
+                  </li>
+                )
+              })}
+            </ol>
           </div>
         )}
 

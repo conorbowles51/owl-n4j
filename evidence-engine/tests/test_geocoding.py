@@ -2,6 +2,7 @@ import pytest
 
 from app.services import geocoding as geocoding_module
 from app.services.geocoding import (
+    GEOCODING_CANDIDATE_LIMIT,
     GeocodeResult,
     GeocodingService,
     build_geocode_request,
@@ -205,6 +206,7 @@ async def test_fetch_preserves_duplicate_place_candidates(monkeypatch: pytest.Mo
         {"lat": "39.9526", "lon": "-75.1652", "display_name": "Springfield, Pennsylvania", "importance": 0.66, "type": "city"},
         {"lat": "39.7817", "lon": "-89.6501", "display_name": "Springfield, Illinois", "importance": 0.64, "type": "city"},
     ]
+    request_params = []
 
     class FakeResponse:
         def raise_for_status(self) -> None:
@@ -224,6 +226,7 @@ async def test_fetch_preserves_duplicate_place_candidates(monkeypatch: pytest.Mo
             return None
 
         async def get(self, *args, **kwargs):
+            request_params.append(kwargs.get("params", {}))
             return FakeResponse()
 
     monkeypatch.setattr(geocoding_module.httpx, "AsyncClient", FakeClient)
@@ -231,6 +234,7 @@ async def test_fetch_preserves_duplicate_place_candidates(monkeypatch: pytest.Mo
     result = await GeocodingService()._fetch_from_provider("Springfield", "springfield")
 
     assert result.status == GEOCODING_STATUS_MAPPED
+    assert request_params[0]["limit"] == GEOCODING_CANDIDATE_LIMIT
     assert len(result.candidates or []) == 2
     assert result.candidates[0]["formatted_address"] == "Springfield, Pennsylvania"
     assert result.candidates[1]["formatted_address"] == "Springfield, Illinois"
