@@ -134,13 +134,33 @@ export const useMapStore = create<MapStore>()((set) => ({
   toggleDrawMode: () =>
     set((s) => {
       const drawMode = !s.drawMode
+      // Leaving draw mode with a completable in-progress shape finishes it
+      // into the pending list — "Stop drawing" must never silently discard
+      // work the user can see on the map.
+      const finished = drawMode ? null : createBoundingShape(s.drawingPoints)
       return {
         drawMode,
         drawingPoints: [],
+        ...(finished
+          ? { draftBoundingShapes: [...s.draftBoundingShapes, finished] }
+          : {}),
         ...(drawMode ? { proximityMode: false, proximityAnchorKey: null } : {}),
       }
     }),
-  setDrawTool: (tool) => set({ drawTool: tool, drawingPoints: [] }),
+  setDrawTool: (tool) =>
+    set((s) => {
+      if (tool === s.drawTool) return {}
+      // Switching tools mid-draw also finishes a completable shape rather
+      // than dropping it.
+      const finished = createBoundingShape(s.drawingPoints)
+      return {
+        drawTool: tool,
+        drawingPoints: [],
+        ...(finished
+          ? { draftBoundingShapes: [...s.draftBoundingShapes, finished] }
+          : {}),
+      }
+    }),
   setDrawingPoints: (points) => set({ drawingPoints: points }),
   addDrawingPoint: (point) =>
     set((s) => ({ drawingPoints: [...s.drawingPoints, point] })),

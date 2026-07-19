@@ -31,6 +31,34 @@ describe("map.store", () => {
       expect(useMapStore.getState().drawingPoints).toEqual([])
     })
 
+    it("finishes a completable in-progress shape when draw mode is turned off (DKT-932)", () => {
+      const store = useMapStore.getState()
+      store.toggleDrawMode()
+      store.addDrawingPoint([0, 0])
+      store.addDrawingPoint([1, 0])
+      store.addDrawingPoint([0, 1])
+
+      useMapStore.getState().toggleDrawMode()
+
+      expect(useMapStore.getState().drawMode).toBe(false)
+      expect(useMapStore.getState().drawingPoints).toEqual([])
+      expect(useMapStore.getState().draftBoundingShapes).toHaveLength(1)
+    })
+
+    it("finishes a completable in-progress shape when switching draw tools (DKT-932)", () => {
+      const store = useMapStore.getState()
+      store.toggleDrawMode()
+      store.addDrawingPoint([0, 0])
+      store.addDrawingPoint([1, 0])
+      store.addDrawingPoint([0, 1])
+
+      useMapStore.getState().setDrawTool("polygon")
+
+      expect(useMapStore.getState().drawTool).toBe("polygon")
+      expect(useMapStore.getState().drawingPoints).toEqual([])
+      expect(useMapStore.getState().draftBoundingShapes).toHaveLength(1)
+    })
+
     it("adds points and undoes the last drawing point", () => {
       const store = useMapStore.getState()
       store.addDrawingPoint([1, 1])

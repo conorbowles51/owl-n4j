@@ -105,6 +105,7 @@ export function MapCanvas({ locations }: MapCanvasProps) {
   const setDrawingPoints = useMapStore((s) => s.setDrawingPoints)
   const addDrawingPoint = useMapStore((s) => s.addDrawingPoint)
   const finishDraftShape = useMapStore((s) => s.finishDraftShape)
+  const finishDrawingShape = useMapStore((s) => s.finishDrawingShape)
   const pendingFlyTo = useMapStore((s) => s.pendingFlyTo)
   const clearFlyTo = useMapStore((s) => s.clearFlyTo)
   const pendingZoomDelta = useMapStore((s) => s.pendingZoomDelta)
@@ -436,6 +437,17 @@ export function MapCanvas({ locations }: MapCanvasProps) {
     [drawMode]
   )
 
+  // Double-click closes an in-progress polygon — the standard map-drawing
+  // gesture, alongside the toolbar's Finish button.
+  const handleDblClick = useCallback(
+    (e: MapLayerMouseEvent) => {
+      if (!drawMode) return
+      e.preventDefault()
+      if (drawTool === "polygon") finishDrawingShape()
+    },
+    [drawMode, drawTool, finishDrawingShape]
+  )
+
   // Click handlers
   const handleClick = useCallback(
     (e: MapLayerMouseEvent) => {
@@ -492,6 +504,7 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
       onClick={handleClick}
+      onDblClick={handleDblClick}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       onContextMenu={handleContextMenu}
