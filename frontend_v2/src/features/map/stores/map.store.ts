@@ -1,5 +1,10 @@
 import { create } from "zustand"
 
+export interface BoundingShape {
+  id: string
+  coordinates: [number, number][]
+}
+
 interface MapStore {
   /* Selection */
   selectedLocationKey: string | null
@@ -8,6 +13,11 @@ interface MapStore {
   proximityMode: boolean
   proximityAnchorKey: string | null
   proximityRadius: number
+
+  /* Bounding shape filter */
+  drawMode: boolean
+  drawingPoints: [number, number][]
+  boundingShapes: BoundingShape[]
 
   /* Layer toggles */
   showHeatmap: boolean
@@ -33,6 +43,13 @@ interface MapStore {
   setProximityAnchor: (key: string | null) => void
   setProximityRadius: (radius: number) => void
   toggleProximityMode: () => void
+  toggleDrawMode: () => void
+  addDrawingPoint: (point: [number, number]) => void
+  undoLastDrawingPoint: () => void
+  finishDrawingShape: () => void
+  cancelDrawingShape: () => void
+  removeBoundingShape: (id: string) => void
+  clearBoundingShapes: () => void
   toggleHeatmap: () => void
   toggleType: (type: string) => void
   setHiddenTypes: (types: Set<string>) => void
@@ -51,11 +68,22 @@ interface MapStore {
   reset: () => void
 }
 
+function closeRing(points: [number, number][]) {
+  const first = points[0]
+  const last = points[points.length - 1]
+  if (!first || !last) return points
+  if (first[0] === last[0] && first[1] === last[1]) return points
+  return [...points, first]
+}
+
 export const useMapStore = create<MapStore>()((set) => ({
   selectedLocationKey: null,
   proximityMode: false,
   proximityAnchorKey: null,
   proximityRadius: 5,
+  drawMode: false,
+  drawingPoints: [],
+  boundingShapes: [],
   showHeatmap: false,
   hiddenTypes: new Set(),
   hiddenConfidenceTiers: new Set(),
@@ -68,15 +96,56 @@ export const useMapStore = create<MapStore>()((set) => ({
 
   selectLocation: (key) => set({ selectedLocationKey: key }),
   setProximityAnchor: (key) =>
-    set({ proximityAnchorKey: key, proximityMode: key !== null }),
+    set({
+      proximityAnchorKey: key,
+      proximityMode: key !== null,
+      ...(key ? { drawMode: false, drawingPoints: [] } : {}),
+    }),
   setProximityRadius: (radius) => set({ proximityRadius: radius }),
   toggleProximityMode: () =>
     set((s) => {
       if (s.proximityAnchorKey) {
         return { proximityMode: false, proximityAnchorKey: null }
       }
-      return { proximityMode: !s.proximityMode }
+      const proximityMode = !s.proximityMode
+      return {
+        proximityMode,
+        ...(proximityMode ? { drawMode: false, drawingPoints: [] } : {}),
+      }
     }),
+  toggleDrawMode: () =>
+    set((s) => {
+      const drawMode = !s.drawMode
+      return {
+        drawMode,
+        drawingPoints: [],
+        ...(drawMode ? { proximityMode: false, proximityAnchorKey: null } : {}),
+      }
+    }),
+  addDrawingPoint: (point) =>
+    set((s) => ({ drawingPoints: [...s.drawingPoints, point] })),
+  undoLastDrawingPoint: () =>
+    set((s) => ({ drawingPoints: s.drawingPoints.slice(0, -1) })),
+  finishDrawingShape: () =>
+    set((s) => {
+      if (s.drawingPoints.length < 3) return {}
+      return {
+        drawingPoints: [],
+        boundingShapes: [
+          ...s.boundingShapes,
+          {
+            id: crypto.randomUUID(),
+            coordinates: closeRing(s.drawingPoints),
+          },
+        ],
+      }
+    }),
+  cancelDrawingShape: () => set({ drawingPoints: [] }),
+  removeBoundingShape: (id) =>
+    set((s) => ({
+      boundingShapes: s.boundingShapes.filter((shape) => shape.id !== id),
+    })),
+  clearBoundingShapes: () => set({ boundingShapes: [] }),
   toggleHeatmap: () => set((s) => ({ showHeatmap: !s.showHeatmap })),
   toggleType: (type) =>
     set((s) => {
@@ -117,6 +186,9 @@ export const useMapStore = create<MapStore>()((set) => ({
       proximityMode: false,
       proximityAnchorKey: null,
       proximityRadius: 5,
+      drawMode: false,
+      drawingPoints: [],
+      boundingShapes: [],
       showHeatmap: false,
       hiddenTypes: new Set(),
       hiddenConfidenceTiers: new Set(),

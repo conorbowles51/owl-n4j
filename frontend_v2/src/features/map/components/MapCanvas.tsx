@@ -6,14 +6,27 @@ import { useMapTheme } from "../hooks/use-map-theme"
 import { useMapStore } from "../stores/map.store"
 import { useGraphStore } from "@/stores/graph.store"
 import { useMapAnalysis, type MapLocation } from "../hooks/use-map-data"
-import { locationsToGeoJSON, createCircleGeoJSON } from "../lib/geojson"
 import {
+  boundingShapesToGeoJSON,
+  createCircleGeoJSON,
+  drawingLineToGeoJSON,
+  drawingPointsToGeoJSON,
+  drawingPolygonPreviewToGeoJSON,
+  locationsToGeoJSON,
+} from "../lib/geojson"
+import {
+  boundingShapeFillLayer,
+  boundingShapeOutlineLayer,
+  drawingLineLayer,
+  drawingPointLayer,
+  drawingShapeFillLayer,
+  drawingShapeOutlineLayer,
   pointLayer,
   heatmapLayer,
   proximityFillLayer,
   proximityOutlineLayer,
 } from "../lib/map-styles"
-import { getConfidenceTier, needsReview } from "@/lib/location-confidence"
+import { getVisibleLocations } from "../lib/visible-locations"
 import { EntityPopup } from "./EntityPopup"
 import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
 
@@ -38,6 +51,10 @@ export function MapCanvas({ locations }: MapCanvasProps) {
   const proximityAnchorKey = useMapStore((s) => s.proximityAnchorKey)
   const proximityRadius = useMapStore((s) => s.proximityRadius)
   const setProximityAnchor = useMapStore((s) => s.setProximityAnchor)
+  const drawMode = useMapStore((s) => s.drawMode)
+  const drawingPoints = useMapStore((s) => s.drawingPoints)
+  const boundingShapes = useMapStore((s) => s.boundingShapes)
+  const addDrawingPoint = useMapStore((s) => s.addDrawingPoint)
   const pendingFlyTo = useMapStore((s) => s.pendingFlyTo)
   const clearFlyTo = useMapStore((s) => s.clearFlyTo)
   const pendingZoomDelta = useMapStore((s) => s.pendingZoomDelta)
@@ -51,16 +68,33 @@ export function MapCanvas({ locations }: MapCanvasProps) {
   // GeoJSON data
   const visibleLocations = useMemo(
     () =>
-      locations.filter((l) => {
-        if (hiddenTypes.has(l.type)) return false
-        if (needsReviewMode) return needsReview(l)
-        return !hiddenConfidenceTiers.has(getConfidenceTier(l))
+      getVisibleLocations(locations, {
+        hiddenTypes,
+        hiddenConfidenceTiers,
+        needsReviewMode,
+        boundingShapes,
       }),
-    [locations, hiddenTypes, hiddenConfidenceTiers, needsReviewMode]
+    [locations, hiddenTypes, hiddenConfidenceTiers, needsReviewMode, boundingShapes]
   )
   const geojson = useMemo(
     () => locationsToGeoJSON(visibleLocations),
     [visibleLocations]
+  )
+  const boundingShapesGeoJSON = useMemo(
+    () => boundingShapesToGeoJSON(boundingShapes),
+    [boundingShapes]
+  )
+  const drawingLineGeoJSON = useMemo(
+    () => drawingLineToGeoJSON(drawingPoints),
+    [drawingPoints]
+  )
+  const drawingPolygonPreviewGeoJSON = useMemo(
+    () => drawingPolygonPreviewToGeoJSON(drawingPoints),
+    [drawingPoints]
+  )
+  const drawingPointsGeoJSON = useMemo(
+    () => drawingPointsToGeoJSON(drawingPoints),
+    [drawingPoints]
   )
 
   // Proximity anchor
@@ -160,6 +194,12 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       const map = mapRef.current?.getMap()
       if (!map) return
 
+      if (drawMode) {
+        map.getCanvas().style.cursor = "crosshair"
+        setHoveredLocationKey(null)
+        return
+      }
+
       const features = map.queryRenderedFeatures(e.point, {
         layers: ["unclustered-point"],
       })
@@ -177,7 +217,7 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       map.getCanvas().style.cursor = "default"
       startHide()
     },
-    [cancelHide, startHide]
+    [cancelHide, drawMode, startHide]
   )
 
   const handleMouseLeave = useCallback(() => {
@@ -189,6 +229,12 @@ export function MapCanvas({ locations }: MapCanvasProps) {
     (e: MapLayerMouseEvent) => {
       const map = mapRef.current?.getMap()
       if (!map) return
+
+      if (drawMode) {
+        addDrawingPoint([e.lngLat.lng, e.lngLat.lat])
+        setHoveredLocationKey(null)
+        return
+      }
 
       // Check for point click
       const pointFeatures = map.queryRenderedFeatures(e.point, {
@@ -209,7 +255,14 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       // Click on empty space — deselect
       selectNodes([])
     },
-    [selectNodes, proximityMode, proximityAnchorKey, setProximityAnchor]
+    [
+      addDrawingPoint,
+      drawMode,
+      selectNodes,
+      proximityMode,
+      proximityAnchorKey,
+      setProximityAnchor,
+    ]
   )
 
   return (
@@ -226,6 +279,36 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       interactiveLayerIds={["unclustered-point"]}
     >
       <NavigationControl position="top-right" showCompass={false} visualizePitch={false} />
+
+      {/* Committed bounding filters */}
+      {boundingShapesGeoJSON.features.length > 0 && (
+        <Source id="bounding-shapes" type="geojson" data={boundingShapesGeoJSON}>
+          <Layer {...boundingShapeFillLayer} />
+          <Layer {...boundingShapeOutlineLayer} />
+        </Source>
+      )}
+
+      {/* In-progress bounding shape */}
+      {drawingPolygonPreviewGeoJSON && (
+        <Source
+          id="drawing-shape-preview"
+          type="geojson"
+          data={drawingPolygonPreviewGeoJSON}
+        >
+          <Layer {...drawingShapeFillLayer} />
+          <Layer {...drawingShapeOutlineLayer} />
+        </Source>
+      )}
+      {drawingLineGeoJSON && (
+        <Source id="drawing-shape-line" type="geojson" data={drawingLineGeoJSON}>
+          <Layer {...drawingLineLayer} />
+        </Source>
+      )}
+      {drawingPointsGeoJSON.features.length > 0 && (
+        <Source id="drawing-shape-points" type="geojson" data={drawingPointsGeoJSON}>
+          <Layer {...drawingPointLayer} />
+        </Source>
+      )}
 
       {/* Main data source */}
       <Source id="locations" type="geojson" data={geojson}>

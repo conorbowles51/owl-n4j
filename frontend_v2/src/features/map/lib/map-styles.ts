@@ -80,3 +80,64 @@ export const proximityOutlineLayer: LayerProps = {
     "line-opacity": 0.6,
   },
 }
+
+export const boundingShapeFillLayer: LayerProps = {
+  id: "bounding-shape-fill",
+  type: "fill",
+  paint: {
+    "fill-color": "#B7791F",
+    "fill-opacity": 0.12,
+  },
+}
+
+export const boundingShapeOutlineLayer: LayerProps = {
+  id: "bounding-shape-outline",
+  type: "line",
+  paint: {
+    "line-color": "#B7791F",
+    "line-width": 2,
+    "line-opacity": 0.85,
+  },
+}
+
+export const drawingShapeFillLayer: LayerProps = {
+  id: "drawing-shape-fill",
+  type: "fill",
+  paint: {
+    "fill-color": "#B7791F",
+    "fill-opacity": 0.08,
+  },
+}
+
+export const drawingShapeOutlineLayer: LayerProps = {
+  id: "drawing-shape-outline",
+  type: "line",
+  paint: {
+    "line-color": "#B7791F",
+    "line-width": 2,
+    "line-dasharray": [2, 2],
+    "line-opacity": 0.8,
+  },
+}
+
+export const drawingLineLayer: LayerProps = {
+  id: "drawing-shape-line",
+  type: "line",
+  paint: {
+    "line-color": "#B7791F",
+    "line-width": 2,
+    "line-dasharray": [2, 2],
+    "line-opacity": 0.8,
+  },
+}
+
+export const drawingPointLayer: LayerProps = {
+  id: "drawing-shape-point",
+  type: "circle",
+  paint: {
+    "circle-color": "#ffffff",
+    "circle-radius": 5,
+    "circle-stroke-color": "#B7791F",
+    "circle-stroke-width": 2,
+  },
+}

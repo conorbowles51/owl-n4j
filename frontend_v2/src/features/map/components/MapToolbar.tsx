@@ -3,8 +3,11 @@ import {
   Crosshair,
   Layers,
   ListChecks,
+  Pencil,
   RefreshCw,
   ShieldCheck,
+  Trash2,
+  Undo2,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -24,6 +27,7 @@ import {
   getConfidenceTier,
   needsReview,
 } from "@/lib/location-confidence"
+import { getVisibleLocations } from "../lib/visible-locations"
 
 interface MapToolbarProps {
   caseId: string
@@ -52,6 +56,15 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
   const proximityMode = useMapStore((s) => s.proximityMode)
   const proximityAnchorKey = useMapStore((s) => s.proximityAnchorKey)
   const toggleProximityMode = useMapStore((s) => s.toggleProximityMode)
+  const drawMode = useMapStore((s) => s.drawMode)
+  const drawingPoints = useMapStore((s) => s.drawingPoints)
+  const boundingShapes = useMapStore((s) => s.boundingShapes)
+  const toggleDrawMode = useMapStore((s) => s.toggleDrawMode)
+  const undoLastDrawingPoint = useMapStore((s) => s.undoLastDrawingPoint)
+  const finishDrawingShape = useMapStore((s) => s.finishDrawingShape)
+  const cancelDrawingShape = useMapStore((s) => s.cancelDrawingShape)
+  const removeBoundingShape = useMapStore((s) => s.removeBoundingShape)
+  const clearBoundingShapes = useMapStore((s) => s.clearBoundingShapes)
   const hiddenConfidenceTiers = useMapStore((s) => s.hiddenConfidenceTiers)
   const hiddenTypes = useMapStore((s) => s.hiddenTypes)
   const toggleConfidenceTier = useMapStore((s) => s.toggleConfidenceTier)
@@ -73,12 +86,26 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
   }
 
   const confidenceFilterActive = hiddenConfidenceTiers.size > 0
-  const visibleMapLocations = locations.filter((loc) => {
-    if (hiddenTypes.has(loc.type)) return false
-    if (needsReviewMode) return needsReview(loc)
-    return !hiddenConfidenceTiers.has(getConfidenceTier(loc))
+  const shapeFilterActive = boundingShapes.length > 0
+  const visibleMapLocations = getVisibleLocations(locations, {
+    hiddenTypes,
+    hiddenConfidenceTiers,
+    needsReviewMode,
+    boundingShapes,
   })
   const visibleCount = visibleMapLocations.length
+  const activeFilterLabels = [
+    needsReviewMode ? "needs review" : null,
+    confidenceFilterActive ? "confidence" : null,
+    shapeFilterActive
+      ? `${boundingShapes.length} area${boundingShapes.length !== 1 ? "s" : ""}`
+      : null,
+  ].filter(Boolean)
+
+  const clearActiveFilters = () => {
+    clearConfidenceFilter()
+    clearBoundingShapes()
+  }
 
   const handleRescan = async () => {
     await fetchAPI(`/api/graph/cases/${caseId}/rescan-locations`, {
@@ -182,6 +209,119 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
           ) : null}
         </Button>
 
+        {/* Bounding area drawing */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant={drawMode || shapeFilterActive ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 text-xs"
+            >
+              <Pencil className="mr-1 size-3.5" />
+              Areas
+              {shapeFilterActive ? (
+                <Badge variant="amber" className="ml-1 text-[9px]">
+                  {boundingShapes.length}
+                </Badge>
+              ) : drawMode ? (
+                <Badge variant="secondary" className="ml-1 text-[9px]">
+                  Drawing
+                </Badge>
+              ) : null}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64 p-2">
+            <div className="mb-2 flex items-center justify-between gap-2 px-1">
+              <span className="text-xs font-medium">Area filter</span>
+              <span className="text-[10px] text-muted-foreground">
+                {visibleCount} of {locations.length}
+              </span>
+            </div>
+
+            <Button
+              variant={drawMode ? "secondary" : "outline"}
+              size="sm"
+              className="mb-2 h-7 w-full text-xs"
+              onClick={toggleDrawMode}
+            >
+              <Pencil className="size-3.5" />
+              {drawMode ? "Stop drawing" : "Draw area"}
+            </Button>
+
+            {drawMode && (
+              <div className="mb-2 grid grid-cols-[1fr_auto_auto_auto] items-center gap-1 border-b border-border pb-2">
+                <span className="px-1 text-[10px] text-muted-foreground">
+                  {drawingPoints.length} point
+                  {drawingPoints.length !== 1 ? "s" : ""}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Undo last point"
+                  disabled={drawingPoints.length === 0}
+                  onClick={undoLastDrawingPoint}
+                >
+                  <Undo2 className="size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Cancel drawing"
+                  disabled={drawingPoints.length === 0}
+                  onClick={cancelDrawingShape}
+                >
+                  <X className="size-3.5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Finish area"
+                  disabled={drawingPoints.length < 3}
+                  onClick={finishDrawingShape}
+                >
+                  <Check className="size-3.5" />
+                </Button>
+              </div>
+            )}
+
+            {boundingShapes.length > 0 ? (
+              <div className="space-y-1">
+                {boundingShapes.map((shape, index) => (
+                  <div
+                    key={shape.id}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted"
+                  >
+                    <span>Area {index + 1}</span>
+                    <span className="ml-auto text-[10px] text-muted-foreground">
+                      {Math.max(shape.coordinates.length - 1, 0)} points
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                      aria-label={`Remove area ${index + 1}`}
+                      onClick={() => removeBoundingShape(shape.id)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={clearBoundingShapes}
+                  className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Trash2 className="size-3.5" />
+                  Clear areas
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed border-border px-2 py-2 text-center text-[10px] text-muted-foreground">
+                No areas
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+
         <div className="flex-1" />
 
         {/* Rescan button */}
@@ -202,14 +342,19 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
       </div>
 
       {/* Active filter banner: the map is NOT showing the full picture */}
-      {(needsReviewMode || confidenceFilterActive) && (
+      {(needsReviewMode || confidenceFilterActive || shapeFilterActive) && (
         <div className="flex items-center gap-2 border-b border-amber-500/40 bg-yellow-500/15 px-3 py-1 text-[11px] font-medium text-yellow-700 dark:text-yellow-400">
-          <ShieldCheck className="size-3.5" />
-          {needsReviewMode
-            ? `Needs review mode: showing ${visibleCount} of ${locations.length} map pins; ${reviewCount} total locations need review`
-            : `Confidence filter active: showing ${visibleCount} of ${locations.length} locations`}
+          {shapeFilterActive ? (
+            <Pencil className="size-3.5" />
+          ) : (
+            <ShieldCheck className="size-3.5" />
+          )}
+          {`Showing ${visibleCount} of ${locations.length} locations (${activeFilterLabels.join(", ")})`}
+          {needsReviewMode && reviewCount > 0
+            ? `; ${reviewCount} total locations need review`
+            : ""}
           <button
-            onClick={clearConfidenceFilter}
+            onClick={clearActiveFilters}
             className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-yellow-500/20"
           >
             <X className="size-3" />
