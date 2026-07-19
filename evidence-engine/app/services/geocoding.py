@@ -53,14 +53,6 @@ def _clean_geo_value(value: Any) -> str:
     return _WHITESPACE_RE.sub(" ", str(value).strip())
 
 
-<<<<<<< HEAD
-def _is_specific_location_text(value: str) -> bool:
-    cleaned = _clean_geo_value(value)
-    if not cleaned:
-        return False
-    return normalize_geocode_query(cleaned) not in _VAGUE_LOCATION_TERMS
-
-
 def _location_granularity(result: dict[str, Any] | None) -> str | None:
     if not result:
         return None
@@ -81,8 +73,6 @@ def _location_granularity(result: dict[str, Any] | None) -> str | None:
     return None
 
 
-=======
->>>>>>> origin/integration/evidence-main-reunion
 def build_geocode_request(
     category: str,
     name: str,
