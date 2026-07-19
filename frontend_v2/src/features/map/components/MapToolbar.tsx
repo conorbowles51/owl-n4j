@@ -1,3 +1,4 @@
+import { useState } from "react"
 import {
   BoxSelect,
   Check,
@@ -53,6 +54,7 @@ function FilterCheckmark({ checked }: { checked: boolean }) {
 
 export function MapToolbar({ caseId, locations }: MapToolbarProps) {
   const queryClient = useQueryClient()
+  const [areasOpen, setAreasOpen] = useState(false)
   const showHeatmap = useMapStore((s) => s.showHeatmap)
   const toggleHeatmap = useMapStore((s) => s.toggleHeatmap)
   const proximityMode = useMapStore((s) => s.proximityMode)
@@ -225,7 +227,15 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
         </Button>
 
         {/* Bounding area drawing */}
-        <Popover>
+        <Popover
+          open={areasOpen}
+          onOpenChange={(open) => {
+            // While drawing, map clicks land "outside" the popover and Radix
+            // would dismiss it — keep it open so Finish/Apply stay reachable
+            if (!open && drawMode) return
+            setAreasOpen(open)
+          }}
+        >
           <PopoverTrigger asChild>
             <Button
               variant={

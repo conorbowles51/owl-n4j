@@ -217,14 +217,32 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       }
 
       if (event.button === 0 && boxDragRef.current) {
+        // Release landed off the map canvas — commit the box instead of
+        // silently dropping it
+        const boxDrag = boxDragRef.current
         boxDragRef.current = null
-        setDrawingPoints([])
+        const map = mapRef.current?.getMap()
+        const releasePoint = { x: event.clientX, y: event.clientY }
+        if (
+          map &&
+          getPointDistance(boxDrag.startPoint, releasePoint) >=
+            BOX_DRAW_MIN_PIXELS
+        ) {
+          const rect = map.getCanvas().getBoundingClientRect()
+          const { lng, lat } = map.unproject([
+            releasePoint.x - rect.left,
+            releasePoint.y - rect.top,
+          ])
+          finishDraftShape(boundsToClosedRing(boxDrag.startLngLat, [lng, lat]))
+        } else {
+          setDrawingPoints([])
+        }
       }
     }
 
     window.addEventListener("mouseup", handleWindowMouseUp)
     return () => window.removeEventListener("mouseup", handleWindowMouseUp)
-  }, [drawMode, setDrawingPoints])
+  }, [drawMode, finishDraftShape, setDrawingPoints])
 
   // Fit bounds on initial load
   const handleLoad = useCallback(() => {
