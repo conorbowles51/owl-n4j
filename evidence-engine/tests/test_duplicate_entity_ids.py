@@ -71,6 +71,10 @@ async def test_write_graph_coalesces_entities_before_embedding(monkeypatch: pyte
     async def fake_embed_entities(entities, case_id) -> None:
         embedded_ids.extend(entity.id for entity in entities)
 
+    async def fake_contextual_geocoding(entities, relationships, case_id, chunks=None):
+        return {}, {}
+
+    monkeypatch.setattr(write_graph_module, "apply_contextual_geocoding", fake_contextual_geocoding)
     monkeypatch.setattr(write_graph_module, "_ensure_indexes", fake_ensure_indexes)
     monkeypatch.setattr(write_graph_module, "_write_entities", fake_write_entities)
     monkeypatch.setattr(write_graph_module, "_write_relationships", fake_write_relationships)

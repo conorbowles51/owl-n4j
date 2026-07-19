@@ -8,14 +8,10 @@ from app.pipeline.resolve_entities import ResolvedEntity
 async def test_write_entities_preserves_manual_fields(monkeypatch):
     captured = {}
 
-    async def fake_apply_geocoding(entities):
-        return None
-
     async def fake_execute_write(query, params):
         captured["query"] = query
         captured["params"] = params
 
-    monkeypatch.setattr(write_graph, "_apply_geocoding", fake_apply_geocoding)
     monkeypatch.setattr(write_graph.neo4j_client, "execute_write", fake_execute_write)
 
     entity = ResolvedEntity(
@@ -40,14 +36,10 @@ async def test_write_entities_preserves_manual_fields(monkeypatch):
 async def test_write_entities_canonicalizes_temporal_aliases_and_preserves_lists(monkeypatch):
     captured = {}
 
-    async def fake_apply_geocoding(entities):
-        return None
-
     async def fake_execute_write(query, params):
         captured["query"] = query
         captured["params"] = params
 
-    monkeypatch.setattr(write_graph, "_apply_geocoding", fake_apply_geocoding)
     monkeypatch.setattr(write_graph.neo4j_client, "execute_write", fake_execute_write)
 
     entity = ResolvedEntity(

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.pipeline import contextual_geocoding
@@ -187,3 +189,107 @@ async def test_contextual_geocoding_marks_country_only_needs_review(
     assert entity.properties["geocoding_granularity"] == "country_only"
     assert "latitude" not in entity.properties
     assert summary["geocoding"]["counts"]["needs_review"] == 1
+
+
+@pytest.mark.asyncio
+async def test_contextual_geocoding_marks_organization_without_address_needs_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def no_existing(case_id: str):
+        return []
+
+    async def fake_geocode(query: str, limit: int = 5):
+        result = _candidate(query, place_class="office", place_type="company", importance=0.55)
+        result.raw_response["address"] = {"city": "London", "country": "United Kingdom"}
+        return [result]
+
+    monkeypatch.setattr(contextual_geocoding.neo4j_client, "get_case_geocoded_locations", no_existing)
+    monkeypatch.setattr(contextual_geocoding.geocoding_service, "geocode_candidates", fake_geocode)
+
+    entity = ResolvedEntity(
+        id="loc-org",
+        category="Location",
+        specific_type="",
+        name="Acme Holdings Ltd",
+        properties={},
+        source_files=["case.pdf"],
+    )
+
+    summary, _ = await apply_contextual_geocoding([entity], [], "case-1")
+
+    assert entity.properties["geocoding_status"] == "needs_review"
+    assert entity.properties["geocoding_granularity"] == "organization_without_address"
+    assert entity.properties["geocoding_precision"] == "unmapped"
+    assert "latitude" not in entity.properties
+    assert summary["geocoding"]["counts"]["needs_review"] == 1
+
+
+@pytest.mark.asyncio
+async def test_contextual_geocoding_marks_ambiguous_candidates_needs_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def no_existing(case_id: str):
+        return []
+
+    async def fake_geocode(query: str, limit: int = 5):
+        illinois = _candidate(query, lat=39.7990, lon=-89.6440, place_class="place", place_type="city", importance=0.72)
+        illinois.raw_response["address"] = {"city": "Springfield", "state": "Illinois", "country_code": "us"}
+        massachusetts = _candidate(query, lat=42.1015, lon=-72.5898, place_class="place", place_type="city", importance=0.68)
+        massachusetts.raw_response["address"] = {"city": "Springfield", "state": "Massachusetts", "country_code": "us"}
+        return [illinois, massachusetts]
+
+    monkeypatch.setattr(contextual_geocoding.neo4j_client, "get_case_geocoded_locations", no_existing)
+    monkeypatch.setattr(contextual_geocoding.geocoding_service, "geocode_candidates", fake_geocode)
+
+    entity = ResolvedEntity(
+        id="loc-ambiguous",
+        category="Location",
+        specific_type="",
+        name="Springfield",
+        properties={"city": "Springfield"},
+        source_files=["case.pdf"],
+    )
+
+    summary, _ = await apply_contextual_geocoding([entity], [], "case-1")
+
+    assert entity.properties["geocoding_status"] == "needs_review"
+    assert entity.properties["geocoding_granularity"] == "ambiguous_candidates"
+    assert entity.properties["geocoding_reason"] == "top_geocoder_candidates_disagree_materially"
+    assert "latitude" not in entity.properties
+    stored_candidates = json.loads(entity.properties["geocoding_candidates"])
+    assert len(stored_candidates) == 2
+    assert summary["geocoding"]["counts"]["needs_review"] == 1
+
+
+@pytest.mark.asyncio
+async def test_contextual_geocoding_accepts_town_as_approximate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def no_existing(case_id: str):
+        return []
+
+    async def fake_geocode(query: str, limit: int = 5):
+        result = _candidate(query, lat=51.1465, lon=0.8676, place_class="place", place_type="town", importance=0.62)
+        result.raw_response["address"] = {"town": "Ashford", "country": "United Kingdom"}
+        return [result]
+
+    monkeypatch.setattr(contextual_geocoding.neo4j_client, "get_case_geocoded_locations", no_existing)
+    monkeypatch.setattr(contextual_geocoding.geocoding_service, "geocode_candidates", fake_geocode)
+
+    entity = ResolvedEntity(
+        id="loc-town",
+        category="Location",
+        specific_type="",
+        name="Ashford",
+        properties={"city": "Ashford", "country": "United Kingdom"},
+        source_files=["case.pdf"],
+    )
+
+    summary, _ = await apply_contextual_geocoding([entity], [], "case-1")
+
+    assert entity.properties["geocoding_status"] == "success"
+    assert entity.properties["geocoding_granularity"] == "town"
+    assert entity.properties["geocoding_precision"] == "approximate"
+    assert entity.properties["latitude"] == 51.1465
+    assert summary["geocoding"]["counts"]["accepted"] == 1
+    assert summary["geocoding"]["counts"]["approximate"] == 1
