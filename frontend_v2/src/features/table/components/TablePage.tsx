@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef, useMemo } from "react"
 import { useParams } from "react-router-dom"
+import { TableProperties } from "lucide-react"
+import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -32,6 +34,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
+import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
+import {
+  useAddSignificantEntities,
+  useRemoveSignificantEntities,
+  useSignificantManifest,
+} from "@/features/significant/hooks/use-significant"
 
 const BULK_EDIT_HIDDEN_PROPERTIES = new Set([
   "id",
@@ -64,6 +73,7 @@ const BULK_EDIT_HIDDEN_PROPERTIES = new Set([
 
 export function TablePage() {
   const { id: caseId } = useParams()
+  const caseLayer = useCaseLayer(caseId)
   const queryClient = useQueryClient()
   const { data: graphData, isLoading } = useGraphData(caseId)
 
@@ -106,7 +116,11 @@ export function TablePage() {
   const [addOpen, setAddOpen] = useState(false)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [significantRemoveConfirmOpen, setSignificantRemoveConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const { entityKeySet: significantEntityKeys } = useSignificantManifest(caseId)
+  const addSignificant = useAddSignificantEntities(caseId ?? "")
+  const removeSignificant = useRemoveSignificantEntities(caseId ?? "")
 
   // Refs
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -332,6 +346,10 @@ export function TablePage() {
 
   // Bulk actions
   const checkedArray = useMemo(() => Array.from(checkedKeys), [checkedKeys])
+  const uncheckedSignificantArray = useMemo(
+    () => checkedArray.filter((key) => !significantEntityKeys.has(key)),
+    [checkedArray, significantEntityKeys]
+  )
   const checkedNodes = useMemo(
     () => nodes.filter((n) => checkedKeys.has(n.key)),
     [nodes, checkedKeys]
@@ -344,6 +362,45 @@ export function TablePage() {
   const handleDelete = useCallback(() => {
     if (checkedArray.length > 0) setDeleteConfirmOpen(true)
   }, [checkedArray])
+
+  const handleAddToSignificant = useCallback(async () => {
+    if (!caseId || uncheckedSignificantArray.length === 0) return
+    try {
+      const result = await addSignificant.mutateAsync({
+        entityKeys: uncheckedSignificantArray,
+        source: "selection",
+        context: { surface: "table_bulk_selection" },
+      })
+      toast.success(
+        `${(result.added_count ?? 0).toLocaleString()} entities added to Significant`
+      )
+      clearChecked()
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not add entities to Significant"
+      )
+    }
+  }, [addSignificant, caseId, clearChecked, uncheckedSignificantArray])
+
+  const handleRemoveFromSignificant = useCallback(async () => {
+    if (!caseId || checkedArray.length === 0) return
+    try {
+      const result = await removeSignificant.mutateAsync(checkedArray)
+      toast.success(
+        `${(result.removed_count ?? 0).toLocaleString()} entities removed from Significant`
+      )
+      clearChecked()
+      setSignificantRemoveConfirmOpen(false)
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not remove entities from Significant"
+      )
+    }
+  }, [caseId, checkedArray, clearChecked, removeSignificant])
 
   const confirmDelete = useCallback(async () => {
     if (!caseId) return
@@ -431,6 +488,17 @@ export function TablePage() {
     )
   }
 
+  if (nodes.length === 0 && caseId && caseLayer === "significant") {
+    return (
+      <SignificantEmptyState
+        caseId={caseId}
+        icon={TableProperties}
+        eligibleTitle="No available significant entities"
+        eligibleDescription="The Significant manifest contains references, but none are currently available in the entity table."
+      />
+    )
+  }
+
   return (
     <div className="flex h-full flex-col bg-background">
       <TableToolbar
@@ -465,6 +533,17 @@ export function TablePage() {
         onDelete={handleDelete}
         onBulkEdit={() => setBulkEditOpen(true)}
         onClear={clearChecked}
+        significantMode={caseLayer === "significant"}
+        significantActionCount={
+          caseLayer === "significant"
+            ? checkedArray.length
+            : uncheckedSignificantArray.length
+        }
+        onAddToSignificant={() => void handleAddToSignificant()}
+        onRemoveFromSignificant={() => setSignificantRemoveConfirmOpen(true)}
+        significantPending={
+          addSignificant.isPending || removeSignificant.isPending
+        }
       />
 
       {filteredCount === 0 ? (
@@ -561,6 +640,40 @@ export function TablePage() {
               disabled={deleting}
             >
               {deleting ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={significantRemoveConfirmOpen}
+        onOpenChange={setSignificantRemoveConfirmOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Remove {checkedArray.length.toLocaleString()} entities from Significant?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            The underlying entities will remain in the full case graph. They will
+            disappear only from the shared Significant layer and its Timeline,
+            Map and Table projections.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSignificantRemoveConfirmOpen(false)}
+              disabled={removeSignificant.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => void handleRemoveFromSignificant()}
+              disabled={removeSignificant.isPending}
+            >
+              {removeSignificant.isPending ? "Removing…" : "Remove"}
             </Button>
           </DialogFooter>
         </DialogContent>

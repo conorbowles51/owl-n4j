@@ -52,6 +52,7 @@ import {
   Send,
   Settings2,
   Sparkles,
+  Star,
   Table2,
   Wrench,
   X,
@@ -71,12 +72,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Switch } from "@/components/ui/switch"
 import { downloadProtectedFile } from "@/lib/protected-file"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
-import { useTheme } from "@/lib/theme"
+import { useTheme } from "@/lib/theme-context"
 import { useGraphStore } from "@/stores/graph.store"
 import { useUIStore } from "@/stores/ui.store"
 import { EditNodeDialog } from "@/features/graph/components/EditNodeDialog"
 import { NodeDetailSheet } from "@/features/graph/components/NodeDetailSheet"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -538,6 +540,7 @@ function chartSeries(artifact: AgentArtifact) {
 
 export function AgentPage() {
   const { id: caseId } = useParams()
+  const caseLayer = useCaseLayer(caseId)
   const [threads, setThreads] = useState<AgentThreadSummary[]>([])
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [messages, setMessages] = useState<AgentClientMessage[]>([])
@@ -690,6 +693,7 @@ export function AgentPage() {
           threadId: activeThreadId,
           provider: selectedModel.provider,
           model: selectedModel.id,
+          caseLayer,
         },
         (event) => {
           if (event.type === "run_started") {
@@ -916,6 +920,15 @@ export function AgentPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {caseLayer === "significant" ? (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200"
+                  >
+                    <Star className="size-3 fill-current" />
+                    Significant only
+                  </Badge>
+                ) : null}
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -998,7 +1011,9 @@ export function AgentPage() {
                       Ask the agent to investigate
                     </h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      It can search the graph, inspect documents, run safe read-only Cypher, and build focused views.
+                      {caseLayer === "significant"
+                        ? "It will investigate only the entities and induced relationships in your Significant layer."
+                        : "It can search the graph, inspect documents, run safe read-only Cypher, and build focused views."}
                     </p>
                   </div>
                 </div>

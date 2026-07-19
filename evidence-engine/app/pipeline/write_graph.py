@@ -75,15 +75,29 @@ async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
     for entity in entities:
         if entity.category not in GEOCODABLE_CATEGORIES:
             continue
-        if _has_coordinates(entity.properties):
+        force_regeocode = bool(entity.properties.pop("_force_regeocode", False))
+        previous_geocoding_state = entity.properties.pop(
+            "_previous_geocoding_state", {}
+        )
+        if _has_coordinates(entity.properties) and not force_regeocode:
             continue
 
         request = build_geocode_request(entity.category, entity.name, entity.properties)
         if request is None:
+            if force_regeocode:
+                entity.properties.update(previous_geocoding_state)
             continue
 
         result = await geocoding_service.geocode(request.query)
+        if force_regeocode and result.status != "success":
+            # Keep the existing, valid coarse pin if an attempted specificity
+            # upgrade cannot be resolved. Its metadata must continue to describe
+            # the coordinates that are actually stored.
+            entity.properties.update(previous_geocoding_state)
+            continue
+
         entity.properties["location_raw"] = request.location_raw
+        entity.properties["location_specificity"] = request.location_specificity
         entity.properties["geocoding_status"] = result.status
 
         if result.status != "success":
@@ -93,6 +107,11 @@ async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
         entity.properties["longitude"] = result.longitude
         entity.properties["location_formatted"] = result.formatted_address
         entity.properties["geocoding_confidence"] = result.confidence
+        entity.properties["geocoding_provider"] = result.provider
+        entity.properties["geocoding_query"] = result.original_query
+        entity.properties["geocoding_formatted_address"] = result.formatted_address
+        if result.location_granularity:
+            entity.properties["location_granularity"] = result.location_granularity
 
 
 # ---------------------------------------------------------------------------

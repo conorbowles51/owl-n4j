@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { useChatStore } from "../stores/chat.store"
 import { ChatSidePanel } from "./ChatSidePanel"
+import { useCaseLayerStore } from "@/features/significant/stores/case-layer.store"
 
 const panelMocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
@@ -30,14 +31,32 @@ vi.mock("@/features/evidence/api", () => ({
   },
 }))
 
-describe("ChatSidePanel", () => {
-  const renderPanel = () =>
-    render(
-      <MemoryRouter initialEntries={["/cases/case-1/chat"]}>
-        <ChatSidePanel caseId="case-1" />
-      </MemoryRouter>
-    )
+vi.hoisted(() => {
+  const storedValues = new Map<string, string>()
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      get length() {
+        return storedValues.size
+      },
+      clear: () => storedValues.clear(),
+      getItem: (key: string) => storedValues.get(key) ?? null,
+      key: (index: number) => Array.from(storedValues.keys())[index] ?? null,
+      removeItem: (key: string) => storedValues.delete(key),
+      setItem: (key: string, value: string) => storedValues.set(key, value),
+    } satisfies Storage,
+  })
+})
 
+function renderPanel() {
+  return render(
+    <MemoryRouter initialEntries={["/cases/case-1/chat"]}>
+      <ChatSidePanel caseId="case-1" />
+    </MemoryRouter>
+  )
+}
+
+describe("ChatSidePanel", () => {
   beforeEach(() => {
     panelMocks.sendMessage.mockReset()
     panelMocks.startNewConversation.mockReset()
@@ -72,6 +91,7 @@ describe("ChatSidePanel", () => {
       activeConversationId: "conversation-1",
       messages: [],
     })
+    useCaseLayerStore.setState({ layerByCase: {} })
   })
 
   it("shows the active conversation and starts new chats from compact controls", () => {
@@ -97,8 +117,35 @@ describe("ChatSidePanel", () => {
       "openai",
       "case_overview",
       expect.objectContaining({
+        label: "Case side panel",
         route: "/cases/case-1/chat",
         scope: "case_overview",
+        selection_within_scope: false,
+        view: "chat",
+      })
+    )
+  })
+
+  it("keeps graph-side selection inside the Significant layer", () => {
+    useCaseLayerStore.getState().setLayer("case-1", "significant")
+
+    renderPanel()
+
+    expect(screen.getByText("Significant Layer")).toBeInTheDocument()
+    const input = screen.getByPlaceholderText("Ask a question...")
+    fireEvent.change(input, { target: { value: "What matters here?" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(panelMocks.sendMessage).toHaveBeenCalledWith(
+      "What matters here?",
+      "gpt-5-mini",
+      "openai",
+      "significant",
+      expect.objectContaining({
+        scope: "significant",
+        selection_within_scope: false,
+        route: "/cases/case-1/chat",
+        view: "chat",
       })
     )
   })

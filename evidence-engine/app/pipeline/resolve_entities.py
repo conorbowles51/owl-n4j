@@ -13,6 +13,12 @@ import numpy as np
 from app.config import settings
 from app.pipeline.extract_entities import RawEntity, RawRelationship
 from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
+from app.pipeline.property_canonicalization import (
+    canonicalize_properties,
+    has_location_evidence,
+    location_specificity_rank,
+    promote_location_specificity,
+)
 from app.services.chroma_client import (
     get_or_create_collection,
     query_similar,
@@ -60,6 +66,69 @@ class ResolvedRelationship:
     confidence: float = 0.5
     source_files: list[str] = field(default_factory=list)
     mandatory_instructions: list[str] = field(default_factory=list)
+
+
+_MANUAL_LOCATION_FIELDS = {
+    "latitude",
+    "longitude",
+    "location_name",
+    "location_formatted",
+}
+_GEOCODING_STATE_FIELDS = {
+    "latitude",
+    "longitude",
+    "location_raw",
+    "location_formatted",
+    "location_specificity",
+    "geocoding_status",
+    "geocoding_confidence",
+}
+
+
+def _reconcile_existing_location_state(
+    entity: ResolvedEntity,
+    existing_properties: dict[str, Any],
+) -> None:
+    """Preserve the best location level and flag safe specificity upgrades.
+
+    A more-specific incoming address should be re-geocoded rather than paired
+    with an older coarse centroid. Investigator-placed coordinates are never
+    scheduled for automatic replacement.
+    """
+    entity.properties = canonicalize_properties(entity.category, entity.properties)
+    existing = canonicalize_properties(entity.category, existing_properties)
+
+    incoming_specificity = entity.properties.get("location_specificity")
+    existing_specificity = existing.get("location_specificity")
+    if incoming_specificity is None and existing_specificity is None:
+        return
+
+    manual_fields = set(existing.get("manual_fields") or [])
+    manually_placed = bool(manual_fields & _MANUAL_LOCATION_FIELDS)
+    incoming_rank = location_specificity_rank(incoming_specificity)
+    existing_rank = location_specificity_rank(existing_specificity)
+
+    if manually_placed or existing_rank >= incoming_rank:
+        if existing_specificity is not None or manually_placed:
+            entity.properties["location_specificity"] = (
+                existing_specificity or "unknown"
+            )
+        return
+
+    has_existing_coordinates = (
+        existing.get("latitude") is not None
+        and existing.get("longitude") is not None
+    )
+    if has_existing_coordinates:
+        entity.properties["_force_regeocode"] = True
+        entity.properties["_previous_geocoding_state"] = {
+            key: existing.get(key)
+            for key in _GEOCODING_STATE_FIELDS
+            if key in existing
+        }
+        entity.properties["_previous_geocoding_state"][
+            "location_specificity"
+        ] = existing_specificity or "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +558,11 @@ def _apply_merges(
             for alias in e.properties.get("aliases", []) or []:
                 all_names.add(str(alias))
 
+        promote_location_specificity(
+            merged_props,
+            *(entities[idx].properties for idx in indices),
+        )
+
         all_names.discard(primary.name)
 
         resolved.append(
@@ -566,6 +640,8 @@ def coalesce_resolved_entities_by_id(
             elif key in {"description", "role"} and isinstance(current, str) and isinstance(value, str):
                 if len(value) > len(current):
                     existing.properties[key] = value
+
+        promote_location_specificity(existing.properties, entity.properties)
 
         if entity.summary and (
             not existing.summary or len(entity.summary) > len(existing.summary)
@@ -890,6 +966,7 @@ async def resolve_entities(
             )
             if existing_props:
                 props = existing_props[0]["props"]
+                _reconcile_existing_location_state(entity, props)
 
                 # List properties: accumulate
                 existing_aliases = set(props.get("aliases", []) or [])
@@ -984,7 +1061,12 @@ def _filter_by_confidence(
     entity_threshold = settings.entity_confidence_threshold
     rel_threshold = settings.relationship_confidence_threshold
 
-    kept_entities = [e for e in entities if e.confidence >= entity_threshold]
+    kept_entities = [
+        e
+        for e in entities
+        if e.confidence >= entity_threshold
+        or has_location_evidence(e.category, e.name, e.properties)
+    ]
     kept_ids = {e.id for e in kept_entities}
 
     kept_rels = [

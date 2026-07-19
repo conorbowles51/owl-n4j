@@ -45,6 +45,7 @@ class Neo4jServiceFacade:
 
     # ── Graph visualization & search ───────────────────────────────────
     get_full_graph = staticmethod(graph_service.get_full_graph)
+    get_existing_node_keys = staticmethod(graph_service.get_existing_node_keys)
     get_graph_structure = staticmethod(graph_service.get_graph_structure)
     get_node_with_neighbours = staticmethod(graph_service.get_node_with_neighbours)
     expand_nodes = staticmethod(graph_service.expand_nodes)
@@ -66,6 +67,7 @@ class Neo4jServiceFacade:
     get_case_entity_summary = staticmethod(entity_service.get_case_entity_summary)
     batch_update_entities = staticmethod(graph_edit_service.batch_update_entities)
     update_graph_node = staticmethod(graph_edit_service.update_node)
+    update_geocoded_location = staticmethod(graph_edit_service.update_geocoded_location)
     get_graph_edit_schema = staticmethod(lambda: graph_edit_service.editable_schema)
     get_entities_for_insights = staticmethod(entity_service.get_entities_for_insights)
     save_entity_insights = staticmethod(entity_service.save_entity_insights)
@@ -105,6 +107,7 @@ class Neo4jServiceFacade:
 
     # ── Geo ────────────────────────────────────────────────────────────
     get_entities_with_locations = staticmethod(geo_service.get_entities_with_locations)
+    get_locations_needing_review = staticmethod(geo_service.get_locations_needing_review)
     update_entity_location = staticmethod(geo_service.update_entity_location)
     remove_entity_location = staticmethod(geo_service.remove_entity_location)
     update_location = staticmethod(graph_edit_service.update_location)

@@ -49,6 +49,7 @@ import { getDisplayStatus } from "../utils/display-status"
 import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
 import type { EvidenceFileRecord } from "@/types/evidence.types"
 import { toast } from "sonner"
+import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
 
 // --- Shared helpers ---
 
@@ -218,7 +219,13 @@ function getCategoryIcon(category: string): React.ElementType {
 
 // --- Entity list grouped by category ---
 
-function EntityList({ entities }: { entities: FileEntity[] }) {
+function EntityList({
+  entities,
+  caseId,
+}: {
+  entities: FileEntity[]
+  caseId: string
+}) {
   const grouped = useMemo(() => {
     const map = new Map<string, FileEntity[]>()
     for (const e of entities) {
@@ -259,14 +266,25 @@ function EntityList({ entities }: { entities: FileEntity[] }) {
                   <span className="min-w-0 truncate text-foreground">
                     {entity.name}
                   </span>
-                  {entity.confidence != null && (
-                    <Badge
-                      variant="outline"
-                      className="shrink-0 px-1 py-0 text-[9px] font-normal text-muted-foreground"
-                    >
-                      {Math.round(entity.confidence * 100)}%
-                    </Badge>
-                  )}
+                  <div className="flex shrink-0 items-center gap-1">
+                    {entity.confidence != null && (
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 px-1 py-0 text-[9px] font-normal text-muted-foreground"
+                      >
+                        {Math.round(entity.confidence * 100)}%
+                      </Badge>
+                    )}
+                    {entity.key && (
+                      <SignificantEntityButton
+                        caseId={caseId}
+                        entityKey={entity.key}
+                        surface="evidence-context"
+                        compact
+                        className="size-6"
+                      />
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -599,7 +617,7 @@ function DetailsPanelContent({
                     <span className="text-xs text-muted-foreground">Loading entities...</span>
                   </div>
                 ) : (
-                  <EntityList entities={entities || []} />
+                  <EntityList entities={entities || []} caseId={caseId} />
                 )}
               </CollapsibleSection>
 

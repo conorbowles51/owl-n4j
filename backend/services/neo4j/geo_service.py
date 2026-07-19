@@ -1,8 +1,9 @@
 """
-Geo Service — location-related operations: geocoded entity retrieval,
+Geo Service - location-related operations: geocoded entity retrieval,
 location updates, location node creation, and relationship management.
 """
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -11,12 +12,29 @@ from services.neo4j.driver import driver
 logger = logging.getLogger(__name__)
 
 
+def _parse_list_property(value: Any) -> List[Dict[str, Any]]:
+    """Neo4j stores structured history as JSON text; expose it as a list."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return []
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, dict)]
+    return []
+
+
 class GeoService:
 
     def get_entities_with_locations(
         self,
         entity_types: Optional[List[str]] = None,
         case_id: str = None,
+        entity_keys: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
         Get all entities that have geocoded locations.
@@ -28,14 +46,27 @@ class GeoService:
         Returns:
             List of entities with lat/lng coordinates
         """
+        scoped_keys = None
+        if entity_keys is not None:
+            scoped_keys = list(dict.fromkeys(entity_keys))
+            if not scoped_keys:
+                return []
+
         with driver.session() as session:
             type_filter = ""
+            scope_filter = ""
+            connected_scope_filter = ""
             # case_id is always required
             params = {"case_id": case_id}
 
             if entity_types:
                 type_filter = "AND labels(n)[0] IN $types"
                 params["types"] = entity_types
+
+            if scoped_keys is not None:
+                params["entity_keys"] = scoped_keys
+                scope_filter = "AND n.key IN $entity_keys"
+                connected_scope_filter = "AND connected.key IN $entity_keys"
 
             # Always filter by case_id
             query = f"""
@@ -45,12 +76,14 @@ class GeoService:
                   AND NONE(label IN labels(n) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
                   AND coalesce(properties(n)['system_node'], false) <> true
                   {type_filter}
+                  {scope_filter}
                   AND n.case_id = $case_id
                 OPTIONAL MATCH (n)-[r]-(connected)
                 WHERE connected IS NULL OR (
                   NONE(label IN labels(connected) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
                   AND coalesce(properties(connected)['system_node'], false) <> true
                   AND connected.case_id = $case_id
+                  {connected_scope_filter}
                 )
                 WITH n, collect(DISTINCT {{
                     key: connected.key,
@@ -69,6 +102,15 @@ class GeoService:
                     n.location_raw AS location_raw,
                     n.location_formatted AS location_formatted,
                     n.geocoding_confidence AS geocoding_confidence,
+                    coalesce(n.geocoding_provider, n.geocode_source) AS geocoding_provider,
+                    coalesce(n.geocoding_query, n.location_raw) AS geocoding_query,
+                    coalesce(n.geocoding_formatted_address, n.location_formatted) AS geocoding_formatted_address,
+                    coalesce(n.location_granularity, n.specificity, n.geocode_accuracy) AS location_granularity,
+                    n.coordinate_precision AS coordinate_precision,
+                    n.accuracy_meters AS accuracy_meters,
+                    coalesce(n.manual_correction_history, n.geocoding_correction_history) AS manual_correction_history,
+                    n.geocoding_status AS geocoding_status,
+                    n.manual_fields AS manual_fields,
                     n.summary AS summary,
                     n.date AS date,
                     connections
@@ -88,6 +130,15 @@ class GeoService:
                     "location_raw": record["location_raw"],
                     "location_formatted": record["location_formatted"],
                     "geocoding_confidence": record["geocoding_confidence"],
+                    "geocoding_provider": record["geocoding_provider"],
+                    "geocoding_query": record["geocoding_query"],
+                    "geocoding_formatted_address": record["geocoding_formatted_address"],
+                    "location_granularity": record["location_granularity"],
+                    "coordinate_precision": record["coordinate_precision"],
+                    "accuracy_meters": record["accuracy_meters"],
+                    "manual_correction_history": _parse_list_property(record["manual_correction_history"]),
+                    "geocoding_status": record["geocoding_status"],
+                    "manual_fields": record["manual_fields"] or [],
                     "summary": record["summary"],
                     "date": record["date"],
                     "connections": [c for c in record["connections"] if c["key"]],
@@ -95,6 +146,64 @@ class GeoService:
                 entities.append(entity)
 
             return entities
+
+    def get_locations_needing_review(
+        self,
+        case_id: str,
+        entity_keys: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """
+        Get entities flagged at ingestion that never received coordinates, so
+        investigators can clear them from the map review queue.
+        """
+        scoped_keys = None
+        if entity_keys is not None:
+            scoped_keys = list(dict.fromkeys(entity_keys))
+            if not scoped_keys:
+                return []
+
+        with driver.session() as session:
+            scope_filter = ""
+            params = {"case_id": case_id}
+            if scoped_keys is not None:
+                scope_filter = "AND n.key IN $entity_keys"
+                params["entity_keys"] = scoped_keys
+
+            query = f"""
+                MATCH (n)
+                WHERE n.case_id = $case_id
+                  {scope_filter}
+                  AND (n.latitude IS NULL OR n.longitude IS NULL)
+                  AND n.geocoding_status IN ['ambiguous', 'unverified', 'failed']
+                  AND NONE(
+                    field IN coalesce(n.manual_fields, [])
+                    WHERE field IN ['latitude', 'longitude', 'location_name', 'location_formatted']
+                  )
+                  AND NONE(label IN labels(n) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(n)['system_node'], false) <> true
+                RETURN
+                    n.key AS key,
+                    n.name AS name,
+                    labels(n)[0] AS type,
+                    n.location_raw AS location_raw,
+                    n.geocoding_status AS geocoding_status,
+                    n.geocoding_confidence AS geocoding_confidence,
+                    n.manual_fields AS manual_fields
+                ORDER BY n.name
+            """
+            result = session.run(query, **params)
+            return [
+                {
+                    "key": record["key"],
+                    "name": record["name"],
+                    "type": record["type"],
+                    "location_raw": record["location_raw"],
+                    "geocoding_status": record["geocoding_status"],
+                    "geocoding_confidence": record["geocoding_confidence"],
+                    "manual_fields": record["manual_fields"] or [],
+                }
+                for record in result
+            ]
 
     def update_entity_location(self, node_key: str, case_id: str, location_name: str, latitude: float, longitude: float) -> Dict:
         """Update the location properties of an entity node."""
@@ -168,6 +277,7 @@ class GeoService:
         longitude: float,
         location_formatted: str,
         geocoding_confidence: str,
+        location_granularity: Optional[str] = None,
     ) -> Dict:
         """Set all location properties on an entity node."""
         with driver.session() as session:
@@ -180,7 +290,11 @@ class GeoService:
                     n.location_formatted = $location_formatted,
                     n.location_name = $location_formatted,
                     n.geocoding_status = 'success',
-                    n.geocoding_confidence = $geocoding_confidence
+                    n.geocoding_confidence = $geocoding_confidence,
+                    n.geocoding_provider = 'nominatim',
+                    n.geocoding_query = $location_raw,
+                    n.geocoding_formatted_address = $location_formatted,
+                    n.location_granularity = $location_granularity
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
                 """,
                 key=node_key,
@@ -190,6 +304,7 @@ class GeoService:
                 longitude=longitude,
                 location_formatted=location_formatted,
                 geocoding_confidence=geocoding_confidence,
+                location_granularity=location_granularity,
             )
             record = result.single()
             return dict(record) if record else {}
@@ -202,6 +317,7 @@ class GeoService:
         longitude: float,
         location_formatted: str,
         geocoding_confidence: str,
+        location_granularity: Optional[str] = None,
         context: str = "",
     ) -> Optional[str]:
         """Create a new Location node in the graph and return its key."""
@@ -221,6 +337,10 @@ class GeoService:
                     location_name: $location_formatted,
                     geocoding_status: 'success',
                     geocoding_confidence: $geocoding_confidence,
+                    geocoding_provider: 'nominatim',
+                    geocoding_query: $name,
+                    geocoding_formatted_address: $location_formatted,
+                    location_granularity: $location_granularity,
                     summary: $context,
                     source: 'geo_rescan'
                 })
@@ -233,6 +353,7 @@ class GeoService:
                 longitude=longitude,
                 location_formatted=location_formatted,
                 geocoding_confidence=geocoding_confidence,
+                location_granularity=location_granularity,
                 context=context,
             )
             record = result.single()

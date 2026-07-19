@@ -27,6 +27,7 @@ entity_categories:
       city:           { type: string, description: "City or town directly supported by the source text" }
       region:         { type: string, description: "State, province, or region directly supported by the source text" }
       country:        { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:    { type: string, description: "Brief description of the person and their relevance" }
     extraction_notes: >
       Only named individuals or those with a clear identifier.
@@ -43,6 +44,7 @@ entity_categories:
       city:           { type: string, description: "City or town directly supported by the source text" }
       region:         { type: string, description: "State, province, or region directly supported by the source text" }
       country:        { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:    { type: string, description: "Brief description and relevance" }
     extraction_notes: >
       Formal, legally constituted entities only.
@@ -59,6 +61,7 @@ entity_categories:
       city:           { type: string, description: "City or town directly supported by the source text" }
       region:         { type: string, description: "State, province, or region directly supported by the source text" }
       country:        { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:    { type: string, description: "Brief description and relevance" }
     extraction_notes: >
       Informal associations without formal legal standing.
@@ -69,7 +72,7 @@ entity_categories:
   # ---------------------------------------------------------------------------
 
   Location:
-    description: "A specific geographic location that can be placed on a map"
+    description: "A geographic place reference at any level of specificity"
     properties:
       location_raw:     { type: string, description: "Free-text place reference directly supported by the source text" }
       address:          { type: string, description: "Street address" }
@@ -77,12 +80,12 @@ entity_categories:
       region:           { type: string, description: "State, province, or region" }
       country:          { type: string, description: "Country" }
       coordinates_hint: { type: string, description: "Any lat/long or coordinate hint from the text" }
-      specificity:      { type: string, description: "How specific this location is (exact_address, building, city, region)" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:      { type: string, description: "Description and relevance" }
     extraction_notes: >
-      ONLY locations specific enough to place on a map.
-      NOT vague regions like 'America', 'overseas', 'the east coast', 'somewhere in Europe'.
-      A city name is the minimum specificity.
+      Extract every geographic place reference supported by the source, including continents,
+      countries, regions, cities, streets, exact addresses, and vague or relative references.
+      Never omit a location because it is broad, ambiguous, or unlikely to geocode successfully.
 
   Event:
     description: "A meaningful discrete occurrence — a meeting, incident, shipment, attack, arrest scene"
@@ -98,6 +101,7 @@ entity_categories:
       city:           { type: string, description: "City or town directly supported by the source text" }
       region:         { type: string, description: "State, province, or region directly supported by the source text" }
       country:        { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:    { type: string, description: "What happened" }
     extraction_notes: >
       Only meaningful discrete occurrences with investigative relevance.
@@ -125,6 +129,7 @@ entity_categories:
       city:           { type: string, description: "City or town directly supported by the source text" }
       region:         { type: string, description: "State, province, or region directly supported by the source text" }
       country:        { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:    { type: string, description: "Description and context" }
     extraction_notes: >
       ONLY actual financial transactions with identifiable parties and amounts.
@@ -144,6 +149,7 @@ entity_categories:
       city:           { type: string, description: "City or town directly supported by the source text" }
       region:         { type: string, description: "State, province, or region directly supported by the source text" }
       country:        { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:    { type: string, description: "Description and relevance" }
     extraction_notes: >
       Accounts held at an institution.
@@ -161,6 +167,7 @@ entity_categories:
       city:            { type: string, description: "City or town directly supported by the source text" }
       region:          { type: string, description: "State, province, or region directly supported by the source text" }
       country:         { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:     { type: string, description: "Description and relevance" }
     extraction_notes: >
       Specific bearer instruments or financial tools, not accounts.
@@ -186,6 +193,7 @@ entity_categories:
       city:           { type: string, description: "City or town directly supported by the source text" }
       region:         { type: string, description: "State, province, or region directly supported by the source text" }
       country:        { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
     extraction_notes: >
       Specific communications between identifiable parties.
       Not general references to 'they communicated' without specifics.
@@ -219,6 +227,7 @@ entity_categories:
       city:           { type: string, description: "City or town directly supported by the source text" }
       region:         { type: string, description: "State, province, or region directly supported by the source text" }
       country:        { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:    { type: string, description: "Description of media content and relevance" }
     extraction_notes: >
       Audio/visual evidentiary media.
@@ -243,6 +252,7 @@ entity_categories:
       city:              { type: string, description: "City or town directly supported by the source text" }
       region:            { type: string, description: "State, province, or region directly supported by the source text" }
       country:           { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:       { type: string, description: "Description and relevance" }
     extraction_notes: >
       Only specific, identifiable vehicles — not generic mentions like 'a car' or 'by vehicle'.
@@ -287,6 +297,7 @@ entity_categories:
       city:          { type: string, description: "City or town directly supported by the source text" }
       region:        { type: string, description: "State, province, or region directly supported by the source text" }
       country:       { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:   { type: string, description: "Description and relevance" }
     extraction_notes: >
       The physical electronic device itself.
@@ -302,6 +313,7 @@ entity_categories:
       city:          { type: string, description: "City or town directly supported by the source text" }
       region:        { type: string, description: "State, province, or region directly supported by the source text" }
       country:       { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:   { type: string, description: "Description and relevance" }
     extraction_notes: >
       FALLBACK category for physical items that do not fit Vehicle, Weapon, Drug, or Device.
@@ -344,6 +356,7 @@ entity_categories:
       city:           { type: string, description: "City or town directly supported by the source text" }
       region:         { type: string, description: "State, province, or region directly supported by the source text" }
       country:        { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:    { type: string, description: "Description and significance" }
     extraction_notes: >
       Formal legal proceedings and actions only.
@@ -357,6 +370,7 @@ entity_categories:
       city:                     { type: string, description: "City or town directly supported by the source text" }
       region:                   { type: string, description: "State, province, or region directly supported by the source text" }
       country:                  { type: string, description: "Country directly supported by the source text" }
+      location_specificity:    { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       intel_type:               { type: string, enum: [tip, informant_report, surveillance_observation, intercept, open_source_intel, forensic_analysis, other], description: "Type of intelligence" }
       date:                     { type: string, description: "Date of the intelligence" }
       time:                     { type: string, description: "Time of the intelligence in HH:mm format when available" }

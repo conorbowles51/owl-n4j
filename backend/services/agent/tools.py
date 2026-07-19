@@ -33,8 +33,13 @@ ChartType = Literal["bar", "stacked_bar", "line", "area", "pie", "donut", "scatt
 class AgentToolContext:
     case_id: str
     artifact_preference: str = "auto"
+    allowed_entity_keys: set[str] | None = None
     result_store: dict[str, Any] = field(default_factory=dict)
     artifact_store: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    @property
+    def significant_scope(self) -> bool:
+        return self.allowed_entity_keys is not None
 
     def result(
         self,
@@ -1467,6 +1472,31 @@ def _shortest_path_graph(case_id: str, node_keys: list[str], max_depth: int) -> 
 
 
 def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
+    def scoped_graph(graph: dict[str, Any]) -> dict[str, Any]:
+        if context.allowed_entity_keys is None:
+            return graph
+        allowed = context.allowed_entity_keys
+        nodes = [node for node in graph.get("nodes", []) if node.get("key") in allowed]
+        node_keys = {node.get("key") for node in nodes}
+        links = [
+            link for link in graph.get("links", [])
+            if link.get("source") in node_keys and link.get("target") in node_keys
+        ]
+        return {**graph, "nodes": nodes, "links": links}
+
+    def scope_error(tool_name: str, capability: str) -> dict[str, Any]:
+        message = (
+            f"{capability} is unavailable while the agent is restricted to the Significant layer. "
+            "Switch the case layer to All data to use it."
+        )
+        return context.result(
+            tool_name,
+            {"error": message},
+            summary=message,
+            status="error",
+            error=message,
+        )
+
     def request_clarification(
         question: str,
         options: list[dict[str, Any]],
@@ -1499,14 +1529,37 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         ) | {"clarification": clarification}
 
     def get_case_overview() -> dict[str, Any]:
-        summary = graph_service.get_graph_summary(context.case_id)
-        compact = {
-            "total_nodes": summary.get("total_nodes", 0),
-            "total_relationships": summary.get("total_relationships", 0),
-            "entity_types": summary.get("entity_types", {}),
-            "relationship_types": summary.get("relationship_types", {}),
-            "sample_entities": (summary.get("entities") or [])[:25],
-        }
+        if context.significant_scope:
+            graph = graph_service.get_graph_structure(
+                context.case_id,
+                entity_keys=sorted(context.allowed_entity_keys or set()),
+            )
+            entity_types: dict[str, int] = {}
+            relationship_types: dict[str, int] = {}
+            for node in graph.get("nodes", []):
+                label = str(node.get("type") or "Other")
+                entity_types[label] = entity_types.get(label, 0) + 1
+            for link in graph.get("links", []):
+                rel_type = str(link.get("type") or "RELATED_TO")
+                relationship_types[rel_type] = relationship_types.get(rel_type, 0) + 1
+            compact = {
+                "scope": "significant",
+                "total_nodes": len(graph.get("nodes", [])),
+                "total_relationships": len(graph.get("links", [])),
+                "entity_types": entity_types,
+                "relationship_types": relationship_types,
+                "sample_entities": graph.get("nodes", [])[:25],
+            }
+        else:
+            summary = graph_service.get_graph_summary(context.case_id)
+            compact = {
+                "scope": "all",
+                "total_nodes": summary.get("total_nodes", 0),
+                "total_relationships": summary.get("total_relationships", 0),
+                "entity_types": summary.get("entity_types", {}),
+                "relationship_types": summary.get("relationship_types", {}),
+                "sample_entities": (summary.get("entities") or [])[:25],
+            }
         return context.result(
             "get_case_overview",
             compact,
@@ -1518,6 +1571,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
 
     def search_graph_entities(query: str, limit: int = 10) -> dict[str, Any]:
         rows = graph_service.search_nodes(query=query, limit=limit, case_id=context.case_id)
+        if context.allowed_entity_keys is not None:
+            rows = [row for row in rows if row.get("key") in context.allowed_entity_keys]
         return context.result(
             "search_graph_entities",
             {"entities": rows, "count": len(rows)},
@@ -1529,6 +1584,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         relationship_types: list[str] | None = None,
         sample_limit: int = 3,
     ) -> dict[str, Any]:
+        if context.significant_scope:
+            return scope_error("inspect_graph_schema", "Case-wide schema sampling")
         schema = _inspect_graph_schema(
             context.case_id,
             labels=labels,
@@ -1545,6 +1602,12 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         )
 
     def get_entity_details(entity_key: str) -> dict[str, Any]:
+        if context.allowed_entity_keys is not None and entity_key not in context.allowed_entity_keys:
+            return context.result(
+                "get_entity_details",
+                {"entity": None},
+                summary=f"{entity_key} is not in the Significant layer.",
+            )
         details = graph_service.get_node_details(entity_key, case_id=context.case_id)
         return context.result(
             "get_entity_details",
@@ -1553,7 +1616,14 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         )
 
     def get_entity_neighborhood(entity_key: str, depth: int = 1) -> dict[str, Any]:
+        if context.allowed_entity_keys is not None and entity_key not in context.allowed_entity_keys:
+            return context.result(
+                "get_entity_neighborhood",
+                {"nodes": [], "links": []},
+                summary=f"{entity_key} is not in the Significant layer.",
+            )
         graph = graph_service.get_node_with_neighbours(entity_key, depth=depth, case_id=context.case_id)
+        graph = scoped_graph(graph)
         return context.result(
             "get_entity_neighborhood",
             graph,
@@ -1561,7 +1631,20 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         )
 
     def find_paths_between_entities(source_key: str, target_key: str, max_depth: int = 4) -> dict[str, Any]:
+        if context.allowed_entity_keys is not None and (
+            source_key not in context.allowed_entity_keys or target_key not in context.allowed_entity_keys
+        ):
+            return context.result(
+                "find_paths_between_entities",
+                {"paths": [], "count": 0},
+                summary="Both endpoints must be in the Significant layer.",
+            )
         paths = _find_paths(context.case_id, source_key, target_key, max_depth)
+        if context.allowed_entity_keys is not None:
+            paths = [
+                path for path in paths
+                if all(node.get("key") in context.allowed_entity_keys for node in path.get("nodes", []))
+            ]
         return context.result(
             "find_paths_between_entities",
             {"paths": paths, "count": len(paths)},
@@ -1569,6 +1652,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         )
 
     def search_documents(query: str, limit: int = 8) -> dict[str, Any]:
+        if context.significant_scope:
+            return scope_error("search_documents", "Case-wide document search")
         from services.vector_db_service import get_vector_db_health
 
         health = get_vector_db_health()
@@ -1614,6 +1699,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         )
 
     def run_cypher(query: str, params: dict[str, Any] | None = None, limit: int = 50) -> dict[str, Any]:
+        if context.significant_scope:
+            return scope_error("run_readonly_cypher", "Free-form case queries")
         repaired = repair_common_cypher(query)
         used_repair = repaired != query.strip()
         rows = run_readonly_cypher(repaired, case_id=context.case_id, params=params, limit=limit)
@@ -1638,6 +1725,11 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             end_date=end_date,
             case_id=context.case_id,
             limit=limit,
+            entity_keys=(
+                sorted(context.allowed_entity_keys)
+                if context.allowed_entity_keys is not None
+                else None
+            ),
         )
         return context.result(
             "get_timeline_events",
@@ -1653,6 +1745,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         mode: Literal["transactions", "intelligence"] = "transactions",
         limit: int = 25,
     ) -> dict[str, Any]:
+        if context.significant_scope:
+            return scope_error("get_financial_transactions", "Financial analysis")
         data = financial_service.get_financial_transactions(
             case_id=context.case_id,
             start_date=start_date,
@@ -1677,7 +1771,15 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         entity_keys: list[str] | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
-        locations = geo_service.get_entities_with_locations(entity_types=entity_types, case_id=context.case_id)
+        locations = geo_service.get_entities_with_locations(
+            entity_types=entity_types,
+            case_id=context.case_id,
+            entity_keys=(
+                sorted(context.allowed_entity_keys)
+                if context.allowed_entity_keys is not None
+                else None
+            ),
+        )
         keys = set(entity_keys or [])
         if keys:
             locations = [location for location in locations if location.get("key") in keys]
@@ -1710,6 +1812,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         include_bridge_nodes: bool = True,
     ) -> dict[str, Any]:
         keys = list(dict.fromkeys(node_keys or []))
+        if context.allowed_entity_keys is not None:
+            keys = [key for key in keys if key in context.allowed_entity_keys]
         source_graphs: list[dict[str, Any]] = []
         source_count = 0
 
@@ -1721,12 +1825,20 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             if extracted_graph.get("nodes") or extracted_graph.get("links"):
                 source_graphs.append(extracted_graph)
             for key in extracted_keys:
-                if key not in keys:
+                if (
+                    key not in keys
+                    and (
+                        context.allowed_entity_keys is None
+                        or key in context.allowed_entity_keys
+                    )
+                ):
                     keys.append(key)
             source_count += 1
 
         query_rows: list[dict[str, Any]] = []
         repaired_query: str | None = None
+        if query and query.strip() and context.significant_scope:
+            return scope_error("build_graph_artifact", "Query-backed graph building")
         if query and query.strip():
             try:
                 repaired_query = repair_common_cypher(query)
@@ -1813,7 +1925,16 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         else:
             graph = _merge_graphs(*source_graphs)
             if not graph.get("nodes"):
-                graph = graph_service.get_graph_structure(context.case_id, limit=max_nodes, sort_by="degree")
+                graph = graph_service.get_graph_structure(
+                    context.case_id,
+                    limit=max_nodes,
+                    sort_by="degree",
+                    entity_keys=(
+                        sorted(context.allowed_entity_keys)
+                        if context.allowed_entity_keys is not None
+                        else None
+                    ),
+                )
         if source_graphs and mode in {"transactions_plus_accounts", "transaction_flow", "shortest_paths", "entity_neighborhood"}:
             graph = _merge_graphs(*source_graphs, graph)
         if mode != "transaction_only":
@@ -1826,6 +1947,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 max_nodes=max_nodes,
                 max_relationships=max_relationships,
             )
+        graph = scoped_graph(graph)
         graph = _compact_graph(graph)
         artifact = _artifact(
             "graph",
@@ -1855,6 +1977,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         )
 
     def build_table_artifact(query: str, title: str | None = None, params: dict[str, Any] | None = None, limit: int = 50) -> dict[str, Any]:
+        if context.significant_scope:
+            return scope_error("build_table_artifact", "Query-backed table building")
         repaired = repair_common_cypher(query)
         rows = run_readonly_cypher(repaired, case_id=context.case_id, params=params, limit=limit)
         rows = _enrich_table_rows_with_entity_names(context.case_id, rows)
@@ -2045,7 +2169,15 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         entity_types: list[str] | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
-        locations = geo_service.get_entities_with_locations(entity_types=entity_types, case_id=context.case_id)
+        locations = geo_service.get_entities_with_locations(
+            entity_types=entity_types,
+            case_id=context.case_id,
+            entity_keys=(
+                sorted(context.allowed_entity_keys)
+                if context.allowed_entity_keys is not None
+                else None
+            ),
+        )
         keys = set(entity_keys or [])
         if keys:
             locations = [location for location in locations if location.get("key") in keys]

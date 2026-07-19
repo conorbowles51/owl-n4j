@@ -1,4 +1,5 @@
 import { fetchAPI } from "@/lib/api-client"
+import type { CaseLayer } from "@/features/significant/types"
 
 export interface TimelineConnection {
   key: string
@@ -145,6 +146,7 @@ export const timelineAPI = {
     endDate?: string
     limit?: number
     cursor?: string
+    scope?: CaseLayer
   }) => {
     const qs = new URLSearchParams({ case_id: params.caseId })
     if (params.types?.length) qs.set("types", params.types.join(","))
@@ -152,6 +154,7 @@ export const timelineAPI = {
     if (params.endDate) qs.set("end_date", params.endDate)
     if (params.limit) qs.set("limit", String(params.limit))
     if (params.cursor) qs.set("cursor", params.cursor)
+    if (params.scope) qs.set("scope", params.scope)
     return fetchAPI<TimelineResponse>(`/api/timeline?${qs}`)
   },
 

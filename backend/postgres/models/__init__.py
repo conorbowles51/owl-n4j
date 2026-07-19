@@ -28,6 +28,7 @@ from postgres.models.case_profile import (
     CaseProfileNoteLink,
 )
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
+from postgres.models.significant import SignificantEntity
 from postgres.models.runtime_state import (
     BackgroundTask,
     LastGraphState,
@@ -57,6 +58,7 @@ __all__ = [
     "CaseRevision", "ChatConversation", "ChatMessage",
     "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall",
     "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
+    "SignificantEntity",
     "CaseProfile", "CaseProfileAttribute", "CaseProfileEvidenceLink",
     "CaseProfileFindingLink", "CaseProfileGraphNodeLink", "CaseProfileNoteLink",
     "BackgroundTask", "PresenceSession", "WiretapProcessedFolder",

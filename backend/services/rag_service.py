@@ -381,15 +381,14 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         """
         if not doc_keys or not case_id:
             return []
-
         try:
             with self.neo4j.session() as session:
                 query = """
-                MATCH (entity)-[:MENTIONED_IN]->(doc:Document)
-                WHERE doc.key IN $doc_keys
-                  AND doc.case_id = $case_id
-                  AND entity.case_id = $case_id
-                RETURN DISTINCT entity.key AS key
+                    MATCH (entity)-[:MENTIONED_IN]->(doc:Document)
+                    WHERE doc.key IN $doc_keys
+                      AND doc.case_id = $case_id
+                      AND entity.case_id = $case_id
+                    RETURN DISTINCT entity.key AS key
                 """
                 results = session.run(query, doc_keys=doc_keys, case_id=case_id)
                 entity_keys = [record["key"] for record in results if record["key"]]
@@ -407,6 +406,35 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 return entity_keys
         except Exception as e:
             print(f"[RAG] Document-entity discovery error: {e}")
+            return []
+
+    def _get_documents_for_entities(
+        self,
+        entity_keys: List[str],
+        case_id: str,
+        limit: int = 500,
+    ) -> List[str]:
+        """Return source document keys linked to a bounded entity scope."""
+        if not entity_keys or not case_id:
+            return []
+        try:
+            with self.neo4j.session() as session:
+                results = session.run(
+                    """
+                    MATCH (entity)-[:MENTIONED_IN]-(doc:Document)
+                    WHERE entity.key IN $entity_keys
+                      AND entity.case_id = $case_id
+                      AND doc.case_id = $case_id
+                    RETURN DISTINCT doc.key AS key
+                    LIMIT $limit
+                    """,
+                    entity_keys=entity_keys,
+                    case_id=case_id,
+                    limit=max(1, min(int(limit), 2000)),
+                )
+                return [record["key"] for record in results if record["key"]]
+        except Exception as exc:
+            print(f"[RAG] Error finding documents for scoped entities: {exc}")
             return []
 
     def _get_document_node_by_key(self, doc_key: str, case_id: str) -> Optional[Dict]:
@@ -586,6 +614,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         doc_keys: Optional[List[str]] = None,
         confidence_threshold: Optional[float] = None,
         debug_log: Optional[Dict] = None,
+        strict_doc_scope: bool = False,
     ) -> List[Dict]:
         """
         Retrieve relevant text chunks via vector search.
@@ -615,6 +644,18 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             vector_filter = {"case_id": case_id}
             threshold = confidence_threshold if confidence_threshold is not None else VECTOR_SEARCH_CONFIDENCE_THRESHOLD
 
+            if strict_doc_scope and not doc_keys:
+                if debug_log is not None:
+                    debug_log["chunk_search"] = {
+                        "enabled": True,
+                        "source": "scoped_chunks",
+                        "strict_scope": True,
+                        "total_results": 0,
+                        "filtered_results": 0,
+                        "reason": "No source documents are linked to the scoped entities",
+                    }
+                return []
+
             # Try chunk-level search first
             print("[RAG] Searching chunk vectors (ChromaDB)..."); sys.stdout.flush()
             chunk_count = vector_db_service.count_chunks()
@@ -641,9 +682,11 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     print(f"[RAG] Doc-scoped chunk search: {doc_scoped_count} results "
                           f"from {len(doc_keys)} document(s)")
 
-                # Phase 2: Case-wide search
+                # Phase 2: Case-wide search. A strict entity scope deliberately
+                # excludes this fill step so unrelated case evidence cannot leak
+                # into a Significant-layer answer.
                 already_retrieved_ids = {r["id"] for r in doc_scoped_results}
-                case_wide_all = vector_db_service.search_chunks(
+                case_wide_all = [] if strict_doc_scope else vector_db_service.search_chunks(
                     query_embedding=query_embedding,
                     top_k=CHUNK_SEARCH_TOP_K,
                     filter_metadata=vector_filter,
@@ -660,7 +703,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 # Log when no chunks found for this case
                 if not all_results and chunk_count > 0:
                     print(f"[RAG] No chunks found for case_id={case_id} (total chunks: {chunk_count})")
-                source = "chunks"
+                source = "scoped_chunks" if strict_doc_scope else "chunks"
             else:
                 # No chunks available — return empty
                 all_results = []
@@ -686,6 +729,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     "top_k": CHUNK_SEARCH_TOP_K if source == "chunks" else VECTOR_SEARCH_TOP_K,
                     "confidence_threshold": threshold,
                     "doc_keys": doc_keys or [],
+                    "strict_scope": strict_doc_scope,
                     "doc_scoped_count": doc_scoped_count,
                     "total_results": len(all_results),
                     "filtered_results": len(filtered),
@@ -717,6 +761,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         case_id: Optional[str] = None,
         top_k: Optional[int] = None,
         debug_log: Optional[Dict] = None,
+        allowed_entity_keys: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
         Retrieve relevant entities via vector search, then enrich from Neo4j.
@@ -729,7 +774,19 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 debug_log["entity_search"] = {"enabled": False, "reason": "Disabled or unavailable"}
             return []
 
+        if allowed_entity_keys is not None and not allowed_entity_keys:
+            if debug_log is not None:
+                debug_log["entity_search"] = {
+                    "enabled": True,
+                    "strict_scope": True,
+                    "vector_results": 0,
+                    "enriched_entities": 0,
+                }
+            return []
+
         top_k = top_k or ENTITY_SEARCH_TOP_K
+        if allowed_entity_keys is not None:
+            top_k = min(500, max(top_k, len(allowed_entity_keys) * 4))
 
         try:
             print("[RAG] Generating entity embedding..."); sys.stdout.flush()
@@ -749,6 +806,11 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 top_k=top_k,
                 filter_metadata=vector_filter,
             )
+            if allowed_entity_keys is not None:
+                allowed = set(allowed_entity_keys)
+                entity_results = [
+                    item for item in entity_results if item.get("id") in allowed
+                ]
             print(f"[RAG] Entity vector search done: {len(entity_results)} results"); sys.stdout.flush()
 
             # Log when no entities found for this case (do NOT fall back to unfiltered search)
@@ -777,6 +839,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     "vector_results": len(entity_results),
                     "enriched_entities": len(enriched_entities),
                     "entity_keys": [e.get("key") for e in enriched_entities[:20]],
+                    "strict_scope": allowed_entity_keys is not None,
                 }
 
             return enriched_entities
@@ -794,6 +857,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         entity_keys: List[str],
         case_id: Optional[str] = None,
         debug_log: Optional[Dict] = None,
+        allowed_entity_keys: Optional[List[str]] = None,
     ) -> Dict:
         """
         Traverse the graph from matched entities to pull connected context.
@@ -815,6 +879,22 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 batch_context = self.neo4j.get_context_for_nodes(batch, case_id)
                 all_entities.extend(batch_context.get("selected_entities", []))
             context = {"selected_entities": all_entities}
+
+            if allowed_entity_keys is not None:
+                allowed = set(allowed_entity_keys)
+                scoped_entities = []
+                for entity in all_entities:
+                    if entity.get("key") not in allowed:
+                        continue
+                    scoped = dict(entity)
+                    scoped["connections"] = [
+                        connection
+                        for connection in entity.get("connections", [])
+                        if connection.get("key") in allowed
+                    ]
+                    scoped_entities.append(scoped)
+                all_entities = scoped_entities
+                context = {"selected_entities": all_entities}
 
             if debug_log is not None:
                 debug_log["graph_traversal"] = {
@@ -1647,6 +1727,7 @@ Only include candidates with score >= 5."""
         conversation_history: Optional[List[Dict[str, str]]] = None,
         llm_context: Any = None,
         view_context: Optional[Dict[str, Any]] = None,
+        scope_entity_keys: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Answer a question using hybrid retrieval:
@@ -1680,6 +1761,7 @@ Only include candidates with score >= 5."""
             "selected_keys": selected_keys,
             "case_id": case_id,
             "view_context": None,
+            "strict_entity_scope": scope_entity_keys is not None,
             "question_type": None,
             "chunk_search": None,
             "entity_search": None,
@@ -1705,7 +1787,10 @@ Only include candidates with score >= 5."""
             debug_log["stages"].append(stage_entry)
             return duration_ms
 
-        context_mode = "hybrid"
+        if scope_entity_keys is not None:
+            scope_entity_keys = list(dict.fromkeys(scope_entity_keys))
+        strict_entity_scope = scope_entity_keys is not None
+        context_mode = "significant" if strict_entity_scope else "hybrid"
         context_description = ""
         cypher_context = None
         view_context_block = self._format_view_context(view_context)
@@ -1737,7 +1822,7 @@ Only include candidates with score >= 5."""
         t0b = time.time()
         graph_summary = None
         stage0b_details = {}
-        if question_type in ("structural", "hybrid") and case_id:
+        if question_type in ("structural", "hybrid") and case_id and not strict_entity_scope:
             try:
                 graph_summary = self.neo4j.get_graph_summary(case_id)
                 if graph_summary:
@@ -1781,6 +1866,8 @@ Only include candidates with score >= 5."""
         if selected_keys:
             doc_keys, entity_keys = self._classify_selected_keys(selected_keys, case_id)
             print(f"[RAG] Key classification: {len(doc_keys)} doc(s), {len(entity_keys)} entity(ies)")
+        if strict_entity_scope and case_id:
+            doc_keys = self._get_documents_for_entities(scope_entity_keys or [], case_id)
         _add_stage(
             "Key Classification", "0c", t0c,
             input={"selected_keys": selected_keys or []},
@@ -1797,6 +1884,7 @@ Only include candidates with score >= 5."""
                 doc_keys=doc_keys if doc_keys else None,
                 confidence_threshold=confidence_threshold,
                 debug_log=debug_log,
+                strict_doc_scope=strict_entity_scope,
             )
         chunk_search_info = debug_log.get("chunk_search") or {}
         doc_scoped_count = sum(1 for c in chunk_results if c.get("_doc_scoped"))
@@ -1828,7 +1916,12 @@ Only include candidates with score >= 5."""
         # ── Stage 2: Retrieve entities ───────────────────────────────────
         print("[RAG] Starting Stage 2: Entity retrieval..."); sys.stdout.flush()
         t2 = time.time()
-        entity_results = self._retrieve_entities(question, case_id, debug_log=debug_log)
+        entity_results = self._retrieve_entities(
+            question,
+            case_id,
+            debug_log=debug_log,
+            allowed_entity_keys=scope_entity_keys,
+        )
         entity_search_info = debug_log.get("entity_search") or {}
         _add_stage(
             "Entity Retrieval", 2, t2,
@@ -1857,7 +1950,7 @@ Only include candidates with score >= 5."""
         t2b = time.time()
         doc_entity_keys = []
         doc_entity_merged_count = 0
-        if doc_keys and case_id:
+        if doc_keys and case_id and not strict_entity_scope:
             try:
                 doc_entity_keys = self._get_entities_for_documents(doc_keys, case_id, debug_log=debug_log)
                 existing_keys = {e.get("key") for e in entity_results}
@@ -1928,7 +2021,12 @@ Only include candidates with score >= 5."""
             traversal_keys = all_entity_keys
             print(f"[RAG] Starting Stage 4: Graph traversal ({len(traversal_keys)} entities)..."); sys.stdout.flush()
         t4 = time.time()
-        graph_context = self._traverse_graph(traversal_keys, case_id, debug_log=debug_log)
+        graph_context = self._traverse_graph(
+            traversal_keys,
+            case_id,
+            debug_log=debug_log,
+            allowed_entity_keys=scope_entity_keys,
+        )
         graph_traversal_info = debug_log.get("graph_traversal") or {}
         total_connections = 0
         connection_list = []
@@ -2009,7 +2107,8 @@ Only include candidates with score >= 5."""
             parts.append(f"{graph_entity_count} graph connections")
         if cypher_context:
             parts.append("Cypher query results")
-        context_description = "Hybrid retrieval: " + ", ".join(parts) if parts else "No relevant context found"
+        context_prefix = "Significant layer" if strict_entity_scope else "Hybrid retrieval"
+        context_description = context_prefix + ": " + ", ".join(parts) if parts else f"{context_prefix}: no relevant context found"
         if view_context_block:
             context_description += " with current view context"
 
@@ -2064,6 +2163,14 @@ Only include candidates with score >= 5."""
         t7 = time.time()
         # Enhance the question with document focus when a document is selected
         effective_question = question
+        if strict_entity_scope:
+            effective_question = (
+                f"{question}\n\n"
+                "SCOPE REQUIREMENT: Answer only from entities in the case's Significant layer, "
+                "relationships whose endpoints are both in that layer, and source passages linked "
+                "to those entities. Do not introduce findings from the rest of the case. "
+                "State clearly when this scoped evidence is insufficient."
+            )
         if doc_keys and case_id:
             doc_names = []
             for dk in doc_keys:
@@ -2073,7 +2180,7 @@ Only include candidates with score >= 5."""
             if doc_names:
                 doc_list = ", ".join(f'"{n}"' for n in doc_names)
                 effective_question = (
-                    f'{question}\n\n'
+                    f'{effective_question}\n\n'
                     f'IMPORTANT: The user has selected the following document(s) as their focus: {doc_list}. '
                     f'Passages from these documents are marked with [SELECTED DOCUMENT] in the context. '
                     f'Prioritize information from these selected documents in your answer. '
@@ -2134,6 +2241,16 @@ Only include candidates with score >= 5."""
                     doc_keys=doc_keys,
                     doc_entity_keys=doc_entity_keys,
                 )
+                if strict_entity_scope:
+                    allowed = set(scope_entity_keys or [])
+                    result_graph["nodes"] = [
+                        node for node in result_graph.get("nodes", [])
+                        if node.get("key") in allowed
+                    ]
+                    result_graph["links"] = [
+                        link for link in result_graph.get("links", [])
+                        if link.get("source") in allowed and link.get("target") in allowed
+                    ]
                 print(f"[RAG] Result graph: {len(result_graph['nodes'])} nodes, {len(result_graph['links'])} links")
             except Exception as e:
                 print(f"[RAG] Error building result graph: {e}")

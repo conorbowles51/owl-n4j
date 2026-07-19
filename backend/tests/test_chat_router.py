@@ -22,6 +22,15 @@ class ChatRequestTests(unittest.TestCase):
 
         self.assertFalse(request.persist)
 
+    def test_chat_request_accepts_significant_scope(self):
+        request = ChatRequest(
+            question="What matters in the focused investigation?",
+            case_id=uuid4(),
+            scope="significant",
+        )
+
+        self.assertEqual(request.scope, "significant")
+
 
 if __name__ == "__main__":
     unittest.main()

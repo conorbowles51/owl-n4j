@@ -41,6 +41,7 @@ class FakeGeocodingService(GeocodingService):
             longitude=self.provider_result.longitude,
             formatted_address=self.provider_result.formatted_address,
             confidence=self.provider_result.confidence,
+            location_granularity=self.provider_result.location_granularity,
             raw_response=self.provider_result.raw_response,
         )
 
@@ -64,6 +65,7 @@ def test_build_geocode_request_prefers_structured_fields() -> None:
     assert request is not None
     assert request.query == "12 Quai Antoine, Monaco, Monaco"
     assert request.location_raw == "Monaco office"
+    assert request.location_specificity == "exact_address"
 
 
 def test_build_geocode_request_uses_location_name_only_for_locations() -> None:
@@ -74,16 +76,48 @@ def test_build_geocode_request_uses_location_name_only_for_locations() -> None:
     assert location is not None
     assert location.query == "Monaco"
     assert location.location_raw == "Monaco"
+    assert location.location_specificity == "unknown"
 
 
-def test_build_geocode_request_rejects_vague_location_text() -> None:
+def test_build_geocode_request_accepts_vague_location_text() -> None:
     request = build_geocode_request(
         "Communication",
         "Meeting",
         {"location_raw": "overseas"},
     )
 
-    assert request is None
+    assert request is not None
+    assert request.query == "overseas"
+    assert request.location_specificity == "unknown"
+
+
+def test_build_geocode_request_preserves_ai_continent_specificity() -> None:
+    request = build_geocode_request(
+        "Location",
+        "Europe",
+        {"location_raw": "Europe", "location_specificity": "continent"},
+    )
+
+    assert request is not None
+    assert request.query == "Europe"
+    assert request.location_specificity == "continent"
+
+
+def test_build_geocode_request_keeps_finer_raw_detail_with_structured_context() -> None:
+    request = build_geocode_request(
+        "Location",
+        "Temple Bar",
+        {
+            "location_raw": "Temple Bar",
+            "city": "Dublin",
+            "country": "Ireland",
+            "location_specificity": "district",
+        },
+    )
+
+    assert request is not None
+    assert request.query == "Temple Bar, Dublin, Ireland"
+    assert request.location_specificity == "district"
 
 
 @pytest.mark.asyncio
@@ -171,4 +205,5 @@ async def test_fetch_from_provider_maps_nominatim_payload(monkeypatch: pytest.Mo
     assert result.longitude == 7.4246
     assert result.formatted_address == "Monaco, 98000, Monaco"
     assert result.confidence == "high"
+    assert result.location_granularity == "city"
     assert result.raw_response == payload[0]

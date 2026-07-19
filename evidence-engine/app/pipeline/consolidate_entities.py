@@ -20,6 +20,7 @@ from app.config import settings
 from app.ontology.schema_builder import get_consolidation_schema
 from app.pipeline.extract_entities import RawEntity, RawRelationship
 from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
+from app.pipeline.property_canonicalization import promote_location_specificity
 from app.services.openai_client import chat_completion
 
 CHUNK_ADJACENCY_THRESHOLD = 2
@@ -153,6 +154,11 @@ def _deterministic_consolidate(
                 all_names.add(str(alias))
             if idx != primary_idx:
                 remove_indices.add(idx)
+
+        promote_location_specificity(
+            merged_props,
+            *(entities[idx].properties for idx in indices),
+        )
 
         all_names.discard(primary.name)
         existing_aliases = list(merged_props.get("aliases") or [])
@@ -333,6 +339,11 @@ async def _llm_consolidate(
                         all_names.add(str(alias))
                     if idx != primary_idx:
                         remove_indices.add(idx)
+
+                promote_location_specificity(
+                    merged_props,
+                    *(entities[idx].properties for idx in global_indices),
+                )
 
                 all_names.discard(primary.name)
                 existing_aliases = list(merged_props.get("aliases") or [])

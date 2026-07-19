@@ -81,12 +81,23 @@ def _geo_field_guidance(ontology: OntologySchema) -> str:
     return (
         "GEO FIELD RULES:\n"
         f"- The following categories may include geo properties when directly supported by the source text: {categories}\n"
-        "- Geo properties are: location_raw, address, city, region, country\n"
+        "- Geo properties are: location_raw, address, city, region, country, location_specificity\n"
+        "- Extract every geographic place reference supported by the source, even when it is broad, vague, ambiguous, or mentioned only in passing\n"
+        "- Never omit a location solely because it is less specific than a city or may fail to geocode\n"
+        "- When a passage contains multiple distinct places, emit a separate Location entity for each place rather than combining or dropping them\n"
         "- Only populate geo properties when the document explicitly supports them\n"
         "- Prefer structured fields (address/city/region/country) when the text provides them\n"
         "- Otherwise preserve the original place reference in location_raw\n"
         "- Do not invent or infer a place just to make an entity mapable\n"
-        "- A city is the minimum specificity for a mappable place"
+        "- Whenever an entity has any geo property, set location_specificity to exactly one of: unknown, continent, country, region, city, district, street, exact_address\n"
+        "- continent: a continent-scale reference such as Europe or Africa\n"
+        "- country: a country or nation\n"
+        "- region: a state, province, county, broad coast, or multi-city region\n"
+        "- city: a city, town, village, municipality, or locality\n"
+        "- district: a neighbourhood, borough, suburb, or postcode area\n"
+        "- street: a named street or road without a specific premises\n"
+        "- exact_address: a numbered address, named building/site/POI, or explicit coordinates\n"
+        "- unknown: a relative or insufficiently grounded phrase such as overseas, nearby, home, or the office"
     )
 
 
@@ -111,7 +122,8 @@ _NOISE_RULES = """\
 - Do NOT extract the document itself as an entity
 - Do NOT extract entities mentioned only in passing with no investigative relevance
 - Every entity must have a specific name or identifier
-- Prefer fewer, high-quality entities over many low-quality ones"""
+- Prefer fewer, high-quality entities over many low-quality ones
+- LOCATION EXCEPTION: retain every source-supported geographic reference regardless of specificity; the GEO FIELD RULES control location extraction"""
 
 
 # ---------------------------------------------------------------------------

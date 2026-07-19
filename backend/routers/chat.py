@@ -33,6 +33,7 @@ from services.ai_costs_service import CostOperationKind, ai_cost_context
 from services.cost_tracking_service import CostJobType, record_cost
 from services.rag_service import rag_service
 from services.system_log_service import LogOrigin, LogType, system_log_service
+from services.significant_service import get_significant_entity_keys
 from utils.prompt_trace import log_section, start_trace
 
 backend_dir = Path(__file__).parent.parent
@@ -47,7 +48,7 @@ class ChatRequest(BaseModel):
     question: str
     case_id: UUID
     conversation_id: Optional[UUID] = None
-    scope: Literal["case_overview", "selection"] = "case_overview"
+    scope: Literal["case_overview", "significant", "selection"] = "case_overview"
     selected_entity_keys: Optional[List[str]] = None
     provider: str = "openai"
     model: str = "gpt-5-mini"
@@ -107,6 +108,7 @@ class ChatResponse(BaseModel):
 
 class SuggestionsRequest(BaseModel):
     case_id: UUID
+    scope: Literal["case_overview", "significant", "selection"] = "case_overview"
     selected_entity_keys: Optional[List[str]] = None
 
 
@@ -135,6 +137,18 @@ async def chat(
 
     question = request.question.strip()
     selected_entity_keys = list(dict.fromkeys(request.selected_entity_keys or []))
+    significant_entity_keys: list[str] | None = None
+    if request.scope == "significant":
+        manifest_entity_keys = get_significant_entity_keys(db, case_id=request.case_id)
+        if selected_entity_keys:
+            selected_set = set(selected_entity_keys)
+            significant_entity_keys = [
+                key for key in manifest_entity_keys if key in selected_set
+            ]
+            selected_entity_keys = significant_entity_keys
+        else:
+            significant_entity_keys = manifest_entity_keys
+            selected_entity_keys = []
     if request.scope == "selection" and not selected_entity_keys:
         selected_entity_keys = []
 
@@ -155,6 +169,10 @@ async def chat(
             case_id=request.case_id,
             title=summarize_title(question),
         )
+    if request.scope == "significant":
+        # A conversation may contain earlier full-case turns. They are not
+        # admissible context once the caller selects the strict Significant scope.
+        conversation_history = []
 
     provider = request.provider.lower()
     model_id = request.model
@@ -239,6 +257,7 @@ async def chat(
                 conversation_history=conversation_history or None,
                 llm_context=llm,
                 view_context=request.view_context,
+                scope_entity_keys=significant_entity_keys,
             )
 
         cost_record = None
@@ -303,13 +322,21 @@ async def chat(
             model_name=model.name,
             server=server,
         )
-        suggestions = [
-            ChatSuggestion(question=question_text)
-            for question_text in rag_service.get_suggested_questions(
-                str(request.case_id),
-                selected_entity_keys or None,
+        if request.scope == "significant" and not significant_entity_keys:
+            suggestions = []
+        else:
+            suggestion_keys = (
+                significant_entity_keys
+                if request.scope == "significant"
+                else selected_entity_keys
             )
-        ]
+            suggestions = [
+                ChatSuggestion(question=question_text)
+                for question_text in rag_service.get_suggested_questions(
+                    str(request.case_id),
+                    (suggestion_keys or [])[:50] or None,
+                )
+            ]
 
         system_log_service.log(
             log_type=LogType.AI_ASSISTANT,
@@ -375,9 +402,14 @@ async def get_suggestions(
     current_user: User = Depends(get_current_db_user),
 ):
     require_case_access(db, current_user, request.case_id)
+    selected_keys = request.selected_entity_keys
+    if request.scope == "significant":
+        selected_keys = get_significant_entity_keys(db, case_id=request.case_id)
+        if not selected_keys:
+            return SuggestionsResponse(suggestions=[])
     suggestions = rag_service.get_suggested_questions(
         str(request.case_id),
-        request.selected_entity_keys,
+        (selected_keys or [])[:50] or None,
     )
     return SuggestionsResponse(
         suggestions=[ChatSuggestion(question=question) for question in suggestions]

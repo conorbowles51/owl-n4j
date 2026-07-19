@@ -86,4 +86,19 @@ describe("chatAPI.ask", () => {
       filters: { category: "Transfer" },
     })
   })
+
+  it("sends Significant as an explicit server-resolved scope", async () => {
+    mockChatResponse()
+
+    await chatAPI.ask({
+      question: "Summarize the focused investigation",
+      case_id: "case-1",
+      scope: "significant",
+    })
+
+    const [, options] = vi.mocked(globalThis.fetch).mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body.scope).toBe("significant")
+    expect(body.selected_entity_keys).toBeUndefined()
+  })
 })

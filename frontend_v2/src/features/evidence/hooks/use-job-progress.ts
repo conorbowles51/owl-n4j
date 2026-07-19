@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import type { EvidenceJob, JobProgressMessage } from "@/types/evidence.types"
 
@@ -99,6 +99,7 @@ export function useJobProgress(options: UseJobProgressOptions) {
       try {
         const ws = new WebSocket(wsUrl)
         socketsRef.current.set(jobId, ws)
+        updateConnectedCount()
 
         ws.onopen = updateConnectedCount
 
@@ -157,14 +158,19 @@ export function useJobProgress(options: UseJobProgressOptions) {
     }
 
     // Disconnect from removed jobs
+    let disconnected = false
     for (const [jobId, ws] of socketsRef.current) {
       if (!jobIds.includes(jobId)) {
         ws.close()
         socketsRef.current.delete(jobId)
         retriesRef.current.delete(jobId)
+        disconnected = true
       }
     }
-  }, [jobIds, connectToJob])
+    if (disconnected) {
+      updateConnectedCount()
+    }
+  }, [jobIds, connectToJob, updateConnectedCount])
 
   // Cleanup on unmount
   useEffect(() => {
