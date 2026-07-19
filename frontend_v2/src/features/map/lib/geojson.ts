@@ -1,5 +1,6 @@
 import type { MapLocation } from "../hooks/use-map-data"
 import type { BoundingShape } from "../stores/map.store"
+import { closeRing, type LngLatPoint } from "./geometry"
 import type {
   Feature,
   FeatureCollection,
@@ -91,7 +92,7 @@ export function boundingShapesToGeoJSON(
 }
 
 export function drawingLineToGeoJSON(
-  points: [number, number][]
+  points: LngLatPoint[]
 ): FeatureCollection<LineString> | null {
   if (points.length < 2) return null
   return {
@@ -107,17 +108,15 @@ export function drawingLineToGeoJSON(
 }
 
 export function drawingPolygonPreviewToGeoJSON(
-  points: [number, number][]
+  points: LngLatPoint[]
 ): FeatureCollection<Polygon> | null {
   if (points.length < 3) return null
-  const first = points[0]
-  if (!first) return null
   return {
     type: "FeatureCollection",
     features: [
       {
         type: "Feature",
-        geometry: { type: "Polygon", coordinates: [[...points, first]] },
+        geometry: { type: "Polygon", coordinates: [closeRing(points)] },
         properties: {},
       },
     ],
@@ -125,7 +124,7 @@ export function drawingPolygonPreviewToGeoJSON(
 }
 
 export function drawingPointsToGeoJSON(
-  points: [number, number][]
+  points: LngLatPoint[]
 ): FeatureCollection<Point, { index: number }> {
   return {
     type: "FeatureCollection",

@@ -100,6 +100,26 @@ export const boundingShapeOutlineLayer: LayerProps = {
   },
 }
 
+export const draftBoundingShapeFillLayer: LayerProps = {
+  id: "draft-bounding-shape-fill",
+  type: "fill",
+  paint: {
+    "fill-color": "#B7791F",
+    "fill-opacity": 0.07,
+  },
+}
+
+export const draftBoundingShapeOutlineLayer: LayerProps = {
+  id: "draft-bounding-shape-outline",
+  type: "line",
+  paint: {
+    "line-color": "#B7791F",
+    "line-width": 2,
+    "line-dasharray": [3, 2],
+    "line-opacity": 0.65,
+  },
+}
+
 export const drawingShapeFillLayer: LayerProps = {
   id: "drawing-shape-fill",
   type: "fill",
