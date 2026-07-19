@@ -1,3 +1,19 @@
+import { createContext, useContext } from "react"
+
+export type Theme = "dark" | "light" | "system"
+
+interface ThemeContextValue {
+  theme: Theme
+  setTheme: (theme: Theme) => void
+}
+
+export const ThemeContext = createContext<ThemeContextValue>({
+  theme: "dark",
+  setTheme: () => {},
+})
+
+export const useTheme = () => useContext(ThemeContext)
+
 export const nodeColors = {
   person: "#4F69C6",
   organization: "#7458A6",
@@ -37,19 +53,16 @@ export const typeAliases: Record<string, EntityType> = {
 
 const FALLBACK_COLOR = "#667D85"
 
-/** Case-insensitive entity type → color lookup with alias mapping and hash fallback */
+/** Case-insensitive entity type -> color lookup with alias mapping and hash fallback */
 export function getNodeColor(type: string): string {
   if (!type) return FALLBACK_COLOR
   const lower = type.toLowerCase()
 
-  // Direct match
   if (lower in nodeColors) return nodeColors[lower as EntityType]
 
-  // Alias match
   const alias = typeAliases[lower]
   if (alias) return nodeColors[alias]
 
-  // Hash-based fallback for unknown types (consistent per type)
   let hash = 0
   for (let i = 0; i < lower.length; i++) {
     hash = lower.charCodeAt(i) + ((hash << 5) - hash)

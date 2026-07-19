@@ -83,3 +83,18 @@ describe("MapToolbar areas popover", () => {
     expect(screen.getByText("Applied")).toBeInTheDocument()
   })
 })
+
+describe("MapToolbar rescan control (DKT-692)", () => {
+  beforeEach(() => {
+    useMapStore.getState().reset()
+  })
+
+  it("does not render the deprecated rescan control", () => {
+    renderToolbar()
+
+    expect(
+      screen.queryByRole("button", { name: /rescan/i })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/rescan/i)).not.toBeInTheDocument()
+  })
+})

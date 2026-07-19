@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useParams } from "react-router-dom"
 import {
   BarChart3,
@@ -42,7 +42,7 @@ import { AmountEditDialog } from "./AmountEditDialog"
 import { EntityEditDialog } from "./EntityEditDialog"
 import { BulkImportDialog } from "./BulkImportDialog"
 import { TablePagination } from "@/features/table/components/TablePagination"
-import type { Transaction } from "../api"
+import type { FinancialDatasetMode, Transaction } from "../api"
 
 export function FinancialPage() {
   const { id: caseId } = useParams()
@@ -93,13 +93,6 @@ export function FinancialPage() {
     pageSize: store.pageSize,
     currentPage: store.currentPage,
   })
-
-  useEffect(() => {
-    if (!isTransactionsMode) {
-      setSelectedSenders(new Set())
-      setSelectedBeneficiaries(new Set())
-    }
-  }, [isTransactionsMode])
 
   const senderRows = useMemo(
     () => buildEntityFlowRows(baseFilteredTransactions, "from", selectedBeneficiaries),
@@ -253,6 +246,15 @@ export function FinancialPage() {
     [bulkCorrect]
   )
 
+  const handleModeChange = useCallback(
+    (mode: FinancialDatasetMode) => {
+      store.setMode(mode)
+      setSelectedSenders(new Set())
+      setSelectedBeneficiaries(new Set())
+    },
+    [store]
+  )
+
   const handleSelectedSendersChange = useCallback(
     (value: Set<string>) => {
       setSelectedSenders(value)
@@ -349,6 +351,7 @@ export function FinancialPage() {
         onOpenBulkImport={() => setBulkImportOpen(true)}
         onOpenCategoryManagement={() => setCategoryMgmtOpen(true)}
         onExportPdf={handleExportPdf}
+        onModeChange={handleModeChange}
       />
 
       {usesLegacyFinancialModel && (

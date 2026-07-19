@@ -101,6 +101,8 @@ export function useJobProgress(options: UseJobProgressOptions) {
         socketsRef.current.set(jobId, ws)
         updateConnectedCount()
 
+        ws.onopen = updateConnectedCount
+
         ws.onmessage = (event) => {
           try {
             const data: JobProgressMessage = JSON.parse(event.data)

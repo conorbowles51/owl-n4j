@@ -22,6 +22,7 @@ interface FinancialToolbarProps {
   onOpenBulkImport: () => void
   onOpenCategoryManagement: () => void
   onExportPdf: () => void
+  onModeChange: (mode: FinancialDatasetMode) => void
 }
 
 export function FinancialToolbar({
@@ -31,6 +32,7 @@ export function FinancialToolbar({
   onOpenBulkImport,
   onOpenCategoryManagement,
   onExportPdf,
+  onModeChange,
 }: FinancialToolbarProps) {
   const {
     searchQuery,
@@ -43,7 +45,6 @@ export function FinancialToolbar({
     entityFilter,
     minAmount,
     maxAmount,
-    setMode,
   } = useFinancialStore()
   const [searchInput, setSearchInput] = useState(searchQuery)
 
@@ -86,7 +87,7 @@ export function FinancialToolbar({
           variant={mode === "transactions" ? "secondary" : "ghost"}
           size="sm"
           className="h-7 px-2 text-xs"
-          onClick={() => setMode("transactions")}
+          onClick={() => onModeChange("transactions")}
         >
           Transactions
         </Button>
@@ -94,7 +95,7 @@ export function FinancialToolbar({
           variant={mode === "intelligence" ? "secondary" : "ghost"}
           size="sm"
           className="h-7 px-2 text-xs"
-          onClick={() => setMode("intelligence")}
+          onClick={() => onModeChange("intelligence")}
         >
           Financial Intelligence
         </Button>

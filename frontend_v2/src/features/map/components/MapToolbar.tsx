@@ -6,7 +6,6 @@ import {
   Layers,
   ListChecks,
   Pencil,
-  RefreshCw,
   ShieldCheck,
   Trash2,
   Undo2,
@@ -21,8 +20,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { useMapStore } from "../stores/map.store"
-import { fetchAPI } from "@/lib/api-client"
-import { useQueryClient } from "@tanstack/react-query"
 import { useMapReviewQueue, type MapLocation } from "../hooks/use-map-data"
 import {
   CONFIDENCE_TIERS,
@@ -53,7 +50,6 @@ function FilterCheckmark({ checked }: { checked: boolean }) {
 }
 
 export function MapToolbar({ caseId, locations }: MapToolbarProps) {
-  const queryClient = useQueryClient()
   const [areasOpen, setAreasOpen] = useState(false)
   const showHeatmap = useMapStore((s) => s.showHeatmap)
   const toggleHeatmap = useMapStore((s) => s.toggleHeatmap)
@@ -122,13 +118,6 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
   const clearActiveFilters = () => {
     clearConfidenceFilter()
     clearBoundingShapes()
-  }
-
-  const handleRescan = async () => {
-    await fetchAPI(`/api/graph/cases/${caseId}/rescan-locations`, {
-      method: "POST",
-    })
-    queryClient.invalidateQueries({ queryKey: ["map", caseId] })
   }
 
   return (
@@ -454,17 +443,6 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
         </Popover>
 
         <div className="flex-1" />
-
-        {/* Rescan button */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs"
-          onClick={handleRescan}
-        >
-          <RefreshCw className="mr-1 size-3.5" />
-          Rescan
-        </Button>
 
         {/* Count */}
         <span className="text-[10px] text-muted-foreground">
