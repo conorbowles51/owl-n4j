@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -97,7 +97,10 @@ export function BulkImportDialog({
   const [error, setError] = useState("")
   const [fileName, setFileName] = useState("")
 
-  const txMap = new Map(transactions.map((t) => [t.key, t]))
+  const txMap = useMemo(
+    () => new Map(transactions.map((transaction) => [transaction.key, transaction])),
+    [transactions]
+  )
 
   const handleFile = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {

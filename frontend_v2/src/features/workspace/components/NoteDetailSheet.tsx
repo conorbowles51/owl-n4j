@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Loader2, Network, Save, Trash2 } from "lucide-react"
 import {
@@ -28,6 +28,36 @@ interface NoteDetailSheetProps {
   onOpenChange: (open: boolean) => void
 }
 
+interface NoteDraft {
+  sourceKey: string
+  title: string
+  content: string
+  tagsInput: string
+}
+
+function createNoteDraft(note: InvestigativeNote | null): NoteDraft {
+  if (!note) {
+    return {
+      sourceKey: "__empty__",
+      title: "",
+      content: "",
+      tagsInput: "",
+    }
+  }
+
+  return {
+    sourceKey: JSON.stringify([
+      note.id,
+      note.title ?? "",
+      note.content ?? "",
+      note.tags ?? [],
+    ]),
+    title: note.title ?? "",
+    content: note.content ?? "",
+    tagsInput: (note.tags ?? []).join(", "),
+  }
+}
+
 export function NoteDetailSheet({
   caseId,
   note,
@@ -39,16 +69,17 @@ export function NoteDetailSheet({
   const deleteNote = useDeleteNote(caseId)
   const buildGraph = useBuildWorkspaceGraph(caseId)
 
-  const [title, setTitle] = useState("")
-  const [content, setContent] = useState("")
-  const [tagsInput, setTagsInput] = useState("")
-
-  useEffect(() => {
-    if (!note) return
-    setTitle(note.title ?? "")
-    setContent(note.content ?? "")
-    setTagsInput((note.tags ?? []).join(", "))
-  }, [note])
+  const sourceDraft = useMemo(() => createNoteDraft(note), [note])
+  const [draft, setDraft] = useState(sourceDraft)
+  const activeDraft =
+    draft.sourceKey === sourceDraft.sourceKey ? draft : sourceDraft
+  const { title, content, tagsInput } = activeDraft
+  const updateDraft = (updates: Partial<Omit<NoteDraft, "sourceKey">>) => {
+    setDraft((current) => ({
+      ...(current.sourceKey === sourceDraft.sourceKey ? current : sourceDraft),
+      ...updates,
+    }))
+  }
 
   const isDirty = useMemo(() => {
     if (!note) return false
@@ -134,7 +165,10 @@ export function NoteDetailSheet({
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               Title
             </p>
-            <Input value={title} onChange={(event) => setTitle(event.target.value)} />
+            <Input
+              value={title}
+              onChange={(event) => updateDraft({ title: event.target.value })}
+            />
           </div>
 
           <div className="space-y-2">
@@ -144,7 +178,7 @@ export function NoteDetailSheet({
             <Textarea
               rows={10}
               value={content}
-              onChange={(event) => setContent(event.target.value)}
+              onChange={(event) => updateDraft({ content: event.target.value })}
             />
           </div>
 
@@ -154,7 +188,7 @@ export function NoteDetailSheet({
             </p>
             <Input
               value={tagsInput}
-              onChange={(event) => setTagsInput(event.target.value)}
+              onChange={(event) => updateDraft({ tagsInput: event.target.value })}
               placeholder="Comma separated tags"
             />
             {tags.length > 0 && (

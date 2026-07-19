@@ -46,7 +46,7 @@ export function InlineDropZone({
         }
       )
     },
-    [caseId, folderId, folderName, onDropComplete, uploadMutation]
+    [folderId, folderName, onDropComplete, uploadMutation]
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {

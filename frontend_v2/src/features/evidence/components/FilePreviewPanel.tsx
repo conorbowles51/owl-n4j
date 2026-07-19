@@ -1,4 +1,4 @@
-import { FileText, Image, Music, Film, File as FileIcon } from "lucide-react"
+import { File as FileIcon } from "lucide-react"
 import type { EvidenceFile } from "@/types/evidence.types"
 import { TextPreview } from "./previews/TextPreview"
 import { ImagePreview } from "./previews/ImagePreview"
@@ -52,17 +52,4 @@ export function FilePreviewPanel({ file, caseId }: FilePreviewPanelProps) {
       </p>
     </div>
   )
-}
-
-export function getFileTypeIcon(filename: string) {
-  const ext = getExt(filename)
-  if (TEXT_EXTS.has(ext)) return FileText
-  if (IMAGE_EXTS.has(ext)) return Image
-  if (AUDIO_EXTS.has(ext)) return Music
-  if (VIDEO_EXTS.has(ext)) return Film
-  return FileIcon
-}
-
-export function isVideoFile(filename: string) {
-  return VIDEO_EXTS.has(getExt(filename))
 }
