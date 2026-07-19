@@ -3,21 +3,26 @@ import { useParams } from "react-router-dom"
 import { MapPin } from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
-import { useMapData } from "../hooks/use-map-data"
+import { useMapData, useMapReviewQueue } from "../hooks/use-map-data"
 import { useProximityAnalysis } from "../hooks/use-proximity-analysis"
 import { useMapStore } from "../stores/map.store"
 import { useGraphStore } from "@/stores/graph.store"
 import { useUIStore } from "@/stores/ui.store"
+import { needsReview } from "@/lib/location-confidence"
 import { MapCanvas } from "./MapCanvas"
 import { MapToolbar } from "./MapToolbar"
 import { MapLegend } from "./MapLegend"
 import { MapControls } from "./MapControls"
+import { NeedsReviewPanel } from "./NeedsReviewPanel"
 import { ProximityAnalysisPanel } from "./ProximityAnalysisPanel"
 
 export function MapPage() {
   const { id: caseId } = useParams()
   const { data: locations, isLoading } = useMapData(caseId)
+  const { data: reviewQueue, isLoading: isReviewQueueLoading } =
+    useMapReviewQueue(caseId)
   const safeLocations = locations ?? []
+  const reviewQueueCount = (reviewQueue ?? []).filter(needsReview).length
 
   const zoomIn = useMapStore((s) => s.zoomIn)
   const zoomOut = useMapStore((s) => s.zoomOut)
@@ -25,6 +30,7 @@ export function MapPage() {
   const flyTo = useMapStore((s) => s.flyTo)
   const proximityAnchorKey = useMapStore((s) => s.proximityAnchorKey)
   const proximityRadius = useMapStore((s) => s.proximityRadius)
+  const needsReviewMode = useMapStore((s) => s.needsReviewMode)
   const setProximityRadius = useMapStore((s) => s.setProximityRadius)
 
   const { anchor, results } = useProximityAnalysis(safeLocations)
@@ -42,7 +48,7 @@ export function MapPage() {
     }
   }, [selectedNodeKeys, expandGraphPanelTo])
 
-  if (isLoading) {
+  if (isLoading || (safeLocations.length === 0 && isReviewQueueLoading)) {
     return (
       <div className="flex h-full items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -50,7 +56,7 @@ export function MapPage() {
     )
   }
 
-  if (!safeLocations.length) {
+  if (!safeLocations.length && reviewQueueCount === 0) {
     return (
       <EmptyState
         icon={MapPin}
@@ -72,6 +78,9 @@ export function MapPage() {
           onZoomOut={zoomOut}
           onFitBounds={fitBounds}
         />
+        {needsReviewMode && (
+          <NeedsReviewPanel caseId={caseId!} locations={safeLocations} />
+        )}
         {proximityAnchorKey && (
           <div className="absolute bottom-3 right-3 z-10 w-72 rounded-lg border border-border bg-card/95 p-3 shadow-md backdrop-blur">
             <ProximityAnalysisPanel

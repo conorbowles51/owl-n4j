@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react"
+import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { useChatStore } from "../stores/chat.store"
 import { ChatSidePanel } from "./ChatSidePanel"
@@ -28,6 +29,14 @@ vi.mock("@/features/evidence/api", () => ({
     getModels: panelMocks.getModels,
   },
 }))
+
+function renderPanel() {
+  return render(
+    <MemoryRouter initialEntries={["/cases/case-1/chat"]}>
+      <ChatSidePanel caseId="case-1" />
+    </MemoryRouter>
+  )
+}
 
 describe("ChatSidePanel", () => {
   beforeEach(() => {
@@ -67,7 +76,7 @@ describe("ChatSidePanel", () => {
   })
 
   it("shows the active conversation and starts new chats from compact controls", () => {
-    render(<ChatSidePanel caseId="case-1" />)
+    renderPanel()
 
     expect(screen.getByText("Saved chat")).toBeInTheDocument()
 
@@ -77,7 +86,7 @@ describe("ChatSidePanel", () => {
   })
 
   it("sends through the persisted chat hook with model and scope", () => {
-    render(<ChatSidePanel caseId="case-1" />)
+    renderPanel()
 
     const input = screen.getByPlaceholderText("Ask a question...")
     fireEvent.change(input, { target: { value: "Follow the money" } })
@@ -87,7 +96,16 @@ describe("ChatSidePanel", () => {
       "Follow the money",
       "gpt-5-mini",
       "openai",
-      "case_overview"
+      "case_overview",
+      {
+        label: "Case side panel",
+        route: "/cases/case-1/chat",
+        scope: "case_overview",
+        selections: {
+          entity_keys: [],
+        },
+        view: "chat",
+      }
     )
   })
 })

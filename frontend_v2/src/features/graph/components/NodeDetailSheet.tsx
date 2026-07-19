@@ -28,6 +28,11 @@ import {
   Eye,
 } from "lucide-react"
 import { graphAPI } from "../api"
+import {
+  getConfidenceTier,
+  CONFIDENCE_TIER_LABELS,
+  CONFIDENCE_TIER_BADGE_VARIANTS,
+} from "@/lib/location-confidence"
 import { evidenceAPI } from "@/features/evidence/api"
 import type { GraphData } from "@/types/graph.types"
 
@@ -165,6 +170,37 @@ export function NodeDetailSheet({
           <div className="flex items-center gap-2">
             <NodeBadge type={detail.type} />
             <h3 className="truncate text-sm font-semibold">{detail.label}</h3>
+            {(properties.latitude !== undefined ||
+              properties.geocoding_status !== undefined) && (
+              <Badge
+                variant={
+                  CONFIDENCE_TIER_BADGE_VARIANTS[
+                    getConfidenceTier({
+                      geocoding_confidence: properties.geocoding_confidence as
+                        | string
+                        | undefined,
+                      manual_fields: properties.manual_fields as
+                        | string[]
+                        | undefined,
+                    })
+                  ]
+                }
+                className="shrink-0 text-[9px]"
+              >
+                {
+                  CONFIDENCE_TIER_LABELS[
+                    getConfidenceTier({
+                      geocoding_confidence: properties.geocoding_confidence as
+                        | string
+                        | undefined,
+                      manual_fields: properties.manual_fields as
+                        | string[]
+                        | undefined,
+                    })
+                  ]
+                }
+              </Badge>
+            )}
           </div>
           {Array.isArray(detail.properties.aliases) &&
             (detail.properties.aliases as unknown[]).length > 0 && (

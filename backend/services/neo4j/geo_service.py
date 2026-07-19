@@ -1,5 +1,5 @@
 """
-Geo Service — location-related operations: geocoded entity retrieval,
+Geo Service - location-related operations: geocoded entity retrieval,
 location updates, location node creation, and relationship management.
 """
 
@@ -69,6 +69,8 @@ class GeoService:
                     n.location_raw AS location_raw,
                     n.location_formatted AS location_formatted,
                     n.geocoding_confidence AS geocoding_confidence,
+                    n.geocoding_status AS geocoding_status,
+                    n.manual_fields AS manual_fields,
                     n.summary AS summary,
                     n.date AS date,
                     connections
@@ -88,6 +90,8 @@ class GeoService:
                     "location_raw": record["location_raw"],
                     "location_formatted": record["location_formatted"],
                     "geocoding_confidence": record["geocoding_confidence"],
+                    "geocoding_status": record["geocoding_status"],
+                    "manual_fields": record["manual_fields"] or [],
                     "summary": record["summary"],
                     "date": record["date"],
                     "connections": [c for c in record["connections"] if c["key"]],
@@ -95,6 +99,47 @@ class GeoService:
                 entities.append(entity)
 
             return entities
+
+    def get_locations_needing_review(self, case_id: str) -> List[Dict]:
+        """
+        Get entities flagged at ingestion that never received coordinates, so
+        investigators can clear them from the map review queue.
+        """
+        with driver.session() as session:
+            query = """
+                MATCH (n)
+                WHERE n.case_id = $case_id
+                  AND (n.latitude IS NULL OR n.longitude IS NULL)
+                  AND n.geocoding_status IN ['ambiguous', 'unverified', 'failed']
+                  AND NONE(
+                    field IN coalesce(n.manual_fields, [])
+                    WHERE field IN ['latitude', 'longitude', 'location_name', 'location_formatted']
+                  )
+                  AND NONE(label IN labels(n) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(n)['system_node'], false) <> true
+                RETURN
+                    n.key AS key,
+                    n.name AS name,
+                    labels(n)[0] AS type,
+                    n.location_raw AS location_raw,
+                    n.geocoding_status AS geocoding_status,
+                    n.geocoding_confidence AS geocoding_confidence,
+                    n.manual_fields AS manual_fields
+                ORDER BY n.name
+            """
+            result = session.run(query, case_id=case_id)
+            return [
+                {
+                    "key": record["key"],
+                    "name": record["name"],
+                    "type": record["type"],
+                    "location_raw": record["location_raw"],
+                    "geocoding_status": record["geocoding_status"],
+                    "geocoding_confidence": record["geocoding_confidence"],
+                    "manual_fields": record["manual_fields"] or [],
+                }
+                for record in result
+            ]
 
     def update_entity_location(self, node_key: str, case_id: str, location_name: str, latitude: float, longitude: float) -> Dict:
         """Update the location properties of an entity node."""

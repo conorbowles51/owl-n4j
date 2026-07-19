@@ -4,6 +4,11 @@ import { Button } from "@/components/ui/button"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { Badge } from "@/components/ui/badge"
 import { markdownToPlainText } from "@/lib/markdown-text"
+import {
+  getConfidenceTier,
+  CONFIDENCE_TIER_LABELS,
+  CONFIDENCE_TIER_BADGE_VARIANTS,
+} from "@/lib/location-confidence"
 import type { MapLocation } from "../hooks/use-map-data"
 import type { EntityType } from "@/lib/theme"
 
@@ -47,11 +52,12 @@ export function EntityPopup({
           <span>
             {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
           </span>
-          {location.geocoding_confidence && (
-            <Badge variant="outline" className="ml-1 text-[9px]">
-              {location.geocoding_confidence}
-            </Badge>
-          )}
+          <Badge
+            variant={CONFIDENCE_TIER_BADGE_VARIANTS[getConfidenceTier(location)]}
+            className="ml-1 text-[9px]"
+          >
+            {CONFIDENCE_TIER_LABELS[getConfidenceTier(location)]}
+          </Badge>
         </div>
 
         {/* Location info */}
