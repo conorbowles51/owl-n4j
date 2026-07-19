@@ -10,6 +10,7 @@ function location(overrides: Partial<MapLocation>): MapLocation {
     type: overrides.type ?? "location",
     latitude: overrides.latitude ?? 0,
     longitude: overrides.longitude ?? 0,
+    manual_correction_history: overrides.manual_correction_history ?? [],
     ...overrides,
   }
 }

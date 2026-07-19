@@ -2460,17 +2460,18 @@ async def geocode_node(
             return {"success": False, "error": "Could not geocode address", "address": body.address}
 
         if apply:
-            neo4j_service.update_graph_node(
+            neo4j_service.update_geocoded_location(
                 node_key,
                 case_id=body.case_id,
-                properties={
-                    "latitude": result["latitude"],
-                    "longitude": result["longitude"],
-                    "location_raw": body.address.strip(),
-                    "location_formatted": result["formatted_address"],
-                    "location_name": result["formatted_address"],
-                },
+                query=body.address.strip(),
+                latitude=result["latitude"],
+                longitude=result["longitude"],
+                formatted_address=result["formatted_address"],
+                confidence=result.get("confidence"),
+                provider=result.get("provider", "nominatim"),
+                location_granularity=result.get("location_granularity"),
                 edited_by=user.get("username", "unknown"),
+                edited_by_name=user.get("name") or user.get("full_name") or user.get("email"),
                 source_view="map",
             )
 
@@ -2480,6 +2481,9 @@ async def geocode_node(
             "longitude": result["longitude"],
             "formatted_address": result["formatted_address"],
             "confidence": result["confidence"],
+            "provider": result.get("provider", "nominatim"),
+            "query": result.get("query", body.address.strip()),
+            "location_granularity": result.get("location_granularity"),
             "applied": apply,
         }
     except LookupError as e:

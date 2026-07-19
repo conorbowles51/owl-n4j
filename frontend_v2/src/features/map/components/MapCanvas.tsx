@@ -15,6 +15,8 @@ import {
   locationsToGeoJSON,
 } from "../lib/geojson"
 import {
+  approximateLocationAreaLayer,
+  approximateLocationOutlineLayer,
   boundingShapeFillLayer,
   boundingShapeOutlineLayer,
   draftBoundingShapeFillLayer,
@@ -36,6 +38,12 @@ import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
 interface MapCanvasProps {
   locations: MapLocation[]
 }
+
+const LOCATION_INTERACTIVE_LAYER_IDS = [
+  "unclustered-point",
+  "approximate-location-outline",
+  "approximate-location-area",
+]
 
 interface ScreenPoint {
   x: number
@@ -307,7 +315,7 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       }
 
       const features = map.queryRenderedFeatures(e.point, {
-        layers: ["unclustered-point"],
+        layers: LOCATION_INTERACTIVE_LAYER_IDS,
       })
 
       if (features.length > 0) {
@@ -422,12 +430,12 @@ export function MapCanvas({ locations }: MapCanvasProps) {
         return
       }
 
-      // Check for point click
-      const pointFeatures = map.queryRenderedFeatures(e.point, {
-        layers: ["unclustered-point"],
+      // Check for exact pin or approximate area click
+      const locationFeatures = map.queryRenderedFeatures(e.point, {
+        layers: LOCATION_INTERACTIVE_LAYER_IDS,
       })
-      if (pointFeatures.length > 0) {
-        const key = pointFeatures[0].properties?.key
+      if (locationFeatures.length > 0) {
+        const key = locationFeatures[0].properties?.key
         if (key) {
           if (proximityMode && !proximityAnchorKey) {
             setProximityAnchor(key)
@@ -469,7 +477,7 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       onContextMenu={handleContextMenu}
       onLoad={handleLoad}
       attributionControl={false}
-      interactiveLayerIds={drawMode ? [] : ["unclustered-point"]}
+      interactiveLayerIds={drawMode ? [] : LOCATION_INTERACTIVE_LAYER_IDS}
     >
       <NavigationControl
         position="top-right"
@@ -535,6 +543,10 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       <Source id="locations" type="geojson" data={geojson}>
         {/* Heatmap (below markers) */}
         {showHeatmap && <Layer {...heatmapLayer} />}
+
+        {/* Approximate locations */}
+        <Layer {...approximateLocationAreaLayer} />
+        <Layer {...approximateLocationOutlineLayer} />
 
         {/* Individual points */}
         <Layer {...pointLayer} />

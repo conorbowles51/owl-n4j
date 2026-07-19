@@ -1,4 +1,8 @@
-import type { MapLocation } from "../hooks/use-map-data"
+import {
+  coordinatePrecisionForLocation,
+  isApproximateLocation,
+  type MapLocation,
+} from "../hooks/use-map-data"
 import type { BoundingShape } from "../stores/map.store"
 import { closeRing, type LngLatPoint } from "./geometry"
 import type {
@@ -16,6 +20,12 @@ export interface LocationProperties {
   locationRaw?: string
   locationFormatted?: string
   geocodingConfidence?: string
+  geocodingProvider?: string | null
+  geocodingQuery?: string | null
+  geocodingFormattedAddress?: string | null
+  locationGranularity?: string | null
+  isApproximate: boolean
+  displayCoordinatePrecision: number
   summary?: string
   date?: string
   connectionCount: number
@@ -40,6 +50,12 @@ export function locationsToGeoJSON(
           locationRaw: loc.location_raw,
           locationFormatted: loc.location_formatted,
           geocodingConfidence: loc.geocoding_confidence,
+          geocodingProvider: loc.geocoding_provider,
+          geocodingQuery: loc.geocoding_query,
+          geocodingFormattedAddress: loc.geocoding_formatted_address,
+          locationGranularity: loc.location_granularity,
+          isApproximate: isApproximateLocation(loc),
+          displayCoordinatePrecision: coordinatePrecisionForLocation(loc),
           summary: loc.summary,
           date: loc.date,
           connectionCount: loc.connections?.length ?? 0,

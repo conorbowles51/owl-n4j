@@ -67,6 +67,7 @@ class Neo4jServiceFacade:
     get_case_entity_summary = staticmethod(entity_service.get_case_entity_summary)
     batch_update_entities = staticmethod(graph_edit_service.batch_update_entities)
     update_graph_node = staticmethod(graph_edit_service.update_node)
+    update_geocoded_location = staticmethod(graph_edit_service.update_geocoded_location)
     get_graph_edit_schema = staticmethod(lambda: graph_edit_service.editable_schema)
     get_entities_for_insights = staticmethod(entity_service.get_entities_for_insights)
     save_entity_insights = staticmethod(entity_service.save_entity_insights)

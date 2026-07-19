@@ -4,6 +4,19 @@ import { fetchAPI } from "@/lib/api-client"
 import type { EntityType } from "@/lib/theme"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 
+export interface ManualCorrection {
+  moved_by?: string | null
+  moved_by_name?: string | null
+  moved_at?: string | null
+  from_latitude?: number | string | null
+  from_longitude?: number | string | null
+  to_latitude?: number | string | null
+  to_longitude?: number | string | null
+  query?: string | null
+  provider?: string | null
+  formatted_address?: string | null
+}
+
 export interface MapLocation {
   key: string
   name: string
@@ -13,6 +26,13 @@ export interface MapLocation {
   location_raw?: string
   location_formatted?: string
   geocoding_confidence?: string
+  geocoding_provider?: string | null
+  geocoding_query?: string | null
+  geocoding_formatted_address?: string | null
+  location_granularity?: string | null
+  coordinate_precision?: number | string | null
+  accuracy_meters?: number | string | null
+  manual_correction_history: ManualCorrection[]
   geocoding_status?: string
   manual_fields?: string[]
   summary?: string
@@ -30,11 +50,92 @@ interface RawMapLocation {
   location_raw?: string
   location_formatted?: string
   geocoding_confidence?: string
+  geocoding_provider?: string | null
+  geocoding_query?: string | null
+  geocoding_formatted_address?: string | null
+  location_granularity?: string | null
+  specificity?: string | null
+  coordinate_precision?: number | string | null
+  accuracy_meters?: number | string | null
+  manual_correction_history?: unknown
   geocoding_status?: string
   manual_fields?: string[]
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
+}
+
+const APPROXIMATE_GRANULARITIES = new Set(["city", "neighborhood", "neighbourhood"])
+
+function normalizeGranularity(value: string | null | undefined) {
+  return value?.trim().toLowerCase().replace(/-/g, "_") ?? null
+}
+
+function normalizeCorrectionHistory(value: unknown): ManualCorrection[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is ManualCorrection => item !== null && typeof item === "object")
+  }
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value)
+      return normalizeCorrectionHistory(parsed)
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+export function isApproximateLocation(location: Pick<MapLocation, "location_granularity">) {
+  const granularity = normalizeGranularity(location.location_granularity)
+  return granularity ? APPROXIMATE_GRANULARITIES.has(granularity) : false
+}
+
+export function coordinatePrecisionForLocation(
+  location: Pick<MapLocation, "accuracy_meters" | "coordinate_precision" | "location_granularity">
+) {
+  const explicitPrecision = Number(location.coordinate_precision)
+  if (Number.isFinite(explicitPrecision) && explicitPrecision >= 0) {
+    return Math.min(6, Math.floor(explicitPrecision))
+  }
+
+  const accuracyMeters = Number(location.accuracy_meters)
+  if (Number.isFinite(accuracyMeters) && accuracyMeters > 0) {
+    if (accuracyMeters >= 50000) return 0
+    if (accuracyMeters >= 10000) return 1
+    if (accuracyMeters >= 1000) return 2
+    if (accuracyMeters >= 100) return 3
+    if (accuracyMeters >= 10) return 4
+    return 5
+  }
+
+  switch (normalizeGranularity(location.location_granularity)) {
+    case "country":
+    case "region":
+    case "state":
+      return 1
+    case "city":
+      return 2
+    case "neighborhood":
+    case "neighbourhood":
+      return 3
+    case "street":
+      return 4
+    case "address":
+    case "building":
+    case "coordinate":
+    case "exact":
+    case "exact_address":
+    case "parcel":
+      return 5
+    default:
+      return 4
+  }
+}
+
+export function formatDisplayCoordinates(location: MapLocation) {
+  const precision = coordinatePrecisionForLocation(location)
+  return `${location.latitude.toFixed(precision)}, ${location.longitude.toFixed(precision)}`
 }
 
 export function useMapData(caseId: string | undefined) {
@@ -50,6 +151,13 @@ export function useMapData(caseId: string | undefined) {
           ...loc,
           name: loc.name ?? loc.label ?? loc.key,
           type: loc.type.toLowerCase() as EntityType,
+          geocoding_provider: loc.geocoding_provider ?? null,
+          geocoding_query: loc.geocoding_query ?? loc.location_raw ?? null,
+          geocoding_formatted_address: loc.geocoding_formatted_address ?? loc.location_formatted ?? null,
+          location_granularity: normalizeGranularity(loc.location_granularity ?? loc.specificity),
+          coordinate_precision: loc.coordinate_precision ?? null,
+          accuracy_meters: loc.accuracy_meters ?? null,
+          manual_correction_history: normalizeCorrectionHistory(loc.manual_correction_history),
         })
       )
     },

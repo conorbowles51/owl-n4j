@@ -425,6 +425,9 @@ export const graphAPI = {
       longitude: number
       formatted_address: string
       confidence: string
+      provider?: string
+      query?: string
+      location_granularity?: string | null
       applied: boolean
       error?: string
     }>(

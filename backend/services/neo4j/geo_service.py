@@ -3,12 +3,29 @@ Geo Service - location-related operations: geocoded entity retrieval,
 location updates, location node creation, and relationship management.
 """
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
 from services.neo4j.driver import driver
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_list_property(value: Any) -> List[Dict[str, Any]]:
+    """Neo4j stores structured history as JSON text; expose it as a list."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return []
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, dict)]
+    return []
 
 
 class GeoService:
@@ -85,6 +102,13 @@ class GeoService:
                     n.location_raw AS location_raw,
                     n.location_formatted AS location_formatted,
                     n.geocoding_confidence AS geocoding_confidence,
+                    coalesce(n.geocoding_provider, n.geocode_source) AS geocoding_provider,
+                    coalesce(n.geocoding_query, n.location_raw) AS geocoding_query,
+                    coalesce(n.geocoding_formatted_address, n.location_formatted) AS geocoding_formatted_address,
+                    coalesce(n.location_granularity, n.specificity, n.geocode_accuracy) AS location_granularity,
+                    n.coordinate_precision AS coordinate_precision,
+                    n.accuracy_meters AS accuracy_meters,
+                    coalesce(n.manual_correction_history, n.geocoding_correction_history) AS manual_correction_history,
                     n.geocoding_status AS geocoding_status,
                     n.manual_fields AS manual_fields,
                     n.summary AS summary,
@@ -106,6 +130,13 @@ class GeoService:
                     "location_raw": record["location_raw"],
                     "location_formatted": record["location_formatted"],
                     "geocoding_confidence": record["geocoding_confidence"],
+                    "geocoding_provider": record["geocoding_provider"],
+                    "geocoding_query": record["geocoding_query"],
+                    "geocoding_formatted_address": record["geocoding_formatted_address"],
+                    "location_granularity": record["location_granularity"],
+                    "coordinate_precision": record["coordinate_precision"],
+                    "accuracy_meters": record["accuracy_meters"],
+                    "manual_correction_history": _parse_list_property(record["manual_correction_history"]),
                     "geocoding_status": record["geocoding_status"],
                     "manual_fields": record["manual_fields"] or [],
                     "summary": record["summary"],
@@ -246,6 +277,7 @@ class GeoService:
         longitude: float,
         location_formatted: str,
         geocoding_confidence: str,
+        location_granularity: Optional[str] = None,
     ) -> Dict:
         """Set all location properties on an entity node."""
         with driver.session() as session:
@@ -258,7 +290,11 @@ class GeoService:
                     n.location_formatted = $location_formatted,
                     n.location_name = $location_formatted,
                     n.geocoding_status = 'success',
-                    n.geocoding_confidence = $geocoding_confidence
+                    n.geocoding_confidence = $geocoding_confidence,
+                    n.geocoding_provider = 'nominatim',
+                    n.geocoding_query = $location_raw,
+                    n.geocoding_formatted_address = $location_formatted,
+                    n.location_granularity = $location_granularity
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
                 """,
                 key=node_key,
@@ -268,6 +304,7 @@ class GeoService:
                 longitude=longitude,
                 location_formatted=location_formatted,
                 geocoding_confidence=geocoding_confidence,
+                location_granularity=location_granularity,
             )
             record = result.single()
             return dict(record) if record else {}
@@ -280,6 +317,7 @@ class GeoService:
         longitude: float,
         location_formatted: str,
         geocoding_confidence: str,
+        location_granularity: Optional[str] = None,
         context: str = "",
     ) -> Optional[str]:
         """Create a new Location node in the graph and return its key."""
@@ -299,6 +337,10 @@ class GeoService:
                     location_name: $location_formatted,
                     geocoding_status: 'success',
                     geocoding_confidence: $geocoding_confidence,
+                    geocoding_provider: 'nominatim',
+                    geocoding_query: $name,
+                    geocoding_formatted_address: $location_formatted,
+                    location_granularity: $location_granularity,
                     summary: $context,
                     source: 'geo_rescan'
                 })
@@ -311,6 +353,7 @@ class GeoService:
                 longitude=longitude,
                 location_formatted=location_formatted,
                 geocoding_confidence=geocoding_confidence,
+                location_granularity=location_granularity,
                 context=context,
             )
             record = result.single()

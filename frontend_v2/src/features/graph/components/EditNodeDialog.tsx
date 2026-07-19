@@ -22,6 +22,11 @@ import { useMapTheme } from "@/features/map/hooks/use-map-theme"
 import type { GraphEditPropertySchema } from "../api"
 import { graphAPI } from "../api"
 import { useGraphEditSchema, useNodeDetails } from "../hooks/use-node-details"
+import {
+  geocodePreviewMatchesCoordinates,
+  type Coordinates,
+  type GeocodePreview,
+} from "../lib/geocode-preview"
 
 interface EditNodeDialogProps {
   open: boolean
@@ -37,11 +42,6 @@ interface EditableProperty {
   kind: "string" | "number" | "boolean"
   value: string
   enum?: string[]
-}
-
-interface Coordinates {
-  latitude: number
-  longitude: number
 }
 
 const FIELD_KEY_RE = /^[A-Za-z][A-Za-z0-9_]*$/
@@ -194,6 +194,7 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null)
   const [locationName, setLocationName] = useState("")
   const [locationSearch, setLocationSearch] = useState("")
+  const [geocodePreview, setGeocodePreview] = useState<GeocodePreview | null>(null)
   const [propertyValues, setPropertyValues] = useState<Record<string, string>>({})
   const [customProperties, setCustomProperties] = useState<EditableProperty[]>([])
   const [customKey, setCustomKey] = useState("")
@@ -250,6 +251,7 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
         scalarToString(props.location_raw)
     )
     setLocationSearch("")
+    setGeocodePreview(null)
     setCustomProperties([])
     setCustomKey("")
     setCustomValue("")
@@ -292,16 +294,24 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
 
   const handleGeocode = async () => {
     if (!node || !locationSearch.trim()) return
+    const query = locationSearch.trim()
     setGeocoding(true)
     setSaveError(null)
     try {
-      const result = await graphAPI.geocodeNode(node.key, caseId, locationSearch.trim(), false)
+      const result = await graphAPI.geocodeNode(node.key, caseId, query, false)
       if (!result.success) {
         setSaveError(result.error ?? "Could not geocode address.")
         return
       }
+      const formattedAddress = result.formatted_address || query
       setCoordinates({ latitude: result.latitude, longitude: result.longitude })
-      setLocationName(result.formatted_address || locationSearch.trim())
+      setLocationName(formattedAddress)
+      setGeocodePreview({
+        query: result.query || query,
+        latitude: result.latitude,
+        longitude: result.longitude,
+        formattedAddress,
+      })
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Could not geocode address.")
     } finally {
@@ -309,18 +319,31 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
     }
   }
 
+  const handleCoordinatesChange = (next: Coordinates) => {
+    setCoordinates(next)
+    setGeocodePreview((current) => (
+      geocodePreviewMatchesCoordinates(current, next) ? current : null
+    ))
+  }
+
   const handleSave = async () => {
     if (!node) return
+    const geocodeToApply = geocodePreviewMatchesCoordinates(geocodePreview, coordinates)
+      ? geocodePreview
+      : null
 
     const properties: Record<string, string | number | boolean | null> = {
       date: date || null,
       time: date && time ? time : null,
       date_precision: datePrecision || null,
-      latitude: coordinates?.latitude ?? null,
-      longitude: coordinates?.longitude ?? null,
-      location_raw: locationName || null,
-      location_formatted: locationName || null,
-      location_name: locationName || null,
+    }
+
+    if (!geocodeToApply) {
+      properties.latitude = coordinates?.latitude ?? null
+      properties.longitude = coordinates?.longitude ?? null
+      properties.location_raw = locationName || null
+      properties.location_formatted = locationName || null
+      properties.location_name = locationName || null
     }
 
     for (const property of renderedProperties) {
@@ -356,6 +379,24 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
         properties,
         source_view: "entity_detail",
       })
+      if (geocodeToApply) {
+        const applied = await graphAPI.geocodeNode(node.key, caseId, geocodeToApply.query, true)
+        if (!applied.success) {
+          throw new Error(applied.error ?? "Could not save geocoded location.")
+        }
+        const locationLabel = locationName.trim()
+        const geocodeLabel = applied.formatted_address || geocodeToApply.formattedAddress
+        if (locationLabel && locationLabel !== geocodeLabel) {
+          await graphAPI.updateNode(node.key, {
+            case_id: caseId,
+            properties: {
+              location_formatted: locationLabel,
+              location_name: locationLabel,
+            },
+            source_view: "entity_detail",
+          })
+        }
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["graph", caseId] }),
         queryClient.invalidateQueries({ queryKey: ["graph", "node", node.key, caseId] }),
@@ -525,7 +566,7 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
                     <Input value={locationName} onChange={(event) => setLocationName(event.target.value)} />
                   </label>
                 </div>
-                <LocationPicker coordinates={coordinates} onChange={setCoordinates} />
+                <LocationPicker coordinates={coordinates} onChange={handleCoordinatesChange} />
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-[11px] text-muted-foreground">
                     {coordinates
@@ -539,6 +580,7 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
                     onClick={() => {
                       setCoordinates(null)
                       setLocationName("")
+                      setGeocodePreview(null)
                     }}
                   >
                     Clear
