@@ -35,11 +35,16 @@ def _get_cached_geocode(cache_key: str) -> tuple[bool, Optional[Dict]]:
             return False, None
         if entry.status == "failed":
             return True, None
+        raw = entry.raw_response if isinstance(entry.raw_response, dict) else {}
         return True, {
+            "provider": entry.provider,
+            "query": entry.original_query,
             "latitude": entry.latitude,
             "longitude": entry.longitude,
             "formatted_address": entry.formatted_address,
             "confidence": entry.confidence,
+            "confidence_score": raw.get("confidence_score"),
+            "location_granularity": (entry.raw_response or {}).get("location_granularity"),
         }
 
 
@@ -76,6 +81,24 @@ def _rate_limit():
     _last_request_time = time.time()
 
 
+def _location_granularity(result: Dict) -> Optional[str]:
+    address = result.get("address") or {}
+    result_type = str(result.get("type") or result.get("addresstype") or "").lower()
+    if address.get("house_number") or result_type in {"house", "building"}:
+        return "address"
+    if address.get("road") or result_type in {"road", "street"}:
+        return "street"
+    if result_type in {"neighbourhood", "neighborhood", "suburb", "quarter", "hamlet"}:
+        return "neighborhood"
+    if result_type in {"city", "town", "village", "municipality", "borough"}:
+        return "city"
+    if result_type in {"county", "state", "region"}:
+        return "region"
+    if result_type == "country":
+        return "country"
+    return None
+
+
 def geocode_with_cache(location: str) -> Optional[Dict]:
     """Geocode a location string, using the shared Nominatim cache."""
     if not location or not location.strip():
@@ -100,10 +123,16 @@ def geocode_with_cache(location: str) -> Optional[Dict]:
         importance = float(r.get("importance", 0))
         confidence = "high" if importance > 0.7 else ("medium" if importance > 0.4 else "low")
         result = {
+            "provider": "nominatim",
+            "query": location.strip(),
             "latitude": float(r["lat"]),
             "longitude": float(r["lon"]),
             "formatted_address": r.get("display_name", location),
             "confidence": confidence,
+            # Raw provider importance, kept so the map can show a 0-100% scale
+            # instead of only the high/medium/low bucket.
+            "confidence_score": importance,
+            "location_granularity": _location_granularity(r),
         }
         _save_geocode_cache(cache_key, location, result)
         return result
@@ -292,6 +321,8 @@ def rescan_case_locations(
             loc["longitude"] = result["longitude"]
             loc["formatted_address"] = result["formatted_address"]
             loc["geocoding_confidence"] = result["confidence"]
+            loc["geocoding_confidence_score"] = result.get("confidence_score")
+            loc["location_granularity"] = result.get("location_granularity")
             geocoded.append(loc)
         else:
             failed_geocode.append(place)
@@ -317,6 +348,8 @@ def rescan_case_locations(
         lng = loc["longitude"]
         formatted = loc.get("formatted_address", place)
         confidence = loc.get("geocoding_confidence", "medium")
+        confidence_score = loc.get("geocoding_confidence_score")
+        granularity = loc.get("location_granularity")
         context = loc.get("context", "")
         associated = loc.get("associated_entities", [])
 
@@ -341,6 +374,8 @@ def rescan_case_locations(
                     longitude=lng,
                     location_formatted=formatted,
                     geocoding_confidence=confidence,
+                    geocoding_confidence_score=confidence_score,
+                    location_granularity=granularity,
                 )
                 if updated:
                     entities_updated += 1
@@ -353,6 +388,8 @@ def rescan_case_locations(
                 longitude=lng,
                 location_formatted=formatted,
                 geocoding_confidence=confidence,
+                geocoding_confidence_score=confidence_score,
+                location_granularity=granularity,
                 context=context,
             )
             if node_key:

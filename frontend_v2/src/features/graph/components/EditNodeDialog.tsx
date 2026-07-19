@@ -22,6 +22,7 @@ import { useMapTheme } from "@/features/map/hooks/use-map-theme"
 import { graphAPI, type GraphEditPropertySchema, type LocationCorrectionResult } from "../api"
 import { useGraphEditSchema, useNodeDetails } from "../hooks/use-node-details"
 import { LocationCorrectionInline } from "./LocationCorrectionInline"
+import { type Coordinates } from "../lib/geocode-preview"
 
 interface EditNodeDialogProps {
   open: boolean
@@ -37,11 +38,6 @@ interface EditableProperty {
   kind: "string" | "number" | "boolean"
   value: string
   enum?: string[]
-}
-
-interface Coordinates {
-  latitude: number
-  longitude: number
 }
 
 const FIELD_KEY_RE = /^[A-Za-z][A-Za-z0-9_]*$/

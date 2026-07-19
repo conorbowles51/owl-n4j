@@ -28,6 +28,7 @@ import { LoupeLogo } from "@/components/brand/LoupeLogo"
 import { useAppStore } from "@/stores/app.store"
 import { Button } from "@/components/ui/button"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { CaseLayerSwitcher } from "@/features/significant/components/CaseLayerSwitcher"
 import {
   Tooltip,
   TooltipContent,
@@ -47,12 +48,17 @@ const mainNav: NavItem[] = [
   { label: "Triage", icon: ShieldCheck, to: "/triage", end: true },
 ]
 
-function getCaseInvestigationNav(caseId: string): NavItem[] {
+function getLayerAwareCaseNav(caseId: string): NavItem[] {
   return [
     { label: "Graph", icon: Network, to: `/cases/${caseId}/graph`, shortcut: "1" },
     { label: "Timeline", icon: Clock, to: `/cases/${caseId}/timeline`, shortcut: "2" },
     { label: "Map", icon: Map, to: `/cases/${caseId}/map`, shortcut: "3" },
     { label: "Table", icon: TableProperties, to: `/cases/${caseId}/table`, shortcut: "4" },
+  ]
+}
+
+function getFullDataCaseNav(caseId: string): NavItem[] {
+  return [
     { label: "Financial", icon: DollarSign, to: `/cases/${caseId}/financial`, shortcut: "5" },
     { label: "Cellebrite", icon: Smartphone, to: `/cases/${caseId}/cellebrite`, shortcut: "6" },
     { label: "Profiles", icon: UserRoundSearch, to: `/cases/${caseId}/profiles`, shortcut: "7" },
@@ -306,8 +312,22 @@ export function AppSidebar() {
         </SidebarSection>
 
         {caseId && (
-          <SidebarSection label="Active Case" expanded={sidebarExpanded} separated>
-            {getCaseInvestigationNav(caseId).map((item) => (
+          <SidebarSection label="Case views" expanded={sidebarExpanded} separated>
+            <CaseLayerSwitcher caseId={caseId} expanded={sidebarExpanded} />
+            {getLayerAwareCaseNav(caseId).map((item) => (
+              <SidebarLink
+                key={item.to}
+                item={item}
+                expanded={sidebarExpanded}
+                active={isItemActive(pathname, item)}
+              />
+            ))}
+          </SidebarSection>
+        )}
+
+        {caseId && (
+          <SidebarSection label="Full case data" expanded={sidebarExpanded} separated>
+            {getFullDataCaseNav(caseId).map((item) => (
               <SidebarLink
                 key={item.to}
                 item={item}

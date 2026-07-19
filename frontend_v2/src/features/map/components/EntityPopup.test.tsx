@@ -10,6 +10,10 @@ vi.mock("react-map-gl/maplibre", () => ({
   ),
 }))
 
+vi.mock("@/features/significant/components/SignificantEntityButton", () => ({
+  SignificantEntityButton: () => <div data-testid="significant-entity-button" />,
+}))
+
 vi.mock("@/features/graph/components/LocationCorrectionInline", () => ({
   LocationCorrectionInline: (props: {
     caseId: string
@@ -35,6 +39,7 @@ describe("EntityPopup", () => {
       longitude: -0.12,
       location_formatted: "Old Place",
       geocoding_confidence: "low",
+      manual_correction_history: [],
     }
 
     render(

@@ -7,7 +7,12 @@ import { GraphToolbar } from "./GraphToolbar"
 function renderToolbar() {
   return render(
     <TooltipProvider>
-      <GraphToolbar caseId="case-1" filteredNodes={3} totalNodes={10} />
+      <GraphToolbar
+        caseId="case-1"
+        scope="all"
+        filteredNodes={3}
+        totalNodes={10}
+      />
     </TooltipProvider>
   )
 }
@@ -72,4 +77,3 @@ describe("GraphToolbar search", () => {
     expect(input.selectionEnd).toBe(5)
   })
 })
-

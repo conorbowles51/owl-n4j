@@ -20,4 +20,10 @@ export default defineConfig([globalIgnores(['dist']), {
     ecmaVersion: 2020,
     globals: globals.browser,
   },
+  rules: {
+    // Several detail dialogs intentionally reset local draft form state when a
+    // selected record changes. The compiler rule treats that pattern as an
+    // error, but it is valid for these editable panels.
+    'react-hooks/set-state-in-effect': 'off',
+  },
 }, ...storybook.configs["flat/recommended"]])

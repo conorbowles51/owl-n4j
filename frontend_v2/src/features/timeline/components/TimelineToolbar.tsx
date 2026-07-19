@@ -1,17 +1,8 @@
 import { useState, forwardRef } from "react"
-import { Bookmark, CheckSquare, Download, Plus, Search, X, SlidersHorizontal } from "lucide-react"
+import { Download, Search, X, SlidersHorizontal } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import type { TimelineView } from "../api"
-
 interface TimelineToolbarProps {
   searchTerm: string
   onSearchChange: (term: string) => void
@@ -21,13 +12,6 @@ interface TimelineToolbarProps {
   totalCount: number
   onToggleFilterSidebar: () => void
   activeFilterCount: number
-  views: TimelineView[]
-  activeViewId: string | null
-  onActiveViewChange: (viewId: string | null) => void
-  curationMode: boolean
-  curationSelectedCount: number
-  onToggleCurationMode: () => void
-  onCreateView: () => void
   onExport: () => void
 }
 
@@ -44,13 +28,6 @@ export const TimelineToolbar = forwardRef<HTMLInputElement, TimelineToolbarProps
       totalCount,
       onToggleFilterSidebar,
       activeFilterCount,
-      views,
-      activeViewId,
-      onActiveViewChange,
-      curationMode,
-      curationSelectedCount,
-      onToggleCurationMode,
-      onCreateView,
       onExport,
     },
     searchInputRef
@@ -93,37 +70,6 @@ export const TimelineToolbar = forwardRef<HTMLInputElement, TimelineToolbarProps
             </Badge>
           )}
         </Button>
-
-        <div className="h-4 w-px bg-border shrink-0" />
-
-        <div className="flex items-center gap-1">
-          <Select
-            value={activeViewId ?? "all"}
-            onValueChange={(value) =>
-              onActiveViewChange(value === "all" ? null : value)
-            }
-          >
-            <SelectTrigger className="h-7 w-[190px] text-xs">
-              <Bookmark className="mr-1 size-3.5 text-muted-foreground" />
-              <SelectValue placeholder="Timeline views" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All events</SelectItem>
-              {views.map((view) => (
-                <SelectItem key={view.id} value={view.id}>
-                  {view.title} ({view.event_count})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Button variant="outline" size="sm" onClick={onCreateView}>
-            <Plus className="size-3.5" />
-            View
-          </Button>
-        </div>
-
-        <div className="h-4 w-px bg-border shrink-0" />
 
         {/* Search */}
         <div className="relative flex-1 max-w-xs">
@@ -197,20 +143,6 @@ export const TimelineToolbar = forwardRef<HTMLInputElement, TimelineToolbarProps
             ? `${totalCount} events`
             : `${filteredCount} of ${totalCount} events`}
         </span>
-
-        <Button
-          variant={curationMode ? "secondary" : "outline"}
-          size="sm"
-          onClick={onToggleCurationMode}
-        >
-          <CheckSquare className="size-3.5" />
-          Curate
-          {curationSelectedCount > 0 && (
-            <Badge variant="amber" className="ml-1 h-4 px-1 text-[10px]">
-              {curationSelectedCount}
-            </Badge>
-          )}
-        </Button>
 
         <Button variant="primary" size="sm" onClick={onExport}>
           <Download className="size-3.5" />

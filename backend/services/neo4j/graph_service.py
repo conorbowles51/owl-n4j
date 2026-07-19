@@ -22,11 +22,30 @@ class GraphService:
     # Graph Visualization Data
     # -------------------------------------------------------------------------
 
+    def get_existing_node_keys(self, case_id: str, node_keys: List[str]) -> List[str]:
+        """Return the requested active entity keys that belong to the case."""
+        clean_keys = list(dict.fromkeys(str(key).strip() for key in node_keys if str(key).strip()))
+        if not clean_keys:
+            return []
+        with driver.session() as session:
+            result = session.run(
+                f"""
+                MATCH (n)
+                WHERE {active_node_predicate("n")} AND n.key IN $node_keys
+                RETURN n.key AS key
+                """,
+                case_id=case_id,
+                node_keys=clean_keys,
+            )
+            found = {record["key"] for record in result if record["key"]}
+        return [key for key in clean_keys if key in found]
+
     def get_full_graph(
         self,
         case_id: str,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        entity_keys: Optional[List[str]] = None,
     ) -> Dict[str, List]:
         """
         Get all nodes and relationships for visualization.
@@ -39,9 +58,21 @@ class GraphService:
         Returns:
             Dict with 'nodes' and 'links' arrays
         """
+        scoped_keys = None
+        if entity_keys is not None:
+            scoped_keys = list(dict.fromkeys(entity_keys))
+            if not scoped_keys:
+                return {"nodes": [], "links": []}
+
         with driver.session() as session:
             # case_id is always required - always filter by it
             params = {"case_id": case_id}
+            scope_filter = ""
+            connected_scope_filter = ""
+            if scoped_keys is not None:
+                params["entity_keys"] = scoped_keys
+                scope_filter = " AND n.key IN $entity_keys"
+                connected_scope_filter = " AND connected.key IN $entity_keys"
 
             # Build date filter query
             if start_date or end_date:
@@ -62,6 +93,7 @@ class GraphService:
                     // Find nodes with dates in range
                     MATCH (n)
                     WHERE {active_node_predicate("n")} AND n.date IS NOT NULL
+                    {scope_filter}
                     {date_filter}
 
                     // Collect all nodes in range and their connections (up to 2 hops)
@@ -71,6 +103,7 @@ class GraphService:
                     // Find all nodes connected to nodes in range (up to 2 hops)
                     MATCH path = (start_node)-[*0..2]-(connected)
                     WHERE {active_node_predicate("connected")}
+                    {connected_scope_filter}
                     WITH collect(DISTINCT start_node) + collect(DISTINCT connected) AS all_nodes
                     UNWIND all_nodes AS node
 
@@ -90,6 +123,7 @@ class GraphService:
                 query = f"""
                     MATCH (n)
                     WHERE {active_node_predicate("n")}
+                    {scope_filter}
                     RETURN
                         id(n) AS neo4j_id,
                         n.id AS id,
@@ -163,6 +197,7 @@ class GraphService:
         end_date: Optional[str] = None,
         limit: Optional[int] = None,
         sort_by: Optional[str] = None,
+        entity_keys: Optional[List[str]] = None,
     ) -> Dict[str, List]:
         """
         Lightweight graph structure for visualization — returns only the fields
@@ -180,8 +215,20 @@ class GraphService:
         Returns:
             Dict with 'nodes' and 'links' arrays (slim payloads)
         """
+        scoped_keys = None
+        if entity_keys is not None:
+            scoped_keys = list(dict.fromkeys(entity_keys))
+            if not scoped_keys:
+                return {"nodes": [], "links": []}
+
         with driver.session() as session:
             params = {"case_id": case_id}
+            scope_filter = ""
+            connected_scope_filter = ""
+            if scoped_keys is not None:
+                params["entity_keys"] = scoped_keys
+                scope_filter = " AND n.key IN $entity_keys"
+                connected_scope_filter = " AND connected.key IN $entity_keys"
 
             # Smart cap: return top-N nodes by degree
             if limit and sort_by == "degree" and not start_date and not end_date:
@@ -189,8 +236,8 @@ class GraphService:
 
                 # Get total node count first (fast count query)
                 total_result = session.run(
-                    f"MATCH (n) WHERE {active_node_predicate('n')} RETURN count(n) AS cnt",
-                    case_id=case_id,
+                    f"MATCH (n) WHERE {active_node_predicate('n')}{scope_filter} RETURN count(n) AS cnt",
+                    **params,
                 )
                 total_node_count = total_result.single()["cnt"]
 
@@ -198,6 +245,7 @@ class GraphService:
                     f"""
                     MATCH (n)
                     WHERE {active_node_predicate("n")}
+                    {scope_filter}
                     OPTIONAL MATCH (n)-[r]-()
                     WHERE r.case_id = $case_id
                     WITH n, count(r) AS deg
@@ -260,11 +308,13 @@ class GraphService:
                 query = f"""
                     MATCH (n)
                     WHERE {active_node_predicate("n")} AND n.date IS NOT NULL
+                    {scope_filter}
                     {date_filter}
                     WITH collect(DISTINCT n) AS nodes_in_range
                     UNWIND nodes_in_range AS start_node
                     MATCH path = (start_node)-[*0..2]-(connected)
                     WHERE {active_node_predicate("connected")}
+                    {connected_scope_filter}
                     WITH collect(DISTINCT start_node) + collect(DISTINCT connected) AS all_nodes
                     UNWIND all_nodes AS node
                     WITH DISTINCT node
@@ -279,6 +329,7 @@ class GraphService:
                 query = f"""
                     MATCH (n)
                     WHERE {active_node_predicate("n")}
+                    {scope_filter}
                     RETURN
                         n.key AS key,
                         n.name AS name,

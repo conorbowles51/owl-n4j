@@ -13,42 +13,20 @@ from sqlalchemy.dialects.postgresql import insert
 from app.config import settings
 from app.dependencies import async_session
 from app.models.geocoding_cache import GeocodingCacheEntry
+from app.pipeline.property_canonicalization import (
+    canonicalize_properties,
+    infer_structured_location_specificity,
+    location_specificity_rank,
+)
 
 _WHITESPACE_RE = re.compile(r"\s+")
-_VAGUE_LOCATION_TERMS = {
-    "abroad",
-    "around town",
-    "city center",
-    "conference room",
-    "elsewhere",
-    "everywhere",
-    "headquarters",
-    "home",
-    "international",
-    "multiple locations",
-    "nationwide",
-    "office",
-    "offshore",
-    "online",
-    "overseas",
-    "remote",
-    "residence",
-    "somewhere",
-    "statewide",
-    "the area",
-    "the city",
-    "unknown",
-    "unspecified",
-    "various locations",
-    "warehouse",
-    "worldwide",
-}
 
 
 @dataclass(frozen=True)
 class GeocodeRequest:
     query: str
     location_raw: str
+    location_specificity: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -61,7 +39,20 @@ class GeocodeResult:
     longitude: float | None = None
     formatted_address: str | None = None
     confidence: str | None = None
+    confidence_score: float | None = None
+    location_granularity: str | None = None
     raw_response: dict[str, Any] | None = None
+
+
+def _importance_from_raw_response(raw_response: Any) -> float | None:
+    """Recover the provider's raw importance score from a cached response."""
+    if not isinstance(raw_response, dict):
+        return None
+    try:
+        importance = raw_response.get("importance")
+        return float(importance) if importance is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def normalize_geocode_query(query: str) -> str:
@@ -74,11 +65,24 @@ def _clean_geo_value(value: Any) -> str:
     return _WHITESPACE_RE.sub(" ", str(value).strip())
 
 
-def _is_specific_location_text(value: str) -> bool:
-    cleaned = _clean_geo_value(value)
-    if not cleaned:
-        return False
-    return normalize_geocode_query(cleaned) not in _VAGUE_LOCATION_TERMS
+def _location_granularity(result: dict[str, Any] | None) -> str | None:
+    if not result:
+        return None
+    address = result.get("address") or {}
+    result_type = str(result.get("type") or result.get("addresstype") or "").lower()
+    if address.get("house_number") or result_type in {"house", "building"}:
+        return "address"
+    if address.get("road") or result_type in {"road", "street"}:
+        return "street"
+    if result_type in {"neighbourhood", "neighborhood", "suburb", "quarter", "hamlet"}:
+        return "neighborhood"
+    if result_type in {"city", "town", "village", "municipality", "borough"}:
+        return "city"
+    if result_type in {"county", "state", "region"}:
+        return "region"
+    if result_type == "country":
+        return "country"
+    return None
 
 
 def build_geocode_request(
@@ -86,32 +90,54 @@ def build_geocode_request(
     name: str,
     properties: dict[str, Any],
 ) -> GeocodeRequest | None:
-    address = _clean_geo_value(properties.get("address"))
-    city = _clean_geo_value(properties.get("city"))
-    region = _clean_geo_value(properties.get("region"))
-    country = _clean_geo_value(properties.get("country"))
-    location_raw = _clean_geo_value(properties.get("location_raw"))
+    normalized_properties = canonicalize_properties(category, properties)
+    address = _clean_geo_value(normalized_properties.get("address"))
+    city = _clean_geo_value(normalized_properties.get("city"))
+    region = _clean_geo_value(normalized_properties.get("region"))
+    country = _clean_geo_value(normalized_properties.get("country"))
+    location_raw = _clean_geo_value(normalized_properties.get("location_raw"))
+    location_specificity = _clean_geo_value(
+        normalized_properties.get("location_specificity")
+    ) or "unknown"
 
     structured_query = ", ".join(part for part in (address, city, region, country) if part)
-    if structured_query and _is_specific_location_text(structured_query):
+    if structured_query:
+        structured_specificity = infer_structured_location_specificity(
+            normalized_properties
+        )
+        if (
+            location_raw
+            and location_specificity_rank(location_specificity)
+            > location_specificity_rank(structured_specificity)
+        ):
+            raw_normalized = normalize_geocode_query(location_raw)
+            query_parts = [location_raw]
+            query_parts.extend(
+                part
+                for part in (address, city, region, country)
+                if part and normalize_geocode_query(part) not in raw_normalized
+            )
+            structured_query = ", ".join(query_parts)
         return GeocodeRequest(
             query=structured_query,
             location_raw=location_raw or structured_query,
+            location_specificity=location_specificity,
         )
 
-    city_query = ", ".join(part for part in (city, region, country) if part)
-    if city_query and _is_specific_location_text(city_query):
+    if location_raw:
         return GeocodeRequest(
-            query=city_query,
-            location_raw=location_raw or city_query,
+            query=location_raw,
+            location_raw=location_raw,
+            location_specificity=location_specificity,
         )
-
-    if location_raw and _is_specific_location_text(location_raw):
-        return GeocodeRequest(query=location_raw, location_raw=location_raw)
 
     location_name = _clean_geo_value(name)
-    if category == "Location" and location_name and _is_specific_location_text(location_name):
-        return GeocodeRequest(query=location_name, location_raw=location_raw or location_name)
+    if category == "Location" and location_name:
+        return GeocodeRequest(
+            query=location_name,
+            location_raw=location_raw or location_name,
+            location_specificity=location_specificity,
+        )
 
     return None
 
@@ -175,6 +201,8 @@ class GeocodingService:
             longitude=record.longitude,
             formatted_address=record.formatted_address,
             confidence=record.confidence,
+            confidence_score=_importance_from_raw_response(record.raw_response),
+            location_granularity=_location_granularity(record.raw_response),
             raw_response=record.raw_response,
         )
 
@@ -263,6 +291,8 @@ class GeocodingService:
             longitude=float(top_result["lon"]),
             formatted_address=top_result.get("display_name", original_query),
             confidence=confidence,
+            confidence_score=importance,
+            location_granularity=_location_granularity(top_result),
             raw_response=top_result,
         )
 

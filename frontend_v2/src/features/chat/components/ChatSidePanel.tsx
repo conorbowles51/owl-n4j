@@ -21,6 +21,7 @@ import { useChatStore } from "../stores/chat.store"
 import { useGraphStore } from "@/stores/graph.store"
 import { evidenceAPI, llmConfigAPI } from "@/features/evidence/api"
 import type { LLMModel } from "@/types/evidence.types"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 
 const DEFAULT_MODEL = "gpt-5-mini"
 const DEFAULT_PROVIDER = "openai"
@@ -33,6 +34,7 @@ interface ChatSidePanelProps {
 
 export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
   const location = useLocation()
+  const caseLayer = useCaseLayer(caseId)
   const [models, setModels] = useState<LLMModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState(DEFAULT_MODEL)
   const [selectedProvider, setSelectedProvider] = useState(DEFAULT_PROVIDER)
@@ -90,12 +92,23 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
 
   const handleSend = () => {
     const trimmed = input.trim()
-    if (!trimmed || isLoading) return
+    if (
+      !trimmed ||
+      isLoading ||
+      (contextMode === "selection" && selectedNodeKeys.size === 0)
+    ) return
+    const chatScope =
+      caseLayer === "significant"
+        ? "significant"
+        : contextMode === "selection"
+          ? "selection"
+          : "case_overview"
     const viewContext = {
       view: location.pathname.split("/").filter(Boolean).pop() ?? "case",
       label: "Case side panel",
       route: location.pathname,
-      scope: contextMode === "selection" ? "selection" : "case_overview",
+      scope: chatScope,
+      selection_within_scope: contextMode === "selection",
       selections: {
         entity_keys: contextMode === "selection" ? Array.from(selectedNodeKeys) : [],
       },
@@ -104,7 +117,7 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
       trimmed,
       selectedModelId,
       selectedProvider,
-      contextMode === "selection" ? "selection" : "case_overview",
+      chatScope,
       viewContext
     )
     setInput("")
@@ -198,7 +211,7 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
             )}
             onClick={() => setContextMode("full")}
           >
-            Case Overview
+            {caseLayer === "significant" ? "Significant Layer" : "Case Overview"}
           </button>
           <button
             type="button"
@@ -280,7 +293,11 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
             size="icon"
             className="size-9 shrink-0 bg-amber-500 hover:bg-amber-600 text-white"
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={
+              !input.trim() ||
+              isLoading ||
+              (contextMode === "selection" && selectedNodeKeys.size === 0)
+            }
           >
             <Send className="size-4" />
           </Button>

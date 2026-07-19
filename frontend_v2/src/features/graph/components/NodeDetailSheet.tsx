@@ -28,8 +28,30 @@ import {
   Eye,
 } from "lucide-react"
 import { graphAPI } from "../api"
+import {
+  getConfidenceTier,
+  confidencePercent,
+  getLocationSpecificity,
+  CONFIDENCE_TIER_LABELS,
+  CONFIDENCE_TIER_BADGE_VARIANTS,
+  LOCATION_SPECIFICITY_LABELS,
+} from "@/lib/location-confidence"
 import { evidenceAPI } from "@/features/evidence/api"
 import type { GraphData } from "@/types/graph.types"
+import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
+import {
+  useAddSignificantEntities,
+  useRemoveSignificantEntities,
+  useSignificantManifest,
+} from "@/features/significant/hooks/use-significant"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface NodeDetailSheetProps {
   caseId: string
@@ -55,6 +77,10 @@ export function NodeDetailSheet({
   const hideNode = useGraphStore((s) => s.hideNode)
   const selectNodes = useGraphStore((s) => s.selectNodes)
   const user = useAuthStore((s) => s.user)
+  const caseLayer = useCaseLayer(caseId)
+  const { entityKeySet: significantEntityKeys } = useSignificantManifest(caseId)
+  const addSignificant = useAddSignificantEntities(caseId)
+  const removeSignificant = useRemoveSignificantEntities(caseId)
 
   const firstKey = Array.from(selectedNodeKeys)[0] ?? null
   const { data: detail, isLoading } = useNodeDetails(firstKey, caseId)
@@ -64,6 +90,7 @@ export function NodeDetailSheet({
   const [insightsExpanded, setInsightsExpanded] = useState(true)
   const [showAllFacts, setShowAllFacts] = useState(false)
   const [viewerDoc, setViewerDoc] = useState<{ url: string; name: string; page?: number } | null>(null)
+  const [bulkRemoveOpen, setBulkRemoveOpen] = useState(false)
 
   const nodeQueryKey = ["graph", "node", firstKey, caseId]
 
@@ -116,6 +143,47 @@ export function NodeDetailSheet({
     }
   }
 
+  const selectedKeys = Array.from(selectedNodeKeys)
+  const newSignificantKeys = selectedKeys.filter(
+    (key) => !significantEntityKeys.has(key)
+  )
+
+  const addSelectionToSignificant = async () => {
+    try {
+      const result = await addSignificant.mutateAsync({
+        entityKeys: newSignificantKeys,
+        source: "selection",
+        context: { surface: "graph_multi_selection" },
+      })
+      toast.success(
+        `${(result.added_count ?? 0).toLocaleString()} entities added to Significant`
+      )
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not add the selection to Significant"
+      )
+    }
+  }
+
+  const removeSelectionFromSignificant = async () => {
+    try {
+      const result = await removeSignificant.mutateAsync(selectedKeys)
+      toast.success(
+        `${(result.removed_count ?? 0).toLocaleString()} entities removed from Significant`
+      )
+      setBulkRemoveOpen(false)
+      clearSelection()
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not remove the selection from Significant"
+      )
+    }
+  }
+
   // Multi-select panel
   if (selectedNodeKeys.size > 1) {
     const selectedNodes = graphData?.nodes.filter((n) =>
@@ -123,20 +191,62 @@ export function NodeDetailSheet({
     ) ?? []
 
     return (
-      <div className="flex h-full flex-col border-l border-border bg-card">
-        <MultiNodePanel
-          nodes={selectedNodes}
-          onMerge={selectedNodeKeys.size >= 2 ? onMergeSelected : undefined}
-          onCompare={selectedNodeKeys.size === 2 ? onCompareSelected : undefined}
-          onHideSelected={() => {
-            for (const k of selectedNodeKeys) hideNode(k)
-            clearSelection()
-          }}
-          onCreateSubgraph={onCreateSubgraph}
-          onClearSelection={clearSelection}
-          className="p-4"
-        />
-      </div>
+      <>
+        <div className="flex h-full flex-col border-l border-border bg-card">
+          <MultiNodePanel
+            nodes={selectedNodes}
+            onMerge={selectedNodeKeys.size >= 2 ? onMergeSelected : undefined}
+            onCompare={selectedNodeKeys.size === 2 ? onCompareSelected : undefined}
+            onHideSelected={() => {
+              for (const k of selectedNodeKeys) hideNode(k)
+              clearSelection()
+            }}
+            onCreateSubgraph={onCreateSubgraph}
+            onClearSelection={clearSelection}
+            significantMode={caseLayer === "significant"}
+            significantActionCount={
+              caseLayer === "significant"
+                ? selectedKeys.length
+                : newSignificantKeys.length
+            }
+            onAddToSignificant={() => void addSelectionToSignificant()}
+            onRemoveFromSignificant={() => setBulkRemoveOpen(true)}
+            significantPending={
+              addSignificant.isPending || removeSignificant.isPending
+            }
+            className="p-4"
+          />
+        </div>
+        <Dialog open={bulkRemoveOpen} onOpenChange={setBulkRemoveOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                Remove {selectedKeys.length.toLocaleString()} entities from Significant?
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              The underlying entities will remain in the full case graph. They
+              will be removed only from the shared Significant layer.
+            </p>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setBulkRemoveOpen(false)}
+                disabled={removeSignificant.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => void removeSelectionFromSignificant()}
+                disabled={removeSignificant.isPending}
+              >
+                {removeSignificant.isPending ? "Removing…" : "Remove"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
     )
   }
 
@@ -165,7 +275,61 @@ export function NodeDetailSheet({
           <div className="flex items-center gap-2">
             <NodeBadge type={detail.type} />
             <h3 className="truncate text-sm font-semibold">{detail.label}</h3>
+            {(properties.latitude !== undefined ||
+              properties.geocoding_status !== undefined) && (
+              <Badge
+                variant={
+                  CONFIDENCE_TIER_BADGE_VARIANTS[
+                    getConfidenceTier({
+                      geocoding_confidence: properties.geocoding_confidence as
+                        | string
+                        | undefined,
+                      manual_fields: properties.manual_fields as
+                        | string[]
+                        | undefined,
+                    })
+                  ]
+                }
+                className="shrink-0 text-[9px]"
+              >
+                {
+                  CONFIDENCE_TIER_LABELS[
+                    getConfidenceTier({
+                      geocoding_confidence: properties.geocoding_confidence as
+                        | string
+                        | undefined,
+                      manual_fields: properties.manual_fields as
+                        | string[]
+                        | undefined,
+                    })
+                  ]
+                }
+              </Badge>
+            )}
           </div>
+          {properties.latitude !== undefined && (
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              {confidencePercent({
+                geocoding_confidence: properties.geocoding_confidence as
+                  | string
+                  | undefined,
+                geocoding_confidence_score: properties.geocoding_confidence_score as
+                  | number
+                  | undefined,
+                manual_fields: properties.manual_fields as string[] | undefined,
+              })}
+              % confidence ·{" "}
+              {
+                LOCATION_SPECIFICITY_LABELS[
+                  getLocationSpecificity({
+                    location_specificity: properties.location_specificity as
+                      | string
+                      | undefined,
+                  })
+                ]
+              }
+            </p>
+          )}
           {Array.isArray(detail.properties.aliases) &&
             (detail.properties.aliases as unknown[]).length > 0 && (
               <p className="mt-0.5 truncate text-[11px] italic text-muted-foreground">
@@ -185,6 +349,12 @@ export function NodeDetailSheet({
           )}
         </div>
         <div className="flex gap-1">
+          <SignificantEntityButton
+            caseId={caseId}
+            entityKey={detail.key}
+            surface="entity_detail"
+            compact
+          />
           <Button
             variant="ghost"
             size="icon-sm"

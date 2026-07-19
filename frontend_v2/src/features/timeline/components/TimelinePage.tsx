@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useCallback, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { Clock } from "lucide-react"
-import { toast } from "sonner"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import {
@@ -12,11 +11,6 @@ import {
 import { useGraphStore } from "@/stores/graph.store"
 import { useUIStore } from "@/stores/ui.store"
 import { useTimelineData } from "../hooks/use-timeline-data"
-import {
-  useTimelineView,
-  useTimelineViews,
-  useUpdateTimelineViewEvents,
-} from "../hooks/use-timeline-views"
 import { useTimelineStore } from "../stores/timeline.store"
 import { useFilteredEvents } from "../hooks/use-filtered-events"
 import { useKeyboardNavigation } from "../hooks/use-keyboard-navigation"
@@ -24,22 +18,20 @@ import { detectClusters } from "../lib/timeline-utils"
 import { FilterSidebar } from "./FilterSidebar"
 import { EventStream } from "./EventStream"
 import { TimelineToolbar } from "./TimelineToolbar"
-import { TimelineCurationBar } from "./TimelineCurationBar"
-import { CreateTimelineViewDialog } from "./CreateTimelineViewDialog"
 import { TimelineExportDialog } from "./TimelineExportDialog"
 import type { TimelineExportSource } from "../lib/timeline-export"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
+import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 
 export function TimelinePage() {
   const { id: caseId } = useParams()
-  const { events, eventTypes, entities, isLoading } =
+  const caseLayer = useCaseLayer(caseId)
+  const { events, eventTypes, entities, isLoading, dataKey } =
     useTimelineData({ caseId })
 
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const [createViewOpen, setCreateViewOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [exportSource, setExportSource] = useState<TimelineExportSource | null>(null)
-  const [createViewEventKeys, setCreateViewEventKeys] = useState<string[]>([])
-  const [targetViewId, setTargetViewId] = useState<string | null>(null)
 
   // Graph store — selecting an event opens the shared entity detail panel
   const selectNodes = useGraphStore((s) => s.selectNodes)
@@ -52,10 +44,7 @@ export function TimelinePage() {
   const searchTerm = useTimelineStore((s) => s.searchTerm)
   const selectedEventKey = useTimelineStore((s) => s.selectedEventKey)
   const multiSelectedKeys = useTimelineStore((s) => s.multiSelectedKeys)
-  const curationSelectedKeys = useTimelineStore((s) => s.curationSelectedKeys)
-  const activeViewId = useTimelineStore((s) => s.activeViewId)
   const filterSidebarOpen = useTimelineStore((s) => s.filterSidebarOpen)
-  const curationMode = useTimelineStore((s) => s.curationMode)
   const visibleWindow = useTimelineStore((s) => s.visibleWindow)
   const scrollToEventKey = useTimelineStore((s) => s.scrollToEventKey)
 
@@ -72,29 +61,12 @@ export function TimelinePage() {
   const timelineSelectEvent = useTimelineStore((s) => s.selectEvent)
   const multiSelectEvent = useTimelineStore((s) => s.multiSelectEvent)
   const clearSelection = useTimelineStore((s) => s.clearSelection)
-  const setActiveViewId = useTimelineStore((s) => s.setActiveViewId)
-  const toggleCurationSelection = useTimelineStore((s) => s.toggleCurationSelection)
-  const clearCurationSelection = useTimelineStore((s) => s.clearCurationSelection)
   const toggleFilterSidebar = useTimelineStore((s) => s.toggleFilterSidebar)
-  const toggleCurationMode = useTimelineStore((s) => s.toggleCurationMode)
   const setClusters = useTimelineStore((s) => s.setClusters)
   const prevCluster = useTimelineStore((s) => s.prevCluster)
   const nextCluster = useTimelineStore((s) => s.nextCluster)
   const scrollToEvent = useTimelineStore((s) => s.scrollToEvent)
   const clearScrollTarget = useTimelineStore((s) => s.clearScrollTarget)
-
-  const viewsQuery = useTimelineViews(caseId)
-  const views = useMemo(() => viewsQuery.data?.views ?? [], [viewsQuery.data?.views])
-  const activeViewQuery = useTimelineView(caseId, activeViewId)
-  const activeView = activeViewQuery.data ?? null
-  const updateViewEvents = useUpdateTimelineViewEvents(caseId)
-  const resolvedTargetViewId = useMemo(
-    () =>
-      targetViewId && views.some((view) => view.id === targetViewId)
-        ? targetViewId
-        : views[0]?.id ?? null,
-    [targetViewId, views]
-  )
 
   // Select event: highlight in timeline + open entity detail in CaseLayout side panel
   const handleSelectEvent = useCallback(
@@ -119,27 +91,34 @@ export function TimelinePage() {
     clearSelection()
   }, [clearSelection])
 
-  // Initialize store on first data load
-  const initializedRef = useRef(false)
+  // Each layer is a distinct timeline dataset. Reset dataset-dependent filters
+  // when its response arrives so stale event types cannot make the other layer
+  // look empty or incomplete.
+  const initializedDataKeyRef = useRef<string | null>(null)
   useEffect(() => {
-    if (initializedRef.current || eventTypes.length === 0) return
+    if (!dataKey || initializedDataKeyRef.current === dataKey) return
     selectAllTypes(eventTypes)
+    clearEntityFilter()
+    clearSelection()
     setClusters(detectClusters(events))
-    initializedRef.current = true
-  }, [eventTypes, events, selectAllTypes, setClusters])
+    initializedDataKeyRef.current = dataKey
+  }, [
+    clearEntityFilter,
+    clearSelection,
+    dataKey,
+    eventTypes,
+    events,
+    selectAllTypes,
+    setClusters,
+  ])
 
   // Update clusters when events change
   useEffect(() => {
-    if (!initializedRef.current || events.length === 0) return
+    if (!dataKey || initializedDataKeyRef.current !== dataKey) return
     setClusters(detectClusters(events))
-  }, [events, setClusters])
+  }, [dataKey, events, setClusters])
 
   // Filtering pipeline
-  const activeViewKeys = useMemo(() => {
-    if (!activeViewId) return null
-    return new Set(activeView?.events.map((event) => event.event_key) ?? [])
-  }, [activeView?.events, activeViewId])
-
   const { items, filteredEvents, filteredCount, totalCount, entityFilterCounts } =
     useFilteredEvents({
       events,
@@ -148,7 +127,7 @@ export function TimelinePage() {
       dateRange,
       visibleWindow,
       searchTerm,
-      includedEventKeys: activeViewId ? activeViewKeys : null,
+      includedEventKeys: null,
     })
 
   // Count active filters (type + entity only — search & date are in toolbar)
@@ -171,67 +150,6 @@ export function TimelinePage() {
     },
     [clearAllFilters, eventTypes]
   )
-
-  const filterSnapshot = useMemo(
-    () => ({
-      selected_types: Array.from(selectedTypes),
-      selected_entity_keys: Array.from(selectedEntityKeys),
-      date_range: dateRange,
-      search_term: searchTerm,
-      source_view_id: activeViewId,
-    }),
-    [activeViewId, dateRange, searchTerm, selectedEntityKeys, selectedTypes]
-  )
-
-  const handleCreateViewFromFiltered = useCallback(() => {
-    setCreateViewEventKeys(filteredEvents.map((event) => event.key))
-    setCreateViewOpen(true)
-  }, [filteredEvents])
-
-  const handleCreateViewFromSelection = useCallback(() => {
-    setCreateViewEventKeys(Array.from(curationSelectedKeys))
-    setCreateViewOpen(true)
-  }, [curationSelectedKeys])
-
-  const handleAddSelectionToView = useCallback(() => {
-    if (!resolvedTargetViewId || curationSelectedKeys.size === 0) return
-    updateViewEvents.mutate(
-      {
-        viewId: resolvedTargetViewId,
-        action: "add",
-        eventKeys: Array.from(curationSelectedKeys),
-      },
-      {
-        onSuccess: () => {
-          toast.success("Events added to timeline view")
-          clearCurationSelection()
-        },
-        onError: (error) => {
-          toast.error(error instanceof Error ? error.message : "Failed to update timeline view")
-        },
-      }
-    )
-  }, [clearCurationSelection, curationSelectedKeys, resolvedTargetViewId, updateViewEvents])
-
-  const handleRemoveSelectionFromView = useCallback(() => {
-    if (!activeView || curationSelectedKeys.size === 0) return
-    updateViewEvents.mutate(
-      {
-        viewId: activeView.id,
-        action: "remove",
-        eventKeys: Array.from(curationSelectedKeys),
-      },
-      {
-        onSuccess: () => {
-          toast.success("Events removed from timeline view")
-          clearCurationSelection()
-        },
-        onError: (error) => {
-          toast.error(error instanceof Error ? error.message : "Failed to update timeline view")
-        },
-      }
-    )
-  }, [activeView, clearCurationSelection, curationSelectedKeys, updateViewEvents])
 
   const openExportDialog = useCallback((source: TimelineExportSource | null = null) => {
     setExportSource(source)
@@ -265,6 +183,16 @@ export function TimelinePage() {
   }
 
   if (events.length === 0) {
+    if (caseId && caseLayer === "significant") {
+      return (
+        <SignificantEmptyState
+          caseId={caseId}
+          icon={Clock}
+          eligibleTitle="No significant entities belong on the timeline"
+          eligibleDescription="Your Significant layer has entities, but none currently contain a usable date or time."
+        />
+      )
+    }
     return (
       <EmptyState
         icon={Clock}
@@ -287,30 +215,8 @@ export function TimelinePage() {
         totalCount={totalCount}
         onToggleFilterSidebar={toggleFilterSidebar}
         activeFilterCount={activeFilterCount}
-        views={views}
-        activeViewId={activeViewId}
-        onActiveViewChange={setActiveViewId}
-        curationMode={curationMode}
-        curationSelectedCount={curationSelectedKeys.size}
-        onToggleCurationMode={toggleCurationMode}
-        onCreateView={handleCreateViewFromFiltered}
         onExport={() => openExportDialog(null)}
       />
-
-      {curationMode && (
-        <TimelineCurationBar
-          selectedCount={curationSelectedKeys.size}
-          views={views}
-          activeView={activeView}
-          targetViewId={resolvedTargetViewId}
-          onTargetViewChange={setTargetViewId}
-          onCreateFromSelection={handleCreateViewFromSelection}
-          onAddToView={handleAddSelectionToView}
-          onRemoveFromView={handleRemoveSelectionFromView}
-          onExportSelected={() => openExportDialog("selection")}
-          onClear={clearCurationSelection}
-        />
-      )}
 
       {/* 2-panel layout: filter sidebar + event stream */}
       <ResizablePanelGroup orientation="horizontal" className="flex-1">
@@ -350,14 +256,11 @@ export function TimelinePage() {
             totalCount={totalCount}
             selectedEventKey={selectedEventKey}
             multiSelectedKeys={multiSelectedKeys}
-            curationMode={curationMode}
-            curationSelectedKeys={curationSelectedKeys}
             searchTerm={searchTerm}
             selectedEntityKeys={selectedEntityKeys}
             scrollToEventKey={scrollToEventKey}
             onSelectEvent={handleSelectEvent}
             onMultiSelectEvent={handleMultiSelectEvent}
-            onToggleCurationSelection={toggleCurationSelection}
             onClearScrollTarget={clearScrollTarget}
             onClearFilters={handleClearAll}
           />
@@ -365,32 +268,17 @@ export function TimelinePage() {
       </ResizablePanelGroup>
 
       {caseId && (
-        <>
-          <CreateTimelineViewDialog
-            open={createViewOpen}
-            onOpenChange={setCreateViewOpen}
-            caseId={caseId}
-            eventKeys={createViewEventKeys}
-            filterSnapshot={filterSnapshot}
-            onCreated={(view) => {
-              setActiveViewId(view.id)
-              setTargetViewId(view.id)
-              clearCurationSelection()
-            }}
-          />
-          <TimelineExportDialog
+        <TimelineExportDialog
             open={exportOpen}
             onOpenChange={(open) => {
               setExportOpen(open)
               if (!open) setExportSource(null)
             }}
             caseId={caseId}
-            activeView={activeView}
             filteredEvents={filteredEvents}
-            selectedKeys={curationSelectedKeys}
+            selectedKeys={multiSelectedKeys}
             preferredSource={exportSource}
           />
-        </>
       )}
     </div>
   )

@@ -2710,6 +2710,7 @@ async def get_file_entities(
         category = labels[0] if labels else "Other"
         entities.append({
             "id": r["id"],
+            "key": r["node_key"],
             "node_key": r["node_key"],
             "name": r["name"],
             "category": category,

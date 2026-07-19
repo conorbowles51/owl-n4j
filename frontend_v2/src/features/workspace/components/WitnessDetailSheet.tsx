@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   Sheet,
@@ -32,6 +32,58 @@ interface WitnessDetailSheetProps {
   caseId: string
 }
 
+type WitnessCategory = NonNullable<Witness["category"]>
+
+interface WitnessDraft {
+  sourceKey: string
+  name: string
+  role: string
+  organization: string
+  category: WitnessCategory
+  credibilityRating: number
+  statementSummary: string
+  riskAssessment: string
+  strategyNotes: string
+}
+
+function createWitnessDraft(witness: Witness | null): WitnessDraft {
+  if (!witness) {
+    return {
+      sourceKey: "__empty__",
+      name: "",
+      role: "",
+      organization: "",
+      category: "NEUTRAL",
+      credibilityRating: 0,
+      statementSummary: "",
+      riskAssessment: "",
+      strategyNotes: "",
+    }
+  }
+
+  return {
+    sourceKey: JSON.stringify([
+      witness.id,
+      witness.name ?? "",
+      witness.role ?? "",
+      witness.organization ?? "",
+      witness.category ?? "NEUTRAL",
+      witness.credibility_rating ?? 0,
+      witness.statement_summary ?? "",
+      witness.risk_assessment ?? "",
+      witness.strategy_notes ?? "",
+    ]),
+    name: witness.name ?? "",
+    role: witness.role ?? "",
+    organization: witness.organization ?? "",
+    category: witness.category ?? "NEUTRAL",
+    credibilityRating: witness.credibility_rating ?? 0,
+    statementSummary: witness.statement_summary ?? "",
+    riskAssessment: witness.risk_assessment ?? "",
+    strategyNotes: witness.strategy_notes ?? "",
+  }
+}
+
 const categoryBadge = (category: string) => {
   switch (category) {
     case "FRIENDLY":
@@ -58,33 +110,30 @@ export function WitnessDetailSheet({
   caseId,
 }: WitnessDetailSheetProps) {
   const navigate = useNavigate()
-  const [name, setName] = useState("")
-  const [role, setRole] = useState("")
-  const [organization, setOrganization] = useState("")
-  const [category, setCategory] = useState<"FRIENDLY" | "NEUTRAL" | "ADVERSE">(
-    "NEUTRAL",
-  )
-  const [credibilityRating, setCredibilityRating] = useState(0)
-  const [statementSummary, setStatementSummary] = useState("")
-  const [riskAssessment, setRiskAssessment] = useState("")
-  const [strategyNotes, setStrategyNotes] = useState("")
-
   const updateWitness = useUpdateWitness(caseId)
   const deleteWitness = useDeleteWitness(caseId)
   const buildGraph = useBuildWorkspaceGraph(caseId)
 
-  useEffect(() => {
-    if (witness) {
-      setName(witness.name ?? "")
-      setRole(witness.role ?? "")
-      setOrganization(witness.organization ?? "")
-      setCategory(witness.category ?? "NEUTRAL")
-      setCredibilityRating(witness.credibility_rating ?? 0)
-      setStatementSummary(witness.statement_summary ?? "")
-      setRiskAssessment(witness.risk_assessment ?? "")
-      setStrategyNotes(witness.strategy_notes ?? "")
-    }
-  }, [witness])
+  const sourceDraft = useMemo(() => createWitnessDraft(witness), [witness])
+  const [draft, setDraft] = useState(sourceDraft)
+  const activeDraft =
+    draft.sourceKey === sourceDraft.sourceKey ? draft : sourceDraft
+  const {
+    name,
+    role,
+    organization,
+    category,
+    credibilityRating,
+    statementSummary,
+    riskAssessment,
+    strategyNotes,
+  } = activeDraft
+  const updateDraft = (updates: Partial<Omit<WitnessDraft, "sourceKey">>) => {
+    setDraft((current) => ({
+      ...(current.sourceKey === sourceDraft.sourceKey ? current : sourceDraft),
+      ...updates,
+    }))
+  }
 
   const isDirty = useMemo(
     () =>
@@ -186,7 +235,7 @@ export function WitnessDetailSheet({
               </h4>
               <Input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => updateDraft({ name: e.target.value })}
                 placeholder="Witness name"
               />
             </div>
@@ -198,7 +247,7 @@ export function WitnessDetailSheet({
               </h4>
               <Input
                 value={role}
-                onChange={(e) => setRole(e.target.value)}
+                onChange={(e) => updateDraft({ role: e.target.value })}
                 placeholder="Role or title"
               />
             </div>
@@ -210,7 +259,7 @@ export function WitnessDetailSheet({
               </h4>
               <Input
                 value={organization}
-                onChange={(e) => setOrganization(e.target.value)}
+                onChange={(e) => updateDraft({ organization: e.target.value })}
                 placeholder="Organization"
               />
             </div>
@@ -224,7 +273,7 @@ export function WitnessDetailSheet({
                 <Select
                   value={category}
                   onValueChange={(v) =>
-                    setCategory(v as "FRIENDLY" | "NEUTRAL" | "ADVERSE")
+                    updateDraft({ category: v as WitnessCategory })
                   }
                 >
                   <SelectTrigger className="w-[180px]">
@@ -250,7 +299,7 @@ export function WitnessDetailSheet({
                   <button
                     key={star}
                     type="button"
-                    onClick={() => setCredibilityRating(star)}
+                    onClick={() => updateDraft({ credibilityRating: star })}
                     className="p-0.5 hover:scale-110 transition-transform"
                   >
                     <Star
@@ -272,7 +321,9 @@ export function WitnessDetailSheet({
               </h4>
               <Textarea
                 value={statementSummary}
-                onChange={(e) => setStatementSummary(e.target.value)}
+                onChange={(e) =>
+                  updateDraft({ statementSummary: e.target.value })
+                }
                 placeholder="Summary of witness statement..."
                 rows={3}
               />
@@ -285,7 +336,9 @@ export function WitnessDetailSheet({
               </h4>
               <Textarea
                 value={riskAssessment}
-                onChange={(e) => setRiskAssessment(e.target.value)}
+                onChange={(e) =>
+                  updateDraft({ riskAssessment: e.target.value })
+                }
                 placeholder="Assess risks related to this witness..."
                 rows={3}
               />
@@ -298,7 +351,7 @@ export function WitnessDetailSheet({
               </h4>
               <Textarea
                 value={strategyNotes}
-                onChange={(e) => setStrategyNotes(e.target.value)}
+                onChange={(e) => updateDraft({ strategyNotes: e.target.value })}
                 placeholder="Notes on examination strategy..."
                 rows={3}
               />

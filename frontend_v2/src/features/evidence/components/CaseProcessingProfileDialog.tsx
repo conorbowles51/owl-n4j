@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   Dialog,
@@ -26,6 +26,7 @@ import { InstructionListEditor } from "@/components/ui/instruction-list-editor"
 import { BriefcaseBusiness, Plus, X } from "lucide-react"
 import { toast } from "sonner"
 import { profilesAPI } from "@/features/admin/api"
+import type { CaseProcessingProfile } from "@/types/evidence.types"
 import {
   useCaseProcessingProfile,
   useUpdateCaseProcessingProfile,
@@ -38,6 +39,49 @@ interface CaseProcessingProfileDialogProps {
 }
 
 const NONE_PROFILE_VALUE = "__none__"
+
+interface EntityTypeDraft {
+  name: string
+  description: string
+}
+
+interface CaseProfileDraft {
+  sourceKey: string
+  selectedProfileName: string
+  contextInstructions: string
+  mandatoryInstructions: string[]
+  entityTypes: EntityTypeDraft[]
+  newEntityName: string
+  newEntityDesc: string
+}
+
+function toEntityTypeDrafts(
+  entities: { name: string; description?: string | null }[] = []
+): EntityTypeDraft[] {
+  return entities.map((entity) => ({
+    name: entity.name,
+    description: entity.description ?? "",
+  }))
+}
+
+function createCaseProfileDraft(
+  caseProfile: CaseProcessingProfile | undefined
+): CaseProfileDraft {
+  return {
+    sourceKey: JSON.stringify([
+      caseProfile?.source_profile_name ?? NONE_PROFILE_VALUE,
+      caseProfile?.context_instructions ?? "",
+      caseProfile?.mandatory_instructions ?? [],
+      caseProfile?.special_entity_types ?? [],
+    ]),
+    selectedProfileName: caseProfile?.source_profile_name ?? NONE_PROFILE_VALUE,
+    contextInstructions: caseProfile?.context_instructions ?? "",
+    mandatoryInstructions: caseProfile?.mandatory_instructions ?? [],
+    entityTypes: toEntityTypeDrafts(caseProfile?.special_entity_types),
+    newEntityName: "",
+    newEntityDesc: "",
+  }
+}
 
 export function CaseProcessingProfileDialog({
   caseId,
@@ -52,30 +96,43 @@ export function CaseProcessingProfileDialog({
   const { data: caseProfile, isLoading: caseLoading } = useCaseProcessingProfile(caseId, open)
   const updateCaseProfile = useUpdateCaseProcessingProfile(caseId)
 
-  const [selectedProfileName, setSelectedProfileName] = useState<string>(NONE_PROFILE_VALUE)
-  const [contextInstructions, setContextInstructions] = useState("")
-  const [mandatoryInstructions, setMandatoryInstructions] = useState<string[]>([])
-  const [entityTypes, setEntityTypes] = useState<
-    { name: string; description: string }[]
-  >([])
-  const [newEntityName, setNewEntityName] = useState("")
-  const [newEntityDesc, setNewEntityDesc] = useState("")
+  const sourceDraft = useMemo(
+    () => createCaseProfileDraft(caseProfile),
+    [caseProfile]
+  )
+  const [draft, setDraft] = useState(sourceDraft)
+  const activeDraft =
+    draft.sourceKey === sourceDraft.sourceKey ? draft : sourceDraft
+  const {
+    selectedProfileName,
+    contextInstructions,
+    mandatoryInstructions,
+    entityTypes,
+    newEntityName,
+    newEntityDesc,
+  } = activeDraft
+  const updateDraft = (updates: Partial<Omit<CaseProfileDraft, "sourceKey">>) => {
+    setDraft((current) => ({
+      ...(current.sourceKey === sourceDraft.sourceKey ? current : sourceDraft),
+      ...updates,
+    }))
+  }
 
-  useEffect(() => {
-    if (!open) return
+  const setContextInstructions = (contextInstructions: string) =>
+    updateDraft({ contextInstructions })
+  const setMandatoryInstructions = (mandatoryInstructions: string[]) =>
+    updateDraft({ mandatoryInstructions })
+  const setNewEntityName = (newEntityName: string) =>
+    updateDraft({ newEntityName })
+  const setNewEntityDesc = (newEntityDesc: string) =>
+    updateDraft({ newEntityDesc })
 
-    setSelectedProfileName(caseProfile?.source_profile_name ?? NONE_PROFILE_VALUE)
-    setContextInstructions(caseProfile?.context_instructions ?? "")
-    setMandatoryInstructions(caseProfile?.mandatory_instructions ?? [])
-    setEntityTypes(
-      (caseProfile?.special_entity_types ?? []).map((entity) => ({
-        name: entity.name,
-        description: entity.description ?? "",
-      }))
-    )
-    setNewEntityName("")
-    setNewEntityDesc("")
-  }, [caseProfile, open])
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setDraft(sourceDraft)
+    }
+    onOpenChange(nextOpen)
+  }
 
   const selectedLibraryProfile = useMemo(
     () =>
@@ -84,23 +141,20 @@ export function CaseProcessingProfileDialog({
   )
 
   const handleLibraryProfileChange = (value: string) => {
-    setSelectedProfileName(value)
-
     if (value === NONE_PROFILE_VALUE) {
+      updateDraft({ selectedProfileName: value })
       return
     }
 
     const profile = libraryProfiles.find((item) => item.name === value)
     if (!profile) return
 
-    setContextInstructions(profile.context_instructions ?? "")
-    setMandatoryInstructions(profile.mandatory_instructions ?? [])
-    setEntityTypes(
-      (profile.special_entity_types ?? []).map((entity) => ({
-        name: entity.name,
-        description: entity.description ?? "",
-      }))
-    )
+    updateDraft({
+      selectedProfileName: value,
+      contextInstructions: profile.context_instructions ?? "",
+      mandatoryInstructions: profile.mandatory_instructions ?? [],
+      entityTypes: toEntityTypeDrafts(profile.special_entity_types),
+    })
   }
 
   const addEntityType = () => {
@@ -112,16 +166,18 @@ export function CaseProcessingProfileDialog({
       return
     }
 
-    setEntityTypes((prev) => [
-      ...prev,
-      { name, description: newEntityDesc.trim() },
-    ])
-    setNewEntityName("")
-    setNewEntityDesc("")
+    updateDraft({
+      entityTypes: [
+        ...entityTypes,
+        { name, description: newEntityDesc.trim() },
+      ],
+      newEntityName: "",
+      newEntityDesc: "",
+    })
   }
 
   const removeEntityType = (index: number) => {
-    setEntityTypes((prev) => prev.filter((_, i) => i !== index))
+    updateDraft({ entityTypes: entityTypes.filter((_, i) => i !== index) })
   }
 
   const handleSave = () => {
@@ -139,7 +195,7 @@ export function CaseProcessingProfileDialog({
       {
         onSuccess: () => {
           toast.success("Case processing profile saved")
-          onOpenChange(false)
+          handleOpenChange(false)
         },
         onError: (error) => {
           toast.error(error.message || "Failed to save case processing profile")
@@ -151,7 +207,7 @@ export function CaseProcessingProfileDialog({
   const isLoading = libraryLoading || caseLoading
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="flex max-h-[85vh] w-[92vw] flex-col overflow-hidden sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -353,7 +409,7 @@ export function CaseProcessingProfileDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
           <Button

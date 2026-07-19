@@ -23,6 +23,7 @@ describe("EntityList", () => {
     const entities: FileEntity[] = [
       {
         id: "entity-1",
+        key: null,
         node_key: "loc-1",
         name: "Old Place",
         category: "Location",
@@ -35,6 +36,7 @@ describe("EntityList", () => {
       },
       {
         id: "entity-2",
+        key: null,
         node_key: "person-1",
         name: "Jane",
         category: "Person",

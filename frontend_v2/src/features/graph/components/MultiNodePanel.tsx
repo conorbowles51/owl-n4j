@@ -1,4 +1,4 @@
-import { GitMerge, EyeOff, Network, BarChart3 } from "lucide-react"
+import { GitMerge, EyeOff, Network, BarChart3, Star, StarOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -13,6 +13,11 @@ interface MultiNodePanelProps {
   onCreateSubgraph?: () => void
   onCompare?: () => void
   onClearSelection?: () => void
+  significantMode?: boolean
+  significantActionCount?: number
+  onAddToSignificant?: () => void
+  onRemoveFromSignificant?: () => void
+  significantPending?: boolean
   className?: string
 }
 
@@ -23,6 +28,11 @@ export function MultiNodePanel({
   onCreateSubgraph,
   onCompare,
   onClearSelection,
+  significantMode = false,
+  significantActionCount = 0,
+  onAddToSignificant,
+  onRemoveFromSignificant,
+  significantPending = false,
   className,
 }: MultiNodePanelProps) {
   // Group by entity type
@@ -57,6 +67,29 @@ export function MultiNodePanel({
 
       {/* Bulk actions */}
       <div className="grid grid-cols-2 gap-2">
+        {significantMode && onRemoveFromSignificant ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-amber-500/30 text-amber-700 dark:text-amber-300"
+            disabled={significantPending || significantActionCount === 0}
+            onClick={onRemoveFromSignificant}
+          >
+            <StarOff className="size-3.5" />
+            Remove {significantActionCount.toLocaleString()}
+          </Button>
+        ) : onAddToSignificant && significantActionCount > 0 ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-amber-500/30 text-amber-700 dark:text-amber-300"
+            disabled={significantPending}
+            onClick={onAddToSignificant}
+          >
+            <Star className="size-3.5" />
+            Add {significantActionCount.toLocaleString()}
+          </Button>
+        ) : null}
         {onMerge && nodes.length >= 2 && (
           <Button variant="outline" size="sm" onClick={onMerge}>
             <GitMerge className="size-3.5" />

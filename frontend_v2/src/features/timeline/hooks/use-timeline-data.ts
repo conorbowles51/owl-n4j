@@ -10,6 +10,7 @@ import {
 
 import type { DateRange, DerivedEntity } from "../lib/timeline-utils"
 import type { TimelineEvent } from "../api"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 
 interface UseTimelineDataParams {
   caseId: string | undefined
@@ -22,13 +23,15 @@ interface UseTimelineDataResult {
   dateRange: DateRange
   isLoading: boolean
   totalCount: number
+  dataKey: string | null
 }
 
 export function useTimelineData({
   caseId,
 }: UseTimelineDataParams): UseTimelineDataResult {
+  const scope = useCaseLayer(caseId)
   const eventsQuery = useQuery({
-    queryKey: ["timeline", caseId],
+    queryKey: ["timeline", caseId, scope],
     queryFn: async () => {
       const events: TimelineEvent[] = []
       let cursor: string | undefined
@@ -40,6 +43,7 @@ export function useTimelineData({
           caseId: caseId!,
           limit: 2000,
           cursor,
+          scope,
         })
         events.push(...page.events)
         total = page.total
@@ -47,7 +51,13 @@ export function useTimelineData({
         pageCount += 1
       } while (cursor && pageCount < 100)
 
-      return { events, count: events.length, total, next_cursor: cursor }
+      return {
+        events,
+        count: events.length,
+        total,
+        next_cursor: cursor,
+        dataKey: `${caseId}:${scope}`,
+      }
     },
     enabled: !!caseId,
   })
@@ -83,5 +93,6 @@ export function useTimelineData({
     dateRange,
     isLoading: eventsQuery.isLoading,
     totalCount: eventsQuery.data?.total ?? 0,
+    dataKey: eventsQuery.data?.dataKey ?? null,
   }
 }

@@ -1,3 +1,4 @@
+import json
 import unittest
 import uuid
 from datetime import datetime, timezone
@@ -267,6 +268,107 @@ class GraphEditServiceTests(unittest.TestCase):
         self.assertEqual(captured["params"]["restore_updates"]["latitude"], 1.0)
         self.assertEqual(captured["params"]["manual_fields"], ["name"])
 
+    def test_geocoded_location_appends_manual_correction_history(self):
+        service = GraphEditService()
+        service._fetch_node = Mock(
+            return_value={
+                "labels": ["Location"],
+                "category": "Location",
+                "properties": {
+                    "key": "loc-1",
+                    "case_id": "case-1",
+                    "latitude": 51.5,
+                    "longitude": -0.12,
+                    "manual_correction_history": json.dumps(
+                        [{"moved_by": "analyst", "moved_at": "2026-07-17T12:00:00+00:00"}]
+                    ),
+                },
+            }
+        )
+        captured = {}
+
+        with patch(
+            "services.neo4j.graph_edit_service.driver.session",
+            return_value=_FakeSession(captured),
+        ):
+            result = service.update_geocoded_location(
+                "loc-1",
+                case_id="case-1",
+                query="London",
+                latitude=51.501,
+                longitude=-0.141,
+                formatted_address="London, UK",
+                confidence="high",
+                provider="nominatim",
+                location_granularity="city",
+                edited_by="investigator",
+                edited_by_name="Investigator One",
+            )
+
+        history = json.loads(captured["params"]["updates"]["manual_correction_history"])
+        self.assertTrue(result["success"])
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[-1]["moved_by"], "investigator")
+        self.assertEqual(history[-1]["moved_by_name"], "Investigator One")
+        self.assertEqual(history[-1]["from_latitude"], 51.5)
+        self.assertEqual(history[-1]["from_longitude"], -0.12)
+        self.assertEqual(history[-1]["to_latitude"], 51.501)
+        self.assertEqual(history[-1]["to_longitude"], -0.141)
+        self.assertEqual(captured["params"]["updates"]["geocoding_provider"], "nominatim")
+
+    def test_apply_geocoded_location_appends_manual_correction_history(self):
+        service = GraphEditService()
+        case_id = str(uuid.uuid4())
+        service._fetch_node = Mock(
+            return_value={
+                "labels": ["Location"],
+                "category": "Location",
+                "properties": {
+                    "key": "loc-1",
+                    "case_id": case_id,
+                    "latitude": 51.5,
+                    "longitude": -0.12,
+                    "manual_correction_history": json.dumps(
+                        [{"moved_by": "analyst", "moved_at": "2026-07-17T12:00:00+00:00"}]
+                    ),
+                },
+            }
+        )
+        captured = {}
+        db = _FakeDB()
+        record = {
+            "labels": ["Location"],
+            "properties": {"key": "loc-1", "latitude": 51.501, "longitude": -0.141},
+        }
+
+        with patch(
+            "services.neo4j.graph_edit_service.driver.session",
+            return_value=_FakeSession(captured, record),
+        ):
+            service.apply_geocoded_location(
+                "loc-1",
+                case_id=case_id,
+                address="London",
+                latitude=51.501,
+                longitude=-0.141,
+                formatted_address="London, UK",
+                geocoder_confidence="high",
+                provider="nominatim",
+                location_granularity="city",
+                edited_by="investigator",
+                edited_by_name="Investigator One",
+                db=db,
+            )
+
+        history = json.loads(captured["params"]["updates"]["manual_correction_history"])
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[-1]["moved_by"], "investigator")
+        self.assertEqual(history[-1]["moved_by_name"], "Investigator One")
+        self.assertEqual(history[-1]["from_latitude"], 51.5)
+        self.assertEqual(history[-1]["to_latitude"], 51.501)
+        self.assertEqual(captured["params"]["updates"]["geocoding_provider"], "nominatim")
+        self.assertEqual(captured["params"]["updates"]["location_granularity"], "city")
+
 
 class GraphGeocodeRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_geocode_preview_does_not_persist(self):
@@ -331,6 +433,55 @@ class GraphGeocodeRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(apply_correction.call_args.kwargs["db"], db)
         self.assertEqual(result["confidence"], "manual")
         self.assertEqual(result["geocoder_confidence"], "high")
+
+    async def test_geocode_apply_persists_provenance_and_correction(self):
+        db = Mock()
+        with patch(
+            "services.geo_rescan_service.geocode_with_cache",
+            return_value={
+                "provider": "nominatim",
+                "query": "London",
+                "latitude": 51.5,
+                "longitude": -0.12,
+                "formatted_address": "London, UK",
+                "confidence": "high",
+                "location_granularity": "city",
+            },
+        ), patch.object(
+            graph.neo4j_service,
+            "apply_geocoded_location",
+            return_value={
+                "success": True,
+                "confidence": "manual",
+                "undo_key": "location_relocation_loc-1",
+            },
+        ) as apply_correction, patch.object(graph.system_log_service, "log"):
+            result = await graph.geocode_node(
+                "loc-1",
+                graph.GeocodeNodeRequest(case_id="case-1", address="London"),
+                apply=True,
+                user={"username": "investigator", "name": "Investigator One"},
+                db=db,
+            )
+
+        apply_correction.assert_called_once_with(
+            "loc-1",
+            case_id="case-1",
+            address="London",
+            latitude=51.5,
+            longitude=-0.12,
+            formatted_address="London, UK",
+            geocoder_confidence="high",
+            provider="nominatim",
+            location_granularity="city",
+            edited_by="investigator",
+            edited_by_name="Investigator One",
+            source_view="map",
+            db=db,
+        )
+        self.assertTrue(result["applied"])
+        self.assertEqual(result["provider"], "nominatim")
+        self.assertEqual(result["location_granularity"], "city")
 
 
 class TimelineNormalisationTests(unittest.TestCase):

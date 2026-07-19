@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from datetime import datetime, timezone
@@ -48,6 +49,21 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
+
+
+def _parse_history(value: Any) -> list[dict[str, Any]]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return []
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, dict)]
+    return []
 
 
 class GraphEditService:
@@ -337,6 +353,111 @@ class GraphEditService:
             "properties": dict(record["properties"] or {}),
         }
 
+    def update_geocoded_location(
+        self,
+        node_key: str,
+        *,
+        case_id: str,
+        query: str,
+        latitude: float,
+        longitude: float,
+        formatted_address: str,
+        confidence: str | None,
+        provider: str | None = None,
+        location_granularity: str | None = None,
+        edited_by: str | None = None,
+        edited_by_name: str | None = None,
+        source_view: str | None = "map",
+    ) -> dict[str, Any]:
+        if not case_id:
+            raise ValueError("case_id is required")
+
+        current = self._fetch_node(node_key, case_id)
+        if not current:
+            raise LookupError(f"Node not found: {node_key}")
+
+        current_props = current["properties"]
+        edited_at = datetime.now(timezone.utc).isoformat()
+        clean_query = query.strip()
+        clean_provider = provider or "nominatim"
+        clean_formatted = formatted_address or clean_query
+
+        history = _parse_history(current_props.get("manual_correction_history"))
+        history.append(
+            {
+                "moved_by": edited_by or "unknown",
+                "moved_by_name": edited_by_name,
+                "moved_at": edited_at,
+                "from_latitude": _json_safe(current_props.get("latitude")),
+                "from_longitude": _json_safe(current_props.get("longitude")),
+                "to_latitude": latitude,
+                "to_longitude": longitude,
+                "query": clean_query,
+                "provider": clean_provider,
+                "formatted_address": clean_formatted,
+            }
+        )
+
+        updates: dict[str, Any] = {
+            "latitude": self._coerce_scalar("latitude", latitude),
+            "longitude": self._coerce_scalar("longitude", longitude),
+            "location_raw": clean_query,
+            "location_formatted": clean_formatted,
+            "location_name": clean_formatted,
+            "geocoding_status": "success",
+            "geocoding_provider": clean_provider,
+            "geocoding_query": clean_query,
+            "geocoding_formatted_address": clean_formatted,
+            "manual_correction_history": json.dumps(history),
+        }
+        if confidence:
+            updates["geocoding_confidence"] = confidence
+        if location_granularity:
+            updates["location_granularity"] = location_granularity
+
+        manual_fields = ["latitude", "longitude", "location_raw", "location_formatted", "location_name"]
+        with driver.session() as session:
+            record = session.run(
+                f"""
+                MATCH (n {{key: $key, case_id: $case_id}})
+                WHERE {active_node_predicate('n')}
+                SET n += $updates
+                SET n.manual_fields = reduce(
+                        acc = coalesce(n.manual_fields, []),
+                        field IN $manual_fields |
+                        CASE WHEN field IN acc THEN acc ELSE acc + field END
+                    ),
+                    n.last_edited_at = $edited_at,
+                    n.last_edited_by = $edited_by,
+                    n.last_edit_source = $source_view
+                RETURN n.key AS key, labels(n) AS labels, properties(n) AS properties
+                """,
+                key=node_key,
+                case_id=case_id,
+                updates=updates,
+                manual_fields=manual_fields,
+                edited_at=edited_at,
+                edited_by=edited_by,
+                source_view=source_view,
+            ).single()
+
+        labels = list(record["labels"] or []) if record else []
+        return {
+            "success": True,
+            "node_key": node_key,
+            "updated_fields": manual_fields,
+            "changes": {
+                "latitude": {"before": _json_safe(current_props.get("latitude")), "after": latitude},
+                "longitude": {"before": _json_safe(current_props.get("longitude")), "after": longitude},
+                "location_formatted": {
+                    "before": _json_safe(current_props.get("location_formatted")),
+                    "after": clean_formatted,
+                },
+            },
+            "category": self._current_category(labels),
+            "properties": dict(record["properties"] or {}) if record else {},
+        }
+
     def remove_location(
         self,
         node_key: str,
@@ -441,7 +562,10 @@ class GraphEditService:
         longitude: float,
         formatted_address: str,
         geocoder_confidence: str | None = None,
+        provider: str | None = None,
+        location_granularity: str | None = None,
         edited_by: str | None = None,
+        edited_by_name: str | None = None,
         source_view: str | None = "map",
         db: Session | None = None,
     ) -> dict[str, Any]:
@@ -466,6 +590,7 @@ class GraphEditService:
 
         corrected_at = datetime.now(timezone.utc)
         corrected_at_iso = corrected_at.isoformat()
+        clean_provider = provider or "nominatim"
         before = self._location_snapshot(node["properties"])
         after = {
             "geocoding_status": "success",
@@ -476,11 +601,32 @@ class GraphEditService:
             "location_raw": location_raw,
             "location_formatted": formatted,
             "location_name": formatted,
+            "geocoding_provider": clean_provider,
+            "geocoding_query": location_raw,
+            "geocoding_formatted_address": formatted,
             "location_corrected_at": corrected_at_iso,
             "location_corrected_by": edited_by,
             "location_correction_source": source_view,
             "location_correction_address": location_raw,
         }
+        if location_granularity:
+            after["location_granularity"] = location_granularity
+
+        history = _parse_history(node["properties"].get("manual_correction_history"))
+        history.append(
+            {
+                "moved_by": edited_by or "unknown",
+                "moved_by_name": edited_by_name,
+                "moved_at": corrected_at_iso,
+                "from_latitude": _json_safe(node["properties"].get("latitude")),
+                "from_longitude": _json_safe(node["properties"].get("longitude")),
+                "to_latitude": lat,
+                "to_longitude": lng,
+                "query": location_raw,
+                "provider": clean_provider,
+                "formatted_address": formatted,
+            }
+        )
         item = self._record_location_relocation(
             node_key,
             case_id=case_id,
@@ -497,6 +643,7 @@ class GraphEditService:
 
         updates = {
             **after,
+            "manual_correction_history": json.dumps(history),
             "last_edited_at": corrected_at_iso,
             "last_edited_by": edited_by,
             "last_edit_source": source_view,

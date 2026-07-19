@@ -50,6 +50,7 @@ import { getDisplayStatus } from "../utils/display-status"
 import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
 import type { EvidenceFileRecord } from "@/types/evidence.types"
 import { toast } from "sonner"
+import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
 
 // --- Shared helpers ---
 
@@ -277,14 +278,25 @@ export function EntityList({
                       <span className="min-w-0 truncate text-foreground">
                         {entity.name}
                       </span>
-                      {entity.confidence != null && (
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 px-1 py-0 text-[9px] font-normal text-muted-foreground"
-                        >
-                          {Math.round(entity.confidence * 100)}%
-                        </Badge>
-                      )}
+                      <div className="flex shrink-0 items-center gap-1">
+                        {entity.confidence != null && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 px-1 py-0 text-[9px] font-normal text-muted-foreground"
+                          >
+                            {Math.round(entity.confidence * 100)}%
+                          </Badge>
+                        )}
+                        {entity.key && (
+                          <SignificantEntityButton
+                            caseId={caseId}
+                            entityKey={entity.key}
+                            surface="evidence-context"
+                            compact
+                            className="size-6"
+                          />
+                        )}
+                      </div>
                     </div>
                     {isLocation && entity.node_key && (
                       <LocationCorrectionInline
