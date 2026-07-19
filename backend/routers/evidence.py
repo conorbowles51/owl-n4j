@@ -2687,8 +2687,19 @@ async def get_file_entities(
     query = """
     MATCH (n)
     WHERE n.case_id = $case_id AND $filename IN n.source_files
-    RETURN n.id AS id, n.name AS name, labels(n) AS labels,
-           n.specific_type AS specific_type, n.confidence AS confidence
+    RETURN coalesce(n.id, n.key) AS id, n.key AS node_key, n.name AS name, labels(n) AS labels,
+           n.specific_type AS specific_type, n.confidence AS confidence,
+           n.latitude AS latitude, n.longitude AS longitude,
+           n.location_raw AS location_raw,
+           n.location_formatted AS location_formatted,
+           n.location_name AS location_name,
+           n.geocoding_confidence AS geocoding_confidence,
+           n.location_source AS location_source,
+           n.location_corrected_at AS location_corrected_at,
+           n.location_corrected_by AS location_corrected_by,
+           n.location_correction_source AS location_correction_source,
+           n.location_correction_address AS location_correction_address,
+           n.last_location_relocation_key AS last_location_relocation_key
     ORDER BY n.confidence DESC
     LIMIT 50
     """
@@ -2699,10 +2710,24 @@ async def get_file_entities(
         category = labels[0] if labels else "Other"
         entities.append({
             "id": r["id"],
+            "key": r["node_key"],
+            "node_key": r["node_key"],
             "name": r["name"],
             "category": category,
             "specific_type": r["specific_type"],
             "confidence": r["confidence"],
+            "latitude": r["latitude"],
+            "longitude": r["longitude"],
+            "location_raw": r["location_raw"],
+            "location_formatted": r["location_formatted"],
+            "location_name": r["location_name"],
+            "geocoding_confidence": r["geocoding_confidence"],
+            "location_source": r["location_source"],
+            "location_corrected_at": r["location_corrected_at"],
+            "location_corrected_by": r["location_corrected_by"],
+            "location_correction_source": r["location_correction_source"],
+            "location_correction_address": r["location_correction_address"],
+            "last_location_relocation_key": r["last_location_relocation_key"],
         })
     return entities
 

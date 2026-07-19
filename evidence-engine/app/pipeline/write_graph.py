@@ -14,6 +14,7 @@ from app.pipeline.property_canonicalization import (
     is_neo4j_primitive_list,
 )
 from app.services import chroma_client, neo4j_client
+from app.services.geocoding import build_geocode_request, geocoding_service
 from app.services.openai_client import embed_texts
 from app.utils.text_sanitize import sanitize_json
 
@@ -64,6 +65,63 @@ async def _ensure_indexes() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Targeted re-geocoding (DKT-691 specificity-upgrade flow)
+# ---------------------------------------------------------------------------
+
+
+def _has_coordinates(properties: dict[str, Any]) -> bool:
+    return properties.get("latitude") is not None and properties.get("longitude") is not None
+
+
+async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
+    for entity in entities:
+        if entity.category not in GEOCODABLE_CATEGORIES:
+            continue
+        force_regeocode = bool(entity.properties.pop("_force_regeocode", False))
+        previous_geocoding_state = entity.properties.pop(
+            "_previous_geocoding_state", {}
+        )
+        if not force_regeocode and entity.properties.get("geocoding_status"):
+            # The contextual geocoding pass already decided this entity.
+            continue
+        if _has_coordinates(entity.properties) and not force_regeocode:
+            continue
+
+        request = build_geocode_request(entity.category, entity.name, entity.properties)
+        if request is None:
+            if force_regeocode:
+                entity.properties.update(previous_geocoding_state)
+            continue
+
+        result = await geocoding_service.geocode(request.query)
+        if force_regeocode and result.status != "success":
+            # Keep the existing, valid coarse pin if an attempted specificity
+            # upgrade cannot be resolved. Its metadata must continue to describe
+            # the coordinates that are actually stored.
+            entity.properties.update(previous_geocoding_state)
+            continue
+
+        entity.properties["location_raw"] = request.location_raw
+        entity.properties["location_specificity"] = request.location_specificity
+        entity.properties["geocoding_status"] = result.status
+
+        if result.status != "success":
+            continue
+
+        entity.properties["latitude"] = result.latitude
+        entity.properties["longitude"] = result.longitude
+        entity.properties["location_formatted"] = result.formatted_address
+        entity.properties["geocoding_confidence"] = result.confidence
+        if result.confidence_score is not None:
+            entity.properties["geocoding_confidence_score"] = result.confidence_score
+        entity.properties["geocoding_provider"] = result.provider
+        entity.properties["geocoding_query"] = result.original_query
+        entity.properties["geocoding_formatted_address"] = result.formatted_address
+        if result.location_granularity:
+            entity.properties["location_granularity"] = result.location_granularity
+
+
+# ---------------------------------------------------------------------------
 # Write entities
 # ---------------------------------------------------------------------------
 
@@ -74,6 +132,12 @@ async def _write_entities(
 ) -> None:
     for entity in entities:
         entity.properties = canonicalize_properties(entity.category, entity.properties)
+
+    # Targeted re-geocode pass (DKT-691): entities flagged for a specificity
+    # upgrade are skipped by the contextual pass and resolved here, with the
+    # previous valid pin restored if the upgrade cannot be geocoded. Entities
+    # the contextual pass already decided are left untouched.
+    await _apply_geocoding(entities)
 
     # Group by category and batch-write
     by_cat: dict[str, list[dict[str, Any]]] = {}

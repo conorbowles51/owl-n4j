@@ -262,6 +262,63 @@ class AgentImprovementTests(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertIn("case_id", result["error"])
 
+    def test_significant_agent_blocks_case_wide_query_tools(self):
+        context = AgentToolContext(
+            case_id="case-1",
+            allowed_entity_keys={"person-1", "event-2"},
+        )
+        tools = {tool.name: tool for tool in make_agent_tools(context)}
+
+        cypher = tools["run_readonly_cypher"].invoke(
+            {
+                "query": "MATCH (n) WHERE n.case_id = $case_id RETURN n",
+                "params": {},
+                "limit": 10,
+            }
+        )
+        documents = tools["search_documents"].invoke(
+            {"query": "anything", "limit": 5}
+        )
+        financial = tools["get_financial_transactions"].invoke({"limit": 5})
+
+        self.assertEqual(cypher["status"], "error")
+        self.assertEqual(documents["status"], "error")
+        self.assertEqual(financial["status"], "error")
+        self.assertIn("Significant layer", cypher["error"])
+
+    def test_significant_agent_neighborhood_is_an_induced_subgraph(self):
+        context = AgentToolContext(
+            case_id="case-1",
+            allowed_entity_keys={"person-1", "event-2"},
+        )
+        tools = {tool.name: tool for tool in make_agent_tools(context)}
+        full_graph = {
+            "nodes": [
+                {"key": "person-1", "name": "Mark", "type": "Person"},
+                {"key": "event-2", "name": "Meeting", "type": "Event"},
+                {"key": "outside-3", "name": "Unmarked", "type": "Person"},
+            ],
+            "links": [
+                {"source": "person-1", "target": "event-2", "type": "ATTENDED"},
+                {"source": "person-1", "target": "outside-3", "type": "KNOWS"},
+            ],
+        }
+
+        with patch(
+            "services.agent.tools.graph_service.get_node_with_neighbours",
+            return_value=full_graph,
+        ):
+            result = tools["get_entity_neighborhood"].invoke(
+                {"entity_key": "person-1", "depth": 1}
+            )
+
+        self.assertEqual(
+            {node["key"] for node in result["data"]["nodes"]},
+            {"person-1", "event-2"},
+        )
+        self.assertEqual(len(result["data"]["links"]), 1)
+        self.assertEqual(result["data"]["links"][0]["target"], "event-2")
+
     def test_request_clarification_tool_returns_structured_payload(self):
         context = AgentToolContext(case_id="case-1")
         tools = {tool.name: tool for tool in make_agent_tools(context)}

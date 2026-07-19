@@ -18,12 +18,14 @@ import type {
   BetweennessResult,
   CommunityResult,
 } from "@/types/graph.types"
+import type { CaseLayer } from "@/features/significant/types"
 
 interface GraphAnalysisPanelProps {
   caseId: string
+  scope: CaseLayer
 }
 
-export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
+export function GraphAnalysisPanel({ caseId, scope }: GraphAnalysisPanelProps) {
   const { selectedNodeKeys, clearSubgraph, addToSubgraph } = useGraphStore()
 
   const showInSpotlight = (keys: string[]) => {
@@ -41,7 +43,7 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
   const [btResults, setBtResults] = useState<BetweennessResult[]>([])
 
   const runPageRank = () => {
-    pageRank.mutate({}, {
+    pageRank.mutate({ scope }, {
       onSuccess: (data) => {
         setPrResults(data.results)
         showInSpotlight(data.results.map((r) => r.key))
@@ -50,7 +52,7 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
   }
 
   const runLouvain = () => {
-    louvain.mutate({}, {
+    louvain.mutate({ scope }, {
       onSuccess: (data) => {
         setCommunities(data.communities)
         const keys: string[] = []
@@ -63,7 +65,7 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
   }
 
   const runBetweenness = () => {
-    betweenness.mutate({}, {
+    betweenness.mutate({ scope }, {
       onSuccess: (data) => {
         setBtResults(data.results)
         showInSpotlight(data.results.map((r) => r.key))
@@ -74,7 +76,7 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
   const runShortestPaths = () => {
     const keys = Array.from(selectedNodeKeys)
     if (keys.length < 2) return
-    shortestPaths.mutate({ nodeKeys: keys }, {
+    shortestPaths.mutate({ nodeKeys: keys, scope }, {
       onSuccess: (data) => {
         const pathNodes = new Set<string>()
         for (const p of data.paths) {
@@ -88,6 +90,11 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
   return (
     <div className="space-y-3 p-4">
       <h3 className="text-sm font-semibold">Graph Analysis</h3>
+      {scope === "significant" && (
+        <p className="text-xs text-muted-foreground">
+          Results use only Significant entities and relationships between them.
+        </p>
+      )}
 
       {/* PageRank */}
       <div className="rounded-lg border p-3">

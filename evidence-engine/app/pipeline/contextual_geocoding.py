@@ -524,6 +524,12 @@ async def apply_contextual_geocoding(
         ):
             continue
 
+        if entity.properties.get("_force_regeocode"):
+            # DKT-691 specificity-upgrade flow: this entity keeps a previous
+            # valid pin and is re-geocoded by the targeted pass in write_graph,
+            # which restores the old pin if the upgrade cannot be resolved.
+            continue
+
         if _has_coordinates(entity.properties):
             decision = _mark_coordinate_entity(entity)
             decisions.append(decision)

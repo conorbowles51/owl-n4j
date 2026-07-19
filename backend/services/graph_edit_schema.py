@@ -42,6 +42,14 @@ SYSTEM_PROPERTY_KEYS = frozenset(
         "last_edit_source",
         "geocoding_status",
         "geocoding_confidence",
+        "geocoding_provider",
+        "geocoding_query",
+        "geocoding_formatted_address",
+        "location_granularity",
+        "coordinate_precision",
+        "accuracy_meters",
+        "manual_correction_history",
+        "geocoding_correction_history",
         "geocode_confidence",
         "geocode_source",
         "geocode_accuracy",
@@ -52,6 +60,13 @@ SYSTEM_PROPERTY_KEYS = frozenset(
         "nearest_location_delta_s",
         "nearest_location_source",
         "location_source",
+        "location_corrected_at",
+        "location_corrected_by",
+        "location_correction_source",
+        "location_correction_address",
+        "location_correction_undone_at",
+        "location_correction_undone_by",
+        "last_location_relocation_key",
     }
 )
 

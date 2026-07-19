@@ -17,6 +17,7 @@ import { RecycleBinPanel } from "./RecycleBinPanel"
 import { CypherPanel } from "./CypherPanel"
 import { SimilarEntitiesView } from "./SimilarEntitiesView"
 import type { GraphData } from "@/types/graph.types"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 
 const TOOL_LABELS: Record<string, string> = {
   "force-controls": "Force Controls",
@@ -120,6 +121,7 @@ export function GraphSidePanelContent({
   onCreateSubgraph,
   onRefreshGraph,
 }: GraphSidePanelProps) {
+  const caseLayer = useCaseLayer(caseId)
   const tab = useUIStore((s) => s.graphPanelTab)
   const toolOverlay = useUIStore((s) => s.graphPanelToolOverlay)
   const setCollapsed = useUIStore((s) => s.setGraphPanelCollapsed)
@@ -212,7 +214,7 @@ export function GraphSidePanelContent({
           <>
             {toolOverlay === "force-controls" && <ForceControlsPanel />}
             {toolOverlay === "analysis" && (
-              <GraphAnalysisPanel caseId={caseId} />
+              <GraphAnalysisPanel caseId={caseId} scope={caseLayer} />
             )}
             {toolOverlay === "similar" && (
               <SimilarEntitiesView

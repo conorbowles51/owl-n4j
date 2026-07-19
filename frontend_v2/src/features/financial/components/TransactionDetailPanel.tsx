@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import type { Transaction } from "../api"
@@ -13,22 +13,43 @@ interface TransactionDetailPanelProps {
   }) => void
 }
 
+interface TransactionDraft {
+  sourceKey: string
+  purpose: string
+  counterparty: string
+  notes: string
+}
+
+function createTransactionDraft(transaction: Transaction): TransactionDraft {
+  return {
+    sourceKey: JSON.stringify([
+      transaction.key,
+      transaction.purpose ?? "",
+      transaction.counterparty_details ?? "",
+      transaction.notes ?? "",
+    ]),
+    purpose: transaction.purpose || "",
+    counterparty: transaction.counterparty_details || "",
+    notes: transaction.notes || "",
+  }
+}
+
 export function TransactionDetailPanel({
   transaction,
   editable = true,
   onSave,
 }: TransactionDetailPanelProps) {
-  const [purpose, setPurpose] = useState(transaction.purpose || "")
-  const [counterparty, setCounterparty] = useState(
-    transaction.counterparty_details || ""
-  )
-  const [notes, setNotes] = useState(transaction.notes || "")
-
-  useEffect(() => {
-    setPurpose(transaction.purpose || "")
-    setCounterparty(transaction.counterparty_details || "")
-    setNotes(transaction.notes || "")
-  }, [transaction.key, transaction.purpose, transaction.counterparty_details, transaction.notes])
+  const sourceDraft = createTransactionDraft(transaction)
+  const [draft, setDraft] = useState(sourceDraft)
+  const activeDraft =
+    draft.sourceKey === sourceDraft.sourceKey ? draft : sourceDraft
+  const { purpose, counterparty, notes } = activeDraft
+  const updateDraft = (updates: Partial<Omit<TransactionDraft, "sourceKey">>) => {
+    setDraft((current) => ({
+      ...(current.sourceKey === sourceDraft.sourceKey ? current : sourceDraft),
+      ...updates,
+    }))
+  }
 
   const handleBlur = (
     field: "purpose" | "counterpartyDetails" | "notes",
@@ -79,7 +100,7 @@ export function TransactionDetailPanel({
           </label>
           <Input
             value={purpose}
-            onChange={(e) => setPurpose(e.target.value)}
+            onChange={(e) => updateDraft({ purpose: e.target.value })}
             onBlur={() => handleBlur("purpose", purpose, transaction.purpose)}
             disabled={!editable}
             className="h-7 text-xs"
@@ -94,7 +115,7 @@ export function TransactionDetailPanel({
           </label>
           <Input
             value={counterparty}
-            onChange={(e) => setCounterparty(e.target.value)}
+            onChange={(e) => updateDraft({ counterparty: e.target.value })}
             onBlur={() =>
               handleBlur(
                 "counterpartyDetails",
@@ -115,7 +136,7 @@ export function TransactionDetailPanel({
           </label>
           <Textarea
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            onChange={(e) => updateDraft({ notes: e.target.value })}
             onBlur={() => handleBlur("notes", notes, transaction.notes)}
             disabled={!editable}
             className="h-16 resize-none text-xs"

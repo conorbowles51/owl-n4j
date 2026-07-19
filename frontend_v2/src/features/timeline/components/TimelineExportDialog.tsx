@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { timelineAPI, type TimelineEvent, type TimelineView } from "../api"
+import { timelineAPI, type TimelineEvent } from "../api"
 import {
   TIMELINE_EXPORT_FIELDS,
   buildTimelineExportPayload,
@@ -28,7 +28,6 @@ interface TimelineExportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   caseId: string
-  activeView: TimelineView | null
   filteredEvents: TimelineEvent[]
   selectedKeys: Set<string>
   preferredSource?: TimelineExportSource | null
@@ -49,7 +48,6 @@ export function TimelineExportDialog({
   open,
   onOpenChange,
   caseId,
-  activeView,
   filteredEvents,
   selectedKeys,
   preferredSource,
@@ -65,23 +63,21 @@ export function TimelineExportDialog({
 
   useEffect(() => {
     if (!open) return
-    setSource(preferredSource ?? (activeView ? "view" : selectedKeys.size > 0 ? "selection" : "filtered"))
-    setTitle(activeView?.title ?? "Timeline Export")
-  }, [activeView, open, preferredSource, selectedKeys.size])
+    setSource(preferredSource ?? (selectedKeys.size > 0 ? "selection" : "filtered"))
+    setTitle("Timeline Export")
+  }, [open, preferredSource, selectedKeys.size])
 
   const selectedCount = selectedKeys.size
   const sourceCount = useMemo(() => {
-    if (source === "view") return activeView?.event_count ?? 0
     if (source === "selection") return selectedCount
     return filteredEvents.length
-  }, [activeView?.event_count, filteredEvents.length, selectedCount, source])
+  }, [filteredEvents.length, selectedCount, source])
 
   const previewSpan = timelineDateSpan(filteredEvents)
   const tooLargeForPdf = format === "pdf" && sourceCount > 5000
   const canExport =
     sourceCount > 0 &&
     !tooLargeForPdf &&
-    (source !== "view" || Boolean(activeView)) &&
     (source !== "selection" || selectedCount > 0)
 
   const handleDetailChange = (value: TimelineExportDetailLevel) => {
@@ -103,7 +99,7 @@ export function TimelineExportDialog({
         format,
         detailLevel,
         fields,
-        activeView,
+        activeView: null,
         filteredEvents,
         selectedKeys,
         title,
@@ -147,9 +143,6 @@ export function TimelineExportDialog({
                     <SelectItem value="filtered">Current filters ({filteredEvents.length})</SelectItem>
                     <SelectItem value="selection" disabled={selectedCount === 0}>
                       Selected events ({selectedCount})
-                    </SelectItem>
-                    <SelectItem value="view" disabled={!activeView}>
-                      Saved view ({activeView?.event_count ?? 0})
                     </SelectItem>
                   </SelectContent>
                 </Select>

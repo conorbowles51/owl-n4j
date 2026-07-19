@@ -43,6 +43,7 @@ from routers import (
     evidence_folders_router,
     cellebrite_router,
     triage_router,
+    significant_router,
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
@@ -159,6 +160,7 @@ app.include_router(notebook_router)
 app.include_router(evidence_folders_router)
 app.include_router(cellebrite_router)
 app.include_router(triage_router)
+app.include_router(significant_router)
 app.include_router(evidence_ws_router)
 
 

@@ -10,14 +10,11 @@ interface EventStreamProps {
   totalCount: number
   selectedEventKey: string | null
   multiSelectedKeys: Set<string>
-  curationMode: boolean
-  curationSelectedKeys: Set<string>
   searchTerm: string
   selectedEntityKeys: Set<string>
   scrollToEventKey: string | null
   onSelectEvent: (key: string) => void
   onMultiSelectEvent: (key: string) => void
-  onToggleCurationSelection: (key: string) => void
   onClearScrollTarget: () => void
   onClearFilters: () => void
 }
@@ -30,14 +27,11 @@ export function EventStream({
   totalCount,
   selectedEventKey,
   multiSelectedKeys,
-  curationMode,
-  curationSelectedKeys,
   searchTerm,
   selectedEntityKeys,
   scrollToEventKey,
   onSelectEvent,
   onMultiSelectEvent,
-  onToggleCurationSelection,
   onClearScrollTarget,
   onClearFilters,
 }: EventStreamProps) {
@@ -125,13 +119,10 @@ export function EventStream({
                     event={item.event}
                     isSelected={selectedEventKey === item.event.key}
                     isMultiSelected={multiSelectedKeys.has(item.event.key)}
-                    curationMode={curationMode}
-                    isCurationSelected={curationSelectedKeys.has(item.event.key)}
                     searchTerm={searchTerm}
                     highlightedEntityKeys={selectedEntityKeys}
                     onSelect={onSelectEvent}
                     onMultiSelect={onMultiSelectEvent}
-                    onToggleCurationSelection={onToggleCurationSelection}
                   />
                 </div>
               )}

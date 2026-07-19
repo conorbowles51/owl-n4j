@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query"
 import { graphAPI } from "../api"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 
 export function useGraphData(caseId: string | undefined) {
+  const scope = useCaseLayer(caseId)
   return useQuery({
-    queryKey: ["graph", caseId],
-    queryFn: () => graphAPI.getGraph({ case_id: caseId! }),
+    queryKey: ["graph", caseId, scope],
+    queryFn: () => graphAPI.getGraph({ case_id: caseId!, scope }),
     enabled: !!caseId,
   })
 }

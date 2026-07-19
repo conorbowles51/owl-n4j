@@ -21,7 +21,7 @@ class GraphRecycleBinItem(Base, TimestampMixin):
             name="ck_graph_recycle_bin_items_status",
         ),
         CheckConstraint(
-            "item_type IN ('entity_delete', 'merge_undo')",
+            "item_type IN ('entity_delete', 'merge_undo', 'location_relocation')",
             name="ck_graph_recycle_bin_items_item_type",
         ),
         UniqueConstraint("recycle_key", name="uq_graph_recycle_bin_items_recycle_key"),

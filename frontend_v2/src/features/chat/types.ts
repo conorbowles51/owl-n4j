@@ -1,6 +1,6 @@
 import type { EntityType } from "@/lib/theme"
 
-export type ChatScope = "case_overview" | "selection"
+export type ChatScope = "case_overview" | "significant" | "selection"
 
 export interface ChatSource {
   filename: string

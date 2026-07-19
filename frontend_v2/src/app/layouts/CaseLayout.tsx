@@ -8,6 +8,7 @@ import {
 import { useUIStore } from "@/stores/ui.store"
 import { CaseSidePanelRail, CaseSidePanelContent } from "./CaseSidePanel"
 import { EvidenceContextSidebar } from "@/features/evidence/components/EvidenceContextSidebar"
+import { SignificantLayerBar } from "@/features/significant/components/SignificantLayerBar"
 
 export function CaseLayout() {
   const { id: caseId } = useParams()
@@ -15,6 +16,12 @@ export function CaseLayout() {
   const isGraphRoute = !!useMatch("/cases/:id/graph")
   const isAgentRoute = !!useMatch("/cases/:id/agent")
   const isEvidenceRoute = !!useMatch("/cases/:id/evidence")
+  const isTimelineRoute = !!useMatch("/cases/:id/timeline")
+  const isMapRoute = !!useMatch("/cases/:id/map")
+  const isTableRoute = !!useMatch("/cases/:id/table")
+  const isLayerAwareRoute = Boolean(
+    isGraphRoute || isTimelineRoute || isMapRoute || isTableRoute
+  )
 
   // Graph and Agent routes manage their own full-width workspaces.
   const showCaseSidePanel = !isGraphRoute && !isAgentRoute
@@ -22,6 +29,9 @@ export function CaseLayout() {
   return (
     <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
+        {isLayerAwareRoute && caseId ? (
+          <SignificantLayerBar caseId={caseId} />
+        ) : null}
         <div className="flex flex-1 overflow-hidden">
           {showCaseSidePanel ? (
             <ResizablePanelGroup orientation="horizontal" className="flex-1">

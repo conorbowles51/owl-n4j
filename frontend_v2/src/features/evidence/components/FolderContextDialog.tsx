@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -23,13 +23,57 @@ import {
   useUpdateFolderProfile,
 } from "../hooks/use-folder-context"
 import { ProfileChainPreview } from "./ProfileChainPreview"
-import type { ProfileOverrides } from "@/types/evidence.types"
+import type { FolderProfile, ProfileOverrides } from "@/types/evidence.types"
 
 interface FolderContextDialogProps {
   folderId: string
   caseId: string
   open: boolean
   onOpenChange: (open: boolean) => void
+}
+
+interface EntityTypeDraft {
+  name: string
+  description: string
+}
+
+interface FolderProfileDraft {
+  sourceKey: string
+  contextInstructions: string
+  mandatoryInstructions: string[]
+  entityTypes: EntityTypeDraft[]
+  newEntityName: string
+  newEntityDesc: string
+}
+
+function toEntityTypeDrafts(
+  entities: { name: string; description?: string | null }[] = []
+): EntityTypeDraft[] {
+  return entities.map((entity) => ({
+    name: entity.name,
+    description: entity.description ?? "",
+  }))
+}
+
+function createFolderProfileDraft(
+  folderId: string,
+  profile: FolderProfile | undefined
+): FolderProfileDraft {
+  return {
+    sourceKey: JSON.stringify([
+      folderId,
+      profile?.context_instructions ?? "",
+      profile?.mandatory_instructions ?? [],
+      profile?.profile_overrides?.special_entity_types ?? [],
+    ]),
+    contextInstructions: profile?.context_instructions ?? "",
+    mandatoryInstructions: profile?.mandatory_instructions ?? [],
+    entityTypes: toEntityTypeDrafts(
+      profile?.profile_overrides?.special_entity_types
+    ),
+    newEntityName: "",
+    newEntityDesc: "",
+  }
 }
 
 export function FolderContextDialog({
@@ -44,30 +88,46 @@ export function FolderContextDialog({
     useEffectiveProfile(open ? folderId : null, caseId)
   const updateProfile = useUpdateFolderProfile(caseId)
 
-  const [contextInstructions, setContextInstructions] = useState("")
-  const [mandatoryInstructions, setMandatoryInstructions] = useState<string[]>([])
-  const [entityTypes, setEntityTypes] = useState<
-    { name: string; description: string }[]
-  >([])
-  const [newEntityName, setNewEntityName] = useState("")
-  const [newEntityDesc, setNewEntityDesc] = useState("")
+  const sourceDraft = useMemo(
+    () => createFolderProfileDraft(folderId, profile),
+    [folderId, profile]
+  )
+  const [draft, setDraft] = useState(sourceDraft)
+  const activeDraft =
+    draft.sourceKey === sourceDraft.sourceKey ? draft : sourceDraft
+  const {
+    contextInstructions,
+    mandatoryInstructions,
+    entityTypes,
+    newEntityName,
+    newEntityDesc,
+  } = activeDraft
+  const updateDraft = (
+    updates: Partial<Omit<FolderProfileDraft, "sourceKey">>
+  ) => {
+    setDraft((current) => ({
+      ...(current.sourceKey === sourceDraft.sourceKey ? current : sourceDraft),
+      ...updates,
+    }))
+  }
 
-  useEffect(() => {
-    if (!open) return
+  const setContextInstructions = (contextInstructions: string) =>
+    updateDraft({ contextInstructions })
+  const setMandatoryInstructions = (mandatoryInstructions: string[]) =>
+    updateDraft({ mandatoryInstructions })
+  const setNewEntityName = (newEntityName: string) =>
+    updateDraft({ newEntityName })
+  const setNewEntityDesc = (newEntityDesc: string) =>
+    updateDraft({ newEntityDesc })
 
-    setContextInstructions(profile?.context_instructions ?? "")
-    setMandatoryInstructions(profile?.mandatory_instructions ?? [])
-    setEntityTypes(
-      (profile?.profile_overrides?.special_entity_types ?? []).map((entity) => ({
-        name: entity.name,
-        description: entity.description ?? "",
-      }))
-    )
-    setNewEntityName("")
-    setNewEntityDesc("")
-  }, [open, profile])
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setDraft(sourceDraft)
+    }
+    onOpenChange(nextOpen)
+  }
 
-  const addEntityType = useCallback(() => {
+  const addEntityType = () => {
     const name = newEntityName.trim()
     if (!name) return
 
@@ -76,19 +136,21 @@ export function FolderContextDialog({
       return
     }
 
-    setEntityTypes((prev) => [
-      ...prev,
-      { name, description: newEntityDesc.trim() },
-    ])
-    setNewEntityName("")
-    setNewEntityDesc("")
-  }, [entityTypes, newEntityDesc, newEntityName])
+    updateDraft({
+      entityTypes: [
+        ...entityTypes,
+        { name, description: newEntityDesc.trim() },
+      ],
+      newEntityName: "",
+      newEntityDesc: "",
+    })
+  }
 
-  const removeEntityType = useCallback((index: number) => {
-    setEntityTypes((prev) => prev.filter((_, i) => i !== index))
-  }, [])
+  const removeEntityType = (index: number) => {
+    updateDraft({ entityTypes: entityTypes.filter((_, i) => i !== index) })
+  }
 
-  const handleSave = useCallback(() => {
+  const handleSave = () => {
     const overrides: ProfileOverrides = {}
 
     if (entityTypes.length > 0) {
@@ -111,14 +173,14 @@ export function FolderContextDialog({
       {
         onSuccess: () => {
           toast.success("Folder profile saved")
-          onOpenChange(false)
+          handleOpenChange(false)
         },
         onError: (error) => {
           toast.error(error.message || "Failed to save folder profile")
         },
       }
     )
-  }, [contextInstructions, entityTypes, folderId, mandatoryInstructions, onOpenChange, updateProfile])
+  }
 
   const isLoading = profileLoading || effectiveLoading
   const previewOverrides = useMemo<ProfileOverrides | null>(() => {
@@ -194,7 +256,7 @@ export function FolderContextDialog({
   }, [previewChain])
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="flex max-h-[85vh] w-[92vw] flex-col overflow-hidden sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -381,7 +443,7 @@ export function FolderContextDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
           <Button

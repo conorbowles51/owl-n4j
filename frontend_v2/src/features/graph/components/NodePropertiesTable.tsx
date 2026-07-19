@@ -59,6 +59,13 @@ const metadataKeys = new Set([
   "nearest_location_delta_s",
   "nearest_location_source",
   "location_source",
+  "location_corrected_at",
+  "location_corrected_by",
+  "location_correction_source",
+  "location_correction_address",
+  "location_correction_undone_at",
+  "location_correction_undone_by",
+  "last_location_relocation_key",
 ])
 
 export function NodePropertiesTable({ properties, className }: NodePropertiesTableProps) {

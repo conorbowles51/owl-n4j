@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/tooltip"
 import { useGraphStore } from "@/stores/graph.store"
 import type { ForceGraphMethods } from "react-force-graph-2d"
+import type { CaseLayer } from "@/features/significant/types"
 
 interface GraphToolbarProps {
   caseId: string
@@ -38,6 +39,7 @@ interface GraphToolbarProps {
   onOpenSimilarEntities?: () => void
   onOpenRecycleBin?: () => void
   onOpenCypher?: () => void
+  scope: CaseLayer
   filteredNodes: number
   totalNodes: number
 }
@@ -51,6 +53,7 @@ export function GraphToolbar({
   onOpenSimilarEntities,
   onOpenRecycleBin,
   onOpenCypher,
+  scope,
   filteredNodes,
   totalNodes,
 }: GraphToolbarProps) {
@@ -242,10 +245,12 @@ export function GraphToolbar({
 
       {/* Node actions */}
       <div className="flex items-center gap-0.5 border-l border-border pl-2">
-        <Button variant="ghost" size="sm" className="text-xs" onClick={onOpenAddNode}>
-          <Plus className="size-3.5" />
-          Add Node
-        </Button>
+        {scope === "all" && (
+          <Button variant="ghost" size="sm" className="text-xs" onClick={onOpenAddNode}>
+            <Plus className="size-3.5" />
+            Add Node
+          </Button>
+        )}
         <Button variant="ghost" size="sm" className="text-xs" onClick={onOpenCreateRelationship}>
           <GitBranch className="size-3.5" />
           Relationship
@@ -270,22 +275,26 @@ export function GraphToolbar({
           </TooltipTrigger>
           <TooltipContent>Graph Analysis</TooltipContent>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={onOpenSimilarEntities}>
-              <Users className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Find Similar Entities</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={onOpenCypher}>
-              <Terminal className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Cypher Query</TooltipContent>
-        </Tooltip>
+        {scope === "all" && (
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-sm" onClick={onOpenSimilarEntities}>
+                  <Users className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Find Similar Entities</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-sm" onClick={onOpenCypher}>
+                  <Terminal className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Cypher Query</TooltipContent>
+            </Tooltip>
+          </>
+        )}
       </div>
 
       {/* Spotlight / Recycle */}
@@ -308,14 +317,16 @@ export function GraphToolbar({
           </TooltipTrigger>
           <TooltipContent>Spotlight Graph</TooltipContent>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={onOpenRecycleBin}>
-              <Trash2 className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Recycle Bin</TooltipContent>
-        </Tooltip>
+        {scope === "all" && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-sm" onClick={onOpenRecycleBin}>
+                <Trash2 className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Recycle Bin</TooltipContent>
+          </Tooltip>
+        )}
         {hiddenNodeKeys.size > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>

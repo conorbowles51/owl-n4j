@@ -1,4 +1,4 @@
-import { Trash2, GitMerge, Pencil, X } from "lucide-react"
+import { Trash2, GitMerge, Pencil, X, Star, StarOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
@@ -8,6 +8,11 @@ interface BulkActionsBarProps {
   onDelete: () => void
   onBulkEdit: () => void
   onClear: () => void
+  significantMode?: boolean
+  significantActionCount?: number
+  onAddToSignificant?: () => void
+  onRemoveFromSignificant?: () => void
+  significantPending?: boolean
 }
 
 export function BulkActionsBar({
@@ -16,6 +21,11 @@ export function BulkActionsBar({
   onDelete,
   onBulkEdit,
   onClear,
+  significantMode = false,
+  significantActionCount = 0,
+  onAddToSignificant,
+  onRemoveFromSignificant,
+  significantPending = false,
 }: BulkActionsBarProps) {
   if (count === 0) return null
 
@@ -26,6 +36,29 @@ export function BulkActionsBar({
       </Badge>
 
       <div className="flex items-center gap-1">
+        {significantMode && onRemoveFromSignificant ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-amber-700 dark:text-amber-300"
+            disabled={significantPending || significantActionCount === 0}
+            onClick={onRemoveFromSignificant}
+          >
+            <StarOff className="size-3.5" />
+            Remove from Significant
+          </Button>
+        ) : onAddToSignificant && significantActionCount > 0 ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-amber-700 dark:text-amber-300"
+            disabled={significantPending}
+            onClick={onAddToSignificant}
+          >
+            <Star className="size-3.5" />
+            Add {significantActionCount.toLocaleString()} to Significant
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"

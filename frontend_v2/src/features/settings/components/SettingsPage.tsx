@@ -10,7 +10,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { useTheme } from "@/lib/theme-provider"
+import { useTheme } from "@/lib/theme-context"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 
 const SHORTCUTS = [

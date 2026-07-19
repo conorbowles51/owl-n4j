@@ -11,10 +11,19 @@ import {
   Eye,
   Network,
   Sparkles,
+  Star,
+  StarOff,
 } from "lucide-react"
 import { useGraphStore } from "@/stores/graph.store"
+import { toast } from "sonner"
+import {
+  useAddSignificantEntities,
+  useRemoveSignificantEntities,
+  useSignificantManifest,
+} from "@/features/significant/hooks/use-significant"
 
 interface GraphContextMenuProps {
+  caseId: string
   onExpand?: (key: string) => void
   onEdit?: (key: string) => void
   onDelete?: (key: string) => void
@@ -24,6 +33,7 @@ interface GraphContextMenuProps {
 }
 
 export function GraphContextMenu({
+  caseId,
   onExpand,
   onEdit,
   onDelete,
@@ -41,6 +51,9 @@ export function GraphContextMenu({
     selectedNodeKeys,
     addToSubgraph,
   } = useGraphStore()
+  const { entityKeySet: significantEntityKeys } = useSignificantManifest(caseId)
+  const addSignificant = useAddSignificantEntities(caseId)
+  const removeSignificant = useRemoveSignificantEntities(caseId)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -59,6 +72,31 @@ export function GraphContextMenu({
   const { x, y, nodeKey, nodeLabel } = contextMenu
   const isPinned = pinnedNodeKeys.has(nodeKey)
   const multiSelected = selectedNodeKeys.size > 1
+  const isSignificant = significantEntityKeys.has(nodeKey)
+
+  const toggleSignificant = async () => {
+    try {
+      if (isSignificant) {
+        await removeSignificant.mutateAsync([nodeKey])
+        toast.success("Removed from Significant")
+      } else {
+        await addSignificant.mutateAsync({
+          entityKeys: [nodeKey],
+          source: "manual",
+          context: { surface: "graph_context_menu" },
+        })
+        toast.success("Added to Significant")
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not update the Significant layer"
+      )
+    } finally {
+      closeContextMenu()
+    }
+  }
 
   type MenuItem =
     | { separator: true }
@@ -85,6 +123,11 @@ export function GraphContextMenu({
       icon: Network,
       label: "Add to Spotlight",
       onClick: () => { addToSubgraph([nodeKey]); closeContextMenu() },
+    },
+    {
+      icon: isSignificant ? StarOff : Star,
+      label: isSignificant ? "Remove from Significant" : "Add to Significant",
+      onClick: () => { void toggleSignificant() },
     },
     {
       icon: isPinned ? PinOff : Pin,

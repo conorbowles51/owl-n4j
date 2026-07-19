@@ -1,6 +1,11 @@
 import pytest
 
-from app.pipeline.resolve_entities import ResolvedEntity, coalesce_resolved_entities_by_id
+from app.pipeline.resolve_entities import (
+    ResolvedEntity,
+    _filter_by_confidence,
+    _reconcile_existing_location_state,
+    coalesce_resolved_entities_by_id,
+)
 from app.pipeline import write_graph as write_graph_module
 
 
@@ -52,6 +57,67 @@ def test_coalesce_resolved_entities_merges_duplicate_ids() -> None:
         {"text": "Appears in related file", "source_doc": "USA-027860.pdf"}
     ]
     assert entity.mandatory_instructions == ["Keep beneficial owners distinct"]
+
+
+def test_confidence_filter_retains_low_confidence_location_evidence() -> None:
+    location = ResolvedEntity(
+        id="location-1",
+        category="Location",
+        specific_type="Country",
+        name="Ireland",
+        properties={"location_raw": "Ireland", "location_specificity": "country"},
+        confidence=0.1,
+    )
+    located_event = ResolvedEntity(
+        id="event-1",
+        category="Event",
+        specific_type="Meeting",
+        name="Uncertain meeting",
+        properties={"location_raw": "overseas", "location_specificity": "unknown"},
+        confidence=0.1,
+    )
+    non_location = ResolvedEntity(
+        id="person-1",
+        category="Person",
+        specific_type="Witness",
+        name="Uncertain witness",
+        confidence=0.1,
+    )
+
+    kept, _ = _filter_by_confidence([location, located_event, non_location], [])
+
+    assert [entity.id for entity in kept] == ["location-1", "event-1"]
+
+
+def test_existing_coarse_coordinates_are_flagged_for_specificity_upgrade() -> None:
+    entity = ResolvedEntity(
+        id="location-1",
+        category="Location",
+        specific_type="Address",
+        name="Fleet Street location",
+        properties={
+            "location_raw": "12 Fleet Street, London",
+            "address": "12 Fleet Street",
+            "city": "London",
+        },
+    )
+
+    _reconcile_existing_location_state(
+        entity,
+        {
+            "location_raw": "United Kingdom",
+            "country": "United Kingdom",
+            "location_specificity": "country",
+            "latitude": 54.0,
+            "longitude": -2.0,
+            "geocoding_status": "success",
+            "geocoding_confidence": "high",
+        },
+    )
+
+    assert entity.properties["location_specificity"] == "exact_address"
+    assert entity.properties["_force_regeocode"] is True
+    assert entity.properties["_previous_geocoding_state"]["location_specificity"] == "country"
 
 
 @pytest.mark.asyncio

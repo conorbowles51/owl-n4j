@@ -1,6 +1,12 @@
 import { useState } from "react"
 import { ChevronDown, ChevronUp, Eye, EyeOff } from "lucide-react"
 import { getNodeColor } from "@/lib/theme"
+import {
+  CONFIDENCE_TIERS,
+  CONFIDENCE_TIER_COLORS,
+  CONFIDENCE_TIER_LABELS,
+  getConfidenceTier,
+} from "@/lib/location-confidence"
 import { useMapStore } from "../stores/map.store"
 import type { MapLocation } from "../hooks/use-map-data"
 
@@ -13,6 +19,14 @@ export function MapLegend({ locations }: MapLegendProps) {
   const [filter, setFilter] = useState("")
   const hiddenTypes = useMapStore((s) => s.hiddenTypes)
   const toggleType = useMapStore((s) => s.toggleType)
+
+  // Count locations per confidence tier (same vocabulary as filter + popup)
+  const tierCounts = new Map<string, number>()
+  for (const loc of locations) {
+    const tier = getConfidenceTier(loc)
+    tierCounts.set(tier, (tierCounts.get(tier) ?? 0) + 1)
+  }
+  const tiers = CONFIDENCE_TIERS.filter((tier) => (tierCounts.get(tier) ?? 0) > 0)
 
   // Count locations per type
   const typeCounts = new Map<string, number>()
@@ -81,6 +95,31 @@ export function MapLegend({ locations }: MapLegendProps) {
             )
           })}
           </div>
+
+          {tiers.length > 0 && (
+            <>
+              <div className="mt-2 px-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Confidence
+              </div>
+              <div className="mt-1 flex flex-col gap-0.5">
+                {tiers.map((tier) => (
+                  <div
+                    key={tier}
+                    className="flex items-center gap-2 rounded px-1.5 py-0.5 text-xs"
+                  >
+                    <div
+                      className="size-2.5 rounded-full"
+                      style={{ backgroundColor: CONFIDENCE_TIER_COLORS[tier] }}
+                    />
+                    <span>{CONFIDENCE_TIER_LABELS[tier]}</span>
+                    <span className="ml-auto text-[10px] text-muted-foreground">
+                      {tierCounts.get(tier)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@
 Graph Router - endpoints for graph visualization data.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from uuid import UUID
 import hashlib
 import json
@@ -25,6 +25,11 @@ from routers.auth import get_current_user
 from routers.case_access import authorize_case, case_access_dependency
 from routers.users import get_current_db_user
 from postgres.session import get_db
+from services.significant_service import get_significant_entity_keys
+from services.significant_service import (
+    restore_significant_entity_after_restore,
+    suspend_significant_entity_for_delete,
+)
 
 _GRAPH_READ_ONLY_POST_PATHS = frozenset(
     {
@@ -67,6 +72,7 @@ class ShortestPathsRequest(BaseModel):
     case_id: str  # REQUIRED: Filter to case-specific paths
     node_keys: List[str]
     max_depth: int = 10
+    scope: Literal["all", "significant"] = "all"
 
 
 class ExpandNodesRequest(BaseModel):
@@ -83,6 +89,7 @@ class PageRankRequest(BaseModel):
     top_n: int = 20  # Number of top influential nodes to return
     iterations: int = 20  # Number of PageRank iterations
     damping_factor: float = 0.85  # Damping factor for PageRank
+    scope: Literal["all", "significant"] = "all"
 
 
 class LouvainRequest(BaseModel):
@@ -91,6 +98,7 @@ class LouvainRequest(BaseModel):
     node_keys: Optional[List[str]] = None  # If None, runs on full graph (filtered by case_id)
     resolution: float = 1.0  # Resolution parameter for modularity (higher = more communities)
     max_iterations: int = 10  # Maximum number of iterations
+    scope: Literal["all", "significant"] = "all"
 
 
 class BetweennessCentralityRequest(BaseModel):
@@ -99,6 +107,7 @@ class BetweennessCentralityRequest(BaseModel):
     node_keys: Optional[List[str]] = None  # If None, runs on full graph (filtered by case_id)
     top_n: int = 20  # Number of top nodes by betweenness centrality to return
     normalized: bool = True  # Whether to normalize the scores
+    scope: Literal["all", "significant"] = "all"
 
 
 class DeleteNodeRequest(BaseModel):
@@ -328,6 +337,11 @@ async def get_graph(
     lightweight: bool = Query(False, description="Return slim payload (key/name/type/confidence/mentioned only)"),
     limit: Optional[int] = Query(None, description="Cap nodes at top-N (requires sort_by)"),
     sort_by: Optional[str] = Query(None, description="Sort criterion when limit is set (e.g. 'degree')"),
+    scope: Literal["all", "significant"] = Query(
+        "all",
+        description="Case layer to project",
+    ),
+    db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
     """
@@ -338,13 +352,24 @@ async def get_graph(
     Pass lightweight=true for a slim response suitable for graph rendering (v2 frontend).
     """
     try:
+        scoped_entity_keys = (
+            get_significant_entity_keys(db, case_id=UUID(case_id))
+            if scope == "significant"
+            else None
+        )
         if lightweight:
             result = neo4j_service.get_graph_structure(
                 case_id=case_id, start_date=start_date, end_date=end_date,
                 limit=limit, sort_by=sort_by,
+                entity_keys=scoped_entity_keys,
             )
         else:
-            result = neo4j_service.get_full_graph(case_id=case_id, start_date=start_date, end_date=end_date)
+            result = neo4j_service.get_full_graph(
+                case_id=case_id,
+                start_date=start_date,
+                end_date=end_date,
+                entity_keys=scoped_entity_keys,
+            )
         
         # Log the filter operation if dates are provided
         if start_date or end_date:
@@ -570,6 +595,8 @@ async def get_graph_summary(
 async def get_entities_with_locations(
     types: Optional[str] = Query(None, description="Comma-separated entity types to filter"),
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
+    scope: Literal["all", "significant"] = Query("all", description="Case layer to project"),
+    db: Session = Depends(get_db),
 ):
     """
     Get all entities that have geocoded locations for map display.
@@ -580,12 +607,55 @@ async def get_entities_with_locations(
         entity_types = None
         if types:
             entity_types = [t.strip() for t in types.split(",")]
-        return neo4j_service.get_entities_with_locations(entity_types, case_id=case_id)
+        scoped_entity_keys = (
+            get_significant_entity_keys(db, case_id=UUID(case_id))
+            if scope == "significant"
+            else None
+        )
+        if scoped_entity_keys is not None:
+            return neo4j_service.get_entities_with_locations(
+                entity_types,
+                case_id=case_id,
+                entity_keys=scoped_entity_keys,
+            )
+        return neo4j_service.get_entities_with_locations(
+            entity_types,
+            case_id=case_id,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/locations/needs-review")
+async def get_locations_needing_review(
+    case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
+    scope: Literal["all", "significant"] = Query("all", description="Case layer to project"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get entities flagged at ingestion with no coordinates so the map review
+    queue can list them alongside low-confidence geocodes.
+    """
+    try:
+        scoped_entity_keys = (
+            get_significant_entity_keys(db, case_id=UUID(case_id))
+            if scope == "significant"
+            else None
+        )
+        if scoped_entity_keys is None:
+            return neo4j_service.get_locations_needing_review(case_id=case_id)
+        return neo4j_service.get_locations_needing_review(
+            case_id=case_id,
+            entity_keys=scoped_entity_keys,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/shortest-paths")
-async def get_shortest_paths_subgraph(request: ShortestPathsRequest):
+async def get_shortest_paths_subgraph(
+    request: ShortestPathsRequest,
+    db: Session = Depends(get_db),
+):
     """
     Get subgraph containing shortest paths between selected nodes.
     
@@ -605,17 +675,34 @@ async def get_shortest_paths_subgraph(request: ShortestPathsRequest):
         )
     
     try:
+        allowed_entity_keys = None
+        if request.scope == "significant":
+            allowed_entity_keys = get_significant_entity_keys(
+                db,
+                case_id=UUID(request.case_id),
+            )
+            if not set(request.node_keys).issubset(allowed_entity_keys):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Shortest-path endpoints must belong to the Significant layer",
+                )
         return neo4j_service.get_shortest_paths_subgraph(
             request.node_keys,
             request.max_depth,
-            case_id=request.case_id
+            case_id=request.case_id,
+            allowed_node_keys=allowed_entity_keys,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/pagerank")
-async def get_pagerank(request: PageRankRequest):
+async def get_pagerank(
+    request: PageRankRequest,
+    db: Session = Depends(get_db),
+):
     """
     Get influential nodes using PageRank algorithm.
     
@@ -645,19 +732,32 @@ async def get_pagerank(request: PageRankRequest):
         )
     
     try:
+        node_keys = request.node_keys if request.node_keys else None
+        induced_only = request.scope == "significant"
+        if induced_only:
+            node_keys = get_significant_entity_keys(
+                db,
+                case_id=UUID(request.case_id),
+            )
+            if not node_keys:
+                return {"results": []}
         return neo4j_service.get_pagerank_subgraph(
-            node_keys=request.node_keys if request.node_keys else None,
+            node_keys=node_keys,
             top_n=request.top_n,
             iterations=request.iterations,
             damping_factor=request.damping_factor,
-            case_id=request.case_id
+            case_id=request.case_id,
+            induced_only=induced_only,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/louvain")
-async def get_louvain_communities(request: LouvainRequest):
+async def get_louvain_communities(
+    request: LouvainRequest,
+    db: Session = Depends(get_db),
+):
     """
     Get communities using Louvain modularity algorithm.
     
@@ -681,18 +781,31 @@ async def get_louvain_communities(request: LouvainRequest):
         )
     
     try:
+        node_keys = request.node_keys if request.node_keys else None
+        induced_only = request.scope == "significant"
+        if induced_only:
+            node_keys = get_significant_entity_keys(
+                db,
+                case_id=UUID(request.case_id),
+            )
+            if not node_keys:
+                return {"communities": []}
         return neo4j_service.get_louvain_communities(
-            node_keys=request.node_keys if request.node_keys else None,
+            node_keys=node_keys,
             resolution=request.resolution,
             max_iterations=request.max_iterations,
-            case_id=request.case_id
+            case_id=request.case_id,
+            induced_only=induced_only,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/betweenness-centrality")
-async def get_betweenness_centrality(request: BetweennessCentralityRequest):
+async def get_betweenness_centrality(
+    request: BetweennessCentralityRequest,
+    db: Session = Depends(get_db),
+):
     """
     Get nodes with highest betweenness centrality.
     
@@ -710,11 +823,21 @@ async def get_betweenness_centrality(request: BetweennessCentralityRequest):
         )
     
     try:
+        node_keys = request.node_keys if request.node_keys else None
+        induced_only = request.scope == "significant"
+        if induced_only:
+            node_keys = get_significant_entity_keys(
+                db,
+                case_id=UUID(request.case_id),
+            )
+            if not node_keys:
+                return {"results": []}
         return neo4j_service.get_betweenness_centrality(
-            node_keys=request.node_keys if request.node_keys else None,
+            node_keys=node_keys,
             top_n=request.top_n,
             normalized=request.normalized,
-            case_id=request.case_id
+            case_id=request.case_id,
+            induced_only=induced_only,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1896,6 +2019,7 @@ async def delete_node(
     case_id: str = Query(..., description="REQUIRED: Verify node belongs to this case"),
     permanent: bool = Query(False, description="If True, permanently delete. If False, move to recycling bin."),
     user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -1912,7 +2036,14 @@ async def delete_node(
     Returns:
         Dict with success status and deletion info
     """
+    membership_suspended = False
     try:
+        membership_suspended = suspend_significant_entity_for_delete(
+            db,
+            case_id=UUID(case_id),
+            entity_key=node_key,
+            current_user=current_user,
+        )
         if permanent:
             result = neo4j_service.delete_node(node_key, case_id=case_id)
             action = "Node Permanently Deleted"
@@ -1950,10 +2081,28 @@ async def delete_node(
 
         return result
     except ValueError as e:
+        if membership_suspended:
+            try:
+                restore_significant_entity_after_restore(
+                    db,
+                    case_id=UUID(case_id),
+                    entity_key=node_key,
+                )
+            except Exception:
+                pass
         message = str(e)
         status_code = 409 if "already exists" in message else 404
         raise HTTPException(status_code=status_code, detail=message)
     except Exception as e:
+        if membership_suspended:
+            try:
+                restore_significant_entity_after_restore(
+                    db,
+                    case_id=UUID(case_id),
+                    entity_key=node_key,
+                )
+            except Exception:
+                pass
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
@@ -1976,6 +2125,7 @@ class UpdateLocationRequest(BaseModel):
     location_name: str
     latitude: float
     longitude: float
+    source_view: Optional[str] = None
 
 
 @router.put("/node/{node_key}/location")
@@ -1983,26 +2133,33 @@ async def update_entity_location(
     node_key: str,
     request: UpdateLocationRequest,
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Update the location of an entity node on the map."""
     try:
-        result = neo4j_service.update_location(
-            node_key=node_key,
+        result = neo4j_service.apply_geocoded_location(
+            node_key,
             case_id=request.case_id,
-            location_name=request.location_name,
+            address=request.location_name,
             latitude=request.latitude,
             longitude=request.longitude,
+            formatted_address=request.location_name,
+            geocoder_confidence=None,
             edited_by=user.get("username", "unknown"),
+            source_view=request.source_view or "legacy_location_endpoint",
+            db=db,
         )
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
-            action="Location Updated",
+            action="Location Corrected",
             details={
                 "node_key": node_key,
                 "location_name": request.location_name,
                 "latitude": request.latitude,
                 "longitude": request.longitude,
+                "source_view": request.source_view or "legacy_location_endpoint",
+                "undo_key": result.get("undo_key"),
             },
             user=user.get("username", "unknown"),
             success=True,
@@ -2154,15 +2311,20 @@ async def get_case_insights(case_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/cases/{case_id}/rescan-locations")
+@router.post(
+    "/cases/{case_id}/rescan-locations",
+    deprecated=True,
+    summary="Deprecated legacy location rescan",
+)
 async def rescan_locations(
     case_id: str,
     force_regeocode: bool = Query(False, description="Re-geocode entities that already have coordinates"),
     user: dict = Depends(get_current_user),
 ):
     """
-    Rescan all document chunks for a case, extract geographic locations
-    using GPT-5.2, geocode them, and link them to graph entities.
+    Deprecated legacy case-wide location rescan.
+
+    Superseded by agentic ingestion-time geocoding and per-node geocoding.
     """
     try:
         result = rescan_case_locations(case_id, force_regeocode=force_regeocode)
@@ -2218,6 +2380,13 @@ async def restore_recycled_entity(
             db=db,
             restored_by=user.get("username", "unknown"),
         )
+        restored_key = (result.get("restored_entity") or {}).get("key")
+        if restored_key:
+            restore_significant_entity_after_restore(
+                db,
+                case_id=UUID(case_id),
+                entity_key=restored_key,
+            )
 
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
@@ -2282,6 +2451,12 @@ async def permanently_delete_recycled(
 class GeocodeNodeRequest(BaseModel):
     case_id: str
     address: str
+    source_view: Optional[str] = None
+
+
+class UndoGeocodeNodeRequest(BaseModel):
+    case_id: str
+    source_view: Optional[str] = None
 
 
 @router.post("/node/{node_key}/geocode")
@@ -2291,6 +2466,7 @@ async def geocode_node(
     body: GeocodeNodeRequest,
     apply: bool = Query(True, description="If true, persist the geocoded location to the node"),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Geocode a single entity address, optionally applying it to the node."""
     from services.geo_rescan_service import geocode_with_cache
@@ -2303,29 +2479,105 @@ async def geocode_node(
         if not result:
             return {"success": False, "error": "Could not geocode address", "address": body.address}
 
+        applied_result = None
         if apply:
-            neo4j_service.update_graph_node(
+            applied_result = neo4j_service.apply_geocoded_location(
                 node_key,
                 case_id=body.case_id,
-                properties={
-                    "latitude": result["latitude"],
-                    "longitude": result["longitude"],
-                    "location_raw": body.address.strip(),
-                    "location_formatted": result["formatted_address"],
-                    "location_name": result["formatted_address"],
-                },
+                address=body.address.strip(),
+                latitude=result["latitude"],
+                longitude=result["longitude"],
+                formatted_address=result["formatted_address"],
+                geocoder_confidence=result.get("confidence"),
+                provider=result.get("provider", "nominatim"),
+                location_granularity=result.get("location_granularity"),
                 edited_by=user.get("username", "unknown"),
-                source_view="map",
+                edited_by_name=user.get("name") or user.get("full_name") or user.get("email"),
+                source_view=body.source_view or "map",
+                db=db,
             )
 
-        return {
+            system_log_service.log(
+                log_type=LogType.GRAPH_OPERATION,
+                origin=LogOrigin.FRONTEND,
+                action="Location Corrected",
+                details={
+                    "case_id": body.case_id,
+                    "node_key": node_key,
+                    "address": body.address.strip(),
+                    "latitude": result["latitude"],
+                    "longitude": result["longitude"],
+                    "formatted_address": result["formatted_address"],
+                    "geocoder_confidence": result.get("confidence"),
+                    "source_view": body.source_view or "map",
+                    "undo_key": applied_result.get("undo_key"),
+                },
+                user=user.get("username", "unknown"),
+                success=True,
+            )
+
+        response = {
             "success": True,
             "latitude": result["latitude"],
             "longitude": result["longitude"],
             "formatted_address": result["formatted_address"],
-            "confidence": result["confidence"],
+            "confidence": applied_result.get("confidence") if applied_result else result["confidence"],
+            "geocoder_confidence": result.get("confidence"),
+            "provider": result.get("provider", "nominatim"),
+            "query": result.get("query", body.address.strip()),
+            "location_granularity": result.get("location_granularity"),
             "applied": apply,
         }
+        if applied_result:
+            response.update(
+                {
+                    "undo_key": applied_result.get("undo_key"),
+                    "corrected_at": applied_result.get("corrected_at"),
+                    "corrected_by": applied_result.get("corrected_by"),
+                    "previous_location": applied_result.get("previous_location"),
+                    "properties": applied_result.get("properties"),
+                }
+            )
+        return response
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/node/{node_key}/geocode/undo")
+@router.post("/nodes/{node_key}/geocode/undo")
+async def undo_geocode_node(
+    node_key: str,
+    body: UndoGeocodeNodeRequest,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Undo the latest applied location correction for a node."""
+    try:
+        result = neo4j_service.undo_location_relocation(
+            node_key,
+            case_id=body.case_id,
+            edited_by=user.get("username", "unknown"),
+            source_view=body.source_view or "map",
+            db=db,
+        )
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Location Correction Undone",
+            details={
+                "case_id": body.case_id,
+                "node_key": node_key,
+                "source_view": body.source_view or "map",
+                "undo_key": result.get("undo_key"),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        return result
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:

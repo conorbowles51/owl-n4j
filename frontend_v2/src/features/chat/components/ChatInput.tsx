@@ -17,6 +17,7 @@ import type { EntityType } from "@/lib/theme"
 import { llmConfigAPI } from "@/features/evidence/api"
 import type { LLMModel } from "@/types/evidence.types"
 import type { ChatScope } from "../types"
+import type { CaseLayer } from "@/features/significant/types"
 
 interface ContextNode {
   key: string
@@ -36,6 +37,7 @@ interface ChatInputProps {
   contextNodes: ContextNode[]
   contextDocument?: string | null
   suggestions: string[]
+  caseLayer: CaseLayer
   isReadOnly?: boolean
 }
 
@@ -48,13 +50,16 @@ export function ChatInput({
   contextNodes,
   contextDocument,
   suggestions,
+  caseLayer,
   isReadOnly = false,
 }: ChatInputProps) {
   const [input, setInput] = useState("")
   const [models, setModels] = useState<LLMModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState(DEFAULT_MODEL)
   const [selectedProvider, setSelectedProvider] = useState(DEFAULT_PROVIDER)
-  const [scope, setScope] = useState<ChatScope>("case_overview")
+  const [scope, setScope] = useState<ChatScope>(
+    caseLayer === "significant" ? "significant" : "case_overview"
+  )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modelsLoaded = useRef(false)
 
@@ -84,10 +89,19 @@ export function ChatInput({
 
   const handleSend = useCallback(() => {
     const trimmed = input.trim()
-    if (!trimmed || isLoading) return
+    if (
+      !trimmed ||
+      isLoading ||
+      (scope === "selection" && contextNodes.length === 0)
+    ) return
     const viewContext = {
       view: "Chat",
-      label: scope === "selection" ? "Selected entities" : "Case overview",
+      label:
+        scope === "selection"
+          ? "Selected entities"
+          : scope === "significant"
+            ? "Significant layer"
+            : "All case data",
       selections: {
         entities: contextNodes.map((node) => ({
           key: node.key,
@@ -139,7 +153,19 @@ export function ChatInput({
             )}
             onClick={() => setScope("case_overview")}
           >
-            Case Overview
+            All Case Data
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+              scope === "significant"
+                ? "bg-amber-500/15 text-amber-800 shadow-sm dark:text-amber-200"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setScope("significant")}
+          >
+            Significant
           </button>
           <button
             type="button"
@@ -156,7 +182,7 @@ export function ChatInput({
         </div>
         {scope === "selection" && contextNodes.length === 0 && (
           <span className="text-xs text-amber-600 dark:text-amber-400">
-            No entities selected. The chat will fall back to case overview.
+            Select at least one entity to use this scope.
           </span>
         )}
       </div>
@@ -237,7 +263,11 @@ export function ChatInput({
           variant="primary"
           size="icon-sm"
           onClick={handleSend}
-          disabled={!input.trim() || isLoading}
+          disabled={
+            !input.trim() ||
+            isLoading ||
+            (scope === "selection" && contextNodes.length === 0)
+          }
           className="shrink-0"
         >
           <Send className="size-3.5" />
