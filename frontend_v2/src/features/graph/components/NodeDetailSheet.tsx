@@ -30,8 +30,11 @@ import {
 import { graphAPI } from "../api"
 import {
   getConfidenceTier,
+  confidencePercent,
+  getLocationSpecificity,
   CONFIDENCE_TIER_LABELS,
   CONFIDENCE_TIER_BADGE_VARIANTS,
+  LOCATION_SPECIFICITY_LABELS,
 } from "@/lib/location-confidence"
 import { evidenceAPI } from "@/features/evidence/api"
 import type { GraphData } from "@/types/graph.types"
@@ -202,6 +205,29 @@ export function NodeDetailSheet({
               </Badge>
             )}
           </div>
+          {properties.latitude !== undefined && (
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              {confidencePercent({
+                geocoding_confidence: properties.geocoding_confidence as
+                  | string
+                  | undefined,
+                geocoding_confidence_score: properties.geocoding_confidence_score as
+                  | number
+                  | undefined,
+                manual_fields: properties.manual_fields as string[] | undefined,
+              })}
+              % confidence ·{" "}
+              {
+                LOCATION_SPECIFICITY_LABELS[
+                  getLocationSpecificity({
+                    location_specificity: properties.location_specificity as
+                      | string
+                      | undefined,
+                  })
+                ]
+              }
+            </p>
+          )}
           {Array.isArray(detail.properties.aliases) &&
             (detail.properties.aliases as unknown[]).length > 0 && (
               <p className="mt-0.5 truncate text-[11px] italic text-muted-foreground">

@@ -69,7 +69,9 @@ class GeoService:
                     n.location_raw AS location_raw,
                     n.location_formatted AS location_formatted,
                     n.geocoding_confidence AS geocoding_confidence,
+                    n.geocoding_confidence_score AS geocoding_confidence_score,
                     n.geocoding_status AS geocoding_status,
+                    n.location_specificity AS location_specificity,
                     n.manual_fields AS manual_fields,
                     n.summary AS summary,
                     n.date AS date,
@@ -90,7 +92,9 @@ class GeoService:
                     "location_raw": record["location_raw"],
                     "location_formatted": record["location_formatted"],
                     "geocoding_confidence": record["geocoding_confidence"],
+                    "geocoding_confidence_score": record["geocoding_confidence_score"],
                     "geocoding_status": record["geocoding_status"],
+                    "location_specificity": record["location_specificity"],
                     "manual_fields": record["manual_fields"] or [],
                     "summary": record["summary"],
                     "date": record["date"],
@@ -124,6 +128,7 @@ class GeoService:
                     n.location_raw AS location_raw,
                     n.geocoding_status AS geocoding_status,
                     n.geocoding_confidence AS geocoding_confidence,
+                    n.location_specificity AS location_specificity,
                     n.manual_fields AS manual_fields
                 ORDER BY n.name
             """
@@ -136,6 +141,7 @@ class GeoService:
                     "location_raw": record["location_raw"],
                     "geocoding_status": record["geocoding_status"],
                     "geocoding_confidence": record["geocoding_confidence"],
+                    "location_specificity": record["location_specificity"],
                     "manual_fields": record["manual_fields"] or [],
                 }
                 for record in result
@@ -175,7 +181,7 @@ class GeoService:
                 """
                 MATCH (n {key: $key, case_id: $case_id})
                 REMOVE n.latitude, n.longitude, n.location_name, n.location_formatted,
-                       n.location_raw, n.geocoding_confidence
+                       n.location_raw, n.geocoding_confidence, n.geocoding_confidence_score
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
                 """,
                 key=node_key,
@@ -213,6 +219,7 @@ class GeoService:
         longitude: float,
         location_formatted: str,
         geocoding_confidence: str,
+        geocoding_confidence_score: Optional[float] = None,
     ) -> Dict:
         """Set all location properties on an entity node."""
         with driver.session() as session:
@@ -225,7 +232,8 @@ class GeoService:
                     n.location_formatted = $location_formatted,
                     n.location_name = $location_formatted,
                     n.geocoding_status = 'success',
-                    n.geocoding_confidence = $geocoding_confidence
+                    n.geocoding_confidence = $geocoding_confidence,
+                    n.geocoding_confidence_score = $geocoding_confidence_score
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
                 """,
                 key=node_key,
@@ -235,6 +243,7 @@ class GeoService:
                 longitude=longitude,
                 location_formatted=location_formatted,
                 geocoding_confidence=geocoding_confidence,
+                geocoding_confidence_score=geocoding_confidence_score,
             )
             record = result.single()
             return dict(record) if record else {}
@@ -247,6 +256,7 @@ class GeoService:
         longitude: float,
         location_formatted: str,
         geocoding_confidence: str,
+        geocoding_confidence_score: Optional[float] = None,
         context: str = "",
     ) -> Optional[str]:
         """Create a new Location node in the graph and return its key."""
@@ -266,6 +276,7 @@ class GeoService:
                     location_name: $location_formatted,
                     geocoding_status: 'success',
                     geocoding_confidence: $geocoding_confidence,
+                    geocoding_confidence_score: $geocoding_confidence_score,
                     summary: $context,
                     source: 'geo_rescan'
                 })
@@ -278,6 +289,7 @@ class GeoService:
                 longitude=longitude,
                 location_formatted=location_formatted,
                 geocoding_confidence=geocoding_confidence,
+                geocoding_confidence_score=geocoding_confidence_score,
                 context=context,
             )
             record = result.single()

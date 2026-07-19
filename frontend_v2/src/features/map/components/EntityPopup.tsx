@@ -6,8 +6,11 @@ import { Badge } from "@/components/ui/badge"
 import { markdownToPlainText } from "@/lib/markdown-text"
 import {
   getConfidenceTier,
+  confidencePercent,
+  getLocationSpecificity,
   CONFIDENCE_TIER_LABELS,
   CONFIDENCE_TIER_BADGE_VARIANTS,
+  LOCATION_SPECIFICITY_LABELS,
 } from "@/lib/location-confidence"
 import type { MapLocation } from "../hooks/use-map-data"
 import type { EntityType } from "@/lib/theme"
@@ -59,6 +62,12 @@ export function EntityPopup({
             {CONFIDENCE_TIER_LABELS[getConfidenceTier(location)]}
           </Badge>
         </div>
+
+        {/* Confidence % + specificity (same vocabulary as filter + legend) */}
+        <p className="text-[10px] text-muted-foreground">
+          {confidencePercent(location)}% confidence ·{" "}
+          {LOCATION_SPECIFICITY_LABELS[getLocationSpecificity(location)]}
+        </p>
 
         {/* Location info */}
         {location.location_formatted && (

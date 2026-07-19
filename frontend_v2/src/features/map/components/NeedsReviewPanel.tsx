@@ -6,7 +6,10 @@ import { useMapReviewQueue, type MapLocation } from "../hooks/use-map-data"
 import {
   CONFIDENCE_TIER_BADGE_VARIANTS,
   CONFIDENCE_TIER_LABELS,
+  LOCATION_SPECIFICITY_LABELS,
+  confidencePercent,
   getConfidenceTier,
+  getLocationSpecificity,
   needsReview,
   reviewReason,
 } from "@/lib/location-confidence"
@@ -69,6 +72,10 @@ export function NeedsReviewPanel({ caseId, locations }: NeedsReviewPanelProps) {
             <span className="truncate text-[10px] text-muted-foreground">
               {reviewReason(loc)}
               {loc.location_raw ? ` - "${loc.location_raw}"` : ""}
+            </span>
+            <span className="truncate text-[10px] text-muted-foreground">
+              {confidencePercent(loc)}% confidence ·{" "}
+              {LOCATION_SPECIFICITY_LABELS[getLocationSpecificity(loc)]}
             </span>
           </button>
         ))}

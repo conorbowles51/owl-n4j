@@ -12,7 +12,9 @@ export interface MapLocation {
   location_raw?: string
   location_formatted?: string
   geocoding_confidence?: string
+  geocoding_confidence_score?: number
   geocoding_status?: string
+  location_specificity?: string
   manual_fields?: string[]
   summary?: string
   date?: string
@@ -29,7 +31,9 @@ interface RawMapLocation {
   location_raw?: string
   location_formatted?: string
   geocoding_confidence?: string
+  geocoding_confidence_score?: number
   geocoding_status?: string
+  location_specificity?: string
   manual_fields?: string[]
   summary?: string
   date?: string
@@ -62,6 +66,7 @@ export interface ReviewQueueItem {
   location_raw?: string
   geocoding_status?: string
   geocoding_confidence?: string
+  location_specificity?: string
   manual_fields?: string[]
 }
 

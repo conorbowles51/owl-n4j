@@ -35,11 +35,13 @@ def _get_cached_geocode(cache_key: str) -> tuple[bool, Optional[Dict]]:
             return False, None
         if entry.status == "failed":
             return True, None
+        raw = entry.raw_response if isinstance(entry.raw_response, dict) else {}
         return True, {
             "latitude": entry.latitude,
             "longitude": entry.longitude,
             "formatted_address": entry.formatted_address,
             "confidence": entry.confidence,
+            "confidence_score": raw.get("confidence_score"),
         }
 
 
@@ -104,6 +106,9 @@ def geocode_with_cache(location: str) -> Optional[Dict]:
             "longitude": float(r["lon"]),
             "formatted_address": r.get("display_name", location),
             "confidence": confidence,
+            # Raw provider importance, kept so the map can show a 0-100% scale
+            # instead of only the high/medium/low bucket.
+            "confidence_score": importance,
         }
         _save_geocode_cache(cache_key, location, result)
         return result
@@ -292,6 +297,7 @@ def rescan_case_locations(
             loc["longitude"] = result["longitude"]
             loc["formatted_address"] = result["formatted_address"]
             loc["geocoding_confidence"] = result["confidence"]
+            loc["geocoding_confidence_score"] = result.get("confidence_score")
             geocoded.append(loc)
         else:
             failed_geocode.append(place)
@@ -317,6 +323,7 @@ def rescan_case_locations(
         lng = loc["longitude"]
         formatted = loc.get("formatted_address", place)
         confidence = loc.get("geocoding_confidence", "medium")
+        confidence_score = loc.get("geocoding_confidence_score")
         context = loc.get("context", "")
         associated = loc.get("associated_entities", [])
 
@@ -335,6 +342,7 @@ def rescan_case_locations(
                     longitude=lng,
                     location_formatted=formatted,
                     geocoding_confidence=confidence,
+                    geocoding_confidence_score=confidence_score,
                 )
                 entities_updated += 1
         else:
@@ -346,6 +354,7 @@ def rescan_case_locations(
                 longitude=lng,
                 location_formatted=formatted,
                 geocoding_confidence=confidence,
+                geocoding_confidence_score=confidence_score,
                 context=context,
             )
             if node_key:

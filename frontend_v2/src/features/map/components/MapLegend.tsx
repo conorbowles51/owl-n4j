@@ -19,8 +19,6 @@ export function MapLegend({ locations }: MapLegendProps) {
   const [filter, setFilter] = useState("")
   const hiddenTypes = useMapStore((s) => s.hiddenTypes)
   const toggleType = useMapStore((s) => s.toggleType)
-  const hiddenConfidenceTiers = useMapStore((s) => s.hiddenConfidenceTiers)
-  const toggleConfidenceTier = useMapStore((s) => s.toggleConfidenceTier)
 
   // Count locations per confidence tier (same vocabulary as filter + popup)
   const tierCounts = new Map<string, number>()
@@ -104,31 +102,21 @@ export function MapLegend({ locations }: MapLegendProps) {
                 Confidence
               </div>
               <div className="mt-1 flex flex-col gap-0.5">
-                {tiers.map((tier) => {
-                  const isHidden = hiddenConfidenceTiers.has(tier)
-                  return (
-                    <button
-                      key={tier}
-                      onClick={() => toggleConfidenceTier(tier)}
-                      className="flex items-center gap-2 rounded px-1.5 py-0.5 text-xs hover:bg-muted"
-                      style={{ opacity: isHidden ? 0.4 : 1 }}
-                    >
-                      <div
-                        className="size-2.5 rounded-full"
-                        style={{ backgroundColor: CONFIDENCE_TIER_COLORS[tier] }}
-                      />
-                      <span>{CONFIDENCE_TIER_LABELS[tier]}</span>
-                      <span className="ml-auto text-[10px] text-muted-foreground">
-                        {tierCounts.get(tier)}
-                      </span>
-                      {isHidden ? (
-                        <EyeOff className="size-3 text-muted-foreground" />
-                      ) : (
-                        <Eye className="size-3 text-muted-foreground" />
-                      )}
-                    </button>
-                  )
-                })}
+                {tiers.map((tier) => (
+                  <div
+                    key={tier}
+                    className="flex items-center gap-2 rounded px-1.5 py-0.5 text-xs"
+                  >
+                    <div
+                      className="size-2.5 rounded-full"
+                      style={{ backgroundColor: CONFIDENCE_TIER_COLORS[tier] }}
+                    />
+                    <span>{CONFIDENCE_TIER_LABELS[tier]}</span>
+                    <span className="ml-auto text-[10px] text-muted-foreground">
+                      {tierCounts.get(tier)}
+                    </span>
+                  </div>
+                ))}
               </div>
             </>
           )}

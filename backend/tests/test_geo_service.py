@@ -32,6 +32,7 @@ class GeoServiceReviewQueueTests(unittest.TestCase):
                 "location_raw": "warehouse",
                 "geocoding_status": "ambiguous",
                 "geocoding_confidence": None,
+                "location_specificity": "unknown",
                 "manual_fields": None,
             }
         ]
@@ -57,6 +58,7 @@ class GeoServiceReviewQueueTests(unittest.TestCase):
                     "location_raw": "warehouse",
                     "geocoding_status": "ambiguous",
                     "geocoding_confidence": None,
+                    "location_specificity": "unknown",
                     "manual_fields": [],
                 }
             ],

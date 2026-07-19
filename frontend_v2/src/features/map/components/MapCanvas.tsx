@@ -13,7 +13,7 @@ import {
   proximityFillLayer,
   proximityOutlineLayer,
 } from "../lib/map-styles"
-import { getConfidenceTier, needsReview } from "@/lib/location-confidence"
+import { matchesLocationFilters, needsReview } from "@/lib/location-confidence"
 import { EntityPopup } from "./EntityPopup"
 import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
 
@@ -32,7 +32,10 @@ export function MapCanvas({ locations }: MapCanvasProps) {
 
   const showHeatmap = useMapStore((s) => s.showHeatmap)
   const hiddenTypes = useMapStore((s) => s.hiddenTypes)
-  const hiddenConfidenceTiers = useMapStore((s) => s.hiddenConfidenceTiers)
+  const confidenceThreshold = useMapStore((s) => s.confidenceThreshold)
+  const confidenceDirection = useMapStore((s) => s.confidenceDirection)
+  const specificityThreshold = useMapStore((s) => s.specificityThreshold)
+  const specificityDirection = useMapStore((s) => s.specificityDirection)
   const needsReviewMode = useMapStore((s) => s.needsReviewMode)
   const proximityMode = useMapStore((s) => s.proximityMode)
   const proximityAnchorKey = useMapStore((s) => s.proximityAnchorKey)
@@ -54,9 +57,22 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       locations.filter((l) => {
         if (hiddenTypes.has(l.type)) return false
         if (needsReviewMode) return needsReview(l)
-        return !hiddenConfidenceTiers.has(getConfidenceTier(l))
+        return matchesLocationFilters(l, {
+          confidenceThreshold,
+          confidenceDirection,
+          specificityThreshold,
+          specificityDirection,
+        })
       }),
-    [locations, hiddenTypes, hiddenConfidenceTiers, needsReviewMode]
+    [
+      locations,
+      hiddenTypes,
+      confidenceThreshold,
+      confidenceDirection,
+      specificityThreshold,
+      specificityDirection,
+      needsReviewMode,
+    ]
   )
   const geojson = useMemo(
     () => locationsToGeoJSON(visibleLocations),
