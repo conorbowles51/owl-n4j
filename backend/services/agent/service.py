@@ -33,6 +33,7 @@ import services.agent.storage as storage
 from services.ai_costs_service import CostOperationKind, record_cost
 from services.case_service import check_case_access
 from services.system_log_service import LogOrigin, LogType, system_log_service
+from services.significant_service import get_significant_entity_keys
 
 
 DEFAULT_AGENT_MAX_TOOL_CALLS = 28
@@ -50,6 +51,11 @@ class AgentService:
             raise ValueError("Ephemeral agent runs are not supported yet")
 
         check_case_access(db, request.case_id, user, required_permission=("case", "view"))
+        allowed_entity_keys = (
+            get_significant_entity_keys(db, case_id=request.case_id)
+            if request.case_layer == "significant"
+            else None
+        )
 
         model = get_model_by_id(request.model)
         if not model:
@@ -72,7 +78,10 @@ class AgentService:
             provider=provider,
             model_id=model.id,
             input_message=request.message,
-            extra_metadata={"artifact_preference": request.artifact_preference},
+            extra_metadata={
+                "artifact_preference": request.artifact_preference,
+                "case_layer": request.case_layer,
+            },
         )
         db.commit()
         db.refresh(thread)
@@ -100,7 +109,11 @@ class AgentService:
             },
         }
 
-        history = self._build_history(db, thread=thread)
+        history = (
+            [HumanMessage(content=request.message)]
+            if request.case_layer == "significant"
+            else self._build_history(db, thread=thread)
+        )
         runner = AgentGraphRunner(provider=provider, model_id=model.id)
         final_result: dict[str, Any] | None = None
 
@@ -111,8 +124,13 @@ class AgentService:
                 artifact_preference=request.artifact_preference,
                 max_tool_calls=DEFAULT_AGENT_MAX_TOOL_CALLS,
                 thread_id=str(thread.id),
-                available_artifacts=self._available_artifacts_for_runner(thread),
+                available_artifacts=(
+                    []
+                    if request.case_layer == "significant"
+                    else self._available_artifacts_for_runner(thread)
+                ),
                 should_cancel=lambda: is_cancelled(run_id),
+                allowed_entity_keys=allowed_entity_keys,
             ):
                 if event.get("type") == "final":
                     final_result = event.get("result") or {}
@@ -289,6 +307,11 @@ class AgentService:
             raise ValueError("Ephemeral agent runs are not supported yet")
 
         check_case_access(db, request.case_id, user, required_permission=("case", "view"))
+        allowed_entity_keys = (
+            get_significant_entity_keys(db, case_id=request.case_id)
+            if request.case_layer == "significant"
+            else None
+        )
 
         model = get_model_by_id(request.model)
         if not model:
@@ -314,7 +337,10 @@ class AgentService:
             provider=provider,
             model_id=model.id,
             input_message=request.message,
-            extra_metadata={"artifact_preference": request.artifact_preference},
+            extra_metadata={
+                "artifact_preference": request.artifact_preference,
+                "case_layer": request.case_layer,
+            },
         )
         db.flush()
         self._log_agent_event(
@@ -325,7 +351,11 @@ class AgentService:
             details={"thread_id": str(thread.id), "streaming": False},
         )
 
-        history = self._build_history(db, thread=thread)
+        history = (
+            [HumanMessage(content=request.message)]
+            if request.case_layer == "significant"
+            else self._build_history(db, thread=thread)
+        )
         runner = AgentGraphRunner(provider=provider, model_id=model.id)
 
         try:
@@ -335,7 +365,12 @@ class AgentService:
                 artifact_preference=request.artifact_preference,
                 max_tool_calls=DEFAULT_AGENT_MAX_TOOL_CALLS,
                 thread_id=str(thread.id),
-                available_artifacts=self._available_artifacts_for_runner(thread),
+                available_artifacts=(
+                    []
+                    if request.case_layer == "significant"
+                    else self._available_artifacts_for_runner(thread)
+                ),
+                allowed_entity_keys=allowed_entity_keys,
             )
             runner_clarification = self._clarification_from_runner(
                 result.get("clarification"),

@@ -1,5 +1,6 @@
 import { nodeColors, typeAliases } from "@/lib/theme"
 import type { LayerProps } from "react-map-gl/maplibre"
+import type { FilterSpecification } from "maplibre-gl"
 
 /** Entity type → color match expression for MapLibre */
 const entityColorMatch: unknown[] = [
@@ -10,9 +11,48 @@ const entityColorMatch: unknown[] = [
   "#667D85", // fallback
 ]
 
+const exactLocationFilter: FilterSpecification = ["!=", ["get", "isApproximate"], true]
+const approximateLocationFilter: FilterSpecification = ["==", ["get", "isApproximate"], true]
+
+// MapLibre only allows ["zoom"] as the input of a top-level "interpolate"/"step",
+// so the granularity branch must sit inside each stop's output, not wrap the interpolate.
+const isCityGranularity = ["==", ["get", "locationGranularity"], "city"]
+const approximateRadius = [
+  "interpolate", ["linear"], ["zoom"],
+  0, ["case", isCityGranularity, 18, 10],
+  8, ["case", isCityGranularity, 34, 22],
+  14, ["case", isCityGranularity, 64, 38],
+]
+
+export const approximateLocationAreaLayer: LayerProps = {
+  id: "approximate-location-area",
+  type: "circle",
+  filter: approximateLocationFilter,
+  paint: {
+    "circle-color": entityColorMatch as unknown as string,
+    "circle-radius": approximateRadius as unknown as number,
+    "circle-blur": 0.75,
+    "circle-opacity": 0.28,
+  },
+}
+
+export const approximateLocationOutlineLayer: LayerProps = {
+  id: "approximate-location-outline",
+  type: "circle",
+  filter: approximateLocationFilter,
+  paint: {
+    "circle-color": "transparent",
+    "circle-radius": approximateRadius as unknown as number,
+    "circle-stroke-color": entityColorMatch as unknown as string,
+    "circle-stroke-width": 1.5,
+    "circle-stroke-opacity": 0.58,
+  },
+}
+
 export const pointLayer: LayerProps = {
   id: "unclustered-point",
   type: "circle",
+  filter: exactLocationFilter,
   paint: {
     "circle-color": entityColorMatch as unknown as string,
     "circle-radius": [
@@ -30,6 +70,7 @@ export const pointLayer: LayerProps = {
 export const pointSelectedLayer: LayerProps = {
   id: "unclustered-point-selected",
   type: "circle",
+  filter: exactLocationFilter,
   paint: {
     "circle-color": "transparent",
     "circle-radius": 12,
@@ -78,5 +119,86 @@ export const proximityOutlineLayer: LayerProps = {
     "line-width": 2,
     "line-dasharray": [3, 2],
     "line-opacity": 0.6,
+  },
+}
+
+export const boundingShapeFillLayer: LayerProps = {
+  id: "bounding-shape-fill",
+  type: "fill",
+  paint: {
+    "fill-color": "#B7791F",
+    "fill-opacity": 0.12,
+  },
+}
+
+export const boundingShapeOutlineLayer: LayerProps = {
+  id: "bounding-shape-outline",
+  type: "line",
+  paint: {
+    "line-color": "#B7791F",
+    "line-width": 2,
+    "line-opacity": 0.85,
+  },
+}
+
+export const draftBoundingShapeFillLayer: LayerProps = {
+  id: "draft-bounding-shape-fill",
+  type: "fill",
+  paint: {
+    "fill-color": "#B7791F",
+    "fill-opacity": 0.07,
+  },
+}
+
+export const draftBoundingShapeOutlineLayer: LayerProps = {
+  id: "draft-bounding-shape-outline",
+  type: "line",
+  paint: {
+    "line-color": "#B7791F",
+    "line-width": 2,
+    "line-dasharray": [3, 2],
+    "line-opacity": 0.65,
+  },
+}
+
+export const drawingShapeFillLayer: LayerProps = {
+  id: "drawing-shape-fill",
+  type: "fill",
+  paint: {
+    "fill-color": "#B7791F",
+    "fill-opacity": 0.08,
+  },
+}
+
+export const drawingShapeOutlineLayer: LayerProps = {
+  id: "drawing-shape-outline",
+  type: "line",
+  paint: {
+    "line-color": "#B7791F",
+    "line-width": 2,
+    "line-dasharray": [2, 2],
+    "line-opacity": 0.8,
+  },
+}
+
+export const drawingLineLayer: LayerProps = {
+  id: "drawing-shape-line",
+  type: "line",
+  paint: {
+    "line-color": "#B7791F",
+    "line-width": 2,
+    "line-dasharray": [2, 2],
+    "line-opacity": 0.8,
+  },
+}
+
+export const drawingPointLayer: LayerProps = {
+  id: "drawing-shape-point",
+  type: "circle",
+  paint: {
+    "circle-color": "#ffffff",
+    "circle-radius": 5,
+    "circle-stroke-color": "#B7791F",
+    "circle-stroke-width": 2,
   },
 }

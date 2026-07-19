@@ -62,10 +62,18 @@ export const chatAPI = {
       timeout: 120000,
     }),
 
-  getSuggestions: (caseId: string, selectedEntityKeys?: string[]) =>
+  getSuggestions: (
+    caseId: string,
+    scope: ChatScope = "case_overview",
+    selectedEntityKeys?: string[]
+  ) =>
     fetchAPI<ChatSuggestionsResponse>("/api/chat/suggestions", {
       method: "POST",
-      body: { case_id: caseId, selected_entity_keys: selectedEntityKeys },
+      body: {
+        case_id: caseId,
+        scope,
+        selected_entity_keys: selectedEntityKeys,
+      },
     }).then((res) => res.suggestions),
 }
 

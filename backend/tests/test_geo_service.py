@@ -64,6 +64,35 @@ class GeoServiceReviewQueueTests(unittest.TestCase):
             ],
         )
 
+    def test_needs_review_query_can_be_scoped_to_significant_keys(self):
+        captured = {}
+
+        with patch(
+            "services.neo4j.geo_service.driver.session",
+            return_value=_FakeSession(captured, []),
+        ):
+            result = GeoService().get_locations_needing_review(
+                "case-1",
+                entity_keys=["loc-1", "loc-1", "loc-2"],
+            )
+
+        self.assertEqual(result, [])
+        self.assertEqual(
+            captured["params"],
+            {"case_id": "case-1", "entity_keys": ["loc-1", "loc-2"]},
+        )
+        self.assertIn("n.key IN $entity_keys", captured["query"])
+
+    def test_needs_review_query_skips_neo4j_for_empty_significant_layer(self):
+        with patch("services.neo4j.geo_service.driver.session") as session:
+            result = GeoService().get_locations_needing_review(
+                "case-1",
+                entity_keys=[],
+            )
+
+        self.assertEqual(result, [])
+        session.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

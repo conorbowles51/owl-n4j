@@ -1,5 +1,17 @@
-import type { MapLocation } from "../hooks/use-map-data"
-import type { Feature, FeatureCollection, Point, Polygon } from "geojson"
+import {
+  coordinatePrecisionForLocation,
+  isApproximateLocation,
+  type MapLocation,
+} from "../hooks/use-map-data"
+import type { BoundingShape } from "../stores/map.store"
+import { closeRing, type LngLatPoint } from "./geometry"
+import type {
+  Feature,
+  FeatureCollection,
+  LineString,
+  Point,
+  Polygon,
+} from "geojson"
 
 export interface LocationProperties {
   key: string
@@ -8,6 +20,12 @@ export interface LocationProperties {
   locationRaw?: string
   locationFormatted?: string
   geocodingConfidence?: string
+  geocodingProvider?: string | null
+  geocodingQuery?: string | null
+  geocodingFormattedAddress?: string | null
+  locationGranularity?: string | null
+  isApproximate: boolean
+  displayCoordinatePrecision: number
   summary?: string
   date?: string
   connectionCount: number
@@ -32,6 +50,12 @@ export function locationsToGeoJSON(
           locationRaw: loc.location_raw,
           locationFormatted: loc.location_formatted,
           geocodingConfidence: loc.geocoding_confidence,
+          geocodingProvider: loc.geocoding_provider,
+          geocodingQuery: loc.geocoding_query,
+          geocodingFormattedAddress: loc.geocoding_formatted_address,
+          locationGranularity: loc.location_granularity,
+          isApproximate: isApproximateLocation(loc),
+          displayCoordinatePrecision: coordinatePrecisionForLocation(loc),
           summary: loc.summary,
           date: loc.date,
           connectionCount: loc.connections?.length ?? 0,
@@ -65,5 +89,67 @@ export function createCircleGeoJSON(
         properties: {},
       },
     ],
+  }
+}
+
+export function boundingShapesToGeoJSON(
+  shapes: BoundingShape[]
+): FeatureCollection<Polygon, { id: string }> {
+  return {
+    type: "FeatureCollection",
+    features: shapes.map(
+      (shape): Feature<Polygon, { id: string }> => ({
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [shape.coordinates] },
+        properties: { id: shape.id },
+      })
+    ),
+  }
+}
+
+export function drawingLineToGeoJSON(
+  points: LngLatPoint[]
+): FeatureCollection<LineString> | null {
+  if (points.length < 2) return null
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: points },
+        properties: {},
+      },
+    ],
+  }
+}
+
+export function drawingPolygonPreviewToGeoJSON(
+  points: LngLatPoint[]
+): FeatureCollection<Polygon> | null {
+  if (points.length < 3) return null
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [closeRing(points)] },
+        properties: {},
+      },
+    ],
+  }
+}
+
+export function drawingPointsToGeoJSON(
+  points: LngLatPoint[]
+): FeatureCollection<Point, { index: number }> {
+  return {
+    type: "FeatureCollection",
+    features: points.map(
+      (point, index): Feature<Point, { index: number }> => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: point },
+        properties: { index },
+      })
+    ),
   }
 }

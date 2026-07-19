@@ -109,6 +109,7 @@ class TimelineService:
         start_date: Optional[str],
         end_date: Optional[str],
         case_id: str,
+        entity_keys: Optional[List[str]] = None,
     ) -> tuple[str, Dict]:
         conditions = [
             "sort_date IS NOT NULL",
@@ -117,6 +118,10 @@ class TimelineService:
             "n.case_id = $case_id",
         ]
         params: Dict = {"case_id": case_id}
+
+        if entity_keys is not None:
+            conditions.append("n.key IN $entity_keys")
+            params["entity_keys"] = entity_keys
 
         if event_types:
             conditions.append("labels(n)[0] IN $types")
@@ -169,6 +174,7 @@ class TimelineService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         case_id: str = None,
+        entity_keys: Optional[List[str]] = None,
     ) -> List[Dict]:
         """Backward-compatible full timeline fetch."""
         page = self.get_timeline_page(
@@ -176,6 +182,7 @@ class TimelineService:
             start_date=start_date,
             end_date=end_date,
             case_id=case_id,
+            entity_keys=entity_keys,
             limit=10000,
             cursor=None,
         )
@@ -189,10 +196,24 @@ class TimelineService:
         case_id: str = None,
         limit: int = 500,
         cursor: str | None = None,
+        entity_keys: Optional[List[str]] = None,
     ) -> Dict:
         """Get timeline events using stable keyset pagination."""
         limit = max(1, min(int(limit or 500), 2000))
-        where_clause, params = self._build_filters(event_types, start_date, end_date, case_id)
+        if entity_keys is not None:
+            entity_keys = list(dict.fromkeys(entity_keys))
+            if not entity_keys:
+                return {"events": [], "count": 0, "total": 0, "next_cursor": None}
+        where_clause, params = self._build_filters(
+            event_types,
+            start_date,
+            end_date,
+            case_id,
+            entity_keys,
+        )
+        connected_scope_filter = (
+            "AND connected.key IN $entity_keys" if entity_keys is not None else ""
+        )
 
         cursor_payload = self._decode_cursor(cursor)
         if cursor_payload:
@@ -233,6 +254,7 @@ class TimelineService:
               NONE(label IN labels(connected) WHERE label IN ['Document', 'Case', 'RecycleBin', 'RecycleBinItem'])
               AND coalesce(properties(connected)['system_node'], false) <> true
               AND connected.case_id = $case_id
+              {connected_scope_filter}
             )
             WITH n, sort_date, sort_time, collect(DISTINCT {{
                 key: connected.key,
@@ -255,7 +277,13 @@ class TimelineService:
             LIMIT $limit
         """
 
-        count_where, count_params = self._build_filters(event_types, start_date, end_date, case_id)
+        count_where, count_params = self._build_filters(
+            event_types,
+            start_date,
+            end_date,
+            case_id,
+            entity_keys,
+        )
         count_query = f"""
             MATCH (n)
             WITH

@@ -6,6 +6,7 @@ import type {
   AgentThreadDetail,
   AgentThreadSummary,
 } from "./types"
+import type { CaseLayer } from "@/features/significant/types"
 
 export type AgentArtifactExportFormat = "csv" | "pdf" | "docx"
 
@@ -16,6 +17,7 @@ export interface SendAgentMessageParams {
   artifactPreference?: "auto" | "none" | "graph" | "table" | "map" | "report" | "chart"
   provider?: string
   model?: string
+  caseLayer?: CaseLayer
 }
 
 const AGENT_DEFAULTS = {
@@ -40,6 +42,7 @@ export const agentAPI = {
         provider: params.provider || AGENT_DEFAULTS.provider,
         model: params.model || AGENT_DEFAULTS.model,
         artifact_preference: params.artifactPreference || "auto",
+        case_layer: params.caseLayer || "all",
         persist: true,
       },
       timeout: 240000,
@@ -64,6 +67,7 @@ export const agentAPI = {
         provider: params.provider || AGENT_DEFAULTS.provider,
         model: params.model || AGENT_DEFAULTS.model,
         artifact_preference: params.artifactPreference || "auto",
+        case_layer: params.caseLayer || "all",
         persist: true,
       }),
     })

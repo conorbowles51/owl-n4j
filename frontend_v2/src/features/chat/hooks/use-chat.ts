@@ -33,6 +33,7 @@ export function useChat(caseId: string) {
       try {
         const next = await chatAPI.getSuggestions(
           caseId,
+          scope,
           scope === "selection" ? Array.from(selectedNodeKeys) : undefined
         )
         setSuggestions(next.map((item) => item.question))
@@ -74,9 +75,16 @@ export function useChat(caseId: string) {
       const effectiveScope =
         scope === "selection" && selectedNodeKeys.size > 0
           ? "selection"
-          : "case_overview"
+          : scope === "significant"
+            ? "significant"
+            : "case_overview"
+      const selectionWithinScope =
+        effectiveScope === "significant" &&
+        viewContext?.selection_within_scope === true
       const selectedKeys =
-        effectiveScope === "selection" ? Array.from(selectedNodeKeys) : undefined
+        effectiveScope === "selection" || selectionWithinScope
+          ? Array.from(selectedNodeKeys)
+          : undefined
 
       const userMsg: ChatMessageData = {
         role: "user",

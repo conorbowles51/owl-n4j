@@ -6,14 +6,32 @@ import { useMapTheme } from "../hooks/use-map-theme"
 import { useMapStore } from "../stores/map.store"
 import { useGraphStore } from "@/stores/graph.store"
 import { useMapAnalysis, type MapLocation } from "../hooks/use-map-data"
-import { locationsToGeoJSON, createCircleGeoJSON } from "../lib/geojson"
 import {
+  boundingShapesToGeoJSON,
+  createCircleGeoJSON,
+  drawingLineToGeoJSON,
+  drawingPointsToGeoJSON,
+  drawingPolygonPreviewToGeoJSON,
+  locationsToGeoJSON,
+} from "../lib/geojson"
+import {
+  approximateLocationAreaLayer,
+  approximateLocationOutlineLayer,
+  boundingShapeFillLayer,
+  boundingShapeOutlineLayer,
+  draftBoundingShapeFillLayer,
+  draftBoundingShapeOutlineLayer,
+  drawingLineLayer,
+  drawingPointLayer,
+  drawingShapeFillLayer,
+  drawingShapeOutlineLayer,
   pointLayer,
   heatmapLayer,
   proximityFillLayer,
   proximityOutlineLayer,
 } from "../lib/map-styles"
-import { matchesLocationFilters, needsReview } from "@/lib/location-confidence"
+import { getVisibleLocations } from "../lib/visible-locations"
+import { boundsToClosedRing, type LngLatPoint } from "../lib/geometry"
 import { EntityPopup } from "./EntityPopup"
 import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
 
@@ -21,13 +39,54 @@ interface MapCanvasProps {
   locations: MapLocation[]
 }
 
+const LOCATION_INTERACTIVE_LAYER_IDS = [
+  "unclustered-point",
+  "approximate-location-outline",
+  "approximate-location-area",
+]
+
+interface ScreenPoint {
+  x: number
+  y: number
+}
+
+interface BoxDragState {
+  startLngLat: LngLatPoint
+  startPoint: ScreenPoint
+}
+
+interface SecondaryPanState {
+  lastPoint: ScreenPoint
+}
+
+const BOX_DRAW_MIN_PIXELS = 8
+
+function getEventPoint(e: MapLayerMouseEvent): ScreenPoint {
+  return {
+    x: e.originalEvent.clientX,
+    y: e.originalEvent.clientY,
+  }
+}
+
+function getLngLatPoint(e: MapLayerMouseEvent): LngLatPoint {
+  return [e.lngLat.lng, e.lngLat.lat]
+}
+
+function getPointDistance(a: ScreenPoint, b: ScreenPoint) {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
 export function MapCanvas({ locations }: MapCanvasProps) {
   const mapRef = useRef<MapRef>(null)
+  const boxDragRef = useRef<BoxDragState | null>(null)
+  const secondaryPanRef = useRef<SecondaryPanState | null>(null)
   const { styleUrl } = useMapTheme()
   const { bounds } = useMapAnalysis(locations)
 
   // Hover state for popup
-  const [hoveredLocationKey, setHoveredLocationKey] = useState<string | null>(null)
+  const [hoveredLocationKey, setHoveredLocationKey] = useState<string | null>(
+    null
+  )
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const showHeatmap = useMapStore((s) => s.showHeatmap)
@@ -41,6 +100,15 @@ export function MapCanvas({ locations }: MapCanvasProps) {
   const proximityAnchorKey = useMapStore((s) => s.proximityAnchorKey)
   const proximityRadius = useMapStore((s) => s.proximityRadius)
   const setProximityAnchor = useMapStore((s) => s.setProximityAnchor)
+  const drawMode = useMapStore((s) => s.drawMode)
+  const drawTool = useMapStore((s) => s.drawTool)
+  const drawingPoints = useMapStore((s) => s.drawingPoints)
+  const draftBoundingShapes = useMapStore((s) => s.draftBoundingShapes)
+  const boundingShapes = useMapStore((s) => s.boundingShapes)
+  const setDrawingPoints = useMapStore((s) => s.setDrawingPoints)
+  const addDrawingPoint = useMapStore((s) => s.addDrawingPoint)
+  const finishDraftShape = useMapStore((s) => s.finishDraftShape)
+  const finishDrawingShape = useMapStore((s) => s.finishDrawingShape)
   const pendingFlyTo = useMapStore((s) => s.pendingFlyTo)
   const clearFlyTo = useMapStore((s) => s.clearFlyTo)
   const pendingZoomDelta = useMapStore((s) => s.pendingZoomDelta)
@@ -54,15 +122,14 @@ export function MapCanvas({ locations }: MapCanvasProps) {
   // GeoJSON data
   const visibleLocations = useMemo(
     () =>
-      locations.filter((l) => {
-        if (hiddenTypes.has(l.type)) return false
-        if (needsReviewMode) return needsReview(l)
-        return matchesLocationFilters(l, {
-          confidenceThreshold,
-          confidenceDirection,
-          specificityThreshold,
-          specificityDirection,
-        })
+      getVisibleLocations(locations, {
+        hiddenTypes,
+        confidenceThreshold,
+        confidenceDirection,
+        specificityThreshold,
+        specificityDirection,
+        needsReviewMode,
+        boundingShapes,
       }),
     [
       locations,
@@ -72,11 +139,32 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       specificityThreshold,
       specificityDirection,
       needsReviewMode,
+      boundingShapes,
     ]
   )
   const geojson = useMemo(
     () => locationsToGeoJSON(visibleLocations),
     [visibleLocations]
+  )
+  const boundingShapesGeoJSON = useMemo(
+    () => boundingShapesToGeoJSON(boundingShapes),
+    [boundingShapes]
+  )
+  const draftBoundingShapesGeoJSON = useMemo(
+    () => boundingShapesToGeoJSON(draftBoundingShapes),
+    [draftBoundingShapes]
+  )
+  const drawingLineGeoJSON = useMemo(
+    () => drawingLineToGeoJSON(drawingPoints),
+    [drawingPoints]
+  )
+  const drawingPolygonPreviewGeoJSON = useMemo(
+    () => drawingPolygonPreviewToGeoJSON(drawingPoints),
+    [drawingPoints]
+  )
+  const drawingPointsGeoJSON = useMemo(
+    () => drawingPointsToGeoJSON(drawTool === "polygon" ? drawingPoints : []),
+    [drawTool, drawingPoints]
   )
 
   // Proximity anchor
@@ -122,6 +210,57 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    const map = mapRef.current?.getMap()
+    if (!map) return
+
+    map.getCanvas().style.cursor = drawMode ? "crosshair" : "default"
+    if (!drawMode) {
+      boxDragRef.current = null
+      secondaryPanRef.current = null
+    }
+  }, [drawMode])
+
+  useEffect(() => {
+    if (!drawMode) return
+
+    const handleWindowMouseUp = (event: MouseEvent) => {
+      if (event.button === 2 && secondaryPanRef.current) {
+        secondaryPanRef.current = null
+        mapRef.current
+          ?.getMap()
+          .getCanvas()
+          .style.setProperty("cursor", "crosshair")
+      }
+
+      if (event.button === 0 && boxDragRef.current) {
+        // Release landed off the map canvas — commit the box instead of
+        // silently dropping it
+        const boxDrag = boxDragRef.current
+        boxDragRef.current = null
+        const map = mapRef.current?.getMap()
+        const releasePoint = { x: event.clientX, y: event.clientY }
+        if (
+          map &&
+          getPointDistance(boxDrag.startPoint, releasePoint) >=
+            BOX_DRAW_MIN_PIXELS
+        ) {
+          const rect = map.getCanvas().getBoundingClientRect()
+          const { lng, lat } = map.unproject([
+            releasePoint.x - rect.left,
+            releasePoint.y - rect.top,
+          ])
+          finishDraftShape(boundsToClosedRing(boxDrag.startLngLat, [lng, lat]))
+        } else {
+          setDrawingPoints([])
+        }
+      }
+    }
+
+    window.addEventListener("mouseup", handleWindowMouseUp)
+    return () => window.removeEventListener("mouseup", handleWindowMouseUp)
+  }, [drawMode, finishDraftShape, setDrawingPoints])
 
   // Fit bounds on initial load
   const handleLoad = useCallback(() => {
@@ -176,8 +315,37 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       const map = mapRef.current?.getMap()
       if (!map) return
 
+      if (drawMode) {
+        if (secondaryPanRef.current) {
+          e.originalEvent.preventDefault()
+          const point = getEventPoint(e)
+          const dx = point.x - secondaryPanRef.current.lastPoint.x
+          const dy = point.y - secondaryPanRef.current.lastPoint.y
+          // panBy shifts the CENTER by the offset, so the content moves opposite
+          // the cursor; negate so the map follows the drag like native panning.
+          map.panBy([-dx, -dy], { duration: 0 })
+          secondaryPanRef.current = { lastPoint: point }
+          map.getCanvas().style.cursor = "grabbing"
+          return
+        }
+
+        if (drawTool === "box" && boxDragRef.current) {
+          e.originalEvent.preventDefault()
+          setDrawingPoints(
+            boundsToClosedRing(
+              boxDragRef.current.startLngLat,
+              getLngLatPoint(e)
+            )
+          )
+        }
+
+        map.getCanvas().style.cursor = "crosshair"
+        setHoveredLocationKey(null)
+        return
+      }
+
       const features = map.queryRenderedFeatures(e.point, {
-        layers: ["unclustered-point"],
+        layers: LOCATION_INTERACTIVE_LAYER_IDS,
       })
 
       if (features.length > 0) {
@@ -193,12 +361,101 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       map.getCanvas().style.cursor = "default"
       startHide()
     },
-    [cancelHide, startHide]
+    [cancelHide, drawMode, drawTool, setDrawingPoints, startHide]
   )
 
   const handleMouseLeave = useCallback(() => {
+    if (drawMode && secondaryPanRef.current) return
     startHide()
-  }, [startHide])
+  }, [drawMode, startHide])
+
+  const handleMouseDown = useCallback(
+    (e: MapLayerMouseEvent) => {
+      if (!drawMode) return
+
+      e.originalEvent.preventDefault()
+      setHoveredLocationKey(null)
+
+      if (e.originalEvent.button === 2) {
+        secondaryPanRef.current = { lastPoint: getEventPoint(e) }
+        mapRef.current
+          ?.getMap()
+          .getCanvas()
+          .style.setProperty("cursor", "grabbing")
+        return
+      }
+
+      if (e.originalEvent.button !== 0) return
+
+      if (drawTool === "box") {
+        const startLngLat = getLngLatPoint(e)
+        boxDragRef.current = {
+          startLngLat,
+          startPoint: getEventPoint(e),
+        }
+        setDrawingPoints([])
+      }
+    },
+    [drawMode, drawTool, setDrawingPoints]
+  )
+
+  const handleMouseUp = useCallback(
+    (e: MapLayerMouseEvent) => {
+      if (!drawMode) return
+
+      if (e.originalEvent.button === 2 && secondaryPanRef.current) {
+        e.originalEvent.preventDefault()
+        secondaryPanRef.current = null
+        mapRef.current
+          ?.getMap()
+          .getCanvas()
+          .style.setProperty("cursor", "crosshair")
+        return
+      }
+
+      if (
+        e.originalEvent.button === 0 &&
+        drawTool === "box" &&
+        boxDragRef.current
+      ) {
+        e.originalEvent.preventDefault()
+        const boxDrag = boxDragRef.current
+        boxDragRef.current = null
+
+        if (
+          getPointDistance(boxDrag.startPoint, getEventPoint(e)) <
+          BOX_DRAW_MIN_PIXELS
+        ) {
+          setDrawingPoints([])
+          return
+        }
+
+        finishDraftShape(
+          boundsToClosedRing(boxDrag.startLngLat, getLngLatPoint(e))
+        )
+      }
+    },
+    [drawMode, drawTool, finishDraftShape, setDrawingPoints]
+  )
+
+  const handleContextMenu = useCallback(
+    (e: MapLayerMouseEvent) => {
+      if (!drawMode) return
+      e.originalEvent.preventDefault()
+    },
+    [drawMode]
+  )
+
+  // Double-click closes an in-progress polygon — the standard map-drawing
+  // gesture, alongside the toolbar's Finish button.
+  const handleDblClick = useCallback(
+    (e: MapLayerMouseEvent) => {
+      if (!drawMode) return
+      e.preventDefault()
+      if (drawTool === "polygon") finishDrawingShape()
+    },
+    [drawMode, drawTool, finishDrawingShape]
+  )
 
   // Click handlers
   const handleClick = useCallback(
@@ -206,12 +463,20 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       const map = mapRef.current?.getMap()
       if (!map) return
 
-      // Check for point click
-      const pointFeatures = map.queryRenderedFeatures(e.point, {
-        layers: ["unclustered-point"],
+      if (drawMode) {
+        if (drawTool === "polygon") {
+          addDrawingPoint(getLngLatPoint(e))
+        }
+        setHoveredLocationKey(null)
+        return
+      }
+
+      // Check for exact pin or approximate area click
+      const locationFeatures = map.queryRenderedFeatures(e.point, {
+        layers: LOCATION_INTERACTIVE_LAYER_IDS,
       })
-      if (pointFeatures.length > 0) {
-        const key = pointFeatures[0].properties?.key
+      if (locationFeatures.length > 0) {
+        const key = locationFeatures[0].properties?.key
         if (key) {
           if (proximityMode && !proximityAnchorKey) {
             setProximityAnchor(key)
@@ -225,7 +490,15 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       // Click on empty space — deselect
       selectNodes([])
     },
-    [selectNodes, proximityMode, proximityAnchorKey, setProximityAnchor]
+    [
+      addDrawingPoint,
+      drawMode,
+      drawTool,
+      selectNodes,
+      proximityMode,
+      proximityAnchorKey,
+      setProximityAnchor,
+    ]
   )
 
   return (
@@ -234,19 +507,88 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       mapLib={maplibregl}
       mapStyle={styleUrl}
       style={{ width: "100%", height: "100%" }}
+      dragPan={!drawMode}
+      dragRotate={!drawMode}
+      doubleClickZoom={!drawMode}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
       onClick={handleClick}
+      onDblClick={handleDblClick}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
+      onContextMenu={handleContextMenu}
       onLoad={handleLoad}
       attributionControl={false}
-      interactiveLayerIds={["unclustered-point"]}
+      interactiveLayerIds={drawMode ? [] : LOCATION_INTERACTIVE_LAYER_IDS}
     >
-      <NavigationControl position="top-right" showCompass={false} visualizePitch={false} />
+      <NavigationControl
+        position="top-right"
+        showCompass={false}
+        visualizePitch={false}
+      />
+
+      {/* Committed bounding filters */}
+      {boundingShapesGeoJSON.features.length > 0 && (
+        <Source
+          id="bounding-shapes"
+          type="geojson"
+          data={boundingShapesGeoJSON}
+        >
+          <Layer {...boundingShapeFillLayer} />
+          <Layer {...boundingShapeOutlineLayer} />
+        </Source>
+      )}
+
+      {/* Pending bounding filters */}
+      {draftBoundingShapesGeoJSON.features.length > 0 && (
+        <Source
+          id="draft-bounding-shapes"
+          type="geojson"
+          data={draftBoundingShapesGeoJSON}
+        >
+          <Layer {...draftBoundingShapeFillLayer} />
+          <Layer {...draftBoundingShapeOutlineLayer} />
+        </Source>
+      )}
+
+      {/* In-progress bounding shape */}
+      {drawingPolygonPreviewGeoJSON && (
+        <Source
+          id="drawing-shape-preview"
+          type="geojson"
+          data={drawingPolygonPreviewGeoJSON}
+        >
+          <Layer {...drawingShapeFillLayer} />
+          <Layer {...drawingShapeOutlineLayer} />
+        </Source>
+      )}
+      {drawingLineGeoJSON && (
+        <Source
+          id="drawing-shape-line"
+          type="geojson"
+          data={drawingLineGeoJSON}
+        >
+          <Layer {...drawingLineLayer} />
+        </Source>
+      )}
+      {drawingPointsGeoJSON.features.length > 0 && (
+        <Source
+          id="drawing-shape-points"
+          type="geojson"
+          data={drawingPointsGeoJSON}
+        >
+          <Layer {...drawingPointLayer} />
+        </Source>
+      )}
 
       {/* Main data source */}
       <Source id="locations" type="geojson" data={geojson}>
         {/* Heatmap (below markers) */}
         {showHeatmap && <Layer {...heatmapLayer} />}
+
+        {/* Approximate locations */}
+        <Layer {...approximateLocationAreaLayer} />
+        <Layer {...approximateLocationOutlineLayer} />
 
         {/* Individual points */}
         <Layer {...pointLayer} />

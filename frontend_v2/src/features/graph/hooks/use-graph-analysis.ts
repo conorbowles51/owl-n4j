@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query"
 import { graphAPI } from "../api"
+import type { CaseLayer } from "@/features/significant/types"
 
 export function usePageRank(caseId: string) {
   return useMutation({
@@ -8,13 +9,15 @@ export function usePageRank(caseId: string) {
       topN?: number
       iterations?: number
       dampingFactor?: number
+      scope?: CaseLayer
     }) =>
       graphAPI.getPageRank(
         caseId,
         params.nodeKeys,
         params.topN,
         params.iterations,
-        params.dampingFactor
+        params.dampingFactor,
+        params.scope
       ),
   })
 }
@@ -25,12 +28,14 @@ export function useLouvainCommunities(caseId: string) {
       nodeKeys?: string[] | null
       resolution?: number
       maxIterations?: number
+      scope?: CaseLayer
     }) =>
       graphAPI.getLouvainCommunities(
         caseId,
         params.nodeKeys,
         params.resolution,
-        params.maxIterations
+        params.maxIterations,
+        params.scope
       ),
   })
 }
@@ -41,20 +46,31 @@ export function useBetweennessCentrality(caseId: string) {
       nodeKeys?: string[] | null
       topN?: number
       normalized?: boolean
+      scope?: CaseLayer
     }) =>
       graphAPI.getBetweennessCentrality(
         caseId,
         params.nodeKeys,
         params.topN,
-        params.normalized
+        params.normalized,
+        params.scope
       ),
   })
 }
 
 export function useShortestPaths(caseId: string) {
   return useMutation({
-    mutationFn: (params: { nodeKeys: string[]; maxDepth?: number }) =>
-      graphAPI.getShortestPaths(caseId, params.nodeKeys, params.maxDepth),
+    mutationFn: (params: {
+      nodeKeys: string[]
+      maxDepth?: number
+      scope?: CaseLayer
+    }) =>
+      graphAPI.getShortestPaths(
+        caseId,
+        params.nodeKeys,
+        params.maxDepth,
+        params.scope
+      ),
   })
 }
 

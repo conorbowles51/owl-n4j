@@ -40,6 +40,7 @@ class GeocodeResult:
     formatted_address: str | None = None
     confidence: str | None = None
     confidence_score: float | None = None
+    location_granularity: str | None = None
     raw_response: dict[str, Any] | None = None
 
 
@@ -62,6 +63,26 @@ def _clean_geo_value(value: Any) -> str:
     if value is None:
         return ""
     return _WHITESPACE_RE.sub(" ", str(value).strip())
+
+
+def _location_granularity(result: dict[str, Any] | None) -> str | None:
+    if not result:
+        return None
+    address = result.get("address") or {}
+    result_type = str(result.get("type") or result.get("addresstype") or "").lower()
+    if address.get("house_number") or result_type in {"house", "building"}:
+        return "address"
+    if address.get("road") or result_type in {"road", "street"}:
+        return "street"
+    if result_type in {"neighbourhood", "neighborhood", "suburb", "quarter", "hamlet"}:
+        return "neighborhood"
+    if result_type in {"city", "town", "village", "municipality", "borough"}:
+        return "city"
+    if result_type in {"county", "state", "region"}:
+        return "region"
+    if result_type == "country":
+        return "country"
+    return None
 
 
 def build_geocode_request(
@@ -181,6 +202,7 @@ class GeocodingService:
             formatted_address=record.formatted_address,
             confidence=record.confidence,
             confidence_score=_importance_from_raw_response(record.raw_response),
+            location_granularity=_location_granularity(record.raw_response),
             raw_response=record.raw_response,
         )
 
@@ -270,6 +292,7 @@ class GeocodingService:
             formatted_address=top_result.get("display_name", original_query),
             confidence=confidence,
             confidence_score=importance,
+            location_granularity=_location_granularity(top_result),
             raw_response=top_result,
         )
 

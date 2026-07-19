@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -50,6 +50,60 @@ interface TheoryDetailSheetProps {
   caseId: string
 }
 
+type TheoryType = NonNullable<Theory["type"]>
+type PrivilegeLevel = NonNullable<Theory["privilege_level"]>
+type TheoryListField = "supportingEvidence" | "counterArguments" | "nextSteps"
+
+interface TheoryDraft {
+  sourceKey: string
+  title: string
+  type: TheoryType
+  privilegeLevel: PrivilegeLevel
+  confidence: number
+  hypothesis: string
+  supportingEvidence: string[]
+  counterArguments: string[]
+  nextSteps: string[]
+}
+
+function createTheoryDraft(theory: Theory | null): TheoryDraft {
+  if (!theory) {
+    return {
+      sourceKey: "__empty__",
+      title: "",
+      type: "PRIMARY",
+      privilegeLevel: "PUBLIC",
+      confidence: 50,
+      hypothesis: "",
+      supportingEvidence: [],
+      counterArguments: [],
+      nextSteps: [],
+    }
+  }
+
+  return {
+    sourceKey: JSON.stringify([
+      theory.id,
+      theory.title ?? "",
+      theory.type ?? "PRIMARY",
+      theory.privilege_level ?? "PUBLIC",
+      theory.confidence_score ?? 50,
+      theory.hypothesis ?? "",
+      theory.supporting_evidence ?? [],
+      theory.counter_arguments ?? [],
+      theory.next_steps ?? [],
+    ]),
+    title: theory.title ?? "",
+    type: theory.type ?? "PRIMARY",
+    privilegeLevel: theory.privilege_level ?? "PUBLIC",
+    confidence: theory.confidence_score ?? 50,
+    hypothesis: theory.hypothesis ?? "",
+    supportingEvidence: [...(theory.supporting_evidence ?? [])],
+    counterArguments: [...(theory.counter_arguments ?? [])],
+    nextSteps: [...(theory.next_steps ?? [])],
+  }
+}
+
 const PRIVILEGE_ICONS = {
   PUBLIC: Globe,
   ATTORNEY_ONLY: Shield,
@@ -58,31 +112,30 @@ const PRIVILEGE_ICONS = {
 
 export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: TheoryDetailSheetProps) {
   const navigate = useNavigate()
-  const [title, setTitle] = useState("")
-  const [type, setType] = useState<"PRIMARY" | "SECONDARY" | "NOTE">("PRIMARY")
-  const [privilegeLevel, setPrivilegeLevel] = useState<"PUBLIC" | "ATTORNEY_ONLY" | "PRIVATE">("PUBLIC")
-  const [confidence, setConfidence] = useState(50)
-  const [hypothesis, setHypothesis] = useState("")
-  const [supportingEvidence, setSupportingEvidence] = useState<string[]>([])
-  const [counterArguments, setCounterArguments] = useState<string[]>([])
-  const [nextSteps, setNextSteps] = useState<string[]>([])
-
   const updateTheory = useUpdateTheory(caseId)
   const deleteTheory = useDeleteTheory(caseId)
   const buildGraph = useBuildWorkspaceGraph(caseId)
 
-  useEffect(() => {
-    if (theory) {
-      setTitle(theory.title ?? "")
-      setType(theory.type ?? "PRIMARY")
-      setPrivilegeLevel(theory.privilege_level ?? "PUBLIC")
-      setConfidence(theory.confidence_score ?? 50)
-      setHypothesis(theory.hypothesis ?? "")
-      setSupportingEvidence(theory.supporting_evidence ?? [])
-      setCounterArguments(theory.counter_arguments ?? [])
-      setNextSteps(theory.next_steps ?? [])
-    }
-  }, [theory])
+  const sourceDraft = useMemo(() => createTheoryDraft(theory), [theory])
+  const [draft, setDraft] = useState(sourceDraft)
+  const activeDraft =
+    draft.sourceKey === sourceDraft.sourceKey ? draft : sourceDraft
+  const {
+    title,
+    type,
+    privilegeLevel,
+    confidence,
+    hypothesis,
+    supportingEvidence,
+    counterArguments,
+    nextSteps,
+  } = activeDraft
+  const updateDraft = (updates: Partial<Omit<TheoryDraft, "sourceKey">>) => {
+    setDraft((current) => ({
+      ...(current.sourceKey === sourceDraft.sourceKey ? current : sourceDraft),
+      ...updates,
+    }))
+  }
 
   const isDirty = useMemo(
     () =>
@@ -155,27 +208,33 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
 
   // --- Editable list helpers ---
   const updateListItem = (
-    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    field: TheoryListField,
     index: number,
     value: string,
   ) => {
-    setter((prev) => prev.map((item, i) => (i === index ? value : item)))
+    updateDraft({
+      [field]: activeDraft[field].map((item, i) =>
+        i === index ? value : item
+      ),
+    })
   }
 
   const removeListItem = (
-    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    field: TheoryListField,
     index: number,
   ) => {
-    setter((prev) => prev.filter((_, i) => i !== index))
+    updateDraft({
+      [field]: activeDraft[field].filter((_, i) => i !== index),
+    })
   }
 
-  const addListItem = (setter: React.Dispatch<React.SetStateAction<string[]>>) => {
-    setter((prev) => [...prev, ""])
+  const addListItem = (field: TheoryListField) => {
+    updateDraft({ [field]: [...activeDraft[field], ""] })
   }
 
   const renderEditableList = (
     items: string[],
-    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    field: TheoryListField,
     placeholder: string,
   ) => (
     <div className="space-y-1.5">
@@ -183,7 +242,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
         <div key={index} className="flex items-center gap-1.5">
           <Input
             value={item}
-            onChange={(e) => updateListItem(setter, index, e.target.value)}
+            onChange={(e) => updateListItem(field, index, e.target.value)}
             placeholder={placeholder}
             className="h-8 text-xs"
           />
@@ -191,7 +250,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
             variant="ghost"
             size="icon"
             className="h-8 w-8 shrink-0"
-            onClick={() => removeListItem(setter, index)}
+            onClick={() => removeListItem(field, index)}
           >
             <X className="h-3.5 w-3.5" />
           </Button>
@@ -201,7 +260,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
         variant="outline"
         size="sm"
         className="h-7 text-xs"
-        onClick={() => addListItem(setter)}
+        onClick={() => addListItem(field)}
       >
         <Plus className="mr-1 h-3 w-3" />
         Add
@@ -257,11 +316,14 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
               </h4>
               <Input
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => updateDraft({ title: e.target.value })}
                 placeholder="Theory title"
               />
               <div className="flex items-center gap-2">
-                <Select value={type} onValueChange={(v) => setType(v as typeof type)}>
+                <Select
+                  value={type}
+                  onValueChange={(v) => updateDraft({ type: v as TheoryType })}
+                >
                   <SelectTrigger className="h-8 w-[140px] text-xs">
                     <SelectValue />
                   </SelectTrigger>
@@ -274,7 +336,9 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
 
                 <Select
                   value={privilegeLevel}
-                  onValueChange={(v) => setPrivilegeLevel(v as typeof privilegeLevel)}
+                  onValueChange={(v) =>
+                    updateDraft({ privilegeLevel: v as PrivilegeLevel })
+                  }
                 >
                   <SelectTrigger className="h-8 w-[160px] text-xs">
                     <div className="flex items-center gap-1.5">
@@ -313,7 +377,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
               </h4>
               <Slider
                 value={[confidence]}
-                onValueChange={(vals) => setConfidence(vals[0])}
+                onValueChange={(vals) => updateDraft({ confidence: vals[0] })}
                 min={0}
                 max={100}
                 step={1}
@@ -328,7 +392,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
               </h4>
               <Textarea
                 value={hypothesis}
-                onChange={(e) => setHypothesis(e.target.value)}
+                onChange={(e) => updateDraft({ hypothesis: e.target.value })}
                 placeholder="Describe the theory hypothesis..."
                 rows={4}
                 className="text-sm"
@@ -340,7 +404,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
               <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Supporting Evidence
               </h4>
-              {renderEditableList(supportingEvidence, setSupportingEvidence, "Add supporting evidence...")}
+              {renderEditableList(supportingEvidence, "supportingEvidence", "Add supporting evidence...")}
             </div>
 
             {/* Counter Arguments */}
@@ -348,7 +412,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
               <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Counter Arguments
               </h4>
-              {renderEditableList(counterArguments, setCounterArguments, "Add counter argument...")}
+              {renderEditableList(counterArguments, "counterArguments", "Add counter argument...")}
             </div>
 
             {/* Next Steps */}
@@ -356,7 +420,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
               <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Next Steps
               </h4>
-              {renderEditableList(nextSteps, setNextSteps, "Add next step...")}
+              {renderEditableList(nextSteps, "nextSteps", "Add next step...")}
             </div>
 
             {/* Attached Items */}

@@ -28,6 +28,7 @@ class AgentMessageRequest(BaseModel):
     provider: str = "openai"
     model: str = "gpt-5-mini"
     artifact_preference: AgentArtifactPreference = "auto"
+    case_layer: Literal["all", "significant"] = "all"
     persist: bool = True
 
     @field_validator("message")
