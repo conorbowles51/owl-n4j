@@ -33,6 +33,23 @@ function getOpenRing(ring: LngLatPoint[]) {
   return ring
 }
 
+export function closeRing(points: LngLatPoint[]) {
+  const first = points[0]
+  const last = points[points.length - 1]
+  if (!first || !last) return points
+  if (samePoint(first, last)) return points
+  return [...points, first]
+}
+
+export function boundsToClosedRing(start: LngLatPoint, end: LngLatPoint) {
+  return closeRing([
+    [start[0], start[1]],
+    [end[0], start[1]],
+    [end[0], end[1]],
+    [start[0], end[1]],
+  ])
+}
+
 export function pointInPolygon(point: LngLatPoint, ring: LngLatPoint[]) {
   const polygon = getOpenRing(ring)
   if (polygon.length < 3) return false

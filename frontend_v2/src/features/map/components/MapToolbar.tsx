@@ -1,4 +1,5 @@
 import {
+  BoxSelect,
   Check,
   Crosshair,
   Layers,
@@ -8,6 +9,7 @@ import {
   ShieldCheck,
   Trash2,
   Undo2,
+  Waypoints,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -57,12 +59,24 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
   const proximityAnchorKey = useMapStore((s) => s.proximityAnchorKey)
   const toggleProximityMode = useMapStore((s) => s.toggleProximityMode)
   const drawMode = useMapStore((s) => s.drawMode)
+  const drawTool = useMapStore((s) => s.drawTool)
   const drawingPoints = useMapStore((s) => s.drawingPoints)
+  const draftBoundingShapes = useMapStore((s) => s.draftBoundingShapes)
   const boundingShapes = useMapStore((s) => s.boundingShapes)
   const toggleDrawMode = useMapStore((s) => s.toggleDrawMode)
+  const setDrawTool = useMapStore((s) => s.setDrawTool)
   const undoLastDrawingPoint = useMapStore((s) => s.undoLastDrawingPoint)
   const finishDrawingShape = useMapStore((s) => s.finishDrawingShape)
   const cancelDrawingShape = useMapStore((s) => s.cancelDrawingShape)
+  const applyBoundingShapeFilter = useMapStore(
+    (s) => s.applyBoundingShapeFilter
+  )
+  const discardBoundingShapeDraft = useMapStore(
+    (s) => s.discardBoundingShapeDraft
+  )
+  const removeDraftBoundingShape = useMapStore(
+    (s) => s.removeDraftBoundingShape
+  )
   const removeBoundingShape = useMapStore((s) => s.removeBoundingShape)
   const clearBoundingShapes = useMapStore((s) => s.clearBoundingShapes)
   const hiddenConfidenceTiers = useMapStore((s) => s.hiddenConfidenceTiers)
@@ -87,6 +101,7 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
 
   const confidenceFilterActive = hiddenConfidenceTiers.size > 0
   const shapeFilterActive = boundingShapes.length > 0
+  const draftShapeActive = draftBoundingShapes.length > 0
   const visibleMapLocations = getVisibleLocations(locations, {
     hiddenTypes,
     hiddenConfidenceTiers,
@@ -213,7 +228,11 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
         <Popover>
           <PopoverTrigger asChild>
             <Button
-              variant={drawMode || shapeFilterActive ? "secondary" : "ghost"}
+              variant={
+                drawMode || shapeFilterActive || draftShapeActive
+                  ? "secondary"
+                  : "ghost"
+              }
               size="sm"
               className="h-7 text-xs"
             >
@@ -222,6 +241,10 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
               {shapeFilterActive ? (
                 <Badge variant="amber" className="ml-1 text-[9px]">
                   {boundingShapes.length}
+                </Badge>
+              ) : draftShapeActive ? (
+                <Badge variant="secondary" className="ml-1 text-[9px]">
+                  {draftBoundingShapes.length}
                 </Badge>
               ) : drawMode ? (
                 <Badge variant="secondary" className="ml-1 text-[9px]">
@@ -238,6 +261,27 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
               </span>
             </div>
 
+            <div className="mb-2 grid grid-cols-2 gap-1">
+              <Button
+                variant={drawTool === "box" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setDrawTool("box")}
+              >
+                <BoxSelect className="size-3.5" />
+                Box
+              </Button>
+              <Button
+                variant={drawTool === "polygon" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setDrawTool("polygon")}
+              >
+                <Waypoints className="size-3.5" />
+                Polygon
+              </Button>
+            </div>
+
             <Button
               variant={drawMode ? "secondary" : "outline"}
               size="sm"
@@ -248,7 +292,7 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
               {drawMode ? "Stop drawing" : "Draw area"}
             </Button>
 
-            {drawMode && (
+            {drawMode && drawTool === "polygon" && (
               <div className="mb-2 grid grid-cols-[1fr_auto_auto_auto] items-center gap-1 border-b border-border pb-2">
                 <span className="px-1 text-[10px] text-muted-foreground">
                   {drawingPoints.length} point
@@ -284,8 +328,85 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
               </div>
             )}
 
+            {drawMode && drawTool === "box" && drawingPoints.length > 0 && (
+              <div className="mb-2 grid grid-cols-[1fr_auto] items-center gap-1 border-b border-border pb-2">
+                <span className="px-1 text-[10px] text-muted-foreground">
+                  Box draft
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Cancel drawing"
+                  onClick={cancelDrawingShape}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            )}
+
+            {draftBoundingShapes.length > 0 && (
+              <div className="mb-2 space-y-1 border-b border-border pb-2">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">
+                    Pending
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {draftBoundingShapes.length}
+                  </span>
+                </div>
+                {draftBoundingShapes.map((shape, index) => (
+                  <div
+                    key={shape.id}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted"
+                  >
+                    <span>Area {index + 1}</span>
+                    <span className="ml-auto text-[10px] text-muted-foreground">
+                      {Math.max(shape.coordinates.length - 1, 0)} points
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                      aria-label={`Remove pending area ${index + 1}`}
+                      onClick={() => removeDraftBoundingShape(shape.id)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <div className="grid grid-cols-2 gap-1 pt-1">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={drawingPoints.length > 0}
+                    onClick={applyBoundingShapeFilter}
+                  >
+                    <Check className="size-3.5" />
+                    Apply
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={discardBoundingShapeDraft}
+                  >
+                    <X className="size-3.5" />
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {boundingShapes.length > 0 ? (
               <div className="space-y-1">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">
+                    Applied
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {boundingShapes.length}
+                  </span>
+                </div>
                 {boundingShapes.map((shape, index) => (
                   <div
                     key={shape.id}
@@ -314,11 +435,11 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
                   Clear areas
                 </button>
               </div>
-            ) : (
+            ) : draftBoundingShapes.length === 0 ? (
               <div className="rounded-md border border-dashed border-border px-2 py-2 text-center text-[10px] text-muted-foreground">
                 No areas
               </div>
-            )}
+            ) : null}
           </PopoverContent>
         </Popover>
 

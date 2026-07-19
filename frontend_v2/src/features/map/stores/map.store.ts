@@ -1,9 +1,12 @@
 import { create } from "zustand"
+import { closeRing, type LngLatPoint } from "../lib/geometry"
 
 export interface BoundingShape {
   id: string
-  coordinates: [number, number][]
+  coordinates: LngLatPoint[]
 }
+
+export type DrawTool = "box" | "polygon"
 
 interface MapStore {
   /* Selection */
@@ -16,7 +19,9 @@ interface MapStore {
 
   /* Bounding shape filter */
   drawMode: boolean
-  drawingPoints: [number, number][]
+  drawTool: DrawTool
+  drawingPoints: LngLatPoint[]
+  draftBoundingShapes: BoundingShape[]
   boundingShapes: BoundingShape[]
 
   /* Layer toggles */
@@ -44,10 +49,17 @@ interface MapStore {
   setProximityRadius: (radius: number) => void
   toggleProximityMode: () => void
   toggleDrawMode: () => void
-  addDrawingPoint: (point: [number, number]) => void
+  setDrawTool: (tool: DrawTool) => void
+  setDrawingPoints: (points: LngLatPoint[]) => void
+  addDrawingPoint: (point: LngLatPoint) => void
   undoLastDrawingPoint: () => void
+  finishDraftShape: (points?: LngLatPoint[]) => void
   finishDrawingShape: () => void
   cancelDrawingShape: () => void
+  applyBoundingShapeFilter: () => void
+  discardBoundingShapeDraft: () => void
+  removeDraftBoundingShape: (id: string) => void
+  clearDraftBoundingShapes: () => void
   removeBoundingShape: (id: string) => void
   clearBoundingShapes: () => void
   toggleHeatmap: () => void
@@ -58,7 +70,11 @@ interface MapStore {
   toggleNeedsReviewMode: () => void
   setHeatmapRadius: (radius: number) => void
   setHeatmapIntensity: (intensity: number) => void
-  flyTo: (coords: { longitude: number; latitude: number; zoom?: number }) => void
+  flyTo: (coords: {
+    longitude: number
+    latitude: number
+    zoom?: number
+  }) => void
   clearFlyTo: () => void
   zoomIn: () => void
   zoomOut: () => void
@@ -68,12 +84,12 @@ interface MapStore {
   reset: () => void
 }
 
-function closeRing(points: [number, number][]) {
-  const first = points[0]
-  const last = points[points.length - 1]
-  if (!first || !last) return points
-  if (first[0] === last[0] && first[1] === last[1]) return points
-  return [...points, first]
+function createBoundingShape(points: LngLatPoint[]) {
+  if (points.length < 3) return null
+  return {
+    id: crypto.randomUUID(),
+    coordinates: closeRing(points),
+  } satisfies BoundingShape
 }
 
 export const useMapStore = create<MapStore>()((set) => ({
@@ -82,7 +98,9 @@ export const useMapStore = create<MapStore>()((set) => ({
   proximityAnchorKey: null,
   proximityRadius: 5,
   drawMode: false,
+  drawTool: "box",
   drawingPoints: [],
+  draftBoundingShapes: [],
   boundingShapes: [],
   showHeatmap: false,
   hiddenTypes: new Set(),
@@ -122,25 +140,49 @@ export const useMapStore = create<MapStore>()((set) => ({
         ...(drawMode ? { proximityMode: false, proximityAnchorKey: null } : {}),
       }
     }),
+  setDrawTool: (tool) => set({ drawTool: tool, drawingPoints: [] }),
+  setDrawingPoints: (points) => set({ drawingPoints: points }),
   addDrawingPoint: (point) =>
     set((s) => ({ drawingPoints: [...s.drawingPoints, point] })),
   undoLastDrawingPoint: () =>
     set((s) => ({ drawingPoints: s.drawingPoints.slice(0, -1) })),
-  finishDrawingShape: () =>
+  finishDraftShape: (points) =>
     set((s) => {
-      if (s.drawingPoints.length < 3) return {}
+      const shape = createBoundingShape(points ?? s.drawingPoints)
+      if (!shape) return {}
       return {
         drawingPoints: [],
-        boundingShapes: [
-          ...s.boundingShapes,
-          {
-            id: crypto.randomUUID(),
-            coordinates: closeRing(s.drawingPoints),
-          },
-        ],
+        draftBoundingShapes: [...s.draftBoundingShapes, shape],
+      }
+    }),
+  finishDrawingShape: () =>
+    set((s) => {
+      const shape = createBoundingShape(s.drawingPoints)
+      if (!shape) return {}
+      return {
+        drawingPoints: [],
+        draftBoundingShapes: [...s.draftBoundingShapes, shape],
       }
     }),
   cancelDrawingShape: () => set({ drawingPoints: [] }),
+  applyBoundingShapeFilter: () =>
+    set((s) => {
+      if (s.draftBoundingShapes.length === 0) return { drawingPoints: [] }
+      return {
+        drawingPoints: [],
+        boundingShapes: [...s.boundingShapes, ...s.draftBoundingShapes],
+        draftBoundingShapes: [],
+      }
+    }),
+  discardBoundingShapeDraft: () =>
+    set({ drawingPoints: [], draftBoundingShapes: [] }),
+  removeDraftBoundingShape: (id) =>
+    set((s) => ({
+      draftBoundingShapes: s.draftBoundingShapes.filter(
+        (shape) => shape.id !== id
+      ),
+    })),
+  clearDraftBoundingShapes: () => set({ draftBoundingShapes: [] }),
   removeBoundingShape: (id) =>
     set((s) => ({
       boundingShapes: s.boundingShapes.filter((shape) => shape.id !== id),
@@ -187,7 +229,9 @@ export const useMapStore = create<MapStore>()((set) => ({
       proximityAnchorKey: null,
       proximityRadius: 5,
       drawMode: false,
+      drawTool: "box",
       drawingPoints: [],
+      draftBoundingShapes: [],
       boundingShapes: [],
       showHeatmap: false,
       hiddenTypes: new Set(),

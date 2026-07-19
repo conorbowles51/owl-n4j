@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { pointInAnyShape, pointInPolygon, type LngLatPoint } from "./geometry"
+import {
+  boundsToClosedRing,
+  closeRing,
+  pointInAnyShape,
+  pointInPolygon,
+  type LngLatPoint,
+} from "./geometry"
 
 describe("geometry", () => {
   const square: LngLatPoint[] = [
@@ -44,6 +50,34 @@ describe("geometry", () => {
 
     it("passes every point when no shape filter is active", () => {
       expect(pointInAnyShape([500, 500], [])).toBe(true)
+    })
+  })
+
+  describe("ring helpers", () => {
+    it("closes an open ring without duplicating an already closed ring", () => {
+      expect(
+        closeRing([
+          [0, 0],
+          [1, 0],
+          [1, 1],
+        ])
+      ).toEqual([
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 0],
+      ])
+      expect(closeRing(square)).toEqual(square)
+    })
+
+    it("creates a closed rectangular ring from drag bounds", () => {
+      expect(boundsToClosedRing([1, 2], [3, 4])).toEqual([
+        [1, 2],
+        [3, 2],
+        [3, 4],
+        [1, 4],
+        [1, 2],
+      ])
     })
   })
 })
