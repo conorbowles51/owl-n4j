@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react"
 import { ArrowLeft, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useSignificantManifest } from "../hooks/use-significant"
 import { useCaseLayerStore } from "../stores/case-layer.store"
 
@@ -17,9 +18,23 @@ export function SignificantEmptyState({
   eligibleTitle,
   eligibleDescription,
 }: SignificantEmptyStateProps) {
-  const { data } = useSignificantManifest(caseId)
+  const { data, isPending } = useSignificantManifest(caseId)
   const setLayer = useCaseLayerStore((state) => state.setLayer)
   const hasSignificantEntities = (data?.count ?? 0) > 0
+
+  if (isPending) {
+    return (
+      <div className="flex h-full items-center justify-center bg-canvas">
+        <div
+          role="status"
+          aria-label="Loading Significant layer"
+          className="grid size-14 place-items-center rounded-2xl bg-amber-500/[0.06] text-amber-600 ring-1 ring-inset ring-amber-500/15 dark:text-amber-300"
+        >
+          <LoadingSpinner size="lg" className="text-current" />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="relative flex h-full items-center justify-center overflow-hidden bg-canvas px-6">

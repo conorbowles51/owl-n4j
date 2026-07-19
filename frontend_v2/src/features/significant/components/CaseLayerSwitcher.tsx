@@ -46,8 +46,12 @@ export function CaseLayerSwitcher({
 }: CaseLayerSwitcherProps) {
   const layer = useCaseLayer(caseId)
   const setLayer = useCaseLayerStore((state) => state.setLayer)
-  const { data } = useSignificantManifest(caseId)
+  const { data, isPending } = useSignificantManifest(caseId)
   const count = data?.count ?? 0
+  const compactCount = new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(count)
 
   if (!expanded) {
     const trigger = (
@@ -90,45 +94,60 @@ export function CaseLayerSwitcher({
   }
 
   return (
-    <div className="mx-1 mb-2 rounded-lg border border-sidebar-border bg-black/[0.025] p-1 dark:bg-white/[0.025]">
-      <div className="mb-1 flex items-center justify-between px-1.5 pt-1">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-muted">
-          Case layer
-        </span>
-        <span className="font-mono text-[10px] tabular-nums text-sidebar-muted">
-          {count.toLocaleString()} marked
-        </span>
-      </div>
-      <div className="grid grid-cols-2 gap-1" role="group" aria-label="Case layer">
-        {OPTIONS.map((option) => {
-          const active = option.value === layer
-          const Icon = option.icon
-          return (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={active}
-              onClick={() => setLayer(caseId, option.value)}
+    <div
+      className="mx-1 mb-2 grid grid-cols-[0.9fr_1.1fr] gap-1 rounded-lg bg-sidebar-accent/25 p-1 ring-1 ring-inset ring-sidebar-border/80"
+      role="group"
+      aria-label="Case layer"
+    >
+      {OPTIONS.map((option) => {
+        const active = option.value === layer
+        const Icon = option.icon
+        const isSignificant = option.value === "significant"
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-label={
+              isSignificant
+                ? isPending
+                  ? "Significant, loading marked count"
+                  : `Significant, ${count.toLocaleString()} marked`
+                : option.label
+            }
+            aria-pressed={active}
+            onClick={() => setLayer(caseId, option.value)}
+            className={cn(
+              "relative flex h-8 min-w-0 items-center justify-center gap-1.5 rounded px-1.5 text-[11px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-150 ease-out after:absolute after:-inset-y-1 after:inset-x-0 focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.96]",
+              active && isSignificant
+                ? "bg-amber-500/15 text-amber-700 shadow-[inset_0_0_0_1px_rgba(217,119,6,0.28)] dark:text-amber-300"
+                : active
+                  ? "bg-sidebar-accent text-sidebar-foreground shadow-sm"
+                  : "text-sidebar-muted hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            )}
+          >
+            <Icon
               className={cn(
-                "flex h-8 items-center justify-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors",
-                active && option.value === "significant"
-                  ? "bg-amber-500/15 text-amber-700 shadow-[inset_0_0_0_1px_rgba(217,119,6,0.28)] dark:text-amber-300"
-                  : active
-                    ? "bg-sidebar-accent text-sidebar-foreground shadow-sm"
-                    : "text-sidebar-muted hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                "size-3.5 shrink-0",
+                active && isSignificant && "fill-current"
               )}
-            >
-              <Icon
-                className={cn(
-                  "size-3.5",
-                  active && option.value === "significant" && "fill-current"
-                )}
-              />
-              {option.label}
-            </button>
-          )
-        })}
-      </div>
+            />
+            <span className="truncate">{option.label}</span>
+            {isSignificant ? (
+              <span
+                className="min-w-3 shrink-0 font-mono text-[9px] tabular-nums opacity-70"
+                aria-hidden="true"
+                title={
+                  isPending
+                    ? "Loading marked entity count"
+                    : `${count.toLocaleString()} marked entities`
+                }
+              >
+                {isPending ? "…" : compactCount}
+              </span>
+            ) : null}
+          </button>
+        )
+      })}
     </div>
   )
 }
