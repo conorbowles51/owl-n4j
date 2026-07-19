@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { describe, expect, it, vi } from "vitest"
-import { EntityPopup, parseGeocodingCandidates } from "./EntityPopup"
+import { EntityPopup } from "./EntityPopup"
+import { parseGeocodingCandidates } from "../lib/geocoding-candidates"
 import type { MapLocation } from "../hooks/use-map-data"
 
 vi.mock("react-map-gl/maplibre", () => ({

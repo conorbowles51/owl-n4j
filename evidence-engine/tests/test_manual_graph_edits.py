@@ -106,6 +106,79 @@ async def test_write_entities_rejects_disallowed_coordinates_before_graph_write(
 
 
 @pytest.mark.asyncio
+async def test_write_entities_stamps_legacy_provenance_on_pregeocode_coordinates(monkeypatch):
+    captured = {}
+
+    async def fake_apply_geocoding(entities):
+        for entity in entities:
+            write_graph._validate_entity_coordinates(entity)
+
+    async def fake_execute_write(query, params):
+        captured["params"] = params
+
+    monkeypatch.setattr(write_graph, "_apply_geocoding", fake_apply_geocoding)
+    monkeypatch.setattr(write_graph.neo4j_client, "execute_write", fake_execute_write)
+
+    entity = ResolvedEntity(
+        id="loc-legacy",
+        category="Location",
+        specific_type="City",
+        name="Springfield",
+        properties={"latitude": 39.9526, "longitude": -75.1652, "location_raw": "Springfield"},
+    )
+
+    await write_graph._write_entities([entity], case_id="case-1", job_id="job-1")
+
+    node = captured["params"]["nodes"][0]
+    assert node["latitude"] == 39.9526
+    assert node["longitude"] == -75.1652
+    assert node["geocoding_status"] == "mapped"
+    assert node["geocoding_provider"] == "legacy"
+    assert node["geocoding_query"] == "Springfield"
+    assert node["geocoding_precision"] == "unknown"
+    assert node["geocoding_confidence"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_write_entities_keeps_existing_provenance_on_pregeocode_coordinates(monkeypatch):
+    captured = {}
+
+    async def fake_apply_geocoding(entities):
+        for entity in entities:
+            write_graph._validate_entity_coordinates(entity)
+
+    async def fake_execute_write(query, params):
+        captured["params"] = params
+
+    monkeypatch.setattr(write_graph, "_apply_geocoding", fake_apply_geocoding)
+    monkeypatch.setattr(write_graph.neo4j_client, "execute_write", fake_execute_write)
+
+    entity = ResolvedEntity(
+        id="loc-agentic",
+        category="Location",
+        specific_type="City",
+        name="Springfield",
+        properties={
+            "latitude": 39.9526,
+            "longitude": -75.1652,
+            "geocoding_provider": "nominatim",
+            "geocoding_query": "Springfield, PA",
+            "geocoding_precision": "city",
+            "geocoding_confidence": "high",
+        },
+    )
+
+    await write_graph._write_entities([entity], case_id="case-1", job_id="job-1")
+
+    node = captured["params"]["nodes"][0]
+    assert node["geocoding_status"] == "mapped"
+    assert node["geocoding_provider"] == "nominatim"
+    assert node["geocoding_query"] == "Springfield, PA"
+    assert node["geocoding_precision"] == "city"
+    assert node["geocoding_confidence"] == "high"
+
+
+@pytest.mark.asyncio
 async def test_apply_geocoding_provider_failure_keeps_retriable_unmapped_state(monkeypatch):
     class FakeResult:
         provider = "nominatim"

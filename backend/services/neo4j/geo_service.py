@@ -111,6 +111,11 @@ class GeoService:
                     )
                     continue
 
+                # Nodes written before provenance stamping existed can carry
+                # valid coordinates with no provenance. Never serve an
+                # unexplained pin: expose them as explicit legacy records at
+                # low confidence so the popup can state why the pin exists
+                # and the review queue picks them up.
                 entity = {
                     "id": record["id"],
                     "key": record["key"],
@@ -120,12 +125,12 @@ class GeoService:
                     "longitude": validated.longitude,
                     "location_raw": record["location_raw"],
                     "location_formatted": record["location_formatted"],
-                    "geocoding_provider": record["geocoding_provider"],
-                    "geocoding_query": record["geocoding_query"],
-                    "geocoding_precision": record["geocoding_precision"],
-                    "geocoding_confidence": record["geocoding_confidence"],
+                    "geocoding_provider": record["geocoding_provider"] or "legacy",
+                    "geocoding_query": record["geocoding_query"] or record["location_raw"],
+                    "geocoding_precision": record["geocoding_precision"] or "unknown",
+                    "geocoding_confidence": record["geocoding_confidence"] or "low",
                     "geocoding_candidates": record["geocoding_candidates"],
-                    "geocoding_status": record["geocoding_status"],
+                    "geocoding_status": record["geocoding_status"] or "mapped",
                     "geocoding_rejection_reason": record["geocoding_rejection_reason"],
                     "geocoding_provider_error": record["geocoding_provider_error"],
                     "summary": record["summary"],

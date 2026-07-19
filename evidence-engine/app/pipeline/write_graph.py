@@ -102,6 +102,19 @@ def _validate_entity_coordinates(entity: ResolvedEntity) -> None:
     if validated.is_valid:
         entity.properties["latitude"] = validated.latitude
         entity.properties["longitude"] = validated.longitude
+        entity.properties["geocoding_status"] = GEOCODING_STATUS_MAPPED
+        # Coordinates that arrive already set (legacy nodes, re-ingested
+        # entities, upstream stages) must carry provenance like every other
+        # pin — the popup and review queue have to be able to say why the
+        # pin is where it is. Keep whatever provenance survived; anything
+        # missing is stamped as an explicit legacy record at low
+        # confidence so the review queue surfaces it instead of the pin
+        # passing as verified.
+        entity.properties["geocoding_provider"] = provenance.geocoder or "legacy"
+        if provenance.query:
+            entity.properties["geocoding_query"] = provenance.query
+        entity.properties["geocoding_precision"] = provenance.precision or "unknown"
+        entity.properties["geocoding_confidence"] = provenance.confidence or "low"
         return
 
     strip_coordinate_properties(entity.properties)
