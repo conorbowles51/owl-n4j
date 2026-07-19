@@ -311,7 +311,9 @@ export function MapCanvas({ locations }: MapCanvasProps) {
           const point = getEventPoint(e)
           const dx = point.x - secondaryPanRef.current.lastPoint.x
           const dy = point.y - secondaryPanRef.current.lastPoint.y
-          map.panBy([dx, dy], { duration: 0 })
+          // panBy shifts the CENTER by the offset, so the content moves opposite
+          // the cursor; negate so the map follows the drag like native panning.
+          map.panBy([-dx, -dy], { duration: 0 })
           secondaryPanRef.current = { lastPoint: point }
           map.getCanvas().style.cursor = "grabbing"
           return
