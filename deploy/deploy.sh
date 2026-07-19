@@ -53,6 +53,20 @@ is_compiled_frontend() {
 }
 
 mkdir -p "${LOG_DIR}"
+
+# Single-instance guard: an auto-deploy racing a manual build in the same tree
+# corrupts npm state mid-install (2026-07-19: tsc saw a half-populated
+# typescript package and the deploy failed rc=2).
+LOCK_FILE="${LOG_DIR}/.deploy.lock"
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+    echo "Another deploy holds ${LOCK_FILE} - waiting up to 10 minutes..."
+    if ! flock -w 600 9; then
+        echo "FAIL: could not acquire deploy lock after 10 minutes"
+        exit 1
+    fi
+fi
+
 exec > >(tee -a "${LOG_FILE}") 2>&1
 
 echo ""
@@ -64,7 +78,8 @@ DEPLOY_START=$(date +%s)
 
 if [ "$(id -u)" -eq 0 ]; then
     DEPLOY_USER="$(stat -c '%U' "${PROJECT_DIR}")"
-    RUN_AS="sudo -u ${DEPLOY_USER}"
+    # -H: npm must use the deploy user's HOME/cache, never /root/.npm
+    RUN_AS="sudo -u ${DEPLOY_USER} -H"
     SYSTEMCTL="systemctl"
     success "Running as root (app commands as ${DEPLOY_USER})"
 else
@@ -79,6 +94,12 @@ restore_frontend_on_exit() {
     if [ "${FRONTEND_STOPPED}" = true ]; then
         warn "Deployment exited while the frontend was stopped - attempting restart"
         $SYSTEMCTL start owl-frontend-v2 || true
+        sleep 3
+        if $SYSTEMCTL is-active --quiet owl-frontend-v2; then
+            warn "owl-frontend-v2 restarted (serving the previous build)"
+        else
+            fail "owl-frontend-v2 DID NOT COME BACK - start it manually: systemctl start owl-frontend-v2"
+        fi
     fi
 }
 trap restore_frontend_on_exit EXIT
@@ -117,8 +138,21 @@ if [ -z "${CURRENT_BRANCH}" ] || [ "${CURRENT_BRANCH}" = "HEAD" ]; then
     exit 1
 fi
 
-echo "${PREV_COMMIT}" > "${LOG_DIR}/.last-good-commit"
-success "Saved rollback commit ${PREV_COMMIT_SHORT} on branch ${CURRENT_BRANCH}"
+# Rollback target = last commit that PASSED a deploy health check (written only
+# on success below). PREV_COMMIT is NOT safe: the docket agent pulls the tree
+# before running this script, so on auto-deploys PREV == the commit under test.
+LAST_GOOD_FILE="${LOG_DIR}/.last-good-commit"
+ROLLBACK_TARGET=""
+if [ -f "${LAST_GOOD_FILE}" ]; then
+    CANDIDATE="$(cat "${LAST_GOOD_FILE}")"
+    if git cat-file -e "${CANDIDATE}^{commit}" 2>/dev/null; then
+        ROLLBACK_TARGET="${CANDIDATE}"
+    fi
+fi
+if [ -z "${ROLLBACK_TARGET}" ]; then
+    ROLLBACK_TARGET="${PREV_COMMIT}"
+fi
+success "Rollback target: $(git rev-parse --short "${ROLLBACK_TARGET}") (last known-good) on branch ${CURRENT_BRANCH}"
 
 step "Checking for local changes"
 
@@ -156,6 +190,15 @@ success "Frontend stopped"
 
 step "Installing and validating frontend dependencies"
 cd "${FRONTEND_DIR}"
+# Root-owned files from any past root npm/vitest run make npm ci as
+# ${DEPLOY_USER} half-fail (missing .bin links, missing lib files).
+if [ "$(id -u)" -eq 0 ] && [ -d "${FRONTEND_DIR}/node_modules" ]; then
+    ROOT_OWNED=$(find "${FRONTEND_DIR}/node_modules" "${FRONTEND_DIR}/dist" -uid 0 -print -quit 2>/dev/null || true)
+    if [ -n "${ROOT_OWNED}" ]; then
+        warn "Root-owned files in node_modules/dist (e.g. ${ROOT_OWNED}) - reclaiming for ${DEPLOY_USER}"
+        chown -R "${DEPLOY_USER}:" "${FRONTEND_DIR}/node_modules" "${FRONTEND_DIR}/dist" 2>/dev/null || true
+    fi
+fi
 $RUN_AS npm ci --silent
 $RUN_AS rm -rf "${FRONTEND_DIR}/node_modules/.vite"
 $RUN_AS npm run build
@@ -171,7 +214,7 @@ fi
 success "Frontend service configured to serve the compiled bundle"
 
 step "Refreshing Docker stack"
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 success "Docker stack refreshed"
 
 step "Running database migrations"
@@ -197,8 +240,10 @@ for i in $(seq 1 ${HEALTH_RETRIES}); do
     FRONTEND_RESPONSE="$(curl -fsS --max-time 5 "${FRONTEND_URL}" 2>/dev/null || true)"
     if echo "${RESPONSE}" | grep -q '"status":"ok"' &&
         ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
-        is_compiled_frontend "${FRONTEND_RESPONSE}"; then
-        success "Health check passed"
+        is_compiled_frontend "${FRONTEND_RESPONSE}" &&
+        $SYSTEMCTL is-active --quiet owl-backend-v2 &&
+        $SYSTEMCTL is-active --quiet owl-frontend-v2; then
+        success "Health check passed (owl-backend-v2 + owl-frontend-v2 units active)"
         echo "  Backend: ${RESPONSE}"
         echo "  Frontend: compiled assets served on port ${FRONTEND_PORT}"
         HEALTHY=true
@@ -208,6 +253,7 @@ for i in $(seq 1 ${HEALTH_RETRIES}); do
 done
 
 if [ "${HEALTHY}" = true ]; then
+    echo "${NEW_COMMIT}" > "${LAST_GOOD_FILE}"
     DEPLOY_END=$(date +%s)
     DEPLOY_DURATION=$(( DEPLOY_END - DEPLOY_START ))
     echo ""
@@ -221,10 +267,16 @@ if [ "${HEALTHY}" = true ]; then
 fi
 
 echo ""
-fail "Health check failed - rolling back to ${PREV_COMMIT_SHORT}"
+ROLLBACK_SHORT="$(git rev-parse --short "${ROLLBACK_TARGET}")"
+if [ "${ROLLBACK_TARGET}" = "${NEW_COMMIT}" ]; then
+    fail "Health check failed - no distinct known-good commit to roll back to"
+    warn "Rebuilding ${ROLLBACK_SHORT} in place (failure may be transient)"
+else
+    fail "Health check failed - rolling back to last known-good ${ROLLBACK_SHORT}"
+fi
 
 cd "${PROJECT_DIR}"
-$RUN_AS git reset --hard "${PREV_COMMIT}"
+$RUN_AS git reset --hard "${ROLLBACK_TARGET}"
 
 step "Rollback: reinstalling dependencies"
 $SYSTEMCTL stop owl-frontend-v2 || true
@@ -237,7 +289,7 @@ $RUN_AS npm run build || true
 cd "${PROJECT_DIR}"
 
 step "Rollback: rebuilding Docker stack"
-docker compose up -d --build || true
+docker compose up -d --build --remove-orphans || true
 
 step "Rollback: restarting services"
 $SYSTEMCTL restart owl-backend-v2 || true
@@ -250,7 +302,7 @@ FRONTEND_RESPONSE="$(curl -fsS --max-time 5 "${FRONTEND_URL}" 2>/dev/null || tru
 if echo "${RESPONSE}" | grep -q '"status":"ok"' &&
     ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
     is_compiled_frontend "${FRONTEND_RESPONSE}"; then
-    warn "Rollback successful - running ${PREV_COMMIT_SHORT}"
+    warn "Rollback successful - running ${ROLLBACK_SHORT}"
     warn "See log: ${LOG_FILE}"
 else
     fail "Rollback also failed"
