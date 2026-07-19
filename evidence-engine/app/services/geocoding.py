@@ -13,42 +13,20 @@ from sqlalchemy.dialects.postgresql import insert
 from app.config import settings
 from app.dependencies import async_session
 from app.models.geocoding_cache import GeocodingCacheEntry
+from app.pipeline.property_canonicalization import (
+    canonicalize_properties,
+    infer_structured_location_specificity,
+    location_specificity_rank,
+)
 
 _WHITESPACE_RE = re.compile(r"\s+")
-_VAGUE_LOCATION_TERMS = {
-    "abroad",
-    "around town",
-    "city center",
-    "conference room",
-    "elsewhere",
-    "everywhere",
-    "headquarters",
-    "home",
-    "international",
-    "multiple locations",
-    "nationwide",
-    "office",
-    "offshore",
-    "online",
-    "overseas",
-    "remote",
-    "residence",
-    "somewhere",
-    "statewide",
-    "the area",
-    "the city",
-    "unknown",
-    "unspecified",
-    "various locations",
-    "warehouse",
-    "worldwide",
-}
 
 
 @dataclass(frozen=True)
 class GeocodeRequest:
     query: str
     location_raw: str
+    location_specificity: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -74,44 +52,59 @@ def _clean_geo_value(value: Any) -> str:
     return _WHITESPACE_RE.sub(" ", str(value).strip())
 
 
-def _is_specific_location_text(value: str) -> bool:
-    cleaned = _clean_geo_value(value)
-    if not cleaned:
-        return False
-    return normalize_geocode_query(cleaned) not in _VAGUE_LOCATION_TERMS
-
-
 def build_geocode_request(
     category: str,
     name: str,
     properties: dict[str, Any],
 ) -> GeocodeRequest | None:
-    address = _clean_geo_value(properties.get("address"))
-    city = _clean_geo_value(properties.get("city"))
-    region = _clean_geo_value(properties.get("region"))
-    country = _clean_geo_value(properties.get("country"))
-    location_raw = _clean_geo_value(properties.get("location_raw"))
+    normalized_properties = canonicalize_properties(category, properties)
+    address = _clean_geo_value(normalized_properties.get("address"))
+    city = _clean_geo_value(normalized_properties.get("city"))
+    region = _clean_geo_value(normalized_properties.get("region"))
+    country = _clean_geo_value(normalized_properties.get("country"))
+    location_raw = _clean_geo_value(normalized_properties.get("location_raw"))
+    location_specificity = _clean_geo_value(
+        normalized_properties.get("location_specificity")
+    ) or "unknown"
 
     structured_query = ", ".join(part for part in (address, city, region, country) if part)
-    if structured_query and _is_specific_location_text(structured_query):
+    if structured_query:
+        structured_specificity = infer_structured_location_specificity(
+            normalized_properties
+        )
+        if (
+            location_raw
+            and location_specificity_rank(location_specificity)
+            > location_specificity_rank(structured_specificity)
+        ):
+            raw_normalized = normalize_geocode_query(location_raw)
+            query_parts = [location_raw]
+            query_parts.extend(
+                part
+                for part in (address, city, region, country)
+                if part and normalize_geocode_query(part) not in raw_normalized
+            )
+            structured_query = ", ".join(query_parts)
         return GeocodeRequest(
             query=structured_query,
             location_raw=location_raw or structured_query,
+            location_specificity=location_specificity,
         )
 
-    city_query = ", ".join(part for part in (city, region, country) if part)
-    if city_query and _is_specific_location_text(city_query):
+    if location_raw:
         return GeocodeRequest(
-            query=city_query,
-            location_raw=location_raw or city_query,
+            query=location_raw,
+            location_raw=location_raw,
+            location_specificity=location_specificity,
         )
-
-    if location_raw and _is_specific_location_text(location_raw):
-        return GeocodeRequest(query=location_raw, location_raw=location_raw)
 
     location_name = _clean_geo_value(name)
-    if category == "Location" and location_name and _is_specific_location_text(location_name):
-        return GeocodeRequest(query=location_name, location_raw=location_raw or location_name)
+    if category == "Location" and location_name:
+        return GeocodeRequest(
+            query=location_name,
+            location_raw=location_raw or location_name,
+            location_specificity=location_specificity,
+        )
 
     return None
 

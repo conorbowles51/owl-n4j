@@ -98,6 +98,6 @@ The React frontend (separate repo) consumes the graph through four views. When m
 
 - **Entity deduplication at scale**: Cases can have 10K+ entities. Three-phase approach: blocking → embedding similarity → LLM confirmation. Cross-job dedup is built in (queries existing entity embeddings)
 - **Extraction noise**: Prompts enforce selective extraction with explicit inclusion/exclusion rules per category. Every entity requires `source_quote` and `confidence`
-- **Location specificity**: Only locations specific enough to geocode. Prompt explicitly excludes vague regions
+- **Location specificity**: Retain every source-supported geographic reference and classify it as unknown, continent, country, region, city, district, street, or exact_address before attempting geocoding
 - **Transaction modeling**: Only actual financial transactions with identifiable parties. Prompt excludes incidental monetary references
 - **Timeline relevance**: Only meaningful discrete events. Prompt excludes vague temporal references
