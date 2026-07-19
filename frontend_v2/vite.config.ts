@@ -19,8 +19,25 @@ const apiProxy = {
 }
 console.log(`\n  🦉 Build: ${buildInfo.full}\n`)
 
+// Written into dist/ so a running tab can detect that a newer build has been
+// deployed (stale open SPA tabs otherwise survive every deploy).
+const versionJsonPlugin: import("vite").Plugin = {
+  name: "emit-version-json",
+  generateBundle() {
+    this.emitFile({
+      type: "asset",
+      fileName: "version.json",
+      source: JSON.stringify({
+        commit: buildInfo.commit,
+        name: buildInfo.displayName,
+        timestamp: buildInfo.timestamp,
+      }),
+    })
+  },
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), versionJsonPlugin],
   // Timeline is lazy-loaded, so its virtualizer may otherwise be discovered
   // after the dev server has already served modules. Pre-bundle it at startup
   // to avoid Vite invalidating the first Timeline import with a 504.
