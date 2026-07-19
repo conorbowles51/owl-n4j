@@ -87,7 +87,11 @@ interface MapStore {
 function createBoundingShape(points: LngLatPoint[]) {
   if (points.length < 3) return null
   return {
-    id: crypto.randomUUID(),
+    // crypto.randomUUID only exists in secure contexts (https/localhost);
+    // the app is served over plain http, so it must never be assumed.
+    id:
+      globalThis.crypto?.randomUUID?.() ??
+      `shape-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
     coordinates: closeRing(points),
   } satisfies BoundingShape
 }
