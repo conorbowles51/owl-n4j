@@ -19,6 +19,7 @@ import { useChat } from "../hooks/use-chat"
 import { useChatContext } from "../hooks/use-chat-context"
 import { useChatStore } from "../stores/chat.store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 
 export function ChatPage() {
   const { id: caseId } = useParams()
@@ -28,6 +29,7 @@ export function ChatPage() {
     page?: number
   } | null>(null)
   const chat = useChat(caseId!)
+  const caseLayer = useCaseLayer(caseId)
   const context = useChatContext(caseId!)
   const resultGraphPanelOpen = useChatStore((s) => s.resultGraphPanelOpen)
   const activeOwnerId = useChatStore((s) => s.activeConversationOwnerId)
@@ -95,11 +97,13 @@ export function ChatPage() {
 
             {/* Input */}
             <ChatInput
+              key={`${caseId}:${caseLayer}`}
               onSend={chat.sendMessage}
               isLoading={chat.isLoading}
               contextNodes={context.selectedNodes}
               contextDocument={context.scopedDocument}
               suggestions={chat.suggestions}
+              caseLayer={caseLayer}
               isReadOnly={isReadOnly}
             />
           </div>

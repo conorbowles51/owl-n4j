@@ -13,6 +13,7 @@ from postgres.session import get_db
 from routers.users import get_current_db_user
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access, get_case_if_allowed
 from services.neo4j_service import neo4j_service
+from services.significant_service import get_significant_entity_keys
 from services.timeline_view_service import (
     TimelineViewNotFound,
     batch_update_view_events,
@@ -129,6 +130,7 @@ async def get_timeline(
     ),
     limit: int = Query(500, ge=1, le=2000, description="Maximum events to return"),
     cursor: Optional[str] = Query(None, description="Opaque cursor from a previous response"),
+    scope: Literal["all", "significant"] = Query("all", description="Case layer to project"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -144,13 +146,21 @@ async def get_timeline(
         if types:
             event_types = [t.strip() for t in types.split(",") if t.strip()]
 
+        page_args = {
+            "event_types": event_types,
+            "start_date": start_date,
+            "end_date": end_date,
+            "case_id": str(case_id),
+            "limit": limit,
+            "cursor": cursor,
+        }
+        if scope == "significant":
+            page_args["entity_keys"] = get_significant_entity_keys(
+                db,
+                case_id=case_id,
+            )
         return neo4j_service.get_timeline_page(
-            event_types=event_types,
-            start_date=start_date,
-            end_date=end_date,
-            case_id=str(case_id),
-            limit=limit,
-            cursor=cursor,
+            **page_args,
         )
     except Exception as exc:
         _handle_error(exc)

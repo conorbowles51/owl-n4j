@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 import type { EntityType } from "@/lib/theme"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 
 export interface MapLocation {
   key: string
@@ -37,11 +38,12 @@ interface RawMapLocation {
 }
 
 export function useMapData(caseId: string | undefined) {
+  const scope = useCaseLayer(caseId)
   return useQuery({
-    queryKey: ["map", caseId],
+    queryKey: ["map", caseId, scope],
     queryFn: async () => {
       const raw = await fetchAPI<RawMapLocation[]>(
-        `/api/graph/locations?case_id=${caseId}`
+        `/api/graph/locations?case_id=${caseId}&scope=${scope}`
       )
       return raw.map(
         (loc): MapLocation => ({
@@ -67,11 +69,12 @@ export interface ReviewQueueItem {
 
 /** Locations flagged at ingestion (no coordinates, so no pin). */
 export function useMapReviewQueue(caseId: string | undefined) {
+  const scope = useCaseLayer(caseId)
   return useQuery({
-    queryKey: ["map", "needs-review", caseId],
+    queryKey: ["map", "needs-review", caseId, scope],
     queryFn: () =>
       fetchAPI<ReviewQueueItem[]>(
-        `/api/graph/locations/needs-review?case_id=${caseId}`
+        `/api/graph/locations/needs-review?case_id=${caseId}&scope=${scope}`
       ),
     enabled: !!caseId,
   })

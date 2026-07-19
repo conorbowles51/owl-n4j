@@ -377,11 +377,13 @@ class AgentGraphRunner:
         max_tool_calls: int = 28,
         thread_id: str | None = None,
         available_artifacts: list[dict[str, Any]] | None = None,
+        allowed_entity_keys: list[str] | None = None,
     ) -> dict[str, Any]:
         available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
             case_id=case_id,
             artifact_preference=artifact_preference,
+            allowed_entity_keys=(set(allowed_entity_keys) if allowed_entity_keys is not None else None),
             artifact_store=_artifact_store_from_available(available_artifacts),
         )
         tools = make_agent_tools(tool_context)
@@ -392,6 +394,7 @@ class AgentGraphRunner:
             return f"""You are the OWL AI Agent, an investigative graph analyst.
 
 You are working inside one case only. Every tool is already scoped to case_id={case_id}.
+{"You are additionally restricted to the Significant layer. Use only its entities and relationships between those entities; do not infer from or request case-wide data." if allowed_entity_keys is not None else "You may use the full case dataset."}
 
 Your job:
 - Answer investigation questions using tools instead of guessing.
@@ -609,11 +612,13 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
         thread_id: str | None = None,
         available_artifacts: list[dict[str, Any]] | None = None,
         should_cancel: Callable[[], bool] | None = None,
+        allowed_entity_keys: list[str] | None = None,
     ):
         available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
             case_id=case_id,
             artifact_preference=artifact_preference,
+            allowed_entity_keys=(set(allowed_entity_keys) if allowed_entity_keys is not None else None),
             artifact_store=_artifact_store_from_available(available_artifacts),
         )
         tools = make_agent_tools(tool_context)
@@ -624,6 +629,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
             return f"""You are the OWL AI Agent, an investigative graph analyst.
 
 You are working inside one case only. Every tool is already scoped to case_id={case_id}.
+{"You are additionally restricted to the Significant layer. Use only its entities and relationships between those entities; do not infer from or request case-wide data." if allowed_entity_keys is not None else "You may use the full case dataset."}
 
 Your job:
 - Answer investigation questions using tools instead of guessing.

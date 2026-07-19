@@ -11,6 +11,8 @@ import {
 } from "@/lib/location-confidence"
 import type { MapLocation } from "../hooks/use-map-data"
 import type { EntityType } from "@/lib/theme"
+import { useParams } from "react-router-dom"
+import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
 
 interface EntityPopupProps {
   location: MapLocation
@@ -27,6 +29,7 @@ export function EntityPopup({
   onMouseEnter,
   onMouseLeave,
 }: EntityPopupProps) {
+  const { id: caseId } = useParams()
   const summaryText = location.summary ? markdownToPlainText(location.summary) : null
 
   return (
@@ -43,7 +46,15 @@ export function EntityPopup({
         {/* Header */}
         <div className="flex items-center gap-2">
           <NodeBadge type={location.type as EntityType} />
-          <span className="text-xs font-semibold">{location.name}</span>
+          <span className="min-w-0 flex-1 truncate text-xs font-semibold">{location.name}</span>
+          {caseId ? (
+            <SignificantEntityButton
+              caseId={caseId}
+              entityKey={location.key}
+              surface="map_popup"
+              compact
+            />
+          ) : null}
         </div>
 
         {/* Coordinates */}

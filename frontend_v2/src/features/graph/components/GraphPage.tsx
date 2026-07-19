@@ -30,6 +30,8 @@ import { graphAPI } from "../api"
 import { useUIStore } from "@/stores/ui.store"
 import { SubgraphView } from "./SubgraphView"
 import type { NodeDetail } from "@/types/graph.types"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
+import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -40,6 +42,7 @@ export function GraphPage() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const graphRef = useRef<ForceGraphMethods | undefined>(undefined)
+  const caseLayer = useCaseLayer(caseId)
 
   /* ---- Data fetching ---- */
   const { data: graphData, isLoading } = useGraphData(caseId)
@@ -82,6 +85,16 @@ export function GraphPage() {
   const expandGraphPanelTo = useUIStore((s) => s.expandGraphPanelTo)
   const setGraphPanelToolOverlay = useUIStore((s) => s.setGraphPanelToolOverlay)
   const graphPanelToolOverlay = useUIStore((s) => s.graphPanelToolOverlay)
+
+  useEffect(() => {
+    if (
+      caseLayer === "significant" &&
+      graphPanelToolOverlay &&
+      ["similar", "cypher", "recycle"].includes(graphPanelToolOverlay)
+    ) {
+      setGraphPanelToolOverlay(null)
+    }
+  }, [caseLayer, graphPanelToolOverlay, setGraphPanelToolOverlay])
 
   // Auto-expand to detail tab when selection changes
   const prevKeysRef = useRef(selectedNodeKeys)
@@ -214,6 +227,16 @@ export function GraphPage() {
   }
 
   if (!graphData?.nodes.length) {
+    if (caseId && caseLayer === "significant") {
+      return (
+        <SignificantEmptyState
+          caseId={caseId}
+          icon={Network}
+          eligibleTitle="No available significant entities"
+          eligibleDescription="The Significant manifest contains references, but none are currently available in the case graph."
+        />
+      )
+    }
     return (
       <EmptyState
         icon={Network}
@@ -252,6 +275,7 @@ export function GraphPage() {
         onOpenSimilarEntities={() => toggleToolOverlay("similar")}
         onOpenRecycleBin={() => toggleToolOverlay("recycle")}
         onOpenCypher={() => toggleToolOverlay("cypher")}
+        scope={caseLayer}
         filteredNodes={filteredNodes}
         totalNodes={totalNodes}
       />
@@ -311,6 +335,7 @@ export function GraphPage() {
 
       {/* Context menu (floating, positioned by canvas right-click) */}
       <GraphContextMenu
+        caseId={caseId!}
         onShowDetail={(key) => {
           selectNodes([key])
           expandGraphPanelTo("detail")

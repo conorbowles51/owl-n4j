@@ -15,9 +15,12 @@ import { MapLegend } from "./MapLegend"
 import { MapControls } from "./MapControls"
 import { NeedsReviewPanel } from "./NeedsReviewPanel"
 import { ProximityAnalysisPanel } from "./ProximityAnalysisPanel"
+import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
+import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 
 export function MapPage() {
   const { id: caseId } = useParams()
+  const caseLayer = useCaseLayer(caseId)
   const { data: locations, isLoading } = useMapData(caseId)
   const { data: reviewQueue, isLoading: isReviewQueueLoading } =
     useMapReviewQueue(caseId)
@@ -57,6 +60,16 @@ export function MapPage() {
   }
 
   if (!safeLocations.length && reviewQueueCount === 0) {
+    if (caseId && caseLayer === "significant") {
+      return (
+        <SignificantEmptyState
+          caseId={caseId}
+          icon={MapPin}
+          eligibleTitle="No significant entities can be mapped"
+          eligibleDescription="Your Significant layer has entities, but none currently have usable geographic coordinates."
+        />
+      )
+    }
     return (
       <EmptyState
         icon={MapPin}

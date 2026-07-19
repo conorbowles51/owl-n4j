@@ -10,6 +10,7 @@ import type {
   BetweennessResult,
   ShortestPathResult,
 } from "@/types/graph.types"
+import type { CaseLayer } from "@/features/significant/types"
 
 export interface GraphEditPropertySchema {
   name: string
@@ -104,12 +105,14 @@ export const graphAPI = {
     end_date?: string
     limit?: number
     sort_by?: string
+    scope?: CaseLayer
   }) => {
     const qs = new URLSearchParams({ case_id: params.case_id, lightweight: "true" })
     if (params.start_date) qs.set("start_date", params.start_date)
     if (params.end_date) qs.set("end_date", params.end_date)
     if (params.limit != null) qs.set("limit", String(params.limit))
     if (params.sort_by) qs.set("sort_by", params.sort_by)
+    if (params.scope) qs.set("scope", params.scope)
     const raw = await fetchAPI<RawGraphData>(`/api/graph?${qs}`)
     return toGraphData(raw)
   },
@@ -214,10 +217,15 @@ export const graphAPI = {
     return toGraphData(raw)
   },
 
-  getShortestPaths: (caseId: string, nodeKeys: string[], maxDepth = 10) =>
+  getShortestPaths: (
+    caseId: string,
+    nodeKeys: string[],
+    maxDepth = 10,
+    scope: "all" | "significant" = "all"
+  ) =>
     fetchAPI<ShortestPathResult>("/api/graph/shortest-paths", {
       method: "POST",
-      body: { case_id: caseId, node_keys: nodeKeys, max_depth: maxDepth },
+      body: { case_id: caseId, node_keys: nodeKeys, max_depth: maxDepth, scope },
     }),
 
   /* --- Entity merge / dedup --- */
@@ -311,7 +319,8 @@ export const graphAPI = {
     nodeKeys?: string[] | null,
     topN = 20,
     iterations = 20,
-    dampingFactor = 0.85
+    dampingFactor = 0.85,
+    scope: "all" | "significant" = "all"
   ) =>
     fetchAPI<{ results: PageRankResult[] }>("/api/graph/pagerank", {
       method: "POST",
@@ -321,6 +330,7 @@ export const graphAPI = {
         top_n: topN,
         iterations,
         damping_factor: dampingFactor,
+        scope,
       },
     }),
 
@@ -328,7 +338,8 @@ export const graphAPI = {
     caseId: string,
     nodeKeys?: string[] | null,
     resolution = 1.0,
-    maxIterations = 10
+    maxIterations = 10,
+    scope: "all" | "significant" = "all"
   ) =>
     fetchAPI<{ communities: CommunityResult[] }>("/api/graph/louvain", {
       method: "POST",
@@ -337,6 +348,7 @@ export const graphAPI = {
         node_keys: nodeKeys,
         resolution,
         max_iterations: maxIterations,
+        scope,
       },
     }),
 
@@ -344,7 +356,8 @@ export const graphAPI = {
     caseId: string,
     nodeKeys?: string[] | null,
     topN = 20,
-    normalized = true
+    normalized = true,
+    scope: "all" | "significant" = "all"
   ) =>
     fetchAPI<{ results: BetweennessResult[] }>("/api/graph/betweenness-centrality", {
       method: "POST",
@@ -353,6 +366,7 @@ export const graphAPI = {
         node_keys: nodeKeys,
         top_n: topN,
         normalized,
+        scope,
       },
     }),
 
