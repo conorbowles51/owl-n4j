@@ -13,15 +13,44 @@ All nodes get:
 """
 
 import json
+import logging
 import re
 import uuid
 from typing import List, Dict, Optional, Set, Callable, Tuple
 
 from app.pipeline.property_canonicalization import canonicalize_properties
+from app.services.location_validation import validate_location
 
 from .models import ParsedModel, Party, CellebriteReport
 
 # The synchronous Neo4j adapter is injected by the orchestrator.
+
+logger = logging.getLogger(__name__)
+
+
+def _confidence_label(value) -> Optional[str]:
+    """
+    Map Cellebrite confidence (a "High"/"Medium"/"Low" label or a numeric
+    score, sometimes on a 0-100 scale) onto the high/medium/low taxonomy
+    the geocoding provenance schema uses, so device-sourced pins filter
+    and display the same way as geocoded ones.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        label = value.strip().lower()
+        return label if label in ("high", "medium", "low") else None
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    if score > 1:
+        score /= 100.0
+    if score > 0.7:
+        return "high"
+    if score > 0.4:
+        return "medium"
+    return "low"
 
 
 def _geocode_lat_lon(lat: float, lon: float) -> Optional[Dict]:
@@ -797,6 +826,24 @@ class CellebriteNeo4jWriter:
         if lat is None or lon is None:
             return  # Skip locations without coordinates
 
+        # Device GPS is exactly where garbage fixes appear (0,0 cold
+        # starts, out-of-range carves), so gate the coordinates through
+        # the same validation the geocoding pipeline uses before anything
+        # is written or enriched. Invalid fixes still produce a node —
+        # the device did record something and the review queue should be
+        # able to surface it — but never a coordinate, so no pin.
+        validated = validate_location(latitude=lat, longitude=lon, entity_type="Location")
+        if not validated.is_valid:
+            logger.warning(
+                "Rejected Cellebrite location coordinates before graph write",
+                extra={
+                    "model_id": model.model_id,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "reason": validated.rejection_reason.value if validated.rejection_reason else None,
+                },
+            )
+
         # Build a free-form address from PositionAddress sub-fields if
         # present. Order matches typical postal display so the result is
         # human-readable; we keep individual components alongside in case
@@ -850,29 +897,48 @@ class CellebriteNeo4jWriter:
 
         props = self._base_props(model, loc_key, effective_type)
         props.update({
-            "latitude": lat,
-            "longitude": lon,
             "location_type": effective_type,
             "source_app": source,
+            "geocoding_status": validated.status,
         })
+        if validated.is_valid:
+            props["latitude"] = validated.latitude
+            props["longitude"] = validated.longitude
+            # Coordinate provenance: the pin itself comes from device
+            # telemetry, not a geocoder query — record that so the map
+            # popup can say why the pin is where it is.
+            props["geocoding_provider"] = "cellebrite"
+            props["geocoding_precision"] = "gps"
+            confidence_label = _confidence_label(
+                confidence_score if confidence_score is not None else model.decoding_confidence
+            )
+            if confidence_label:
+                props["geocoding_confidence"] = confidence_label
+        elif validated.rejection_reason:
+            props["geocoding_rejection_reason"] = validated.rejection_reason.value
         if accuracy_meters is not None:
             props["accuracy_meters"] = accuracy_meters
         if confidence_score is not None:
             props["confidence_score"] = confidence_score
         if address_str:
             props["address"] = address_str
+            props["location_formatted"] = address_str
             # Source marker so reverse-geocoded vs Cellebrite-provided
             # addresses are distinguishable downstream — investigators
             # can audit "was this address from the device or inferred?".
             props["geocode_source"] = "cellebrite"
             props.update({k: v for k, v in address_parts.items() if v})
-        else:
+        elif validated.is_valid:
             # Cellebrite didn't carry an address — try the configured
-            # reverse-geocoder. Default-off (returns geocode_source =
-            # "none" if no backend is set), so this is a no-op on
-            # deploys that haven't opted in. Wrapped in try/except
-            # because ingestion must not fail if the geocoder is
-            # misconfigured at runtime.
+            # reverse-geocoder (only for coordinates that passed
+            # validation; garbage fixes are never sent to a provider).
+            # Default-off (returns geocode_source = "none" if no backend
+            # is set), so this is a no-op on deploys that haven't opted
+            # in. Wrapped in try/except because ingestion must not fail
+            # if the geocoder is misconfigured at runtime — the device
+            # coordinates stand on their own; a provider failure only
+            # loses the address label, it never unmaps or fabricates a
+            # pin.
             try:
                 geo = _geocode_lat_lon(lat, lon)
             except Exception:
@@ -886,6 +952,14 @@ class CellebriteNeo4jWriter:
                     v = geo.get(k)
                     if v is not None:
                         props[k] = v
+                if geo.get("geocode_source") not in (None, "none"):
+                    # The address came from a reverse-geocode of the
+                    # device fix — record the query so provenance shows
+                    # what was sent to the provider.
+                    props["geocoding_query"] = f"reverse:{lat},{lon}"
+                    formatted = geo.get("address") or geo.get("place_name")
+                    if formatted:
+                        props["location_formatted"] = formatted
         if timestamp:
             props["date"] = timestamp[:10]
             props["time"] = timestamp[11:16] if len(timestamp) > 16 else None
@@ -1187,6 +1261,40 @@ class CellebriteNeo4jWriter:
         if not cell_id and lat is None and lon is None:
             return  # Not enough data to be useful
 
+        # Cell registrations are the other device-telemetry coordinate
+        # source, and just as prone to 0,0 cold-start and corrupt-carve
+        # values — run them through the same validation gate. An invalid
+        # fix still writes the tower node (cell_id/mcc/mnc are evidence)
+        # but never a coordinate, so no pin.
+        geocoding_props: Dict[str, Optional[str]] = {}
+        if lat is not None and lon is not None:
+            validated = validate_location(latitude=lat, longitude=lon, entity_type="CellTower")
+            geocoding_props["geocoding_status"] = validated.status
+            if validated.is_valid:
+                lat = validated.latitude
+                lon = validated.longitude
+                geocoding_props["geocoding_provider"] = "cellebrite"
+                geocoding_props["geocoding_precision"] = "cell_tower"
+                confidence_label = _confidence_label(
+                    confidence_score if confidence_score is not None else model.decoding_confidence
+                )
+                if confidence_label:
+                    geocoding_props["geocoding_confidence"] = confidence_label
+            else:
+                logger.warning(
+                    "Rejected Cellebrite cell tower coordinates before graph write",
+                    extra={
+                        "model_id": model.model_id,
+                        "latitude": lat,
+                        "longitude": lon,
+                        "reason": validated.rejection_reason.value if validated.rejection_reason else None,
+                    },
+                )
+                if validated.rejection_reason:
+                    geocoding_props["geocoding_rejection_reason"] = validated.rejection_reason.value
+                lat = None
+                lon = None
+
         key = f"cell-{model.model_id[:12]}"
         name = f"Cell {cell_id}" if cell_id else "Cell tower"
         props = self._base_props(model, key, name)
@@ -1207,6 +1315,7 @@ class CellebriteNeo4jWriter:
             "confidence_score": confidence_score,
             "source_app": source,
         })
+        props.update(geocoding_props)
         if timestamp:
             props["date"] = timestamp[:10]
             props["time"] = timestamp[11:16] if len(timestamp) > 16 else None

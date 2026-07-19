@@ -53,4 +53,5 @@ jobs:
           python -m pytest -q \
             evidence-engine/tests/test_location_validation.py \
             evidence-engine/tests/test_geocoding.py \
-            evidence-engine/tests/test_manual_graph_edits.py
+            evidence-engine/tests/test_manual_graph_edits.py \
+            evidence-engine/tests/test_cellebrite_location_validation.py

@@ -39,6 +39,10 @@ ALLOWED_COORDINATE_ENTITY_TYPES = frozenset(
         "Device",
         "PhysicalEvidence",
         "Media",
+        # Device-reported telemetry (cell radio registration fix), not a
+        # geocoder output — allowed to carry validated coordinates even
+        # though it is not an ontology category.
+        "CellTower",
     }
 )
 
