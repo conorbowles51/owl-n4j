@@ -3,6 +3,7 @@ import { fetchAPI } from "@/lib/api-client"
 
 export interface FileEntity {
   id: string
+  key: string | null
   name: string
   category: string
   specific_type: string

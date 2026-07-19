@@ -6,12 +6,25 @@ import ForceGraph2D, {
 } from "react-force-graph-2d"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Trash2, ChevronDown, ChevronRight } from "lucide-react"
+import { Trash2, ChevronDown, ChevronRight, Star } from "lucide-react"
+import { toast } from "sonner"
 import { useGraphStore } from "@/stores/graph.store"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
 import { SubgraphAnalysisPanel } from "./SubgraphAnalysisPanel"
 import { useTheme } from "@/lib/theme-context"
 import type { GraphData } from "@/types/graph.types"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  useAddSignificantEntities,
+  useSignificantManifest,
+} from "@/features/significant/hooks/use-significant"
+import { useCaseLayerStore } from "@/features/significant/stores/case-layer.store"
 
 interface SubgraphViewProps {
   caseId: string
@@ -34,15 +47,28 @@ interface SpotlightLink {
 type ForceNode = NodeObject<SpotlightNode>
 type ForceLink = LinkObject<SpotlightNode, SpotlightLink>
 
-export function SubgraphView({ graphData }: SubgraphViewProps) {
+export function SubgraphView({ caseId, graphData }: SubgraphViewProps) {
   const sgRef = useRef<ForceGraphMethods<SpotlightNode, SpotlightLink> | undefined>(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 300, height: 300 })
   const [analysisCollapsed, setAnalysisCollapsed] = useState(true)
+  const [confirmSignificantOpen, setConfirmSignificantOpen] = useState(false)
   const { theme } = useTheme()
 
   const { subgraphNodeKeys, clearSubgraph, selectNodes, showRelationshipLabels } =
     useGraphStore()
+  const { entityKeySet: significantEntityKeys } = useSignificantManifest(caseId)
+  const addSignificant = useAddSignificantEntities(caseId)
+  const setLayer = useCaseLayerStore((state) => state.setLayer)
+
+  const spotlightKeys = useMemo(
+    () => Array.from(subgraphNodeKeys),
+    [subgraphNodeKeys]
+  )
+  const newSignificantCount = useMemo(
+    () => spotlightKeys.filter((key) => !significantEntityKeys.has(key)).length,
+    [significantEntityKeys, spotlightKeys]
+  )
 
   const isDark =
     theme === "dark" ||
@@ -99,6 +125,35 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
     [selectNodes]
   )
 
+  const addSpotlightToSignificant = useCallback(async () => {
+    try {
+      const result = await addSignificant.mutateAsync({
+        entityKeys: spotlightKeys,
+        source: "spotlight",
+        context: { surface: "spotlight", spotlight_size: spotlightKeys.length },
+      })
+      setConfirmSignificantOpen(false)
+      const added = result.added_count ?? 0
+      toast.success(
+        added === 1
+          ? "1 entity added to Significant"
+          : `${added.toLocaleString()} entities added to Significant`,
+        {
+          action: {
+            label: "View Significant",
+            onClick: () => setLayer(caseId, "significant"),
+          },
+        }
+      )
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not add Spotlight to Significant"
+      )
+    }
+  }, [addSignificant, caseId, setLayer, spotlightKeys])
+
   if (subgraphNodeKeys.size === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-4 text-center">
@@ -116,15 +171,29 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
         <h3 className="text-sm font-semibold">
           Spotlight ({subgraphNodeKeys.size})
         </h3>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-xs text-red-600 dark:text-red-400"
-          onClick={clearSubgraph}
-        >
-          <Trash2 className="size-3.5" />
-          Clear
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 border-amber-500/30 bg-amber-500/10 text-xs text-amber-700 hover:bg-amber-500/15 dark:text-amber-300"
+            disabled={newSignificantCount === 0 || addSignificant.isPending}
+            onClick={() => setConfirmSignificantOpen(true)}
+          >
+            <Star className="size-3.5" />
+            {newSignificantCount === 0
+              ? "All significant"
+              : `Add ${newSignificantCount.toLocaleString()} to Significant`}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-red-600 dark:text-red-400"
+            onClick={clearSubgraph}
+          >
+            <Trash2 className="size-3.5" />
+            Clear
+          </Button>
+        </div>
       </div>
 
       {/* Force graph — fills available space */}
@@ -208,6 +277,46 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
           </ScrollArea>
         )}
       </div>
+
+      <Dialog open={confirmSignificantOpen} onOpenChange={setConfirmSignificantOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Spotlight to Significant?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              This will add {newSignificantCount.toLocaleString()} new
+              {newSignificantCount === 1 ? " entity" : " entities"} to the shared
+              Significant layer. {spotlightKeys.length - newSignificantCount > 0
+                ? `${(spotlightKeys.length - newSignificantCount).toLocaleString()} are already included.`
+                : null}
+            </p>
+            <p className="rounded-md border border-amber-500/20 bg-amber-500/[0.07] px-3 py-2 text-xs text-foreground/80">
+              Relationships will appear automatically wherever both connected
+              entities are significant. Your Spotlight will remain unchanged.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmSignificantOpen(false)}
+              disabled={addSignificant.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => void addSpotlightToSignificant()}
+              disabled={addSignificant.isPending || newSignificantCount === 0}
+            >
+              <Star className="size-3.5" />
+              {addSignificant.isPending
+                ? "Adding…"
+                : `Add ${newSignificantCount.toLocaleString()}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

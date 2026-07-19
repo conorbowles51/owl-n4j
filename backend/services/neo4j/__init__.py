@@ -45,6 +45,7 @@ class Neo4jServiceFacade:
 
     # ── Graph visualization & search ───────────────────────────────────
     get_full_graph = staticmethod(graph_service.get_full_graph)
+    get_existing_node_keys = staticmethod(graph_service.get_existing_node_keys)
     get_graph_structure = staticmethod(graph_service.get_graph_structure)
     get_node_with_neighbours = staticmethod(graph_service.get_node_with_neighbours)
     expand_nodes = staticmethod(graph_service.expand_nodes)

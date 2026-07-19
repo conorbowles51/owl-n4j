@@ -65,6 +65,7 @@ def test_build_geocode_request_prefers_structured_fields() -> None:
     assert request is not None
     assert request.query == "12 Quai Antoine, Monaco, Monaco"
     assert request.location_raw == "Monaco office"
+    assert request.location_specificity == "exact_address"
 
 
 def test_build_geocode_request_uses_location_name_only_for_locations() -> None:
@@ -75,16 +76,48 @@ def test_build_geocode_request_uses_location_name_only_for_locations() -> None:
     assert location is not None
     assert location.query == "Monaco"
     assert location.location_raw == "Monaco"
+    assert location.location_specificity == "unknown"
 
 
-def test_build_geocode_request_rejects_vague_location_text() -> None:
+def test_build_geocode_request_accepts_vague_location_text() -> None:
     request = build_geocode_request(
         "Communication",
         "Meeting",
         {"location_raw": "overseas"},
     )
 
-    assert request is None
+    assert request is not None
+    assert request.query == "overseas"
+    assert request.location_specificity == "unknown"
+
+
+def test_build_geocode_request_preserves_ai_continent_specificity() -> None:
+    request = build_geocode_request(
+        "Location",
+        "Europe",
+        {"location_raw": "Europe", "location_specificity": "continent"},
+    )
+
+    assert request is not None
+    assert request.query == "Europe"
+    assert request.location_specificity == "continent"
+
+
+def test_build_geocode_request_keeps_finer_raw_detail_with_structured_context() -> None:
+    request = build_geocode_request(
+        "Location",
+        "Temple Bar",
+        {
+            "location_raw": "Temple Bar",
+            "city": "Dublin",
+            "country": "Ireland",
+            "location_specificity": "district",
+        },
+    )
+
+    assert request is not None
+    assert request.query == "Temple Bar, Dublin, Ireland"
+    assert request.location_specificity == "district"
 
 
 @pytest.mark.asyncio

@@ -329,6 +329,17 @@ class JobStatusSubscriber:
                         )
 
                 merge_job.recycled_source_keys = recycled
+                if merged_key:
+                    from services.significant_service import (
+                        transfer_significant_membership_after_merge,
+                    )
+
+                    transfer_significant_membership_after_merge(
+                        db,
+                        case_id=merge_job.case_id,
+                        source_entity_keys=source_keys,
+                        merged_entity_key=merged_key,
+                    )
                 if failed:
                     merge_job.status = "partial"
                     merge_job.error_message = (

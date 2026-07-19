@@ -40,6 +40,40 @@ describe("graphAPI edit helpers", () => {
     })
   })
 
+  it("requests the Significant graph as a server-side projection", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ nodes: [], links: [] }), { status: 200 })
+    )
+
+    await graphAPI.getGraph({ case_id: "case-1", scope: "significant" })
+
+    const [url] = vi.mocked(globalThis.fetch).mock.calls[0]
+    expect(url).toContain("case_id=case-1")
+    expect(url).toContain("scope=significant")
+    expect(url).toContain("lightweight=true")
+  })
+
+  it("scopes graph analysis to the induced Significant graph", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ results: [] }), { status: 200 })
+    )
+
+    await graphAPI.getPageRank(
+      "case-1",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "significant"
+    )
+
+    const [, options] = vi.mocked(globalThis.fetch).mock.calls[0]
+    expect(JSON.parse(options?.body as string)).toMatchObject({
+      case_id: "case-1",
+      scope: "significant",
+    })
+  })
+
   it("supports geocode preview without applying immediately", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(

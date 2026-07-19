@@ -34,6 +34,7 @@ class GeoService:
         self,
         entity_types: Optional[List[str]] = None,
         case_id: str = None,
+        entity_keys: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
         Get all entities that have geocoded locations.
@@ -45,14 +46,27 @@ class GeoService:
         Returns:
             List of entities with lat/lng coordinates
         """
+        scoped_keys = None
+        if entity_keys is not None:
+            scoped_keys = list(dict.fromkeys(entity_keys))
+            if not scoped_keys:
+                return []
+
         with driver.session() as session:
             type_filter = ""
+            scope_filter = ""
+            connected_scope_filter = ""
             # case_id is always required
             params = {"case_id": case_id}
 
             if entity_types:
                 type_filter = "AND labels(n)[0] IN $types"
                 params["types"] = entity_types
+
+            if scoped_keys is not None:
+                params["entity_keys"] = scoped_keys
+                scope_filter = "AND n.key IN $entity_keys"
+                connected_scope_filter = "AND connected.key IN $entity_keys"
 
             # Always filter by case_id
             query = f"""
@@ -62,12 +76,14 @@ class GeoService:
                   AND NONE(label IN labels(n) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
                   AND coalesce(properties(n)['system_node'], false) <> true
                   {type_filter}
+                  {scope_filter}
                   AND n.case_id = $case_id
                 OPTIONAL MATCH (n)-[r]-(connected)
                 WHERE connected IS NULL OR (
                   NONE(label IN labels(connected) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
                   AND coalesce(properties(connected)['system_node'], false) <> true
                   AND connected.case_id = $case_id
+                  {connected_scope_filter}
                 )
                 WITH n, collect(DISTINCT {{
                     key: connected.key,
@@ -131,15 +147,32 @@ class GeoService:
 
             return entities
 
-    def get_locations_needing_review(self, case_id: str) -> List[Dict]:
+    def get_locations_needing_review(
+        self,
+        case_id: str,
+        entity_keys: Optional[List[str]] = None,
+    ) -> List[Dict]:
         """
         Get entities flagged at ingestion that never received coordinates, so
         investigators can clear them from the map review queue.
         """
+        scoped_keys = None
+        if entity_keys is not None:
+            scoped_keys = list(dict.fromkeys(entity_keys))
+            if not scoped_keys:
+                return []
+
         with driver.session() as session:
-            query = """
+            scope_filter = ""
+            params = {"case_id": case_id}
+            if scoped_keys is not None:
+                scope_filter = "AND n.key IN $entity_keys"
+                params["entity_keys"] = scoped_keys
+
+            query = f"""
                 MATCH (n)
                 WHERE n.case_id = $case_id
+                  {scope_filter}
                   AND (n.latitude IS NULL OR n.longitude IS NULL)
                   AND n.geocoding_status IN ['ambiguous', 'unverified', 'failed']
                   AND NONE(
@@ -158,7 +191,7 @@ class GeoService:
                     n.manual_fields AS manual_fields
                 ORDER BY n.name
             """
-            result = session.run(query, case_id=case_id)
+            result = session.run(query, **params)
             return [
                 {
                     "key": record["key"],

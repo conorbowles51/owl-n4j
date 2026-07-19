@@ -157,10 +157,149 @@ LONGITUDE_ALIASES = {
     "location_longitude",
 }
 
+LOCATION_SPECIFICITY_LEVELS = (
+    "unknown",
+    "continent",
+    "country",
+    "region",
+    "city",
+    "district",
+    "street",
+    "exact_address",
+)
+LOCATION_SPECIFICITY_RANK = {
+    level: rank for rank, level in enumerate(LOCATION_SPECIFICITY_LEVELS)
+}
+_LOCATION_SPECIFICITY_ALIASES = {
+    "unknown": "unknown",
+    "unspecified": "unknown",
+    "vague": "unknown",
+    "relative": "unknown",
+    "continent": "continent",
+    "continental": "continent",
+    "country": "country",
+    "nation": "country",
+    "national": "country",
+    "region": "region",
+    "regional": "region",
+    "state": "region",
+    "province": "region",
+    "county": "region",
+    "city": "city",
+    "town": "city",
+    "village": "city",
+    "municipality": "city",
+    "locality": "city",
+    "district": "district",
+    "neighborhood": "district",
+    "neighbourhood": "district",
+    "borough": "district",
+    "suburb": "district",
+    "postcode": "district",
+    "postal_code": "district",
+    "street": "street",
+    "road": "street",
+    "exact": "exact_address",
+    "exact_address": "exact_address",
+    "address": "exact_address",
+    "building": "exact_address",
+    "premise": "exact_address",
+    "poi": "exact_address",
+    "point": "exact_address",
+    "coordinates": "exact_address",
+    "coordinate": "exact_address",
+}
+_LOCATION_EVIDENCE_FIELDS = (
+    "location_raw",
+    "address",
+    "city",
+    "region",
+    "country",
+    "coordinates_hint",
+    "latitude",
+    "longitude",
+)
+
 
 def _canonical_key(key: str) -> str:
     text = re.sub(r"[^a-zA-Z0-9]+", "_", str(key or "").strip().lower())
     return re.sub(r"_+", "_", text).strip("_")
+
+
+def normalize_location_specificity(value: Any) -> str | None:
+    """Return a canonical location-specificity level for common model variants."""
+    if value in (None, ""):
+        return None
+    return _LOCATION_SPECIFICITY_ALIASES.get(_canonical_key(str(value)))
+
+
+def location_specificity_rank(value: Any) -> int:
+    """Return the ordered rank of a specificity value, defaulting to unknown."""
+    normalized = normalize_location_specificity(value) or "unknown"
+    return LOCATION_SPECIFICITY_RANK[normalized]
+
+
+def promote_location_specificity(
+    properties: dict[str, Any],
+    *candidates: dict[str, Any],
+) -> None:
+    """Promote a merged property set to its most-specific valid source label."""
+    best = normalize_location_specificity(
+        properties.get("location_specificity", properties.get("specificity"))
+    )
+    for candidate in candidates:
+        value = normalize_location_specificity(
+            candidate.get("location_specificity", candidate.get("specificity"))
+        )
+        if value is not None and (
+            best is None
+            or location_specificity_rank(value) > location_specificity_rank(best)
+        ):
+            best = value
+    if best is not None:
+        properties["location_specificity"] = best
+
+
+def has_location_evidence(
+    category: str,
+    name: str,
+    properties: dict[str, Any] | None,
+) -> bool:
+    """Whether an entity carries a location that ingestion must retain."""
+    props = properties or {}
+    if any(props.get(field) not in (None, "") for field in _LOCATION_EVIDENCE_FIELDS):
+        return True
+    return category == "Location" and bool(str(name or "").strip())
+
+
+def infer_structured_location_specificity(properties: dict[str, Any]) -> str | None:
+    """Infer a conservative level from canonical structured geo fields."""
+    if properties.get("coordinates_hint") not in (None, ""):
+        return "exact_address"
+    if (
+        properties.get("latitude") is not None
+        and properties.get("longitude") is not None
+        and properties.get("geocoding_status") in (None, "")
+    ):
+        # Coordinates present in extracted source data are exact. Coordinates
+        # previously produced by the geocoder retain the input specificity that
+        # was persisted alongside geocoding_status instead of becoming "exact".
+        return "exact_address"
+
+    address = str(properties.get("address") or "").strip()
+    if address:
+        # A house/unit number is strong evidence of an exact address. A named
+        # building or POI can still be labelled exact_address by the model.
+        if re.match(r"^\s*\d+[A-Za-z]?(?:\s*[-/]\s*\d+[A-Za-z]?)?\b", address):
+            return "exact_address"
+        return "street"
+    if properties.get("city") not in (None, ""):
+        return "city"
+    if properties.get("region") not in (None, ""):
+        return "region"
+    if properties.get("country") not in (None, ""):
+        return "country"
+    return None
 
 
 def _first_present(properties: dict[str, Any], canonical_keys: set[str]) -> tuple[str, Any] | None:
@@ -341,6 +480,39 @@ def _normalize_geo_properties(properties: dict[str, Any]) -> None:
             text = " ".join(source[1].split())
             if text:
                 properties["location_raw"] = text
+
+    model_specificity = normalize_location_specificity(
+        properties.get("location_specificity", properties.get("specificity"))
+    )
+    structured_specificity = infer_structured_location_specificity(properties)
+
+    # Structured address parts are less ambiguous than a free-form model label.
+    # A finer model label is retained only when location_raw contains additional
+    # detail that the structured fields do not represent (for example a district
+    # plus its containing city).
+    if structured_specificity:
+        raw_key = _canonical_key(str(properties.get("location_raw") or ""))
+        structured_keys = {
+            _canonical_key(str(properties.get(field) or ""))
+            for field in ("address", "city", "region", "country")
+            if properties.get(field) not in (None, "")
+        }
+        model_describes_finer_raw_text = (
+            model_specificity is not None
+            and location_specificity_rank(model_specificity)
+            > location_specificity_rank(structured_specificity)
+            and bool(raw_key)
+            and raw_key not in structured_keys
+        )
+        properties["location_specificity"] = (
+            model_specificity
+            if model_describes_finer_raw_text
+            else structured_specificity
+        )
+    elif model_specificity:
+        properties["location_specificity"] = model_specificity
+    elif properties.get("location_raw") not in (None, ""):
+        properties["location_specificity"] = "unknown"
 
 
 def _normalize_financial_properties(category: str, properties: dict[str, Any]) -> None:

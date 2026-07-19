@@ -71,39 +71,33 @@ def _has_coordinates(properties: dict[str, Any]) -> bool:
     return properties.get("latitude") is not None and properties.get("longitude") is not None
 
 
-def _raw_location_text(category: str, name: str, properties: dict[str, Any]) -> str:
-    """Best-effort location text for an entity, even when too vague to geocode."""
-    raw = str(properties.get("location_raw") or "").strip()
-    if raw:
-        return raw
-    parts = (properties.get(k) for k in ("address", "city", "region", "country"))
-    structured = ", ".join(str(p).strip() for p in parts if p and str(p).strip())
-    if structured:
-        return structured
-    if category == "Location":
-        return str(name or "").strip()
-    return ""
-
-
 async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
     for entity in entities:
         if entity.category not in GEOCODABLE_CATEGORIES:
             continue
-        if _has_coordinates(entity.properties):
+        force_regeocode = bool(entity.properties.pop("_force_regeocode", False))
+        previous_geocoding_state = entity.properties.pop(
+            "_previous_geocoding_state", {}
+        )
+        if _has_coordinates(entity.properties) and not force_regeocode:
             continue
 
         request = build_geocode_request(entity.category, entity.name, entity.properties)
         if request is None:
-            # Location text was present but too vague to geocode; flag it as
-            # ambiguous for the review queue instead of silently dropping it.
-            location_raw = _raw_location_text(entity.category, entity.name, entity.properties)
-            if location_raw:
-                entity.properties["location_raw"] = location_raw
-                entity.properties["geocoding_status"] = "ambiguous"
+            if force_regeocode:
+                entity.properties.update(previous_geocoding_state)
             continue
 
         result = await geocoding_service.geocode(request.query)
+        if force_regeocode and result.status != "success":
+            # Keep the existing, valid coarse pin if an attempted specificity
+            # upgrade cannot be resolved. Its metadata must continue to describe
+            # the coordinates that are actually stored.
+            entity.properties.update(previous_geocoding_state)
+            continue
+
         entity.properties["location_raw"] = request.location_raw
+        entity.properties["location_specificity"] = request.location_specificity
         entity.properties["geocoding_status"] = result.status
 
         if result.status != "success":

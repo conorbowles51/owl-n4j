@@ -2687,7 +2687,7 @@ async def get_file_entities(
     query = """
     MATCH (n)
     WHERE n.case_id = $case_id AND $filename IN n.source_files
-    RETURN n.id AS id, n.name AS name, labels(n) AS labels,
+    RETURN n.id AS id, n.key AS key, n.name AS name, labels(n) AS labels,
            n.specific_type AS specific_type, n.confidence AS confidence
     ORDER BY n.confidence DESC
     LIMIT 50
@@ -2699,6 +2699,7 @@ async def get_file_entities(
         category = labels[0] if labels else "Other"
         entities.append({
             "id": r["id"],
+            "key": r["key"],
             "name": r["name"],
             "category": category,
             "specific_type": r["specific_type"],

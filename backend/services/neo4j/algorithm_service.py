@@ -15,7 +15,13 @@ logger = logging.getLogger(__name__)
 
 class AlgorithmService:
 
-    def get_shortest_paths_subgraph(self, node_keys: List[str], max_depth: int = 10, case_id: str = None) -> Dict[str, List]:
+    def get_shortest_paths_subgraph(
+        self,
+        node_keys: List[str],
+        max_depth: int = 10,
+        case_id: str = None,
+        allowed_node_keys: Optional[List[str]] = None,
+    ) -> Dict[str, List]:
         """
         Find shortest paths between all pairs of selected nodes.
 
@@ -44,6 +50,11 @@ class AlgorithmService:
 
                     # Note: Neo4j doesn't support parameters in variable-length patterns,
                     # so we use string formatting for max_depth (validated as int)
+                    allowed_path_clause = (
+                        "AND all(node IN nodes(path) WHERE node.key IN $allowed_node_keys)"
+                        if allowed_node_keys is not None
+                        else ""
+                    )
                     result = session.run(
                         f"""
                         MATCH path = shortestPath((a {{key: $key1, case_id: $case_id}})-[*..{int(max_depth)}]-(b {{key: $key2, case_id: $case_id}}))
@@ -52,11 +63,13 @@ class AlgorithmService:
                             AND NONE(label IN labels(node) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
                             AND coalesce(properties(node)['system_node'], false) <> true)
                           AND all(rel IN relationships(path) WHERE rel.case_id = $case_id)
+                          {allowed_path_clause}
                         RETURN path
                         """,
                         key1=key1,
                         key2=key2,
-                        case_id=case_id
+                        case_id=case_id,
+                        allowed_node_keys=allowed_node_keys,
                     )
 
                     for record in result:
@@ -92,7 +105,8 @@ class AlgorithmService:
         top_n: int = 20,
         iterations: int = 20,
         damping_factor: float = 0.85,
-        case_id: str = None
+        case_id: str = None,
+        induced_only: bool = False,
     ) -> Dict:
         """
         Calculate PageRank for nodes and return top influential nodes as subgraph.
@@ -111,7 +125,8 @@ class AlgorithmService:
         with driver.session() as session:
             # Step 1: Build the graph to analyze - always filter by case_id
             if node_keys and len(node_keys) > 0:
-                # Focus on selected nodes and their connections (2 hops)
+                # Significant scope is an induced graph: only manifest nodes and
+                # relationships whose two endpoints are in the manifest.
                 graph_query = """
                     MATCH (n)
                     WHERE n.key IN $node_keys AND n.case_id = $case_id
@@ -126,6 +141,14 @@ class AlgorithmService:
                     UNWIND allNodes AS node
                     RETURN DISTINCT node.key AS key
                 """
+                if induced_only:
+                    graph_query = """
+                        MATCH (n)
+                        WHERE n.key IN $node_keys AND n.case_id = $case_id
+                          AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                          AND coalesce(properties(n)['system_node'], false) <> true
+                        RETURN DISTINCT n.key AS key
+                    """
                 result = session.run(graph_query, node_keys=node_keys, case_id=case_id)
                 focus_keys = [record["key"] for record in result if record["key"]]
 
@@ -340,7 +363,8 @@ class AlgorithmService:
         node_keys: Optional[List[str]] = None,
         resolution: float = 1.0,
         max_iterations: int = 10,
-        case_id: str = None
+        case_id: str = None,
+        induced_only: bool = False,
     ) -> Dict:
         """
         Detect communities using Louvain modularity algorithm.
@@ -373,6 +397,14 @@ class AlgorithmService:
                     UNWIND allNodes AS node
                     RETURN DISTINCT node.key AS key
                 """
+                if induced_only:
+                    graph_query = """
+                        MATCH (n)
+                        WHERE n.key IN $node_keys AND n.case_id = $case_id
+                          AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                          AND coalesce(properties(n)['system_node'], false) <> true
+                        RETURN DISTINCT n.key AS key
+                    """
                 result = session.run(graph_query, node_keys=node_keys, case_id=case_id)
                 focus_keys = [record["key"] for record in result if record["key"]]
 
@@ -498,7 +530,8 @@ class AlgorithmService:
         node_keys: Optional[List[str]] = None,
         top_n: int = 20,
         normalized: bool = True,
-        case_id: str = None
+        case_id: str = None,
+        induced_only: bool = False,
     ) -> Dict:
         """
         Calculate betweenness centrality for nodes.
@@ -536,6 +569,14 @@ class AlgorithmService:
                     UNWIND allNodes AS node
                     RETURN DISTINCT node.key AS key
                 """
+                if induced_only:
+                    graph_query = """
+                        MATCH (n)
+                        WHERE n.key IN $node_keys AND n.case_id = $case_id
+                          AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                          AND coalesce(properties(n)['system_node'], false) <> true
+                        RETURN DISTINCT n.key AS key
+                    """
                 result = session.run(graph_query, node_keys=node_keys, case_id=case_id)
                 focus_keys = [record["key"] for record in result if record["key"]]
 

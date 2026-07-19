@@ -267,11 +267,12 @@ Generates human-readable narrative summaries for every entity:
 
 The final stage writes everything to Neo4j and prepares data for RAG:
 
-**Geocoding (Location entities only):**
-- Constructs an address string from the entity's `address`, `city`, `region`, `country` properties
-- Calls Google Maps Geocoding API to get `(latitude, longitude)`
-- Results are cached in memory to avoid duplicate API calls
-- Locations without coordinates won't appear on the map view
+**Geocoding (all geo-bearing map entities):**
+- Retains geographic references at every granularity, including vague phrases and continent/country-level locations
+- Assigns ordered `location_specificity`: `unknown`, `continent`, `country`, `region`, `city`, `district`, `street`, or `exact_address`
+- Constructs a query from `address`, `city`, `region`, and `country`, falling back to `location_raw` or a Location entity's name
+- Attempts every non-empty query through Nominatim and caches both successful and failed results
+- Preserves failed locations in the graph with `geocoding_status=failed`; they remain reviewable even though they cannot produce a map pin
 
 **Entity writes to Neo4j:**
 - Batched in groups of 500 using `UNWIND ... MERGE` queries
@@ -309,7 +310,7 @@ The ontology defines **24 entity categories**, each becoming a Neo4j node label:
 #### Places & Events
 | Category | Description | Key Properties |
 |---|---|---|
-| **Location** | A geographic location specific enough to map | address, city, region, country, coordinates_hint, specificity (enum) |
+| **Location** | A geographic reference at any level of specificity | address, city, region, country, coordinates_hint, location_specificity (enum) |
 | **Event** | A meaningful discrete occurrence | date, date_precision (enum), event_type, significance, description |
 
 #### Financial
@@ -395,7 +396,7 @@ The ontology configures which entity categories power each frontend view:
 | View | Categories | Required Fields |
 |---|---|---|
 | **Timeline** | Event, LegalAction, Media, Intelligence, Transaction, Communication | `date` |
-| **Map** | Location | `latitude`, `longitude` |
+| **Map** | Configured geo-bearing entity categories | `latitude`, `longitude` |
 | **Financial** | Transaction | `amount`, `currency` |
 | **Graph** | All categories | — |
 
