@@ -14,18 +14,23 @@ const entityColorMatch: unknown[] = [
 const exactLocationFilter: FilterSpecification = ["!=", ["get", "isApproximate"], true]
 const approximateLocationFilter: FilterSpecification = ["==", ["get", "isApproximate"], true]
 
+// MapLibre only allows ["zoom"] as the input of a top-level "interpolate"/"step",
+// so the granularity branch must sit inside each stop's output, not wrap the interpolate.
+const isCityGranularity = ["==", ["get", "locationGranularity"], "city"]
+const approximateRadius = [
+  "interpolate", ["linear"], ["zoom"],
+  0, ["case", isCityGranularity, 18, 10],
+  8, ["case", isCityGranularity, 34, 22],
+  14, ["case", isCityGranularity, 64, 38],
+]
+
 export const approximateLocationAreaLayer: LayerProps = {
   id: "approximate-location-area",
   type: "circle",
   filter: approximateLocationFilter,
   paint: {
     "circle-color": entityColorMatch as unknown as string,
-    "circle-radius": [
-      "case",
-      ["==", ["get", "locationGranularity"], "city"],
-      ["interpolate", ["linear"], ["zoom"], 0, 18, 8, 34, 14, 64],
-      ["interpolate", ["linear"], ["zoom"], 0, 10, 8, 22, 14, 38],
-    ],
+    "circle-radius": approximateRadius as unknown as number,
     "circle-blur": 0.75,
     "circle-opacity": 0.28,
   },
@@ -37,12 +42,7 @@ export const approximateLocationOutlineLayer: LayerProps = {
   filter: approximateLocationFilter,
   paint: {
     "circle-color": "transparent",
-    "circle-radius": [
-      "case",
-      ["==", ["get", "locationGranularity"], "city"],
-      ["interpolate", ["linear"], ["zoom"], 0, 18, 8, 34, 14, 64],
-      ["interpolate", ["linear"], ["zoom"], 0, 10, 8, 22, 14, 38],
-    ],
+    "circle-radius": approximateRadius as unknown as number,
     "circle-stroke-color": entityColorMatch as unknown as string,
     "circle-stroke-width": 1.5,
     "circle-stroke-opacity": 0.58,
