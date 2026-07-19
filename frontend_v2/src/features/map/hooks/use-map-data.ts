@@ -32,6 +32,8 @@ export interface MapLocation {
   coordinate_precision?: number | string | null
   accuracy_meters?: number | string | null
   manual_correction_history: ManualCorrection[]
+  geocoding_status?: string
+  manual_fields?: string[]
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
@@ -55,6 +57,8 @@ interface RawMapLocation {
   coordinate_precision?: number | string | null
   accuracy_meters?: number | string | null
   manual_correction_history?: unknown
+  geocoding_status?: string
+  manual_fields?: string[]
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
@@ -155,6 +159,28 @@ export function useMapData(caseId: string | undefined) {
         })
       )
     },
+    enabled: !!caseId,
+  })
+}
+
+export interface ReviewQueueItem {
+  key: string
+  name: string
+  type: string
+  location_raw?: string
+  geocoding_status?: string
+  geocoding_confidence?: string
+  manual_fields?: string[]
+}
+
+/** Locations flagged at ingestion (no coordinates, so no pin). */
+export function useMapReviewQueue(caseId: string | undefined) {
+  return useQuery({
+    queryKey: ["map", "needs-review", caseId],
+    queryFn: () =>
+      fetchAPI<ReviewQueueItem[]>(
+        `/api/graph/locations/needs-review?case_id=${caseId}`
+      ),
     enabled: !!caseId,
   })
 }

@@ -3,7 +3,14 @@ import {
   isApproximateLocation,
   type MapLocation,
 } from "../hooks/use-map-data"
-import type { Feature, FeatureCollection, Point, Polygon } from "geojson"
+import type { BoundingShape } from "../stores/map.store"
+import type {
+  Feature,
+  FeatureCollection,
+  LineString,
+  Point,
+  Polygon,
+} from "geojson"
 
 export interface LocationProperties {
   key: string
@@ -81,5 +88,69 @@ export function createCircleGeoJSON(
         properties: {},
       },
     ],
+  }
+}
+
+export function boundingShapesToGeoJSON(
+  shapes: BoundingShape[]
+): FeatureCollection<Polygon, { id: string }> {
+  return {
+    type: "FeatureCollection",
+    features: shapes.map(
+      (shape): Feature<Polygon, { id: string }> => ({
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [shape.coordinates] },
+        properties: { id: shape.id },
+      })
+    ),
+  }
+}
+
+export function drawingLineToGeoJSON(
+  points: [number, number][]
+): FeatureCollection<LineString> | null {
+  if (points.length < 2) return null
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: points },
+        properties: {},
+      },
+    ],
+  }
+}
+
+export function drawingPolygonPreviewToGeoJSON(
+  points: [number, number][]
+): FeatureCollection<Polygon> | null {
+  if (points.length < 3) return null
+  const first = points[0]
+  if (!first) return null
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [[...points, first]] },
+        properties: {},
+      },
+    ],
+  }
+}
+
+export function drawingPointsToGeoJSON(
+  points: [number, number][]
+): FeatureCollection<Point, { index: number }> {
+  return {
+    type: "FeatureCollection",
+    features: points.map(
+      (point, index): Feature<Point, { index: number }> => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: point },
+        properties: { index },
+      })
+    ),
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import type { EvidenceJob, JobProgressMessage } from "@/types/evidence.types"
 
@@ -23,6 +23,12 @@ export function useJobProgress(options: UseJobProgressOptions) {
   const queryClient = useQueryClient()
   const socketsRef = useRef<Map<string, WebSocket>>(new Map())
   const retriesRef = useRef<Map<string, number>>(new Map())
+  const connectToJobRef = useRef<(jobId: string) => void>(() => {})
+  const [connectedCount, setConnectedCount] = useState(0)
+
+  const updateConnectedCount = useCallback(() => {
+    setConnectedCount(socketsRef.current.size)
+  }, [])
 
   const handleMessage = useCallback(
     (jobId: string, data: JobProgressMessage) => {
@@ -93,6 +99,7 @@ export function useJobProgress(options: UseJobProgressOptions) {
       try {
         const ws = new WebSocket(wsUrl)
         socketsRef.current.set(jobId, ws)
+        updateConnectedCount()
 
         ws.onmessage = (event) => {
           try {
@@ -104,6 +111,7 @@ export function useJobProgress(options: UseJobProgressOptions) {
               ws.close()
               socketsRef.current.delete(jobId)
               retriesRef.current.delete(jobId)
+              updateConnectedCount()
             }
           } catch {
             // Ignore parse errors
@@ -112,26 +120,32 @@ export function useJobProgress(options: UseJobProgressOptions) {
 
         ws.onclose = () => {
           socketsRef.current.delete(jobId)
+          updateConnectedCount()
         }
 
         ws.onerror = () => {
           ws.close()
           socketsRef.current.delete(jobId)
+          updateConnectedCount()
 
           // Retry with exponential backoff (max 3 attempts)
           const retries = retriesRef.current.get(jobId) || 0
           if (retries < 3) {
             retriesRef.current.set(jobId, retries + 1)
             const delay = Math.pow(2, retries) * 1000 // 1s, 2s, 4s
-            setTimeout(() => connectToJob(jobId), delay)
+            setTimeout(() => connectToJobRef.current(jobId), delay)
           }
         }
       } catch {
         // WebSocket not available — polling fallback handles it
       }
     },
-    [handleMessage]
+    [handleMessage, updateConnectedCount]
   )
+
+  useEffect(() => {
+    connectToJobRef.current = connectToJob
+  }, [connectToJob])
 
   useEffect(() => {
     // Connect to new jobs
@@ -142,14 +156,19 @@ export function useJobProgress(options: UseJobProgressOptions) {
     }
 
     // Disconnect from removed jobs
+    let disconnected = false
     for (const [jobId, ws] of socketsRef.current) {
       if (!jobIds.includes(jobId)) {
         ws.close()
         socketsRef.current.delete(jobId)
         retriesRef.current.delete(jobId)
+        disconnected = true
       }
     }
-  }, [jobIds, connectToJob])
+    if (disconnected) {
+      updateConnectedCount()
+    }
+  }, [jobIds, connectToJob, updateConnectedCount])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -166,6 +185,6 @@ export function useJobProgress(options: UseJobProgressOptions) {
   }, [])
 
   return {
-    connectedCount: socketsRef.current.size,
+    connectedCount,
   }
 }

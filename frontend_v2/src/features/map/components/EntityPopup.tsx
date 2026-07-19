@@ -11,6 +11,11 @@ import {
   type ManualCorrection,
   type MapLocation,
 } from "../hooks/use-map-data"
+import {
+  getConfidenceTier,
+  CONFIDENCE_TIER_LABELS,
+  CONFIDENCE_TIER_BADGE_VARIANTS,
+} from "@/lib/location-confidence"
 import type { EntityType } from "@/lib/theme"
 
 interface EntityPopupProps {
@@ -84,11 +89,12 @@ export function EntityPopup({
               approximate
             </Badge>
           )}
-          {location.geocoding_confidence && (
-            <Badge variant="outline" className="ml-1 text-[9px]">
-              {location.geocoding_confidence}
-            </Badge>
-          )}
+          <Badge
+            variant={CONFIDENCE_TIER_BADGE_VARIANTS[getConfidenceTier(location)]}
+            className="ml-1 text-[9px]"
+          >
+            {CONFIDENCE_TIER_LABELS[getConfidenceTier(location)]}
+          </Badge>
         </div>
 
         {/* Location info */}

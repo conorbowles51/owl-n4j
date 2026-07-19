@@ -6,7 +6,7 @@ import ForceGraph2D, {
 } from "react-force-graph-2d"
 import { useGraphStore } from "@/stores/graph.store"
 import { getNodeColor, getCanvasColors } from "@/lib/theme"
-import { useTheme } from "@/lib/theme-provider"
+import { useTheme } from "@/lib/theme-context"
 import type { GraphData } from "@/types/graph.types"
 
 /* ------------------------------------------------------------------ */

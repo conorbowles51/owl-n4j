@@ -134,6 +134,44 @@ class GraphLocationAuthorizationTests(unittest.TestCase):
         self.assertEqual(response.json(), payload)
         get_locations.assert_called_once_with(None, case_id=str(db.case.id))
 
+    def test_locations_needing_review_uses_case_read_authorization(self):
+        membership = SimpleNamespace(
+            permissions={"case": {"view": True, "edit": False}}
+        )
+        current_user = SimpleNamespace(
+            id=uuid4(),
+            global_role="user",
+            is_active=True,
+        )
+        db = _CaseAccessDb(membership=membership)
+        self.app.dependency_overrides[graph.get_current_db_user] = lambda: current_user
+        self.app.dependency_overrides[graph.get_db] = lambda: db
+        payload = [
+            {
+                "key": "loc-1",
+                "name": "Unknown warehouse",
+                "type": "Location",
+                "location_raw": "warehouse",
+                "geocoding_status": "ambiguous",
+                "geocoding_confidence": None,
+                "manual_fields": [],
+            }
+        ]
+
+        with patch.object(
+            graph.neo4j_service,
+            "get_locations_needing_review",
+            return_value=payload,
+        ) as get_locations:
+            response = self.client.get(
+                "/api/graph/locations/needs-review",
+                params={"case_id": str(db.case.id)},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), payload)
+        get_locations.assert_called_once_with(case_id=str(db.case.id))
+
     def test_graph_mutation_rejects_a_view_only_member(self):
         membership = SimpleNamespace(
             permissions={"case": {"view": True, "edit": False}}

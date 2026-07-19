@@ -21,8 +21,9 @@ export default defineConfig([globalIgnores(['dist']), {
     globals: globals.browser,
   },
   rules: {
-    'react-hooks/immutability': 'off',
+    // Several detail dialogs intentionally reset local draft form state when a
+    // selected record changes. The compiler rule treats that pattern as an
+    // error, but it is valid for these editable panels.
     'react-hooks/set-state-in-effect': 'off',
-    'react-refresh/only-export-components': 'off',
   },
 }, ...storybook.configs["flat/recommended"]])

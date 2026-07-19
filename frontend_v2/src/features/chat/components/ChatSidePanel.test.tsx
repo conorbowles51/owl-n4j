@@ -30,7 +30,7 @@ vi.mock("@/features/evidence/api", () => ({
   },
 }))
 
-function renderChatSidePanel() {
+function renderPanel() {
   return render(
     <MemoryRouter initialEntries={["/cases/case-1/chat"]}>
       <ChatSidePanel caseId="case-1" />
@@ -76,7 +76,7 @@ describe("ChatSidePanel", () => {
   })
 
   it("shows the active conversation and starts new chats from compact controls", () => {
-    renderChatSidePanel()
+    renderPanel()
 
     expect(screen.getByText("Saved chat")).toBeInTheDocument()
 
@@ -86,7 +86,7 @@ describe("ChatSidePanel", () => {
   })
 
   it("sends through the persisted chat hook with model and scope", () => {
-    renderChatSidePanel()
+    renderPanel()
 
     const input = screen.getByPlaceholderText("Ask a question...")
     fireEvent.change(input, { target: { value: "Follow the money" } })
@@ -98,13 +98,13 @@ describe("ChatSidePanel", () => {
       "openai",
       "case_overview",
       {
-        view: "chat",
         label: "Case side panel",
         route: "/cases/case-1/chat",
         scope: "case_overview",
         selections: {
           entity_keys: [],
         },
+        view: "chat",
       }
     )
   })

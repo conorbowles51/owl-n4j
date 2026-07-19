@@ -71,6 +71,20 @@ def _has_coordinates(properties: dict[str, Any]) -> bool:
     return properties.get("latitude") is not None and properties.get("longitude") is not None
 
 
+def _raw_location_text(category: str, name: str, properties: dict[str, Any]) -> str:
+    """Best-effort location text for an entity, even when too vague to geocode."""
+    raw = str(properties.get("location_raw") or "").strip()
+    if raw:
+        return raw
+    parts = (properties.get(k) for k in ("address", "city", "region", "country"))
+    structured = ", ".join(str(p).strip() for p in parts if p and str(p).strip())
+    if structured:
+        return structured
+    if category == "Location":
+        return str(name or "").strip()
+    return ""
+
+
 async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
     for entity in entities:
         if entity.category not in GEOCODABLE_CATEGORIES:
@@ -80,6 +94,12 @@ async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
 
         request = build_geocode_request(entity.category, entity.name, entity.properties)
         if request is None:
+            # Location text was present but too vague to geocode; flag it as
+            # ambiguous for the review queue instead of silently dropping it.
+            location_raw = _raw_location_text(entity.category, entity.name, entity.properties)
+            if location_raw:
+                entity.properties["location_raw"] = location_raw
+                entity.properties["geocoding_status"] = "ambiguous"
             continue
 
         result = await geocoding_service.geocode(request.query)
