@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from postgres.models.case import Case
 from postgres.models.case_membership import CaseMembership
-from postgres.models.enums import CaseMembershipRole, GlobalRole
+from postgres.models.enums import CaseMembershipRole, CaseStatus, GlobalRole
 from postgres.models.user import User
 from postgres.permissions import (
     OWNER_PERMISSIONS,
@@ -20,6 +20,10 @@ from postgres.permissions import (
     VIEWER_PERMISSIONS,
     clone_permissions,
 )
+from services.system_log_service import LogOrigin, LogType, system_log_service
+
+
+_UNSET = object()
 
 
 # --- Custom Exceptions ---
@@ -302,18 +306,20 @@ def update_case(
     db: Session,
     case_id: UUID,
     user: User,
-    title: str | None = None,
-    description: str | None = None,
+    title: str | object = _UNSET,
+    description: str | None | object = _UNSET,
+    status: CaseStatus | str | object = _UNSET,
 ) -> Case:
     """
-    Update a case's title and/or description.
+    Update a case's metadata and write its audit record in the same transaction.
 
     Args:
         db: Database session
         case_id: The case ID
         user: The user performing the update
         title: New title (optional)
-        description: New description (optional)
+        description: New description, including ``None`` to clear it (optional)
+        status: New case workflow status (optional)
 
     Returns:
         The updated Case object
@@ -324,10 +330,33 @@ def update_case(
     """
     case, _ = check_case_access(db, case_id, user, required_permission=("case", "edit"))
 
-    if title is not None:
+    changes: dict[str, dict[str, str | None]] = {}
+
+    if title is not _UNSET and title != case.title:
+        changes["title"] = {"from": case.title, "to": title}
         case.title = title
-    if description is not None:
+    if description is not _UNSET and description != case.description:
+        changes["description"] = {"from": case.description, "to": description}
         case.description = description
+
+    if status is not _UNSET:
+        status_value = status.value if isinstance(status, CaseStatus) else status
+        if status_value != case.status:
+            changes["status"] = {"from": case.status, "to": status_value}
+            case.status = status_value
+
+    if not changes:
+        return case
+
+    system_log_service.log(
+        log_type=LogType.CASE_OPERATION,
+        origin=LogOrigin.BACKEND,
+        action="Update Case Metadata",
+        details={"case_id": str(case_id), "changes": changes},
+        user=user.email,
+        success=True,
+        db=db,
+    )
 
     db.commit()
     db.refresh(case)

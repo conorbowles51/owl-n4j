@@ -52,8 +52,13 @@ export function FileListToolbar({
   onDeleteFiles,
 }: FileListToolbarProps) {
   const {
-    searchTerm,
-    setSearchTerm,
+    searchMode,
+    setSearchMode,
+    fileSearchTerm,
+    setFileSearchTerm,
+    textSearchTerm,
+    setTextSearchTerm,
+    openTextSearch,
     statusFilter,
     setStatusFilter,
     typeFilter,
@@ -87,6 +92,8 @@ export function FileListToolbar({
   })
 
   const selectionCount = selectedFileIds.size
+  const activeSearchTerm = searchMode === "files" ? fileSearchTerm : textSearchTerm
+  const setActiveSearchTerm = searchMode === "files" ? setFileSearchTerm : setTextSearchTerm
 
   const handleUploadSelection = (selectedFiles: FileList | null, mode: UploadMode) => {
     const files = Array.from(selectedFiles ?? [])
@@ -157,21 +164,43 @@ export function FileListToolbar({
 
   return (
     <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
-      {/* Search */}
-      <div className="relative max-w-xs flex-1">
-        <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search files..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="h-8 pl-8 pr-7 text-xs"
-        />
-        {searchTerm && (
-          <button
-            onClick={() => setSearchTerm("")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+      {/* One search control, two deliberately different scopes. */}
+      <div className="flex min-w-[360px] max-w-[520px] flex-1 items-center overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
+        <Select
+          value={searchMode}
+          onValueChange={(value) => setSearchMode(value as "files" | "text")}
+        >
+          <SelectTrigger
+            size="sm"
+            aria-label="Search scope"
+            className="h-8 w-[136px] shrink-0 rounded-none border-0 border-r border-border bg-muted/30 px-2.5 shadow-none focus-visible:ring-0"
           >
-            <X className="size-3" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="start">
+            <SelectItem value="files">Files in folder</SelectItem>
+            <SelectItem value="text">Text in case</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label={searchMode === "files" ? "Search files in folder" : "Search text in case"}
+            placeholder={searchMode === "files" ? "Filter filenames..." : "Find an exact name, phrase, or number..."}
+            value={activeSearchTerm}
+            onFocus={() => searchMode === "text" && openTextSearch()}
+            onChange={(e) => setActiveSearchTerm(e.target.value)}
+            className="h-8 rounded-none border-0 pl-8 pr-8 text-xs shadow-none focus-visible:ring-0"
+          />
+        </div>
+        {activeSearchTerm && (
+          <button
+            type="button"
+            aria-label="Clear search"
+            onClick={() => setActiveSearchTerm("")}
+            className="mr-1.5 flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X className="size-3.5" />
           </button>
         )}
       </div>

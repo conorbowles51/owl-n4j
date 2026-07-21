@@ -18,7 +18,7 @@ from postgres.models.agent import (
     AgentThread,
     AgentToolCall,
 )
-from postgres.models.evidence import EvidenceFolder, EvidenceFile, IngestionLog
+from postgres.models.evidence import EvidenceDocumentText, EvidenceFolder, EvidenceFile, IngestionLog
 from postgres.models.case_profile import (
     CaseProfile,
     CaseProfileAttribute,
@@ -57,7 +57,7 @@ __all__ = [
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",
     "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall",
-    "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
+    "EvidenceDocumentText", "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "SignificantEntity",
     "CaseProfile", "CaseProfileAttribute", "CaseProfileEvidenceLink",
     "CaseProfileFindingLink", "CaseProfileGraphNodeLink", "CaseProfileNoteLink",

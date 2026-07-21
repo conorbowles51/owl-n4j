@@ -47,6 +47,7 @@ interface DocumentViewerProps {
   documentUrl?: string
   documentName?: string
   initialPage?: number
+  navigationKey?: string
 }
 
 export function DocumentViewer({
@@ -55,6 +56,7 @@ export function DocumentViewer({
   documentUrl,
   documentName,
   initialPage = 1,
+  navigationKey,
 }: DocumentViewerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -106,8 +108,7 @@ export function DocumentViewer({
     } else if (documentUrl && fileType !== "text") {
       setLoading(true)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, documentUrl, fileType])
+  }, [open, documentUrl, documentName, fileType, initialPage, navigationKey])
 
   useEffect(() => {
     if (!open || fileType === "text") return

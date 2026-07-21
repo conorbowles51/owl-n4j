@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Enum, String, Text, Uuid, func
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -65,4 +65,24 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
+    )
+
+
+class EvidenceDocumentText(Base):
+    __tablename__ = "evidence_document_texts"
+
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("evidence_files.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    engine_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    character_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source_locations: Mapped[list] = mapped_column(JSONB, server_default="[]", nullable=False)
+    extracted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )

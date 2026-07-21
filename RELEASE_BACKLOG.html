@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b202a'/%3E%3Ccircle cx='28' cy='28' r='13' fill='none' stroke='%237ed3cc' stroke-width='5'/%3E%3Cpath d='M38 38 52 52' stroke='%23fbfaf5' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='28' cy='28' r='3' fill='%23eeb24a'/%3E%3C/svg%3E" />
+  <title>Loupe — Initial Release Backlog</title>
+  <style>
+    :root {
+      --ink: #0b202a;
+      --ink-2: #294752;
+      --ink-3: #627880;
+      --paper: #f3f0e7;
+      --paper-2: #fbfaf5;
+      --paper-3: #e7e2d5;
+      --line: #d6d0c2;
+      --teal: #087f83;
+      --teal-soft: #d7ece8;
+      --amber: #c48419;
+      --amber-soft: #f7e8c8;
+      --coral: #ba4e3b;
+      --coral-soft: #f5dcd5;
+      --slate-soft: #e2e9e9;
+      --shadow: 0 16px 42px rgba(11, 32, 42, 0.09);
+      --display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      --body: Aptos, "Segoe UI Variable", "Segoe UI", sans-serif;
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 74% -8%, rgba(8, 127, 131, 0.14), transparent 28rem),
+        linear-gradient(90deg, rgba(11, 32, 42, 0.025) 1px, transparent 1px),
+        var(--paper);
+      background-size: auto, 42px 42px, auto;
+      font-family: var(--body);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    a { color: inherit; }
+    :focus-visible { outline: 3px solid rgba(8, 127, 131, 0.34); outline-offset: 2px; }
+
+    .masthead {
+      position: relative;
+      overflow: hidden;
+      padding: 56px clamp(24px, 6vw, 92px) 52px;
+      color: #f8f5eb;
+      background:
+        linear-gradient(115deg, rgba(255,255,255,0.045), transparent 42%),
+        var(--ink);
+    }
+
+    .masthead::after {
+      content: "";
+      position: absolute;
+      width: 560px;
+      height: 560px;
+      right: -180px;
+      top: -280px;
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 50%;
+      box-shadow: 0 0 0 58px rgba(255,255,255,0.025), 0 0 0 118px rgba(255,255,255,0.018);
+      pointer-events: none;
+    }
+
+    .brandline, .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .brandmark {
+      display: inline-grid;
+      place-items: center;
+      width: 27px;
+      height: 27px;
+      border: 1px solid rgba(255,255,255,0.42);
+      border-radius: 50%;
+      color: #7ed3cc;
+    }
+
+    .masthead-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.7fr);
+      gap: clamp(32px, 7vw, 110px);
+      max-width: 1480px;
+      margin: 58px auto 0;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      max-width: 880px;
+      margin-bottom: 20px;
+      font-family: var(--display);
+      font-size: clamp(48px, 7vw, 92px);
+      line-height: 0.94;
+      font-weight: 600;
+      letter-spacing: -0.045em;
+    }
+
+    .dek {
+      max-width: 780px;
+      margin: 0;
+      color: #c6d2d4;
+      font-size: clamp(16px, 2vw, 21px);
+      line-height: 1.55;
+    }
+
+    .verdict {
+      align-self: end;
+      padding: 22px 22px 20px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.055);
+      backdrop-filter: blur(12px);
+    }
+
+    .verdict .eyebrow { color: #7ed3cc; }
+    .verdict strong {
+      display: block;
+      margin: 8px 0 6px;
+      font-family: var(--display);
+      font-size: 26px;
+      font-weight: 600;
+    }
+    .verdict p { margin: 0; color: #c6d2d4; font-size: 13px; }
+
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      max-width: 1480px;
+      margin: -1px auto 0;
+      border: 1px solid var(--line);
+      border-top: 0;
+      background: var(--paper-2);
+      box-shadow: var(--shadow);
+    }
+
+    .metric { padding: 22px 24px; border-right: 1px solid var(--line); }
+    .metric:last-child { border-right: 0; }
+    .metric span { display: block; color: var(--ink-3); font-size: 11px; font-weight: 800; letter-spacing: 0.11em; text-transform: uppercase; }
+    .metric strong { display: block; margin-top: 4px; font-family: var(--display); font-size: 34px; line-height: 1; font-weight: 600; }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 296px minmax(0, 1fr);
+      gap: 34px;
+      max-width: 1480px;
+      margin: 42px auto 100px;
+      padding: 0 24px;
+    }
+
+    .sidebar { position: sticky; top: 18px; align-self: start; max-height: calc(100vh - 36px); overflow: auto; scrollbar-width: thin; }
+    .sidebar-card { border: 1px solid var(--line); background: rgba(251,250,245,0.9); box-shadow: 0 8px 28px rgba(11,32,42,0.055); }
+    .sidebar-title { padding: 15px 16px 12px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; }
+    .epic-nav { display: grid; padding: 8px; }
+    .epic-nav a { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: center; padding: 8px; border-radius: 3px; text-decoration: none; font-size: 12px; }
+    .epic-nav a:hover { background: var(--paper-3); }
+    .epic-nav .nav-id { color: var(--teal); font-family: var(--mono); font-size: 10px; font-weight: 800; }
+    .epic-nav .nav-count { color: var(--ink-3); font-family: var(--mono); font-size: 10px; }
+
+    .sidebar-note { margin-top: 14px; padding: 16px; border-left: 3px solid var(--teal); background: var(--teal-soft); color: var(--ink-2); font-size: 12px; }
+    .sidebar-note strong { display: block; margin-bottom: 4px; color: var(--ink); }
+
+    .main { min-width: 0; }
+    .controls {
+      position: sticky;
+      z-index: 20;
+      top: 0;
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) auto auto;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: rgba(243, 240, 231, 0.92);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 9px 22px rgba(11,32,42,0.055);
+    }
+
+    .search-wrap { position: relative; }
+    .search-wrap::before { content: "⌕"; position: absolute; left: 13px; top: 7px; color: var(--teal); font-size: 20px; line-height: 1; }
+    .search-wrap input, .controls select {
+      width: 100%;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      background: var(--paper-2);
+      color: var(--ink);
+    }
+    .search-wrap input { padding: 0 14px 0 40px; }
+    .controls select { min-width: 154px; padding: 0 30px 0 10px; }
+
+    .button-row { display: flex; gap: 7px; }
+    .action {
+      min-height: 38px;
+      padding: 0 12px;
+      border: 1px solid var(--ink);
+      border-radius: 2px;
+      background: transparent;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .action:hover { background: var(--ink); color: white; }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin: 12px 0 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-top: 0;
+      background: rgba(251,250,245,0.7);
+    }
+
+    .filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 29px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 99px;
+      background: var(--paper-2);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 750;
+    }
+    .filter-chip[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: white; }
+    .chip-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+    .scope-note {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 16px;
+      align-items: start;
+      margin: 24px 0 34px;
+      padding: 19px 20px;
+      border: 1px solid #d0aa64;
+      background: var(--amber-soft);
+    }
+    .scope-note .stamp { padding: 4px 8px; border: 1px solid var(--amber); color: #7b500b; font-family: var(--mono); font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .scope-note p { margin: 0; color: #604718; font-size: 13px; }
+
+    .epic { scroll-margin-top: 88px; margin: 0 0 46px; }
+    .epic-header {
+      display: grid;
+      grid-template-columns: 72px 1fr auto;
+      gap: 18px;
+      align-items: end;
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 2px solid var(--ink);
+    }
+    .epic-no { color: var(--teal); font-family: var(--mono); font-size: 12px; font-weight: 800; letter-spacing: 0.12em; }
+    .epic h2 { margin: 0; font-family: var(--display); font-size: clamp(29px, 4vw, 46px); line-height: 1; font-weight: 600; letter-spacing: -0.025em; }
+    .epic-strap { margin: 7px 0 0; color: var(--ink-3); font-size: 13px; }
+    .epic-progress { text-align: right; }
+    .epic-progress strong { display: block; font-family: var(--mono); font-size: 13px; }
+    .epic-progress span { color: var(--ink-3); font-size: 10px; text-transform: uppercase; }
+
+    .story-list { display: grid; gap: 10px; }
+    .story { border: 1px solid var(--line); background: var(--paper-2); box-shadow: 0 5px 16px rgba(11,32,42,0.035); }
+    .story[hidden], .epic[hidden] { display: none !important; }
+    .story-toggle {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 13px;
+      align-items: center;
+      width: 100%;
+      padding: 15px 16px;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .story-toggle:hover { background: rgba(231,226,213,0.48); }
+    .caret { color: var(--teal); font-family: var(--mono); font-size: 14px; transition: transform 160ms ease; }
+    .story.open .caret { transform: rotate(90deg); }
+    .story-heading { min-width: 0; }
+    .story-title-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .story-id { color: var(--ink-3); font-family: var(--mono); font-size: 10px; font-weight: 800; }
+    .story h3 { margin: 3px 0 0; font-size: 15px; line-height: 1.32; font-weight: 760; }
+    .story-progress { color: var(--ink-3); font-family: var(--mono); font-size: 10px; white-space: nowrap; }
+
+    .badge { display: inline-flex; align-items: center; min-height: 20px; padding: 1px 7px; border-radius: 2px; font-family: var(--mono); font-size: 9px; font-weight: 850; letter-spacing: 0.04em; text-transform: uppercase; }
+    .p0 { background: var(--coral-soft); color: #8e2d20; }
+    .p1 { background: var(--amber-soft); color: #77500e; }
+    .p2 { background: var(--slate-soft); color: #37535c; }
+    .decision { background: var(--teal-soft); color: #075d60; }
+
+    .story-body { display: none; padding: 0 18px 19px 47px; }
+    .story.open .story-body { display: block; }
+    .outcome { max-width: 920px; margin: 0 0 13px; color: var(--ink-2); font-size: 13px; }
+    .meta-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 15px; }
+    .meta { padding: 3px 7px; border: 1px solid var(--line); background: #fffef9; color: var(--ink-3); font-family: var(--mono); font-size: 9px; }
+
+    .task-label { margin: 0 0 8px; color: var(--ink-3); font-size: 10px; font-weight: 850; letter-spacing: 0.11em; text-transform: uppercase; }
+    .tasks { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+    .task { display: grid; grid-template-columns: 19px 1fr; gap: 9px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .task input { width: 15px; height: 15px; margin: 3px 0 0; accent-color: var(--teal); }
+    .task label { cursor: pointer; font-size: 12.5px; }
+    .task.done label { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+    .acceptance { margin: 14px 0 0; padding: 11px 13px; border-left: 3px solid var(--teal); background: var(--teal-soft); color: #174e50; font-size: 12px; }
+    .acceptance strong { color: var(--ink); }
+
+    .empty-results { display: none; margin: 42px 0; padding: 40px; border: 1px dashed var(--line); text-align: center; color: var(--ink-3); }
+    .empty-results.visible { display: block; }
+
+    .methodology {
+      margin-top: 60px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      background: var(--ink);
+      color: #d7e1e2;
+    }
+    .methodology h2 { margin-bottom: 8px; color: white; font-family: var(--display); font-size: 31px; font-weight: 600; }
+    .methodology p { max-width: 900px; font-size: 13px; }
+    .evidence-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; }
+    .evidence-card { padding: 14px; border: 1px solid rgba(255,255,255,0.14); }
+    .evidence-card strong { display: block; margin-bottom: 4px; color: #7ed3cc; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .evidence-card span { font-size: 12px; }
+
+    @media (max-width: 1080px) {
+      .masthead-grid { grid-template-columns: 1fr; }
+      .verdict { max-width: 620px; }
+      .summary-strip { grid-template-columns: repeat(3, 1fr); }
+      .metric:nth-child(3) { border-right: 0; }
+      .metric:nth-child(n+4) { border-top: 1px solid var(--line); }
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { position: static; max-height: none; }
+      .epic-nav { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 720px) {
+      .masthead { padding: 34px 20px; }
+      .masthead-grid { margin-top: 38px; }
+      .summary-strip { grid-template-columns: repeat(2, 1fr); }
+      .metric, .metric:nth-child(3) { border-right: 1px solid var(--line); border-top: 1px solid var(--line); }
+      .metric:nth-child(even) { border-right: 0; }
+      .shell { margin-top: 24px; padding: 0 12px; }
+      .sidebar { display: none; }
+      .controls { position: static; grid-template-columns: 1fr; }
+      .button-row { flex-wrap: wrap; }
+      .epic-nav { grid-template-columns: 1fr; }
+      .epic-header { grid-template-columns: 1fr; gap: 4px; }
+      .epic-progress { text-align: left; }
+      .story-toggle { grid-template-columns: auto minmax(0,1fr); }
+      .story-progress { grid-column: 2; }
+      .story-body { padding-left: 47px; }
+      .evidence-grid { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      body { background: white; font-size: 11pt; }
+      .masthead { padding: 30px; color: var(--ink); background: white; border-bottom: 3px solid var(--ink); }
+      .masthead::after, .sidebar, .controls, .filters, .scope-note .stamp, .button-row { display: none !important; }
+      .masthead-grid { margin-top: 25px; grid-template-columns: 1fr; }
+      .dek, .verdict p { color: var(--ink-2); }
+      .verdict { padding: 12px; border: 1px solid var(--line); }
+      .verdict .eyebrow { color: var(--teal); }
+      .summary-strip { box-shadow: none; }
+      .shell { display: block; max-width: none; margin: 24px 0; padding: 0; }
+      .main { width: 100%; }
+      .story { break-inside: avoid; box-shadow: none; }
+      .story-body { display: block !important; }
+      .caret { display: none; }
+      .methodology { color: var(--ink); background: white; }
+      .methodology h2 { color: var(--ink); }
+      .evidence-card { border-color: var(--line); }
+      .evidence-card strong { color: var(--teal); }
+    }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div class="brandline"><span class="brandmark">⌕</span> Loupe / Release control dossier</div>
+    <div class="masthead-grid">
+      <div>
+        <div class="eyebrow" style="color:#7ed3cc; margin-bottom:14px;">Initial external release · 16 July 2026</div>
+        <h1 aria-label="Release backlog, without blind spots.">Release backlog,<br />without blind spots.</h1>
+        <p class="dek">A code-informed, end-to-end programme of work for taking the investigation platform from a feature-rich development build to a trustworthy first customer release.</p>
+      </div>
+      <aside class="verdict">
+        <div class="eyebrow">Current release decision</div>
+        <strong>No-go for real external data</strong>
+        <p>Strong product depth; release is blocked by access-control gaps, exposed development defaults, missing recovery controls, incomplete reports, and failing quality gates.</p>
+      </aside>
+    </div>
+  </header>
+
+  <section class="summary-strip" aria-label="Backlog summary">
+    <div class="metric"><span>Epics</span><strong id="epicCount">—</strong></div>
+    <div class="metric"><span>Stories</span><strong id="storyCount">—</strong></div>
+    <div class="metric"><span>Tasks</span><strong id="taskCount">—</strong></div>
+    <div class="metric"><span>P0 blockers</span><strong id="p0Count">—</strong></div>
+    <div class="metric"><span>Complete</span><strong id="doneCount">0%</strong></div>
+  </section>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="Epic navigation">
+      <div class="sidebar-card">
+        <div class="sidebar-title">Release workstreams</div>
+        <nav class="epic-nav" id="epicNav"></nav>
+      </div>
+      <div class="sidebar-note">
+        <strong>Priority contract</strong>
+        P0 blocks all external real data. P1 blocks an independent pilot. “Decision” stories must be resolved before dependent build work is accepted.
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="controls" aria-label="Backlog controls">
+        <label class="search-wrap">
+          <span style="position:absolute;left:-9999px">Search backlog</span>
+          <input id="search" type="search" placeholder="Search stories, tasks, evidence…" autocomplete="off" />
+        </label>
+        <select id="epicFilter" aria-label="Filter by epic"><option value="all">All epics</option></select>
+        <div class="button-row">
+          <button class="action" id="expandAll" type="button">Expand all</button>
+          <button class="action" id="collapseAll" type="button">Collapse</button>
+          <button class="action" id="print" type="button">Print / PDF</button>
+        </div>
+      </div>
+
+      <div class="filters" aria-label="Priority filters">
+        <button class="filter-chip" type="button" data-priority="P0" aria-pressed="true"><span class="chip-dot" style="color:#ba4e3b"></span>P0 blockers</button>
+        <button class="filter-chip" type="button" data-priority="P1" aria-pressed="true"><span class="chip-dot" style="color:#c48419"></span>P1 pilot</button>
+        <button class="filter-chip" type="button" data-priority="Decision" aria-pressed="true"><span class="chip-dot" style="color:#087f83"></span>Decisions</button>
+        <span id="visibleCount" style="margin-left:auto;align-self:center;color:var(--ink-3);font:10px var(--mono)"></span>
+      </div>
+
+      <div class="scope-note">
+        <span class="stamp">Release gate</span>
+        <p><strong>P0 and P1 are the initial-release commitment.</strong> Decision stories resolve scope before dependent build work can be accepted. Features excluded through a Decision story must be removed from navigation, documentation, APIs, and sales promises—not left as broken placeholders.</p>
+      </div>
+
+      <div id="backlog"></div>
+      <div class="empty-results" id="emptyResults">No backlog items match the current filters.</div>
+
+      <section class="methodology">
+        <h2>Investigation basis</h2>
+        <p>This backlog was built from the supplied ticket list, the current repository, the existing July release-readiness audit and roadmap, the project backlog and changelog, current deployment files, feature routes and components, and fresh local quality checks. A static review cannot replace a penetration test, production restore drill, legal review, or full browser exercise with representative customer data; those are explicit tickets rather than hidden assumptions.</p>
+        <div class="evidence-grid">
+          <div class="evidence-card"><strong>Product surface</strong><span>19 frontend feature areas; graph, timeline, map, table, financial, Cellebrite, evidence, chat, agent, workspace, reports, triage, case/admin and settings flows.</span></div>
+          <div class="evidence-card"><strong>Fresh quality signal</strong><span>Main and landing builds pass. Evidence engine: 34/34 tests. Frontend: 168/179 tests, with 11 failures. Lint: 28 errors and 22 warnings. Backend all-suite run did not complete and must be made deterministic.</span></div>
+          <div class="evidence-card"><strong>Fresh security signal</strong><span>Main frontend dependency audit reports 3 high and 1 moderate advisories. No CI workflow was found. Internal services remain host-published with development credentials.</span></div>
+          <div class="evidence-card"><strong>Confirmed unfinished UI</strong><span>Case Settings is a placeholder; Reports has no registered backend; movement trails are marked deferred; report actions are unwired; several supplied Graph, Timeline, Map and Evidence issues are present in current code.</span></div>
+          <div class="evidence-card"><strong>Working tree care</strong><span>The landing site contains pre-existing user changes. This dossier adds one self-contained HTML file and does not alter application source.</span></div>
+          <div class="evidence-card"><strong>Definition of release-ready</strong><span>Correct permissions, durable evidence, traceable AI output, recoverable operations, green gates, usable exports, documented limits, and a signed full release drill.</span></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const backlog = [
+      {
+        id: "E00", title: "Release scope & product decisions", strap: "Freeze what V1 promises before polishing contradictory surfaces.",
+        stories: [
+          { id:"REL-001", p:"Decision", gate:"Before implementation freeze", evidence:"Repository + supplied discussion items", title:"Publish the V1 feature and navigation contract", description:"Resolve every ambiguous ‘keep, merge, port or remove’ item so engineering, QA, documentation and sales test the same product.", tasks:["Classify Graph analysis, Spotlight analysis, Map Proximity, movement trails, route analysis, AI Chat, Investigation Agent, Reports, Triage, AI Costs and multiple model providers as V1, beta, admin-only or excluded.","For every excluded feature, remove its navigation, entry points, APIs where unsafe, documentation and marketing references.","Write one primary user journey for each included feature, with role, starting state, success outcome and supported limits.","Record a named product owner and acceptance reviewer for every included surface."], acceptance:"One versioned scope matrix drives backlog, test plan, documentation and release notes; no visible placeholder or non-working action remains." },
+          { id:"REL-002", p:"Decision", gate:"Before external data", evidence:"Release-readiness audit", title:"Set the operating promises and hard limits", description:"Convert undefined operational expectations into measurable release constraints.", tasks:["Choose customer isolation model, permitted data regions and model/map/geocoding providers.","Set maximum file size, files per upload, case storage, concurrent jobs, graph/event/transaction scale and monthly AI spend.","Set backup RPO, restore RTO, support hours, maintenance windows and incident notification targets.","Define company support access to customer evidence, approval rules and audit visibility.","Name accountable owners for security, releases, backups, support, incidents and privacy."], acceptance:"Limits and responsibilities are documented, implemented as controls where applicable, and reflected in contract/support language." },
+          { id:"REL-003", p:"P0", gate:"Final go/no-go", evidence:"Release-readiness audit", title:"Run and sign the full first-customer release drill", description:"Prove the complete system in a fresh production-like customer environment rather than inferring readiness from component tests.", tasks:["Provision a fresh isolated instance with unique secrets, HTTPS and only approved public ports.","Exercise every role plus a non-member through the UI and direct API requests.","Upload/process a representative mixed dataset and verify graph, timeline, map, table, financial, Cellebrite, workspace, AI and promised exports.","Run backup/clean restore, a normal update and a simulated failed update with rollback or restore.","Simulate worker/provider failure, low disk, expired session and unauthorised case access; confirm alerts and runbooks.","Attach evidence and obtain named product, security and operations sign-off."], acceptance:"Every P0/P1 criterion has recorded evidence and an owner; any failed P0 keeps the decision at no-go." }
+        ]
+      },
+      {
+        id:"E01", title:"Security, identity & access control", strap:"Make authentication and case boundaries the default, not an endpoint-by-endpoint hope.",
+        stories:[
+          { id:"SEC-001", p:"P0", gate:"Before external data", evidence:"Confirmed: evidence-engine/app/main.py and upload routes", title:"Authenticate and internalise the Evidence Engine", description:"The ingestion API currently registers upload, file, job, merge, Cellebrite and WebSocket routes without authentication and is host-published.", tasks:["Remove public host exposure and place the API/worker/datastores on a private network.","Add a per-instance backend-to-engine service identity using signed short-lived credentials or equivalent mutual authentication.","Reject missing, expired, replayed and wrong-instance credentials on HTTP and WebSocket routes.","Authorise the user and case in the main backend before forwarding every upload, job, file, merge or delete action.","Add request, file, concurrency and cost limits plus negative integration tests."], acceptance:"No external caller can reach the engine directly; an authenticated non-member cannot operate on another case through the backend." },
+          { id:"SEC-002", p:"P0", gate:"Before external data", evidence:"Confirmed: public user reads; inconsistent Graph, Financial, Filesystem and admin routes", title:"Enforce authentication and object-level authorisation across every API", description:"Apply one auditable permission contract to all route families and remove unauthenticated or caller-trusted case access.", tasks:["Make authentication the application/router default and explicitly exempt only health, login and a locked provisioning flow.","Inventory every route and WebSocket by resource, action and required case/global permission.","Close public user list/detail and profile-management reads; add membership checks to Graph, Financial, Filesystem, Evidence, Timeline, Map, Workspace, Chat, Agent, exports and snapshots.","Restrict maintenance, backfill, logs, model config, direct query and platform operations to the least privileged admin role.","Add owner/editor/viewer/guest/non-member/admin/super-admin negative tests for every route family."], acceptance:"The permission matrix and automated tests prove that non-members cannot read, viewers cannot mutate, and ordinary users cannot run instance-wide operations." },
+          { id:"SEC-003", p:"P0", gate:"Before external data", evidence:"Confirmed: docker-compose.yml, config.py and .env.example", title:"Eliminate shared defaults and public datastore ports", description:"Neo4j, Postgres, Redis, Chroma and ingestion are host-published with development/default credentials.", tasks:["Remove production host mappings for internal services; bind diagnostics to loopback only.","Generate unique database, Redis/Chroma, service, JWT and bootstrap credentials per instance.","Make production startup fail closed when a required secret is absent, weak or equal to a known development value.","Move secrets to an approved secret store and document rotation/emergency revocation.","Rotate any credential or signing key that has existed in repository/development configuration."], acceptance:"A network scan exposes only approved services and secret validation prevents an instance starting with repository-known credentials." },
+          { id:"SEC-004", p:"P0", gate:"Before external data", evidence:"Confirmed: 24-hour JWT, localStorage token, cookie without Secure, no CSRF/rate limiting", title:"Harden sessions, cookies and login", description:"Remove token theft and long-lived session paths and make account changes take effect immediately.", tasks:["Use Secure, HttpOnly, SameSite cookies as the browser credential and remove localStorage bearer tokens.","Add CSRF protection for cookie-authenticated state changes and a strict origin/CORS policy.","Shorten idle/absolute session life; add server-side session IDs, revocation and device/session listing.","Revalidate active user and current role on protected requests; revoke sessions after password, role or account-state changes.","Rate-limit login and recovery, audit failures, prevent user enumeration and add safe lockout/backoff."], acceptance:"Stolen frontend JavaScript cannot read the session token; revoked/deactivated users lose access immediately; brute-force controls are tested." },
+          { id:"SEC-005", p:"P1", gate:"Before independent pilot", evidence:"Supplied auth/admin tickets + audit", title:"Deliver MFA and safe account recovery", description:"Admins need recoverable accounts without weak manual database edits or an unsafe ‘reset password’ shortcut.", tasks:["Require TOTP/WebAuthn MFA for admin and super-admin roles; decide policy for investigators.","Implement self-service recovery with short-lived single-use tokens, generic responses and full audit events.","Add an admin reset flow that creates a temporary credential or reset invitation, forces password change and revokes existing sessions.","Enforce a stronger password policy and breached/common-password checks appropriate to the deployment.","Issue recovery codes and document a two-person lost-admin procedure."], acceptance:"Admin recovery does not reveal or set a reusable password, MFA cannot be bypassed, and all resets/recovery actions are auditable." },
+          { id:"SEC-006", p:"P0", gate:"Before external data", evidence:"Confirmed: AdminLayout has no role guard", title:"Guard administration in both UI and API", description:"Hidden navigation is not authorisation; direct admin URLs must fail safely for non-admins.", tasks:["Add an admin route guard with explicit loading, forbidden and session-expired states.","Keep admin navigation role-aware but never rely on visibility for protection.","Use one backend admin dependency for user, logs, costs, profiles, tasks, updates and maintenance operations.","Prevent admins changing super-admins and protect the last active super-admin and last viable case owner.","Add browser tests for direct URL entry and direct API calls by every role."], acceptance:"Non-admin users receive a consistent 403/redirect and cannot cause admin-side effects through direct requests." }
+        ]
+      },
+      {
+        id:"E02", title:"Evidence Engine & ingestion", strap:"Turn extraction into a durable, bounded and reviewable evidence pipeline.",
+        stories:[
+          { id:"ING-001", p:"Decision", gate:"Before architecture freeze", evidence:"Supplied ingestion-agent proposal", title:"Spike an ingestion agent against the deterministic pipeline", description:"Evaluate whether a bounded agent materially improves entity deduplication and contextual linking without weakening reproducibility, cost or security.", tasks:["Define a benchmark corpus with aliases, ambiguous entities, conflicting facts, repeat uploads and cross-document relationships.","Specify an allowlisted read-only tool set, maximum steps/runtime/spend, case isolation and immutable execution trace.","Compare precision, recall, duplicate rate, relationship quality, cost and latency against the current blocking/embedding/LLM pipeline.","Threat-test prompt injection, cross-case key guessing, tool loops and malicious document text.","Write an architecture decision: implement, restrict to analyst review, or reject; include migration and rollback implications."], acceptance:"The decision is based on measured quality and safety, not intuition; any implementation remains replayable, idempotent and human-reviewable." },
+          { id:"ING-002", p:"P0", gate:"Before external data", evidence:"Audit + current graph/evidence models", title:"Make provenance and human review first-class", description:"Every extracted or inferred item must retain an exact path back to original material through edits and merges.", tasks:["Store source file ID/hash, page/chunk/timecode, exact supporting excerpt and extraction run/model for entities, relationships, events, locations and transactions.","Distinguish AI extraction, AI inference, investigator assertion and human-verified fact in data and UI.","Preserve provenance sets through entity/relationship merge, edit, recycle and restore.","Expose conflicts and unsupported assertions instead of overwriting or presenting a single false certainty.","Add source-integrity tests across reprocessing and provider/model changes."], acceptance:"An investigator can open the exact original support for every material graph fact and see who/what last changed it." },
+          { id:"ING-003", p:"P1", gate:"Before independent pilot", evidence:"Supplied location issue + map inspection", title:"Reject or qualify vague and bad locations during ingestion", description:"Prevent countries, generic regions, organisations and low-confidence geocodes from appearing as exact map points.", tasks:["Define accepted location granularity and a reject/needs-review taxonomy.","Validate coordinates, impossible values, zero-island results and entity types before graph write.","Store geocoder, query, formatted address, precision, confidence and ambiguity candidates.","Route vague/ambiguous locations to review and allow investigator correction without AI overwrite.","Build fixtures for invalid addresses, duplicate names, country-only values and no-network/provider failures."], acceptance:"Low-quality locations are excluded or visibly approximate; exact pins have a defensible source and precision." },
+          { id:"ING-004", p:"P1", gate:"Before independent pilot", evidence:"Project backlog FEAT-002/013/014", title:"Raise extraction and summary quality across supported formats", description:"Define useful outputs for documents, messages, spreadsheets, audio, video and mobile exports instead of relying on generic prompts.", tasks:["Expand document summaries to cover key facts, entities, dates, amounts, relationships, uncertainties and citations.","Add structured text-message parsing for threads, participants, timestamps, attachments and timezones.","Validate OCR, transcription, spreadsheet tables and video frames on representative fixtures.","Consolidate repetitive facts/insights into readable entity/document views while preserving atomic provenance.","Version prompts/ontologies and run regression benchmarks before changing models or instructions."], acceptance:"A signed fixture suite meets agreed extraction-quality thresholds and summaries are useful without hiding source uncertainty." },
+          { id:"ING-005", p:"P0", gate:"Before external data", evidence:"Audit + worker/job code", title:"Make ingestion jobs idempotent, resumable and recoverable", description:"Worker or VM failure must not duplicate, orphan or permanently wedge evidence processing.", tasks:["Define durable stage checkpoints and idempotency keys for upload, batch, reprocess, merge and Cellebrite jobs.","Resume safely after worker restart; make retry policy explicit for provider, database and network failures.","Implement cancellation with terminal-state convergence and cleanup of partial Chroma/Neo4j/Postgres/file writes.","Prevent concurrent upload/processing deadlocks and reproduce project backlog BUG-011.","Test crash at every stage, duplicate delivery, low disk, timeout and partial write."], acceptance:"After interruption, a job can resume or cleanly fail without duplicate graph data, orphan files, stuck status or server restart." },
+          { id:"ING-006", p:"P0", gate:"Before external data", evidence:"Confirmed upload reads whole file; no complete quota boundary", title:"Secure and bound the upload pipeline", description:"Protect memory, disk, workers and AI budget from accidental or hostile uploads.", tasks:["Stream uploads to quarantine storage while hashing; avoid reading entire files into memory.","Enforce reverse-proxy and application limits for body size, file count, archive expansion, case quota and concurrent jobs.","Validate file signatures against extension/MIME, normalise filenames, block traversal/symlinks and quarantine rejects.","Add malware scanning and decompression-bomb/archive recursion protection.","Surface safe, actionable rejection messages without logging evidence content or secrets."], acceptance:"Oversized, malformed, disguised, malicious and quota-exceeding uploads fail predictably before expensive processing or durable contamination." }
+        ]
+      },
+      {
+        id:"E03", title:"Case management & user administration", strap:"Complete the lifecycle around people, cases, collaborators and saved state.",
+        stories:[
+          { id:"ADM-001", p:"P1", gate:"Before independent pilot", evidence:"Supplied admin ticket; UI lacks account-state actions", title:"Archive/deactivate users safely", description:"Provide a reversible account lifecycle that preserves attribution and does not silently orphan cases.", tasks:["Add active/archived filtering and a clearly named Deactivate/Reactivate action to User Management.","Show affected case ownership/memberships before deactivation and block orphaning the last owner or administrator.","Revoke all sessions and prevent login immediately when deactivated.","Preserve historical authorship and audit records; never hard-delete referenced users.","Audit actor, target, reason and result; test self/last-admin protections."], acceptance:"Admins can safely remove access and later restore it without losing attribution or weakening owner/admin guarantees." },
+          { id:"ADM-002", p:"P1", gate:"Before independent pilot", evidence:"Supplied admin reset ticket", title:"Add an administrator-initiated password recovery flow", description:"Replace direct password setting with a secure reset workflow integrated with session revocation and audit.", tasks:["Add Reset access in User Management with confirmation and reason.","Issue a short-lived one-time reset invitation or temporary credential and force change at next sign-in.","Revoke the target’s current sessions and notify them through the approved channel.","Prevent lower admins resetting super-admins; rate-limit and audit every attempt.","Test expired, reused, cancelled and wrong-user reset tokens."], acceptance:"The admin never learns the user’s final password, old sessions stop working, and every reset is traceable." },
+          { id:"CASE-001", p:"P1", gate:"Before independent pilot", evidence:"Current case list supports archive; backlog FEAT-012", title:"Finish and regression-test the case archive lifecycle", description:"Archiving should declutter active work without looking like deletion or breaking deep links and permissions.", tasks:["Default lists/search to active cases and provide an explicit archived view with clear status treatment.","Confirm archive/unarchive is permission-checked, audited and preserves evidence, jobs, chats, exports and links.","Block or clearly handle new mutations and background jobs on archived cases.","Test direct links, super-admin all-cases view, restore and concurrent users."], acceptance:"A completed case can be archived and restored without data loss, permission drift or confusion with permanent deletion." },
+          { id:"CASE-002", p:"P1", gate:"Before independent pilot", evidence:"Confirmed: CaseSettingsPage is placeholder text", title:"Implement Case Settings or remove the route", description:"The visible settings route promises member, metadata, version and danger-zone management but currently contains no functionality.", tasks:["Implement case title/description/status metadata editing with validation and audit.","Integrate collaborator roles/permissions and explicit owner transfer.","Show processing profile/version state and safe reprocessing implications.","Create a danger zone for archive, export and delete with typed confirmation and permission checks.","If scope excludes these controls, remove the route and relocate essential actions."], acceptance:"Every visible Case Settings control is persisted, authorised, audited and covered by browser tests—or the route is absent." },
+          { id:"CASE-003", p:"P0", gate:"Before external data", evidence:"Case membership model + audit", title:"Harden collaboration and ownership invariants", description:"Make invitations, permission changes and owner transitions safe across the whole case.", tasks:["Document owner/editor/viewer/guest capability presets and custom-permission semantics.","Prevent removal, deactivation or transfer that leaves no viable owner; require explicit owner handover.","Make super-admin support access policy explicit and visible/audited to the customer.","Audit invitation, acceptance, role change, removal and support access.","Test simultaneous permission edits and stale UI permissions."], acceptance:"Membership changes cannot orphan a case, silently broaden access or remain effective after revocation." },
+          { id:"CASE-004", p:"P1", gate:"Before independent pilot", evidence:"Backlog BUG-009 and snapshot/export feedback", title:"Stabilise deadlines and investigation snapshots", description:"Saved snapshots are part of the investigation workflow and must not freeze, disappear or cross cases.", tasks:["Reproduce snapshot save timeout/crash and missing-list reports against current Postgres-backed storage.","Add bounded payloads, progress, cancellation and clear failure recovery for large snapshots.","Verify case scoping, membership, restore semantics and concurrent saves.","Test deadlines for timezone/date edges, permissions, reminders and archived cases.","Add end-to-end save, list, open, export, delete and restore coverage."], acceptance:"Representative large snapshots and deadlines persist, reload and remain case-scoped without UI freezes or timeouts." }
+        ]
+      },
+      {
+        id:"E04", title:"Graph & entity analysis", strap:"Simplify the core workspace while protecting entity integrity and full-dataset semantics.",
+        stories:[
+          { id:"GRAPH-001", p:"P1", gate:"Before independent pilot", evidence:"Supplied ticket; defaults are linkDistance 200 / charge -50", title:"Tune default graph spacing for readable layouts", description:"Current force defaults can overlap labels/nodes even though manual controls exist.", tasks:["Create representative small, medium, dense and 10k-node graph fixtures.","Add collision/label-aware spacing and adaptive force parameters by graph size/degree.","Choose defaults using measured settling time, overlap rate and browser memory—not one demo case.","Persist optional user adjustments per user/case and provide an obvious reset.","Regression-test resizing, filtered graphs, Spotlight and pinned nodes."], acceptance:"Default graphs settle quickly with no material node/label overlap on the supported fixture set." },
+          { id:"GRAPH-002", p:"P1", gate:"Before independent pilot", evidence:"Supplied toolbar/context-menu tickets; confirmed in current components", title:"Reduce the Graph toolbar and context menu to safe investigator actions", description:"Remove technical, duplicated or non-working actions and use unambiguous recycle terminology.", tasks:["Remove Run Cypher from the production Graph toolbar and disable/directly restrict the backend query endpoint.","Remove Expand Connections, Relationship Analysis, Pin/Unpin, Copy Key and Hide Node from the main-graph context menu.","Retain Show Details, Add to Spotlight, Edit Entity and Recycle Entity; show Merge Selected only for 2+ selected nodes.","Rename every destructive node action from Delete to Recycle and explain recoverability.","Move Force Controls into a clearly labelled view/layout settings affordance and test toolbar overflow at supported widths."], acceptance:"The production toolbar/context menu exactly matches the approved action set and contains no expert-only or inert command." },
+          { id:"GRAPH-003", p:"P0", gate:"Before external data", evidence:"Confirmed: current dialog splits selected nodes and can self-link", title:"Rebuild the create-relationship workflow", description:"Use a selected source entity, search for a target, name the relationship, and persist investigator provenance.", tasks:["Require exactly one source entity or make multi-source behavior explicit; never default a one-node selection to a self-relationship.","Add full-case target search with type/identifier disambiguation and prevent invalid same-node links unless explicitly supported.","Validate/canonicalise relationship type while showing the human-readable label.","Persist notes, actor, timestamp, source type and optional supporting evidence—the current notes field is collected but unused.","Add permission, duplicate, direction, case-boundary and undo/recycle tests."], acceptance:"An investigator can create the intended directed relationship without preselecting two nodes, and the resulting edge is auditable and recoverable." },
+          { id:"GRAPH-004", p:"P1", gate:"Before independent pilot", evidence:"Supplied Spotlight tickets; confirmed empty Spotlight is not rendered", title:"Make Spotlight a predictable toggle and selection workflow", description:"Spotlight should open even when empty, accept selected nodes from a logical action, and remain independently closable.", tasks:["Render the Spotlight panel whenever toggled on, including a useful empty state.","Add Add selected to Spotlight near selection actions/context—not in the legend—and support remove/clear.","Keep the toolbar button state accurate and make the same control always open/close Spotlight.","Preserve Spotlight contents while hidden and define case/navigation reset behavior.","Remove the current analysis expander or redesign it around approved, understandable Spotlight-only outcomes."], acceptance:"Users can open an empty Spotlight, add/remove selected nodes and close/reopen it without losing state or hunting in the legend." },
+          { id:"GRAPH-005", p:"P1", gate:"Before independent pilot", evidence:"Supplied Add Node address ticket; AddNodeDialog currently has only name/type/summary", title:"Complete manual entity creation and location linking", description:"Manual creation must support the same meaningful fields and provenance as entity editing.", tasks:["Use a schema-driven form by entity type rather than a three-field generic dialog.","For locations, keep map selection, address search, formatted address and coordinates bidirectionally linked.","Show geocoding precision/confidence and allow pin correction/clear before save.","Capture investigator assertion, actor and optional supporting evidence; protect verified fields from later AI overwrite.","Validate duplicates and offer compare/merge before creating a likely duplicate."], acceptance:"Selecting a place fills the address fields and editing the address updates the pin; saved entities retain clear investigator provenance." },
+          { id:"GRAPH-006", p:"P1", gate:"Before independent pilot", evidence:"Supplied scroll and Neil-validation tickets", title:"Validate Graph algorithms and make results usable", description:"Algorithm output needs domain sign-off, explanations, scroll containment and deterministic result interaction.", tasks:["Fix the Graph Analysis overlay so its full content and result lists scroll inside the right rail at all supported heights.","Verify PageRank, Louvain, betweenness and shortest paths against known fixture graphs.","Add plain-language purpose, inputs, limits and interpretation for each algorithm.","Obtain domain-owner sign-off (the original note names Neil) on labels, ranking and presentation.","Handle unavailable plugins, large-graph limits, empty results and cancellation without stale Spotlight data."], acceptance:"Known fixtures return expected results, the panel is fully scrollable, and a domain reviewer signs the displayed interpretation." },
+          { id:"GRAPH-007", p:"P0", gate:"Before external data", evidence:"Supplied merge/recycle ticket + targeted existing tests", title:"Prove merge, similar-entity and recycle-bin data integrity", description:"No entity facts, sources, relationships or downstream references may disappear during the highest-risk Graph workflow.", tasks:["Build end-to-end fixtures covering Find Similar → compare/reject/merge → recycle → restore.","Verify properties, facts, insights, aliases, provenance, relationships, embeddings, timeline/map/financial links and workspace attachments survive merge.","Define deterministic conflict handling, merge idempotency and concurrent-merge locking.","Verify restore after manual recycle, merge and evidence deletion; prevent restoring into another case.","Record immutable audit events and add a pre-merge preview/summary."], acceptance:"Automated cross-store assertions prove no essential data or references are lost and recycle/restore returns a consistent entity." },
+          { id:"GRAPH-008", p:"P1", gate:"Before independent pilot", evidence:"Supplied restore performance + capped-graph backlog", title:"Meet Graph scale, restore and full-dataset semantics", description:"The UI must say when it shows a subset and never imply loaded rows are the complete case.", tasks:["Profile and improve recycle-bin restore latency with a user-visible progress state and a measured target.","Define supported graph sizes and stress-test load, search, selection, algorithms, merge and export.","Explain graph caps/filtering and faded relevance nodes; provide an explicit full-dataset search path.","Make legend type selection query the full case rather than only the loaded cap (backlog BUG-015).","Split or worker-offload expensive layout/render tasks and set browser memory thresholds."], acceptance:"Restore meets its target; capped graphs are unmistakable; search/type actions and exports operate on the intended full dataset." }
+        ]
+      },
+      {
+        id:"E05", title:"Timeline", strap:"Make chronology correct, curatable and exportable without a maze of modes.",
+        stories:[
+          { id:"TIME-001", p:"P1", gate:"Before independent pilot", evidence:"Supplied filter tickets; confirmed code", title:"Streamline Timeline search and filters", description:"Keep the custom date range and add fast entity discovery while removing low-value preset clutter.", tasks:["Add search within the Entities filter, including type/name/alias and result counts.","Remove 30d/90d/1yr presets; retain All and one accessible custom date-range control.","Keep search, type, entity and date filters visible/understandable at supported widths.","Define whether filters apply to loaded or full data and show active-filter chips/counts.","Test keyboard search, clear/reset, zero results and thousands of entities."], acceptance:"Users can find an entity and apply a custom date range without hidden state or toolbar overflow; preset buttons are gone." },
+          { id:"TIME-002", p:"P1", gate:"Before independent pilot", evidence:"Supplied curate/focus tickets; delete hook exists but no clear UI", title:"Redesign focused timelines and curation", description:"Replace ‘curate/focus/view’ ambiguity with one saved-timeline mental model and explicit selection actions.", tasks:["Choose one user-facing term (for example Saved timeline) and update labels, help and empty states.","Add Select all filtered, Clear selection and accurate selected/total counts.","Support create from selection, add/remove events, rename and delete with confirmation.","Expose delete in the saved-timeline selector/management surface and handle deleting the active view.","Protect unsaved curation on navigation/filter change and enforce owner/editor permissions."], acceptance:"A first-time user can create, edit, switch and delete a saved timeline without explanation from a developer." },
+          { id:"TIME-003", p:"P0", gate:"Before external data", evidence:"Audit + active timeline code", title:"Prove date, time and provenance correctness", description:"Chronology must not silently invent precision or conflate event time with ingestion time.", tasks:["Model date precision, unknown/partial dates, event timezone and original textual value.","Distinguish event date from file creation, extraction and ingestion dates in UI/export.","Verify ordering around DST, midnight, mixed timezones and missing times.","Show exact source citation and manual correction history for each event.","Add fixture-based backend/frontend regression tests and human review of representative cases."], acceptance:"Timeline order and displayed precision match the source fixtures, and every event opens its exact evidence support." },
+          { id:"TIME-004", p:"P1", gate:"Before independent pilot", evidence:"Supplied PDF export ticket; current PDF/CSV flow", title:"Finish court/client-ready Timeline exports", description:"Make PDF and CSV match filtered/selected/saved scope and the release export standard.", tasks:["Verify export source selection never silently includes events outside the chosen scope.","Apply the shared brand header/footer, case identity, generation time, author, confidentiality label and AI review statement.","Include exact source appendix and stable event identifiers.","Test page breaks, long summaries, fonts, non-Latin text, empty dates, 5k-event PDF limit and deterministic re-export.","Add visual golden tests for compact/standard/detailed PDF modes."], acceptance:"Exported event count and content exactly match the chosen source and render legibly across the fixture matrix." },
+          { id:"TIME-005", p:"P1", gate:"Before independent pilot", evidence:"Audit performance matrix", title:"Scale Timeline interaction to supported case sizes", description:"Virtualisation, filtering and export must remain responsive with thousands of events.", tasks:["Set supported event count and latency/memory thresholds.","Profile clustering, filtering, selection and scroll restoration with representative data.","Ensure client and server pagination/virtualisation do not omit filter/export results.","Test concurrent event corrections and saved-view edits.","Provide loading, partial, retry and provider-degraded states."], acceptance:"The supported large-case fixture meets defined interaction and export thresholds without omissions or browser freezes." }
+        ]
+      },
+      {
+        id:"E06", title:"Map & geospatial review", strap:"Show location certainty honestly and remove analytical clutter that is not earning its space.",
+        stories:[
+          { id:"MAP-001", p:"P1", gate:"Before independent pilot", evidence:"Supplied confidence question + current MapLocation fields", title:"Expose and filter geocoding confidence and precision", description:"The data already carries confidence but the main Map does not let users interpret or filter it.", tasks:["Define confidence/precision levels and display them in marker popups/details/legend.","Add filter or review queue for exact, approximate, ambiguous and unverified locations.","Render approximate areas differently from exact pins and avoid false precision in coordinates.","Show geocoding provider/query and manual correction history.","Test mixed confidence, duplicates, invalid coordinates and corrected locations."], acceptance:"Users can identify and filter uncertain locations; approximate results never look exact." },
+          { id:"MAP-002", p:"P1", gate:"Before independent pilot", evidence:"Supplied ‘Proximity not useful’ + unfinished MovementTrails code", title:"Remove non-V1 Map analysis surfaces", description:"Simplify the Map by removing Proximity and any unfinished routes/trails unless the scope decision gives them a tested user outcome.", tasks:["Remove Proximity toolbar, anchor state, radius panel and related dead code from the V1 build.","Remove or feature-flag unused Route Analysis and the explicitly deferred Movement Trails placeholder.","Clear persisted state/migrations and update help, tests and screenshots.","If any surface is retained, write its investigator outcome and full acceptance fixture before release."], acceptance:"The V1 Map contains only supported, working layers and actions; no placeholder or low-value analysis control is visible." },
+          { id:"MAP-003", p:"P1", gate:"Before independent pilot", evidence:"Map/geocoder review", title:"Complete manual correction and provider-degraded behavior", description:"Investigators must be able to correct locations while the system remains useful when geocoding is unavailable.", tasks:["Unify map pin, address search and entity location editing with undo/audit.","Add geocoder timeout/retry/backoff, cache policy, quota and cost controls.","Show a clear degraded mode when tiles/geocoder are unavailable and retain known coordinates.","Prevent AI reprocessing from overwriting investigator-verified coordinates.","Name map/geocoding providers in privacy/subprocessor documentation."], acceptance:"Manual corrections survive reprocessing and provider outage produces an actionable degraded state, not silent disappearance." },
+          { id:"MAP-004", p:"P1", gate:"Before independent pilot", evidence:"Audit large-marker/privacy requirements", title:"Validate Map scale, privacy and export behavior", description:"Large cases and sensitive location data need explicit performance and handling rules.", tasks:["Cluster/virtualise markers and set supported marker-count thresholds.","Test hidden types, heatmap, selection, side rail and fit bounds with large/duplicate datasets.","Define whether map screenshots/exports are V1 and apply access/audit/confidentiality controls.","Verify location data is excluded from logs/telemetry and follows case retention/export/delete.","Test keyboard and non-pointer alternatives for marker selection/details."], acceptance:"The large-location fixture remains usable and sensitive coordinates cannot leak through unauthorised export, logs or telemetry." }
+        ]
+      },
+      {
+        id:"E07", title:"Table & financial analysis", strap:"Keep the strong tab, but prove full-data operations and financial correctness before calling it finished.",
+        stories:[
+          { id:"TABLE-001", p:"P1", gate:"Before independent pilot", evidence:"Table code + audit (user initially marked ‘all good’)", title:"Regression-test Table as a full-case review surface", description:"A polished appearance is not proof that search, sorting and export cover all case entities.", tasks:["Verify search, type filters, sorting and CSV export against the full dataset, not only loaded/capped rows.","Test pagination/virtualisation, empty data, malformed properties, merged/recycled entities and relationship breadcrumbs.","Show stable entity IDs, confidence, verification state and provenance columns.","Preserve selection across pages only when behavior is explicit and safe.","Add owner/editor/viewer/non-member permission coverage."], acceptance:"Table counts and exports match backend fixtures exactly across pagination and entity lifecycle changes." },
+          { id:"TABLE-002", p:"P1", gate:"Before independent pilot", evidence:"Backlog FEAT-004", title:"Add auditable bulk edit and multi-entity merge", description:"Speed up duplicate cleanup without turning bulk actions into a data-loss mechanism.", tasks:["Allow 2+ selected duplicates to open one merge preview with final name/type selection.","Preserve all facts, summaries, insights, aliases, sources and relationships with conflict review.","Make bulk property edits schema-aware, permission-checked and reversible/audited.","Show full-case selection scope and prevent accidental operation on hidden rows.","Reuse Graph merge integrity tests and refresh every dependent view after completion."], acceptance:"A multi-entity merge produces the same lossless audited result as the verified Graph flow and clearly states its scope." },
+          { id:"FIN-001", p:"Decision", gate:"Before feature freeze", evidence:"Supplied ‘big V1 port’ ticket + rich current V2 implementation", title:"Complete a V1-to-V2 Financial parity and scope matrix", description:"Replace an unbounded port request with a signed inventory of existing, missing, changed and intentionally dropped workflows.", tasks:["Inventory V1 screenshots/routes/workflows against V2 transaction/intelligence modes, filters, corrections, categories, sub-transactions, charts and export.","Interview the domain owner to rank missing workflows by release outcome.","Create a fixture and acceptance journey for every retained financial capability.","Remove navigation/help for explicitly deferred functions.","Convert each accepted gap into a linked implementation story before closing this decision."], acceptance:"A signed parity matrix defines exactly what ‘Financial V1 complete’ means and every retained gap has testable acceptance criteria." },
+          { id:"FIN-002", p:"P0", gate:"Before external data", evidence:"Confirmed financial route authorisation gaps + audit", title:"Secure and prove Financial data correctness", description:"Financial reads/writes require case authorisation and accounting-grade arithmetic/source traceability.", tasks:["Add authentication and case permission checks to every financial endpoint and mutation.","Use decimal/currency-aware calculations; test negative/refund values, FX, missing dates, duplicates and rounding.","Add a stable human-reference transaction ID that persists in UI, notes and exports.","Trace every value to file/page/quote and label inferred or manually corrected values.","Reconcile summary cards, charts, filtered totals and exports against known ledgers."], acceptance:"Unauthorised requests fail and every tested total/transaction ID/source matches the signed fixture ledger." },
+          { id:"FIN-003", p:"P1", gate:"Before independent pilot", evidence:"Backlog FEAT-005/006", title:"Improve Financial review ergonomics", description:"Keep search available on constrained screens and make client conversations referenceable.", tasks:["Move the primary search field outside the collapsible filter panel and retain it at supported widths.","Add visible stable transaction IDs and direct lookup by ID.","Preserve filters/search when opening details and make reset scope obvious.","Review editable purpose/counterparty/notes flows for unsaved changes, concurrency and audit.","Test keyboard navigation, dense tables and 200% zoom."], acceptance:"Investigators can search and reference a transaction while the filter panel is closed, including on the minimum supported width." },
+          { id:"FIN-004", p:"P1", gate:"Before independent pilot", evidence:"Backlog FEAT-007 + export audit", title:"Standardise Financial and cost-ledger exports", description:"Exports must be explainable, billable and consistent with visible filters.", tasks:["Add case identity/reference, applied filters, generation time, author, confidentiality and source provenance to PDF/CSV.","Consolidate repeated cost-ledger ingestion line items by evidence/job while preserving an auditable detail appendix.","Add case filter/grouping and PDF export to Cost Ledger.","Test wide tables, long values, currencies, totals, page breaks and deterministic regeneration.","Audit every export and restrict it to authorised roles."], acceptance:"Financial and cost-ledger exports reconcile to on-screen scope and are usable as stable client/court references." },
+          { id:"FIN-005", p:"P1", gate:"Before independent pilot", evidence:"Audit performance matrix", title:"Stress-test large financial cases", description:"Prove pagination, filtering, correction and export with thousands of transactions.", tasks:["Set supported transaction counts and latency/memory/export thresholds.","Test server pagination and full-dataset filters/totals under concurrent ingestion.","Profile charts and entity-flow tables for unnecessary full-data rendering.","Verify corrections and bulk categorisation under concurrent users.","Add interruption/retry behavior for long exports."], acceptance:"The signed large-ledger fixture meets thresholds with correct totals and no omitted/duplicated rows." }
+        ]
+      },
+      {
+        id:"E08", title:"Cellebrite & triage", strap:"Finish the differentiating mobile-data workflows without widening filesystem or retention risk.",
+        stories:[
+          { id:"CELL-001", p:"Decision", gate:"Before feature freeze", evidence:"Supplied ‘big V1 port’ ticket", title:"Create a Cellebrite V1-to-V2 parity matrix", description:"Define which Overview, contacts, communications, events, locations, files, graph and intersection workflows constitute release parity.", tasks:["Inventory V1 behavior against the current V2 tabs and APIs with screenshots and sample reports.","List supported UFDR/XML/ZIP formats and Cellebrite versions plus intentional exclusions.","Prioritise gaps with a domain owner and create one acceptance fixture per retained workflow.","Review third-party format/library/licensing constraints.","Remove or label deferred features rather than shipping partial controls."], acceptance:"The signed matrix replaces the vague port request and all retained gaps are represented by testable stories/tasks." },
+          { id:"CELL-002", p:"P1", gate:"Before independent pilot", evidence:"Engine/backend Cellebrite paths + audit", title:"Harden Cellebrite ingestion and deletion", description:"Mobile reports are large, nested and sensitive; partial processing must not leave cross-store orphans.", tasks:["Test representative, very large, partial, corrupt and duplicate reports plus cancellation/re-ingestion.","Make report identity/idempotency explicit and remove the unsafe ‘Replace duplicate report’ shortcut from general upload.","Verify attachments, thumbnails and raw files remain linked and authorised.","Implement coordinated delete/recycle across Postgres, Neo4j, Chroma and file storage.","Retain source hashes, parser version, timezone assumptions and ingest manifest."], acceptance:"Every fixture either imports deterministically or fails cleanly; deleting/re-ingesting a report leaves no orphans or duplicate intelligence." },
+          { id:"CELL-003", p:"P1", gate:"Before independent pilot", evidence:"Current multi-tab Cellebrite UI", title:"Validate Cellebrite search, identity and timezone semantics", description:"Phone identity, aliases and timestamps must stay consistent across tabs and reports.", tasks:["Verify phone/email/app identity normalisation, alias merge and duplicate-contact handling.","Test message/call/event timezone conversion and preserve original timestamp/zone.","Make global versus tab/thread search scope visible and fixture-tested.","Validate multi-report intersections against known contacts/events/locations.","Ensure every result links to its source report/item/attachment."], acceptance:"Known fixture queries return the expected people, messages, events and intersections with unambiguous source/time semantics." },
+          { id:"CELL-004", p:"P1", gate:"Before independent pilot", evidence:"Audit large-case matrix", title:"Meet Cellebrite performance and export targets", description:"Large reports must not freeze the browser or silently truncate results.", tasks:["Set supported report size/event/message/file counts and processing targets.","Virtualise/paginate heavy lists and profile Overview, Contact feed, communications, timeline, locations and graph.","Test cancellation, refresh during processing and provider/worker restart.","Define and test authorised exports with filters, stable IDs, provenance and confidentiality.","Add visible cap/partial-result indicators wherever limits apply."], acceptance:"The large mobile-report fixture processes and remains navigable within measured thresholds with no silent truncation." },
+          { id:"TRI-001", p:"P0", gate:"Before external data", evidence:"Audit + triage filesystem code", title:"Constrain Triage to approved sources and import roles", description:"Triage is a powerful local-filesystem surface and must not be a general-user file browser.", tasks:["Require a dedicated import/admin permission and target-case upload permission.","Fail closed when TRIAGE_ALLOWED_ROOTS is empty in production; canonicalise paths and block symlink/network-share escapes.","Cap scan depth, files, bytes, hashing concurrency and LLM advisory spend.","Make dry run the default, showing exact source manifest, hashes, destination case/folder and exclusions.","Test cancel/restart, permission loss, path races and duplicate import."], acceptance:"An unauthorised user or out-of-root path cannot be scanned/imported, and every import has a durable manifest." }
+        ]
+      },
+      {
+        id:"E09", title:"Evidence library & processing UX", strap:"Make files easy to organise and review while preserving immutable originals and honest processing state.",
+        stories:[
+          { id:"EVID-001", p:"P1", gate:"Before independent pilot", evidence:"Supplied ticket; confirmed Stale filter and processing_stale model", title:"Remove ‘Stale’ as a user-facing document status", description:"Keep the internal reprocessing signal but present it as a clear action rather than an unexplained status category.", tasks:["Remove Stale from the status filter and document-status vocabulary.","Rename internal processing_stale UI treatment to ‘Reprocessing recommended’ or approved copy with an explanation.","Keep primary state as unprocessed/processing/processed/failed and show why configuration changes require reprocess.","Update API/docs/tests without losing the internal invalidation mechanism."], acceptance:"Users never see an unexplained Stale status; affected files have a clear reason and reprocess action." },
+          { id:"EVID-002", p:"P1", gate:"Before independent pilot", evidence:"Supplied ticket; backend move exists, folder tree has no drag/drop", title:"Implement reliable folder reorganisation", description:"Dragging folders currently cannot reposition them even though the backend supports moves.", tasks:["Add pointer drag/drop with valid drop targets, insertion feedback and auto-expand.","Provide keyboard/menu Move to… as an accessible alternative.","Prevent self/descendant moves, cross-case moves and stale-tree races; surface backend errors.","Support moving selected files and folders with optimistic rollback and audit.","Test deep trees, empty/root moves, concurrent rename/move and refresh persistence."], acceptance:"Folders and files move reliably by drag or keyboard/menu and remain correct after refresh without cycles or cross-case leakage." },
+          { id:"EVID-003", p:"P1", gate:"Before independent pilot", evidence:"Supplied summary ticket; current summary is read-only", title:"Allow reviewed document-summary edits", description:"Investigators need to correct summaries without erasing the AI original or its provenance.", tasks:["Add edit/cancel/save with unsaved-change protection and permissions.","Store original AI summary, current reviewed summary, editor, timestamp and version history.","Label AI-generated versus human-edited content and prevent reprocessing overwrite without review.","Add concurrency conflict handling and audit events.","Ensure workspace/report/chat references use the approved current version while retaining history."], acceptance:"A permitted user can edit and recover a summary; its AI original and full edit history remain available." },
+          { id:"EVID-004", p:"P1", gate:"Before independent pilot", evidence:"Supplied upload-menu ticket; confirmed current checkbox", title:"Remove ‘Replace duplicate report’ from the upload menu", description:"Duplicate handling should be automatic, reviewable and format-aware—not a persistent destructive checkbox.", tasks:["Remove the checkbox/state from the general upload dropdown.","Detect duplicate files/reports by stable hash/report identity and present a post-detection choice if genuinely needed.","Define skip, link existing, reprocess and supersede semantics with non-destructive defaults.","Protect existing report data/links during any approved supersede flow and add audit.","Add duplicate-name, same-content, changed-content and concurrent-upload tests."], acceptance:"General upload has no replace toggle; duplicate behavior is deterministic, non-destructive and explained at the point of detection." },
+          { id:"EVID-005", p:"P0", gate:"Before external data", evidence:"Audit + evidence deletion/storage paths", title:"Define immutable originals, recycle, retention and chain-of-handling", description:"Evidence deletion and movement need defensible history without making unsupported legal chain-of-custody claims.", tasks:["Store originals immutably with SHA-256, uploader, received time, original name/size and storage version.","Define soft delete/recycle, authorised hard delete, legal hold and retention/offboarding behavior.","Record upload, view, download, move, process, export, recycle, restore and delete events in tamper-resistant audit history.","Verify cross-store cleanup/rebuild rules for derived text, frames, embeddings and graph data.","Use ‘handling history’ language until legal review approves stronger claims."], acceptance:"Original evidence hashes and handling history survive normal operations; irreversible deletion follows documented authority and retention rules." },
+          { id:"EVID-006", p:"P1", gate:"Before independent pilot", evidence:"Jobs panel + failed frontend hook lint", title:"Polish processing, preview and failure recovery", description:"Users must understand active jobs and recover without a server restart.", tasks:["Fix the WebSocket reconnect implementation flagged by lint and test disconnect/retry/cancel races.","Show per-file/batch progress, queue position, elapsed time, safe error detail and next action.","Support retry/reprocess from failure without duplicate upload or stale job cards.","Verify protected previews/downloads for PDF, text, image, audio, video and unsupported formats.","Test concurrent uploads, refresh/navigation during processing and long filenames/non-Latin text."], acceptance:"A user can diagnose and recover every fixture failure from the UI; reconnect/retry never creates duplicate jobs or data." }
+        ]
+      },
+      {
+        id:"E10", title:"AI chat, agent & model operations", strap:"Give AI one coherent place in the product, with sources, limits and human approval.",
+        stories:[
+          { id:"AI-001", p:"Decision", gate:"Before feature freeze", evidence:"Supplied ‘merge Chat with Agent’ discussion + duplicated nav/rail", title:"Choose one Chat/Agent/side-rail information architecture", description:"Clarify when users ask, investigate with tools, review artifacts and use the global side rail.", tasks:["Map current Chat page, Investigation Agent, right-rail Chat and report/artifact workflows.","User-test at least two coherent models and choose names, entry points and conversation ownership.","Define whether the side rail shares threads/context with the full page and what selection scope it inherits.","Remove duplicate/inconsistent routes and migrate existing conversations if needed.","Update navigation, onboarding, permissions, analytics and end-to-end tests."], acceptance:"A new user can predict where to ask a question, run an investigation and find prior output; there are no competing chat histories." },
+          { id:"AI-002", p:"P0", gate:"Before external data", evidence:"Audit + current citation/result-graph foundations", title:"Enforce a source-citation and AI-limitation contract", description:"Material factual claims must link to exact evidence or state that support was not found.", tasks:["Require file/page/chunk/quote citations for material claims and make each citation open the protected source location.","Clearly separate retrieved evidence, model reasoning and investigator assertions.","Add a persistent human-review warning and prevent absence-of-evidence claims without appropriate qualification.","Handle deleted/recycled/broken sources and snapshot the citation context used for an answer.","Add fixture-based answer/citation acceptance tests and unsupported-question tests."], acceptance:"Every tested material claim has an exact working citation or an explicit unsupported marker; warnings cannot be dismissed permanently." },
+          { id:"AI-003", p:"P1", gate:"Before independent pilot", evidence:"Supplied save-artifacts ticket; artifacts currently persist per Agent thread/export", title:"Promote Agent artifacts into durable case work", description:"Let investigators deliberately save, name, review and reuse generated tables, graphs, maps, charts and reports outside one thread.", tasks:["Add Save to Workspace/Report with destination, title and optional note instead of relying only on automatic thread persistence.","Mark generated artifacts Draft until a user approves; store creator/model/run/tools/citations and version.","Support list/open/rename/update/recycle with permissions, concurrency and audit.","Keep source links and case scoping through export and workspace/report embedding.","Test unsupported/deleted sources, large artifacts and re-opening after session restart."], acceptance:"An approved artifact is discoverable in the case workspace, retains its investigation trail and can be safely exported or recycled." },
+          { id:"AI-004", p:"Decision", gate:"Before provider commitment", evidence:"Supplied OpenAI/Anthropic/Gemini ticket; current OpenAI/Ollama focus", title:"Design and gate multi-provider support", description:"Add providers for resilience or contractual needs—not a shallow model dropdown with incompatible guarantees.", tasks:["Define provider abstraction for chat, tools, structured output, vision, transcription and embeddings, including capability fallbacks.","Evaluate OpenAI, Anthropic, Gemini and approved local models for data terms, region, retention, training, cost and quality.","Store provider secrets per instance, expose an admin allowlist and record provider/model on every run/artifact/cost.","Handle model retirement, outage/fallback and embedding-dimension migrations without silent behavior changes.","Run the same extraction, citation, tool and safety fixtures for every supported provider."], acceptance:"Each advertised provider passes the shared capability/safety contract and the deployed provider terms match customer documentation." },
+          { id:"AI-005", p:"P0", gate:"Before external data", evidence:"Agent service/tool review + audit", title:"Bound and authorise every Agent tool", description:"Outer endpoint permission checks are insufficient when tools can query, export or mutate case data.", tasks:["Enforce case/user permission inside every tool and validate returned keys belong to that case.","Keep tools read-only by default; require explicit, scoped confirmation for mutation, export or expensive work.","Cap steps, retries, query/result size, runtime, concurrent runs and spend.","Use parser/allowlist-backed query safety rather than string blocklists; remove unrestricted Cypher.","Threat-test prompt injection, malicious evidence/tool output, cross-case guessing, duplicate calls, cancellation races and partial failure."], acceptance:"Adversarial fixtures cannot cross cases, mutate/export without approval, exceed budgets or bypass the query policy." },
+          { id:"AI-006", p:"P1", gate:"Before independent pilot", evidence:"AI Costs and provider-error review", title:"Add AI budgets, outage behavior and complete cost attribution", description:"Costs should remain an operational control and AI failure should not strand user work.", tasks:["Set per-case/per-user/monthly warning and hard caps for ingestion, chat and agent usage.","Attribute every provider call—including retries/tools/embeddings—to user, case, operation, model and source job/run.","Show estimated/actual cost for expensive actions and clear cap errors.","Add provider timeout/circuit-breaker/retry behavior and preserve drafts when unavailable.","Alert on abnormal spend, missing pricing and repeated provider failure."], acceptance:"Known usage reconciles to provider billing within tolerance; caps stop work safely and provider outage preserves user context." }
+        ]
+      },
+      {
+        id:"E11", title:"Workspace, right rail & settings", strap:"Make investigation work durable across views and replace placeholder preferences with real behavior.",
+        stories:[
+          { id:"WORK-001", p:"P0", gate:"Before external data", evidence:"Backlog BUG-007/008; Postgres migration claims a fix", title:"Prove Notes no longer disappear or fail to save", description:"Treat the storage migration as a hypothesis until current end-to-end and concurrency tests close the reports.", tasks:["Reproduce the original create/save/disappear scenarios on migrated and fresh cases.","Verify case/user permissions, list filters and transaction rollback on failed saves.","Test concurrent create/edit, refresh, multiple workers and migration idempotency.","Add visible retry/recovery and prevent duplicate notes after timeout.","Close BUG-007/008 only with durable database and browser assertions."], acceptance:"Notes survive refresh/restart/concurrency and remain visible only in the correct case; simulated failures do not lose or duplicate content." },
+          { id:"WORK-002", p:"P1", gate:"Before independent pilot", evidence:"Backlog FEAT-003/001", title:"Complete Findings and inline evidence summaries", description:"Provide a structured, source-linked place for conclusions distinct from private working notes.", tasks:["Finish Findings create/edit/reorder/recycle with linked evidence, entities and documents.","Show inline file summaries in Workspace with clear AI/human status and source open action.","Place Findings first in approved report output while retaining author, citations and review state.","Enforce case permissions, audit and optimistic concurrency.","Test broken/recycled links and large linked-item sets."], acceptance:"A finding is durable, reviewable and exportable with working evidence links; file summaries are visible without opening each file." },
+          { id:"WORK-003", p:"P1", gate:"Before independent pilot", evidence:"Backlog FEAT-010/011/014", title:"Reorganise Workspace around investigation outcomes", description:"Reduce clutter and align section naming/order with the approved domain workflow.", tasks:["Approve and implement the section order covering deadlines/tasks, findings, context/exposure, theories, notes, snapshots, witnesses, entities, evidence, files, graph, timeline, map and audit.","Make the left navigation match and remember collapsed state per user/case.","Condense Witness Matrix default rows; add Interviewed by and rename Witness Interview to Interview or Statement.","Consolidate excessive AI facts/insights into navigable summaries without dropping atomic sources.","Remove or rename legally misleading Chain of Custody / Audit Log labels following legal review."], acceptance:"The signed workspace map matches navigation and exports, and a usability walkthrough can find each core object without developer help." },
+          { id:"WORK-004", p:"P1", gate:"Before independent pilot", evidence:"Supplied Right Rail heading + current duplicated layouts", title:"Unify Details, AI Chat and Notebook right-rail behavior", description:"The shared rail should behave consistently across Graph, Evidence, Timeline, Map, Table, Financial and Cellebrite.", tasks:["Define a single tab/state model, with Evidence Processing as a route-specific addition.","Keep selection/context correct when switching tabs/routes and never show another case’s entity or thread.","Make collapse/resize/scroll/focus behavior consistent and persisted; fix nested overflow in all tool overlays.","Resolve Graph’s separate rail and Agent’s full-width exception through the AI information-architecture decision.","Add keyboard shortcuts, accessible tab semantics and browser tests across every case route."], acceptance:"The rail keeps correct case/selection context and identical collapse, scroll and keyboard behavior on every supported route." },
+          { id:"WORK-005", p:"P1", gate:"Before independent pilot", evidence:"Backlog BUG-006 + linted edit sheets", title:"Protect unsaved work and concurrent edits", description:"Outside clicks, navigation and another investigator must not silently discard or overwrite long-form work.", tasks:["Inventory every modal/sheet/editor and classify draft, destructive close and autosave behavior.","Block accidental backdrop/Escape/navigation close when dirty; offer save/discard/cancel.","Add local/server drafts where long-form work warrants it.","Use optimistic concurrency/version checks and present merge/reload choices on conflict.","Cover notes, theories, witnesses, summaries, reports, chat saves, financial details and settings in browser tests."], acceptance:"Dirty editors cannot close or overwrite silently; simulated conflicts preserve both users’ work and offer a clear resolution." },
+          { id:"SET-001", p:"P1", gate:"Before independent pilot", evidence:"Confirmed: personal settings mostly uncontrolled defaults; Case Settings placeholder handled separately", title:"Make personal Settings truthful and persistent", description:"Theme works, but notification/default-view controls currently look functional without a persistence contract.", tasks:["Persist supported preferences server-side or clearly local-only with documented scope.","Implement default case view and ensure opening a case respects it.","Wire notification preferences to real browser/in-app behavior and permission prompts, or remove them.","Add change-password/session management and approved profile fields.","Verify shortcuts shown in Settings match implemented shortcuts and do not conflict with browser/assistive tech."], acceptance:"Every visible setting changes real behavior after refresh on supported devices, or is removed from the release UI." }
+        ]
+      },
+      {
+        id:"E12", title:"Reports, exports & brand system", strap:"Produce deterministic, source-linked documents that look like one product.",
+        stories:[
+          { id:"REP-001", p:"Decision", gate:"Before feature freeze", evidence:"Confirmed: frontend calls /api/reports; no backend router", title:"Choose and deliver the V1 Reports product—or remove it", description:"The visible Reports page currently targets a backend that is not registered and cannot be considered partial success.", tasks:["Choose dedicated report builder versus curated bundle of existing snapshot/timeline/notebook/financial/agent exports.","Define report ownership, sections, versioning, approval, citations and supported formats.","If included, implement case-authorised persistence/generation and wire Print/Export/Delete end to end.","If excluded, remove route/navigation/copy and direct users to supported exports.","Add end-to-end create, reopen, edit, approve, export and recycle coverage."], acceptance:"Reports is either a complete tested V1 workflow or completely absent from the V1 promise and interface." },
+          { id:"REP-002", p:"P0", gate:"Before external data", evidence:"Confirmed: dangerouslySetInnerHTML with stored report content", title:"Sanitise report content and isolate document rendering", description:"Unsafe/AI-generated HTML must not execute in the application origin or access user sessions.", tasks:["Store structured content or constrained Markdown instead of arbitrary HTML.","Render through an allowlisted sanitizer with links/images/styles policy and strict CSP.","Generate PDF/DOCX server-side in an isolated, resource-bounded process.","Block external resource fetches, local-file access and script/event attributes.","Add stored-XSS, malicious SVG/URL, huge-content and prompt-injected markup tests."], acceptance:"Security fixtures cannot execute code, load unauthorised resources or read local/session data through report preview/export." },
+          { id:"REP-003", p:"P1", gate:"Before independent pilot", evidence:"Supplied ‘normalise and brand all exports’ + backlog FEAT-009", title:"Create one export design and metadata standard", description:"Apply a consistent, legible and legally reviewed document frame to every promised export.", tasks:["Freeze logo/name, colour, typography and accessibility-safe fallbacks; reconcile legacy #222248/Cinzel/Lato feedback with the current Loupe brand decision.","Standardise cover/header/footer, case identity, document title/version, author, generation timestamp, page numbers and confidentiality classification.","Include filters/scope, stable IDs, source citations and AI/human-review statement where relevant.","Create reusable PDF/DOCX/CSV templates used by Graph, Timeline, Financial, Snapshot, Notebook, Agent and Reports.","Add visual regression fixtures for fonts, page breaks, long tables, non-Latin text and missing assets."], acceptance:"Every promised export passes the same brand/metadata/citation checklist and renders consistently from one template system." },
+          { id:"REP-004", p:"P1", gate:"Before independent pilot", evidence:"Backlog BUG-003/012 + FEAT-008", title:"Fix Snapshot export fidelity and scope", description:"Snapshot reports must contain a sharp graph and only the timeline/events saved with that snapshot.", tasks:["Render graph images at print-appropriate vector/high DPI with deterministic colours and labels.","Scope events/entities/notes to the saved snapshot rather than the whole case.","Add source citations and approved confidentiality labels.","Test empty/large graphs, dark/light UI independence, long timelines and recycled sources.","Reconcile generated report content with the saved snapshot version/hash."], acceptance:"Fixture exports are sharp, contain only snapshot-scoped content and reproduce the same saved version on re-export." },
+          { id:"REP-005", p:"P0", gate:"Before external data", evidence:"Audit export access requirements", title:"Authorise, audit and integrity-test all exports", description:"Exports are a high-impact disclosure path and need the same case boundary as on-screen data.", tasks:["Inventory every download/print/file endpoint and require case permission server-side.","Record actor, case, export type, scope, result and correlation ID without logging evidence content.","Prevent IDOR, guessed artifact/report IDs and cross-case cached files.","Apply safe filenames, content types, no-sniff/cache headers and expiring download URLs where needed.","Add negative security tests plus dataset-to-export count/hash assertions."], acceptance:"A non-member cannot generate or fetch any export; authorised exports exactly match their selected case/scope and are auditable." },
+          { id:"BRAND-001", p:"P1", gate:"Before independent pilot", evidence:"Confirmed Loupe/Owl identifiers across app, prompts, docs and deploy", title:"Freeze and apply the production identity", description:"Finish the Loupe decision across customer-visible product, documentation, operations and legal materials.", tasks:["Complete company/domain/social/trademark clearance with appropriate professional advice.","Create an inventory of visible Owl/Deduce/Loupe names, logos, favicons, email copy and generated documents.","Replace customer-visible legacy identity while deliberately versioning internal technical identifiers that cannot safely change at once.","Align landing claims, login, app shell, exports, user guide, release notes, system emails and legal terms.","Add brand smoke screenshots and a pre-release string/asset scan."], acceptance:"Customer-visible release artifacts present one cleared name and identity; any retained legacy technical identifier is documented and invisible." }
+        ]
+      },
+      {
+        id:"E13", title:"Platform administration & observability", strap:"Keep the controls that help operate a customer safely; remove global powers from ordinary users.",
+        stories:[
+          { id:"OPS-001", p:"Decision", gate:"Before feature freeze", evidence:"Supplied ‘consider removing AI Costs’; current admin dashboard is substantial", title:"Retain AI Costs as an admin operations control", description:"Cost visibility is release-critical even if the tab is not useful to ordinary investigators.", tasks:["Confirm AI Costs remains admin-only and rename/reposition it under Operations if clearer.","Reconcile every ingestion/chat/agent/provider call and surface unattributed/missing-price records.","Add budgets, forecasts, warnings, hard caps and anomaly alerts by case/user/provider.","Add authorised CSV/PDF export for billing/support reconciliation.","If customer admins should not see provider economics, separate customer usage allowances from internal cost detail."], acceptance:"The scope decision is explicit; operators can reconcile and cap AI spend without exposing inappropriate provider details." },
+          { id:"OPS-002", p:"P0", gate:"Before external data", evidence:"Confirmed logs clearable by ordinary users; audit retention gaps", title:"Separate immutable security audit from technical logs", description:"Do not let a compromised application admin erase the history needed to investigate access or deletion.", tasks:["Define security event coverage for auth, case access, evidence, exports, permissions, admin/support and destructive actions.","Store actor, case/object, action, result, IP/session and correlation ID while redacting content/secrets.","Export security events to a protected append-only sink with time-based retention.","Keep technical diagnostics separately searchable and privacy-safe.","Remove ordinary clear-log power and test tampering/retention boundaries."], acceptance:"Required events are queryable after an application-level log clear or database compromise scenario and contain no evidence payloads/secrets." },
+          { id:"OPS-003", p:"P1", gate:"Before independent pilot", evidence:"Admin tasks/update screens + deploy scripts", title:"Make background tasks and platform updates safe to operate", description:"Admin controls need accurate state, confirmation, concurrency protection and recovery.", tasks:["Show task owner/case/type/age/progress/error/retry/cancel with safe redaction.","Prevent duplicate incompatible maintenance/update jobs and require reason/confirmation for destructive tasks.","Replace unrestricted global repair/backfill actions with admin policy, dry run and audit.","Report exact application/schema version and update result; preserve control after disconnect.","Test stuck task, process restart, failed update and stale UI state."], acceptance:"An admin can diagnose/recover a failed task or update without shell access, duplicated work or unaudited global mutation." },
+          { id:"OPS-004", p:"P0", gate:"Before external data", evidence:"Health endpoint/deploy-gate audit", title:"Implement trustworthy liveness, readiness and instance inventory", description:"A top-level ‘ok’ must not hide an unavailable database, worker or ingestion engine.", tasks:["Separate liveness from readiness and return non-2xx when a required dependency is unavailable.","Check Postgres, Neo4j, Redis, Chroma, ingestion API/worker/queue, storage and required provider configuration.","Make deploy success require readiness plus authenticated smoke actions.","Track instance/customer/environment/region/version/schema/storage/last backup/last restore/deploy/health.","Expose only safe diagnostics to customer admins; keep sensitive details in operations tooling."], acceptance:"Stopping any required dependency fails readiness, blocks deployment promotion and produces an actionable inventory/alert state." }
+        ]
+      },
+      {
+        id:"E14", title:"Deployment, recovery & customer operations", strap:"Deploy like a product: isolated, encrypted, recoverable and observable.",
+        stories:[
+          { id:"DEP-001", p:"P0", gate:"Before external data", evidence:"Confirmed HTTP/0.0.0.0/Vite preview deployment; no reverse proxy/TLS", title:"Build a production network and HTTPS boundary", description:"Serve static assets through a supported production edge and keep application/internal services private.", tasks:["Place Caddy/Nginx/managed load balancer in front; expose only 80/443 and redirect to HTTPS.","Serve versioned static frontend assets; bind backend and preview/internal services to private/loopback interfaces.","Configure automatic certificates, HSTS, CSP/security headers, trusted proxy settings and request/upload limits.","Restrict SSH/admin through IAP, VPN or approved network and harden host/service accounts/firewalls.","Run external port, TLS and header scans in the release drill."], acceptance:"Only approved HTTPS endpoints are internet-reachable and production traffic never reaches Vite preview or raw Uvicorn directly." },
+          { id:"DEP-002", p:"P0", gate:"Before external data", evidence:"Confirmed deploy pulls/builds source in place; no CI workflow", title:"Release immutable, versioned artifacts through promotion stages", description:"Build once in CI and promote the same tested artifact instead of mutating customer servers from Git.", tasks:["Create CI that builds signed/versioned frontend/backend/engine/container artifacts after all gates pass.","Publish to an approved registry with SBOM, provenance and vulnerability results.","Deploy exact versions to staging → internal → canary → customers with recorded release channel.","Remove production git pull, pip/npm install and source build paths.","Add authenticated smoke checks and automatic halt—not unsafe rollback—on failure."], acceptance:"The digest tested in CI is the digest running on the instance, and operations can identify every customer’s exact version." },
+          { id:"DEP-003", p:"P0", gate:"Before external data", evidence:"Confirmed migration-before-health and unsafe rollback scripts", title:"Make migrations and rollback recovery-safe", description:"Code rollback cannot be claimed when the schema may already be incompatible.", tasks:["Adopt expand/contract backward-compatible migrations and document compatibility window per release.","Test upgrades from the oldest supported customer version using realistic backup data.","Take/verify a pre-migration recovery point and record app/schema versions.","Declare code rollback, roll-forward or full restore strategy for every migration-bearing release.","Replace checkout/reset scripts with immutable deployment rollback and rehearse failure after migration."], acceptance:"A simulated failed migration/deploy returns to a verified compatible state without data loss or manual production edits." },
+          { id:"DR-001", p:"P0", gate:"Before external data", evidence:"Confirmed: no coordinated backup implementation", title:"Implement encrypted off-instance backup and clean restore", description:"Protect Postgres, Neo4j, evidence, generated artifacts and vector rebuild inputs as one recoverable instance.", tasks:["Create coordinated, versioned recovery sets with database dumps/snapshots, immutable evidence, config references and app/schema versions.","Encrypt in transit/at rest, restrict deletion, retain multiple generations and copy outside the VM failure boundary.","Monitor freshness/size/failure and take a verified pre-deployment backup.","Write automated clean-environment restore and rebuild Chroma when chosen.","Verify users/permissions, file hashes, every product view, citations, chats, audit and exports after restore."], acceptance:"A scheduled recovery set restores into a clean project within RTO and original evidence hashes match; the drill is recorded." },
+          { id:"OPS-005", p:"P0", gate:"Before external data", evidence:"Audit monitoring/runbook gaps", title:"Add monitoring, alerts and incident runbooks", description:"Important failures must reach a named person with a tested response—not remain in local logs.", tasks:["Monitor HTTPS/certs, CPU/memory/disk, containers, API latency/errors, workers/queue, job failures, provider errors, storage and costs.","Alert on backup freshness/failure, low disk, restart loops, readiness, cost spikes and unsupported version.","Route urgent alerts to named responders with escalation/severity/support targets.","Write and exercise runbooks for outage, stuck jobs, disk full, failed backup/deploy, lost admin, provider outage and suspected breach.","Add privacy-safe structured error reporting with correlation IDs."], acceptance:"Each simulated critical failure produces an actionable alert and the on-call responder can follow a tested runbook to recovery/escalation." },
+          { id:"INFRA-001", p:"P0", gate:"Before external data", evidence:"Release architecture recommendation", title:"Automate isolated customer provisioning and offboarding", description:"Create consistent instances without shared credentials, storage or founder-only manual steps.", tasks:["Build Terraform/equivalent for project/network/compute/storage/secrets/DNS/TLS/backups/monitoring/budgets.","Use one approved isolation boundary and unique instance/service/admin identities.","Record region, URL, customer, version, backups, health and support access in inventory.","Implement time-bound audited support access and emergency break-glass.","Automate export/offboarding, retention expiry and two-person irreversible deletion."], acceptance:"A fresh customer can be provisioned and later offboarded from documented automation with no shared secret or storage path." }
+        ]
+      },
+      {
+        id:"E15", title:"Quality, performance & accessibility", strap:"Make release confidence repeatable in CI and representative browsers—not dependent on a founder’s laptop.",
+        stories:[
+          { id:"QA-001", p:"P0", gate:"Before external data", evidence:"Fresh run: 11 frontend test failures; 28 lint errors; backend suite did not complete", title:"Make every required automated gate deterministic and green", description:"The current main frontend suite/lint fail and the backend aggregate run needs a reliable completion path.", tasks:["Fix the localStorage test environment, missing Router wrapper, Markdown expectation and any underlying regressions behind 11 frontend failures.","Fix 28 lint errors/22 warnings and exclude generated Storybook output from source lint.","Diagnose the backend all-suite non-completion, add per-test timeouts and make the complete suite finish reliably.","Keep Evidence Engine 34/34 and add regression tests for changed ingestion/security behavior.","Publish coverage and fail release creation on test/lint/type/build failure."], acceptance:"A clean checkout completes the documented quality command in CI with zero required failures and a bounded runtime." },
+          { id:"QA-002", p:"P0", gate:"Before external data", evidence:"No .github/workflows found; no E2E suite", title:"Create CI and browser end-to-end release journeys", description:"Automate the real flows and permission boundaries that unit tests currently miss.", tasks:["Run Python checks/tests, frontend lint/type/test/build, dependency/secret/container scans and migration upgrade tests on every PR.","Add browser journeys for login/logout/session expiry, case/members, upload/process, Graph merge/recycle, Timeline, Map, Financial, Chat citations, Agent approval, Workspace save, Reports/exports and admin boundaries.","Run owner/editor/viewer/non-member/direct-URL/direct-API negative cases.","Capture screenshots/traces on failure using synthetic fixture data.","Block artifact publishing/promotion unless required jobs pass."], acceptance:"CI can detect each confirmed release blocker class and produces no releasable artifact when a required journey fails." },
+          { id:"QA-003", p:"P0", gate:"Before external data", evidence:"Fresh npm audit: 3 high / 1 moderate runtime advisories", title:"Resolve and continuously scan vulnerable dependencies", description:"Update React Router/lodash paths and keep risk visible across JavaScript, Python and container images.", tasks:["Upgrade or otherwise remove the current high/moderate runtime advisories and run regression tests.","Audit Python direct/transitive packages and base/container images with an agreed scanner.","Generate SBOMs and record accepted exceptions with owner, exploitability and expiry.","Enable dependency update automation and a supported-version policy.","Add secret scanning for current/history/release artifacts."], acceptance:"No unaccepted critical/high release vulnerability remains and every exception is time-bound, owned and documented." },
+          { id:"PERF-001", p:"P1", gate:"Before independent pilot", evidence:"Fresh builds: main initial JS ~2.15 MB; landing hero chunk ~613 KB", title:"Meet frontend performance and bundle budgets", description:"Code splitting exists for pages, but the shared initial bundle remains too large and the 3D landing hero triggers a warning.", tasks:["Analyse main bundle and split shared chart/editor/map/utility dependencies into cacheable lazy chunks.","Set budgets for initial JS/CSS, route chunks, LCP, INP and CLS on target hardware/network.","Optimise/defer the landing 3D asset/chunk and keep a fast reduced-motion/WebGL fallback.","Move expensive Graph/Timeline/Cellebrite computation off the main thread where profiling justifies it.","Measure cold/warm load and route transitions in CI or scheduled lab runs."], acceptance:"Both sites meet signed bundle and Core Web Vitals budgets without removing required functionality or accessibility fallbacks." },
+          { id:"PERF-002", p:"P1", gate:"Before independent pilot", evidence:"Audit large-case matrix", title:"Publish and prove supported data-scale limits", description:"Replace implicit unlimited claims with measured case/file/entity/event/transaction/mobile-report thresholds.", tasks:["Create small/typical/maximum synthetic datasets with many small and very large files.","Load-test simultaneous ingestion and investigation plus worker restart/near-full disk/provider delay.","Measure API latency, queue delay, completion time, browser memory/FPS and export duration/error rate.","Optimise or lower published limits where thresholds fail; show caps and partial results in UI.","Repeat the maximum case test before release promotion."], acceptance:"Published limits come from a passing measured test and the UI clearly handles attempts beyond them." },
+          { id:"A11Y-001", p:"P1", gate:"Before independent pilot", evidence:"Cross-cutting UI review requirement", title:"Complete accessibility and keyboard acceptance", description:"The data-dense application needs a supported keyboard/high-zoom/screen-reader path, not only visual polish.", tasks:["Audit WCAG 2.1 AA essentials: names/roles/states, focus order/visibility, contrast, headings, dialogs, errors and live progress.","Test keyboard-only Graph alternatives, tables, filters, drag/drop move alternative, right rail, menus and exports.","Test 200–400% zoom/reflow at supported desktop widths and reduced motion.","Provide text/table alternatives for canvas/map information needed to complete core tasks.","Add Storybook accessibility checks and browser smoke coverage for critical flows."], acceptance:"A keyboard/high-zoom user can complete the documented core journey, and no critical/serious automated issue remains unexplained." },
+          { id:"QA-004", p:"P1", gate:"Before independent pilot", evidence:"Release manual matrix", title:"Validate supported browsers and every state", description:"Polish loading, empty, error, offline/degraded and concurrency states across the whole application.", tasks:["Define supported Chrome/Edge versions and minimum desktop resolution; add others only if promised.","Walk every route with empty, loading, partial, permission denied, API error, timeout and session-expired states.","Test slow network, refresh during long work, two simultaneous users and provider/database degradation.","Remove console-only errors, technical dead ends, placeholder copy and unhandled buttons.","Run a non-developer exploratory ‘day in the life’ and triage every blocker."], acceptance:"The supported-browser matrix passes and every primary route has usable non-happy-path behavior with no visible placeholder action." }
+        ]
+      },
+      {
+        id:"E16", title:"Landing, documentation, legal & onboarding", strap:"Ensure the public promise, customer terms and first day of use match the system that actually ships.",
+        stories:[
+          { id:"WEB-001", p:"P1", gate:"Before independent pilot", evidence:"Landing code + release claims review", title:"Make the landing site production-complete and evidence-based", description:"Public control/provenance claims must match implemented architecture and the walkthrough request must fail clearly when email is not configured.", tasks:["Review every security, provenance, deployment and portability claim against the release evidence.","Require/validate the contact email at build/deploy; provide a no-mail-client fallback or clear support contact.","Add Privacy, Terms, security/contact and accessibility links in the footer.","Test metadata, favicon, social preview, canonical URL, sitemap/robots and analytics consent if analytics is added.","Run responsive, keyboard, reduced-motion, no-WebGL and performance checks."], acceptance:"The deployed landing site has working contact/legal paths, passes the browser matrix and makes no unsupported product/security claim." },
+          { id:"DOC-001", p:"P1", gate:"Before independent pilot", evidence:"Audit documentation requirements; guide scripts exist", title:"Publish versioned customer documentation", description:"A new investigator should complete core work without undocumented founder knowledge.", tasks:["Write first login/MFA, roles, case collaboration, supported evidence/limits, processing errors and recovery.","Document Graph, Table, Timeline, Map, Financial, Cellebrite, Workspace/Notebook, AI/citations, Agent approvals and promised Reports/exports.","Explain confidence, provenance, human review, retention, restore requests, deletion, support and known limitations.","Generate branded PDF/web outputs from versioned source and tie them to application versions.","Have a non-developer complete a first investigation using only the guide."], acceptance:"The documentation-only usability run completes the agreed journey; docs version and screenshots match the release candidate." },
+          { id:"DOC-002", p:"P0", gate:"Before external data", evidence:"Audit internal runbook requirements", title:"Write and exercise internal operating runbooks", description:"Provisioning and incidents must not depend on one person’s memory.", tasks:["Document customer provisioning, secret rotation, admin recovery and support access.","Document deploy/canary/migration/rollback/restore and version inventory.","Document outage, worker/provider failure, disk/cost spike, failed backup and suspected breach response.","Document customer export/offboarding/retention expiry/deletion and evidence preservation.","Exercise each high-risk runbook and record corrections/owner/review date."], acceptance:"A second operator can execute each critical runbook in a rehearsal without undocumented steps or unsafe access." },
+          { id:"LEGAL-001", p:"P0", gate:"Before external data", evidence:"Release privacy/legal audit", title:"Complete customer legal, privacy and AI terms", description:"Investigation data is highly sensitive; contracts and notices must accurately allocate responsibility and describe processing.", tasks:["Finalise customer/service agreement, DPA, privacy notice, acceptable-use, confidentiality, IP and liability/termination/payment terms with qualified advice.","Define controller/processor roles, regions/transfers, retention, backup, deletion, legal hold and breach notification.","Publish subprocessors for cloud, AI, maps/geocoding, email, monitoring and support.","Add AI limitations, human-review obligations, prohibited/high-risk uses and provider training/retention terms.","Align support/SLA/RPO/RTO/offboarding wording to measured operations and never overclaim legal privilege/chain of custody."], acceptance:"Signed terms and notices match the deployed architecture/provider settings and the promised release limits/support model." },
+          { id:"ONB-001", p:"P1", gate:"Before independent pilot", evidence:"Audit first-run requirements", title:"Deliver first-run onboarding, demo data and support channels", description:"Make the first customer session safe and intentional.", tasks:["Create a synthetic representative demo case with known expected graph/timeline/map/financial/Cellebrite/AI outputs.","Add a first-login checklist covering MFA, profile, first case, collaborator, upload, citations and support.","Establish support@ and security@ channels with SPF, DKIM, DMARC, ownership and escalation.","Define pilot price/duration/users/cases/storage/AI allowance/support/success measures and feedback cadence.","Separate pilot bugs from feature requests and require a formal pilot review before customer two."], acceptance:"A pilot user completes onboarding and the first investigation with synthetic data, knows support/security contacts and agrees measured success criteria." }
+        ]
+      }
+    ];
+
+    const stateKey = "loupe.release-backlog.progress.v1";
+    let completed = {};
+    try { completed = JSON.parse(localStorage.getItem(stateKey) || "{}"); } catch { completed = {}; }
+    const activePriorities = new Set(["P0", "P1", "Decision"]);
+
+    const backlogEl = document.getElementById("backlog");
+    const navEl = document.getElementById("epicNav");
+    const epicFilter = document.getElementById("epicFilter");
+
+    const el = (tag, className, text) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+
+    function priorityClass(priority) {
+      return priority === "P0" ? "p0" : priority === "P1" ? "p1" : priority === "P2" ? "p2" : "decision";
+    }
+
+    function allTasks() { return backlog.flatMap(epic => epic.stories.flatMap(story => story.tasks.map((task, i) => ({ epic, story, task, id: `${story.id}.${i+1}` })))); }
+
+    function render() {
+      backlog.forEach((epic, epicIndex) => {
+        const navLink = el("a");
+        navLink.href = `#${epic.id}`;
+        navLink.append(el("span", "nav-id", epic.id), el("span", "nav-label", epic.title), el("span", "nav-count", String(epic.stories.length)));
+        navEl.append(navLink);
+
+        const option = el("option", "", `${epic.id} · ${epic.title}`);
+        option.value = epic.id;
+        epicFilter.append(option);
+
+        const section = el("section", "epic");
+        section.id = epic.id;
+        section.dataset.epic = epic.id;
+        const header = el("header", "epic-header");
+        header.append(el("div", "epic-no", `${String(epicIndex + 1).padStart(2,"0")} / ${epic.id}`));
+        const titleWrap = el("div");
+        titleWrap.append(el("h2", "", epic.title), el("p", "epic-strap", epic.strap));
+        const progress = el("div", "epic-progress");
+        progress.dataset.epicProgress = epic.id;
+        header.append(titleWrap, progress);
+        section.append(header);
+
+        const list = el("div", "story-list");
+        epic.stories.forEach((story, storyIndex) => {
+          const article = el("article", `story ${storyIndex === 0 ? "open" : ""}`);
+          article.dataset.priority = story.p;
+          article.dataset.story = story.id;
+          article.dataset.epic = epic.id;
+          article.dataset.search = [epic.title, epic.strap, story.id, story.p, story.gate, story.evidence, story.title, story.description, story.acceptance, ...story.tasks].join(" ").toLowerCase();
+
+          const toggle = el("button", "story-toggle");
+          toggle.type = "button";
+          toggle.setAttribute("aria-expanded", storyIndex === 0 ? "true" : "false");
+          const caret = el("span", "caret", "›");
+          const heading = el("div", "story-heading");
+          const titleRow = el("div", "story-title-row");
+          titleRow.append(el("span", "story-id", story.id), el("span", `badge ${priorityClass(story.p)}`, story.p));
+          heading.append(titleRow, el("h3", "", story.title));
+          const storyProgress = el("span", "story-progress");
+          storyProgress.dataset.storyProgress = story.id;
+          toggle.append(caret, heading, storyProgress);
+          toggle.addEventListener("click", () => {
+            article.classList.toggle("open");
+            toggle.setAttribute("aria-expanded", article.classList.contains("open") ? "true" : "false");
+          });
+          article.append(toggle);
+
+          const body = el("div", "story-body");
+          body.append(el("p", "outcome", story.description));
+          const meta = el("div", "meta-row");
+          meta.append(el("span", "meta", `Gate · ${story.gate}`), el("span", "meta", `Evidence · ${story.evidence}`));
+          body.append(meta, el("div", "task-label", "Tasks / acceptance work"));
+          const tasks = el("ul", "tasks");
+          story.tasks.forEach((taskText, taskIndex) => {
+            const taskId = `${story.id}.${taskIndex + 1}`;
+            const li = el("li", `task ${completed[taskId] ? "done" : ""}`);
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.id = `task-${taskId}`;
+            checkbox.checked = Boolean(completed[taskId]);
+            const label = el("label", "", taskText);
+            label.htmlFor = checkbox.id;
+            checkbox.addEventListener("change", () => {
+              if (checkbox.checked) completed[taskId] = true; else delete completed[taskId];
+              localStorage.setItem(stateKey, JSON.stringify(completed));
+              li.classList.toggle("done", checkbox.checked);
+              updateProgress();
+            });
+            li.append(checkbox, label);
+            tasks.append(li);
+          });
+          body.append(tasks);
+          const acceptance = el("p", "acceptance");
+          acceptance.append(el("strong", "", "Story complete when — "), document.createTextNode(story.acceptance));
+          body.append(acceptance);
+          article.append(body);
+          list.append(article);
+        });
+        section.append(list);
+        backlogEl.append(section);
+      });
+      updateProgress();
+      applyFilters();
+    }
+
+    function updateProgress() {
+      const tasks = allTasks();
+      const done = tasks.filter(item => completed[item.id]).length;
+      document.getElementById("epicCount").textContent = backlog.length;
+      document.getElementById("storyCount").textContent = backlog.reduce((sum, epic) => sum + epic.stories.length, 0);
+      document.getElementById("taskCount").textContent = tasks.length;
+      document.getElementById("p0Count").textContent = backlog.flatMap(e => e.stories).filter(s => s.p === "P0").length;
+      document.getElementById("doneCount").textContent = tasks.length ? `${Math.round(done / tasks.length * 100)}%` : "0%";
+
+      backlog.forEach(epic => {
+        const epicTasks = epic.stories.flatMap(story => story.tasks.map((_, i) => `${story.id}.${i+1}`));
+        const epicDone = epicTasks.filter(id => completed[id]).length;
+        const node = document.querySelector(`[data-epic-progress="${epic.id}"]`);
+        node.replaceChildren(el("strong", "", `${epicDone} / ${epicTasks.length}`), el("span", "", "tasks complete"));
+        epic.stories.forEach(story => {
+          const storyDone = story.tasks.filter((_, i) => completed[`${story.id}.${i+1}`]).length;
+          const progress = document.querySelector(`[data-story-progress="${story.id}"]`);
+          progress.textContent = `${storyDone}/${story.tasks.length}`;
+        });
+      });
+    }
+
+    function applyFilters() {
+      const query = document.getElementById("search").value.trim().toLowerCase();
+      const chosenEpic = epicFilter.value;
+      let visibleStories = 0;
+      document.querySelectorAll(".story").forEach(story => {
+        const matchesPriority = activePriorities.has(story.dataset.priority);
+        const matchesEpic = chosenEpic === "all" || chosenEpic === story.dataset.epic;
+        const matchesSearch = !query || story.dataset.search.includes(query);
+        const visible = matchesPriority && matchesEpic && matchesSearch;
+        story.hidden = !visible;
+        if (visible) visibleStories += 1;
+      });
+      document.querySelectorAll(".epic").forEach(epic => {
+        epic.hidden = ![...epic.querySelectorAll(".story")].some(story => !story.hidden);
+      });
+      const totalStories = backlog.reduce((sum, epic) => sum + epic.stories.length, 0);
+      document.getElementById("visibleCount").textContent = `Showing ${visibleStories} of ${totalStories} stories`;
+      document.getElementById("emptyResults").classList.toggle("visible", visibleStories === 0);
+    }
+
+    document.getElementById("search").addEventListener("input", applyFilters);
+    epicFilter.addEventListener("change", applyFilters);
+    document.querySelectorAll(".filter-chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const p = chip.dataset.priority;
+        if (activePriorities.has(p)) activePriorities.delete(p); else activePriorities.add(p);
+        chip.setAttribute("aria-pressed", activePriorities.has(p) ? "true" : "false");
+        applyFilters();
+      });
+    });
+    document.getElementById("expandAll").addEventListener("click", () => document.querySelectorAll(".story:not([hidden])").forEach(story => { story.classList.add("open"); story.querySelector(".story-toggle").setAttribute("aria-expanded","true"); }));
+    document.getElementById("collapseAll").addEventListener("click", () => document.querySelectorAll(".story").forEach(story => { story.classList.remove("open"); story.querySelector(".story-toggle").setAttribute("aria-expanded","false"); }));
+    document.getElementById("print").addEventListener("click", () => window.print());
+
+    render();
+  </script>
+</body>
+</html>

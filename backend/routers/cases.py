@@ -10,11 +10,11 @@ from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from postgres.models.case import Case
-from postgres.models.enums import CaseMembershipRole, GlobalRole
+from postgres.models.enums import CaseMembershipRole, CaseStatus, GlobalRole
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.users import get_current_db_user
@@ -56,8 +56,38 @@ class CaseCreateRequest(BaseModel):
 class CaseUpdateRequest(BaseModel):
     """Request model for updating a case."""
 
-    title: str | None = None
-    description: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=5000)
+    status: CaseStatus | None = None
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Title must not be empty")
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def normalize_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @model_validator(mode="after")
+    def validate_patch(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one metadata field is required")
+        if "title" in self.model_fields_set and self.title is None:
+            raise ValueError("Title must not be null")
+        if "status" in self.model_fields_set and self.status is None:
+            raise ValueError("Status must not be null")
+        return self
 
 
 class CaseResponse(BaseModel):
@@ -66,6 +96,7 @@ class CaseResponse(BaseModel):
     id: UUID
     title: str
     description: str | None
+    status: CaseStatus = CaseStatus.active
     created_by_user_id: UUID
     owner_user_id: UUID
     created_at: datetime
@@ -191,6 +222,7 @@ def list_cases(
             id=case.id,
             title=case.title,
             description=case.description,
+            status=case.status,
             created_by_user_id=case.created_by_user_id,
             owner_user_id=case.owner_user_id,
             created_at=case.created_at,
@@ -245,6 +277,7 @@ def get_case(
         id=case.id,
         title=case.title,
         description=case.description,
+        status=case.status,
         created_by_user_id=case.created_by_user_id,
         owner_user_id=case.owner_user_id,
         created_at=case.created_at,
@@ -266,7 +299,7 @@ def update_existing_case(
     current_user: User = Depends(get_current_db_user),
 ):
     """
-    Update a case's title and/or description.
+    Update a case's title, description, and/or workflow status.
 
     Requires case.edit permission.
     """
@@ -275,8 +308,7 @@ def update_existing_case(
             db=db,
             case_id=case_id,
             user=current_user,
-            title=request.title,
-            description=request.description,
+            **request.model_dump(exclude_unset=True),
         )
         return case
     except CaseNotFound:

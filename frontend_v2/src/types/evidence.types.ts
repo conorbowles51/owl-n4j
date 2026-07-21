@@ -129,6 +129,51 @@ export interface EvidenceSummary {
   filename?: string
 }
 
+export interface EvidenceTextSearchHit {
+  id: string
+  start_char: number
+  end_char: number
+  snippet: string
+  highlight_start: number
+  highlight_end: number
+  page_number: number | null
+  location_label: string | null
+}
+
+export interface EvidenceTextSearchDocument {
+  evidence_id: string
+  document_name: string
+  folder_path: string
+  total_matches: number
+  shown_matches: number
+  matches_truncated: boolean
+  matches: EvidenceTextSearchHit[]
+}
+
+export interface EvidenceTextSearchResponse {
+  query: string
+  total_matches: number
+  total_documents: number
+  case_documents: number
+  searchable_documents: number
+  document_limit: number
+  document_offset: number
+  returned_documents: number
+  has_more_documents: boolean
+  documents: EvidenceTextSearchDocument[]
+}
+
+export interface EvidenceDocumentMatchesResponse {
+  query: string
+  evidence_id: string
+  total_matches: number
+  returned_matches: number
+  offset: number
+  limit: number
+  has_more: boolean
+  matches: EvidenceTextSearchHit[]
+}
+
 // Folder types
 export interface EvidenceFolder {
   id: string

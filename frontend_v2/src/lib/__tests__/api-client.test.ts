@@ -99,4 +99,22 @@ describe("fetchAPI", () => {
     await expect(fetchAPI("/api/test")).rejects.toThrow()
     expect(localStorage.getItem("authToken")).toBeNull()
   })
+
+  it("cancels the request when a caller-provided signal aborts", async () => {
+    vi.mocked(globalThis.fetch).mockImplementation((_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"))
+        })
+      })
+    )
+    const caller = new AbortController()
+
+    const request = fetchAPI("/api/test", { signal: caller.signal })
+    caller.abort()
+
+    await expect(request).rejects.toMatchObject({ name: "AbortError" })
+    const [, options] = vi.mocked(globalThis.fetch).mock.calls[0]
+    expect(options?.signal?.aborted).toBe(true)
+  })
 })

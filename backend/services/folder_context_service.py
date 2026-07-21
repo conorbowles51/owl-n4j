@@ -156,7 +156,12 @@ def build_processing_snapshot(
     file_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     effective = resolve_effective_profile(db, folder_id, case_id)
-    sibling_files = gather_sibling_files(db, folder_id, exclude_file_id=file_id)
+    sibling_files = gather_sibling_files(
+        db,
+        case_id,
+        folder_id,
+        exclude_file_id=file_id,
+    )
     return {
         "source_folder_id": str(folder_id) if folder_id else None,
         "effective_context": effective["effective_context"],
@@ -169,13 +174,19 @@ def build_processing_snapshot(
 
 def gather_sibling_files(
     db: Session,
+    case_id: uuid.UUID,
     folder_id: uuid.UUID | None,
     exclude_file_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
     """
     Return basic info about all files in the same folder for sibling awareness.
     """
-    conditions = [EvidenceFile.folder_id == folder_id] if folder_id else [EvidenceFile.folder_id.is_(None)]
+    conditions = [EvidenceFile.case_id == case_id]
+    conditions.append(
+        EvidenceFile.folder_id == folder_id
+        if folder_id
+        else EvidenceFile.folder_id.is_(None)
+    )
     if exclude_file_id:
         conditions.append(EvidenceFile.id != exclude_file_id)
 

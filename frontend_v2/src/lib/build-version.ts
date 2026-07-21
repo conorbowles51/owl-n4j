@@ -50,7 +50,6 @@ async function checkVersion() {
 }
 
 export function startBuildVersionGuard() {
-  // eslint-disable-next-line no-console
   console.info(`🦉 Loupe build: ${__BUILD_NAME__} (${__BUILD_COMMIT__})`)
   window.addEventListener("focus", checkVersion)
   setInterval(checkVersion, CHECK_INTERVAL_MS)

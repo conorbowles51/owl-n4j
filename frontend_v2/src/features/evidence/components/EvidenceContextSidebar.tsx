@@ -25,6 +25,8 @@ import {
   Banknote,
   NotebookPen,
   Tag,
+  Search,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -50,6 +52,7 @@ import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
 import type { EvidenceFileRecord } from "@/types/evidence.types"
 import { toast } from "sonner"
 import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
+import { TextSearchPanel } from "./TextSearchPanel"
 
 // --- Shared helpers ---
 
@@ -707,7 +710,14 @@ interface EvidenceContextSidebarProps {
 export function EvidenceContextSidebar({
   caseId,
 }: EvidenceContextSidebarProps) {
-  const { sidebarTab, setSidebarTab, detailFileId, currentFolderId } = useEvidenceStore()
+  const {
+    sidebarTab,
+    setSidebarTab,
+    detailFileId,
+    currentFolderId,
+    textSearchOverlayOpen,
+    closeTextSearch,
+  } = useEvidenceStore()
   const setCollapsed = useUIStore((s) => s.setGraphPanelCollapsed)
 
   // Resolve detail file internally
@@ -729,46 +739,82 @@ export function EvidenceContextSidebar({
 
   return (
     <div className="flex h-full flex-col border-l border-border bg-card">
-      {/* Tab bar */}
-      <div className="flex items-center border-b border-border bg-muted/30">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setSidebarTab(tab.id)}
-            className={cn(
-              "flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2",
-              sidebarTab === tab.id
-                ? "border-amber-500 text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <tab.icon className="size-3.5" />
-            {tab.label}
-            {tab.id === "processing" && hasActiveJobs && (
-              <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
-            )}
-          </button>
-        ))}
-        <div className="ml-auto pr-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setCollapsed(true)}
-              >
-                <PanelRightClose className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left">Collapse panel</TooltipContent>
-          </Tooltip>
+      {textSearchOverlayOpen ? (
+        <div className="flex h-10 items-center gap-2 border-b border-border bg-muted/30 px-2.5">
+          <Search className="size-3.5 text-primary" />
+          <span className="text-xs font-semibold">Text search</span>
+          <div className="ml-auto flex items-center gap-0.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Collapse text search panel"
+                  onClick={() => setCollapsed(true)}
+                >
+                  <PanelRightClose className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">Collapse panel</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Close text search"
+                  onClick={closeTextSearch}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">Close text search</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center border-b border-border bg-muted/30">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSidebarTab(tab.id)}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2",
+                sidebarTab === tab.id
+                  ? "border-amber-500 text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <tab.icon className="size-3.5" />
+              {tab.label}
+              {tab.id === "processing" && hasActiveJobs && (
+                <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+              )}
+            </button>
+          ))}
+          <div className="ml-auto pr-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setCollapsed(true)}
+                >
+                  <PanelRightClose className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">Collapse panel</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      )}
 
       {/* Tab content */}
       <div className="flex-1 overflow-hidden">
-        {sidebarTab === "details" && (
+        {textSearchOverlayOpen ? (
+          <TextSearchPanel caseId={caseId} />
+        ) : sidebarTab === "details" && (
           detailFile ? (
             <DetailsPanelContent file={detailFile} caseId={caseId} />
           ) : (
@@ -783,13 +829,13 @@ export function EvidenceContextSidebar({
             </div>
           )
         )}
-        {sidebarTab === "processing" && (
+        {!textSearchOverlayOpen && sidebarTab === "processing" && (
           <JobsPanel caseId={caseId} />
         )}
-        {sidebarTab === "chat" && (
+        {!textSearchOverlayOpen && sidebarTab === "chat" && (
           <ChatSidePanel caseId={caseId} />
         )}
-        {sidebarTab === "notebook" && (
+        {!textSearchOverlayOpen && sidebarTab === "notebook" && (
           <NotebookPanel caseId={caseId} />
         )}
       </div>

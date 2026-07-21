@@ -32,6 +32,7 @@ from services.evidence_processing_service import process_db_files
 from services.neo4j_service import neo4j_service
 from services.cypher_generator import generate_cypher_from_graph
 from services.evidence_db_storage import EvidenceDBStorage
+from services.evidence_text_search_service import search_case_text, search_document_text
 from services import evidence_engine_client
 from .auth import get_current_user
 from routers.case_access import (
@@ -693,6 +694,61 @@ class EvidenceLogListResponse(BaseModel):
     logs: List[EvidenceLog]
 
 
+class TextSearchHit(BaseModel):
+    id: str
+    start_char: int
+    end_char: int
+    snippet: str
+    highlight_start: int
+    highlight_end: int
+    page_number: Optional[int] = None
+    location_label: Optional[str] = None
+
+
+class TextSearchDocument(BaseModel):
+    evidence_id: str
+    document_name: str
+    folder_path: str
+    total_matches: int
+    shown_matches: int
+    matches_truncated: bool
+    matches: List[TextSearchHit]
+
+
+class CaseTextSearchResponse(BaseModel):
+    query: str
+    total_matches: int
+    total_documents: int
+    case_documents: int
+    searchable_documents: int
+    document_limit: int
+    document_offset: int
+    returned_documents: int
+    has_more_documents: bool
+    documents: List[TextSearchDocument]
+
+
+class DocumentTextMatchesResponse(BaseModel):
+    query: str
+    evidence_id: str
+    total_matches: int
+    returned_matches: int
+    offset: int
+    limit: int
+    has_more: bool
+    matches: List[TextSearchHit]
+
+
+def _validated_text_query(q: str) -> str:
+    query = q.strip()
+    if len(query) < 2 or len(query) > 256:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Search query must contain between 2 and 256 characters",
+        )
+    return query
+
+
 @router.get("", response_model=EvidenceListResponse)
 async def list_evidence(
     case_id: str = Query(..., description="Case ID"),
@@ -716,6 +772,51 @@ async def list_evidence(
         return {"files": [_evidence_record_from_db(f) for f in db_files]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/text-search", response_model=CaseTextSearchResponse)
+async def text_search(
+    response: Response,
+    case_id: UUID = Query(..., description="Case ID"),
+    q: str = Query(..., min_length=2, max_length=256),
+    document_limit: int = Query(25, ge=1, le=100),
+    document_offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    query = _validated_text_query(q)
+    result = search_case_text(
+        db,
+        case_id=case_id,
+        query=query,
+        document_limit=document_limit,
+        document_offset=document_offset,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@router.get("/{evidence_id}/text-matches", response_model=DocumentTextMatchesResponse)
+async def document_text_matches(
+    evidence_id: str,
+    response: Response,
+    q: str = Query(..., min_length=2, max_length=256),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    query = _validated_text_query(q)
+    record = _evidence_record_for_id(db, evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    result = search_document_text(
+        db,
+        evidence_id=record.id,
+        query=query,
+        limit=limit,
+        offset=offset,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return result
 
 
 

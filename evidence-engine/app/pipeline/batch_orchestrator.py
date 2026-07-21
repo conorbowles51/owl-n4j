@@ -23,6 +23,7 @@ from app.pipeline.resolve_entities import resolve_entities
 from app.pipeline.resolve_relationships import resolve_relationships
 from app.pipeline.write_graph import write_graph
 from app.services.cost_tracking import ingestion_cost_context
+from app.services.evidence_document_text import upsert_evidence_document_text
 from app.services.redis_client import publish_progress
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,14 @@ async def _extract_file(
     ):
         await _update_job_status(job_id, JobStatus.EXTRACTING_TEXT, 0.0, "Extracting text...")
         doc = await extract_text(file_path, file_name)
+        if source_evidence_file_id:
+            async with async_session() as text_db:
+                await upsert_evidence_document_text(
+                    text_db,
+                    evidence_file_id=source_evidence_file_id,
+                    engine_job_id=job_id,
+                    doc=doc,
+                )
         transcription = get_transcription(doc)
         await _update_job_status(
             job_id,

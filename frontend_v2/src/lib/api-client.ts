@@ -20,7 +20,7 @@ export async function fetchAPI<T>(
   options: FetchOptions = {}
 ): Promise<T> {
   const token = localStorage.getItem("authToken")
-  const { body, timeout, ...init } = options
+  const { body, timeout, signal: callerSignal, ...init } = options
 
   const headers: Record<string, string> = {
     ...(init.headers as Record<string, string>),
@@ -35,6 +35,9 @@ export async function fetchAPI<T>(
   }
 
   const controller = new AbortController()
+  const abortFromCaller = () => controller.abort(callerSignal?.reason)
+  if (callerSignal?.aborted) abortFromCaller()
+  else callerSignal?.addEventListener("abort", abortFromCaller, { once: true })
   const timeoutMs = timeout ?? (endpoint.includes("/auth/") ? 10000 : 300000)
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
@@ -81,5 +84,6 @@ export async function fetchAPI<T>(
     return (await response.json()) as T
   } finally {
     clearTimeout(timeoutId)
+    callerSignal?.removeEventListener("abort", abortFromCaller)
   }
 }

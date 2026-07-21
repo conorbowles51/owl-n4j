@@ -1,5 +1,5 @@
 import { fetchAPI } from "@/lib/api-client"
-import type { Case } from "@/types/case.types"
+import type { Case, CaseMetadataUpdate } from "@/types/case.types"
 import type { CaseProcessingProfile } from "@/types/evidence.types"
 
 export type CaseListViewMode = "my_cases" | "all_cases"
@@ -20,7 +20,7 @@ export const casesAPI = {
   create: (data: { title: string; description?: string }) =>
     fetchAPI<Case>("/api/cases", { method: "POST", body: data }),
 
-  update: (caseId: string, data: Partial<Pick<Case, "title" | "description">>) =>
+  update: (caseId: string, data: CaseMetadataUpdate) =>
     fetchAPI<Case>(`/api/cases/${caseId}`, { method: "PATCH", body: data }),
 
   archive: (caseId: string) =>

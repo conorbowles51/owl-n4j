@@ -2,6 +2,7 @@ import { create } from "zustand"
 import { useUIStore } from "@/stores/ui.store"
 
 type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed" | "stale"
+export type EvidenceSearchMode = "files" | "text"
 export type UploadActivityStatus = "running" | "completed" | "failed"
 
 export interface UploadActivity {
@@ -46,9 +47,16 @@ interface EvidenceState {
   setSidebarTab: (tab: "details" | "processing" | "chat" | "notebook") => void
   openSidebarTo: (tab: "details" | "processing" | "chat" | "notebook") => void
 
-  // Filters
-  searchTerm: string
-  setSearchTerm: (term: string) => void
+  // Search and filters
+  searchMode: EvidenceSearchMode
+  setSearchMode: (mode: EvidenceSearchMode) => void
+  fileSearchTerm: string
+  setFileSearchTerm: (term: string) => void
+  textSearchTerm: string
+  setTextSearchTerm: (term: string) => void
+  textSearchOverlayOpen: boolean
+  openTextSearch: () => void
+  closeTextSearch: () => void
   statusFilter: StatusFilter
   setStatusFilter: (filter: StatusFilter) => void
   typeFilter: string
@@ -123,7 +131,7 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
   detailFileId: null,
   detailOpen: false,
   openDetail: (fileId) => {
-    set({ detailFileId: fileId, detailOpen: true, sidebarTab: "details" })
+    set({ detailFileId: fileId, detailOpen: true, sidebarTab: "details", textSearchOverlayOpen: false })
     useUIStore.getState().setGraphPanelCollapsed(false)
   },
   closeDetail: () => set({ detailOpen: false }),
@@ -131,12 +139,25 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
   sidebarTab: "details",
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   openSidebarTo: (tab) => {
-    set({ sidebarTab: tab })
+    set({ sidebarTab: tab, textSearchOverlayOpen: false })
     useUIStore.getState().setGraphPanelCollapsed(false)
   },
 
-  searchTerm: "",
-  setSearchTerm: (term) => set({ searchTerm: term }),
+  searchMode: "files",
+  setSearchMode: (mode) => {
+    set({ searchMode: mode, textSearchOverlayOpen: mode === "text" })
+    if (mode === "text") useUIStore.getState().setGraphPanelCollapsed(false)
+  },
+  fileSearchTerm: "",
+  setFileSearchTerm: (term) => set({ fileSearchTerm: term }),
+  textSearchTerm: "",
+  setTextSearchTerm: (term) => set({ textSearchTerm: term }),
+  textSearchOverlayOpen: false,
+  openTextSearch: () => {
+    set({ textSearchOverlayOpen: true })
+    useUIStore.getState().setGraphPanelCollapsed(false)
+  },
+  closeTextSearch: () => set({ textSearchOverlayOpen: false }),
   statusFilter: "all",
   setStatusFilter: (filter) => set({ statusFilter: filter }),
   typeFilter: "",
@@ -190,7 +211,10 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
         detailFileId: null,
         detailOpen: false,
         sidebarTab: "details" as const,
-        searchTerm: "",
+        searchMode: "files" as EvidenceSearchMode,
+        fileSearchTerm: "",
+        textSearchTerm: "",
+        textSearchOverlayOpen: false,
         statusFilter: "all" as StatusFilter,
         typeFilter: "",
       }

@@ -1,9 +1,17 @@
 export type CaseRole = "owner" | "editor" | "viewer" | "admin_access"
+export type CaseStatus = "active" | "on_hold" | "closed"
+
+export interface CaseMetadataUpdate {
+  title?: string
+  description?: string | null
+  status?: CaseStatus
+}
 
 export interface Case {
   id: string
   title: string
   description: string | null
+  status: CaseStatus
   created_by_user_id: string
   owner_user_id: string
   created_at: string

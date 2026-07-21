@@ -6,6 +6,8 @@ import type {
   IngestionLog,
   WiretapCheckResult,
   LLMModel,
+  EvidenceDocumentMatchesResponse,
+  EvidenceTextSearchResponse,
 } from "@/types/evidence.types"
 
 export interface UploadResponse {
@@ -31,6 +33,42 @@ export const evidenceAPI = {
     if (status) qs.set("status", status)
     const res = await fetchAPI<{ files: EvidenceFile[] }>(`/api/evidence?${qs}`)
     return res.files
+  },
+
+  searchText: (
+    caseId: string,
+    query: string,
+    documentLimit = 25,
+    documentOffset = 0,
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams({
+      case_id: caseId,
+      q: query,
+      document_limit: String(documentLimit),
+      document_offset: String(documentOffset),
+    })
+    return fetchAPI<EvidenceTextSearchResponse>(`/api/evidence/text-search?${qs}`, {
+      signal,
+    })
+  },
+
+  getTextMatches: (
+    evidenceId: string,
+    query: string,
+    limit = 50,
+    offset = 0,
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams({
+      q: query,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return fetchAPI<EvidenceDocumentMatchesResponse>(
+      `/api/evidence/${evidenceId}/text-matches?${qs}`,
+      { signal }
+    )
   },
 
   upload: (

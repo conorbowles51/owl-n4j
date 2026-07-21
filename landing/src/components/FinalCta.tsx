@@ -1,31 +1,23 @@
-import { Reveal } from '../lib/Reveal';
+import { Reveal } from "../lib/Reveal"
 
 interface FinalCtaProps {
-  onBookDemo: () => void;
+  onContact: () => void
 }
-
-export function FinalCta({ onBookDemo }: FinalCtaProps) {
+export function FinalCta({ onContact }: FinalCtaProps) {
   return (
-    <section className="section final-cta">
+    <section className="final-cta" id="contact">
+      <div className="final-grid" aria-hidden="true" />
+      <div className="final-lens" aria-hidden="true"><i /><i /><span /></div>
       <div className="container final-cta-inner">
         <Reveal>
-          <p className="kicker">Get started</p>
-        </Reveal>
-        <Reveal delay={0.08}>
-          <h2 className="section-title final-cta-title">Bring Arclight to your next case.</h2>
-        </Reveal>
-        <Reveal delay={0.16}>
-          <p className="section-lede final-cta-lede">
-            We onboard a limited number of firms at a time. Book a demo and see your kind of
-            casework, illuminated.
-          </p>
-        </Reveal>
-        <Reveal delay={0.24}>
-          <button type="button" className="btn btn-primary final-cta-btn" onClick={onBookDemo}>
-            Book a demo
+          <p className="section-index">The next perspective</p>
+          <h2>Make complexity<br /><span>observable.</span></h2>
+          <p>See how Loupe can turn disconnected material into a connected body of intelligence.</p>
+          <button className="button button-primary button-large" type="button" onClick={onContact}>
+            Request a private walkthrough <span aria-hidden="true">↗</span>
           </button>
         </Reveal>
       </div>
     </section>
-  );
+  )
 }

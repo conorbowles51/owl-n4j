@@ -1,21 +1,25 @@
-import { Wordmark } from './brand/Wordmark';
+import { BrandLogo } from "./BrandLogo"
 
-export function Footer() {
+interface FooterProps {
+  onContact: () => void
+}
+export function Footer({ onContact }: FooterProps) {
   return (
     <footer className="footer">
       <div className="container footer-inner">
         <div className="footer-brand">
-          <Wordmark markSize={22} />
-          <p className="footer-tagline">Investigation intelligence.</p>
+          <BrandLogo />
+          <p>Connected intelligence for complex work.</p>
         </div>
-        <nav className="footer-links" aria-label="Footer">
-          <a href="#how-it-works">How it works</a>
-          <a href="#capabilities">Capabilities</a>
-          <a href="#security">Security</a>
-          <a href="#who-its-for">Who it’s for</a>
-        </nav>
-        <p className="micro footer-legal">© 2026 Arclight. All rights reserved.</p>
+        <div className="footer-links">
+          <div><span>Explore</span><a href="#platform">Platform</a><a href="#capabilities">Capabilities</a><a href="#approach">Approach</a></div>
+          <div><span>Connect</span><button type="button" onClick={onContact}>Request a walkthrough</button><a href="#control">Control &amp; provenance</a></div>
+        </div>
+        <div className="footer-bottom">
+          <span>© {new Date().getFullYear()} Loupe</span>
+          <span>Designed to reveal what matters.</span>
+        </div>
       </div>
     </footer>
-  );
+  )
 }

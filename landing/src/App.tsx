@@ -1,43 +1,50 @@
-import { useState } from 'react';
-import { Nav } from './components/Nav';
-import { Hero } from './components/Hero';
-import { Problem } from './components/Problem';
-import { HowItWorks } from './components/HowItWorks';
-import { Capabilities } from './components/Capabilities';
-import { Trust } from './components/Trust';
-import { Audience } from './components/Audience';
-import { FinalCta } from './components/FinalCta';
-import { Footer } from './components/Footer';
-import { DemoModal } from './components/DemoModal';
+import { useEffect, useState } from "react"
+import { CapabilityMatrix } from "./components/CapabilityMatrix"
+import { ContactModal } from "./components/ContactModal"
+import { FinalCta } from "./components/FinalCta"
+import { FlowSection } from "./components/FlowSection"
+import { Footer } from "./components/Footer"
+import { Hero } from "./components/Hero"
+import { Navigation } from "./components/Navigation"
+import { ProductStage } from "./components/ProductStage"
+import { TrustSection } from "./components/TrustSection"
 
-function App() {
-  const [demoOpen, setDemoOpen] = useState(false);
-  const openDemo = () => setDemoOpen(true);
+export function App() {
+  const [contactOpen, setContactOpen] = useState(false)
+
+  useEffect(() => {
+    const updateProgress = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight
+      const progress = max > 0 ? window.scrollY / max : 0
+      document.documentElement.style.setProperty("--page-progress", String(progress))
+    }
+
+    updateProgress()
+    window.addEventListener("scroll", updateProgress, { passive: true })
+    window.addEventListener("resize", updateProgress)
+    return () => {
+      window.removeEventListener("scroll", updateProgress)
+      window.removeEventListener("resize", updateProgress)
+    }
+  }, [])
 
   return (
-    <>
-      <a href="#main" className="skip-link">
+    <div className="site-shell">
+      <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <Nav onBookDemo={openDemo} />
-      <main id="main">
-        <Hero onBookDemo={openDemo} />
-        <Problem />
-        <hr className="section-rule" />
-        <HowItWorks />
-        <hr className="section-rule" />
-        <Capabilities />
-        <hr className="section-rule" />
-        <Trust />
-        <hr className="section-rule" />
-        <Audience />
-        <FinalCta onBookDemo={openDemo} />
+      <div className="page-progress" aria-hidden="true" />
+      <Navigation onContact={() => setContactOpen(true)} />
+      <main id="main-content">
+        <Hero onContact={() => setContactOpen(true)} />
+        <ProductStage />
+        <CapabilityMatrix />
+        <FlowSection />
+        <TrustSection />
+        <FinalCta onContact={() => setContactOpen(true)} />
       </main>
-      <Footer />
-      {demoOpen && <DemoModal open={demoOpen} onClose={() => setDemoOpen(false)} />}
-      <div className="grain" aria-hidden="true" />
-    </>
-  );
+      <Footer onContact={() => setContactOpen(true)} />
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
+    </div>
+  )
 }
-
-export default App;

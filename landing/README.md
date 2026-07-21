@@ -1,73 +1,32 @@
-# React + TypeScript + Vite
+# Loupe landing site
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Standalone public brochure site for Loupe. It is intentionally isolated from `frontend_v2` so it can be hosted and released independently.
 
-Currently, two official plugins are available:
+## Direction
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The visual concept is an **intelligence observatory**: fragmented signals assemble around a living 3D Loupe lens, then resolve into a precise product workspace. Copy focuses on what the platform does rather than a single profession or market.
 
-## React Compiler
+## Run locally
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Production build:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build
 ```
+
+## Contact configuration
+
+Copy `.env.example` to `.env` and set `VITE_CONTACT_EMAIL`. The walkthrough form prepares an email draft in the visitor's default email client; it does not send or retain form data itself.
+
+## Performance and accessibility
+
+- Three.js rendering pauses when the hero is off-screen or the tab is hidden.
+- Device pixel ratio is capped to reduce GPU load.
+- `prefers-reduced-motion` receives a static composed 3D frame and disables decorative motion.
+- The product content remains fully understandable without WebGL.
+- Navigation, modal focus management, semantic landmarks and visible keyboard focus are included.

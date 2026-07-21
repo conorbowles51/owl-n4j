@@ -1,11 +1,13 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // The immersive Three.js scene is deliberately isolated in its own async chunk.
+    chunkSizeWarningLimit: 600,
+  },
   server: {
-    // Respect a port assigned by tooling (e.g. preview harness); fall back to Vite default.
-    port: Number(process.env.PORT) || 5173,
+    port: Number(process.env.PORT) || 4178,
   },
 })

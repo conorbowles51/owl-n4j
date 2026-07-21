@@ -354,6 +354,46 @@ class EvidenceAuthorizationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         run_cypher.assert_not_called()
 
+    def test_text_search_rejects_non_member_before_querying_document_text(self):
+        current_user = SimpleNamespace(
+            id=uuid4(),
+            global_role="user",
+            is_active=True,
+        )
+        db = _CaseAccessDb()
+        self.app.dependency_overrides[get_current_db_user] = lambda: current_user
+        self.app.dependency_overrides[get_db] = lambda: db
+
+        with patch.object(evidence, "search_case_text") as search:
+            response = self.client.get(
+                "/api/evidence/text-search",
+                params={"case_id": str(db.case.id), "q": "needle"},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        search.assert_not_called()
+
+    def test_document_matches_authorizes_the_records_case_before_searching(self):
+        evidence_id = uuid4()
+        current_user = SimpleNamespace(
+            id=uuid4(),
+            global_role="user",
+            is_active=True,
+        )
+        record = SimpleNamespace(id=evidence_id, case_id=uuid4())
+        db = _CaseAccessDb(records={evidence_id: record})
+        self.app.dependency_overrides[get_current_db_user] = lambda: current_user
+        self.app.dependency_overrides[get_db] = lambda: db
+
+        with patch.object(evidence, "search_document_text") as search:
+            response = self.client.get(
+                f"/api/evidence/{evidence_id}/text-matches",
+                params={"q": "needle"},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        search.assert_not_called()
+
 
 class UserDirectoryAuthorizationTests(unittest.TestCase):
     def setUp(self):

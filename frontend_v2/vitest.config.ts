@@ -21,7 +21,24 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['src/**/*.test.{ts,tsx}'],
+          exclude: ['src/**/*.browser.test.{ts,tsx}'],
           environment: 'jsdom',
+          setupFiles: ['./src/test/setup.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'browser',
+          include: ['src/**/*.browser.test.{ts,tsx}'],
+          browser: {
+            enabled: true,
+            headless: true,
+            provider: playwright({}),
+            instances: [{
+              browser: 'chromium'
+            }]
+          },
           setupFiles: ['./src/test/setup.ts'],
         },
       },

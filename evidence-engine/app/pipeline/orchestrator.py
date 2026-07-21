@@ -17,6 +17,7 @@ from app.pipeline.resolve_entities import resolve_entities
 from app.pipeline.resolve_relationships import resolve_relationships
 from app.pipeline.write_graph import write_graph
 from app.services.cost_tracking import ingestion_cost_context
+from app.services.evidence_document_text import upsert_evidence_document_text
 from app.services.redis_client import publish_progress
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,13 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
             # Stage 1: Text extraction -> 0-15%
             await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.0, db, "Extracting text...")
             doc = await extract_text(job.file_path, job.file_name)
+            if job.source_evidence_file_id:
+                await upsert_evidence_document_text(
+                    db,
+                    evidence_file_id=job.source_evidence_file_id,
+                    engine_job_id=job.id,
+                    doc=doc,
+                )
             job.transcription = get_transcription(doc)
             await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.15, db, "Text extracted")
 

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Info, Loader2, MessageSquare, NotebookPen, PanelRightClose } from "lucide-react"
+import { Info, Loader2, MessageSquare, NotebookPen, PanelRightClose, Search } from "lucide-react"
 import { useParams, useMatch } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import {
@@ -26,10 +26,15 @@ export function CaseSidePanelRail() {
   const isEvidenceRoute = !!useMatch("/cases/:id/evidence")
   const evidenceSidebarTab = useEvidenceStore((s) => s.sidebarTab)
   const setSidebarTab = useEvidenceStore((s) => s.setSidebarTab)
+  const textSearchTerm = useEvidenceStore((s) => s.textSearchTerm)
+  const textSearchOverlayOpen = useEvidenceStore((s) => s.textSearchOverlayOpen)
+  const setSearchMode = useEvidenceStore((s) => s.setSearchMode)
+  const closeTextSearch = useEvidenceStore((s) => s.closeTextSearch)
 
   const handleExpand = (target: string) => {
     if (isEvidenceRoute) {
       setSidebarTab(target as "details" | "processing" | "chat" | "notebook")
+      closeTextSearch()
     } else {
       expandTo(target as "detail" | "chat" | "notebook")
     }
@@ -44,6 +49,28 @@ export function CaseSidePanelRail() {
 
   return (
     <div className="flex h-full w-12 flex-col items-center gap-1 border-l border-border bg-panel pt-2">
+      {isEvidenceRoute && textSearchTerm.trim().length > 0 && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Reopen text search"
+              className={cn("relative", textSearchOverlayOpen && "text-foreground")}
+              onClick={() => {
+                setSearchMode("text")
+                useUIStore.getState().setGraphPanelCollapsed(false)
+              }}
+            >
+              <Search className="size-4" />
+              {textSearchOverlayOpen && (
+                <span className="absolute -left-1 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Reopen text search</TooltipContent>
+        </Tooltip>
+      )}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button

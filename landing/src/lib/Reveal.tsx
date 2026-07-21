@@ -1,44 +1,47 @@
-import { useEffect, useRef, type ReactNode, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ElementType,
+  type ReactNode,
+} from "react"
 
 interface RevealProps {
-  children: ReactNode;
-  /** Stagger delay in seconds. */
-  delay?: number;
-  className?: string;
-  as?: 'div' | 'section' | 'span' | 'li';
+  as?: ElementType
+  children: ReactNode
+  className?: string
+  delay?: number
 }
 
-/**
- * Scroll-triggered reveal. Adds .is-visible once when ~20% enters the
- * viewport; CSS does the rest. Respects prefers-reduced-motion via CSS.
- */
-export function Reveal({ children, delay = 0, className = '', as = 'div' }: RevealProps) {
-  // Render as a generic element; the 'div' cast keeps the polymorphic
-  // ref simple — all allowed tags share the HTMLElement interface we use.
-  const Tag = as as 'div';
-  const ref = useRef<HTMLDivElement>(null);
+export function Reveal({ as: Tag = "div", children, className = "", delay = 0 }: RevealProps) {
+  const ref = useRef<HTMLElement | null>(null)
+  const [visible, setVisible] = useState(false)
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          el.classList.add('is-visible');
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.2, rootMargin: '0px 0px -40px 0px' },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+    const element = ref.current
+    if (!element) return
 
-  const style = delay > 0 ? ({ '--reveal-delay': `${delay}s` } as CSSProperties) : undefined;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return
+        setVisible(true)
+        observer.disconnect()
+      },
+      { rootMargin: "0px 0px -8%", threshold: 0.12 }
+    )
+
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   return (
-    <Tag ref={ref} className={`reveal ${className}`.trim()} style={style}>
+    <Tag
+      ref={ref}
+      className={`reveal ${visible ? "is-visible" : ""} ${className}`}
+      style={{ "--reveal-delay": `${delay}s` } as CSSProperties}
+    >
       {children}
     </Tag>
-  );
+  )
 }

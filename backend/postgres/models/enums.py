@@ -9,3 +9,9 @@ class GlobalRole(str, Enum):
 class CaseMembershipRole(str, Enum):
     owner = "owner"
     collaborator = "collaborator"
+
+
+class CaseStatus(str, Enum):
+    active = "active"
+    on_hold = "on_hold"
+    closed = "closed"

@@ -186,6 +186,38 @@ class EvidenceFile(Base, TimestampMixin):
     last_processed_folder = relationship("EvidenceFolder", foreign_keys=[last_processed_folder_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
     duplicate_of = relationship("EvidenceFile", remote_side=[id], foreign_keys=[duplicate_of_id])
+    document_text = relationship(
+        "EvidenceDocumentText",
+        back_populates="evidence_file",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class EvidenceDocumentText(Base):
+    __tablename__ = "evidence_document_texts"
+
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evidence_files.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    engine_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    character_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source_locations: Mapped[list] = mapped_column(
+        _jsonb_column(),
+        server_default="[]",
+        nullable=False,
+    )
+    extracted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    evidence_file = relationship("EvidenceFile", back_populates="document_text")
 
 
 class IngestionLog(Base):

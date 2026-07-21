@@ -43,14 +43,14 @@ export function FileListPanel({
     selectedFileIds,
     selectAllFiles,
     clearSelection,
-    searchTerm,
+    fileSearchTerm,
     statusFilter,
     typeFilter,
   } = useEvidenceStore()
 
   const pagingKey = [
     currentFolderId ?? "root",
-    searchTerm,
+    fileSearchTerm,
     statusFilter,
     typeFilter,
   ].join("\u001f")
@@ -70,7 +70,7 @@ export function FileListPanel({
   const { data: contents, isLoading } = useFolderContents(caseId, currentFolderId, {
     limit: FILE_PAGE_SIZE,
     offset: filePage * FILE_PAGE_SIZE,
-    search: searchTerm || undefined,
+    search: fileSearchTerm || undefined,
     status: statusFilter !== "all" ? statusFilter : undefined,
     type: typeFilter || undefined,
   })
