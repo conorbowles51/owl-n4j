@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # Image processing
     image_provider: str = "tesseract"  # "tesseract" or "openai"
     tesseract_lang: str = "eng"
+    pdf_ocr_dpi: int = 300
+    pdf_ocr_max_pixels: int = 25_000_000
+    pdf_ocr_page_timeout_seconds: int = 60
+    pdf_ocr_max_concurrency: int = 2
     openai_vision_model: str = "gpt-4o"
     openai_transcription_model: str = "gpt-4o-mini-transcribe"
     audio_transcription_segment_seconds: int = 240

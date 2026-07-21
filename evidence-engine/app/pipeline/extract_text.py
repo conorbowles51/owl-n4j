@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import Any
 
 import docx
-import fitz  # PyMuPDF
 import openpyxl
 
 from app.config import settings
+from app.pipeline.pdf_extraction import PdfProgressCallback, extract_pdf
 from app.services.openai_client import chat_completion, transcribe_audio
 from app.utils.text_sanitize import sanitize_json, sanitize_text
 
@@ -36,61 +36,6 @@ class ExtractedDocument:
     text: str
     metadata: dict[str, Any] = field(default_factory=dict)
     tables: list[str] = field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
-# PDF
-# ---------------------------------------------------------------------------
-
-def _extract_pdf(file_path: str) -> ExtractedDocument:
-    doc = fitz.open(file_path)
-    pages: list[str] = []
-    table_chunks: list[str] = []
-    total_chars = 0
-    page_spans: list[dict[str, int]] = []
-    offset = 0
-
-    for page_number, page in enumerate(doc, start=1):
-        text = page.get_text()
-        pages.append(text)
-        total_chars += len(text)
-        page_spans.append(
-            {
-                "page": page_number,
-                "start_char": offset,
-                "end_char": offset + len(text),
-            }
-        )
-        offset += len(text) + 2
-
-        try:
-            tables = page.find_tables()
-            for table in tables.tables:
-                extracted = table.extract()
-                rows: list[str] = []
-                for row in extracted:
-                    cells = [str(cell).strip() if cell is not None else "" for cell in row]
-                    if any(cells):
-                        rows.append(" | ".join(cells))
-                if rows:
-                    table_chunks.append(f"[Page: {page_number}]\n" + "\n".join(rows))
-        except Exception:
-            continue
-
-    doc.close()
-
-    avg_chars = total_chars / max(len(pages), 1)
-
-    return ExtractedDocument(
-        text="\n\n".join(pages),
-        metadata={
-            "file_type": "pdf",
-            "page_count": len(pages),
-            "is_scanned": avg_chars < 50,
-            "page_spans": page_spans,
-        },
-        tables=table_chunks,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -763,11 +708,20 @@ def get_transcription(doc: ExtractedDocument) -> str | None:
     return None
 
 
-async def extract_text(file_path: str, file_name: str) -> ExtractedDocument:
+async def extract_text(
+    file_path: str,
+    file_name: str,
+    progress_callback: PdfProgressCallback | None = None,
+) -> ExtractedDocument:
     ext = Path(file_name).suffix.lower()
 
     if ext == ".pdf":
-        doc = _extract_pdf(file_path)
+        pdf = await extract_pdf(file_path, progress_callback=progress_callback)
+        doc = ExtractedDocument(
+            text=pdf.text,
+            metadata=pdf.metadata,
+            tables=pdf.tables,
+        )
     elif ext in (".docx", ".doc"):
         doc = _extract_docx(file_path)
     elif ext in (".xlsx", ".xls"):

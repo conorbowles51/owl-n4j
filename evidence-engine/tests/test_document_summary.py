@@ -85,7 +85,11 @@ async def test_batch_extraction_passes_effective_profile_to_document_summary(
     async def fake_update_job_status(*_args: object, **_kwargs: object) -> None:
         return None
 
-    async def fake_extract_text(_file_path: str, _file_name: str) -> ExtractedDocument:
+    async def fake_extract_text(
+        _file_path: str,
+        _file_name: str,
+        **_kwargs: object,
+    ) -> ExtractedDocument:
         return ExtractedDocument(
             text=(
                 "This jail call transcript contains enough content for summary generation "

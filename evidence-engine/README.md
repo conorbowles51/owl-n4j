@@ -139,7 +139,7 @@ Converts the uploaded file into raw text, handling each format appropriately:
 
 | Format | Method |
 |---|---|
-| PDF | PyMuPDF — extracts text page by page |
+| PDF | PyMuPDF native text extraction with automatic page-level Tesseract OCR for scanned or mixed PDFs |
 | DOCX | python-docx — preserves structure, extracts tables separately |
 | XLSX/CSV | openpyxl — each sheet as a separate table chunk |
 | HTML/Markdown | BeautifulSoup/Markdown — strips markup |
@@ -148,6 +148,10 @@ Converts the uploaded file into raw text, handling each format appropriately:
 | Video (MP4, AVI) | FFmpeg key frame extraction → Vision API scene descriptions + audio track transcription |
 
 **Output:** `ExtractedDocument(text, tables, metadata)` — tables are kept separate from body text because table-aware extraction prompts yield better results for financial data and structured records.
+
+PDF extraction is hybrid and automatic. Each page is inspected independently: pages with a usable embedded text layer stay on the native PyMuPDF path, while image-only pages, sparse text overlays on page-sized images, and simulated vector text are rendered and OCRed locally with Tesseract. Mixed documents preserve native and OCR text in their original page order. The original evidence file is never rewritten; the derived page metadata records the extraction method, OCR confidence, language, and render resolution used for search and citation provenance.
+
+Scanned table cells are currently ingested as ordered OCR body text. Reconstructing their rows and columns requires a separate layout-aware extraction feature.
 
 ### Stage 2: Chunking & Embedding
 
@@ -589,6 +593,10 @@ STORAGE_PATH=/data/files                    # Where uploaded files are saved
 # Image processing
 IMAGE_PROVIDER=tesseract                    # Or "openai" for Vision API OCR
 TESSERACT_LANG=eng
+PDF_OCR_DPI=300                             # Preferred render resolution for scanned PDF pages
+PDF_OCR_MAX_PIXELS=25000000                 # Per-page memory guard; oversized pages are downscaled
+PDF_OCR_PAGE_TIMEOUT_SECONDS=60             # Fail the file if an OCR page exceeds this timeout
+PDF_OCR_MAX_CONCURRENCY=2                   # Bound concurrent PDF extraction/OCR work
 
 # Video processing
 VIDEO_FRAME_INTERVAL=30                     # Seconds between key frames

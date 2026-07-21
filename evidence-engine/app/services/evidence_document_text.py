@@ -56,15 +56,25 @@ def build_canonical_document_text(doc: ExtractedDocument) -> CanonicalDocumentTe
         content = doc.text or ""
         for span in doc.metadata.get("page_spans") or []:
             page = span.get("page")
-            locations.append(
-                {
-                    "kind": "page",
-                    "label": f"Page {page}",
-                    "page_number": page,
-                    "start_char": int(span.get("start_char", 0)),
-                    "end_char": min(int(span.get("end_char", 0)), len(content)),
-                }
-            )
+            location = {
+                "kind": "page",
+                "label": f"Page {page}",
+                "page_number": page,
+                "start_char": int(span.get("start_char", 0)),
+                "end_char": min(int(span.get("end_char", 0)), len(content)),
+            }
+            for key in (
+                "extraction_method",
+                "detection_reason",
+                "ocr_status",
+                "ocr_confidence",
+                "ocr_low_confidence",
+                "ocr_dpi",
+                "ocr_language",
+            ):
+                if key in span:
+                    location[key] = span[key]
+            locations.append(location)
     elif file_type == "docx":
         _append_section(
             sections,

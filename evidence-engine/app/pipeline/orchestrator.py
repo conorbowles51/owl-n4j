@@ -10,6 +10,7 @@ from app.pipeline.consolidate_entities import consolidate_entities
 from app.pipeline.context_injector import build_enriched_context
 from app.pipeline.extract_entities import extract_entities_and_relationships
 from app.pipeline.extract_text import extract_text, get_transcription
+from app.pipeline.pdf_extraction import PdfExtractionProgress
 from app.pipeline.generate_document_summary import generate_document_summary
 from app.pipeline.generate_summaries import generate_summaries
 from app.pipeline.link_transaction_parties import link_transaction_parties
@@ -62,7 +63,26 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
         ):
             # Stage 1: Text extraction -> 0-15%
             await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.0, db, "Extracting text...")
-            doc = await extract_text(job.file_path, job.file_name)
+
+            async def report_pdf_progress(update: PdfExtractionProgress) -> None:
+                if update.total > 0:
+                    fraction = min(1.0, max(0.0, update.completed / update.total))
+                    progress = 0.02 + (0.12 * fraction)
+                else:
+                    progress = 0.02
+                await _update_job(
+                    job,
+                    JobStatus.EXTRACTING_TEXT,
+                    progress,
+                    db,
+                    update.message,
+                )
+
+            doc = await extract_text(
+                job.file_path,
+                job.file_name,
+                progress_callback=report_pdf_progress,
+            )
             if job.source_evidence_file_id:
                 await upsert_evidence_document_text(
                     db,
