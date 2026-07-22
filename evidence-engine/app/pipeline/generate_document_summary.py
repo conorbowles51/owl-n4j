@@ -15,8 +15,9 @@ MAX_CONTENT_CHARS = 30000
 MIN_CONTENT_CHARS = 50
 SUMMARY_MAP_CHARS = 18000
 SUMMARY_REDUCE_CHARS = 28000
-SUMMARY_MAP_OUTPUT_TOKENS = 4096
-SUMMARY_REDUCE_OUTPUT_TOKENS = 4096
+SUMMARY_MAP_OUTPUT_TOKENS = 16384
+SUMMARY_REDUCE_OUTPUT_TOKENS = 16384
+SUMMARY_RETRY_OUTPUT_TOKENS = 32768
 SUMMARY_MAX_REDUCTION_LEVELS = 8
 
 _DOCUMENT_SUMMARY_REVIEW_SCHEMA = {
@@ -172,20 +173,31 @@ async def _summarize_all_segments(
             f"(characters {start + 1}-{end} of {len(content)}):\n"
             f"{profile_guidance}{text}"
         )
+        messages = [
+            {
+                "role": "system",
+                "content": secure_system_prompt(
+                    "Create facts-only evidence digests and preserve source attribution."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ]
         async with semaphore:
             digest = await chat_completion(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": secure_system_prompt(
-                            "Create facts-only evidence digests and preserve source attribution."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
+                messages=messages,
                 workload="ingestion_document_summary",
                 max_output_tokens=SUMMARY_MAP_OUTPUT_TOKENS,
             )
+            if not digest or not digest.strip():
+                logger.warning(
+                    "Empty digest for source segment %d; retrying with a larger output budget",
+                    index + 1,
+                )
+                digest = await chat_completion(
+                    messages=messages,
+                    workload="ingestion_document_summary",
+                    max_output_tokens=SUMMARY_RETRY_OUTPUT_TOKENS,
+                )
         if not digest or not digest.strip():
             raise RuntimeError(f"Empty digest for source segment {index + 1}")
         return (
@@ -224,19 +236,32 @@ async def _summarize_all_segments(
                 "to no more than 1,200 words.\n\n"
                 + "\n\n".join(group)
             )
+            messages = [
+                {
+                    "role": "system",
+                    "content": secure_system_prompt(
+                        "Consolidate evidence digests without adding facts or analysis."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ]
             digest = await chat_completion(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": secure_system_prompt(
-                            "Consolidate evidence digests without adding facts or analysis."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
+                messages=messages,
                 workload="ingestion_document_summary",
                 max_output_tokens=SUMMARY_REDUCE_OUTPUT_TOKENS,
             )
+            if not digest or not digest.strip():
+                logger.warning(
+                    "Empty digest during reduction level %d, group %d; "
+                    "retrying with a larger output budget",
+                    level,
+                    group_index,
+                )
+                digest = await chat_completion(
+                    messages=messages,
+                    workload="ingestion_document_summary",
+                    max_output_tokens=SUMMARY_RETRY_OUTPUT_TOKENS,
+                )
             if not digest or not digest.strip():
                 raise RuntimeError(
                     f"Empty digest during reduction level {level}, group {group_index}"

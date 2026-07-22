@@ -242,6 +242,31 @@ async def test_single_digest_reduction_accepts_actual_payload_shrinkage(
 
 
 @pytest.mark.asyncio
+async def test_empty_segment_digest_retries_with_a_reasoning_safe_output_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_budgets: list[int] = []
+
+    async def fake_chat_completion(**kwargs: Any) -> str:
+        output_budgets.append(kwargs["max_output_tokens"])
+        return "" if len(output_budgets) == 1 else "Recovered digest"
+
+    monkeypatch.setattr(summary_module, "chat_completion", fake_chat_completion)
+
+    result = await summary_module._summarize_all_segments(
+        "Persisted evidence text that is long enough to summarize." * 2,
+        file_name="reasoning-heavy-report.pdf",
+        profile_guidance="",
+    )
+
+    assert "Recovered digest" in result
+    assert output_budgets == [
+        summary_module.SUMMARY_MAP_OUTPUT_TOKENS,
+        summary_module.SUMMARY_RETRY_OUTPUT_TOKENS,
+    ]
+
+
+@pytest.mark.asyncio
 async def test_batch_extraction_passes_effective_profile_to_document_summary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
