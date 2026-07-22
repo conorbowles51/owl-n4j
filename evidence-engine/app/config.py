@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     tesseract_lang: str = "eng"
     pdf_ocr_dpi: int = 300
     pdf_ocr_max_pixels: int = 25_000_000
-    pdf_ocr_page_timeout_seconds: int = 60
+    pdf_ocr_page_timeout_seconds: int = 300
     pdf_ocr_max_concurrency: int = 2
     openai_vision_model: str = "gpt-4o"
     openai_transcription_model: str = "gpt-4o-mini-transcribe"

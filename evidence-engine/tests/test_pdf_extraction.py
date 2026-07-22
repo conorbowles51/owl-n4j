@@ -452,6 +452,72 @@ async def test_tesseract_error_names_the_pdf_page(
         await extract_text(str(pdf_path), pdf_path.name)
 
 
+async def test_optional_orientation_timeout_keeps_successful_primary_ocr(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "dense-page.pdf"
+    _write_scanned_pdf(pdf_path, ["Dense condensed evidence text"])
+    monkeypatch.setattr(
+        pytesseract,
+        "image_to_osd",
+        lambda *_args, **_kwargs: {"rotate": 0, "orientation_conf": 20.0},
+    )
+    attempts = 0
+
+    def primary_then_timeout(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return {
+                "text": ["DENSE", "PRIMARY", "TEXT"],
+                "conf": ["55", "55", "55"],
+                "block_num": [1, 1, 1],
+                "par_num": [1, 1, 1],
+                "line_num": [1, 1, 1],
+            }
+        raise RuntimeError("Tesseract process timeout")
+
+    monkeypatch.setattr(pytesseract, "image_to_data", primary_then_timeout)
+
+    result = await extract_text(str(pdf_path), pdf_path.name)
+
+    assert attempts == 2
+    assert result.text == "DENSE PRIMARY TEXT"
+    assert result.metadata["page_spans"][0]["ocr_confidence"] == 55.0
+
+
+async def test_orientation_detection_timeout_falls_back_to_primary_ocr(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "orientation-timeout.pdf"
+    _write_scanned_pdf(pdf_path, ["Orientation fallback evidence"])
+    observed_osd_timeouts: list[float] = []
+
+    def timeout_osd(*_args, **kwargs):
+        observed_osd_timeouts.append(float(kwargs["timeout"]))
+        raise RuntimeError("Tesseract process timeout")
+
+    monkeypatch.setattr(pytesseract, "image_to_osd", timeout_osd)
+    monkeypatch.setattr(
+        pytesseract,
+        "image_to_data",
+        lambda *_args, **_kwargs: {
+            "text": ["PRIMARY", "OCR", "SURVIVED"],
+            "conf": ["95", "95", "95"],
+            "block_num": [1, 1, 1],
+            "par_num": [1, 1, 1],
+            "line_num": [1, 1, 1],
+        },
+    )
+
+    result = await extract_text(str(pdf_path), pdf_path.name)
+
+    assert result.text == "PRIMARY OCR SURVIVED"
+    assert observed_osd_timeouts and observed_osd_timeouts[0] <= 30.0
+
+
 async def test_missing_configured_language_is_actionable(
     tmp_path,
     monkeypatch,

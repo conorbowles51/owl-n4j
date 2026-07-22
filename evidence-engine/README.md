@@ -640,7 +640,7 @@ IMAGE_PROVIDER=tesseract                    # Or "openai" for Vision API OCR
 TESSERACT_LANG=eng
 PDF_OCR_DPI=300                             # Preferred render resolution for scanned PDF pages
 PDF_OCR_MAX_PIXELS=25000000                 # Per-page memory guard; oversized pages are downscaled
-PDF_OCR_PAGE_TIMEOUT_SECONDS=60             # Fail the file if an OCR page exceeds this timeout
+PDF_OCR_PAGE_TIMEOUT_SECONDS=300            # Hard ceiling for required OCR work on one page
 PDF_OCR_MAX_CONCURRENCY=2                   # Bound concurrent PDF extraction/OCR work
 
 # Resource guards

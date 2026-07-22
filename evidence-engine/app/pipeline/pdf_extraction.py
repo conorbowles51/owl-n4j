@@ -23,6 +23,7 @@ MIN_VECTOR_DRAWINGS = 1000
 LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
+MAX_OSD_TIMEOUT_SECONDS = 30.0
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -267,6 +268,10 @@ def _is_insufficient_text_osd_error(exc: pytesseract.TesseractError) -> bool:
     return all(marker in message for marker in OSD_INSUFFICIENT_TEXT_MARKERS)
 
 
+def _is_tesseract_timeout_error(exc: RuntimeError) -> bool:
+    return "tesseract" in str(exc).lower() and "timeout" in str(exc).lower()
+
+
 def _run_tesseract_data(
     image: Image.Image,
     *,
@@ -336,7 +341,10 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int]:
                 image,
                 config=f"--dpi {dpi}",
                 output_type=pytesseract.Output.DICT,
-                timeout=_remaining_ocr_timeout(deadline),
+                timeout=min(
+                    MAX_OSD_TIMEOUT_SECONDS,
+                    _remaining_ocr_timeout(deadline),
+                ),
             )
             rotation = int(osd.get("rotate") or 0) % 360
             try:
@@ -346,6 +354,16 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int]:
         except pytesseract.TesseractError as exc:
             if not _is_insufficient_text_osd_error(exc):
                 raise
+            rotation = 0
+            osd_confidence = None
+        except RuntimeError as exc:
+            if not _is_tesseract_timeout_error(exc):
+                raise
+            logger.warning(
+                "PDF OCR orientation detection timed out; continuing with "
+                "the unrotated page (dpi=%d)",
+                dpi,
+            )
             rotation = 0
             osd_confidence = None
 
@@ -372,13 +390,24 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int]:
 
         best_score = (confidence if confidence is not None else -1.0, len(text))
         for alternative_rotation in alternative_rotations:
-            alternative_text, alternative_confidence = _ocr_at_rotation(
-                image,
-                clockwise_rotation=alternative_rotation,
-                dpi=dpi,
-                deadline=deadline,
-                page_segmentation_mode=3,
-            )
+            try:
+                alternative_text, alternative_confidence = _ocr_at_rotation(
+                    image,
+                    clockwise_rotation=alternative_rotation,
+                    dpi=dpi,
+                    deadline=deadline,
+                    page_segmentation_mode=3,
+                )
+            except RuntimeError as exc:
+                if not _is_tesseract_timeout_error(exc):
+                    raise
+                logger.warning(
+                    "Optional PDF OCR orientation retry timed out; retaining "
+                    "the best successful result (rotation=%d dpi=%d)",
+                    alternative_rotation,
+                    dpi,
+                )
+                break
             alternative_score = (
                 alternative_confidence
                 if alternative_confidence is not None
