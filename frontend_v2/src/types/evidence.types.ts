@@ -120,6 +120,21 @@ export interface LLMModel {
   pros?: string[]
   cons?: string[]
   context_window?: number
+  supports_agent?: boolean
+  supports_structured_output?: boolean
+  provider_configured?: boolean
+}
+
+export interface AIWorkloadModelConfig {
+  provider: string
+  model_id: string
+}
+
+export interface AIModelPolicy {
+  revision: number
+  configuration: Record<string, AIWorkloadModelConfig>
+  workloads: Record<string, { label: string; description: string; group: string }>
+  providers: Record<string, boolean>
 }
 
 // Evidence Summary

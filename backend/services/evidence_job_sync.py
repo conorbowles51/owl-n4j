@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from postgres.models.evidence import EvidenceFile
@@ -90,12 +91,26 @@ def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
 
 def reconcile_jobs_payload(db: Session, jobs: list[dict[str, Any]]) -> int:
     engine_job_ids = [str(job.get("id")) for job in jobs if job.get("id")]
-    if not engine_job_ids:
+    source_evidence_file_ids: list[uuid.UUID] = []
+    for job in jobs:
+        source_id = job.get("source_evidence_file_id")
+        if not source_id:
+            continue
+        try:
+            source_evidence_file_ids.append(uuid.UUID(str(source_id)))
+        except (ValueError, TypeError):
+            continue
+    if not engine_job_ids and not source_evidence_file_ids:
         return 0
 
+    predicates = []
+    if engine_job_ids:
+        predicates.append(EvidenceFile.engine_job_id.in_(engine_job_ids))
+    if source_evidence_file_ids:
+        predicates.append(EvidenceFile.id.in_(source_evidence_file_ids))
     db_records = list(
         db.scalars(
-            select(EvidenceFile).where(EvidenceFile.engine_job_id.in_(engine_job_ids))
+            select(EvidenceFile).where(or_(*predicates))
         ).all()
     )
     records_by_job_id = {
@@ -103,13 +118,25 @@ def reconcile_jobs_payload(db: Session, jobs: list[dict[str, Any]]) -> int:
         for record in db_records
         if record.engine_job_id
     }
+    records_by_source_id = {str(record.id): record for record in db_records}
 
     updated = 0
     for job in jobs:
         db_rec = records_by_job_id.get(str(job.get("id")))
         if not db_rec:
+            db_rec = records_by_source_id.get(
+                str(job.get("source_evidence_file_id") or "")
+            )
+        if not db_rec:
             continue
+        changed = False
+        job_id = str(job.get("id") or "")
+        if job_id and db_rec.engine_job_id != job_id:
+            db_rec.engine_job_id = job_id
+            changed = True
         if _sync_db_record_from_job(db_rec, job):
+            changed = True
+        if changed:
             updated += 1
 
     if updated:

@@ -1,13 +1,31 @@
+import asyncio
 from dataclasses import dataclass, field
+import logging
 from typing import Any
 import re
 
 from app.pipeline.extract_text import ExtractedDocument
-from app.services.chroma_client import add_embeddings, get_or_create_collection
+from app.services.chroma_client import get_or_create_collection, upsert_embeddings
+from app.services.evidence_document_text import build_canonical_document_text
 from app.services.openai_client import embed_texts
 
 CHUNK_SIZE = 6000  # ~1500 tokens
 CHUNK_OVERLAP = 800  # ~200 tokens
+logger = logging.getLogger(__name__)
+
+
+def normalize_document_key(file_name: str) -> str:
+    """Return the document key format used by the case graph."""
+    key = file_name.strip().lower()
+    key = re.sub(r"[\s_]+", "-", key)
+    key = re.sub(r"[^a-z0-9\-]", "", key)
+    key = re.sub(r"-+", "-", key)
+    return key.strip("-")
+
+
+def get_document_revision_id(doc: ExtractedDocument) -> str:
+    """Return the stable hash of the canonical extracted document content."""
+    return build_canonical_document_text(doc).content_sha256
 
 
 @dataclass
@@ -18,6 +36,23 @@ class TextChunk:
     end_char: int
     is_table: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ChunkActivationResult:
+    activated_count: int
+    retired_count: int
+
+
+@dataclass(frozen=True)
+class StagedChunkRevision:
+    """Identity required to publish a document's staged chunk revision."""
+
+    evidence_file_id: str
+    revision_id: str
+    file_name: str
+    has_chunks: bool
+    job_id: str | None = None
 
 
 def _find_break_point(text: str, start: int, end: int) -> int:
@@ -168,8 +203,15 @@ async def chunk_and_embed(
     case_id: str,
     job_id: str,
     file_name: str,
+    *,
+    evidence_file_id: str | None = None,
+    revision_id: str | None = None,
 ) -> list[TextChunk]:
-    """Chunk document and store embeddings in ChromaDB."""
+    """Chunk a document and stage its versioned embeddings in ChromaDB.
+
+    Staged chunks are invisible to retrieval until the owning ingestion run
+    explicitly activates the revision after successful publication.
+    """
     chunks = chunk_document(doc, file_name, job_id)
     if not chunks:
         return chunks
@@ -177,14 +219,23 @@ async def chunk_and_embed(
     texts = [c.text for c in chunks]
     embeddings = await embed_texts(texts)
 
-    collection = get_or_create_collection("chunks")
+    document_identity = evidence_file_id or job_id
+    resolved_revision_id = revision_id or get_document_revision_id(doc)
+    document_key = normalize_document_key(file_name)
+    for chunk in chunks:
+        chunk.metadata.update(
+            {
+                "evidence_file_id": document_identity,
+                "revision_id": resolved_revision_id,
+                "doc_key": document_key,
+            }
+        )
 
-    add_embeddings(
-        collection=collection,
-        ids=[f"{job_id}_chunk_{c.index}" for c in chunks],
-        embeddings=embeddings,
-        documents=texts,
-        metadatas=[
+    ids = [
+        f"{document_identity}:{resolved_revision_id}:chunk:{c.index}"
+        for c in chunks
+    ]
+    metadatas = [
             # ChromaDB rejects None metadata values (only int/float/bool/string allowed),
             # so strip Nones — relevant for non-paginated formats (xlsx, csv) where
             # page_start/page_end are unset.
@@ -192,9 +243,13 @@ async def chunk_and_embed(
                 k: v
                 for k, v in {
                     "case_id": case_id,
-                    "doc_id": file_name,
+                    "doc_id": document_identity,
                     "doc_name": file_name,
+                    "doc_key": document_key,
                     "job_id": job_id,
+                    "evidence_file_id": evidence_file_id,
+                    "revision_id": resolved_revision_id,
+                    "ingestion_state": "draft",
                     "file_name": file_name,
                     "chunk_index": c.index,
                     "start_char": c.start_char,
@@ -205,8 +260,130 @@ async def chunk_and_embed(
                 }.items()
                 if v is not None
             }
-            for c in chunks
-        ],
-    )
+        for c in chunks
+    ]
+
+    def stage_embeddings() -> None:
+        collection = get_or_create_collection("chunks")
+        upsert_embeddings(
+            collection=collection,
+            ids=ids,
+            embeddings=embeddings,
+            documents=texts,
+            metadatas=metadatas,
+        )
+
+    await asyncio.to_thread(stage_embeddings)
 
     return chunks
+
+
+def _chunk_records(
+    collection: Any,
+    *,
+    case_id: str,
+    evidence_file_id: str,
+    file_name: str,
+) -> dict[str, dict[str, Any]]:
+    records: dict[str, dict[str, Any]] = {}
+    filters = [
+        {
+            "$and": [
+                {"case_id": case_id},
+                {"evidence_file_id": evidence_file_id},
+            ]
+        },
+        {
+            "$and": [
+                {"case_id": case_id},
+                {"doc_id": file_name},
+            ]
+        },
+    ]
+    for where in filters:
+        result = collection.get(where=where, include=["metadatas"])
+        ids = result.get("ids") or []
+        metadatas = result.get("metadatas") or []
+        for chunk_id, metadata in zip(ids, metadatas):
+            records[str(chunk_id)] = dict(metadata or {})
+    return records
+
+
+def _activate_chunk_revision_sync(
+    *,
+    case_id: str,
+    evidence_file_id: str,
+    revision_id: str,
+    file_name: str,
+) -> ChunkActivationResult:
+    collection = get_or_create_collection("chunks")
+    records = _chunk_records(
+        collection,
+        case_id=case_id,
+        evidence_file_id=evidence_file_id,
+        file_name=file_name,
+    )
+    updated_ids: list[str] = []
+    updated_metadatas: list[dict[str, Any]] = []
+    activated_count = 0
+    retired_count = 0
+
+    for chunk_id, metadata in records.items():
+        is_current = (
+            metadata.get("evidence_file_id") == evidence_file_id
+            and metadata.get("revision_id") == revision_id
+        )
+        target_state = "active" if is_current else "inactive"
+        if is_current:
+            activated_count += 1
+        elif metadata.get("ingestion_state") != "inactive":
+            retired_count += 1
+        if metadata.get("ingestion_state") == target_state:
+            continue
+        updated_ids.append(chunk_id)
+        updated_metadatas.append({**metadata, "ingestion_state": target_state})
+
+    if activated_count == 0:
+        raise RuntimeError(
+            "Cannot activate chunk revision because no staged chunks were found "
+            f"for evidence_file_id={evidence_file_id} revision_id={revision_id}."
+        )
+
+    batch_size = 500
+    for index in range(0, len(updated_ids), batch_size):
+        end = index + batch_size
+        collection.update(
+            ids=updated_ids[index:end],
+            metadatas=updated_metadatas[index:end],
+        )
+
+    logger.info(
+        "chunk-revision-activated case_id=%s evidence_file_id=%s revision_id=%s "
+        "activated=%d retired=%d",
+        case_id,
+        evidence_file_id,
+        revision_id,
+        activated_count,
+        retired_count,
+    )
+    return ChunkActivationResult(
+        activated_count=activated_count,
+        retired_count=retired_count,
+    )
+
+
+async def activate_chunk_revision(
+    *,
+    case_id: str,
+    evidence_file_id: str,
+    revision_id: str,
+    file_name: str,
+) -> ChunkActivationResult:
+    """Atomically expose one evidence revision and retire its older chunks."""
+    return await asyncio.to_thread(
+        _activate_chunk_revision_sync,
+        case_id=case_id,
+        evidence_file_id=evidence_file_id,
+        revision_id=revision_id,
+        file_name=file_name,
+    )

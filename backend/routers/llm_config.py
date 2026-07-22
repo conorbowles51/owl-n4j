@@ -5,6 +5,7 @@ LLM Configuration Router - endpoints for managing LLM provider and model selecti
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 import sys
 from pathlib import Path
@@ -22,6 +23,15 @@ from models.llm_models import (
     get_default_model,
 )
 from routers.auth import get_current_user
+from routers.users import get_current_db_user, require_admin
+from postgres.models.user import User
+from postgres.session import get_db
+from services.ai_model_policy import (
+    WORKLOADS,
+    get_policy,
+    provider_is_configured,
+    save_policy,
+)
 from services.llm_service import llm_service
 
 router = APIRouter(prefix="/api/llm-config", tags=["llm-config"])
@@ -32,7 +42,7 @@ class LLMConfigResponse(BaseModel):
     provider: str
     model_id: str
     model_name: str
-    server: str  # "Ollama (local)" or "OpenAI (remote)"
+    server: str
 
 
 class ModelInfoResponse(BaseModel):
@@ -45,6 +55,9 @@ class ModelInfoResponse(BaseModel):
     cons: list[str]
     context_window: Optional[int] = None
     parameters: Optional[str] = None
+    supports_agent: bool = True
+    supports_structured_output: bool = True
+    provider_configured: bool = False
 
 
 class ModelsListResponse(BaseModel):
@@ -55,8 +68,25 @@ class ModelsListResponse(BaseModel):
 
 class SetLLMConfigRequest(BaseModel):
     """Request model for setting LLM configuration."""
-    provider: str  # "openai" or "ollama"
+    provider: str
     model_id: str
+
+
+class WorkloadModelConfig(BaseModel):
+    provider: str
+    model_id: str
+
+
+class AIModelPolicyResponse(BaseModel):
+    revision: int
+    configuration: dict[str, WorkloadModelConfig]
+    workloads: dict[str, dict[str, str]]
+    providers: dict[str, bool]
+
+
+class UpdateAIModelPolicyRequest(BaseModel):
+    revision: int | None = None
+    configuration: dict[str, WorkloadModelConfig]
 
 
 @router.get("/models", response_model=ModelsListResponse)
@@ -68,7 +98,7 @@ async def get_available_models(
     Get all available LLM models, optionally filtered by provider.
     
     Args:
-        provider: Optional provider filter ("openai" or "ollama")
+        provider: Optional cloud provider filter
         user: Current authenticated user
     """
     try:
@@ -82,16 +112,64 @@ async def get_available_models(
             models = AVAILABLE_MODELS
         
         return ModelsListResponse(
-            models=[ModelInfoResponse(**model.to_dict()) for model in models],
+            models=[
+                ModelInfoResponse(
+                    **model.to_dict(),
+                    provider_configured=provider_is_configured(model.provider.value),
+                )
+                for model in models
+            ],
             providers=[p.value for p in LLMProvider],
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/policy", response_model=AIModelPolicyResponse)
+def get_ai_model_policy(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_db_user),
+):
+    configuration, revision = get_policy(db)
+    return AIModelPolicyResponse(
+        revision=revision,
+        configuration=configuration,
+        workloads=WORKLOADS,
+        providers={provider.value: provider_is_configured(provider.value, db) for provider in LLMProvider},
+    )
+
+
+@router.put("/policy", response_model=AIModelPolicyResponse)
+def update_ai_model_policy(
+    request: UpdateAIModelPolicyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    try:
+        record = save_policy(
+            db,
+            configuration={key: value.model_dump() for key, value in request.configuration.items()},
+            expected_revision=request.revision,
+            updated_by=current_user.email,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AIModelPolicyResponse(
+        revision=record.revision,
+        configuration=record.configuration,
+        workloads=WORKLOADS,
+        providers={provider.value: provider_is_configured(provider.value, db) for provider in LLMProvider},
+    )
+
+
 @router.get("/current", response_model=LLMConfigResponse)
 async def get_current_config(
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_db_user),
 ):
     """
     Get the current LLM configuration.
@@ -100,7 +178,9 @@ async def get_current_config(
         user: Current authenticated user
     """
     try:
-        current_provider, current_model_id = llm_service.get_current_config()
+        configuration, _ = get_policy(db)
+        current_provider = configuration["chat"]["provider"]
+        current_model_id = configuration["chat"]["model_id"]
         model = get_model_by_id(current_model_id)
         
         if not model:
@@ -108,7 +188,7 @@ async def get_current_config(
             provider_enum = LLMProvider(current_provider)
             model = get_default_model(provider_enum)
         
-        server = "Ollama (local)" if current_provider == "ollama" else "OpenAI (remote)"
+        server = f"{current_provider.title()} (remote)"
         
         return LLMConfigResponse(
             provider=current_provider,
@@ -123,7 +203,8 @@ async def get_current_config(
 @router.post("/set", response_model=LLMConfigResponse)
 async def set_llm_config(
     request: SetLLMConfigRequest,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
     """
     Set the LLM provider and model.
@@ -151,10 +232,21 @@ async def set_llm_config(
                 detail=f"Model {request.model_id} does not belong to provider {request.provider}"
             )
         
-        # Set configuration
+        configuration, revision = get_policy(db)
+        configuration["chat"] = {
+            "provider": request.provider.lower(),
+            "model_id": request.model_id,
+        }
+        save_policy(
+            db,
+            configuration=configuration,
+            expected_revision=revision,
+            updated_by=current_user.email,
+        )
+        # Keep request-independent legacy callers aligned in this process.
         llm_service.set_config(request.provider.lower(), request.model_id)
         
-        server = "Ollama (local)" if request.provider.lower() == "ollama" else "OpenAI (remote)"
+        server = f"{request.provider.title()} (remote)"
         
         return LLMConfigResponse(
             provider=request.provider.lower(),

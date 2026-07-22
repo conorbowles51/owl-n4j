@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -13,6 +14,7 @@ import numpy as np
 from app.config import settings
 from app.pipeline.extract_entities import RawEntity, RawRelationship
 from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
+from app.pipeline.prompt_security import secure_system_prompt
 from app.pipeline.property_canonicalization import (
     canonicalize_properties,
     has_location_evidence,
@@ -47,6 +49,8 @@ class ResolvedEntity:
     source_quotes: list[str] = field(default_factory=list)
     confidence: float = 0.5
     source_files: list[str] = field(default_factory=list)
+    source_locations: list[dict[str, Any]] = field(default_factory=list)
+    source_claim_ids: list[str] = field(default_factory=list)
     verified_facts: list[dict[str, Any]] = field(default_factory=list)
     ai_insights: list[dict[str, Any]] = field(default_factory=list)
     mandatory_instructions: list[str] = field(default_factory=list)
@@ -65,6 +69,8 @@ class ResolvedRelationship:
     source_quotes: list[str] = field(default_factory=list)
     confidence: float = 0.5
     source_files: list[str] = field(default_factory=list)
+    source_locations: list[dict[str, Any]] = field(default_factory=list)
+    source_claim_ids: list[str] = field(default_factory=list)
     mandatory_instructions: list[str] = field(default_factory=list)
 
 
@@ -227,6 +233,23 @@ def _merge_verified_facts(
         merged.append(item)
         seen.add(key)
 
+    return merged
+
+
+def _merge_source_locations(
+    existing: list[dict[str, Any]],
+    new_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged = [dict(item) for item in (existing or []) if isinstance(item, dict)]
+    seen = {json.dumps(item, sort_keys=True, default=str) for item in merged}
+    for item in new_items or []:
+        if not isinstance(item, dict):
+            continue
+        marker = json.dumps(item, sort_keys=True, default=str)
+        if marker in seen:
+            continue
+        merged.append(dict(item))
+        seen.add(marker)
     return merged
 
 
@@ -476,7 +499,7 @@ async def _llm_confirm(
             messages=[
                 {
                     "role": "system",
-                    "content": (
+                    "content": secure_system_prompt(
                         "You are an entity resolution expert. "
                         "Mandatory profile rules in the user prompt are binding. "
                         "Do not merge entities in a way that erases rule-compliant names, types, or distinctions. "
@@ -485,7 +508,7 @@ async def _llm_confirm(
                 },
                 {"role": "user", "content": prompt},
             ],
-            model=settings.openai_resolution_model,
+            workload="ingestion_resolution",
             response_format=get_resolution_schema(),
         )
 
@@ -543,6 +566,8 @@ def _apply_merges(
         merged_props = dict(primary.properties)
         merged_facts: list[dict[str, Any]] = []
         merged_insights: list[dict[str, Any]] = []
+        merged_locations: list[dict[str, Any]] = []
+        all_claim_ids: set[str] = set()
 
         for idx in indices:
             e = entities[idx]
@@ -550,8 +575,25 @@ def _apply_merges(
             all_names.add(e.name)
             all_quotes.append(e.source_quote)
             all_files.add(e.source_file)
+            for fact in e.verified_facts:
+                fact_location = fact.get("source_location")
+                if not isinstance(fact_location, dict):
+                    fact_location = {}
+                all_files.add(
+                    str(
+                        fact.get("source_doc")
+                        or fact_location.get("source_file")
+                        or ""
+                    )
+                )
             merged_facts = _merge_verified_facts(merged_facts, e.verified_facts)
             merged_insights = _merge_ai_insights(merged_insights, e.ai_insights)
+            if e.source_location:
+                merged_locations = _merge_source_locations(
+                    merged_locations,
+                    [{**e.source_location, "quote": e.source_quote}],
+                )
+            all_claim_ids.update(e.source_claim_ids)
             for k, v in e.properties.items():
                 if k not in merged_props or not merged_props[k]:
                     merged_props[k] = v
@@ -575,7 +617,9 @@ def _apply_merges(
                 properties=merged_props,
                 source_quotes=[q for q in all_quotes if q],
                 confidence=max(entities[i].confidence for i in indices),
-                source_files=sorted(all_files),
+                source_files=sorted(source_file for source_file in all_files if source_file),
+                source_locations=merged_locations,
+                source_claim_ids=sorted(all_claim_ids),
                 verified_facts=merged_facts,
                 ai_insights=merged_insights,
                 mandatory_instructions=merge_mandatory_instructions(
@@ -615,6 +659,13 @@ def coalesce_resolved_entities_by_id(
         existing.verified_facts = _merge_verified_facts(
             existing.verified_facts,
             entity.verified_facts,
+        )
+        existing.source_locations = _merge_source_locations(
+            existing.source_locations,
+            entity.source_locations,
+        )
+        existing.source_claim_ids = sorted(
+            set(existing.source_claim_ids) | set(entity.source_claim_ids)
         )
         existing.ai_insights = _merge_ai_insights(
             existing.ai_insights,
@@ -662,9 +713,18 @@ async def _cross_job_dedup(
     case_id: str,
 ) -> dict[str, str]:
     """Returns mapping of new-entity-id → existing-entity-id for confirmed merges."""
+    def load_existing_entities():
+        collection = get_or_create_collection("entities")
+        if collection.count() == 0:
+            return collection, {}
+        return collection, collection.get(
+            where={"case_id": case_id},
+            include=["metadatas"],
+        )
+
     try:
-        col = get_or_create_collection("entities")
-        if col.count() == 0:
+        col, all_existing = await asyncio.to_thread(load_existing_entities)
+        if not all_existing:
             return {}
     except Exception:
         return {}
@@ -672,7 +732,6 @@ async def _cross_job_dedup(
     merge_map: dict[str, str] = {}
 
     # Build a name/alias index of existing entities for candidate generation
-    all_existing = col.get(where={"case_id": case_id}, include=["metadatas"])
     existing_by_norm: dict[tuple[str, str], str] = {}
     if all_existing and all_existing["ids"]:
         for eid, meta in zip(
@@ -739,7 +798,8 @@ async def _cross_job_dedup(
         embeddings = await embed_texts(texts)
 
         for k, (emb, entity) in enumerate(zip(embeddings, non_matched)):
-            results = query_similar(
+            results = await asyncio.to_thread(
+                query_similar,
                 col,
                 query_embeddings=[emb],
                 n_results=5,
@@ -769,8 +829,7 @@ async def _cross_job_dedup(
                 "RETURN n.id AS id, labels(n) AS labels, n.name AS name, "
                 "n.specific_type AS specific_type, n.description AS description, "
                 "n.role AS role, n.aliases AS aliases, "
-                "n.confidence AS confidence, n.verified_facts AS verified_facts, "
-                "n.ai_insights AS ai_insights",
+                "n.confidence AS confidence, n.verified_facts AS verified_facts",
                 {"ids": existing_ids},
             )
             for record in neo4j_data or []:
@@ -799,17 +858,17 @@ async def _cross_job_dedup(
                 existing_map[eid]["verified_facts"] = [
                     f["text"] for f in all_facts[:3] if f.get("text")
                 ]
-                all_insights = _parse_json_list(record.get("ai_insights"))
-                existing_map[eid]["ai_insights"] = [
-                    i["text"] for i in all_insights[:3] if i.get("text")
-                ]
         except Exception:
             logger.warning("Neo4j fetch failed for cross-job LLM context, falling back to ChromaDB")
 
         # Fallback: fill in any missing entities from ChromaDB
         missing_ids = [eid for eid in existing_ids if eid not in existing_map]
         if missing_ids:
-            chroma_data = col.get(ids=missing_ids, include=["documents", "metadatas"])
+            chroma_data = await asyncio.to_thread(
+                col.get,
+                ids=missing_ids,
+                include=["documents", "metadatas"],
+            )
             if chroma_data and chroma_data["ids"]:
                 for eid, doc, meta in zip(
                     chroma_data["ids"],
@@ -861,7 +920,7 @@ async def _cross_job_dedup(
             messages=[
                 {
                     "role": "system",
-                    "content": (
+                    "content": secure_system_prompt(
                         "You are an entity resolution expert. "
                         "Mandatory profile rules in the user prompt are binding. "
                         "Do not merge entities in a way that erases rule-compliant names, types, or distinctions. "
@@ -870,7 +929,7 @@ async def _cross_job_dedup(
                 },
                 {"role": "user", "content": prompt},
             ],
-            model=settings.openai_resolution_model,
+            workload="ingestion_resolution",
             response_format=get_resolution_schema(),
         )
         data = json.loads(response)
@@ -976,6 +1035,14 @@ async def resolve_entities(
                 existing_quotes = props.get("source_quotes", []) or []
                 new_quotes = [q for q in entity.source_quotes if q not in existing_quotes]
                 entity.source_quotes = existing_quotes + new_quotes
+                entity.source_locations = _merge_source_locations(
+                    _parse_json_list(props.get("source_locations")),
+                    entity.source_locations,
+                )
+                entity.source_claim_ids = sorted(
+                    set(props.get("source_claim_ids", []) or [])
+                    | set(entity.source_claim_ids)
+                )
                 entity.verified_facts = _merge_verified_facts(
                     _parse_json_list(props.get("verified_facts")),
                     entity.verified_facts,
@@ -1042,6 +1109,12 @@ async def resolve_entities(
                     source_quotes=[r.source_quote] if r.source_quote else [],
                     confidence=r.confidence,
                     source_files=[r.source_file] if r.source_file else [],
+                    source_locations=(
+                        [{**r.source_location, "quote": r.source_quote}]
+                        if r.source_location
+                        else []
+                    ),
+                    source_claim_ids=list(r.source_claim_ids),
                     mandatory_instructions=r.mandatory_instructions,
                 )
             )

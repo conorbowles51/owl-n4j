@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "role_listing_supported",
+      "subject": "Vanderhoff",
+      "statement": "Vanderhoff is listed as Field Training Officer/Supervisor.",
+      "quote": "Vanderhoff — Field Training Officer/Supervisor",
+      "expected": "verified"
+    },
+    {
+      "id": "role_implication_rejected",
+      "subject": "Vanderhoff",
+      "statement": "Vanderhoff had supervisory responsibilities for the unit on the call.",
+      "quote": "Vanderhoff — Field Training Officer/Supervisor",
+      "expected": "rejected"
+    },
+    {
+      "id": "attributed_allegation_supported",
+      "subject": "Nexus Trading Ltd",
+      "statement": "The complaint alleges that suspicious payments were made to Nexus Trading Ltd.",
+      "quote": "The complainant alleges that suspicious payments were made to Nexus Trading Ltd.",
+      "expected": "verified"
+    },
+    {
+      "id": "deattributed_allegation_rejected",
+      "subject": "Nexus Trading Ltd",
+      "statement": "Nexus Trading Ltd received fraudulent payments.",
+      "quote": "The complainant alleges that suspicious payments were made to Nexus Trading Ltd.",
+      "expected": "rejected"
+    },
+    {
+      "id": "transaction_supported",
+      "subject": "Payment",
+      "statement": "A payment of EUR 125,000 was recorded on 15 March 2023.",
+      "quote": "15 March 2023 | EUR 125,000 | Strategic Consulting Phase 1",
+      "expected": "verified"
+    },
+    {
+      "id": "ownership_inference_rejected",
+      "subject": "Marcus Chen",
+      "statement": "Marcus Chen owned Nexus Trading Ltd.",
+      "quote": "Marcus Chen added Nexus Trading Ltd as a vendor.",
+      "expected": "rejected"
+    },
+    {
+      "id": "ambiguous_pronoun_uncertain",
+      "subject": "David Okonkwo",
+      "statement": "David Okonkwo approved the urgent payment.",
+      "quote": "He approved it after the call.",
+      "expected": "uncertain"
+    }
+  ]
+}

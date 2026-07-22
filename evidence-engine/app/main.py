@@ -1,9 +1,11 @@
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from app.api.routes import cellebrite, files, health, jobs, merge, upload
 from app.api.websocket import router as ws_router
@@ -31,6 +33,20 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def require_service_key(request, call_next):
+    if settings.service_api_key and request.url.path not in {
+        "/health",
+        "/ready",
+        "/docs",
+        "/openapi.json",
+    }:
+        supplied = request.headers.get("X-Evidence-Engine-Key", "")
+        if not secrets.compare_digest(supplied, settings.service_api_key):
+            return JSONResponse(status_code=401, content={"detail": "Invalid service credential"})
+    return await call_next(request)
 
 app.include_router(health.router, tags=["health"])
 app.include_router(upload.router, tags=["upload"])

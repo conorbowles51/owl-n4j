@@ -1,21 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import { Send, Sparkles, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { useGraphStore } from "@/stores/graph.store"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { cn } from "@/lib/cn"
 import type { EntityType } from "@/lib/theme"
-import { llmConfigAPI } from "@/features/evidence/api"
-import type { LLMModel } from "@/types/evidence.types"
+import { ActiveAIModel } from "@/features/settings/components/ActiveAIModel"
 import type { ChatScope } from "../types"
 import type { CaseLayer } from "@/features/significant/types"
 
@@ -41,9 +33,6 @@ interface ChatInputProps {
   isReadOnly?: boolean
 }
 
-const DEFAULT_MODEL = "gpt-5-mini"
-const DEFAULT_PROVIDER = "openai"
-
 export function ChatInput({
   onSend,
   isLoading,
@@ -54,39 +43,10 @@ export function ChatInput({
   isReadOnly = false,
 }: ChatInputProps) {
   const [input, setInput] = useState("")
-  const [models, setModels] = useState<LLMModel[]>([])
-  const [selectedModelId, setSelectedModelId] = useState(DEFAULT_MODEL)
-  const [selectedProvider, setSelectedProvider] = useState(DEFAULT_PROVIDER)
   const [scope, setScope] = useState<ChatScope>(
     caseLayer === "significant" ? "significant" : "case_overview"
   )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const modelsLoaded = useRef(false)
-
-  useEffect(() => {
-    if (modelsLoaded.current) return
-    modelsLoaded.current = true
-    llmConfigAPI
-      .getModels()
-      .then((res) => {
-        const list = res.models ?? []
-        setModels(list)
-        if (list.length > 0 && !list.some((m) => m.id === DEFAULT_MODEL)) {
-          setSelectedModelId(list[0].id)
-          setSelectedProvider(list[0].provider)
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  const handleModelSelect = (modelId: string) => {
-    const model = models.find((m) => m.id === modelId)
-    if (model) {
-      setSelectedModelId(model.id)
-      setSelectedProvider(model.provider)
-    }
-  }
-
   const handleSend = useCallback(() => {
     const trimmed = input.trim()
     if (
@@ -111,7 +71,13 @@ export function ChatInput({
         evidence: contextDocument || undefined,
       },
     }
-    onSend(trimmed, selectedModelId, selectedProvider, scope, viewContext)
+    onSend(
+      trimmed,
+      undefined,
+      undefined,
+      scope,
+      viewContext
+    )
     setInput("")
   }, [
     contextDocument,
@@ -120,8 +86,6 @@ export function ChatInput({
     isLoading,
     onSend,
     scope,
-    selectedModelId,
-    selectedProvider,
   ])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -235,20 +199,7 @@ export function ChatInput({
       )}
 
       <div className="flex items-end gap-2 p-4">
-        {models.length > 0 && (
-          <Select value={selectedModelId} onValueChange={handleModelSelect}>
-            <SelectTrigger className="h-[40px] w-[150px] shrink-0 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {models.map((m) => (
-                <SelectItem key={m.id} value={m.id} className="text-xs">
-                  {m.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <ActiveAIModel workload="chat" />
 
         <Textarea
           ref={textareaRef}

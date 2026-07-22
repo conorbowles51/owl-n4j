@@ -191,6 +191,7 @@ class EvidenceFile(Base, TimestampMixin):
         back_populates="evidence_file",
         cascade="all, delete-orphan",
         uselist=False,
+        passive_deletes=True,
     )
 
 
@@ -218,6 +219,36 @@ class EvidenceDocumentText(Base):
     )
 
     evidence_file = relationship("EvidenceFile", back_populates="document_text")
+
+
+class EvidenceClaim(Base):
+    __tablename__ = "evidence_claims"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evidence_files.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    revision_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    engine_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    claim_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    predicate: Mapped[str] = mapped_column(String(255), nullable=False)
+    object_value: Mapped[dict] = mapped_column(_jsonb_column(), nullable=False)
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    source_location: Mapped[dict] = mapped_column(_jsonb_column(), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="grounded")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class IngestionLog(Base):

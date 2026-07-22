@@ -38,7 +38,8 @@ async def execute_write(
 ) -> None:
     driver = get_neo4j_driver()
     async with driver.session() as session:
-        await session.run(query, parameters or {})
+        result = await session.run(query, parameters or {})
+        await result.consume()
 
 
 async def check_connection() -> bool:

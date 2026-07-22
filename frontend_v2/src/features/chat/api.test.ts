@@ -49,6 +49,8 @@ describe("chatAPI.ask", () => {
     const [, options] = vi.mocked(globalThis.fetch).mock.calls[0]
     const body = JSON.parse(options?.body as string)
     expect(body.persist).toBe(true)
+    expect(body.provider).toBeUndefined()
+    expect(body.model).toBeUndefined()
   })
 
   it("preserves explicit ephemeral opt-out", async () => {

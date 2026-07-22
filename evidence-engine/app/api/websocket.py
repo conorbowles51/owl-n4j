@@ -1,10 +1,12 @@
 import asyncio
 import json
+import secrets
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from app.dependencies import async_session
+from app.config import settings
 from app.models.job import Job
 from app.services.redis_client import get_redis
 
@@ -33,6 +35,11 @@ async def _check_job_status(job_id: str) -> dict | None:
 
 @router.websocket("/ws/jobs/{job_id}")
 async def job_progress(websocket: WebSocket, job_id: str):
+    if settings.service_api_key:
+        supplied = websocket.headers.get("X-Evidence-Engine-Key", "")
+        if not secrets.compare_digest(supplied, settings.service_api_key):
+            await websocket.close(code=1008, reason="Invalid service credential")
+            return
     await websocket.accept()
 
     # If the job already finished before we connected, send status immediately

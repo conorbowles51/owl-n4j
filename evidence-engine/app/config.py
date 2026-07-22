@@ -16,18 +16,28 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379"
+    service_api_key: str = ""
 
     # OpenAI
     openai_api_key: str = ""
-    openai_model: str = "gpt-5-mini"
-    openai_extraction_model: str = "gpt-5-mini"
-    openai_resolution_model: str = "gpt-5-mini"
-    openai_summary_model: str = "gpt-5-mini"
-    openai_document_summary_model: str = "gpt-5-mini"
-    openai_quality_model: str = "gpt-5-mini"
+    anthropic_api_key: str = ""
+    gemini_api_key: str = ""
+    ai_credential_encryption_key: str = "loupe-development-ai-credentials-change-me"
+    openai_model: str = "gpt-5.6-terra"
+    openai_extraction_model: str = "gpt-5.6-terra"
+    openai_resolution_model: str = "gpt-5.6-terra"
+    openai_summary_model: str = "gpt-5.6-terra"
+    openai_document_summary_model: str = "gpt-5.6-sol"
+    openai_quality_model: str = "gpt-5.6-terra"
     openai_embedding_model: str = "text-embedding-3-small"
     openai_embedding_batch_size: int = 16
     openai_embedding_max_batch_chars: int = 80000
+    extraction_max_concurrency: int = 6
+    document_summary_max_concurrency: int = 3
+    claim_verification_enabled: bool = True
+    claim_verification_max_claims: int = 250
+    claim_verification_batch_size: int = 20
+    claim_verification_max_concurrency: int = 2
 
     # Quality thresholds
     entity_confidence_threshold: float = 0.4
@@ -37,6 +47,18 @@ class Settings(BaseSettings):
     # Storage
     storage_path: str = "/data/files"
     cellebrite_data_root: str = "evidence-data"
+    max_upload_file_bytes: int = 1_073_741_824
+    max_upload_batch_files: int = 50
+    max_upload_batch_bytes: int = 5_368_709_120
+    upload_read_chunk_bytes: int = 1_048_576
+    batch_file_max_concurrency: int = 4
+    max_extracted_characters: int = 50_000_000
+    max_pdf_pages: int = 2_000
+    max_image_pixels: int = 25_000_000
+    max_image_file_bytes: int = 50_000_000
+    max_text_input_bytes: int = 100_000_000
+    max_office_uncompressed_bytes: int = 500_000_000
+    max_office_archive_entries: int = 10_000
 
     # Image processing
     image_provider: str = "tesseract"  # "tesseract" or "openai"

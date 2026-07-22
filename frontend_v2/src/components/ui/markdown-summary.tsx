@@ -4,7 +4,22 @@ import remarkGfm from "remark-gfm"
 
 interface MarkdownSummaryProps {
   content: string
-  onOpenFile?: (filename: string) => void
+  onOpenFile?: (filename: string, page?: number) => void
+}
+
+function parseDocumentLink(href: string) {
+  const raw = href.slice("doc://".length)
+  const separator = raw.lastIndexOf("/")
+  const rawFilename = separator >= 0 ? raw.slice(0, separator) : raw
+  const rawPage = separator >= 0 ? raw.slice(separator + 1) : ""
+  let filename = rawFilename
+  try {
+    filename = decodeURIComponent(rawFilename)
+  } catch {
+    filename = rawFilename
+  }
+  const page = Number.parseInt(rawPage, 10)
+  return { filename, page: Number.isFinite(page) ? page : undefined }
 }
 
 /**
@@ -13,7 +28,7 @@ interface MarkdownSummaryProps {
  */
 export function MarkdownSummary({ content, onOpenFile }: MarkdownSummaryProps) {
   const markdownUrlTransform = (url: string) => {
-    if (url.startsWith("evidence://")) return url
+    if (url.startsWith("evidence://") || url.startsWith("doc://")) return url
     return defaultUrlTransform(url)
   }
 
@@ -34,6 +49,18 @@ export function MarkdownSummary({ content, onOpenFile }: MarkdownSummaryProps) {
             type="button"
             className="text-amber-500 hover:text-amber-400 underline underline-offset-2 cursor-pointer"
             onClick={() => onOpenFile?.(filename)}
+          >
+            {children}
+          </button>
+        )
+      }
+      if (href?.startsWith("doc://")) {
+        const target = parseDocumentLink(href)
+        return (
+          <button
+            type="button"
+            className="cursor-pointer text-amber-500 underline underline-offset-2 hover:text-amber-400"
+            onClick={() => onOpenFile?.(target.filename, target.page)}
           >
             {children}
           </button>

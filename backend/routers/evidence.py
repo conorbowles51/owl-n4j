@@ -1869,6 +1869,7 @@ async def delete_evidence_file(
             "shared_entities_unlinked": [],
             "chromadb_cleaned": False,
         }
+        doc_key = None
 
         # 2. Delete from Neo4j (Document node + exclusive entities)
         try:
@@ -1905,25 +1906,30 @@ async def delete_evidence_file(
                 neo4j_service.delete_node(doc_key, case_id=case_id)
                 result_info["document_deleted"] = True
 
-                # 3. Clean up ChromaDB embeddings
-                try:
-                    from services.vector_db_service import get_vector_db_service
-                    vector_db = get_vector_db_service()
-                    if vector_db:
-                        # Delete all chunk embeddings for this document
-                        vector_db.delete_chunks_by_doc(doc_key)
-                        # Delete exclusive entity embeddings
-                        for entity in result_info["exclusive_entities_recycled"]:
-                            vector_db.delete_entity(entity["key"])
-                        result_info["chromadb_cleaned"] = True
-                except Exception as e:
-                    logger.warning(f"ChromaDB cleanup error: {e}")
             else:
                 logger.info(f"No Document node found in Neo4j for {filename}")
         except ValueError as e:
             logger.info(f"Neo4j document deletion: {e}")
         except Exception as e:
             logger.warning(f"Neo4j cleanup error: {e}")
+
+        # 3. Clean up ChromaDB independently of graph cleanup. A missing or
+        # partially-written Document node must not leave searchable chunks.
+        try:
+            from services.vector_db_service import get_vector_db_service
+            vector_db = get_vector_db_service()
+            if vector_db:
+                vector_db.delete_chunks_for_document(
+                    case_id=case_id,
+                    evidence_file_id=str(db_record.id),
+                    doc_key=doc_key,
+                    file_name=filename,
+                )
+                for entity in result_info["exclusive_entities_recycled"]:
+                    vector_db.delete_entity(entity["key"])
+                result_info["chromadb_cleaned"] = True
+        except Exception as e:
+            logger.warning(f"ChromaDB cleanup error: {e}")
 
         # 4. Delete physical file from backend disk
         if stored_path:

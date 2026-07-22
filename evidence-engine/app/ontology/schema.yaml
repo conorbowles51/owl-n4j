@@ -473,6 +473,14 @@ relationship_types:
       context: { type: string, description: "Context of the association" }
       nature:  { type: string, description: "Nature of association" }
 
+  ALLEGED_ASSOCIATE_OF:
+    description: "An association alleged or attributed by a source, not established as fact"
+    typical_source: [Person]
+    typical_target: [Person]
+    properties:
+      attribution: { type: string, description: "Who or what source makes the allegation" }
+      assertion_status: { type: string, description: "Usually alleged, claimed, or disputed" }
+
   # Location & Movement
   LOCATED_AT:
     description: "Entity is at, based in, or operates from a location"
@@ -488,6 +496,13 @@ relationship_types:
       date:           { type: string, description: "Date of travel" }
       date_precision: { type: string }
       method:         { type: string, description: "Mode of travel (air, road, sea, rail)" }
+
+  PHONE_ACTIVITY_OBSERVED_AT:
+    description: "Telecommunications records associate a person's or device's phone activity with a location; this does not itself prove travel or presence"
+    typical_source: [Person, Device, Communication]
+    typical_target: [Location]
+    properties:
+      observation_basis: { type: string, description: "Cell site, tower, handset, IMEI, IMSI, or other telecommunications basis" }
 
   RESIDED_AT:
     description: "Person's residential address"

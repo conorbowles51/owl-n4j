@@ -11,9 +11,10 @@ import requests
 from openai import OpenAI
 
 from config import (
+    ANTHROPIC_API_KEY,
+    GEMINI_API_KEY,
     LLM_MODEL,
     LLM_PROVIDER,
-    OLLAMA_BASE_URL,
     OPENAI_API_KEY,
     QUESTION_CLASSIFICATION_ENABLED,
 )
@@ -36,10 +37,13 @@ class LLMExecutionContext:
         self,
         provider: str,
         model_id: str,
+        api_key: str | None = None,
         use_responses_api_for_gpt5: bool = False,
     ):
         self.provider = provider
         self.model_id = model_id
+        self.api_key = api_key
+        self._client = OpenAI(api_key=api_key) if provider == "openai" and api_key else None
         self.use_responses_api_for_gpt5 = use_responses_api_for_gpt5
         runtime_config = get_chat_config()
         self.system_context = runtime_config.get("system_context", system_context)
@@ -59,58 +63,17 @@ class LLMExecutionContext:
         self.last_raw_response = None
         self.last_usage = None
 
-        if self.provider == "ollama":
-            result = self._call_ollama(prompt, temperature, json_mode, timeout)
-        elif self.provider == "openai":
+        if self.provider == "openai":
             result = self._call_openai(prompt, temperature, json_mode, timeout)
+        elif self.provider == "anthropic":
+            result = self._call_anthropic(prompt, temperature, json_mode, timeout)
+        elif self.provider == "gemini":
+            result = self._call_gemini(prompt, temperature, json_mode, timeout)
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
 
         self.last_raw_response = result
         return result
-
-    def _call_ollama(
-        self,
-        prompt: str,
-        temperature: float,
-        json_mode: bool,
-        timeout: int,
-    ) -> str:
-        url = f"{OLLAMA_BASE_URL}/api/chat"
-        payload: Dict[str, Any] = {
-            "model": self.model_id,
-            "messages": [
-                {"role": "system", "content": self.system_context},
-                {"role": "user", "content": prompt},
-            ],
-            "stream": False,
-            "options": {"temperature": temperature},
-        }
-        if json_mode:
-            payload["format"] = "json"
-
-        log_section(
-            source_file=__file__,
-            source_func="_call_ollama",
-            title="HTTP request: Ollama /api/chat payload",
-            content={
-                "url": url,
-                "model_id": self.model_id,
-                "provider": self.provider,
-                "json_mode": json_mode,
-                "temperature": temperature,
-                "payload": payload,
-            },
-            as_json=True,
-        )
-
-        response = requests.post(url, json=payload, timeout=(10, timeout))
-        response.raise_for_status()
-        data = response.json()
-        content = (data.get("message") or {}).get("content", "") or ""
-        if not content.strip():
-            raise ValueError("LLM returned empty response")
-        return content
 
     def _call_openai(
         self,
@@ -119,7 +82,8 @@ class LLMExecutionContext:
         json_mode: bool,
         timeout: int,
     ) -> str:
-        if not client:
+        openai_client = self._client or client
+        if not openai_client:
             raise ValueError("OpenAI client not initialized. OPENAI_API_KEY not set.")
 
         if (
@@ -160,7 +124,7 @@ class LLMExecutionContext:
             as_json=True,
         )
 
-        response = client.chat.completions.create(**kwargs)
+        response = openai_client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content
         if not content:
             raise ValueError("LLM returned empty response")
@@ -172,6 +136,94 @@ class LLMExecutionContext:
                 "completion_tokens": usage.completion_tokens,
                 "total_tokens": usage.total_tokens,
             }
+        return content
+
+    def _call_anthropic(
+        self,
+        prompt: str,
+        temperature: float,
+        json_mode: bool,
+        timeout: int,
+    ) -> str:
+        api_key = self.api_key or ANTHROPIC_API_KEY
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY is not set")
+        user_prompt = prompt
+        if json_mode:
+            user_prompt += "\n\nReturn only one valid JSON object with no markdown fence."
+        payload: Dict[str, Any] = {
+            "model": self.model_id,
+            "max_tokens": 8192,
+            "system": self.system_context,
+            "messages": [{"role": "user", "content": user_prompt}],
+        }
+        if not self.model_id.startswith(("claude-sonnet-5", "claude-opus-4-8", "claude-fable-5")):
+            payload["temperature"] = temperature
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=(10, timeout),
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = "\n".join(
+            str(block.get("text") or "")
+            for block in data.get("content", [])
+            if block.get("type") == "text"
+        ).strip()
+        if not content:
+            raise ValueError("Anthropic returned an empty response")
+        usage = data.get("usage") or {}
+        self.last_usage = {
+            "prompt_tokens": usage.get("input_tokens"),
+            "completion_tokens": usage.get("output_tokens"),
+            "total_tokens": (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0),
+        }
+        return content
+
+    def _call_gemini(
+        self,
+        prompt: str,
+        temperature: float,
+        json_mode: bool,
+        timeout: int,
+    ) -> str:
+        api_key = self.api_key or GEMINI_API_KEY
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY is not set")
+        generation_config: dict[str, Any] = {}
+        if not self.model_id.startswith("gemini-3"):
+            generation_config["temperature"] = temperature
+        if json_mode:
+            generation_config["responseMimeType"] = "application/json"
+        response = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_id}:generateContent",
+            headers={"x-goog-api-key": api_key, "content-type": "application/json"},
+            json={
+                "systemInstruction": {"parts": [{"text": self.system_context}]},
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": generation_config,
+            },
+            timeout=(10, timeout),
+        )
+        response.raise_for_status()
+        data = response.json()
+        candidates = data.get("candidates") or []
+        parts = ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []
+        content = "\n".join(str(part.get("text") or "") for part in parts).strip()
+        if not content:
+            raise ValueError("Gemini returned an empty response")
+        usage = data.get("usageMetadata") or {}
+        self.last_usage = {
+            "prompt_tokens": usage.get("promptTokenCount"),
+            "completion_tokens": usage.get("candidatesTokenCount"),
+            "total_tokens": usage.get("totalTokenCount"),
+        }
         return content
 
     def _call_openai_responses(
@@ -212,7 +264,10 @@ class LLMExecutionContext:
             as_json=True,
         )
 
-        response = client.responses.create(**kwargs)
+        openai_client = self._client or client
+        if not openai_client:
+            raise ValueError("OpenAI client not initialized. OPENAI_API_KEY not set.")
+        response = openai_client.responses.create(**kwargs)
         content = self._extract_response_text(response)
         if not content:
             status = getattr(response, "status", None)
@@ -413,6 +468,7 @@ class LLMService:
         self,
         provider: Optional[str] = None,
         model_id: Optional[str] = None,
+        api_key: str | None = None,
         use_responses_api_for_gpt5: bool = False,
     ) -> LLMExecutionContext:
         resolved_provider = (provider or self.default_provider).lower()
@@ -420,9 +476,19 @@ class LLMService:
         model = get_model_by_id(resolved_model)
         if model:
             resolved_provider = model.provider.value
+        if api_key is None:
+            try:
+                from postgres.session import get_background_session
+                from services.ai_provider_credentials import get_provider_api_key
+
+                with get_background_session() as db:
+                    api_key = get_provider_api_key(db, resolved_provider)
+            except Exception:
+                api_key = None
         return LLMExecutionContext(
             resolved_provider,
             resolved_model,
+            api_key=api_key,
             use_responses_api_for_gpt5=use_responses_api_for_gpt5,
         )
 

@@ -91,7 +91,6 @@ const settingsItem: NavItem = {
   label: "Settings",
   icon: Settings,
   to: "/settings",
-  end: true,
 }
 
 function ShortcutHint({ value, active = false }: { value: string; active?: boolean }) {

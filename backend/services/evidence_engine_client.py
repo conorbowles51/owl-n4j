@@ -7,11 +7,13 @@ requests from the owl-n4j backend so the frontend API surface remains unchanged.
 """
 
 import logging
+from contextlib import ExitStack
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
 
-from config import EVIDENCE_ENGINE_URL, EVIDENCE_ENGINE_TIMEOUT
+from config import EVIDENCE_ENGINE_API_KEY, EVIDENCE_ENGINE_URL, EVIDENCE_ENGINE_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +24,15 @@ def _get_client() -> httpx.AsyncClient:
     """Lazy-init a shared async HTTP client."""
     global _client
     if _client is None:
+        headers = (
+            {"X-Evidence-Engine-Key": EVIDENCE_ENGINE_API_KEY}
+            if EVIDENCE_ENGINE_API_KEY
+            else None
+        )
         _client = httpx.AsyncClient(
             base_url=EVIDENCE_ENGINE_URL,
             timeout=httpx.Timeout(EVIDENCE_ENGINE_TIMEOUT, connect=10.0),
+            headers=headers,
         )
     return _client
 
@@ -99,6 +107,36 @@ async def upload_files_batch(
     )
     response.raise_for_status()
     return response.json()
+
+
+async def upload_file_paths_batch(
+    case_id: str,
+    files: List[tuple[str, Path, str]],
+    processing_metadata: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Stream evidence files from disk to the engine without buffering them in RAM."""
+    client = _get_client()
+    data = {}
+    if processing_metadata is not None:
+        import json
+
+        data["processing_metadata"] = json.dumps(processing_metadata)
+
+    with ExitStack() as opened:
+        multipart_files = [
+            (
+                "files",
+                (name, opened.enter_context(Path(path).open("rb")), content_type),
+            )
+            for name, path, content_type in files
+        ]
+        response = await client.post(
+            f"/cases/{case_id}/files",
+            files=multipart_files,
+            data=data,
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 async def create_cellebrite_job(

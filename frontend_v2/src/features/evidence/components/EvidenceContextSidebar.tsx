@@ -372,6 +372,7 @@ function DetailsPanelContent({
   caseId: string
 }) {
   const [viewerOpen, setViewerOpen] = useState(false)
+  const [viewerPage, setViewerPage] = useState(1)
   const fileUrl = evidenceAPI.getFileUrl(file.id)
   const ext = getExt(file.original_filename)
   const mediaType = getMediaType(file.original_filename)
@@ -596,7 +597,13 @@ function DetailsPanelContent({
             <>
               {/* AI Summary section */}
               <CollapsibleSection title="AI Summary">
-                <FileSummaryPanel summary={file.summary} />
+                <FileSummaryPanel
+                  summary={file.summary}
+                  onOpenFile={(_, page) => {
+                    setViewerPage(page ?? 1)
+                    setViewerOpen(true)
+                  }}
+                />
               </CollapsibleSection>
 
               {mediaType === "audio" && (
@@ -696,6 +703,8 @@ function DetailsPanelContent({
         onOpenChange={setViewerOpen}
         documentUrl={fileUrl}
         documentName={file.original_filename}
+        initialPage={viewerPage}
+        navigationKey={`${file.id}:${viewerPage}`}
       />
     </>
   )

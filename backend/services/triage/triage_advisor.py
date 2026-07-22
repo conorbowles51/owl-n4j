@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from services.triage.triage_storage import triage_storage
 
@@ -24,8 +24,6 @@ class TriageAdvisor:
         self,
         triage_case_id: str,
         question: str,
-        model_provider: Optional[str] = None,
-        model_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Answer an investigator's question using triage case context.
@@ -33,8 +31,6 @@ class TriageAdvisor:
         Args:
             triage_case_id: Case ID
             question: The investigator's question
-            model_provider: Optional LLM provider override
-            model_id: Optional model ID override
 
         Returns:
             Dict with 'answer' and 'suggestions' keys
@@ -70,12 +66,6 @@ Return valid JSON:
   ]
 }}"""
 
-        # Optionally override model
-        original_config = None
-        if model_provider and model_id:
-            original_config = llm_service.get_current_config()
-            llm_service.set_config(model_provider, model_id)
-
         try:
             llm_service.set_cost_tracking_context(
                 job_type="ingestion",
@@ -103,8 +93,6 @@ Return valid JSON:
             return {"answer": f"Error: {e}", "suggestions": []}
         finally:
             llm_service.clear_cost_tracking_context()
-            if original_config:
-                llm_service.set_config(*original_config)
 
     def suggest_next_steps(self, triage_case_id: str) -> List[Dict[str, Any]]:
         """

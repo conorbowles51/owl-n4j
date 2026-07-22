@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.job import JobStatus
 
@@ -14,6 +14,7 @@ class JobResponse(BaseModel):
     id: uuid.UUID
     case_id: str
     batch_id: uuid.UUID | None = None
+    source_evidence_file_id: uuid.UUID | None = None
     job_type: str = "ingestion"
     file_name: str | None = None
     status: JobStatus
@@ -25,6 +26,9 @@ class JobResponse(BaseModel):
     mime_type: str | None = None
     sha256: str | None = None
     document_summary: str | None = None
+    pipeline_version: str = "evidence-v2"
+    pipeline_state: dict = Field(default_factory=dict)
+    quality_report: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

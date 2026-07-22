@@ -18,6 +18,7 @@ from app.ontology.schema_builder import get_entity_schema, get_relationship_sche
 from app.pipeline.mandatory_rules import normalize_mandatory_instructions
 from app.pipeline.chunk_embed import TextChunk
 from app.pipeline.property_canonicalization import canonicalize_properties
+from app.pipeline.prompt_security import secure_system_prompt
 from app.services.openai_client import chat_completion
 
 
@@ -54,6 +55,36 @@ def _clean_entity_name(name: str) -> str:
     return " ".join(name.split())
 
 
+def _is_graph_noise_entity(
+    *,
+    category: str,
+    name: str,
+    specific_type: str,
+    properties: dict[str, Any],
+) -> bool:
+    normalized_name = re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+    if properties.get("financial_record_kind") == "summary_metric" and normalized_name in {
+        "total",
+        "grand total",
+        "total amount",
+        "aggregate total",
+    }:
+        return True
+    if category in {"Document", "Media"}:
+        generic_reference = normalized_name in {
+            "document",
+            "record",
+            "recording",
+            "audio recording",
+            "passport record",
+            "the report",
+        }
+        has_identifier = bool(re.search(r"\b[A-Z]{2,}[-/]?\d{2,}\b", name))
+        if generic_reference and not has_identifier:
+            return True
+    return False
+
+
 @dataclass
 class RawEntity:
     temp_id: str
@@ -65,6 +96,8 @@ class RawEntity:
     confidence: float = 0.5
     source_chunk_index: int = 0
     source_file: str = ""
+    source_location: dict[str, Any] | None = None
+    source_claim_ids: list[str] = field(default_factory=list)
     verified_facts: list[dict[str, Any]] = field(default_factory=list)
     ai_insights: list[dict[str, Any]] = field(default_factory=list)
     mandatory_instructions: list[str] = field(default_factory=list)
@@ -81,6 +114,11 @@ class RawRelationship:
     confidence: float = 0.5
     source_chunk_index: int = 0
     source_file: str = ""
+    source_location: dict[str, Any] | None = None
+    verification_context: str = ""
+    verification_status: str = "not_reviewed"
+    verification_reason: str = ""
+    source_claim_ids: list[str] = field(default_factory=list)
     mandatory_instructions: list[str] = field(default_factory=list)
 
 
@@ -417,6 +455,8 @@ async def _extract_entities_from_chunk(
     page_end: int | None = None,
     file_type: str | None = None,
     source_document_id: str | None = None,
+    revision_id: str | None = None,
+    chunk_start_char: int = 0,
 ) -> list[RawEntity]:
     normalized_instructions = normalize_mandatory_instructions(mandatory_instructions)
     prompt = build_entity_extraction_prompt(
@@ -436,8 +476,9 @@ async def _extract_entities_from_chunk(
         messages=[
             {
                 "role": "system",
-                "content": (
-                    "You extract structured entities from investigative documents. "
+                "content": secure_system_prompt(
+                    "You compile source-grounded structured entities from investigative documents. "
+                    "Do not provide analysis, opinions, hypotheses, or inferred implications. "
                     "The mandatory profile rules in the user prompt are binding and override generic extraction defaults. "
                     "Apply them exactly whenever the document provides enough evidence to do so. "
                     "Treat any response that ignores those rules as invalid. "
@@ -446,7 +487,7 @@ async def _extract_entities_from_chunk(
             },
             {"role": "user", "content": prompt},
         ],
-        model=settings.openai_extraction_model,
+        workload="ingestion_extraction",
         response_format=get_entity_schema(),
     )
 
@@ -467,13 +508,48 @@ async def _extract_entities_from_chunk(
             e.get("verified_facts", []),
             file_name=file_name,
             fallback_page=page_start,
+            chunk_text=chunk_text,
+            chunk_index=chunk_index,
+            chunk_start_char=chunk_start_char,
+            chunk_page_start=page_start,
+            chunk_page_end=page_end,
+            source_document_id=source_document_id,
+            revision_id=revision_id,
+            is_table=is_table,
         )
-        ai_insights = _normalize_ai_insights(
-            e.get("ai_insights", []),
-            file_name=file_name,
-        )
+        if e.get("ai_insights"):
+            logger.warning(
+                "entity-ai-insights-discarded file=%s chunk=%d",
+                file_name,
+                chunk_index,
+            )
+        ai_insights: list[dict[str, Any]] = []
 
-        source_quote = str(e.get("source_quote", ""))
+        claimed_source_quote = str(e.get("source_quote", ""))
+        grounded_source_quote = _ground_quote(claimed_source_quote, chunk_text)
+        if grounded_source_quote is None:
+            source_quote = ""
+            source_location = None
+        else:
+            source_quote = grounded_source_quote[0]
+            source_location = _build_source_location(
+                grounded_source_quote,
+                file_name=file_name,
+                chunk_index=chunk_index,
+                chunk_start_char=chunk_start_char,
+                page_start=page_start,
+                page_end=page_end,
+                source_document_id=source_document_id,
+                revision_id=revision_id,
+                is_table=is_table,
+            )
+        if not source_quote and not verified_facts:
+            logger.warning(
+                "entity-rejected reason=no-grounded-evidence file=%s chunk=%d",
+                file_name,
+                chunk_index,
+            )
+            continue
         properties = canonicalize_properties(
             category,
             dict(e.get("properties", {}) or {}),
@@ -502,17 +578,36 @@ async def _extract_entities_from_chunk(
                 evidence_texts=[name, source_quote],
             )
 
+        specific_type = e.get("specific_type", category)
+        if _is_graph_noise_entity(
+            category=category,
+            name=name,
+            specific_type=specific_type,
+            properties=properties,
+        ):
+            logger.info(
+                "entity-rejected reason=graph-noise name=%r category=%s file=%s",
+                name,
+                category,
+                file_name,
+            )
+            continue
+
+        if category in {"Document", "Media"}:
+            properties.setdefault("evidence_availability", "referenced_only")
+
         entities.append(
             RawEntity(
                 temp_id=f"chunk{chunk_index}_E{i}",
                 category=category,
-                specific_type=e.get("specific_type", category),
+                specific_type=specific_type,
                 name=name,
                 properties=properties,
                 source_quote=source_quote,
                 confidence=confidence,
                 source_chunk_index=chunk_index,
                 source_file=file_name,
+                source_location=source_location,
                 verified_facts=verified_facts,
                 ai_insights=ai_insights,
                 mandatory_instructions=normalized_instructions,
@@ -529,6 +624,13 @@ async def _extract_relationships_from_chunk(
     file_name: str,
     case_context: str,
     mandatory_instructions: list[str] | None = None,
+    *,
+    page_start: int | None = None,
+    page_end: int | None = None,
+    source_document_id: str | None = None,
+    revision_id: str | None = None,
+    chunk_start_char: int = 0,
+    is_table: bool = False,
 ) -> list[RawRelationship]:
     if not entities:
         return []
@@ -559,7 +661,7 @@ async def _extract_relationships_from_chunk(
         messages=[
             {
                 "role": "system",
-                "content": (
+                "content": secure_system_prompt(
                     "You extract relationships between entities. "
                     "The mandatory profile rules in the user prompt are binding and override generic extraction defaults. "
                     "Apply them exactly whenever the document provides enough evidence to do so. "
@@ -569,7 +671,7 @@ async def _extract_relationships_from_chunk(
             },
             {"role": "user", "content": prompt},
         ],
-        model=settings.openai_extraction_model,
+        workload="ingestion_extraction",
         response_format=get_relationship_schema(),
     )
 
@@ -583,6 +685,18 @@ async def _extract_relationships_from_chunk(
         if src not in entity_ids or tgt not in entity_ids:
             continue
 
+        grounded_source_quote = _ground_quote(
+            str(r.get("source_quote", "")),
+            chunk_text,
+        )
+        if grounded_source_quote is None:
+            logger.warning(
+                "relationship-rejected reason=ungrounded-quote file=%s chunk=%d",
+                file_name,
+                chunk_index,
+            )
+            continue
+
         relationships.append(
             RawRelationship(
                 source_entity_id=src,
@@ -590,10 +704,26 @@ async def _extract_relationships_from_chunk(
                 type=r.get("type", "ASSOCIATED_WITH"),
                 detail=r.get("detail", ""),
                 properties=r.get("properties", {}),
-                source_quote=r.get("source_quote", ""),
+                source_quote=grounded_source_quote[0],
                 confidence=_coerce_confidence(r.get("confidence")),
                 source_chunk_index=chunk_index,
                 source_file=file_name,
+                source_location=_build_source_location(
+                    grounded_source_quote,
+                    file_name=file_name,
+                    chunk_index=chunk_index,
+                    chunk_start_char=chunk_start_char,
+                    page_start=page_start,
+                    page_end=page_end,
+                    source_document_id=source_document_id,
+                    revision_id=revision_id,
+                    is_table=is_table,
+                ),
+                verification_context=_build_verification_context(
+                    chunk_text,
+                    grounded_source_quote[1],
+                    grounded_source_quote[2],
+                ),
                 mandatory_instructions=normalized_instructions,
             )
         )
@@ -623,6 +753,14 @@ def _normalize_verified_facts(
     *,
     file_name: str,
     fallback_page: int | None,
+    chunk_text: str = "",
+    chunk_index: int = 0,
+    chunk_start_char: int = 0,
+    chunk_page_start: int | None = None,
+    chunk_page_end: int | None = None,
+    source_document_id: str | None = None,
+    revision_id: str | None = None,
+    is_table: bool = False,
 ) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
 
@@ -632,12 +770,32 @@ def _normalize_verified_facts(
         if not text or not quote:
             continue
 
+        grounded_quote = _ground_quote(quote, chunk_text)
+        if grounded_quote is None:
+            logger.warning(
+                "verified-fact-rejected reason=ungrounded-quote file=%s chunk=%d",
+                file_name,
+                chunk_index,
+            )
+            continue
+        quote, local_quote_start, local_quote_end = grounded_quote
+
         page = fact.get("page")
         if page in ("", None):
             page = fallback_page
         try:
             page = int(page) if page is not None else None
         except (TypeError, ValueError):
+            page = fallback_page
+        if (
+            page is not None
+            and chunk_page_start is not None
+            and page < chunk_page_start
+        ) or (
+            page is not None
+            and chunk_page_end is not None
+            and page > chunk_page_end
+        ):
             page = fallback_page
 
         importance = fact.get("importance", 3)
@@ -646,6 +804,21 @@ def _normalize_verified_facts(
         except (TypeError, ValueError):
             importance = 3
 
+        location_page_start = page if page is not None else chunk_page_start
+        location_page_end = page if page is not None else chunk_page_end
+        quote_offset = 0 if is_table else chunk_start_char
+        source_location = {
+            "source_document_id": source_document_id or file_name,
+            "revision_id": revision_id,
+            "source_file": file_name,
+            "chunk_index": chunk_index,
+            "page_start": location_page_start,
+            "page_end": location_page_end,
+            "quote_start_char": quote_offset + local_quote_start,
+            "quote_end_char": quote_offset + local_quote_end,
+            "coordinate_space": "table_chunk" if is_table else "document_text",
+        }
+
         normalized.append(
             {
                 "text": text,
@@ -653,10 +826,105 @@ def _normalize_verified_facts(
                 "page": page,
                 "importance": max(1, min(5, importance)),
                 "source_doc": file_name,
+                "source_location": {
+                    key: value
+                    for key, value in source_location.items()
+                    if value is not None
+                },
+                # This bounded, same-chunk window is used only by the semantic
+                # verifier. It lets headings and table labels establish the
+                # subject of a short quote without relaxing quote grounding.
+                "_verification_context": _build_verification_context(
+                    chunk_text,
+                    local_quote_start,
+                    local_quote_end,
+                ),
             }
         )
 
     return normalized
+
+
+def _build_verification_context(
+    source_text: str,
+    quote_start: int,
+    quote_end: int,
+    *,
+    max_chars: int = 1800,
+) -> str:
+    """Return a bounded evidence window containing a grounded quote.
+
+    The leading side is deliberately larger because section titles, table
+    headings, and named subjects usually precede a terse value or row.
+    """
+    if not source_text:
+        return ""
+    if len(source_text) <= max_chars:
+        return source_text.strip()
+
+    before = int(max_chars * 0.65)
+    after = max_chars - before
+    start = max(0, quote_start - before)
+    end = min(len(source_text), quote_end + after)
+
+    # Avoid presenting fragments when a nearby line boundary is available.
+    prior_newline = source_text.find("\n", start, quote_start)
+    if prior_newline >= 0:
+        start = prior_newline + 1
+    next_newline = source_text.rfind("\n", quote_end, end)
+    if next_newline >= quote_end:
+        end = next_newline
+    return source_text[start:end].strip()
+
+
+def _ground_quote(quote: str, source_text: str) -> tuple[str, int, int] | None:
+    """Locate an LLM-provided quote without accepting paraphrases."""
+    candidate = quote.strip()
+    if not candidate or not source_text:
+        return None
+
+    exact_start = source_text.find(candidate)
+    if exact_start >= 0:
+        return candidate, exact_start, exact_start + len(candidate)
+
+    tokens = candidate.split()
+    if not tokens:
+        return None
+    whitespace_tolerant = re.compile(
+        r"\s+".join(re.escape(token) for token in tokens),
+        flags=re.IGNORECASE,
+    )
+    match = whitespace_tolerant.search(source_text)
+    if match is None:
+        return None
+    return match.group(0), match.start(), match.end()
+
+
+def _build_source_location(
+    grounded_quote: tuple[str, int, int],
+    *,
+    file_name: str,
+    chunk_index: int,
+    chunk_start_char: int,
+    page_start: int | None,
+    page_end: int | None,
+    source_document_id: str | None,
+    revision_id: str | None,
+    is_table: bool,
+) -> dict[str, Any]:
+    quote_offset = 0 if is_table else chunk_start_char
+    location = {
+        "source_document_id": source_document_id or file_name,
+        "revision_id": revision_id,
+        "source_file": file_name,
+        "chunk_index": chunk_index,
+        "page_start": page_start,
+        "page_end": page_end,
+        "quote_start_char": quote_offset + grounded_quote[1],
+        "quote_end_char": quote_offset + grounded_quote[2],
+        "coordinate_space": "table_chunk" if is_table else "document_text",
+    }
+    return {key: value for key, value in location.items() if value is not None}
 
 
 def _normalize_ai_insights(
@@ -821,6 +1089,37 @@ def _dedup_within_file(
     return kept, remapped_rels
 
 
+async def _bounded_map(items: list[Any], operation, limit: int) -> list[Any]:
+    """Process a large input list with a fixed worker set, preserving order."""
+    if not items:
+        return []
+    results: list[Any] = [None] * len(items)
+    iterator = iter(enumerate(items))
+    iterator_lock = asyncio.Lock()
+
+    async def worker() -> None:
+        while True:
+            async with iterator_lock:
+                try:
+                    index, item = next(iterator)
+                except StopIteration:
+                    return
+            results[index] = await operation(item)
+
+    tasks = [
+        asyncio.create_task(worker())
+        for _ in range(min(len(items), max(1, limit)))
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    return results
+
+
 async def extract_entities_and_relationships(
     chunks: list[TextChunk],
     case_context: str,
@@ -832,25 +1131,36 @@ async def extract_entities_and_relationships(
     if not chunks:
         return [], []
 
-    # Pass 1: Extract entities from all chunks (parallel, bounded by semaphore)
-    entity_tasks = [
-        _extract_entities_from_chunk(
-            chunk.text,
-            chunk.index,
-            file_name,
-            case_context,
-            mandatory_instructions=mandatory_instructions,
-            special_entity_types=special_entity_types,
-            is_table=chunk.is_table,
-            sheet_name=chunk.metadata.get("sheet_name", ""),
-            page_start=chunk.metadata.get("page_start"),
-            page_end=chunk.metadata.get("page_end"),
-            file_type=chunk.metadata.get("file_type"),
-            source_document_id=chunk.metadata.get("job_id"),
-        )
-        for chunk in chunks
-    ]
-    entity_results = await asyncio.gather(*entity_tasks)
+    max_concurrency = max(1, settings.extraction_max_concurrency)
+
+    # Pass 1: Extract entities with a fixed worker pool. This avoids creating
+    # thousands of tasks up front for very large evidence files.
+    async def extract_chunk_entities(chunk: TextChunk) -> list[RawEntity]:
+        return await _extract_entities_from_chunk(
+                chunk.text,
+                chunk.index,
+                file_name,
+                case_context,
+                mandatory_instructions=mandatory_instructions,
+                special_entity_types=special_entity_types,
+                is_table=chunk.is_table,
+                sheet_name=chunk.metadata.get("sheet_name", ""),
+                page_start=chunk.metadata.get("page_start"),
+                page_end=chunk.metadata.get("page_end"),
+                file_type=chunk.metadata.get("file_type"),
+                source_document_id=(
+                    chunk.metadata.get("evidence_file_id")
+                    or chunk.metadata.get("job_id")
+                ),
+                revision_id=chunk.metadata.get("revision_id"),
+                chunk_start_char=chunk.start_char,
+            )
+
+    entity_results = await _bounded_map(
+        chunks,
+        extract_chunk_entities,
+        max_concurrency,
+    )
 
     all_entities: list[RawEntity] = []
     entities_by_chunk: dict[int, list[RawEntity]] = {}
@@ -858,19 +1168,33 @@ async def extract_entities_and_relationships(
         all_entities.extend(chunk_entities)
         entities_by_chunk[chunk.index] = chunk_entities
 
-    # Pass 2: Extract relationships using known entities (parallel)
-    rel_tasks = [
-        _extract_relationships_from_chunk(
-            chunk.text,
-            chunk.index,
-            entities_by_chunk.get(chunk.index, []),
-            file_name,
-            case_context,
-            mandatory_instructions=mandatory_instructions,
-        )
-        for chunk in chunks
-    ]
-    rel_results = await asyncio.gather(*rel_tasks)
+    # Pass 2: Extract relationships with the same bounded worker pool.
+    async def extract_chunk_relationships(
+        chunk: TextChunk,
+    ) -> list[RawRelationship]:
+        return await _extract_relationships_from_chunk(
+                chunk.text,
+                chunk.index,
+                entities_by_chunk.get(chunk.index, []),
+                file_name,
+                case_context,
+                mandatory_instructions=mandatory_instructions,
+                page_start=chunk.metadata.get("page_start"),
+                page_end=chunk.metadata.get("page_end"),
+                source_document_id=(
+                    chunk.metadata.get("evidence_file_id")
+                    or chunk.metadata.get("job_id")
+                ),
+                revision_id=chunk.metadata.get("revision_id"),
+                chunk_start_char=chunk.start_char,
+                is_table=chunk.is_table,
+            )
+
+    rel_results = await _bounded_map(
+        chunks,
+        extract_chunk_relationships,
+        max_concurrency,
+    )
 
     all_relationships: list[RawRelationship] = []
     for chunk_rels in rel_results:

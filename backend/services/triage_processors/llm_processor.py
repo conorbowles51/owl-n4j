@@ -119,16 +119,6 @@ class LLMProcessor(BaseTriageProcessor):
             "default": 30000,
             "description": "Max characters to send to LLM per file",
         },
-        "model_provider": {
-            "type": "string",
-            "default": "",
-            "description": "LLM provider override: 'ollama' or 'openai' (empty = use current)",
-        },
-        "model_id": {
-            "type": "string",
-            "default": "",
-            "description": "Model ID override (empty = use current)",
-        },
     }
 
     def process_file(
@@ -161,15 +151,6 @@ class LLMProcessor(BaseTriageProcessor):
             custom_prompt=config.get("custom_prompt", "Analyze this content."),
         )
 
-        # Optionally override model
-        model_provider = config.get("model_provider", "")
-        model_id = config.get("model_id", "")
-        original_config = None
-
-        if model_provider and model_id:
-            original_config = llm_service.get_current_config()
-            llm_service.set_config(model_provider, model_id)
-
         try:
             # Set cost tracking context
             llm_service.set_cost_tracking_context(
@@ -188,8 +169,8 @@ class LLMProcessor(BaseTriageProcessor):
             artifact_type = f"llm_{template_name}"
             metadata = {
                 "template": template_name,
-                "model_provider": model_provider or llm_service.get_current_config()[0],
-                "model_id": model_id or llm_service.get_current_config()[1],
+                "model_provider": llm_service.get_current_config()[0],
+                "model_id": llm_service.get_current_config()[1],
                 "input_chars": len(content),
             }
 
@@ -216,5 +197,3 @@ class LLMProcessor(BaseTriageProcessor):
             )]
         finally:
             llm_service.clear_cost_tracking_context()
-            if original_config:
-                llm_service.set_config(*original_config)

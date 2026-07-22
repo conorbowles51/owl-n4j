@@ -5,6 +5,7 @@ shared properties, writes the merged entity to Neo4j, transfers
 relationships, and embeds for RAG.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -19,8 +20,10 @@ from app.config import settings
 from app.models.job import Job, JobStatus
 from app.ontology.schema_builder import get_merge_schema
 from app.pipeline.merge_relationships import aggregate_relationships_for_merge
+from app.pipeline.prompt_security import secure_system_prompt
 from app.services import chroma_client, neo4j_client
 from app.services.cost_tracking import ingestion_cost_context
+from app.services.ai_model_policy import get_ai_runtime_snapshot, load_ai_model_policy
 from app.services.openai_client import chat_completion, embed_texts
 from app.services.redis_client import publish_progress
 
@@ -144,14 +147,14 @@ async def _merge_properties(
         messages=[
             {
                 "role": "system",
-                "content": (
+                "content": secure_system_prompt(
                     "You are an expert investigative analyst. "
                     "Respond with valid JSON matching the provided schema."
                 ),
             },
             {"role": "user", "content": prompt},
         ],
-        model=settings.openai_summary_model,
+        workload="ingestion_entity_summary",
         response_format=get_merge_schema(),
     )
 
@@ -308,20 +311,23 @@ async def _embed_merged_entity(
 
     embeddings = await embed_texts([desc])
 
-    collection = chroma_client.get_or_create_collection("entities")
-    chroma_client.upsert_embeddings(
-        collection=collection,
-        ids=[new_key],
-        embeddings=embeddings,
-        documents=[desc],
-        metadatas=[{
-            "category": category,
-            "specific_type": merged.get("specific_type", ""),
-            "name": merged.get("name", ""),
-            "case_id": case_id,
-            "aliases": ",".join(all_aliases) if all_aliases else "",
-        }],
-    )
+    def upsert_merged_embedding() -> None:
+        collection = chroma_client.get_or_create_collection("entities")
+        chroma_client.upsert_embeddings(
+            collection=collection,
+            ids=[new_key],
+            embeddings=embeddings,
+            documents=[desc],
+            metadatas=[{
+                "category": category,
+                "specific_type": merged.get("specific_type", ""),
+                "name": merged.get("name", ""),
+                "case_id": case_id,
+                "aliases": ",".join(all_aliases) if all_aliases else "",
+            }],
+        )
+
+    await asyncio.to_thread(upsert_merged_embedding)
 
 
 # ---------------------------------------------------------------------------
@@ -329,8 +335,12 @@ async def _embed_merged_entity(
 # ---------------------------------------------------------------------------
 
 async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
+    await load_ai_model_policy(db)
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one()
+    job.pipeline_state = dict(job.pipeline_state or {})
+    job.pipeline_state["ai_runtime"] = get_ai_runtime_snapshot()
+    await db.commit()
 
     payload = job.merge_payload or {}
     entities = payload.get("entities", [])

@@ -121,6 +121,11 @@ const SettingsPage = lazy(() =>
     default: m.SettingsPage,
   }))
 )
+const AISettingsPage = lazy(() =>
+  import("@/features/settings/components/AISettingsPage").then((m) => ({
+    default: m.AISettingsPage,
+  }))
+)
 
 function PageLoading() {
   return (
@@ -178,6 +183,7 @@ export function AppRoutes() {
           </Route>
 
           <Route path="/settings" element={<LazyPage><SettingsPage /></LazyPage>} />
+          <Route path="/settings/ai" element={<LazyPage><AISettingsPage /></LazyPage>} />
         </Route>
       </Route>
     </Routes>

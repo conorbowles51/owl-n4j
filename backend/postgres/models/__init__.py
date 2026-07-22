@@ -18,7 +18,7 @@ from postgres.models.agent import (
     AgentThread,
     AgentToolCall,
 )
-from postgres.models.evidence import EvidenceDocumentText, EvidenceFolder, EvidenceFile, IngestionLog
+from postgres.models.evidence import EvidenceClaim, EvidenceDocumentText, EvidenceFolder, EvidenceFile, IngestionLog
 from postgres.models.case_profile import (
     CaseProfile,
     CaseProfileAttribute,
@@ -30,6 +30,8 @@ from postgres.models.case_profile import (
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 from postgres.models.significant import SignificantEntity
 from postgres.models.runtime_state import (
+    AIModelPolicy,
+    AIProviderCredential,
     BackgroundTask,
     LastGraphState,
     PresenceSession,
@@ -57,11 +59,11 @@ __all__ = [
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",
     "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall",
-    "EvidenceDocumentText", "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
+    "EvidenceClaim", "EvidenceDocumentText", "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "SignificantEntity",
     "CaseProfile", "CaseProfileAttribute", "CaseProfileEvidenceLink",
     "CaseProfileFindingLink", "CaseProfileGraphNodeLink", "CaseProfileNoteLink",
-    "BackgroundTask", "PresenceSession", "WiretapProcessedFolder",
+    "AIModelPolicy", "AIProviderCredential", "BackgroundTask", "PresenceSession", "WiretapProcessedFolder",
     "LastGraphState", "SnapshotRecord", "SystemLog",
     "TriageCase", "TriageStage", "TriageTemplate", "TriageHashSet",
     "WorkspaceContext", "WorkspaceWitness", "WorkspaceTheory",

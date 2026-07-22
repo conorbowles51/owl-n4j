@@ -30,6 +30,8 @@ from services.chat_db_service import (
     summarize_title,
 )
 from services.ai_costs_service import CostOperationKind, ai_cost_context
+from services.ai_model_policy import get_workload_model
+from services.ai_provider_credentials import get_provider_api_key
 from services.cost_tracking_service import CostJobType, record_cost
 from services.rag_service import rag_service
 from services.system_log_service import LogOrigin, LogType, system_log_service
@@ -50,8 +52,8 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[UUID] = None
     scope: Literal["case_overview", "significant", "selection"] = "case_overview"
     selected_entity_keys: Optional[List[str]] = None
-    provider: str = "openai"
-    model: str = "gpt-5-mini"
+    provider: Optional[str] = None
+    model: Optional[str] = None
     confidence_threshold: Optional[float] = None
     persist: bool = True
     view_context: Optional[Dict[str, Any]] = None
@@ -174,15 +176,39 @@ async def chat(
         # admissible context once the caller selects the strict Significant scope.
         conversation_history = []
 
-    provider = request.provider.lower()
-    model_id = request.model
+    default_provider, default_model_id = get_workload_model(db, "chat")
+    if request.provider and request.provider.lower() != default_provider:
+        raise HTTPException(
+            status_code=400,
+            detail="Per-request provider overrides are disabled. Change Chat routing in Settings → AI settings.",
+        )
+    if request.model and request.model != default_model_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Per-request model overrides are disabled. Change Chat routing in Settings → AI settings.",
+        )
+    provider = default_provider
+    model_id = default_model_id
     model = get_model_by_id(model_id)
     if not model:
         raise HTTPException(status_code=400, detail=f"Invalid model: {model_id}")
+    if model.provider.value != provider:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model {model_id} belongs to {model.provider.value}, not {provider}",
+        )
+
+    api_key = get_provider_api_key(db, provider)
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{provider.title()} is not connected. Add its API key in Settings → AI settings.",
+        )
 
     llm = rag_service.llm.create_context(
         provider=provider,
         model_id=model_id,
+        api_key=api_key,
         use_responses_api_for_gpt5=True,
     )
 
@@ -315,7 +341,7 @@ async def chat(
         else:
             db.commit()
 
-        server = "Ollama (local)" if llm.provider == "ollama" else "OpenAI (remote)"
+        server = f"{llm.provider.title()} (remote)"
         model_info = ChatModelInfo(
             provider=llm.provider,
             model_id=llm.model_id,

@@ -1,5 +1,5 @@
 """
-Investigation Console - FastAPI Backend
+Loupe - FastAPI Backend
 
 Main entry point for the API server.
 """
@@ -30,6 +30,7 @@ from routers import (
     backfill_router,
     database_router,
     llm_config_router,
+    ai_settings_router,
     workspace_router,
     users_router,
     setup_router,
@@ -59,7 +60,7 @@ from services.platform_update_service import platform_update_service
 async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
     # Startup
-    print("Starting Investigation Console API...")
+    print("Starting Loupe API...")
     try:
         # Reload snapshots from disk (non-blocking)
         snapshot_storage.reload()
@@ -112,7 +113,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Investigation Console API",
+    title="Loupe API",
     description="API for fraud investigation graph visualization and AI-powered queries",
     version="1.0.0",
     lifespan=lifespan,
@@ -147,6 +148,7 @@ app.include_router(system_logs_router)
 app.include_router(backfill_router)
 app.include_router(database_router)
 app.include_router(llm_config_router)
+app.include_router(ai_settings_router)
 app.include_router(workspace_router)
 app.include_router(users_router)
 app.include_router(setup_router)
@@ -169,7 +171,7 @@ async def root():
     """Health check endpoint."""
     return {
         "status": "ok",
-        "service": "Investigation Console API",
+        "service": "Loupe API",
         "version": "1.0.0",
     }
 

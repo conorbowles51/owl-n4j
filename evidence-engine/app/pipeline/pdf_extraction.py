@@ -434,6 +434,11 @@ def _extract_pdf_sync(
     try:
         if document.needs_pass:
             raise PdfOcrError("PDF is password-protected")
+        if document.page_count > settings.max_pdf_pages:
+            raise PdfOcrError(
+                f"PDF has {document.page_count} pages; the configured limit is "
+                f"{settings.max_pdf_pages} pages"
+            )
 
         pages: list[_PageResult] = []
         ocr_indexes: list[int] = []

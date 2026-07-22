@@ -658,17 +658,9 @@ class TriageService:
 
     # ── Advisor (Phase 5) ────────────────────────────────────────────
 
-    def advisor_chat(
-        self, case_id: str, question: str,
-        model_provider: Optional[str] = None,
-        model_id: Optional[str] = None,
-    ) -> Dict:
+    def advisor_chat(self, case_id: str, question: str) -> Dict:
         """Ask the triage advisor a question."""
-        return triage_advisor.advise(
-            case_id, question,
-            model_provider=model_provider,
-            model_id=model_id,
-        )
+        return triage_advisor.advise(case_id, question)
 
     def advisor_suggest(self, case_id: str) -> List[Dict]:
         """Get auto-suggested next steps."""

@@ -18,8 +18,14 @@ from pathlib import Path
 
 from app.config import settings
 from app.ontology.schema_builder import get_consolidation_schema
-from app.pipeline.extract_entities import RawEntity, RawRelationship
+from app.pipeline.extract_entities import (
+    RawEntity,
+    RawRelationship,
+    _merge_ai_insights,
+    _merge_verified_facts,
+)
 from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
+from app.pipeline.prompt_security import secure_system_prompt
 from app.pipeline.property_canonicalization import promote_location_specificity
 from app.services.openai_client import chat_completion
 
@@ -141,6 +147,9 @@ def _deterministic_consolidate(
         all_names: set[str] = set()
         merged_props = dict(primary.properties)
         best_confidence = primary.confidence
+        merged_facts: list[dict] = []
+        merged_insights: list[dict] = []
+        merged_claim_ids: set[str] = set()
 
         for idx in indices:
             e = entities[idx]
@@ -152,6 +161,9 @@ def _deterministic_consolidate(
                     merged_props[k] = v
             for alias in e.properties.get("aliases") or []:
                 all_names.add(str(alias))
+            merged_facts = _merge_verified_facts(merged_facts, e.verified_facts)
+            merged_insights = _merge_ai_insights(merged_insights, e.ai_insights)
+            merged_claim_ids.update(e.source_claim_ids)
             if idx != primary_idx:
                 remove_indices.add(idx)
 
@@ -170,6 +182,9 @@ def _deterministic_consolidate(
 
         primary.properties = merged_props
         primary.confidence = best_confidence
+        primary.verified_facts = merged_facts
+        primary.ai_insights = merged_insights
+        primary.source_claim_ids = sorted(merged_claim_ids)
         primary.mandatory_instructions = merge_mandatory_instructions(
             *[entities[idx].mandatory_instructions for idx in indices]
         )
@@ -264,7 +279,7 @@ async def _llm_consolidate(
                     messages=[
                         {
                             "role": "system",
-                            "content": (
+                            "content": secure_system_prompt(
                                 "You are an entity consolidation expert. "
                                 "Mandatory profile rules in the user prompt are binding. "
                                 "Preserve rule-compliant naming and typing instead of normalizing outputs back to defaults. "
@@ -273,7 +288,7 @@ async def _llm_consolidate(
                         },
                         {"role": "user", "content": prompt},
                     ],
-                    model=settings.openai_resolution_model,
+                    workload="ingestion_resolution",
                     response_format=schema,
                 ),
                 timeout=600,
@@ -326,6 +341,9 @@ async def _llm_consolidate(
 
                 merged_props = dict(primary.properties)
                 best_confidence = primary.confidence
+                merged_facts: list[dict] = []
+                merged_insights: list[dict] = []
+                merged_claim_ids: set[str] = set()
 
                 for idx in global_indices:
                     e = entities[idx]
@@ -337,6 +355,13 @@ async def _llm_consolidate(
                             merged_props[k] = v
                     for alias in e.properties.get("aliases") or []:
                         all_names.add(str(alias))
+                    merged_facts = _merge_verified_facts(
+                        merged_facts, e.verified_facts
+                    )
+                    merged_insights = _merge_ai_insights(
+                        merged_insights, e.ai_insights
+                    )
+                    merged_claim_ids.update(e.source_claim_ids)
                     if idx != primary_idx:
                         remove_indices.add(idx)
 
@@ -355,6 +380,9 @@ async def _llm_consolidate(
 
                 primary.properties = merged_props
                 primary.confidence = best_confidence
+                primary.verified_facts = merged_facts
+                primary.ai_insights = merged_insights
+                primary.source_claim_ids = sorted(merged_claim_ids)
                 primary.mandatory_instructions = merge_mandatory_instructions(
                     *[entities[idx].mandatory_instructions for idx in global_indices]
                 )

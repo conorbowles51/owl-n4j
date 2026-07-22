@@ -28,8 +28,10 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:7b"
 
-# LLM Provider Selection (can be overridden by user settings)
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()  # "openai" or "ollama"
+# Legacy startup fallback. Deployment-wide generative routing is managed in Loupe.
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
+if LLM_PROVIDER not in {"openai", "anthropic", "gemini"}:
+    LLM_PROVIDER = "openai"
 LLM_MODEL = os.getenv("LLM_MODEL")  # If not set, uses default for provider
 
 # Embedding Configuration
@@ -53,6 +55,8 @@ else:
         EMBEDDING_MODEL = "qwen3-embedding:4b"  # Common Ollama embedding model
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Required if using OpenAI
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 # Vector DB Configuration
 CHROMADB_HOST = os.getenv("CHROMADB_HOST", "localhost")
@@ -121,12 +125,17 @@ AUDIO_LANGUAGE = os.getenv("AUDIO_LANGUAGE", None)
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "owlinvestigates")
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "supersecretchange")
+AI_CREDENTIAL_ENCRYPTION_KEY = os.getenv(
+    "AI_CREDENTIAL_ENCRYPTION_KEY",
+    "loupe-development-ai-credentials-change-me",
+)
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
 AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours default
 
 # Evidence Engine Configuration
 EVIDENCE_ENGINE_URL = os.getenv("EVIDENCE_ENGINE_URL", "http://localhost:8003")
 EVIDENCE_ENGINE_TIMEOUT = int(os.getenv("EVIDENCE_ENGINE_TIMEOUT", "300"))  # seconds
+EVIDENCE_ENGINE_API_KEY = os.getenv("EVIDENCE_ENGINE_API_KEY", "")
 USE_EVIDENCE_ENGINE = os.getenv("USE_EVIDENCE_ENGINE", "true").lower() == "true"
 
 _EVIDENCE_DATA_ROOT = Path(os.getenv("EVIDENCE_DATA_ROOT", "evidence-data"))

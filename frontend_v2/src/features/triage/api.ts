@@ -178,7 +178,7 @@ export const triageAPI = {
 
   advisorChat: (
     caseId: string,
-    data: { question: string; model_provider?: string; model_id?: string }
+    data: { question: string }
   ) =>
     fetchAPI<{ answer?: string; suggestions?: AdvisorSuggestion[] }>(
       `/api/triage/cases/${casePath(caseId)}/advisor/chat`,

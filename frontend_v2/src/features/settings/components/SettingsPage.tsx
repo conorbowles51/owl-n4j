@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useTheme } from "@/lib/theme-context"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { SettingsNav } from "./SettingsNav"
 
 const SHORTCUTS = [
   { keys: "Ctrl+K", description: "Open command palette" },
@@ -31,16 +32,17 @@ const SHORTCUTS = [
 export function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const user = useAuthStore((s) => s.user)
-
   return (
     <ScrollArea className="h-full bg-background">
       <div className="mx-auto max-w-2xl space-y-6 p-6">
         <div>
-        <h1 className="font-display text-lg font-semibold">Settings</h1>
+          <h1 className="font-display text-lg font-semibold">Settings</h1>
           <p className="text-xs text-muted-foreground">
             Manage your personal preferences
           </p>
         </div>
+
+        <SettingsNav />
 
         {/* Profile */}
         <Card>

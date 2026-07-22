@@ -1,6 +1,6 @@
 # Evidence Engine
 
-The Evidence Engine is a Python/FastAPI microservice responsible for all evidence handling within the OWL Investigation Platform. It receives investigative files (PDFs, Word documents, spreadsheets, images, audio, video), extracts structured intelligence from them using LLM-powered analysis, and writes the results into a Neo4j knowledge graph that powers the platform's graph, timeline, map, and financial views.
+The Evidence Engine is a Python/FastAPI microservice responsible for evidence handling within Loupe. It receives investigative files (PDFs, Word documents, spreadsheets, images, audio, video), extracts structured intelligence from them using LLM-powered analysis, and writes the results into a Neo4j knowledge graph that powers the platform's graph, timeline, map, and financial views.
 
 ---
 
@@ -44,7 +44,7 @@ Evidence ingestion is the most resource-intensive operation in the platform. A s
 - There was no way to scale ingestion independently of the API.
 - Progress tracking was crude — the frontend had to poll JSON files.
 
-The Evidence Engine solves all of this by running as a separate service with its own database, worker pool, and job queue.
+The Evidence Engine solves all of this by running as a separate service with an independently scalable worker pool and job queue, while using the platform PostgreSQL database as the durable evidence and audit store.
 
 ---
 
@@ -92,7 +92,8 @@ The Evidence Engine solves all of this by running as a separate service with its
 | **Graph Writing** | Writes all entities and relationships to Neo4j with proper labels, properties, and indexes |
 | **Geocoding** | Geocodes Location entities via Google Maps API so they appear on the map view |
 | **RAG Embedding** | Embeds entities and document chunks in ChromaDB for semantic search and future deduplication |
-| **Job Tracking** | Tracks job status and progress in its own PostgreSQL database |
+| **Evidence Compiler** | Grounds quotations, records immutable claims, and quarantines unsupported or uncertain statements before projection |
+| **Job Tracking** | Tracks durable stage attempts, quality reports, and publication recovery state in PostgreSQL |
 | **Real-Time Progress** | Streams progress updates via Redis pub/sub to WebSocket clients |
 | **File Serving** | Provides stored evidence files back to the frontend when needed |
 
@@ -106,7 +107,7 @@ The Evidence Engine solves all of this by running as a separate service with its
 |---|---|---|
 | API Server | Python 3.12 + FastAPI | REST endpoints + WebSocket |
 | Task Queue | Redis + arq | Async background job processing |
-| Job Database | PostgreSQL 16 | Job tracking (separate from main DB) |
+| Evidence Database | PostgreSQL 16 | Shared source of truth for jobs, canonical text, grounded claims, and audit state |
 | Graph Database | Neo4j 5 | Knowledge graph (shared with platform) |
 | Vector Database | ChromaDB | Document chunks + entity embeddings |
 | LLM (extraction) | GPT-4o-mini | Entity/relationship extraction, dedup confirmation |
@@ -119,11 +120,19 @@ The Evidence Engine solves all of this by running as a separate service with its
 
 ### Design Principles
 
-- **Async throughout** — FastAPI, async SQLAlchemy, aiohttp, asyncio semaphores
-- **Idempotent writes** — Neo4j MERGE (not CREATE) keyed on entity UUID, safe to re-run
-- **Case isolation** — All data partitioned by `case_id` (separate ChromaDB collections, Neo4j node properties)
+- **Deterministic evidence boundary** — only source-grounded quotations become claims; unsupported paraphrases and inferences are rejected
+- **Immutable claim ledger** — grounded, verified, uncertain, and rejected claims remain auditable and can reconstruct projection inputs
+- **Versioned publication** — Chroma chunks remain draft until graph publication succeeds; retries upsert the same revision and retire older chunks
+- **Case isolation** — All data is partitioned by `case_id` in PostgreSQL, ChromaDB metadata, and Neo4j properties
 - **Structured LLM output** — All extraction uses OpenAI's JSON schema response format, no fragile parsing
-- **Bounded concurrency** — Semaphore limits (10 concurrent OpenAI calls, 2 concurrent jobs) prevent overload
+- **Bounded concurrency** — explicit limits apply to files, extraction calls, summary maps, OpenAI requests, and PDF/OCR work
+- **Untrusted-source isolation** — uploaded text is always treated as evidence data, never as model instructions
+
+---
+
+### Why this is a bounded evidence compiler, not a free-running agent
+
+Ingestion uses an agent-like sequence of specialized passes, but it deliberately does not give an autonomous agent open-ended tools or permission to roam a case. A free-running agent would make completeness, repeatability, cost, and auditability difficult to guarantee. Instead, the engine performs deterministic extraction and canonical-text persistence, bounded claim compilation, a separate evidence-entailment verification pass, entity resolution, factual summary generation, and recoverable publication. Every promoted fact or relationship has an exact source quotation and immutable claim ID; rejected, uncertain, and budget-excess claims remain auditable but cannot enter summaries or graph projections. Investigators can still use the case-view agents for open-ended analysis after ingestion has established this trustworthy evidence layer.
 
 ---
 
@@ -143,6 +152,7 @@ Converts the uploaded file into raw text, handling each format appropriately:
 | DOCX | python-docx — preserves structure, extracts tables separately |
 | XLSX/CSV | openpyxl — each sheet as a separate table chunk |
 | HTML/Markdown | BeautifulSoup/Markdown — strips markup |
+| EML email | Python email parser; extracts headers and the preferred text body without attachment payloads |
 | Images (JPG, PNG) | Tesseract OCR (default) or OpenAI Vision, plus EXIF metadata extraction |
 | Audio (MP3, WAV) | OpenAI Whisper API, with FFmpeg chunking for files >25MB |
 | Video (MP4, AVI) | FFmpeg key frame extraction → Vision API scene descriptions + audio track transcription |
@@ -152,6 +162,8 @@ Converts the uploaded file into raw text, handling each format appropriately:
 PDF extraction is hybrid and automatic. Each page is inspected independently: pages with a usable embedded text layer stay on the native PyMuPDF path, while image-only pages, sparse text overlays on page-sized images, and simulated vector text are rendered and OCRed locally with Tesseract. Mixed documents preserve native and OCR text in their original page order. The original evidence file is never rewritten; the derived page metadata records the extraction method, OCR confidence, language, and render resolution used for search and citation provenance.
 
 Scanned table cells are currently ingested as ordered OCR body text. Reconstructing their rows and columns requires a separate layout-aware extraction feature.
+
+Unknown binary formats are rejected instead of being decoded as replacement-character text. Legacy `.doc` and `.xls` files return conversion guidance; convert them to `.docx`, PDF, `.xlsx`, or CSV before processing.
 
 ### Stage 2: Chunking & Embedding
 
@@ -167,16 +179,23 @@ Splits the extracted text into overlapping chunks and embeds them in ChromaDB fo
 
 **Embedding:**
 - Model: `text-embedding-3-small` (1,536 dimensions)
-- Batched: 100 texts per API call
-- Stored in ChromaDB collection `case_{case_id}_documents`
-- Each chunk ID: `{job_id}_chunk_{index}`
-- Metadata: file name, chunk index, table flag, sheet name (for Excel)
+- Batches are bounded by both item count and character count
+- Stored in the shared ChromaDB `chunks` collection
+- Each chunk ID is stable for an evidence revision: `{evidence_file_id}:{revision_id}:chunk:{index}`
+- New chunks are `draft`; only a successfully published revision becomes `active`, and older revisions become `inactive`
+- Retrieval excludes draft/inactive revisions while remaining compatible with legacy chunks
 
 ### Stage 3: Entity & Relationship Extraction
 
 **File:** `app/pipeline/extract_entities.py`
 
-This is the core intelligence stage. It uses a **two-pass design**:
+This is the core intelligence stage. It uses a **two-pass evidence-compiler design**:
+
+- Exact source quotes are checked against chunk text and assigned atomic document/revision/page/character provenance.
+- Entity facts and relationships become deterministic immutable claim records in PostgreSQL.
+- A bounded entailment verifier labels selected claims verified, rejected, or uncertain using only the statement and its quote.
+- Rejected and uncertain claims remain auditable but are quarantined from summaries and graph projection.
+- Projected nodes and edges carry `source_claim_ids` for reconciliation and rebuilds.
 
 **Pass 1 — Entity Extraction (parallel across chunks):**
 - Each chunk is sent to GPT-4o-mini with:
@@ -260,10 +279,14 @@ Deduplicates and normalizes relationships in two tiers:
 Generates human-readable narrative summaries for every entity:
 
 - **Model:** GPT-4o (the quality model — summaries are user-facing, so quality matters)
-- **Input per entity:** Name, category, all properties, all source quotes, list of related entities
+- **Input per entity:** Name, category, verified facts, source-backed properties, and relationships that retain documentary quotes
 - **Batch size:** 5 entities per LLM call
-- **Output:** 2–4 sentence narrative summary describing who/what the entity is and why it matters
+- **Output:** Evidence-bound markdown profile describing what the entity is, what the sources state, and its explicitly documented case relationships
+- **Factual boundary:** Raw AI insights are excluded from summary context; opinions, role-based assumptions, inferred motives, and unsupported conclusions are prohibited
+- **Attribution:** Allegations and disputed claims remain attributed to their source rather than being rewritten as established fact
 - **Applied to all entities**, including `is_existing` ones (re-summarized with new context from the latest file)
+
+The separate document summary uses a substantive narrative **Overview** whose requested depth scales with the source size. Oversized documents are divided into complete, ordered, non-overlapping source segments. Bounded facts-only map calls digest every segment, optional intermediate reductions keep the payload within budget, and the final summary receives the complete ordered digest set. No section is silently skipped.
 
 ### Stage 7: Graph Writing
 
@@ -465,6 +488,8 @@ Response 200: [ { ...job }, ... ]
 
 ```
 GET /health
+GET /ready
+GET /cases/{case_id}/projection-health
 
 Response 200:
 {
@@ -473,10 +498,15 @@ Response 200:
     "postgres": true,
     "neo4j": true,
     "chromadb": true,
-    "redis": true
+    "redis": true,
+    "ocr": true,
+    "storage": true,
+    "openai": true
   }
 }
 ```
+
+`/health` reports diagnostic state. `/ready` returns HTTP 503 unless every required dependency, schema check, OCR language, storage permission, and OpenAI configuration is ready. Projection health reconciles ledger claim IDs, Neo4j claim references, Chroma revision states, and pending publications for a case.
 
 ---
 
@@ -495,6 +525,8 @@ Messages (JSON):
   "message": "Extracting entities from chunk 12/27…"
 }
 ```
+
+When `SERVICE_API_KEY` is configured, direct service WebSocket clients must send it in the `X-Evidence-Engine-Key` handshake header. Browser clients connect through the main backend, which authenticates the signed-in user and checks case access before forwarding progress.
 
 **How it works:**
 1. The pipeline publishes status updates to a Redis pub/sub channel (`job:{job_id}:progress`)
@@ -518,11 +550,11 @@ COMPLETED ◀── WRITING_GRAPH ◀── GENERATING_SUMMARIES ◀── RESOL
 ```
 
 **Worker configuration:**
-- Max concurrent jobs: **2** (prevents OpenAI rate limiting)
-- Job timeout: **1 hour**
+- Max concurrent jobs: **4**, with lower per-stage limits for files, model calls, and OCR
+- Job timeout: **4 hours**
 - Retry on failure: **3 attempts**
 
-**Failure behavior:** If any stage fails, the entire job is marked `FAILED` with the error message stored in the database. Because Neo4j writes use `MERGE`, a failed job can be safely re-run without creating duplicates.
+**Failure behavior:** A source extraction or model-stage error fails only the affected file while sibling files continue. Queue dispatch and final chunk publication use durable outbox state and recover automatically after Redis or Chroma interruptions. Neo4j writes and claim inserts are idempotent, so interrupted jobs can be retried without duplicating evidence assertions.
 
 ---
 
@@ -544,7 +576,7 @@ When an investigator uploads multiple files to the same case, the Evidence Engin
 
 ## Services & Dependencies
 
-The Evidence Engine connects to four external services via thin async wrapper clients:
+The Evidence Engine connects to five external services via bounded clients:
 
 | Service | Client | Purpose |
 |---|---|---|
@@ -552,21 +584,22 @@ The Evidence Engine connects to four external services via thin async wrapper cl
 | **ChromaDB** | `app/services/chroma_client.py` | Vector storage for document chunks and entity embeddings. HTTP client. Collections per case. |
 | **OpenAI** | `app/services/openai_client.py` | LLM calls (extraction, dedup, summaries) and embeddings. Semaphore-bounded to 10 concurrent calls. |
 | **Redis** | `app/services/redis_client.py` | Job queue (arq) and progress pub/sub. Singleton aioredis connection. |
+| **PostgreSQL** | SQLAlchemy async sessions | Durable jobs, stage attempts, quality reports, canonical source text, and grounded claims. |
 
 ---
 
 ## Configuration
 
-All configuration is via environment variables, loaded by Pydantic Settings in `app/config.py`:
+Operational configuration is loaded from environment variables by Pydantic Settings in `app/config.py`. Generative provider credentials and model routing are managed in Loupe's AI settings:
 
 ```bash
-# PostgreSQL (evidence-engine job tracking — separate from main DB)
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@evidence-postgres:5432/ingestion
+# PostgreSQL (shared platform evidence and audit store)
+DATABASE_URL=postgresql+asyncpg://owl_us:owl_pw@postgres:5432/owl_db
 
 # Neo4j (shared with main platform)
 NEO4J_URI=bolt://neo4j:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=password
+NEO4J_PASSWORD=testpassword
 
 # ChromaDB (shared with main platform)
 CHROMA_HOST=chromadb
@@ -574,14 +607,26 @@ CHROMA_PORT=8000
 
 # Redis (shared — job queue + pub/sub)
 REDIS_URL=redis://redis:6379
+SERVICE_API_KEY=replace-with-a-long-random-service-secret
 
 # OpenAI
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o-mini                    # Extraction & dedup
-OPENAI_QUALITY_MODEL=gpt-4o                 # Summaries
+ANTHROPIC_API_KEY=...                       # Optional; enables Anthropic in centralized AI settings
+GEMINI_API_KEY=...                          # Optional; enables Google Gemini in centralized AI settings
+AI_CREDENTIAL_ENCRYPTION_KEY=...            # Stable deployment secret used to encrypt provider keys
+OPENAI_MODEL=gpt-5.6-terra
+OPENAI_EXTRACTION_MODEL=gpt-5.6-terra
+OPENAI_RESOLUTION_MODEL=gpt-5.6-terra
+OPENAI_SUMMARY_MODEL=gpt-5.6-terra
+OPENAI_DOCUMENT_SUMMARY_MODEL=gpt-5.6-sol
+OPENAI_QUALITY_MODEL=gpt-5.6-terra              # Claim entailment verification
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_EMBEDDING_BATCH_SIZE=16              # Max texts per embedding request
 OPENAI_EMBEDDING_MAX_BATCH_CHARS=80000      # Max text chars per embedding request
+EXTRACTION_MAX_CONCURRENCY=6                # Concurrent chunk extraction calls per file
+DOCUMENT_SUMMARY_MAX_CONCURRENCY=3          # Concurrent full-source summary map calls
+CLAIM_VERIFICATION_ENABLED=true             # Evidence-only entailment verifier
+CLAIM_VERIFICATION_MAX_CLAIMS=250           # Per-document verification budget; excess claims stay quarantined
 
 # Quality thresholds
 ENTITY_CONFIDENCE_THRESHOLD=0.4             # Drop entities below this
@@ -598,6 +643,16 @@ PDF_OCR_MAX_PIXELS=25000000                 # Per-page memory guard; oversized p
 PDF_OCR_PAGE_TIMEOUT_SECONDS=60             # Fail the file if an OCR page exceeds this timeout
 PDF_OCR_MAX_CONCURRENCY=2                   # Bound concurrent PDF extraction/OCR work
 
+# Resource guards
+MAX_UPLOAD_FILE_BYTES=1073741824
+MAX_UPLOAD_BATCH_FILES=50
+MAX_UPLOAD_BATCH_BYTES=5368709120
+BATCH_FILE_MAX_CONCURRENCY=4
+MAX_EXTRACTED_CHARACTERS=50000000
+MAX_PDF_PAGES=2000
+MAX_IMAGE_PIXELS=25000000
+MAX_OFFICE_UNCOMPRESSED_BYTES=500000000
+
 # Video processing
 VIDEO_FRAME_INTERVAL=30                     # Seconds between key frames
 VIDEO_MAX_FRAMES=50
@@ -605,6 +660,10 @@ VIDEO_MAX_FRAMES=50
 # Geocoding (optional — needed for map view)
 GOOGLE_MAPS_API_KEY=...
 ```
+
+Generative providers, credentials, and models are managed centrally in **Settings → AI settings**. The policy is stored in PostgreSQL and shared by ingestion, the main AI Chat tab, right-rail chat, and AI Agent. Ingestion has separate routes for extraction, identity resolution, entity summaries, document summaries, and fact checking, so quality and cost can be tuned without changing code. Environment provider keys are bootstrap fallbacks until an administrator replaces or disconnects them in the UI; environment model values remain rolling-deployment fallbacks when the central policy is unavailable.
+
+OpenAI, Anthropic, and Google Gemini are the supported generative providers. A super administrator adds or rotates a key through Loupe; the backend validates it before storing encrypted ciphertext, and the full key is never returned to the browser. `AI_CREDENTIAL_ENCRYPTION_KEY` must be identical and stable across the backend, API, and worker containers. Embeddings, transcription, vision, and local Tesseract OCR remain separate supporting services because they are not interchangeable chat-model workloads.
 
 ---
 
@@ -717,10 +776,11 @@ The Evidence Engine replaces an older evidence handling system that was built di
 
 ```bash
 # Start infrastructure services
-docker compose up neo4j postgres redis chromadb evidence-postgres -d
+docker compose up neo4j postgres redis chromadb -d
 
-# Run database migrations
-alembic upgrade head
+# Run the shared backend database migrations from the repository root
+cd ../backend
+python -m alembic upgrade head
 
 # Start the API server (hot-reload)
 uvicorn app.main:app --reload --port 8000
@@ -736,29 +796,34 @@ arq app.worker.WorkerSettings
 docker compose up
 
 # Services:
-#   evidence-engine-api    → localhost:8001
+#   evidence-engine-api    → localhost:8003
 #   evidence-engine-worker → (background, no port)
-#   evidence-postgres      → localhost:5433
-#   neo4j                  → localhost:7687
-#   chromadb               → localhost:8100
-#   redis                  → localhost:6379
+#   postgres               → localhost:5434
+#   neo4j                  → localhost:7688
+#   chromadb               → localhost:8101
+#   redis                  → localhost:6380
 ```
 
 ### Running Tests
 
 ```bash
 pytest
+
+# Versioned claim-verification release evaluation (requires OpenAI credentials)
+python scripts/run_ingestion_eval.py
 ```
 
 ### Database Migrations
 
 ```bash
+# Run these commands from backend/, which owns the shared migration chain.
+
 # Create a new migration
-alembic revision --autogenerate -m "description"
+python -m alembic revision --autogenerate -m "description"
 
 # Apply migrations
-alembic upgrade head
+python -m alembic upgrade head
 
 # Rollback one migration
-alembic downgrade -1
+python -m alembic downgrade -1
 ```

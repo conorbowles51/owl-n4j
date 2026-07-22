@@ -2,7 +2,7 @@ import pytest
 
 from app.pipeline import write_graph
 from app.pipeline.resolve_entities import ResolvedEntity
-from app.services.geocoding import GeocodeResult
+from app.services.geocoding import GeocodeRequest, GeocodeResult
 
 
 @pytest.mark.asyncio
@@ -77,12 +77,12 @@ async def test_apply_geocoding_attempts_and_retains_vague_locations(monkeypatch)
     monkeypatch.setattr(write_graph, "GEOCODABLE_CATEGORIES", {"Communication"})
     queries = []
 
-    async def fake_geocode(query):
-        queries.append(query)
+    async def fake_geocode(request):
+        queries.append(request.query)
         return GeocodeResult(
             provider="nominatim",
-            normalized_query=query,
-            original_query=query,
+            normalized_query=request.query,
+            original_query=request.query,
             status="failed",
         )
 
@@ -113,12 +113,12 @@ async def test_apply_geocoding_replaces_coarse_pin_after_successful_specificity_
 ):
     monkeypatch.setattr(write_graph, "GEOCODABLE_CATEGORIES", {"Location"})
 
-    async def fake_geocode(query):
-        assert query == "12 Fleet Street, London, United Kingdom"
+    async def fake_geocode(request):
+        assert request.query == "12 Fleet Street, London, United Kingdom"
         return GeocodeResult(
             provider="nominatim",
-            normalized_query=query.lower(),
-            original_query=query,
+            normalized_query=request.query.lower(),
+            original_query=request.query,
             status="success",
             latitude=51.513,
             longitude=-0.111,
@@ -164,11 +164,11 @@ async def test_apply_geocoding_keeps_coarse_pin_when_specificity_upgrade_fails(
 ):
     monkeypatch.setattr(write_graph, "GEOCODABLE_CATEGORIES", {"Location"})
 
-    async def fake_geocode(query):
+    async def fake_geocode(request):
         return GeocodeResult(
             provider="nominatim",
-            normalized_query=query.lower(),
-            original_query=query,
+            normalized_query=request.query.lower(),
+            original_query=request.query,
             status="failed",
         )
 
@@ -211,8 +211,8 @@ async def test_write_entities_persists_location_and_geocoder_signals_separately(
 ):
     captured = {}
 
-    async def fake_geocode(query):
-        assert query == "Ireland"
+    async def fake_geocode(request):
+        assert request.query == "Ireland"
         return GeocodeResult(
             provider="nominatim",
             normalized_query="ireland",
@@ -249,3 +249,46 @@ async def test_write_entities_persists_location_and_geocoder_signals_separately(
     assert node["location_specificity"] == "country"
     assert node["geocoding_confidence"] == "high"
     assert node["geocoding_status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_apply_geocoding_passes_structured_request_and_stores_provider_importance(
+    monkeypatch,
+):
+    monkeypatch.setattr(write_graph, "GEOCODABLE_CATEGORIES", {"Person"})
+    captured: list[GeocodeRequest] = []
+
+    async def fake_geocode(request):
+        captured.append(request)
+        return GeocodeResult(
+            provider="nominatim",
+            normalized_query="match-v2|45 fleet street",
+            original_query=request.query,
+            status="success",
+            latitude=51.5,
+            longitude=-0.1,
+            formatted_address="45 Fleet Street, London, EC4Y 1AA, United Kingdom",
+            confidence="high",
+            provider_importance=0.02,
+        )
+
+    monkeypatch.setattr(write_graph.geocoding_service, "geocode", fake_geocode)
+    entity = ResolvedEntity(
+        id="person-1",
+        category="Person",
+        specific_type="Individual",
+        name="Alex Example",
+        properties={
+            "address": "45 Fleet Street, EC4Y 1AA",
+            "city": "London",
+            "country": "United Kingdom",
+            "location_specificity": "exact_address",
+        },
+    )
+
+    await write_graph._apply_geocoding([entity])
+
+    assert len(captured) == 1
+    assert isinstance(captured[0], GeocodeRequest)
+    assert captured[0].address == "45 Fleet Street, EC4Y 1AA"
+    assert entity.properties["geocoding_provider_importance"] == 0.02

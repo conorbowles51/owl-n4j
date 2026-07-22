@@ -7,14 +7,14 @@ from services.agent.schemas import AgentMessageRequest
 
 
 class AgentMessageRequestTests(unittest.TestCase):
-    def test_agent_request_defaults_to_openai_mini_and_persisted(self):
+    def test_agent_request_defers_model_selection_to_central_policy(self):
         request = AgentMessageRequest(
             message="Who is Marcus?",
             case_id=uuid4(),
         )
 
-        self.assertEqual(request.provider, "openai")
-        self.assertEqual(request.model, "gpt-5-mini")
+        self.assertIsNone(request.provider)
+        self.assertIsNone(request.model)
         self.assertEqual(request.artifact_preference, "auto")
         self.assertEqual(request.case_layer, "all")
         self.assertTrue(request.persist)

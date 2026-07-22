@@ -6,25 +6,15 @@ import { Button } from "@/components/ui/button"
 import { DocumentViewer } from "@/components/ui/document-viewer"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { ChatMessage } from "./ChatMessage"
 import { cn } from "@/lib/cn"
 import { useChat } from "../hooks/use-chat"
 import { useConversations } from "../hooks/use-conversations"
 import { useChatStore } from "../stores/chat.store"
 import { useGraphStore } from "@/stores/graph.store"
-import { evidenceAPI, llmConfigAPI } from "@/features/evidence/api"
-import type { LLMModel } from "@/types/evidence.types"
+import { evidenceAPI } from "@/features/evidence/api"
+import { ActiveAIModel } from "@/features/settings/components/ActiveAIModel"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
-
-const DEFAULT_MODEL = "gpt-5-mini"
-const DEFAULT_PROVIDER = "openai"
 
 type ContextMode = "full" | "selection"
 
@@ -35,9 +25,6 @@ interface ChatSidePanelProps {
 export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
   const location = useLocation()
   const caseLayer = useCaseLayer(caseId)
-  const [models, setModels] = useState<LLMModel[]>([])
-  const [selectedModelId, setSelectedModelId] = useState(DEFAULT_MODEL)
-  const [selectedProvider, setSelectedProvider] = useState(DEFAULT_PROVIDER)
   const [contextMode, setContextMode] = useState<ContextMode>("full")
   const [input, setInput] = useState("")
   const [viewerDoc, setViewerDoc] = useState<{
@@ -45,7 +32,6 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
     name: string
     page?: number
   } | null>(null)
-  const modelsLoaded = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -60,20 +46,6 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
   const conversationTitle =
     activeConversation?.name ??
     (activeConversationId ? "Conversation" : "New Conversation")
-
-  // Load available models once
-  useEffect(() => {
-    if (modelsLoaded.current) return
-    modelsLoaded.current = true
-    llmConfigAPI.getModels().then((res) => {
-      const list = res.models ?? []
-      setModels(list)
-      if (list.length > 0 && !list.some((m) => m.id === DEFAULT_MODEL)) {
-        setSelectedModelId(list[0].id)
-        setSelectedProvider(list[0].provider)
-      }
-    }).catch(() => {})
-  }, [])
 
   // Auto-focus textarea on mount
   useEffect(() => {
@@ -115,8 +87,8 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
     }
     void sendMessage(
       trimmed,
-      selectedModelId,
-      selectedProvider,
+      undefined,
+      undefined,
       chatScope,
       viewContext
     )
@@ -127,14 +99,6 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
-    }
-  }
-
-  const handleModelSelect = (modelId: string) => {
-    const model = models.find((m) => m.id === modelId)
-    if (model) {
-      setSelectedModelId(model.id)
-      setSelectedProvider(model.provider)
     }
   }
 
@@ -180,23 +144,9 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
         </Button>
       </div>
 
-      {/* Model selector */}
-      {models.length > 0 && (
-        <div className="flex items-center border-b px-4 py-1.5">
-          <Select value={selectedModelId} onValueChange={handleModelSelect}>
-            <SelectTrigger className="h-7 w-[140px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {models.map((m) => (
-                <SelectItem key={m.id} value={m.id} className="text-xs">
-                  {m.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      <div className="flex items-center border-b px-4 py-1.5">
+        <ActiveAIModel workload="chat" />
+      </div>
 
       {/* Context mode toggle */}
       <div className="flex items-center gap-1.5 border-b px-4 py-1.5">

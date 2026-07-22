@@ -550,8 +550,6 @@ async def advisor_chat(
     result = triage_service.advisor_chat(
         case_id,
         question=request.question,
-        model_provider=request.model_provider,
-        model_id=request.model_id,
     )
     return result
 

@@ -127,3 +127,33 @@ class SystemLog(Base, TimestampMixin):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     details: Mapped[dict] = mapped_column(_jsonb_column(), server_default="{}", nullable=False)
+
+
+class AIModelPolicy(Base, TimestampMixin):
+    """One durable, deployment-wide routing policy for generative AI workloads."""
+
+    __tablename__ = "ai_model_policies"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True, default="default")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    configuration: Mapped[dict] = mapped_column(
+        _jsonb_column(), server_default="{}", nullable=False
+    )
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class AIProviderCredential(Base, TimestampMixin):
+    """Encrypted deployment-wide API credential for one cloud AI provider."""
+
+    __tablename__ = "ai_provider_credentials"
+
+    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    encrypted_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    key_last_four: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="connected")
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="database")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    validation_error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)

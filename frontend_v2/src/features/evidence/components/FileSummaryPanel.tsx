@@ -3,7 +3,7 @@ import { MarkdownSummary } from "@/components/ui/markdown-summary"
 
 interface FileSummaryPanelProps {
   summary: string | null
-  onOpenFile?: (filename: string) => void
+  onOpenFile?: (filename: string, page?: number) => void
 }
 
 export function FileSummaryPanel({ summary, onOpenFile }: FileSummaryPanelProps) {

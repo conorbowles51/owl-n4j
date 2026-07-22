@@ -25,8 +25,8 @@ class AgentMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=12000)
     case_id: UUID
     thread_id: UUID | None = None
-    provider: str = "openai"
-    model: str = "gpt-5-mini"
+    provider: str | None = None
+    model: str | None = None
     artifact_preference: AgentArtifactPreference = "auto"
     case_layer: Literal["all", "significant"] = "all"
     persist: bool = True
@@ -41,8 +41,8 @@ class AgentMessageRequest(BaseModel):
 
     @field_validator("provider")
     @classmethod
-    def _normalize_provider(cls, value: str) -> str:
-        return value.lower().strip()
+    def _normalize_provider(cls, value: str | None) -> str | None:
+        return value.lower().strip() if value else None
 
 
 class AgentModelInfo(BaseModel):

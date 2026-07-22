@@ -66,8 +66,6 @@ class ApplyTemplateRequest(BaseModel):
 
 class AdvisorChatRequest(BaseModel):
     question: str
-    model_provider: Optional[str] = None
-    model_id: Optional[str] = None
 
 
 # ── Ingest requests ───────────────────────────────────────────────────

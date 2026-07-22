@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any
 
@@ -88,7 +89,7 @@ async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
                 entity.properties.update(previous_geocoding_state)
             continue
 
-        result = await geocoding_service.geocode(request.query)
+        result = await geocoding_service.geocode(request)
         if force_regeocode and result.status != "success":
             # Keep the existing, valid coarse pin if an attempted specificity
             # upgrade cannot be resolved. Its metadata must continue to describe
@@ -110,6 +111,8 @@ async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
         entity.properties["geocoding_provider"] = result.provider
         entity.properties["geocoding_query"] = result.original_query
         entity.properties["geocoding_formatted_address"] = result.formatted_address
+        if result.provider_importance is not None:
+            entity.properties["geocoding_provider_importance"] = result.provider_importance
         if result.location_granularity:
             entity.properties["location_granularity"] = result.location_granularity
 
@@ -143,6 +146,8 @@ async def _write_entities(
             "confidence": e.confidence,
             "source_files": e.source_files,
             "source_quotes": e.source_quotes,
+            "source_locations": json.dumps(e.source_locations),
+            "source_claim_ids": e.source_claim_ids,
             "job_id": job_id,
             "specific_type": e.specific_type,
             "verified_facts": json.dumps(e.verified_facts),
@@ -170,6 +175,7 @@ async def _write_entities(
                 f"WITH n, node, coalesce(n.manual_fields, []) AS manual_fields, "
                 f"n.aliases AS prev_aliases, "
                 f"n.source_files AS prev_sf, n.source_quotes AS prev_sq, "
+                f"n.source_claim_ids AS prev_claim_ids, "
                 f"n.description AS prev_desc, n.summary AS prev_summary, "
                 f"n.confidence AS prev_conf, n.role AS prev_role, "
                 f"n.specific_type AS prev_st, n.verified_facts AS prev_vf, "
@@ -184,6 +190,8 @@ async def _write_entities(
                 f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
                 f"n.source_quotes = coalesce(prev_sq, []) + "
                 f"[q IN coalesce(node.source_quotes, []) WHERE NOT q IN coalesce(prev_sq, [])], "
+                f"n.source_claim_ids = reduce(acc = [], x IN (coalesce(prev_claim_ids, []) + coalesce(node.source_claim_ids, [])) "
+                f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
                 # description: prefer longer non-empty value
                 f"n.description = CASE "
                 f"WHEN prev_desc IS NULL OR prev_desc = '' THEN node.description "
@@ -245,6 +253,8 @@ async def _write_relationships(
             "confidence": rel.confidence,
             "source_quotes": rel.source_quotes,
             "source_files": rel.source_files,
+            "source_locations": json.dumps(rel.source_locations),
+            "source_claim_ids": rel.source_claim_ids,
         }
         for k, v in rel.properties.items():
             if isinstance(v, (str, int, float, bool)):
@@ -264,12 +274,15 @@ async def _write_relationships(
                 f"MATCH (a {{id: rel.source_id}}) "
                 f"MATCH (b {{id: rel.target_id}}) "
                 f"MERGE (a)-[r:{rel_type} {{source_id: rel.source_id, target_id: rel.target_id}}]->(b) "
-                f"WITH r, rel, r.source_files AS prev_sf, r.source_quotes AS prev_sq "
+                f"WITH r, rel, r.source_files AS prev_sf, r.source_quotes AS prev_sq, "
+                f"r.source_claim_ids AS prev_claim_ids "
                 f"SET r += rel, "
                 f"r.source_files = reduce(acc = [], x IN (coalesce(prev_sf, []) + coalesce(rel.source_files, [])) "
                 f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
                 f"r.source_quotes = coalesce(prev_sq, []) + "
-                f"[q IN coalesce(rel.source_quotes, []) WHERE NOT q IN coalesce(prev_sq, [])]"
+                f"[q IN coalesce(rel.source_quotes, []) WHERE NOT q IN coalesce(prev_sq, [])], "
+                f"r.source_claim_ids = reduce(acc = [], x IN (coalesce(prev_claim_ids, []) + coalesce(rel.source_claim_ids, [])) "
+                f"| CASE WHEN x IN acc THEN acc ELSE acc + x END)"
             )
             await neo4j_client.execute_write(query, {"rels": batch})
 
@@ -284,8 +297,6 @@ async def _embed_entities(
 ) -> None:
     if not entities:
         return
-
-    collection = chroma_client.get_or_create_collection("entities")
 
     texts = []
     for e in entities:
@@ -302,35 +313,31 @@ async def _embed_entities(
             ]
             if fact_snippets:
                 desc += f" Facts: {'; '.join(fact_snippets)}"
-        elif e.ai_insights:
-            insight_snippets = [
-                insight.get("text", "").strip()
-                for insight in e.ai_insights[:3]
-                if insight.get("text")
-            ]
-            if insight_snippets:
-                desc += f" Insights: {'; '.join(insight_snippets)}"
         texts.append(desc)
 
     embeddings = await embed_texts(texts)
 
     # Upsert so existing entities get updated embeddings (merged aliases, etc.)
-    chroma_client.upsert_embeddings(
-        collection=collection,
-        ids=[e.id for e in entities],
-        embeddings=embeddings,
-        documents=texts,
-        metadatas=[
-            {
-                "category": e.category,
-                "specific_type": e.specific_type,
-                "name": e.name,
-                "case_id": case_id,
-                "aliases": ",".join(e.aliases) if e.aliases else "",
-            }
-            for e in entities
-        ],
-    )
+    def upsert_entity_embeddings() -> None:
+        collection = chroma_client.get_or_create_collection("entities")
+        chroma_client.upsert_embeddings(
+            collection=collection,
+            ids=[e.id for e in entities],
+            embeddings=embeddings,
+            documents=texts,
+            metadatas=[
+                {
+                    "category": e.category,
+                    "specific_type": e.specific_type,
+                    "name": e.name,
+                    "case_id": case_id,
+                    "aliases": ",".join(e.aliases) if e.aliases else "",
+                }
+                for e in entities
+            ],
+        )
+
+    await asyncio.to_thread(upsert_entity_embeddings)
 
 
 # ---------------------------------------------------------------------------

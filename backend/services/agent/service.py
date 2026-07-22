@@ -31,6 +31,8 @@ from services.agent.schemas import (
 )
 import services.agent.storage as storage
 from services.ai_costs_service import CostOperationKind, record_cost
+from services.ai_model_policy import get_workload_model
+from services.ai_provider_credentials import get_provider_api_key
 from services.case_service import check_case_access
 from services.system_log_service import LogOrigin, LogType, system_log_service
 from services.significant_service import get_significant_entity_keys
@@ -57,12 +59,24 @@ class AgentService:
             else None
         )
 
-        model = get_model_by_id(request.model)
+        default_provider, default_model_id = get_workload_model(db, "agent")
+        if request.provider and request.provider != default_provider:
+            raise ValueError("Per-run provider overrides are disabled. Change Agent routing in Settings → AI settings.")
+        if request.model and request.model != default_model_id:
+            raise ValueError("Per-run model overrides are disabled. Change Agent routing in Settings → AI settings.")
+        requested_model = default_model_id
+        requested_provider = default_provider
+        model = get_model_by_id(requested_model)
         if not model:
-            raise ValueError(f"Invalid model: {request.model}")
+            raise ValueError(f"Invalid model: {requested_model}")
         provider = model.provider.value
-        if request.provider and request.provider != provider:
-            raise ValueError(f"Model {request.model} belongs to provider {provider}, not {request.provider}")
+        if requested_provider != provider:
+            raise ValueError(f"Model {requested_model} belongs to provider {provider}, not {requested_provider}")
+        api_key = get_provider_api_key(db, provider)
+        if not api_key:
+            raise ValueError(
+                f"{provider.title()} is not connected. Add its API key in Settings → AI settings."
+            )
 
         thread = self._resolve_thread(db, user=user, request=request)
         user_message = storage.append_message(
@@ -105,7 +119,7 @@ class AgentService:
                 "provider": provider,
                 "model_id": model.id,
                 "model_name": model.name,
-                "server": "OpenAI (remote)" if provider == "openai" else "Ollama (local)",
+                "server": f"{provider.title()} (remote)",
             },
         }
 
@@ -114,7 +128,7 @@ class AgentService:
             if request.case_layer == "significant"
             else self._build_history(db, thread=thread)
         )
-        runner = AgentGraphRunner(provider=provider, model_id=model.id)
+        runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key)
         final_result: dict[str, Any] | None = None
 
         try:
@@ -235,7 +249,7 @@ class AgentService:
                     provider=provider,
                     model_id=model.id,
                     model_name=model.name,
-                    server="OpenAI (remote)" if provider == "openai" else "Ollama (local)",
+                    server=f"{provider.title()} (remote)",
                 ),
                 cost=AgentCost(
                     usd=float(cost_record.cost_usd),
@@ -313,12 +327,24 @@ class AgentService:
             else None
         )
 
-        model = get_model_by_id(request.model)
+        default_provider, default_model_id = get_workload_model(db, "agent")
+        if request.provider and request.provider != default_provider:
+            raise ValueError("Per-run provider overrides are disabled. Change Agent routing in Settings → AI settings.")
+        if request.model and request.model != default_model_id:
+            raise ValueError("Per-run model overrides are disabled. Change Agent routing in Settings → AI settings.")
+        requested_model = default_model_id
+        requested_provider = default_provider
+        model = get_model_by_id(requested_model)
         if not model:
-            raise ValueError(f"Invalid model: {request.model}")
+            raise ValueError(f"Invalid model: {requested_model}")
         provider = model.provider.value
-        if request.provider and request.provider != provider:
-            raise ValueError(f"Model {request.model} belongs to provider {provider}, not {request.provider}")
+        if requested_provider != provider:
+            raise ValueError(f"Model {requested_model} belongs to provider {provider}, not {requested_provider}")
+        api_key = get_provider_api_key(db, provider)
+        if not api_key:
+            raise ValueError(
+                f"{provider.title()} is not connected. Add its API key in Settings → AI settings."
+            )
 
         thread = self._resolve_thread(db, user=user, request=request)
         user_message = None
@@ -356,7 +382,7 @@ class AgentService:
             if request.case_layer == "significant"
             else self._build_history(db, thread=thread)
         )
-        runner = AgentGraphRunner(provider=provider, model_id=model.id)
+        runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key)
 
         try:
             result = runner.invoke(
@@ -469,7 +495,7 @@ class AgentService:
                     provider=provider,
                     model_id=model.id,
                     model_name=model.name,
-                    server="OpenAI (remote)" if provider == "openai" else "Ollama (local)",
+                    server=f"{provider.title()} (remote)",
                 ),
                 cost=AgentCost(
                     usd=float(cost_record.cost_usd),

@@ -20,11 +20,6 @@ export interface SendAgentMessageParams {
   caseLayer?: CaseLayer
 }
 
-const AGENT_DEFAULTS = {
-  provider: "openai",
-  model: "gpt-5-mini",
-} as const
-
 export const agentAPI = {
   listThreads: (caseId: string) =>
     fetchAPI<AgentThreadSummary[]>(`/api/agent/threads?case_id=${caseId}`),
@@ -39,8 +34,8 @@ export const agentAPI = {
         case_id: params.caseId,
         thread_id: params.threadId || undefined,
         message: params.message,
-        provider: params.provider || AGENT_DEFAULTS.provider,
-        model: params.model || AGENT_DEFAULTS.model,
+        ...(params.provider ? { provider: params.provider } : {}),
+        ...(params.model ? { model: params.model } : {}),
         artifact_preference: params.artifactPreference || "auto",
         case_layer: params.caseLayer || "all",
         persist: true,
@@ -64,8 +59,8 @@ export const agentAPI = {
         case_id: params.caseId,
         thread_id: params.threadId || undefined,
         message: params.message,
-        provider: params.provider || AGENT_DEFAULTS.provider,
-        model: params.model || AGENT_DEFAULTS.model,
+        ...(params.provider ? { provider: params.provider } : {}),
+        ...(params.model ? { model: params.model } : {}),
         artifact_preference: params.artifactPreference || "auto",
         case_layer: params.caseLayer || "all",
         persist: true,

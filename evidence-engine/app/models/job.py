@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import BigInteger, DateTime, Enum, Float, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -55,12 +55,17 @@ class Job(Base):
     effective_mandatory_instructions: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     effective_special_entity_types: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     source_folder_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    # AI-generated document summary (first-N-chars → LLM)
+    # AI-generated document summary (full text or representative excerpts → LLM)
     document_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Full audio transcript for audio/video evidence, when extraction produced one.
     transcription: Mapped[str | None] = mapped_column(Text, nullable=True)
     requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     source_evidence_file_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    pipeline_version: Mapped[str] = mapped_column(
+        String(64), default="evidence-v2", server_default="evidence-v2", nullable=False
+    )
+    pipeline_state: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    quality_report: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -85,4 +90,34 @@ class EvidenceDocumentText(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+    )
+
+
+class EvidenceClaim(Base):
+    __tablename__ = "evidence_claims"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("evidence_files.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    revision_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    engine_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    claim_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    predicate: Mapped[str] = mapped_column(String(255), nullable=False)
+    object_value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    source_location: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="grounded")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

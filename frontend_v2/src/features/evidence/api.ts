@@ -6,6 +6,7 @@ import type {
   IngestionLog,
   WiretapCheckResult,
   LLMModel,
+  AIModelPolicy,
   EvidenceDocumentMatchesResponse,
   EvidenceTextSearchResponse,
 } from "@/types/evidence.types"
@@ -231,4 +232,10 @@ export const llmConfigAPI = {
     const qs = provider ? `?provider=${provider}` : ""
     return fetchAPI<{ models: LLMModel[] }>(`/api/llm-config/models${qs}`)
   },
+  getPolicy: () => fetchAPI<AIModelPolicy>("/api/llm-config/policy"),
+  updatePolicy: (revision: number, configuration: AIModelPolicy["configuration"]) =>
+    fetchAPI<AIModelPolicy>("/api/llm-config/policy", {
+      method: "PUT",
+      body: { revision, configuration },
+    }),
 }

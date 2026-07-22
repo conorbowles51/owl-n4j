@@ -9,10 +9,15 @@ The evidence-engine publishes progress to Redis pub/sub on channel
 import asyncio
 import json
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from config import REDIS_URL
+from postgres.models.user import User
+from postgres.session import get_background_session
+from services.auth_service import auth_service
+from services.case_service import get_case_if_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +63,37 @@ async def _check_job_terminal(job_id: str) -> dict | None:
     return None
 
 
+async def _authorize_job_subscription(websocket: WebSocket, job_id: str) -> bool:
+    """Require a valid login and case-view permission before exposing progress."""
+    token = websocket.cookies.get("access_token")
+    if not token:
+        await websocket.close(code=1008, reason="Authentication required")
+        return False
+
+    try:
+        token_data = auth_service["verify_access_token"](token)
+        email = token_data["username"]
+
+        from services import evidence_engine_client
+
+        job = await evidence_engine_client.get_job(job_id)
+        case_id = UUID(str(job["case_id"]))
+
+        def check_case_access() -> None:
+            with get_background_session() as db:
+                user = db.query(User).filter(User.email == email).first()
+                if user is None or not user.is_active:
+                    raise PermissionError("User is unavailable")
+                get_case_if_allowed(db, case_id, user)
+
+        await asyncio.to_thread(check_case_access)
+        return True
+    except Exception:
+        logger.warning("Rejected unauthorized evidence job subscription for job %s", job_id)
+        await websocket.close(code=1008, reason="Not authorized for this evidence job")
+        return False
+
+
 @router.websocket("/api/evidence/ws/jobs/{job_id}")
 async def job_progress_ws(websocket: WebSocket, job_id: str):
     """
@@ -68,6 +104,8 @@ async def job_progress_ws(websocket: WebSocket, job_id: str):
 
     The connection closes automatically when the job reaches "completed" or "failed".
     """
+    if not await _authorize_job_subscription(websocket, job_id):
+        return
     await websocket.accept()
 
     # If the job already finished before we connected, send status immediately
@@ -77,10 +115,11 @@ async def job_progress_ws(websocket: WebSocket, job_id: str):
         await websocket.close()
         return
 
+    pubsub = None
+    channel = f"job:{job_id}:progress"
     try:
         redis = await _get_redis()
         pubsub = redis.pubsub()
-        channel = f"job:{job_id}:progress"
         await pubsub.subscribe(channel)
 
         # Re-check after subscribing to close the race window
@@ -111,14 +150,15 @@ async def job_progress_ws(websocket: WebSocket, job_id: str):
     except WebSocketDisconnect:
         logger.debug("Client disconnected from job progress WS: %s", job_id)
     except Exception as e:
-        logger.error("Error in job progress WS for %s: %s", job_id, e)
+        logger.exception("Error in job progress WS for %s", job_id)
         try:
-            await websocket.send_json({"error": str(e)})
+            await websocket.send_json({"error": "Evidence progress stream unavailable"})
         except Exception:
             pass
     finally:
-        try:
-            await pubsub.unsubscribe(channel)
-            await pubsub.close()
-        except Exception:
-            pass
+        if pubsub is not None:
+            try:
+                await pubsub.unsubscribe(channel)
+                await pubsub.close()
+            except Exception:
+                logger.debug("Failed to close evidence progress subscription", exc_info=True)

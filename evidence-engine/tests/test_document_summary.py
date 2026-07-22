@@ -14,12 +14,14 @@ async def test_generate_document_summary_includes_processing_profile(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    async def fake_chat_completion(*, messages: list[dict[str, str]], model: str) -> str:
+    async def fake_chat_completion(**kwargs: Any) -> str:
+        messages = kwargs["messages"]
+        if kwargs.get("response_format"):
+            return '{"corrected_summary":"summary text","correction_count":0}'
         captured["messages"] = messages
-        captured["model"] = model
+        captured["workload"] = kwargs.get("workload")
         return "  summary text  "
 
-    monkeypatch.setattr(summary_module.settings, "openai_document_summary_model", "summary-test")
     monkeypatch.setattr(summary_module, "chat_completion", fake_chat_completion)
 
     doc = ExtractedDocument(
@@ -43,8 +45,10 @@ async def test_generate_document_summary_includes_processing_profile(
     )
 
     assert result == "summary text"
-    assert captured["model"] == "summary-test"
-    prompt = captured["messages"][0]["content"]
+    assert captured["workload"] == "ingestion_document_summary"
+    assert captured["messages"][0]["role"] == "system"
+    assert "untrusted evidence data" in captured["messages"][0]["content"]
+    prompt = captured["messages"][-1]["content"]
     assert "All calls in this folder were made by Timothy." in prompt
     assert "Identify Timothy as the caller" in prompt
     assert "Jail Call Participant" in prompt
@@ -67,6 +71,104 @@ async def test_generate_document_summary_skips_short_content(
     )
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_document_summary_failure_is_recorded_for_quality_reporting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_chat_completion(**_: object) -> str:
+        raise RuntimeError("summary provider unavailable")
+
+    monkeypatch.setattr(summary_module, "chat_completion", fail_chat_completion)
+    document = ExtractedDocument(
+        text="This source has enough material to require a document summary. " * 3
+    )
+
+    result = await summary_module.generate_document_summary(document, "report.txt")
+
+    assert result is None
+    assert document.metadata["document_summary_status"] == "failed"
+    assert "summary provider unavailable" in document.metadata["document_summary_error"]
+
+
+@pytest.mark.asyncio
+async def test_large_document_requests_a_comprehensive_multi_paragraph_overview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_chat_completion(**kwargs: Any) -> str:
+        prompt = kwargs["messages"][-1]["content"]
+        if kwargs.get("response_format"):
+            return '{"corrected_summary":"summary","correction_count":0}'
+        captured["prompt"] = prompt
+        return "summary"
+
+    monkeypatch.setattr(summary_module, "chat_completion", fake_chat_completion)
+    document = ExtractedDocument(
+        text=(
+            "This is representative evidence from a lengthy investigative report. "
+            "It identifies the principal subjects, events, transactions, and findings."
+        ),
+        metadata={"file_type": "pdf", "page_count": 400},
+    )
+
+    await summary_module.generate_document_summary(document, "long-report.pdf")
+
+    prompt = captured["prompt"]
+    assert "standalone, comprehensive narrative summary" in prompt
+    assert "five to eight substantive paragraphs" in prompt
+    assert "Do not limit the Overview to an abstract or a few introductory sentences" in prompt
+    assert "distinguish documented facts from attributed allegations" in prompt
+
+
+@pytest.mark.asyncio
+async def test_oversized_document_summarizes_every_source_segment_before_reduction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompts: list[str] = []
+
+    async def fake_chat_completion(**kwargs: Any) -> str:
+        prompt = kwargs["messages"][-1]["content"]
+        prompts.append(prompt)
+        if kwargs.get("response_format"):
+            return '{"corrected_summary":"final summary","correction_count":0}'
+        if "SOURCE SEGMENT" in prompt:
+            if "START OF DOCUMENT" in prompt:
+                return "Digest containing START OF DOCUMENT"
+            if "MIDDLE OF DOCUMENT" in prompt:
+                return "Digest containing MIDDLE OF DOCUMENT"
+            if "END OF DOCUMENT" in prompt:
+                return "Digest containing END OF DOCUMENT"
+            return "Digest of intervening source material"
+        return "final summary"
+
+    monkeypatch.setattr(summary_module, "chat_completion", fake_chat_completion)
+    content = (
+        "START OF DOCUMENT: opening allegation and scope.\n\n"
+        + ("Early evidence and procedural history. " * 700)
+        + "\n\nMIDDLE OF DOCUMENT: central transaction findings.\n\n"
+        + ("Later evidence and witness material. " * 700)
+        + "\n\nEND OF DOCUMENT: final findings and requested action."
+    )
+    assert len(content) > summary_module.MAX_CONTENT_CHARS
+
+    await summary_module.generate_document_summary(
+        ExtractedDocument(
+            text=content,
+            metadata={"file_type": "pdf", "page_count": 150},
+        ),
+        "oversized-report.pdf",
+    )
+
+    map_prompts = [prompt for prompt in prompts if "SOURCE SEGMENT" in prompt]
+    assert len(map_prompts) >= 3
+    assert "START OF DOCUMENT" in "\n".join(map_prompts)
+    assert "MIDDLE OF DOCUMENT" in "\n".join(map_prompts)
+    assert "END OF DOCUMENT" in "\n".join(map_prompts)
+    synthesis_prompt = next(prompt for prompt in prompts if "COMPLETE SET OF SOURCE-SEGMENT DIGESTS" in prompt)
+    assert "representative excerpts" not in synthesis_prompt
 
 
 @pytest.mark.asyncio

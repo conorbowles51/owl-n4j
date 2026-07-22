@@ -13,7 +13,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph, add_messages
 
-from config import OPENAI_API_KEY
+from config import ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
 from services.agent.tools import AgentToolContext, make_agent_tools
 
@@ -352,21 +352,50 @@ def _budget_continuation_clarification(max_tool_calls: int) -> dict[str, Any]:
 
 
 class AgentGraphRunner:
-    def __init__(self, *, provider: str, model_id: str):
-        if provider != "openai":
-            raise ValueError("Agent mode currently requires the OpenAI provider for reliable tool calling")
-        if not OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY is required for Agent mode")
-
+    def __init__(self, *, provider: str, model_id: str, api_key: str | None = None):
         self.provider = provider
         self.model_id = model_id
-        self.base_model = ChatOpenAI(
-            model=model_id,
-            api_key=OPENAI_API_KEY,
-            timeout=180,
-            max_retries=2,
-            use_responses_api=True,
-        )
+        if provider == "openai":
+            resolved_api_key = api_key or OPENAI_API_KEY
+            if not resolved_api_key:
+                raise ValueError("OPENAI_API_KEY is required for Agent mode")
+            self.base_model = ChatOpenAI(
+                model=model_id,
+                api_key=resolved_api_key,
+                timeout=180,
+                max_retries=2,
+                use_responses_api=True,
+            )
+        elif provider == "anthropic":
+            resolved_api_key = api_key or ANTHROPIC_API_KEY
+            if not resolved_api_key:
+                raise ValueError("ANTHROPIC_API_KEY is required for Agent mode")
+            try:
+                from langchain_anthropic import ChatAnthropic
+            except ImportError as exc:
+                raise ValueError("Anthropic agent support is not installed") from exc
+            self.base_model = ChatAnthropic(
+                model=model_id,
+                anthropic_api_key=resolved_api_key,
+                timeout=180,
+                max_retries=2,
+            )
+        elif provider == "gemini":
+            resolved_api_key = api_key or GEMINI_API_KEY
+            if not resolved_api_key:
+                raise ValueError("GEMINI_API_KEY is required for Agent mode")
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+            except ImportError as exc:
+                raise ValueError("Gemini agent support is not installed") from exc
+            self.base_model = ChatGoogleGenerativeAI(
+                model=model_id,
+                google_api_key=resolved_api_key,
+                timeout=180,
+                max_retries=2,
+            )
+        else:
+            raise ValueError(f"Agent mode does not support provider: {provider}")
 
     def invoke(
         self,

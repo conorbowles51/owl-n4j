@@ -44,18 +44,11 @@ interface ChatSuggestionsResponse {
   suggestions: ChatSuggestion[]
 }
 
-const CHAT_DEFAULTS = {
-  provider: "openai",
-  model: "gpt-5-mini",
-} as const
-
 export const chatAPI = {
   ask: (params: ChatRequest) =>
     fetchAPI<ChatResponse>("/api/chat", {
       method: "POST",
       body: {
-        provider: CHAT_DEFAULTS.provider,
-        model: CHAT_DEFAULTS.model,
         persist: true,
         ...params,
       },

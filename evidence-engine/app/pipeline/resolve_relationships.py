@@ -10,7 +10,8 @@ from typing import Any
 from app.config import settings
 from app.ontology.schema_builder import get_relationship_resolution_schema
 from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
-from app.pipeline.resolve_entities import ResolvedRelationship
+from app.pipeline.prompt_security import secure_system_prompt
+from app.pipeline.resolve_entities import ResolvedEntity, ResolvedRelationship
 from app.services.openai_client import chat_completion
 
 logger = logging.getLogger(__name__)
@@ -29,15 +30,66 @@ def _group_key(rel: ResolvedRelationship) -> tuple[str, str, str]:
     return (rel.source_entity_id, rel.target_entity_id, _normalize_type(rel.type))
 
 
+def _canonicalize_semantics(
+    relationships: list[ResolvedRelationship],
+    entities: list[ResolvedEntity] | None,
+) -> list[ResolvedRelationship]:
+    """Apply high-confidence direction and allegation rules before deduplication."""
+    if not entities:
+        return relationships
+    categories = {entity.id: entity.category for entity in entities}
+    allegation_markers = ("alleged", "allegation", "accused", "suspected", "co-conspirator")
+    phone_markers = ("phone", "handset", "cell site", "cell-site", "tower", "imei", "imsi")
+
+    for relationship in relationships:
+        normalized_type = _normalize_type(relationship.type)
+        source_category = categories.get(relationship.source_entity_id)
+        target_category = categories.get(relationship.target_entity_id)
+        evidence_text = " ".join(
+            [relationship.detail, *relationship.source_quotes]
+        ).lower()
+
+        if normalized_type in {"SENT_PAYMENT", "RECEIVED_PAYMENT"}:
+            # Both predicates describe a party's role in a Transaction, so the
+            # party is always the source and the Transaction is always target.
+            if source_category == "Transaction" and target_category != "Transaction":
+                relationship.source_entity_id, relationship.target_entity_id = (
+                    relationship.target_entity_id,
+                    relationship.source_entity_id,
+                )
+
+        if normalized_type == "TRAVELED_TO" and any(marker in evidence_text for marker in phone_markers):
+            relationship.type = "PHONE_ACTIVITY_OBSERVED_AT"
+            relationship.properties.setdefault("observation_basis", "telecommunications data")
+
+        if normalized_type == "KNOWN_ASSOCIATE_OF" and any(
+            marker in evidence_text for marker in allegation_markers
+        ):
+            relationship.type = "ALLEGED_ASSOCIATE_OF"
+            relationship.properties.setdefault("assertion_status", "alleged")
+
+        if normalized_type in {"OWNER_OF_PROPERTY", "OWNS_PROPERTY"} and target_category == "Transaction":
+            relationship.type = "PARTICIPATED_IN"
+            relationship.properties.setdefault("role", "buyer or purchaser")
+
+    return relationships
+
+
 def _merge_group(rels: list[ResolvedRelationship]) -> ResolvedRelationship:
     """Merge a group of relationships with identical key into one."""
     all_quotes: list[str] = []
     all_files: set[str] = set()
     merged_props: dict[str, Any] = {}
+    all_locations: list[dict[str, Any]] = []
+    all_claim_ids: set[str] = set()
 
     for r in rels:
         all_quotes.extend(r.source_quotes)
         all_files.update(r.source_files)
+        for location in r.source_locations:
+            if location not in all_locations:
+                all_locations.append(location)
+        all_claim_ids.update(r.source_claim_ids)
         for k, v in r.properties.items():
             if k not in merged_props or not merged_props[k]:
                 merged_props[k] = v
@@ -62,6 +114,8 @@ def _merge_group(rels: list[ResolvedRelationship]) -> ResolvedRelationship:
         source_quotes=unique_quotes,
         confidence=max(r.confidence for r in rels),
         source_files=sorted(all_files),
+        source_locations=all_locations,
+        source_claim_ids=sorted(all_claim_ids),
         mandatory_instructions=merge_mandatory_instructions(
             *[r.mandatory_instructions for r in rels]
         ),
@@ -141,7 +195,7 @@ async def _normalize_near_duplicate_types(
             messages=[
                 {
                     "role": "system",
-                    "content": (
+                    "content": secure_system_prompt(
                         "You are a relationship deduplication expert. "
                         "Mandatory profile rules in the user prompt are binding. "
                         "Do not normalize relationship types or details in a way that breaks those rules. "
@@ -150,7 +204,7 @@ async def _normalize_near_duplicate_types(
                 },
                 {"role": "user", "content": prompt},
             ],
-            model=settings.openai_resolution_model,
+            workload="ingestion_resolution",
             response_format=get_relationship_resolution_schema(),
         )
         data = json.loads(response)
@@ -190,11 +244,13 @@ async def _normalize_near_duplicate_types(
 
 async def resolve_relationships(
     relationships: list[ResolvedRelationship],
+    entities: list[ResolvedEntity] | None = None,
 ) -> list[ResolvedRelationship]:
     """Deduplicate relationships via exact-match grouping + LLM type normalization."""
     if not relationships:
         return []
 
+    relationships = _canonicalize_semantics(relationships, entities)
     original_count = len(relationships)
 
     # Tier 1: Exact match grouping

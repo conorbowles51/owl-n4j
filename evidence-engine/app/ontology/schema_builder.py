@@ -106,6 +106,7 @@ def _entity_item_schema(categories: list[str]) -> dict[str, Any]:
             },
             "ai_insights": {
                 "type": "array",
+                "maxItems": 0,
                 "items": {
                     "type": "object",
                     "properties": {

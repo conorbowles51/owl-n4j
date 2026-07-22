@@ -123,6 +123,9 @@ _NOISE_RULES = """\
 - Do NOT extract entities mentioned only in passing with no investigative relevance
 - Every entity must have a specific name or identifier
 - Prefer fewer, high-quality entities over many low-quality ones
+- Do not create standalone entities for totals, aggregate labels, headings, transcript markers, or generic references such as "the report" or "audio recording"
+- A referenced document or media item is not the same as an ingested evidence file; only retain it when it has a unique title/identifier and is materially involved
+- Retain named courts, judges, prosecutors, regulators, and law-enforcement organizations when they issue, request, authorize, receive, or carry out a material action
 - LOCATION EXCEPTION: retain every source-supported geographic reference regardless of specificity; the GEO FIELD RULES control location extraction"""
 
 
@@ -222,7 +225,7 @@ def build_entity_extraction_prompt(
         "- source_quote: the exact text span that supports this entity\n"
         "- confidence: 0.0 to 1.0\n"
         "- verified_facts: direct facts only, each with text, exact quote, page number, and importance 1-5\n"
-        "- ai_insights: optional inferences only, each with text, confidence, and reasoning\n"
+        "- ai_insights: always return an empty array; automated ingestion must not generate opinions or hypotheses\n"
         "- financial_provenance: null for non-financial entities, otherwise an object containing the required financial provenance fields"
     )
 
@@ -247,7 +250,7 @@ def build_entity_extraction_prompt(
         "- verified_facts must be directly supported by the text in this chunk\n"
         "- Every verified fact must include an exact supporting quote\n"
         "- Use the page number shown above when available; otherwise use null\n"
-        "- ai_insights are optional and must contain only analysis or inference, never direct facts\n"
+        "- ai_insights must be []; analysis and hypotheses belong in investigator-controlled workspace tools, not evidence ingestion\n"
         "- If a statement is not explicitly supported by the document text, it must NOT appear in verified_facts"
     )
 
@@ -324,6 +327,11 @@ def build_relationship_extraction_prompt(
         "RULES:",
         "- Only extract relationships clearly supported by the text",
         "- Do NOT infer relationships not stated or strongly implied",
+        "- Relationship direction must follow the type definition shown above; do not reverse source and target",
+        "- SENT_PAYMENT and RECEIVED_PAYMENT both point from the person/organization/account party to the Transaction entity",
+        "- Phone or cell-tower activity does not prove that a person traveled; use PHONE_ACTIVITY_OBSERVED_AT rather than TRAVELED_TO unless travel is explicitly documented",
+        "- If an association is alleged, suspected, or attributed to an accuser, preserve that qualifier in the relationship type/detail and never label it as a known fact",
+        "- OWNER_OF_PROPERTY must target a property or asset, never a purchase Transaction; use PARTICIPATED_IN for the purchase event",
         "- Both entities in a relationship must be from the provided list",
         "- Prefer specific relationship types over ASSOCIATED_WITH when possible",
         "",

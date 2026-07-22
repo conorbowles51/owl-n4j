@@ -61,13 +61,6 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Markdown } from "@/components/ui/markdown"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { downloadProtectedFile } from "@/lib/protected-file"
@@ -86,6 +79,7 @@ import {
 } from "@/components/ui/resizable"
 import { cn } from "@/lib/cn"
 import { agentAPI } from "../api"
+import { ActiveAIModel } from "@/features/settings/components/ActiveAIModel"
 import type { AgentArtifactExportFormat } from "../api"
 import type {
   AgentArtifact,
@@ -98,13 +92,6 @@ import type {
 } from "../types"
 
 type Dict = Record<string, unknown>
-
-const AGENT_MODEL_OPTIONS = [
-  { id: "gpt-5-mini", name: "GPT-5 Mini", provider: "openai" },
-  { id: "gpt-5", name: "GPT-5", provider: "openai" },
-] as const
-
-type AgentModelId = (typeof AGENT_MODEL_OPTIONS)[number]["id"]
 
 const INVESTIGATION_TRAIL_SETTING_KEY = "owl.agent.showInvestigationTrail"
 
@@ -552,7 +539,6 @@ export function AgentPage() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [runStatusText, setRunStatusText] = useState<string | null>(null)
   const [pendingClarification, setPendingClarification] = useState<AgentClarification | null>(null)
-  const [selectedModelId, setSelectedModelId] = useState<AgentModelId>("gpt-5-mini")
   const [showInvestigationTrail, setShowInvestigationTrail] = useState(loadInvestigationTrailSetting)
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   const [detailsPanelOpen, setDetailsPanelOpen] = useState(false)
@@ -574,8 +560,6 @@ export function AgentPage() {
     }
   }, [sharedPanelCollapsed, sharedPanelTab])
 
-  const selectedModel =
-    AGENT_MODEL_OPTIONS.find((model) => model.id === selectedModelId) ?? AGENT_MODEL_OPTIONS[0]
   const visibleToolTrace = useMemo(
     () => toolTrace.filter((tool) => tool.name !== "request_clarification"),
     [toolTrace]
@@ -691,8 +675,6 @@ export function AgentPage() {
           caseId,
           message: prompt,
           threadId: activeThreadId,
-          provider: selectedModel.provider,
-          model: selectedModel.id,
           caseLayer,
         },
         (event) => {
@@ -975,25 +957,7 @@ export function AgentPage() {
                     </div>
                   </PopoverContent>
                 </Popover>
-                <Select
-                  value={selectedModelId}
-                  onValueChange={(value) => setSelectedModelId(value as AgentModelId)}
-                  disabled={isLoading}
-                >
-                  <SelectTrigger
-                    className="h-7 w-[132px] rounded-full text-xs"
-                    aria-label="Agent model"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent align="end">
-                    {AGENT_MODEL_OPTIONS.map((model) => (
-                      <SelectItem key={model.id} value={model.id} className="text-xs">
-                        {model.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ActiveAIModel workload="agent" />
                 <Badge variant="outline">
                   {artifacts.length} artifacts
                 </Badge>

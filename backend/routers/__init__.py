@@ -21,6 +21,7 @@ from routers.system_logs import router as system_logs_router
 from routers.backfill import router as backfill_router
 from routers.database import router as database_router
 from routers.llm_config import router as llm_config_router
+from routers.ai_settings import router as ai_settings_router
 from routers.workspace import router as workspace_router
 from routers.users import router as users_router
 from routers.setup import router as setup_router
@@ -56,6 +57,7 @@ __all__ = [
     "backfill_router",
     "database_router",
     "llm_config_router",
+    "ai_settings_router",
     "workspace_router",
     "users_router",
     "setup_router",

@@ -81,6 +81,27 @@ describe("fetchAPI", () => {
     }
   })
 
+  it("uses the message from structured API errors", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: {
+            code: "provider_credential_invalid",
+            message: "Anthropic rejected this API key.",
+          },
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } }
+      )
+    )
+
+    try {
+      await fetchAPI("/api/ai-settings/providers/anthropic/credential")
+      expect.unreachable("should have thrown")
+    } catch (err) {
+      expect((err as ApiError).message).toBe("Anthropic rejected this API key.")
+    }
+  })
+
   it("returns undefined for 204 responses", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(null, { status: 204 })

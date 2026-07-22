@@ -109,6 +109,16 @@ def require_admin(current_user: User = Depends(get_current_db_user)) -> User:
     return current_user
 
 
+def require_super_admin(current_user: User = Depends(get_current_db_user)) -> User:
+    """Dependency for billing-sensitive, deployment-wide secret management."""
+    if current_user.global_role != GlobalRole.super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super administrator privileges required",
+        )
+    return current_user
+
+
 # --- Routes ---
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

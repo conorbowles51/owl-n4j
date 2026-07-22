@@ -353,30 +353,47 @@ class VectorDBService:
 
         where = filter_metadata if filter_metadata else None
 
-        # Clamp n_results to collection size
+        # Fetch beyond the caller's limit because staged/retired revisions are
+        # deliberately filtered client-side. Missing state is accepted for
+        # chunks created before revision publication was introduced.
         count = self.chunk_collection.count()
-        if count == 0:
+        if count == 0 or top_k <= 0:
             return []
-        n_results = min(top_k, count)
+        n_results = min(max(top_k * 5, top_k + 20), count)
 
         try:
-            results = self.chunk_collection.query(
-                query_embeddings=[query_embedding],
-                n_results=n_results,
-                where=where
-            )
+            while True:
+                results = self.chunk_collection.query(
+                    query_embeddings=[query_embedding],
+                    n_results=n_results,
+                    where=where
+                )
 
-            formatted = []
-            if results["ids"] and len(results["ids"][0]) > 0:
-                for i in range(len(results["ids"][0])):
-                    formatted.append({
-                        "id": results["ids"][0][i],
-                        "text": results["documents"][0][i],
-                        "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                        "distance": results["distances"][0][i] if "distances" in results and results["distances"] else None
-                    })
+                formatted = []
+                result_ids = results.get("ids") or [[]]
+                returned_count = len(result_ids[0]) if result_ids else 0
+                if returned_count > 0:
+                    for i in range(returned_count):
+                        metadata = results["metadatas"][0][i] if results["metadatas"] else {}
+                        publication_state = metadata.get("ingestion_state")
+                        if publication_state not in (None, "", "active"):
+                            continue
+                        formatted.append({
+                            "id": results["ids"][0][i],
+                            "text": results["documents"][0][i],
+                            "metadata": metadata,
+                            "distance": results["distances"][0][i] if "distances" in results and results["distances"] else None
+                        })
+                        if len(formatted) == top_k:
+                            break
 
-            return formatted
+                if (
+                    len(formatted) >= top_k
+                    or n_results == count
+                    or returned_count < n_results
+                ):
+                    return formatted
+                n_results = min(count, max(n_results * 2, n_results + top_k * 5))
         except Exception as e:
             print(f"[VectorDB] Chunk search error: {e}")
             return []
@@ -397,6 +414,34 @@ class VectorDBService:
                 self.chunk_collection.delete(ids=results["ids"])
         except Exception as e:
             print(f"[VectorDB] Delete chunks error: {e}")
+
+    def delete_chunks_for_document(
+        self,
+        *,
+        case_id: str,
+        evidence_file_id: str,
+        doc_key: str | None = None,
+        file_name: str | None = None,
+    ) -> int:
+        """Delete current and legacy chunks for one case-scoped evidence file."""
+        selectors: list[dict] = [
+            {"evidence_file_id": evidence_file_id},
+            {"doc_id": evidence_file_id},
+        ]
+        if doc_key:
+            selectors.extend(({"doc_key": doc_key}, {"doc_id": doc_key}))
+        if file_name:
+            selectors.extend(({"doc_id": file_name}, {"file_name": file_name}))
+
+        chunk_ids: set[str] = set()
+        for selector in selectors:
+            results = self.chunk_collection.get(
+                where={"$and": [{"case_id": case_id}, selector]}
+            )
+            chunk_ids.update(str(chunk_id) for chunk_id in (results.get("ids") or []))
+        if chunk_ids:
+            self.chunk_collection.delete(ids=sorted(chunk_ids))
+        return len(chunk_ids)
 
     def delete_chunk(self, chunk_id: str) -> None:
         """Delete a single chunk embedding."""

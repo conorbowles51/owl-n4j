@@ -1,4 +1,5 @@
 import base64
+import asyncio
 import csv
 import io
 import json
@@ -7,6 +8,9 @@ import os
 import re
 import subprocess
 import tempfile
+import zipfile
+from email import policy
+from email.parser import BytesParser
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,6 +30,15 @@ AUDIO_EXTENSIONS = {
 }
 VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".gif"}
+PLAIN_TEXT_EXTENSIONS = {
+    ".txt",
+    ".log",
+    ".json",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".sri",
+}
 MAX_WHISPER_SIZE = 25 * 1024 * 1024  # 25 MB
 MIN_AUDIO_TRANSCRIPTION_SEGMENT_SECONDS = 60
 TRANSCRIPTION_PROMPT_CONTEXT_CHARS = 1200
@@ -36,6 +49,36 @@ class ExtractedDocument:
     text: str
     metadata: dict[str, Any] = field(default_factory=dict)
     tables: list[str] = field(default_factory=list)
+
+
+def _validate_office_archive(file_path: str) -> None:
+    try:
+        with zipfile.ZipFile(file_path) as archive:
+            entries = archive.infolist()
+            if len(entries) > settings.max_office_archive_entries:
+                raise ValueError(
+                    f"Office document contains {len(entries)} archive entries; the configured "
+                    f"limit is {settings.max_office_archive_entries}"
+                )
+            uncompressed_size = sum(entry.file_size for entry in entries)
+            if uncompressed_size > settings.max_office_uncompressed_bytes:
+                raise ValueError(
+                    f"Office document expands to {uncompressed_size} bytes; the configured "
+                    f"limit is {settings.max_office_uncompressed_bytes} bytes"
+                )
+            if any(entry.flag_bits & 0x1 for entry in entries):
+                raise ValueError("Encrypted Office documents are not supported")
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Office document is not a valid ZIP-based file") from exc
+
+
+def _validate_text_input_size(file_path: str) -> None:
+    file_size = os.path.getsize(file_path)
+    if file_size > settings.max_text_input_bytes:
+        raise ValueError(
+            f"Text-like input is {file_size} bytes; the configured limit is "
+            f"{settings.max_text_input_bytes} bytes"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +116,7 @@ def _extract_docx(file_path: str) -> ExtractedDocument:
 def _extract_xlsx(file_path: str) -> ExtractedDocument:
     wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
     tables: list[str] = []
+    extracted_characters = 0
 
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
@@ -80,7 +124,14 @@ def _extract_xlsx(file_path: str) -> ExtractedDocument:
         for row in ws.iter_rows(values_only=True):
             cells = [str(c) if c is not None else "" for c in row]
             if any(c.strip() for c in cells):
-                rows.append(" | ".join(cells))
+                rendered_row = " | ".join(cells)
+                extracted_characters += len(rendered_row) + 1
+                if extracted_characters > settings.max_extracted_characters:
+                    wb.close()
+                    raise ValueError(
+                        "Spreadsheet extracted content exceeds the configured character limit"
+                    )
+                rows.append(rendered_row)
         if rows:
             tables.append(f"[Sheet: {sheet_name}]\n" + "\n".join(rows))
 
@@ -107,7 +158,11 @@ def _extract_csv(file_path: str) -> ExtractedDocument:
 
     reader = csv.DictReader(io.StringIO(raw))
     rows_data: list[dict[str, str]] = []
+    extracted_characters = 0
     for row in reader:
+        extracted_characters += sum(len(str(key)) + len(str(value)) for key, value in row.items())
+        if extracted_characters > settings.max_extracted_characters:
+            raise ValueError("CSV extracted content exceeds the configured character limit")
         rows_data.append(row)
 
     text = json.dumps(rows_data, indent=2, default=str) if rows_data else ""
@@ -194,6 +249,66 @@ def _extract_markdown(file_path: str) -> ExtractedDocument:
     return ExtractedDocument(
         text=text,
         metadata={"file_type": "markdown"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# RFC 5322 email
+# ---------------------------------------------------------------------------
+
+def _extract_eml(file_path: str) -> ExtractedDocument:
+    with open(file_path, "rb") as source:
+        message = BytesParser(policy=policy.default).parse(source)
+
+    header_names = ("From", "To", "Cc", "Bcc", "Subject", "Date", "Message-ID")
+    headers = [
+        f"{name}: {message.get(name)}"
+        for name in header_names
+        if message.get(name)
+    ]
+    plain_parts: list[str] = []
+    html_parts: list[str] = []
+    attachment_names: list[str] = []
+
+    for part in message.walk():
+        if part.is_multipart():
+            continue
+        if part.get_content_disposition() == "attachment":
+            if part.get_filename():
+                attachment_names.append(str(part.get_filename()))
+            continue
+        content_type = part.get_content_type()
+        if content_type not in {"text/plain", "text/html"}:
+            continue
+        try:
+            content = str(part.get_content() or "").strip()
+        except (LookupError, UnicodeError):
+            payload = part.get_payload(decode=True) or b""
+            content = payload.decode("utf-8", errors="replace").strip()
+        if not content:
+            continue
+        if content_type == "text/plain":
+            plain_parts.append(content)
+        else:
+            try:
+                from lxml import html as lxml_html
+
+                content = lxml_html.fromstring(content).text_content()
+            except Exception:
+                content = re.sub(r"<[^>]+>", " ", content)
+            html_parts.append(re.sub(r"[ \t]+", " ", content).strip())
+
+    body_parts = plain_parts or html_parts
+    text = "\n".join(headers)
+    if body_parts:
+        text += "\n\n" + "\n\n".join(body_parts)
+    return ExtractedDocument(
+        text=text.strip(),
+        metadata={
+            "file_type": "eml",
+            "attachment_count": len(attachment_names),
+            "attachment_names": attachment_names,
+        },
     )
 
 
@@ -476,7 +591,11 @@ def _extract_text_tesseract(file_path: str) -> str:
     from PIL import Image
 
     img = Image.open(file_path)
-    text = pytesseract.image_to_string(img, lang=settings.tesseract_lang)
+    text = pytesseract.image_to_string(
+        img,
+        lang=settings.tesseract_lang,
+        timeout=settings.pdf_ocr_page_timeout_seconds,
+    )
     img.close()
     return text.strip()
 
@@ -524,32 +643,31 @@ async def _describe_image_vision(file_path: str, file_name: str) -> str:
 
 
 async def _extract_image(file_path: str, file_name: str) -> ExtractedDocument:
-    metadata = _extract_image_metadata(file_path)
+    file_size = os.path.getsize(file_path)
+    if file_size > settings.max_image_file_bytes:
+        raise ValueError(
+            f"Image is {file_size} bytes; the configured limit is "
+            f"{settings.max_image_file_bytes} bytes"
+        )
+    metadata = await asyncio.to_thread(_extract_image_metadata, file_path)
+    pixel_count = int(metadata.get("width", 0) or 0) * int(metadata.get("height", 0) or 0)
+    if pixel_count > settings.max_image_pixels:
+        raise ValueError(
+            f"Image has {pixel_count} pixels; the configured limit is "
+            f"{settings.max_image_pixels} pixels"
+        )
     provider = settings.image_provider.lower()
-    text = ""
 
     if provider == "openai":
-        try:
-            text = await _describe_image_vision(file_path, file_name)
-            metadata["image_provider"] = "openai_vision"
-        except Exception as e:
-            logger.warning("OpenAI Vision failed, falling back to Tesseract: %s", e)
-            try:
-                text = _extract_text_tesseract(file_path)
-                metadata["image_provider"] = "tesseract_fallback"
-            except Exception:
-                logger.error("Both image extraction methods failed for %s", file_name)
+        text = await _describe_image_vision(file_path, file_name)
+        metadata["image_provider"] = "openai_vision"
+    elif provider == "tesseract":
+        text = await asyncio.to_thread(_extract_text_tesseract, file_path)
+        metadata["image_provider"] = "tesseract"
     else:
-        try:
-            text = _extract_text_tesseract(file_path)
-            metadata["image_provider"] = "tesseract"
-        except Exception as e:
-            logger.warning("Tesseract failed, falling back to OpenAI Vision: %s", e)
-            try:
-                text = await _describe_image_vision(file_path, file_name)
-                metadata["image_provider"] = "openai_vision_fallback"
-            except Exception:
-                logger.error("Both image extraction methods failed for %s", file_name)
+        raise ValueError(
+            f"Unsupported IMAGE_PROVIDER={settings.image_provider!r}; expected 'tesseract' or 'openai'"
+        )
 
     return ExtractedDocument(text=text, metadata=metadata)
 
@@ -693,6 +811,12 @@ async def _extract_video(file_path: str, file_name: str) -> ExtractedDocument:
 # ---------------------------------------------------------------------------
 
 def _sanitize_extracted(doc: ExtractedDocument) -> ExtractedDocument:
+    character_count = len(doc.text) + sum(len(table) for table in (doc.tables or []))
+    if character_count > settings.max_extracted_characters:
+        raise ValueError(
+            f"Extracted content has {character_count} characters; the configured limit is "
+            f"{settings.max_extracted_characters}"
+        )
     return ExtractedDocument(
         text=sanitize_text(doc.text),
         metadata=sanitize_json(doc.metadata) if doc.metadata else {},
@@ -722,27 +846,49 @@ async def extract_text(
             metadata=pdf.metadata,
             tables=pdf.tables,
         )
-    elif ext in (".docx", ".doc"):
-        doc = _extract_docx(file_path)
-    elif ext in (".xlsx", ".xls"):
-        doc = _extract_xlsx(file_path)
+    elif ext == ".docx":
+        await asyncio.to_thread(_validate_office_archive, file_path)
+        doc = await asyncio.to_thread(_extract_docx, file_path)
+    elif ext == ".doc":
+        raise ValueError(
+            "Legacy .doc files are not supported; convert the file to .docx or PDF and retry"
+        )
+    elif ext == ".xlsx":
+        await asyncio.to_thread(_validate_office_archive, file_path)
+        doc = await asyncio.to_thread(_extract_xlsx, file_path)
+    elif ext == ".xls":
+        raise ValueError(
+            "Legacy .xls files are not supported; convert the file to .xlsx or CSV and retry"
+        )
     elif ext == ".csv":
-        doc = _extract_csv(file_path)
+        await asyncio.to_thread(_validate_text_input_size, file_path)
+        doc = await asyncio.to_thread(_extract_csv, file_path)
     elif ext in (".html", ".htm"):
-        doc = _extract_html(file_path)
+        await asyncio.to_thread(_validate_text_input_size, file_path)
+        doc = await asyncio.to_thread(_extract_html, file_path)
     elif ext in (".md", ".markdown"):
-        doc = _extract_markdown(file_path)
+        await asyncio.to_thread(_validate_text_input_size, file_path)
+        doc = await asyncio.to_thread(_extract_markdown, file_path)
+    elif ext == ".eml":
+        await asyncio.to_thread(_validate_text_input_size, file_path)
+        doc = await asyncio.to_thread(_extract_eml, file_path)
     elif ext in IMAGE_EXTENSIONS:
         doc = await _extract_image(file_path, file_name)
     elif ext in VIDEO_EXTENSIONS:
         doc = await _extract_video(file_path, file_name)
     elif ext in AUDIO_EXTENSIONS:
         doc = await _extract_audio(file_path)
+    elif ext in PLAIN_TEXT_EXTENSIONS:
+        await asyncio.to_thread(_validate_text_input_size, file_path)
+        text = await asyncio.to_thread(
+            Path(file_path).read_text,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if "\x00" in text:
+            raise ValueError(f"{ext} file contains binary data and cannot be ingested as text")
+        doc = ExtractedDocument(text=text, metadata={"file_type": "text"})
     else:
-        try:
-            text = Path(file_path).read_text(encoding="utf-8", errors="replace")
-            doc = ExtractedDocument(text=text, metadata={"file_type": "text"})
-        except Exception as e:
-            raise ValueError(f"Unsupported file type: {ext}") from e
+        raise ValueError(f"Unsupported file type: {ext or '(no extension)'}")
 
     return _sanitize_extracted(doc)

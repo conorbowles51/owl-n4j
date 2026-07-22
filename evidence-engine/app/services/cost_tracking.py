@@ -169,8 +169,9 @@ def _calculate_cost(rate: AIPricingRate | None, usage: dict[str, Any]) -> Decima
     return Decimal("0")
 
 
-async def record_openai_cost(
+async def record_ai_cost(
     *,
+    provider: str,
     model_id: str,
     operation_kind: str,
     usage: Any = None,
@@ -180,7 +181,7 @@ async def record_openai_cost(
 ) -> None:
     context = _current_context.get()
     normalized_usage = normalize_usage(usage, duration_seconds=duration_seconds)
-    rate = await _resolve_pricing_rate("openai", model_id, operation_kind)
+    rate = await _resolve_pricing_rate(provider, model_id, operation_kind)
     metadata = {
         "source": "evidence_engine",
         **(context.extra_metadata if context else {}),
@@ -190,7 +191,7 @@ async def record_openai_cost(
         db.add(
             CostRecord(
                 job_type=context.job_type if context else "ingestion",
-                provider="openai",
+                provider=provider,
                 model_id=model_id,
                 prompt_tokens=normalized_usage.get("prompt_tokens"),
                 completion_tokens=normalized_usage.get("completion_tokens"),
@@ -207,3 +208,8 @@ async def record_openai_cost(
             )
         )
         await db.commit()
+
+
+async def record_openai_cost(**kwargs: Any) -> None:
+    """Compatibility wrapper for embedding, transcription, and vision callers."""
+    await record_ai_cost(provider="openai", **kwargs)

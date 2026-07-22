@@ -66,7 +66,10 @@ def link_transaction_parties(
                         type="SENT_PAYMENT",
                         detail=f"{sender} sent payment",
                         confidence=0.85,
-                        source_files=tx.source_files,
+                        source_files=list(tx.source_files),
+                        source_quotes=list(tx.source_quotes),
+                        source_locations=list(tx.source_locations),
+                        source_claim_ids=list(tx.source_claim_ids),
                         mandatory_instructions=tx.mandatory_instructions,
                     ))
                     existing.add(key)
@@ -75,15 +78,18 @@ def link_transaction_parties(
             receiver_norm = receiver.strip().lower()
             matched_id = name_to_id.get(receiver_norm)
             if matched_id:
-                key = (tx.id, matched_id, "RECEIVED_PAYMENT")
+                key = (matched_id, tx.id, "RECEIVED_PAYMENT")
                 if key not in existing:
                     new_rels.append(ResolvedRelationship(
-                        source_entity_id=tx.id,
-                        target_entity_id=matched_id,
+                        source_entity_id=matched_id,
+                        target_entity_id=tx.id,
                         type="RECEIVED_PAYMENT",
                         detail=f"{receiver} received payment",
                         confidence=0.85,
-                        source_files=tx.source_files,
+                        source_files=list(tx.source_files),
+                        source_quotes=list(tx.source_quotes),
+                        source_locations=list(tx.source_locations),
+                        source_claim_ids=list(tx.source_claim_ids),
                         mandatory_instructions=tx.mandatory_instructions,
                     ))
                     existing.add(key)

@@ -59,9 +59,8 @@ class EmbeddingService:
         if self.provider == "openai":
             if not OPENAI_AVAILABLE:
                 raise ImportError("OpenAI package not installed. Install with: pip install openai")
-            if not OPENAI_API_KEY:
-                raise ValueError("OPENAI_API_KEY not set in environment variables")
-            self.client = OpenAI(api_key=OPENAI_API_KEY)
+            self.client = None
+            self._client_key = None
             self._validate_openai_model()
         
         elif self.provider == "ollama":
@@ -77,6 +76,25 @@ class EmbeddingService:
         """Validate that the OpenAI model is available."""
         # OpenAI models are validated on first use, so we'll just log
         print(f"[Embedding] Using OpenAI model: {self.model}")
+
+    def _get_openai_client(self):
+        api_key = None
+        try:
+            from postgres.session import get_background_session
+            from services.ai_provider_credentials import get_provider_api_key
+
+            with get_background_session() as db:
+                api_key = get_provider_api_key(db, "openai")
+        except Exception:
+            api_key = OPENAI_API_KEY
+        if not api_key:
+            raise ValueError(
+                "OpenAI is not connected. Add its API key in Settings → AI settings."
+            )
+        if self.client is None or self._client_key != api_key:
+            self.client = OpenAI(api_key=api_key)
+            self._client_key = api_key
+        return self.client
     
     def _validate_ollama_model(self) -> None:
         """Validate that the Ollama model is available."""
@@ -107,7 +125,7 @@ class EmbeddingService:
         
         try:
             if self.provider == "openai":
-                response = self.client.embeddings.create(
+                response = self._get_openai_client().embeddings.create(
                     model=self.model,
                     input=text
                 )
@@ -198,7 +216,7 @@ class EmbeddingService:
             try:
                 if self.provider == "openai":
                     # OpenAI supports batch requests (up to 2048 texts)
-                    response = self.client.embeddings.create(
+                    response = self._get_openai_client().embeddings.create(
                         model=self.model,
                         input=batch
                     )
