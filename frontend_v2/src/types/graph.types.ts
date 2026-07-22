@@ -9,6 +9,7 @@ export interface GraphNode {
   confidence?: number
   community_id?: number
   mentioned?: boolean
+  source_count?: number
   aliases?: string[]
   properties: Record<string, unknown>
   x?: number

@@ -15,6 +15,13 @@ from services.neo4j.driver import active_node_predicate, driver, parse_json_fiel
 logger = logging.getLogger(__name__)
 
 
+def _source_count(properties: Dict) -> int:
+    source_files = properties.get("source_files")
+    if not isinstance(source_files, list):
+        return 0
+    return len({str(item).strip() for item in source_files if str(item).strip()})
+
+
 class GraphService:
     """Graph visualization, search, and AI-context queries."""
 
@@ -270,6 +277,7 @@ class GraphService:
                             "confidence": record["confidence"],
                             "mentioned": node_props.get("mentioned"),
                             "aliases": node_props.get("aliases") or [],
+                            "source_count": _source_count(node_props),
                         })
 
                 links = []
@@ -354,6 +362,7 @@ class GraphService:
                         "confidence": record["confidence"],
                         "mentioned": node_props.get("mentioned"),
                         "aliases": node_props.get("aliases") or [],
+                        "source_count": _source_count(node_props),
                     })
 
             if node_keys and len(node_keys) > 0:
@@ -597,7 +606,8 @@ class GraphService:
                         name: connected.name,
                         type: labels(connected)[0],
                         relationship: type(r),
-                        direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
+                        direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END,
+                        rel_properties: properties(r)
                     }}) AS connections
                 """,
                 **params,

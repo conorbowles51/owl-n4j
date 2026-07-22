@@ -28,6 +28,8 @@ class MergeEntityPayload(BaseModel):
     aliases: list[str] | None = None
     source_files: list[str] | None = None
     source_quotes: list[str] | None = None
+    source_claim_ids: list[str] | None = None
+    source_locations: list[dict[str, Any]] | None = None
     confidence: float | None = None
     properties: dict[str, Any] | None = None
     relationships: list[dict[str, Any]] | None = None

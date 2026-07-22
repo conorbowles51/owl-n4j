@@ -46,7 +46,9 @@ class SignificantProjectionTests(unittest.TestCase):
                 "name": "Mark",
                 "type": "Person",
                 "confidence": 0.9,
-                "node_props": {},
+                "node_props": {
+                    "source_files": ["registry.pdf", "report.pdf", "registry.pdf"]
+                },
             },
             {
                 "key": "event-2",
@@ -75,9 +77,50 @@ class SignificantProjectionTests(unittest.TestCase):
 
         self.assertEqual({node["key"] for node in graph["nodes"]}, {"person-1", "event-2"})
         self.assertEqual(graph["links"][0]["source"], "person-1")
+        person = next(node for node in graph["nodes"] if node["key"] == "person-1")
+        self.assertEqual(person["source_count"], 2)
         self.assertIn("n.key IN $entity_keys", captured[0]["query"])
         self.assertEqual(captured[0]["params"]["entity_keys"], ["person-1", "event-2"])
         self.assertIn("a.key IN $node_keys AND b.key IN $node_keys", captured[1]["query"])
+
+    def test_node_details_include_complete_relationship_properties_for_merges(self):
+        captured = []
+        row = {
+            "id": "person-1",
+            "key": "person-1",
+            "name": "Victoria Blackwood",
+            "type": "Person",
+            "summary": "Summary",
+            "notes": None,
+            "verified_facts": "[]",
+            "ai_insights": "[]",
+            "properties": {},
+            "connections": [
+                {
+                    "key": "company-1",
+                    "name": "Nexus Trading Ltd",
+                    "type": "Organization",
+                    "relationship": "DIRECTOR_OF",
+                    "direction": "outgoing",
+                    "rel_properties": {
+                        "source_claim_ids": ["claim-1"],
+                        "source_locations": '[{"page_start":2}]',
+                        "detail": "Named director",
+                    },
+                }
+            ],
+        }
+        with patch(
+            "services.neo4j.graph_service.driver.session",
+            return_value=_Session(captured, [_Result(single=row)]),
+        ):
+            details = GraphService().get_node_details("person-1", case_id="case-1")
+
+        self.assertIn("rel_properties: properties(r)", captured[0]["query"])
+        self.assertEqual(
+            details["connections"][0]["rel_properties"]["source_claim_ids"],
+            ["claim-1"],
+        )
 
     def test_empty_manifest_short_circuits_all_projections_without_queries(self):
         graph = GraphService().get_graph_structure("case-1", entity_keys=[])

@@ -19,7 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.job import Job, JobStatus
 from app.ontology.schema_builder import get_merge_schema
-from app.pipeline.merge_relationships import aggregate_relationships_for_merge
+from app.pipeline.merge_relationships import (
+    aggregate_relationships_for_merge,
+    build_merge_result_state,
+    merge_entity_evidence,
+    relationship_write_properties,
+)
 from app.pipeline.prompt_security import secure_system_prompt
 from app.services import chroma_client, neo4j_client
 from app.services.cost_tracking import ingestion_cost_context
@@ -184,8 +189,10 @@ async def _write_merged_entity(
         # Add old entity names as aliases
         [e.get("name", "") for e in entities if e.get("name")],
     )
-    all_source_files = _union_lists(*[e.get("source_files") or [] for e in entities])
-    all_source_quotes = _union_lists(*[e.get("source_quotes") or [] for e in entities])
+    all_source_files = merged.get("source_files") or []
+    all_source_quotes = merged.get("source_quotes") or []
+    all_source_claim_ids = merged.get("source_claim_ids") or []
+    all_source_locations = merged.get("source_locations") or []
     max_confidence = max((e.get("confidence") or 0.0 for e in entities), default=0.5)
 
     # Collect base properties from all entities
@@ -208,6 +215,8 @@ async def _write_merged_entity(
         "confidence": max_confidence,
         "source_files": all_source_files,
         "source_quotes": all_source_quotes,
+        "source_claim_ids": all_source_claim_ids,
+        "source_locations": json.dumps(all_source_locations),
         "job_id": job_id,
         "specific_type": merged.get("specific_type", ""),
         "verified_facts": json.dumps(merged.get("verified_facts", [])),
@@ -234,6 +243,12 @@ async def _write_merged_entity(
 
     rel_count = 0
     for (safe_type, direction, target_key), rel_props in agg.items():
+        rel_props = relationship_write_properties(
+            rel_props,
+            merged_entity_key=new_key,
+            target_key=target_key,
+            direction=direction,
+        )
         if direction == "outgoing":
             query = (
                 f"MATCH (a {{id: $source_id}}) "
@@ -387,6 +402,7 @@ async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
                 f"Merging properties from {len(entities)} entities...",
             )
             merged = await _merge_properties(entities, user_preferences)
+            merged = merge_entity_evidence(merged, entities)
             await _update_job(
                 job, JobStatus.MERGING_PROPERTIES, 0.60, db,
                 "Properties merged",
@@ -433,6 +449,11 @@ async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
                 raise
 
         # Complete
+        job.pipeline_state = build_merge_result_state(
+            job.pipeline_state,
+            merged_entity_key=new_key,
+            relationship_count=rel_count,
+        )
         job.entity_count = 1
         job.relationship_count = rel_count
         job.status = JobStatus.COMPLETED

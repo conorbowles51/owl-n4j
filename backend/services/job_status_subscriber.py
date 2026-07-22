@@ -31,6 +31,22 @@ def _extract_failure_message(payload: dict) -> str | None:
     return None
 
 
+def _merged_entity_key(payload: dict) -> str | None:
+    direct = payload.get("merged_entity_key")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    pipeline_state = payload.get("pipeline_state")
+    if not isinstance(pipeline_state, dict):
+        return None
+    merge_result = pipeline_state.get("merge_result")
+    if not isinstance(merge_result, dict):
+        return None
+    persisted = merge_result.get("merged_entity_key")
+    if isinstance(persisted, str) and persisted.strip():
+        return persisted.strip()
+    return None
+
+
 class JobStatusSubscriber:
     """
     Async background task that subscribes to Redis channels for active
@@ -233,7 +249,8 @@ class JobStatusSubscriber:
         job_detail = data
         if status == "completed":
             try:
-                job_detail = await evidence_engine_client.get_job(job_id)
+                fetched_detail = await evidence_engine_client.get_job(job_id)
+                job_detail = {**data, **fetched_detail}
             except Exception:
                 logger.exception("Failed to fetch completed engine job %s detail", job_id)
 
@@ -298,8 +315,20 @@ class JobStatusSubscriber:
         success is reflected as status='partial' rather than masked as 'completed'."""
         try:
             if status == "completed":
-                merged_key = data.get("merged_entity_key")
+                merged_key = _merged_entity_key(data)
                 merge_job.merged_entity_key = merged_key
+                if not merged_key:
+                    merge_job.status = "failed"
+                    merge_job.error_message = (
+                        "Merge engine completed without a persisted result key; "
+                        "source entities were left active."
+                    )
+                    db.commit()
+                    logger.error(
+                        "Merge job %s completed without a result key; sources retained",
+                        merge_job.engine_job_id,
+                    )
+                    return
 
                 from services.neo4j import neo4j_service
 

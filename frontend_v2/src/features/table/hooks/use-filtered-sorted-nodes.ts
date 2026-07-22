@@ -26,6 +26,23 @@ interface UseFilteredSortedNodesResult {
   sourceCounts: Map<string, number>
 }
 
+export function countNodeSources(node: GraphNode): number {
+  if (typeof node.source_count === "number") return node.source_count
+  const sourceDocuments = new Set<string>()
+  const sourceFiles = node.properties.source_files
+  if (Array.isArray(sourceFiles)) {
+    for (const sourceFile of sourceFiles) {
+      if (typeof sourceFile === "string" && sourceFile.trim()) {
+        sourceDocuments.add(sourceFile.trim())
+      }
+    }
+  }
+  for (const fact of node.verified_facts ?? []) {
+    if (fact.source_doc?.trim()) sourceDocuments.add(fact.source_doc.trim())
+  }
+  return sourceDocuments.size
+}
+
 function getNodeSortValue(
   node: GraphNode,
   key: string,
@@ -83,9 +100,7 @@ export function useFilteredSortedNodes({
   const sourceCounts = useMemo(() => {
     const counts = new Map<string, number>()
     for (const node of nodes) {
-      const facts = node.verified_facts?.length ?? 0
-      const insights = node.ai_insights?.length ?? 0
-      counts.set(node.key, facts + insights)
+      counts.set(node.key, countNodeSources(node))
     }
     return counts
   }, [nodes])

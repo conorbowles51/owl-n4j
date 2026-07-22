@@ -53,6 +53,29 @@ describe("graphAPI edit helpers", () => {
     expect(url).toContain("lightweight=true")
   })
 
+  it("maps lightweight source counts for the table projection", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          nodes: [
+            {
+              key: "person-1",
+              name: "Victoria Blackwood QC",
+              type: "Person",
+              source_count: 2,
+            },
+          ],
+          links: [],
+        }),
+        { status: 200 }
+      )
+    )
+
+    const graph = await graphAPI.getGraph({ case_id: "case-1" })
+
+    expect(graph.nodes[0].source_count).toBe(2)
+  })
+
   it("scopes graph analysis to the induced Significant graph", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ results: [] }), { status: 200 })
@@ -98,5 +121,29 @@ describe("graphAPI edit helpers", () => {
       case_id: "case-1",
       address: "London",
     })
+  })
+
+  it("exposes graph source files in node details", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          key: "person-1",
+          name: "Victoria Blackwood",
+          type: "Person",
+          properties: {
+            source_files: ["registry.pdf", "report.pdf", "registry.pdf"],
+          },
+          connections: [],
+        }),
+        { status: 200 }
+      )
+    )
+
+    const detail = await graphAPI.getNodeDetails("person-1", "case-1")
+
+    expect(detail.sources).toEqual([
+      { fileId: "registry.pdf", fileName: "registry.pdf" },
+      { fileId: "report.pdf", fileName: "report.pdf" },
+    ])
   })
 })

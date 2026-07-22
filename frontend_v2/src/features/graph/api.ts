@@ -80,6 +80,7 @@ function toGraphData(raw: RawGraphData): GraphData {
       type: asString(n.type).toLowerCase(),
       confidence: asNumber(n.confidence),
       mentioned: typeof n.mentioned === "boolean" ? n.mentioned : undefined,
+      source_count: asNumber(n.source_count),
       aliases: Array.isArray(n.aliases) ? (n.aliases as string[]) : [],
       properties: n.properties && typeof n.properties === "object" ? n.properties as Record<string, unknown> : {},
     })),
@@ -141,10 +142,27 @@ export const graphAPI = {
         type: c.type,
       })
     }
+    const properties =
+      raw.properties && typeof raw.properties === "object"
+        ? (raw.properties as Record<string, unknown>)
+        : {}
+    const propertySourceFiles = Array.isArray(properties.source_files)
+      ? properties.source_files.filter(
+          (fileName): fileName is string =>
+            typeof fileName === "string" && fileName.trim().length > 0
+        )
+      : []
+    const derivedSources = Array.from(new Set(propertySourceFiles)).map(
+      (fileName) => ({ fileId: fileName, fileName })
+    )
     return {
       ...raw,
       label: raw.name || raw.label || raw.key,
       connections: Array.from(grouped.values()),
+      sources:
+        Array.isArray(raw.sources) && raw.sources.length > 0
+          ? raw.sources
+          : derivedSources,
     } as NodeDetail
   },
 

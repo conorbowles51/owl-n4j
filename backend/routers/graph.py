@@ -127,7 +127,9 @@ MAX_MERGE_ENTITIES = 25
 MERGE_RELATIONSHIP_IDENTITY_FIELDS = frozenset(
     {"source_id", "target_id", "id", "case_id", "source", "target"}
 )
-MERGE_RELATIONSHIP_PROVENANCE_FIELDS = frozenset({"source_files", "source_quotes"})
+MERGE_RELATIONSHIP_PROVENANCE_FIELDS = frozenset(
+    {"source_files", "source_quotes", "source_claim_ids", "source_locations"}
+)
 
 
 def _merge_advisory_lock_id(case_id: str, entity_key: str) -> int:
@@ -147,6 +149,17 @@ def _as_string_list(value: Any) -> list[str]:
     return []
 
 
+def _as_source_locations(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return []
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
 def _relationship_merge_payload(conn: Dict[str, Any]) -> Dict[str, Any]:
     rel_props = conn.get("rel_properties") or {}
     properties = {
@@ -162,6 +175,46 @@ def _relationship_merge_payload(conn: Dict[str, Any]) -> Dict[str, Any]:
         "properties": properties,
         "source_files": _as_string_list(rel_props.get("source_files")),
         "source_quotes": _as_string_list(rel_props.get("source_quotes")),
+        "source_claim_ids": _as_string_list(rel_props.get("source_claim_ids")),
+        "source_locations": _as_source_locations(rel_props.get("source_locations")),
+    }
+
+
+def _entity_merge_payload(details: Dict[str, Any]) -> Dict[str, Any]:
+    props = details.get("properties") or {}
+    reserved_fields = {
+        "key", "id", "case_id", "name", "summary", "notes",
+        "verified_facts", "ai_insights", "aliases", "source_files",
+        "source_quotes", "source_claim_ids", "source_locations", "confidence",
+        "description", "specific_type", "job_id", "last_merge_recycle_key",
+        "last_merge_source_keys",
+    }
+    return {
+        "key": details["key"],
+        "name": details.get("name", ""),
+        "category": details.get("type", "Entity"),
+        "specific_type": props.get("specific_type", ""),
+        "summary": details.get("summary", ""),
+        "description": props.get("description", ""),
+        "verified_facts": details.get("verified_facts") or [],
+        "ai_insights": details.get("ai_insights") or [],
+        "aliases": _as_string_list(props.get("aliases")),
+        "source_files": _as_string_list(props.get("source_files")),
+        "source_quotes": _as_string_list(props.get("source_quotes")),
+        "source_claim_ids": _as_string_list(props.get("source_claim_ids")),
+        "source_locations": _as_source_locations(props.get("source_locations")),
+        "confidence": props.get("confidence"),
+        "properties": {
+            key: value
+            for key, value in props.items()
+            if key not in reserved_fields
+            and isinstance(value, (str, int, float, bool))
+        },
+        "relationships": [
+            _relationship_merge_payload(connection)
+            for connection in (details.get("connections") or [])
+            if connection.get("key")
+        ],
     }
 
 
@@ -1667,40 +1720,7 @@ async def merge_entities(
                     status_code=404,
                     detail=f"Entity not found: {entity_key}",
                 )
-            props = details.get("properties") or {}
-            # Build entity payload for evidence engine
-            verified_facts = details.get("verified_facts") or []
-            ai_insights = details.get("ai_insights") or []
-            entity_payloads.append({
-                "key": details["key"],
-                "name": details.get("name", ""),
-                "category": details.get("type", "Entity"),
-                "specific_type": props.get("specific_type", ""),
-                "summary": details.get("summary", ""),
-                "description": props.get("description", ""),
-                "verified_facts": verified_facts,
-                "ai_insights": ai_insights,
-                "aliases": props.get("aliases") or [],
-                "source_files": props.get("source_files") or [],
-                "source_quotes": props.get("source_quotes") or [],
-                "confidence": props.get("confidence"),
-                "properties": {
-                    k: v for k, v in props.items()
-                    if k not in (
-                        "key", "id", "case_id", "name", "summary", "notes",
-                        "verified_facts", "ai_insights", "aliases",
-                        "source_files", "source_quotes", "confidence",
-                        "description", "specific_type", "job_id",
-                        "last_merge_recycle_key", "last_merge_source_keys",
-                    )
-                    and isinstance(v, (str, int, float, bool))
-                },
-                "relationships": [
-                    _relationship_merge_payload(conn)
-                    for conn in (details.get("connections") or [])
-                    if conn.get("key")
-                ],
-            })
+            entity_payloads.append(_entity_merge_payload(details))
 
         # Build evidence engine payload
         payload = {

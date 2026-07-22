@@ -360,8 +360,9 @@ def build_summary_schema() -> dict[str, Any]:
 def build_merge_schema() -> dict[str, Any]:
     """Build the OpenAI Structured Output schema for entity merge.
 
-    Uses non-strict mode because merged_properties has dynamic keys
-    and fact/insight fields can be null.
+    Uses non-strict mode because merged_properties has dynamic keys.
+    Evidence records are preserved deterministically by the merge pipeline;
+    the model only authors the unified profile prose and scalar properties.
     """
     return {
         "type": "json_schema",
@@ -375,41 +376,13 @@ def build_merge_schema() -> dict[str, Any]:
                     "category": {"type": "string"},
                     "summary": {"type": "string"},
                     "description": {"type": "string"},
-                    "verified_facts": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "text": {"type": "string"},
-                                "quote": {"type": "string"},
-                                "page": {"type": ["integer", "null"]},
-                                "importance": {"type": ["integer", "null"]},
-                                "source_doc": {"type": "string"},
-                            },
-                            "required": ["text"],
-                        },
-                    },
-                    "ai_insights": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "text": {"type": "string"},
-                                "confidence": {"type": "string"},
-                                "reasoning": {"type": "string"},
-                                "source_doc": {"type": "string"},
-                            },
-                            "required": ["text"],
-                        },
-                    },
                     "merged_properties": {
                         "type": "object",
                     },
                 },
                 "required": [
                     "name", "specific_type", "category", "summary",
-                    "description", "verified_facts", "ai_insights",
-                    "merged_properties",
+                    "description", "merged_properties",
                 ],
             },
         },
