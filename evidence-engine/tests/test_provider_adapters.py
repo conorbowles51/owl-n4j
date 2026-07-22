@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -55,6 +56,36 @@ SCHEMA_FORMAT = {
 
 
 @pytest.mark.asyncio
+async def test_openai_adapter_applies_output_token_limit(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs: Any) -> Any:
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="bounded"))],
+                usage={"prompt_tokens": 5, "completion_tokens": 2},
+            )
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=FakeCompletions())
+    )
+    monkeypatch.setattr(openai_client, "get_openai_client", lambda: fake_client)
+
+    content, usage = await openai_client._openai_chat_completion(
+        [{"role": "user", "content": "Summarize."}],
+        model="gpt-5.6-sol",
+        response_format=None,
+        temperature=None,
+        max_output_tokens=1234,
+    )
+
+    assert content == "bounded"
+    assert usage == {"prompt_tokens": 5, "completion_tokens": 2}
+    assert captured["max_completion_tokens"] == 1234
+
+
+@pytest.mark.asyncio
 async def test_anthropic_adapter_translates_structured_output(monkeypatch) -> None:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(openai_client.settings, "anthropic_api_key", "test-key")
@@ -78,6 +109,7 @@ async def test_anthropic_adapter_translates_structured_output(monkeypatch) -> No
         model="claude-sonnet-5",
         response_format=SCHEMA_FORMAT,
         temperature=0.2,
+        max_output_tokens=1234,
     )
 
     assert content == '{"ok":true}'
@@ -87,6 +119,7 @@ async def test_anthropic_adapter_translates_structured_output(monkeypatch) -> No
     assert payload["system"] == "Return a health result."
     assert payload["output_config"]["format"]["type"] == "json_schema"
     assert payload["output_config"]["format"]["schema"] == SCHEMA_FORMAT["json_schema"]["schema"]
+    assert payload["max_tokens"] == 1234
     assert "temperature" not in payload
 
 
@@ -120,6 +153,7 @@ async def test_gemini_adapter_translates_structured_output_and_usage(monkeypatch
         model="gemini-3.5-flash",
         response_format=SCHEMA_FORMAT,
         temperature=0.2,
+        max_output_tokens=1234,
     )
 
     assert content == '{"ok":true}'
@@ -129,4 +163,5 @@ async def test_gemini_adapter_translates_structured_output_and_usage(monkeypatch
     assert payload["systemInstruction"]["parts"][0]["text"] == "Return a health result."
     assert payload["generationConfig"]["responseMimeType"] == "application/json"
     assert payload["generationConfig"]["responseJsonSchema"] == SCHEMA_FORMAT["json_schema"]["schema"]
+    assert payload["generationConfig"]["maxOutputTokens"] == 1234
     assert "temperature" not in payload["generationConfig"]

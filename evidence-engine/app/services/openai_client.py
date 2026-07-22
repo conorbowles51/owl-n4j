@@ -53,6 +53,7 @@ async def chat_completion(
     *,
     provider: str | None = None,
     workload: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> str:
     resolved_provider, resolved_model = resolve_ai_model(
         workload,
@@ -66,6 +67,7 @@ async def chat_completion(
                 model=resolved_model,
                 response_format=response_format,
                 temperature=temperature,
+                max_output_tokens=max_output_tokens,
             )
         elif resolved_provider == "anthropic":
             content, usage = await _anthropic_chat_completion(
@@ -73,6 +75,7 @@ async def chat_completion(
                 model=resolved_model,
                 response_format=response_format,
                 temperature=temperature,
+                max_output_tokens=max_output_tokens,
             )
         elif resolved_provider == "gemini":
             content, usage = await _gemini_chat_completion(
@@ -80,6 +83,7 @@ async def chat_completion(
                 model=resolved_model,
                 response_format=response_format,
                 temperature=temperature,
+                max_output_tokens=max_output_tokens,
             )
         else:
             raise ValueError(f"Unsupported ingestion AI provider: {resolved_provider}")
@@ -131,6 +135,7 @@ async def _openai_chat_completion(
     model: str,
     response_format: Any,
     temperature: float | None,
+    max_output_tokens: int | None = None,
 ) -> tuple[str, Any]:
     client = get_openai_client()
     kwargs: dict[str, Any] = {"model": model, "messages": messages}
@@ -138,6 +143,8 @@ async def _openai_chat_completion(
         kwargs["temperature"] = temperature
     if response_format is not None:
         kwargs["response_format"] = response_format
+    if max_output_tokens is not None:
+        kwargs["max_completion_tokens"] = max_output_tokens
     resp = await client.chat.completions.create(**kwargs)
     return resp.choices[0].message.content or "", getattr(resp, "usage", None)
 
@@ -148,6 +155,7 @@ async def _anthropic_chat_completion(
     model: str,
     response_format: Any,
     temperature: float | None,
+    max_output_tokens: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
     api_key = resolve_provider_api_key("anthropic")
     if not api_key:
@@ -167,7 +175,7 @@ async def _anthropic_chat_completion(
     ]
     payload: dict[str, Any] = {
         "model": model,
-        "max_tokens": 16384,
+        "max_tokens": max_output_tokens or 16384,
         "messages": conversation,
     }
     if system_parts:
@@ -209,6 +217,7 @@ async def _gemini_chat_completion(
     model: str,
     response_format: Any,
     temperature: float | None,
+    max_output_tokens: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
     api_key = resolve_provider_api_key("gemini")
     if not api_key:
@@ -227,6 +236,8 @@ async def _gemini_chat_completion(
         if message.get("role") != "system"
     ]
     generation_config: dict[str, Any] = {}
+    if max_output_tokens is not None:
+        generation_config["maxOutputTokens"] = max_output_tokens
     if temperature is not None and not model.startswith("gemini-3"):
         generation_config["temperature"] = temperature
     schema = _json_schema_from_response_format(response_format)

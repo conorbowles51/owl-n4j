@@ -15,6 +15,9 @@ MAX_CONTENT_CHARS = 30000
 MIN_CONTENT_CHARS = 50
 SUMMARY_MAP_CHARS = 18000
 SUMMARY_REDUCE_CHARS = 28000
+SUMMARY_MAP_OUTPUT_TOKENS = 4096
+SUMMARY_REDUCE_OUTPUT_TOKENS = 4096
+SUMMARY_MAX_REDUCTION_LEVELS = 8
 
 _DOCUMENT_SUMMARY_REVIEW_SCHEMA = {
     "type": "json_schema",
@@ -138,6 +141,15 @@ def _digest_groups(digests: list[str]) -> list[list[str]]:
     return groups
 
 
+def _pairwise_digest_groups(digests: list[str]) -> list[list[str]]:
+    """Guarantee structural progress when size-based grouping yields singletons."""
+    return [digests[index : index + 2] for index in range(0, len(digests), 2)]
+
+
+def _digest_payload_chars(digests: list[str]) -> int:
+    return len("\n\n".join(digests))
+
+
 async def _summarize_all_segments(
     content: str,
     *,
@@ -152,8 +164,9 @@ async def _summarize_all_segments(
             "Create a dense, facts-only evidence digest for this complete source segment. "
             "Retain material names, roles, dates, amounts, identifiers, events, allegations with attribution, "
             "relationships explicitly stated by the source, findings, and requested actions. Do not infer, "
-            "evaluate, or omit material detail merely because it seems repetitive. This digest will be used "
-            "to build the document-level summary.\n\n"
+            "evaluate, or omit material detail merely because it seems repetitive. Prioritize the details most "
+            "important to an investigator and keep the digest to no more than 1,200 words. This digest will be "
+            "used to build the document-level summary.\n\n"
             f"Document: {file_name}\n"
             f"SOURCE SEGMENT {index + 1} OF {len(segments)} "
             f"(characters {start + 1}-{end} of {len(content)}):\n"
@@ -171,6 +184,7 @@ async def _summarize_all_segments(
                     {"role": "user", "content": prompt},
                 ],
                 workload="ingestion_document_summary",
+                max_output_tokens=SUMMARY_MAP_OUTPUT_TOKENS,
             )
         if not digest or not digest.strip():
             raise RuntimeError(f"Empty digest for source segment {index + 1}")
@@ -187,14 +201,27 @@ async def _summarize_all_segments(
     )
 
     level = 1
-    while len("\n\n".join(digests)) > SUMMARY_REDUCE_CHARS:
+    while _digest_payload_chars(digests) > SUMMARY_REDUCE_CHARS:
+        if level > SUMMARY_MAX_REDUCTION_LEVELS:
+            raise RuntimeError(
+                "Document digest reduction exceeded the maximum number of levels"
+            )
+
+        before_chars = _digest_payload_chars(digests)
         groups = _digest_groups(digests)
+        if len(groups) >= len(digests) and len(digests) > 1:
+            # Verbose model output can make every size-based group a singleton.
+            # Pair adjacent digests so the hierarchy still converges.
+            groups = _pairwise_digest_groups(digests)
+
         reduced: list[str] = []
         for group_index, group in enumerate(groups, start=1):
             prompt = (
                 "DIGEST CONSOLIDATION: Combine the following ordered evidence digests into one dense, "
                 "facts-only digest. Preserve all material names, dates, amounts, identifiers, events, "
-                "attributed allegations, explicit relationships, findings, and actions. Do not add analysis.\n\n"
+                "attributed allegations, explicit relationships, findings, and actions. Do not add analysis. "
+                "Prioritize the details most important to an investigator and keep the consolidated digest "
+                "to no more than 1,200 words.\n\n"
                 + "\n\n".join(group)
             )
             digest = await chat_completion(
@@ -208,6 +235,7 @@ async def _summarize_all_segments(
                     {"role": "user", "content": prompt},
                 ],
                 workload="ingestion_document_summary",
+                max_output_tokens=SUMMARY_REDUCE_OUTPUT_TOKENS,
             )
             if not digest or not digest.strip():
                 raise RuntimeError(
@@ -217,8 +245,13 @@ async def _summarize_all_segments(
                 f"[Consolidated digest level {level}, group {group_index} of {len(groups)}]\n"
                 f"{digest.strip()}"
             )
-        if len(reduced) >= len(digests):
-            raise RuntimeError("Document digest reduction did not reduce the payload")
+
+        after_chars = _digest_payload_chars(reduced)
+        if len(reduced) >= len(digests) and after_chars >= before_chars:
+            raise RuntimeError(
+                "Document digest reduction made no progress "
+                f"({before_chars} characters before, {after_chars} after)"
+            )
         digests = reduced
         level += 1
 

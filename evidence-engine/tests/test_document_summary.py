@@ -172,6 +172,76 @@ async def test_oversized_document_summarizes_every_source_segment_before_reducti
 
 
 @pytest.mark.asyncio
+async def test_verbose_singleton_digests_are_forced_into_a_converging_hierarchy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    async def fake_chat_completion(**kwargs: Any) -> str:
+        calls.append(kwargs)
+        prompt = kwargs["messages"][-1]["content"]
+        if "SOURCE SEGMENT" in prompt:
+            return "M" * 160
+        if "DIGEST CONSOLIDATION" in prompt:
+            return "R" * 80
+        raise AssertionError(f"Unexpected prompt: {prompt[:80]}")
+
+    monkeypatch.setattr(summary_module, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(summary_module, "SUMMARY_MAP_CHARS", 100)
+    monkeypatch.setattr(summary_module, "SUMMARY_REDUCE_CHARS", 300)
+
+    result = await summary_module._summarize_all_segments(
+        "x" * 260,
+        file_name="verbose-report.pdf",
+        profile_guidance="",
+    )
+
+    map_calls = [
+        call for call in calls if "SOURCE SEGMENT" in call["messages"][-1]["content"]
+    ]
+    reduce_calls = [
+        call for call in calls if "DIGEST CONSOLIDATION" in call["messages"][-1]["content"]
+    ]
+    assert len(map_calls) == 3
+    assert len(reduce_calls) == 2
+    assert len(result) <= summary_module.SUMMARY_REDUCE_CHARS
+    assert all(
+        call["max_output_tokens"] == summary_module.SUMMARY_MAP_OUTPUT_TOKENS
+        for call in map_calls
+    )
+    assert all(
+        call["max_output_tokens"] == summary_module.SUMMARY_REDUCE_OUTPUT_TOKENS
+        for call in reduce_calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_single_digest_reduction_accepts_actual_payload_shrinkage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_chat_completion(**kwargs: Any) -> str:
+        prompt = kwargs["messages"][-1]["content"]
+        if "SOURCE SEGMENT" in prompt:
+            return "M" * 400
+        if "DIGEST CONSOLIDATION" in prompt:
+            return "R" * 100
+        raise AssertionError(f"Unexpected prompt: {prompt[:80]}")
+
+    monkeypatch.setattr(summary_module, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(summary_module, "SUMMARY_MAP_CHARS", 100)
+    monkeypatch.setattr(summary_module, "SUMMARY_REDUCE_CHARS", 300)
+
+    result = await summary_module._summarize_all_segments(
+        "x" * 80,
+        file_name="single-segment-report.pdf",
+        profile_guidance="",
+    )
+
+    assert len(result) <= summary_module.SUMMARY_REDUCE_CHARS
+    assert "R" * 100 in result
+
+
+@pytest.mark.asyncio
 async def test_batch_extraction_passes_effective_profile_to_document_summary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
