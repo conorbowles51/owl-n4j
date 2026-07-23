@@ -89,6 +89,23 @@ def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
     return changed
 
 
+def _created_at_timestamp(job: dict[str, Any]) -> float | None:
+    value = job.get("created_at")
+    if isinstance(value, datetime):
+        created_at = value
+    elif isinstance(value, str):
+        try:
+            created_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return created_at.timestamp()
+
+
 def reconcile_jobs_payload(db: Session, jobs: list[dict[str, Any]]) -> int:
     engine_job_ids = [str(job.get("id")) for job in jobs if job.get("id")]
     source_evidence_file_ids: list[uuid.UUID] = []
@@ -120,8 +137,13 @@ def reconcile_jobs_payload(db: Session, jobs: list[dict[str, Any]]) -> int:
     }
     records_by_source_id = {str(record.id): record for record in db_records}
 
-    updated = 0
-    for job in jobs:
+    # Reprocessing creates several jobs for the same evidence file. Applying
+    # every historical attempt would allow an old failure to overwrite the
+    # latest success, so only the newest attempt may control the file record.
+    latest_jobs_by_record_id: dict[
+        str, tuple[tuple[float, int], EvidenceFile, dict[str, Any]]
+    ] = {}
+    for payload_index, job in enumerate(jobs):
         db_rec = records_by_job_id.get(str(job.get("id")))
         if not db_rec:
             db_rec = records_by_source_id.get(
@@ -129,6 +151,21 @@ def reconcile_jobs_payload(db: Session, jobs: list[dict[str, Any]]) -> int:
             )
         if not db_rec:
             continue
+
+        created_at = _created_at_timestamp(job)
+        # Missing/unparseable timestamps retain the documented payload order,
+        # where the first item is the newest.
+        order_key = (
+            created_at if created_at is not None else float("-inf"),
+            -payload_index,
+        )
+        record_id = str(db_rec.id)
+        selected = latest_jobs_by_record_id.get(record_id)
+        if selected is None or order_key > selected[0]:
+            latest_jobs_by_record_id[record_id] = (order_key, db_rec, job)
+
+    updated = 0
+    for _, db_rec, job in latest_jobs_by_record_id.values():
         changed = False
         job_id = str(job.get("id") or "")
         if job_id and db_rec.engine_job_id != job_id:
@@ -158,6 +195,17 @@ async def reconcile_case_jobs(db: Session, case_id: str) -> int:
 
 async def reconcile_job_by_id(db: Session, job_id: str) -> dict[str, Any]:
     job = await evidence_engine_client.get_job(job_id)
-    if reconcile_jobs_payload(db, [job]):
+    case_id = str(job.get("case_id") or "")
+    if not case_id:
+        return job
+
+    try:
+        case_jobs = await evidence_engine_client.list_jobs(case_id)
+    except Exception:
+        # A single historical attempt is not enough context to safely update
+        # the file: it may have been superseded by a newer reprocessing job.
+        return job
+
+    if reconcile_jobs_payload(db, case_jobs):
         db.commit()
     return job
