@@ -687,7 +687,7 @@ function EmailCard({
               title="email-body"
               className="h-72 w-full rounded-md border border-border bg-background"
               sandbox=""
-              srcDoc={`<html><head><meta charset="utf-8"><style>body{font-family:"Source Sans 3",system-ui,sans-serif;font-size:13px;line-height:1.45;padding:10px;color:#0b202a;margin:0}img{max-width:100%;height:auto}a{color:#067278}</style></head><body>${body}</body></html>`}
+              srcDoc={`<html><head><meta charset="utf-8"><style>body{font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:13px;line-height:1.45;padding:10px;color:#17181c;margin:0}img{max-width:100%;height:auto}a{color:#b41624}</style></head><body>${body}</body></html>`}
             />
           ) : (
             <pre className="whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-sans text-xs text-foreground">

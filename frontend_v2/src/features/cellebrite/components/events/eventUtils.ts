@@ -22,7 +22,7 @@ export const EVENT_COLORS: Record<string, string> = {
   cell_tower: "#8b5cf6",
   wifi: "#10b981",
   call: "#2563eb",
-  message: "#0c9da0",
+  message: "#b41624",
   email: "#ef4444",
   power: "#6b7280",
   device_event: "#64748b",

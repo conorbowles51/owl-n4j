@@ -8,7 +8,7 @@ const entityColorMatch: unknown[] = [
   ["get", "entityType"],
   ...Object.entries(nodeColors).flatMap(([type, color]) => [type, color]),
   ...Object.entries(typeAliases).flatMap(([alias, canonical]) => [alias, nodeColors[canonical]]),
-  "#667D85", // fallback
+  "#72757E", // fallback
 ]
 
 const exactLocationFilter: FilterSpecification = ["!=", ["get", "isApproximate"], true]
@@ -75,7 +75,7 @@ export const pointSelectedLayer: LayerProps = {
     "circle-color": "transparent",
     "circle-radius": 12,
     "circle-stroke-width": 2,
-    "circle-stroke-color": "#0C9DA0",
+    "circle-stroke-color": "#B41624",
     "circle-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 1, 0],
   },
 }
@@ -93,11 +93,11 @@ export const heatmapLayer: LayerProps = {
       ["linear"],
       ["heatmap-density"],
       0, "rgba(0,0,0,0)",
-      0.2, "#4F69C6",
-      0.4, "#17879E",
-      0.6, "#36B3B2",
-      0.8, "#B7791F",
-      1.0, "#B55473",
+      0.2, "#5571C8",
+      0.4, "#2C8197",
+      0.6, "#F35D6D",
+      0.8, "#B37A2E",
+      1.0, "#C25778",
     ],
   },
 }
@@ -106,7 +106,7 @@ export const proximityFillLayer: LayerProps = {
   id: "proximity-fill",
   type: "fill",
   paint: {
-    "fill-color": "#0C9DA0",
+    "fill-color": "#B41624",
     "fill-opacity": 0.1,
   },
 }
@@ -115,7 +115,7 @@ export const proximityOutlineLayer: LayerProps = {
   id: "proximity-outline",
   type: "line",
   paint: {
-    "line-color": "#0C9DA0",
+    "line-color": "#B41624",
     "line-width": 2,
     "line-dasharray": [3, 2],
     "line-opacity": 0.6,

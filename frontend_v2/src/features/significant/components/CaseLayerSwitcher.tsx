@@ -119,7 +119,7 @@ export function CaseLayerSwitcher({
             className={cn(
               "relative flex h-8 min-w-0 items-center justify-center gap-1.5 rounded px-1.5 text-[11px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-150 ease-out after:absolute after:-inset-y-1 after:inset-x-0 focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.96]",
               active && isSignificant
-                ? "bg-amber-500/15 text-amber-700 shadow-[inset_0_0_0_1px_rgba(217,119,6,0.28)] dark:text-amber-300"
+                ? "bg-amber-500/15 text-amber-700 shadow-[inset_0_0_0_1px_rgba(180,22,36,0.26)] dark:text-amber-300"
                 : active
                   ? "bg-sidebar-accent text-sidebar-foreground shadow-sm"
                   : "text-sidebar-muted hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"

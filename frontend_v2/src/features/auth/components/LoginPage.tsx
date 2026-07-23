@@ -14,11 +14,11 @@ function LoginBackdrop() {
       className="pointer-events-none absolute inset-0 overflow-hidden"
       aria-hidden="true"
     >
-      <div className="absolute inset-0 opacity-70 [background-image:linear-gradient(hsl(var(--border)/0.46)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.46)_1px,transparent_1px)] [background-size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_70%_68%_at_50%_50%,black_8%,transparent_76%)] dark:opacity-35" />
-      <div className="absolute left-1/2 top-1/2 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/[0.035] blur-[110px] dark:bg-primary/[0.025]" />
-      <div className="absolute left-1/2 top-1/2 size-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/[0.055] dark:border-primary/[0.045]" />
-      <div className="absolute left-1/2 top-1/2 size-[30rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/[0.05] dark:border-primary/[0.04]" />
-      <div className="absolute left-1/2 top-1/2 size-[18rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/[0.045] dark:border-primary/[0.035]" />
+      <div className="absolute inset-0 opacity-70 [background-image:linear-gradient(hsl(var(--border)/0.48)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.48)_1px,transparent_1px)] [background-size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_72%_70%_at_50%_48%,black_6%,transparent_78%)] dark:opacity-30" />
+      <div className="absolute left-1/2 top-[46%] size-[38rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/[0.065] blur-[120px] dark:bg-primary/[0.055]" />
+      <div className="absolute left-1/2 top-[46%] size-[44rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/[0.08] dark:border-primary/[0.07]" />
+      <div className="absolute left-1/2 top-[46%] size-[31rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/[0.065] dark:border-primary/[0.055]" />
+      <div className="absolute left-1/2 top-[46%] size-[18rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/[0.055] dark:border-primary/[0.045]" />
       <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent" />
     </div>
   )
@@ -67,7 +67,11 @@ export function LoginPage() {
           <LoupeLogo size="login" />
         </div>
 
-        <section className="mt-9" aria-labelledby="login-heading">
+        <section
+          className="relative mt-7 overflow-hidden rounded-xl border border-border/80 bg-card/85 p-6 shadow-xl backdrop-blur-xl dark:bg-card/78 sm:p-7"
+          aria-labelledby="login-heading"
+        >
+          <div className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-primary/65 to-transparent" />
           <header className="text-center">
             <h1
               id="login-heading"
@@ -80,7 +84,7 @@ export function LoginPage() {
             </p>
           </header>
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+          <form onSubmit={handleSubmit} className="mt-7 space-y-5">
             <div className="space-y-2">
               <label
                 htmlFor="username"
@@ -97,7 +101,7 @@ export function LoginPage() {
                 autoComplete="username"
                 disabled={loading}
                 aria-invalid={Boolean(error)}
-                className="h-11 bg-card/95 shadow-[0_8px_22px_rgba(7,24,32,0.035)] dark:shadow-none"
+                className="h-11 bg-background/90 shadow-sm dark:bg-background/55"
               />
             </div>
 
@@ -118,7 +122,7 @@ export function LoginPage() {
                   autoComplete="current-password"
                   disabled={loading}
                   aria-invalid={Boolean(error)}
-                  className="h-11 bg-card/95 pr-11 shadow-[0_8px_22px_rgba(7,24,32,0.035)] dark:shadow-none"
+                  className="h-11 bg-background/90 pr-11 shadow-sm dark:bg-background/55"
                 />
                 <button
                   type="button"
@@ -163,7 +167,7 @@ export function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-8 flex items-start justify-center gap-2.5 border-t border-border pt-5">
+          <div className="mt-7 flex items-start justify-center gap-2.5 border-t border-border pt-5">
             <ShieldCheck
               className="mt-0.5 size-4 shrink-0 text-primary"
               strokeWidth={1.7}

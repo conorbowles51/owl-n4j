@@ -214,7 +214,7 @@ export function EventMapPanel({
             type="circle"
             filter={["has", "point_count"]}
             paint={{
-              "circle-color": "#0c9da0",
+              "circle-color": "#b41624",
               "circle-radius": ["step", ["get", "point_count"], 15, 25, 20, 100, 26],
               "circle-opacity": 0.85,
               "circle-stroke-color": "#ffffff",
@@ -229,7 +229,7 @@ export function EventMapPanel({
               "text-field": ["get", "point_count_abbreviated"],
               "text-size": 11,
             }}
-            paint={{ "text-color": "#0b202a" }}
+            paint={{ "text-color": "#17181c" }}
           />
           <Layer
             id="event-points"

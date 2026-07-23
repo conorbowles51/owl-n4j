@@ -167,7 +167,7 @@ describe("GraphCanvas3D", () => {
     const firstLabel = mainProps?.nodeThreeObject?.(
       labelledMainNodes[0]
     ) as MockNodeLabel
-    expect(firstLabel.fontFace).toBe('"Source Sans 3", system-ui, sans-serif')
+    expect(firstLabel.fontFace).toBe('"IBM Plex Sans", system-ui, sans-serif')
     expect(firstLabel.material.depthTest).toBe(false)
     expect(firstLabel.renderOrder).toBe(1)
 

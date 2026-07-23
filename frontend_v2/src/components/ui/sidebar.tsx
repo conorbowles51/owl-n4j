@@ -130,8 +130,8 @@ function SidebarLink({
         "text-sidebar-muted hover:bg-slate-50 hover:text-sidebar-foreground dark:hover:bg-white/[0.055]",
         active &&
           (expanded
-            ? "bg-brand-50 text-slate-950 shadow-[inset_0_0_0_1px_rgba(12,157,160,0.2)] before:absolute before:left-1.5 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-brand-500 dark:bg-brand-400/10 dark:text-slate-50 dark:shadow-[inset_0_0_0_1px_rgba(54,179,178,0.22)] dark:before:bg-brand-300"
-            : "bg-slate-900 text-white shadow-[0_10px_20px_-12px_rgba(7,24,32,0.72)] dark:bg-brand-400/15 dark:text-brand-100 dark:shadow-[0_10px_22px_-14px_rgba(0,0,0,0.8)]")
+            ? "bg-brand-50 text-slate-950 shadow-[inset_0_0_0_1px_rgba(180,22,36,0.18)] before:absolute before:left-1.5 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-brand-700 dark:bg-brand-400/10 dark:text-slate-50 dark:shadow-[inset_0_0_0_1px_rgba(243,93,109,0.18)] dark:before:bg-brand-400"
+            : "bg-slate-900 text-white shadow-[0_10px_20px_-12px_rgba(23,24,28,0.72)] dark:bg-brand-400/15 dark:text-brand-100 dark:shadow-[0_10px_22px_-14px_rgba(0,0,0,0.8)]")
       )}
     >
       <item.icon
@@ -284,7 +284,7 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "flex h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[1px_0_0_rgba(7,24,32,0.025)] dark:shadow-[1px_0_0_rgba(0,0,0,0.2)]",
+        "flex h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[1px_0_0_rgba(23,24,28,0.03)] dark:shadow-[1px_0_0_rgba(0,0,0,0.24)]",
         "transition-[width] duration-200 ease-[var(--ease-loupe)]",
         sidebarExpanded ? "w-56" : "w-16"
       )}

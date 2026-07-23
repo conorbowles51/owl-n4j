@@ -43,7 +43,7 @@ function SummaryCard({
   className?: string
 }) {
   return (
-    <div className={`rounded-lg border border-border/80 bg-card p-4 shadow-[0_8px_24px_-20px_rgba(7,24,32,0.4)] ${className ?? ""}`}>
+    <div className={`rounded-lg border border-border/80 bg-card p-4 shadow-[0_10px_30px_-24px_rgba(23,24,28,0.5)] dark:shadow-[0_14px_36px_-26px_rgba(0,0,0,0.85)] ${className ?? ""}`}>
       <div className="mb-3 flex items-center gap-2">
         <Icon className={`size-4 ${iconColor}`} />
         <h3 className="font-display text-sm font-semibold tracking-[-0.015em]">{title}</h3>
@@ -80,7 +80,7 @@ export function WorkspaceOverview({ caseId }: WorkspaceOverviewProps) {
       <CaseContextSection caseId={caseId} />
 
       {/* Deadlines — high priority, right under context */}
-      <div className="rounded-lg border border-border/80 bg-card p-4 shadow-[0_8px_24px_-20px_rgba(7,24,32,0.4)]">
+      <div className="rounded-lg border border-border/80 bg-card p-4 shadow-[0_10px_30px_-24px_rgba(23,24,28,0.5)] dark:shadow-[0_14px_36px_-26px_rgba(0,0,0,0.85)]">
         <div className="mb-2 flex items-center gap-2">
           <CalendarClock className="size-4 text-red-500" />
           <h3 className="font-display text-sm font-semibold tracking-[-0.015em]">Deadlines</h3>

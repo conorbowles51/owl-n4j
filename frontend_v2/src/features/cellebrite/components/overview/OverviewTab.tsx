@@ -866,7 +866,7 @@ function OverviewLocationMap({
             id="overview-location-points"
             type="circle"
             paint={{
-              "circle-color": ["case", ["==", ["get", "key"], selectedId ?? ""], "#0c9da0", "#17879e"],
+              "circle-color": ["case", ["==", ["get", "key"], selectedId ?? ""], "#b41624", "#2c8197"],
               "circle-radius": ["case", ["==", ["get", "key"], selectedId ?? ""], 9, 6],
               "circle-stroke-color": "#ffffff",
               "circle-stroke-width": 2,

@@ -192,7 +192,7 @@ export function ResultGraphPanel() {
         ? node.name.slice(0, 14) + "..."
         : node.name
       const fontSize = Math.max(10 / globalScale, 2)
-      ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
+      ctx.font = `${fontSize}px "IBM Plex Sans", system-ui, sans-serif`
       ctx.textAlign = "center"
       ctx.textBaseline = "top"
       ctx.fillStyle = isSelected ? canvasColors.selectionStroke : canvasColors.labelText

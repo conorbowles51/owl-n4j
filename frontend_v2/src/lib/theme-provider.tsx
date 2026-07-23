@@ -1,25 +1,46 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { ThemeContext, type Theme } from "./theme-context"
 
+function getStoredTheme(): Theme {
+  const stored = localStorage.getItem("owl-theme")
+  return stored === "light" || stored === "system" || stored === "dark"
+    ? stored
+    : "dark"
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem("owl-theme") as Theme) ?? "dark"
-  )
+  const [theme, setTheme] = useState<Theme>(getStoredTheme)
 
   useEffect(() => {
     const root = document.documentElement
-    root.classList.remove("dark", "light")
+    const systemPreference = window.matchMedia("(prefers-color-scheme: dark)")
+    const themeColor = document.querySelector<HTMLMetaElement>(
+      'meta[name="theme-color"]'
+    )
 
-    if (theme === "system") {
-      const systemDark = window.matchMedia(
-        "(prefers-color-scheme: dark)"
-      ).matches
-      root.classList.add(systemDark ? "dark" : "light")
-    } else {
-      root.classList.add(theme)
+    const applyTheme = () => {
+      const resolved =
+        theme === "system"
+          ? systemPreference.matches
+            ? "dark"
+            : "light"
+          : theme
+
+      root.classList.remove("dark", "light")
+      root.classList.add(resolved)
+      themeColor?.setAttribute(
+        "content",
+        resolved === "dark" ? "#0B0C0F" : "#F7F7F8"
+      )
     }
 
+    applyTheme()
     localStorage.setItem("owl-theme", theme)
+
+    if (theme === "system") {
+      systemPreference.addEventListener("change", applyTheme)
+      return () => systemPreference.removeEventListener("change", applyTheme)
+    }
   }, [theme])
 
   return (

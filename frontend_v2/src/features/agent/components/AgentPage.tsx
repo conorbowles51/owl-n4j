@@ -160,14 +160,14 @@ const artifactIcons = {
 } as const
 
 const CHART_COLORS = [
-  "#0C9DA0",
-  "#4F69C6",
-  "#17879E",
-  "#B55473",
-  "#7458A6",
-  "#6F8D3C",
-  "#C66A32",
-  "#B7791F",
+  "#B41624",
+  "#5571C8",
+  "#2C8197",
+  "#C25778",
+  "#8060A9",
+  "#6F8B45",
+  "#C4653F",
+  "#B37A2E",
 ]
 
 function asArray<T = Dict>(value: unknown): T[] {
@@ -1911,7 +1911,7 @@ function GraphArtifact({
       if (isSelected) {
         ctx.beginPath()
         ctx.arc(x, y, radius + 4, 0, 2 * Math.PI)
-        ctx.strokeStyle = "#0c9da0"
+        ctx.strokeStyle = "#B41624"
         ctx.lineWidth = 2 / globalScale
         ctx.stroke()
       }
@@ -1935,7 +1935,7 @@ function GraphArtifact({
       if (!shouldShowLabel) return
 
       const fontSize = Math.max(9 / globalScale, 2.4)
-      ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
+      ctx.font = `${fontSize}px "IBM Plex Sans", system-ui, sans-serif`
       ctx.textAlign = "center"
       ctx.textBaseline = "top"
       ctx.fillStyle = canvasColors.labelText
@@ -1995,7 +1995,7 @@ function GraphArtifact({
         const midY = (source.y + target.y) / 2
         const fontSize = Math.max(8 / globalScale, 2)
         const text = link.type.length > 28 ? `${link.type.slice(0, 26)}...` : link.type
-        ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
+        ctx.font = `${fontSize}px "IBM Plex Sans", system-ui, sans-serif`
         const metrics = ctx.measureText(text)
         const padX = 3 / globalScale
         const padY = 2 / globalScale
@@ -2761,7 +2761,7 @@ function MapArtifact({
             <button
               key={valueText(location.raw.key || index)}
               type="button"
-              className="absolute size-3 rounded-full bg-amber-400 shadow-[0_0_0_4px_rgba(251,191,36,.2)] outline-none ring-offset-2 ring-offset-slate-950 transition-transform hover:scale-125 focus-visible:ring-2 focus-visible:ring-amber-300"
+              className="absolute size-3 rounded-full bg-amber-400 shadow-[0_0_0_4px_rgba(227,59,76,.22)] outline-none ring-offset-2 ring-offset-slate-950 transition-transform hover:scale-125 focus-visible:ring-2 focus-visible:ring-amber-300"
               style={{ left: `${left}%`, top: `${top}%` }}
               title={valueText(location.raw.name || location.raw.key)}
               onClick={() => key && onEntitySelect(key)}

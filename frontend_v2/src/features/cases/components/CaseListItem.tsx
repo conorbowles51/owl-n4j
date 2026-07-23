@@ -21,16 +21,20 @@ export function CaseListItem({
   onArchiveToggle,
 }: CaseListItemProps) {
   return (
-    <button
-      onClick={onSelect}
+    <div
       className={cn(
-        "group flex w-full items-start gap-2.5 rounded-md border border-transparent px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150",
+        "group flex w-full items-start gap-2.5 rounded-md border border-transparent px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30",
         isSelected
           ? "border-brand-200 bg-brand-50 shadow-[inset_2px_0_0_var(--color-brand-400)] dark:border-brand-700/40 dark:bg-brand-500/10"
           : "hover:border-border hover:bg-panel-raised/75"
       )}
     >
-      <div className="min-w-0 flex-1">
+      <button
+        type="button"
+        aria-pressed={isSelected}
+        onClick={onSelect}
+        className="min-w-0 flex-1 cursor-pointer text-left outline-none"
+      >
         <div className="flex items-center gap-2">
           <p className="font-display truncate text-sm font-semibold tracking-[-0.018em] text-foreground">
             {caseData.title}
@@ -55,7 +59,7 @@ export function CaseListItem({
             </span>
           </div>
         )}
-      </div>
+      </button>
 
       <div className="flex shrink-0 items-center gap-1.5">
         <RoleBadge role={caseData.user_role} />
@@ -91,6 +95,6 @@ export function CaseListItem({
           </Button>
         )}
       </div>
-    </button>
+    </div>
   )
 }

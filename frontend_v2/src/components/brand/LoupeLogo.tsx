@@ -8,16 +8,14 @@ interface LoupeLogoProps {
   size?: LoupeLogoSize
 }
 
-const sizeStyles: Record<LoupeLogoSize, { frame: string; image: string; src: string }> = {
+const sizeStyles: Record<LoupeLogoSize, { frame: string; image: string }> = {
   sidebar: {
     frame: "h-11 w-36",
-    image: "left-[-1.38rem] top-[-4rem] h-[10.8rem] w-[10.8rem] dark:brightness-0 dark:invert",
-    src: "/loupe-logo-transparent.png",
+    image: "absolute left-[-0.7rem] top-[-1.1rem] h-[5.1rem] w-[10.2rem] max-w-none",
   },
   login: {
-    frame: "h-[3.75rem] w-44",
-    image: "left-[-1.72rem] top-[-5rem] h-[13.5rem] w-[13.5rem] dark:brightness-0 dark:invert",
-    src: "/loupe-logo-transparent.png",
+    frame: "h-20 w-64",
+    image: "absolute left-[-1.1rem] top-[-2rem] h-36 w-72 max-w-none",
   },
 }
 
@@ -27,9 +25,16 @@ export function LoupeLogo({ alt = "Loupe", className, size = "sidebar" }: LoupeL
   return (
     <span className={cn("relative block shrink-0 overflow-hidden", styles.frame, className)}>
       <img
-        src={styles.src}
+        src="/loupe-red-light.png"
         alt={alt}
-        className={cn("absolute max-w-none", styles.image)}
+        decoding="async"
+        className={cn("block dark:hidden", styles.image)}
+      />
+      <img
+        src="/loupe-red-dark.png"
+        alt={alt}
+        decoding="async"
+        className={cn("hidden dark:block", styles.image)}
       />
     </span>
   )

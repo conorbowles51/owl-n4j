@@ -219,7 +219,7 @@ export function SubgraphView({ caseId, graphData }: SubgraphViewProps) {
           graphData={fgData}
           width={dimensions.width}
           height={dimensions.height}
-          backgroundColor={isDark ? "#071820" : "#F4F7F8"}
+          backgroundColor={isDark ? "#090A0D" : "#F5F5F6"}
           nodeCanvasObject={(node: ForceNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
             const x = node.x ?? 0
             const y = node.y ?? 0
@@ -229,17 +229,17 @@ export function SubgraphView({ caseId, graphData }: SubgraphViewProps) {
             ctx.fillStyle = getNodeColor(node.type)
             ctx.fill()
             const fontSize = Math.max(9 / globalScale, 2)
-            ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
+            ctx.font = `${fontSize}px "IBM Plex Sans", system-ui, sans-serif`
             ctx.textAlign = "center"
             ctx.textBaseline = "top"
-            ctx.fillStyle = isDark ? "#B6C2C6" : "#46656F"
+            ctx.fillStyle = isDark ? "#BFC1C8" : "#565961"
             const label = (node.label || "").length > 15
               ? (node.label || "").slice(0, 13) + "..."
               : node.label || ""
             ctx.fillText(label, x, y + sz + 2)
           }}
           onNodeClick={handleNodeClick}
-          linkColor={() => isDark ? "#294D59" : "#D3DCDF"}
+          linkColor={() => isDark ? "#34363E" : "#DADBE0"}
           linkDirectionalArrowLength={3}
           linkCanvasObjectMode={() => (showRelationshipLabels ? "after" : undefined)}
           linkCanvasObject={(link: ForceLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -250,7 +250,7 @@ export function SubgraphView({ caseId, graphData }: SubgraphViewProps) {
             const midX = (src.x + tgt.x) / 2
             const midY = (src.y + tgt.y) / 2
             const fontSize = Math.max(8 / globalScale, 1.5)
-            ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`
+            ctx.font = `${fontSize}px "IBM Plex Sans", system-ui, sans-serif`
             ctx.textAlign = "center"
             ctx.textBaseline = "middle"
 

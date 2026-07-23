@@ -1,30 +1,14 @@
-import { createContext, useContext } from "react"
-
-export type Theme = "dark" | "light" | "system"
-
-interface ThemeContextValue {
-  theme: Theme
-  setTheme: (theme: Theme) => void
-}
-
-export const ThemeContext = createContext<ThemeContextValue>({
-  theme: "dark",
-  setTheme: () => {},
-})
-
-export const useTheme = () => useContext(ThemeContext)
-
 export const nodeColors = {
-  person: "#4F69C6",
-  organization: "#7458A6",
-  location: "#0C9DA0",
-  financial: "#B7791F",
-  document: "#667D85",
-  event: "#B55473",
-  communication: "#17879E",
-  vehicle: "#6F8D3C",
-  digital: "#7A5BA7",
-  evidence: "#C66A32",
+  person: "#5571C8",
+  organization: "#8060A9",
+  location: "#238A88",
+  financial: "#B37A2E",
+  document: "#72757E",
+  event: "#C25778",
+  communication: "#2C8197",
+  vehicle: "#6F8B45",
+  digital: "#765FA6",
+  evidence: "#C4653F",
 } as const
 
 export type EntityType = keyof typeof nodeColors
@@ -51,7 +35,7 @@ export const typeAliases: Record<string, EntityType> = {
   place: "location",
 }
 
-const FALLBACK_COLOR = "#667D85"
+const FALLBACK_COLOR = "#72757E"
 
 /** Case-insensitive entity type -> color lookup with alias mapping and hash fallback */
 export function getNodeColor(type: string): string {
@@ -72,12 +56,12 @@ export function getNodeColor(type: string): string {
 }
 
 export const statusColors = {
-  success: { bg: "#DDF2E9", text: "#267159", dot: "#3E9B78" },
-  danger: { bg: "#F9E5E7", text: "#A33D46", dot: "#C34E57" },
-  warning: { bg: "#FAEFD5", text: "#8B6622", dot: "#B8892E" },
-  info: { bg: "#E2EFF2", text: "#276C7A", dot: "#388FA0" },
-  amber: { bg: "#DBEFEE", text: "#067278", dot: "#0C9DA0" },
-  slate: { bg: "#EBF0F2", text: "#46656F", dot: "#91A2A8" },
+  success: { bg: "#E1F1E9", text: "#286A4E", dot: "#3B8B67" },
+  danger: { bg: "#F9E5E7", text: "#9C313C", dot: "#BE4652" },
+  warning: { bg: "#F9EED6", text: "#815F25", dot: "#AD7D2D" },
+  info: { bg: "#E5EDF6", text: "#315E86", dot: "#4A7DA8" },
+  amber: { bg: "#FFE4E8", text: "#941B27", dot: "#B41624" },
+  slate: { bg: "#EFEFF1", text: "#565961", dot: "#9A9DA5" },
 } as const
 
 export type StatusVariant = keyof typeof statusColors
@@ -85,14 +69,14 @@ export type StatusVariant = keyof typeof statusColors
 /** Canvas/WebGL colors that adapt to light/dark mode */
 export function getCanvasColors(isDark: boolean) {
   return {
-    background: isDark ? "#071820" : "#F4F7F8",
-    linkColor: isDark ? "#294D59" : "#D3DCDF",
-    labelText: isDark ? "#B6C2C6" : "#46656F",
-    labelBg: isDark ? "rgba(7,24,32,0.88)" : "rgba(244,247,248,0.92)",
-    hoverStroke: isDark ? "#91A2A8" : "#667D85",
-    selectionStroke: "#0C9DA0",
-    selectionGlow: isDark ? "rgba(54,179,178,0.28)" : "rgba(12,157,160,0.18)",
-    statsOverlayBg: isDark ? "rgba(11,32,42,0.86)" : "rgba(244,247,248,0.92)",
-    statsOverlayText: isDark ? "#91A2A8" : "#667D85",
+    background: isDark ? "#090A0D" : "#F5F5F6",
+    linkColor: isDark ? "#34363E" : "#DADBE0",
+    labelText: isDark ? "#BFC1C8" : "#565961",
+    labelBg: isDark ? "rgba(11,12,15,0.9)" : "rgba(247,247,248,0.94)",
+    hoverStroke: isDark ? "#9A9DA5" : "#71747C",
+    selectionStroke: isDark ? "#F35D6D" : "#B41624",
+    selectionGlow: isDark ? "rgba(243,93,109,0.3)" : "rgba(180,22,36,0.2)",
+    statsOverlayBg: isDark ? "rgba(23,24,28,0.9)" : "rgba(247,247,248,0.94)",
+    statsOverlayText: isDark ? "#9A9DA5" : "#71747C",
   }
 }

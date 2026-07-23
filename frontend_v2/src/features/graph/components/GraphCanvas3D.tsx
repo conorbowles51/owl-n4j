@@ -215,7 +215,7 @@ export function GraphCanvas3D({
         isSpotlight ? 12 : 6,
         canvasColors.labelText
       )
-      sprite.fontFace = '"Source Sans 3", system-ui, sans-serif'
+      sprite.fontFace = '"IBM Plex Sans", system-ui, sans-serif'
       sprite.fontSize = 72
       sprite.fontWeight = selectedNodeKeys.has(node.key) ? "600" : "500"
       sprite.strokeWidth = 0.12

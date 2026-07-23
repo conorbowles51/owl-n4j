@@ -38,9 +38,9 @@ export function SignificantEmptyState({
 
   return (
     <div className="relative flex h-full items-center justify-center overflow-hidden bg-canvas px-6">
-      <div className="pointer-events-none absolute inset-0 opacity-50 [background-image:radial-gradient(circle_at_center,rgba(217,119,6,0.09)_0,transparent_48%)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-50 [background-image:radial-gradient(circle_at_center,rgba(180,22,36,0.12)_0,transparent_48%)]" />
       <div className="relative max-w-md text-center">
-        <div className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl border border-amber-500/25 bg-amber-500/10 text-amber-600 shadow-[0_16px_50px_-28px_rgba(217,119,6,0.75)] dark:text-amber-300">
+        <div className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl border border-amber-500/25 bg-amber-500/10 text-amber-600 shadow-[0_16px_50px_-28px_rgba(180,22,36,0.72)] dark:text-amber-300">
           {hasSignificantEntities ? (
             <Icon className="size-6" />
           ) : (

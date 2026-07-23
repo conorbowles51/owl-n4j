@@ -13,8 +13,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import type { FinancialCategory } from "../api"
 
 const PRESET_COLORS = [
-  "#0c9da0", "#4f69c6", "#17879e", "#c65c66", "#7458a6",
-  "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1",
+  "#b41624", "#5571c8", "#2c8197", "#c25778", "#8060a9",
+  "#bc4e78", "#26869e", "#6f8b45", "#c4653f", "#655fc0",
 ]
 
 interface CategoryManagementDialogProps {

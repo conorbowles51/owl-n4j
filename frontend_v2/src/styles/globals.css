@@ -6,90 +6,89 @@
   :root {
     color-scheme: light;
     /* Surfaces */
-    --background: 200 23% 97%;
-    --foreground: 199 58% 10%;
+    --background: 240 6% 97%;
+    --foreground: 228 9% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 199 58% 10%;
+    --card-foreground: 228 9% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 199 58% 10%;
+    --popover-foreground: 228 9% 10%;
 
-    /* Loupe teal */
-    --primary: 181 86% 34%;
-    --primary-foreground: 199 64% 8%;
+    /* Loupe carmine */
+    --primary: 353 76% 40%;
+    --primary-foreground: 0 0% 100%;
 
-    /* Cool investigation neutrals */
-    --secondary: 197 21% 94%;
-    --secondary-foreground: 195 37% 25%;
+    /* Neutral investigation surfaces */
+    --secondary: 240 7% 94%;
+    --secondary-foreground: 230 8% 18%;
 
     /* Muted */
-    --muted: 197 21% 94%;
-    --muted-foreground: 195 13% 46%;
+    --muted: 240 7% 94%;
+    --muted-foreground: 226 5% 44%;
 
     /* Accent */
-    --accent: 175 44% 95%;
-    --accent-foreground: 183 90% 25%;
+    --accent: 350 67% 96%;
+    --accent-foreground: 354 77% 35%;
 
     /* Destructive */
-    --destructive: 355 49% 54%;
+    --destructive: 3 58% 48%;
     --destructive-foreground: 0 0% 100%;
 
     /* Focus ring */
-    --ring: 181 86% 34%;
+    --ring: 353 76% 40%;
 
     /* Border & Input */
-    --border: 195 16% 85%;
-    --input: 195 16% 85%;
+    --border: 230 9% 86%;
+    --input: 230 9% 82%;
 
     /* Application shell */
-    --sidebar: 0 0% 100%;
-    --sidebar-foreground: 195 37% 25%;
-    --sidebar-muted: 195 13% 46%;
-    --sidebar-border: 195 16% 85%;
-    --panel: 195 20% 95%;
+    --sidebar: 240 20% 99%;
+    --sidebar-foreground: 228 9% 12%;
+    --sidebar-muted: 226 5% 42%;
+    --sidebar-border: 230 9% 87%;
+    --panel: 240 7% 95%;
     --panel-raised: 0 0% 100%;
-    --canvas: 192 20% 96%;
+    --canvas: 240 5% 96%;
 
     /* Radius */
-    --radius: 0.4rem;
+    --radius: 0.5rem;
   }
 
   .dark {
     color-scheme: dark;
-    --background: 199 64% 8%;
-    --foreground: 192 26% 96%;
-    --card: 199 58% 10%;
-    --card-foreground: 192 26% 96%;
-    --popover: 197 54% 14%;
-    --popover-foreground: 192 26% 96%;
+    --background: 225 15% 5%;
+    --foreground: 240 5% 96%;
+    --card: 228 14% 8%;
+    --card-foreground: 240 5% 96%;
+    --popover: 230 12% 11%;
+    --popover-foreground: 240 5% 96%;
 
-    --primary: 180 54% 46%;
-    --primary-foreground: 199 64% 8%;
+    --primary: 353 68% 50%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 197 48% 17%;
-    --secondary-foreground: 192 26% 96%;
+    --secondary: 230 13% 13%;
+    --secondary-foreground: 240 5% 96%;
 
-    --muted: 197 48% 17%;
-    --muted-foreground: 196 12% 61%;
+    --muted: 230 11% 12%;
+    --muted-foreground: 228 5% 63%;
 
-    --accent: 195 43% 21%;
-    --accent-foreground: 177 35% 80%;
+    --accent: 348 34% 13%;
+    --accent-foreground: 351 100% 86%;
 
-    --destructive: 355 55% 60%;
+    --destructive: 3 62% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    --ring: 180 54% 46%;
+    --ring: 353 83% 62%;
 
-    --border: 195 37% 25%;
-    --input: 195 37% 25%;
+    --border: 228 10% 18%;
+    --input: 228 10% 22%;
 
-    /* The persistent rail follows dark mode using the transparent lockup. */
-    --sidebar: 200 65% 7%;
-    --sidebar-foreground: 192 26% 96%;
-    --sidebar-muted: 196 12% 61%;
-    --sidebar-border: 197 48% 17%;
-    --panel: 197 54% 14%;
-    --panel-raised: 197 48% 17%;
-    --canvas: 199 64% 8%;
+    --sidebar: 228 15% 6%;
+    --sidebar-foreground: 240 5% 96%;
+    --sidebar-muted: 228 5% 62%;
+    --sidebar-border: 228 11% 16%;
+    --panel: 228 12% 9%;
+    --panel-raised: 228 11% 12%;
+    --canvas: 225 18% 4%;
   }
 }
 
@@ -101,9 +100,10 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
-    font-family: "Source Sans 3", "Segoe UI", sans-serif;
+    font-family: var(--font-sans);
     font-size: 0.875rem;
     line-height: 1.375rem;
+    font-feature-settings: "kern", "liga", "calt";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -115,8 +115,9 @@
   [data-slot="card-title"],
   [data-slot="dialog-title"],
   [data-slot="sheet-title"] {
-    font-family: "Manrope", "Segoe UI", sans-serif;
-    letter-spacing: -0.025em;
+    font-family: var(--font-display);
+    letter-spacing: -0.03em;
+    text-wrap: balance;
   }
 
   ::selection {
@@ -151,34 +152,33 @@
   background-color: hsl(var(--border) / 0.8);
 }
 
-/* Loupe theme tokens as Tailwind v4 theme */
+/* Loupe charcoal and carmine theme tokens */
 @theme {
-  /* Loupe cool navy */
-  --color-slate-50: #F4F6F8;
-  --color-slate-100: #EBF0F2;
-  --color-slate-200: #D3DCDF;
-  --color-slate-300: #B6C2C6;
-  --color-slate-400: #91A2A8;
-  --color-slate-500: #667D85;
-  --color-slate-600: #46656F;
-  --color-slate-700: #294D59;
-  --color-slate-800: #173541;
-  --color-slate-900: #0B202A;
-  --color-slate-950: #071820;
+  /* Neutral family retained behind existing slate utility names. */
+  --color-slate-50: #F7F7F8;
+  --color-slate-100: #EFEFF1;
+  --color-slate-200: #DADBE0;
+  --color-slate-300: #BFC1C8;
+  --color-slate-400: #9A9DA5;
+  --color-slate-500: #71747C;
+  --color-slate-600: #565961;
+  --color-slate-700: #3B3D44;
+  --color-slate-800: #25272D;
+  --color-slate-900: #17181C;
+  --color-slate-950: #0B0C0F;
 
-  /* Loupe teal. The amber aliases keep existing components branded while
-     screen-specific semantic warning colors are migrated separately. */
-  --color-brand-50: #EDF8F7;
-  --color-brand-100: #DBEFEE;
-  --color-brand-200: #B7E0DF;
-  --color-brand-300: #77CACA;
-  --color-brand-400: #36B3B2;
-  --color-brand-500: #0C9DA0;
-  --color-brand-600: #078A8E;
-  --color-brand-700: #067278;
-  --color-brand-800: #0A555A;
-  --color-brand-900: #0B3D42;
-  --color-brand-950: #052B2F;
+  /* Carmine accent sampled from the supplied identity. */
+  --color-brand-50: #FFF1F3;
+  --color-brand-100: #FFE4E8;
+  --color-brand-200: #FECDD5;
+  --color-brand-300: #FDA4B0;
+  --color-brand-400: #F35D6D;
+  --color-brand-500: #E33B4C;
+  --color-brand-600: #CA2436;
+  --color-brand-700: #B41624;
+  --color-brand-800: #941B27;
+  --color-brand-900: #7C1E28;
+  --color-brand-950: #450A12;
   --color-amber-50: var(--color-brand-50);
   --color-amber-100: var(--color-brand-100);
   --color-amber-200: var(--color-brand-200);
@@ -192,16 +192,16 @@
   --color-amber-950: var(--color-brand-950);
 
   /* Graph node palette */
-  --color-node-person: #4F69C6;
-  --color-node-organization: #7458A6;
-  --color-node-location: #0C9DA0;
-  --color-node-financial: #B7791F;
-  --color-node-document: #667D85;
-  --color-node-event: #B55473;
-  --color-node-communication: #17879E;
-  --color-node-vehicle: #6F8D3C;
-  --color-node-digital: #7A5BA7;
-  --color-node-evidence: #C66A32;
+  --color-node-person: #5571C8;
+  --color-node-organization: #8060A9;
+  --color-node-location: #238A88;
+  --color-node-financial: #B37A2E;
+  --color-node-document: #72757E;
+  --color-node-event: #C25778;
+  --color-node-communication: #2C8197;
+  --color-node-vehicle: #6F8B45;
+  --color-node-digital: #765FA6;
+  --color-node-evidence: #C4653F;
 
   /* Semantic colors from CSS variables */
   --color-background: hsl(var(--background));
@@ -232,8 +232,8 @@
   --color-canvas: hsl(var(--canvas));
 
   /* Typography */
-  --font-display: "Manrope", "Segoe UI", sans-serif;
-  --font-sans: "Source Sans 3", "Segoe UI", sans-serif;
+  --font-display: "Space Grotesk", "Segoe UI", sans-serif;
+  --font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "SF Mono", Consolas, monospace;
 
   /* Font sizes - Loupe data-dense scale */
@@ -255,19 +255,19 @@
   --text-4xl--line-height: 2.5rem;
 
   /* Border radius */
-  --radius-sm: 0.25rem;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.75rem;
+  --radius-sm: 0.3rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.7rem;
+  --radius-xl: 0.9rem;
 
   /* Shadows */
-  --shadow-sm: 0 1px 2px 0 rgba(7, 24, 32, 0.05);
-  --shadow-md: 0 3px 10px -2px rgba(7, 24, 32, 0.1), 0 1px 3px -1px rgba(7, 24, 32, 0.06);
-  --shadow-lg: 0 10px 28px -6px rgba(7, 24, 32, 0.14), 0 3px 10px -3px rgba(7, 24, 32, 0.08);
-  --shadow-xl: 0 20px 52px -10px rgba(7, 24, 32, 0.18), 0 5px 18px -5px rgba(7, 24, 32, 0.1);
+  --shadow-sm: 0 1px 2px rgba(23, 24, 28, 0.05);
+  --shadow-md: 0 5px 16px -5px rgba(23, 24, 28, 0.16), 0 1px 3px rgba(23, 24, 28, 0.05);
+  --shadow-lg: 0 16px 38px -12px rgba(23, 24, 28, 0.22), 0 4px 12px -6px rgba(180, 22, 36, 0.08);
+  --shadow-xl: 0 28px 64px -18px rgba(11, 12, 15, 0.32), 0 8px 20px -12px rgba(180, 22, 36, 0.12);
 
   /* Transitions */
-  --ease-loupe: cubic-bezier(0.2, 0, 0, 1);
+  --ease-loupe: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-owl: var(--ease-loupe);
 }
 

@@ -1,15 +1,29 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='24' fill='none' stroke='%230b202a' stroke-width='9'/%3E%3Ccircle cx='32' cy='32' r='7' fill='%230c9da0'/%3E%3Cpath d='M32 8v13M56 32H43' stroke='white' stroke-width='5'/%3E%3C/svg%3E" />
+    <script>
+      (() => {
+        const storedTheme = localStorage.getItem("owl-theme")
+        const savedTheme = ["dark", "light", "system"].includes(storedTheme)
+          ? storedTheme
+          : "dark"
+        const dark =
+          savedTheme === "dark" ||
+          (savedTheme === "system" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches)
+        document.documentElement.classList.add(dark ? "dark" : "light")
+      })()
+    </script>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='28' cy='28' r='19' fill='none' stroke='%2317181c' stroke-width='8'/%3E%3Cpath d='m41.5 41.5 13 13' stroke='%2317181c' stroke-width='8' stroke-linecap='round'/%3E%3Ccircle cx='42' cy='14' r='7' fill='%23b41624' stroke='white' stroke-width='2'/%3E%3C/svg%3E" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0c0f" />
     <meta name="description" content="Loupe enterprise investigations platform" />
     <title>Loupe Investigation Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
       rel="stylesheet"
     />
   </head>

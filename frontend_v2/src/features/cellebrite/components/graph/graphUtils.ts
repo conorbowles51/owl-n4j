@@ -4,7 +4,7 @@ import { asText, readList, readNumber, readText, reportTitle } from "../shared/c
 export const NODE_COLORS = {
   PhoneReport: "#059669",
   Person: "#3b82f6",
-  PersonShared: "#0c9da0",
+  PersonShared: "#b41624",
 }
 
 export type ForceGraphNode = GraphNode & { id: string }

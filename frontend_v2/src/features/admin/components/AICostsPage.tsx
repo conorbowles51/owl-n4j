@@ -297,8 +297,8 @@ export function AICostsPage() {
                       type="monotone"
                       dataKey="ingestion_cost_usd"
                       stackId="cost"
-                      stroke="#067278"
-                      fill="#0c9da0"
+                      stroke="#941B27"
+                      fill="#B41624"
                       fillOpacity={0.8}
                       name="Ingestion"
                     />
@@ -334,7 +334,7 @@ export function AICostsPage() {
                     />
                     <YAxis tickFormatter={chartCurrency} tick={{ fontSize: 12 }} />
                     <RechartsTooltip formatter={(value) => chartCurrency(value as number | string | undefined)} />
-                    <Bar dataKey="cost_usd" fill="#0b202a" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="cost_usd" fill="#17181C" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
