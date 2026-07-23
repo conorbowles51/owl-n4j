@@ -1,0 +1,183 @@
+- generic [ref=f4e2]:
+  - generic [ref=f4e6]:
+    - complementary [ref=f4e7]:
+      - link "Loupe cases" [ref=f4e9] [cursor=pointer]:
+        - /url: /cases
+      - navigation [ref=f4e11]:
+        - region "Investigation" [ref=f4e12]:
+          - paragraph [ref=f4e13]: Investigation
+          - link "Cases" [ref=f4e14] [cursor=pointer]:
+            - /url: /cases
+          - link "Triage" [ref=f4e18] [cursor=pointer]:
+            - /url: /triage
+        - region "Case views" [ref=f4e23]:
+          - paragraph [ref=f4e24]: Case views
+          - group "Case layer" [ref=f4e25]:
+            - button "All data" [pressed] [ref=f4e26]
+            - button "Significant, 0 marked" [ref=f4e32]:
+              - generic [ref=f4e35]: Significant
+              - generic [ref=f4e36]: "0"
+          - link "Graph Ctrl+1" [ref=f4e37] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/graph
+            - generic [ref=f4e43]: Graph
+            - generic [ref=f4e44]: Ctrl+1
+          - link "Timeline Ctrl+2" [ref=f4e45] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/timeline
+            - generic [ref=f4e49]: Timeline
+            - generic [ref=f4e50]: Ctrl+2
+          - link "Map Ctrl+3" [ref=f4e51] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/map
+            - generic [ref=f4e54]: Map
+            - generic [ref=f4e55]: Ctrl+3
+          - link "Table Ctrl+4" [ref=f4e56] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/table
+            - generic [ref=f4e59]: Table
+            - generic [ref=f4e60]: Ctrl+4
+        - region "Full case data" [ref=f4e61]:
+          - paragraph [ref=f4e62]: Full case data
+          - link "Financial Ctrl+5" [ref=f4e63] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/financial
+            - generic [ref=f4e66]: Financial
+            - generic [ref=f4e67]: Ctrl+5
+          - link "Cellebrite Ctrl+6" [ref=f4e68] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/cellebrite
+            - generic [ref=f4e71]: Cellebrite
+            - generic [ref=f4e72]: Ctrl+6
+          - link "Profiles Ctrl+7" [ref=f4e73] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/profiles
+            - generic [ref=f4e79]: Profiles
+            - generic [ref=f4e80]: Ctrl+7
+          - link "Evidence Ctrl+8" [ref=f4e81] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/evidence
+            - generic [ref=f4e85]: Evidence
+            - generic [ref=f4e86]: Ctrl+8
+        - region "AI" [ref=f4e87]:
+          - paragraph [ref=f4e88]: AI
+          - link "Chat" [ref=f4e89] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/chat
+          - link "Agent" [ref=f4e93] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/agent
+        - region "Workspace" [ref=f4e98]:
+          - paragraph [ref=f4e99]: Workspace
+          - link "Workspace" [ref=f4e100] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/workspace
+          - link "Reports" [ref=f4e105] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/reports
+        - region "Admin" [ref=f4e110]:
+          - paragraph [ref=f4e111]: Admin
+          - link "AI Costs" [ref=f4e112] [cursor=pointer]:
+            - /url: /admin/ai-costs
+          - link "Updates" [ref=f4e116] [cursor=pointer]:
+            - /url: /admin/updates
+          - link "Users" [ref=f4e122] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Profiles" [ref=f4e129] [cursor=pointer]:
+            - /url: /admin/profiles
+      - generic [ref=f4e132]:
+        - link "Settings" [ref=f4e133] [cursor=pointer]:
+          - /url: /settings
+        - button "Collapse sidebar" [ref=f4e138]:
+          - generic [ref=f4e139]: Collapse
+    - main [ref=f4e143]:
+      - generic [ref=f4e148]:
+        - generic [ref=f4e149]:
+          - generic [ref=f4e150]:
+            - textbox "Filter graph entities" [ref=f4e155]:
+              - /placeholder: Filter graph...
+            - combobox "Graph search mode" [ref=f4e156]:
+              - option "Filter" [selected]
+              - option "Search"
+            - button "Filter syntax help" [ref=f4e157]
+            - generic [ref=f4e158]: 104 / 104
+          - generic [ref=f4e159]:
+            - button [ref=f4e160]
+            - button [ref=f4e161]
+            - button [ref=f4e162]
+          - generic [ref=f4e163]:
+            - button [ref=f4e164]
+            - button [ref=f4e165]
+          - generic [ref=f4e166]:
+            - button "Add Node" [ref=f4e167]
+            - button "Relationship" [ref=f4e168]
+          - generic [ref=f4e169]:
+            - button [ref=f4e170]
+            - button [ref=f4e171]
+            - button [ref=f4e172]
+            - button [ref=f4e173]
+          - generic [ref=f4e174]:
+            - button [ref=f4e175]
+            - button [ref=f4e176]
+        - generic [ref=f4e178]:
+          - generic [ref=f4e181]:
+            - generic [ref=f4e182]: 104 nodes · 135 edges
+            - generic [ref=f4e187]:
+              - button "Legend 13 types" [ref=f4e188]:
+                - generic [ref=f4e191]: Legend
+                - generic [ref=f4e192]: 13 types
+              - textbox "Filter types..." [ref=f4e194]
+              - generic [ref=f4e195]:
+                - button "transaction 23" [ref=f4e196]:
+                  - generic [ref=f4e198]: transaction
+                  - generic [ref=f4e199]: "23"
+                - button "location 18" [ref=f4e200]:
+                  - generic [ref=f4e202]: location
+                  - generic [ref=f4e203]: "18"
+                - button "organization 17" [ref=f4e204]:
+                  - generic [ref=f4e206]: organization
+                  - generic [ref=f4e207]: "17"
+                - button "communication 14" [ref=f4e208]:
+                  - generic [ref=f4e210]: communication
+                  - generic [ref=f4e211]: "14"
+                - button "person 8" [ref=f4e212]:
+                  - generic [ref=f4e214]: person
+                  - generic [ref=f4e215]: "8"
+                - button "event 8" [ref=f4e216]:
+                  - generic [ref=f4e218]: event
+                  - generic [ref=f4e219]: "8"
+                - button "cyberidentity 5" [ref=f4e220]:
+                  - generic [ref=f4e222]: cyberidentity
+                  - generic [ref=f4e223]: "5"
+                - button "account 3" [ref=f4e224]:
+                  - generic [ref=f4e226]: account
+                  - generic [ref=f4e227]: "3"
+                - button "media 2" [ref=f4e228]:
+                  - generic [ref=f4e230]: media
+                  - generic [ref=f4e231]: "2"
+                - button "document 2" [ref=f4e232]:
+                  - generic [ref=f4e234]: document
+                  - generic [ref=f4e235]: "2"
+                - button "legalaction 2" [ref=f4e236]:
+                  - generic [ref=f4e238]: legalaction
+                  - generic [ref=f4e239]: "2"
+                - button "device 1" [ref=f4e240]:
+                  - generic [ref=f4e242]: device
+                  - generic [ref=f4e243]: "1"
+                - button "other 1" [ref=f4e244]:
+                  - generic [ref=f4e246]: other
+                  - generic [ref=f4e247]: "1"
+              - generic [ref=f4e249]:
+                - button "Select All" [ref=f4e250]
+                - button "Deselect" [ref=f4e251]
+          - separator [ref=f4e257]
+          - generic [ref=f4e268]:
+            - generic [ref=f4e269]:
+              - button "Details" [ref=f4e270]
+              - button "AI Chat" [ref=f4e273]
+              - button "Notebook" [ref=f4e276]
+              - button [ref=f4e281]
+            - generic [ref=f4e283]:
+              - generic [ref=f4e284]:
+                - generic "New Conversation" [ref=f4e287]
+                - button "New chat" [ref=f4e288]
+              - combobox [ref=f4e290]:
+                - generic: GPT-5.6 Terra
+              - generic [ref=f4e292]:
+                - button "Case Overview" [ref=f4e293]
+                - button "Selection" [ref=f4e294]
+              - generic [ref=f4e299]:
+                - paragraph [ref=f4e303]: Ask anything about this case
+                - paragraph [ref=f4e304]: Questions are answered using your uploaded evidence
+              - generic [ref=f4e306]:
+                - textbox "Ask a question..." [active] [ref=f4e307]
+                - button [disabled]
+  - region "Notifications alt+T"

@@ -1,0 +1,412 @@
+- generic [ref=f3e2]:
+  - generic [ref=f3e6]:
+    - complementary [ref=f3e7]:
+      - link "Loupe cases" [ref=f3e9] [cursor=pointer]:
+        - /url: /cases
+      - navigation [ref=f3e11]:
+        - region "Investigation" [ref=f3e12]:
+          - paragraph [ref=f3e13]: Investigation
+          - link "Cases" [ref=f3e14] [cursor=pointer]:
+            - /url: /cases
+          - link "Triage" [ref=f3e18] [cursor=pointer]:
+            - /url: /triage
+        - region "Case views" [ref=f3e23]:
+          - paragraph [ref=f3e24]: Case views
+          - group "Case layer" [ref=f3e25]:
+            - button "All data" [pressed] [ref=f3e26]
+            - button "Significant, 0 marked" [ref=f3e32]:
+              - generic [ref=f3e35]: Significant
+              - generic [ref=f3e36]: "0"
+          - link "Graph Ctrl+1" [ref=f3e37] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/graph
+            - generic [ref=f3e43]: Graph
+            - generic [ref=f3e44]: Ctrl+1
+          - link "Timeline Ctrl+2" [ref=f3e45] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/timeline
+            - generic [ref=f3e49]: Timeline
+            - generic [ref=f3e50]: Ctrl+2
+          - link "Map Ctrl+3" [ref=f3e51] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/map
+            - generic [ref=f3e54]: Map
+            - generic [ref=f3e55]: Ctrl+3
+          - link "Table Ctrl+4" [ref=f3e56] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/table
+            - generic [ref=f3e59]: Table
+            - generic [ref=f3e60]: Ctrl+4
+        - region "Full case data" [ref=f3e61]:
+          - paragraph [ref=f3e62]: Full case data
+          - link "Financial Ctrl+5" [ref=f3e63] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/financial
+            - generic [ref=f3e66]: Financial
+            - generic [ref=f3e67]: Ctrl+5
+          - link "Cellebrite Ctrl+6" [ref=f3e68] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/cellebrite
+            - generic [ref=f3e71]: Cellebrite
+            - generic [ref=f3e72]: Ctrl+6
+          - link "Profiles Ctrl+7" [ref=f3e73] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/profiles
+            - generic [ref=f3e79]: Profiles
+            - generic [ref=f3e80]: Ctrl+7
+          - link "Evidence Ctrl+8" [ref=f3e81] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/evidence
+            - generic [ref=f3e85]: Evidence
+            - generic [ref=f3e86]: Ctrl+8
+        - region "AI" [ref=f3e87]:
+          - paragraph [ref=f3e88]: AI
+          - link "Chat" [ref=f3e89] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/chat
+          - link "Agent" [ref=f3e93] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/agent
+        - region "Workspace" [ref=f3e98]:
+          - paragraph [ref=f3e99]: Workspace
+          - link "Workspace" [ref=f3e100] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/workspace
+          - link "Reports" [ref=f3e105] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/reports
+        - region "Admin" [ref=f3e110]:
+          - paragraph [ref=f3e111]: Admin
+          - link "AI Costs" [ref=f3e112] [cursor=pointer]:
+            - /url: /admin/ai-costs
+          - link "Updates" [ref=f3e116] [cursor=pointer]:
+            - /url: /admin/updates
+          - link "Users" [ref=f3e122] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Profiles" [ref=f3e129] [cursor=pointer]:
+            - /url: /admin/profiles
+      - generic [ref=f3e132]:
+        - link "Settings" [ref=f3e133] [cursor=pointer]:
+          - /url: /settings
+        - button "Collapse sidebar" [ref=f3e138]:
+          - generic [ref=f3e139]: Collapse
+    - main [ref=f3e143]:
+      - generic [ref=f3e147]:
+        - generic [ref=f3e151]:
+          - generic [ref=f3e154]:
+            - generic [ref=f3e155]:
+              - heading "Folders" [level=3] [ref=f3e156]
+              - generic [ref=f3e157]:
+                - button "Edit case processing profile" [ref=f3e158]
+                - button "Collapse sidebar" [ref=f3e159]
+            - button "All Files" [ref=f3e160]
+            - button "New Folder" [ref=f3e165]
+          - separator [ref=f3e166]
+          - generic [ref=f3e177]:
+            - navigation [ref=f3e179]:
+              - button "Root" [ref=f3e180]
+            - generic [ref=f3e185]:
+              - generic [ref=f3e186]:
+                - combobox "Search scope" [ref=f3e187]:
+                  - generic: Files in folder
+                - textbox "Search files in folder" [ref=f3e189]:
+                  - /placeholder: Filter filenames...
+              - combobox [ref=f3e190]:
+                - generic: All Status
+              - combobox [ref=f3e191]:
+                - generic: All Types
+              - button "New Folder" [ref=f3e192]
+              - button "Upload" [ref=f3e193]
+              - button "Process" [disabled]
+              - button "Delete" [disabled]
+              - button "Jobs" [ref=f3e194]
+            - table [ref=f3e197]:
+              - rowgroup [ref=f3e198]:
+                - row [ref=f3e199]:
+                  - columnheader [ref=f3e200]:
+                    - checkbox [ref=f3e201]
+                  - columnheader "Name" [ref=f3e202]
+                  - columnheader "Type" [ref=f3e203]
+                  - columnheader "Size" [ref=f3e204]
+                  - columnheader "Status" [ref=f3e205]
+                  - columnheader "Entities" [ref=f3e206]
+                  - columnheader "Date" [ref=f3e207]
+                  - columnheader [ref=f3e208]
+              - rowgroup [ref=f3e209]:
+                - row [ref=f3e210]:
+                  - cell [ref=f3e211]:
+                    - checkbox [ref=f3e212]
+                  - cell [ref=f3e213]:
+                    - button "01_whistleblower_report.pdf" [active] [ref=f3e214]
+                  - cell "Document" [ref=f3e215]
+                  - cell "4.2 KB" [ref=f3e217]
+                  - cell "processed" [ref=f3e218]
+                  - cell "16 / 195" [ref=f3e220]
+                  - cell "16m ago" [ref=f3e221]
+                  - cell [ref=f3e222]:
+                    - button [ref=f3e224]
+                - row [ref=f3e225]:
+                  - cell [ref=f3e226]:
+                    - checkbox [ref=f3e227]
+                  - cell [ref=f3e228]:
+                    - button "02_company_registry_nexus.pdf" [ref=f3e229]
+                  - cell "Document" [ref=f3e230]
+                  - cell "2.5 KB" [ref=f3e232]
+                  - cell "processed" [ref=f3e233]
+                  - cell "15 / 195" [ref=f3e235]
+                  - cell "16m ago" [ref=f3e236]
+                  - cell [ref=f3e237]:
+                    - button [ref=f3e239]
+                - row [ref=f3e240]:
+                  - cell [ref=f3e241]:
+                    - checkbox [ref=f3e242]
+                  - cell [ref=f3e243]:
+                    - button "03_bank_statement_nexus.pdf" [ref=f3e244]
+                  - cell "Document" [ref=f3e245]
+                  - cell "2.9 KB" [ref=f3e247]
+                  - cell "processed" [ref=f3e248]
+                  - cell "25 / 195" [ref=f3e250]
+                  - cell "16m ago" [ref=f3e251]
+                  - cell [ref=f3e252]:
+                    - button [ref=f3e254]
+                - row [ref=f3e255]:
+                  - cell [ref=f3e256]:
+                    - checkbox [ref=f3e257]
+                  - cell [ref=f3e258]:
+                    - button "04_email_evidence.pdf" [ref=f3e259]
+                  - cell "Document" [ref=f3e260]
+                  - cell "3.8 KB" [ref=f3e262]
+                  - cell "processed" [ref=f3e263]
+                  - cell "17 / 195" [ref=f3e265]
+                  - cell "16m ago" [ref=f3e266]
+                  - cell [ref=f3e267]:
+                    - button [ref=f3e269]
+                - row [ref=f3e270]:
+                  - cell [ref=f3e271]:
+                    - checkbox [ref=f3e272]
+                  - cell [ref=f3e273]:
+                    - button "05_property_records_monaco.pdf" [ref=f3e274]
+                  - cell "Document" [ref=f3e275]
+                  - cell "3.1 KB" [ref=f3e277]
+                  - cell "processed" [ref=f3e278]
+                  - cell "10 / 195" [ref=f3e280]
+                  - cell "16m ago" [ref=f3e281]
+                  - cell [ref=f3e282]:
+                    - button [ref=f3e284]
+                - row [ref=f3e285]:
+                  - cell [ref=f3e286]:
+                    - checkbox [ref=f3e287]
+                  - cell [ref=f3e288]:
+                    - button "06_interview_marcus_chen.pdf" [ref=f3e289]
+                  - cell "Document" [ref=f3e290]
+                  - cell "3.6 KB" [ref=f3e292]
+                  - cell "processed" [ref=f3e293]
+                  - cell "9 / 195" [ref=f3e295]
+                  - cell "16m ago" [ref=f3e296]
+                  - cell [ref=f3e297]:
+                    - button [ref=f3e299]
+                - row [ref=f3e300]:
+                  - cell [ref=f3e301]:
+                    - checkbox [ref=f3e302]
+                  - cell [ref=f3e303]:
+                    - button "07_interview_david_okonkwo.pdf" [ref=f3e304]
+                  - cell "Document" [ref=f3e305]
+                  - cell "3.6 KB" [ref=f3e307]
+                  - cell "processed" [ref=f3e308]
+                  - cell "11 / 195" [ref=f3e310]
+                  - cell "16m ago" [ref=f3e311]
+                  - cell [ref=f3e312]:
+                    - button [ref=f3e314]
+                - row [ref=f3e315]:
+                  - cell [ref=f3e316]:
+                    - checkbox [ref=f3e317]
+                  - cell [ref=f3e318]:
+                    - button "08_forensic_accounting_report.pdf" [ref=f3e319]
+                  - cell "Document" [ref=f3e320]
+                  - cell "3.7 KB" [ref=f3e322]
+                  - cell "processed" [ref=f3e323]
+                  - cell "25 / 195" [ref=f3e325]
+                  - cell "16m ago" [ref=f3e326]
+                  - cell [ref=f3e327]:
+                    - button [ref=f3e329]
+                - row [ref=f3e330]:
+                  - cell [ref=f3e331]:
+                    - checkbox [ref=f3e332]
+                  - cell [ref=f3e333]:
+                    - button "09_phone_records_analysis.pdf" [ref=f3e334]
+                  - cell "Document" [ref=f3e335]
+                  - cell "3.5 KB" [ref=f3e337]
+                  - cell "processed" [ref=f3e338]
+                  - cell "26 / 195" [ref=f3e340]
+                  - cell "16m ago" [ref=f3e341]
+                  - cell [ref=f3e342]:
+                    - button [ref=f3e344]
+                - row [ref=f3e345]:
+                  - cell [ref=f3e346]:
+                    - checkbox [ref=f3e347]
+                  - cell [ref=f3e348]:
+                    - button "10_suspicious_activity_report.pdf" [ref=f3e349]
+                  - cell "Document" [ref=f3e350]
+                  - cell "3.2 KB" [ref=f3e352]
+                  - cell "processed" [ref=f3e353]
+                  - cell "10 / 195" [ref=f3e355]
+                  - cell "16m ago" [ref=f3e356]
+                  - cell [ref=f3e357]:
+                    - button [ref=f3e359]
+                - row [ref=f3e360]:
+                  - cell [ref=f3e361]:
+                    - checkbox [ref=f3e362]
+                  - cell [ref=f3e363]:
+                    - button "11_arrest_warrant_chen.pdf" [ref=f3e364]
+                  - cell "Document" [ref=f3e365]
+                  - cell "3.2 KB" [ref=f3e367]
+                  - cell "processed" [ref=f3e368]
+                  - cell "14 / 195" [ref=f3e370]
+                  - cell "16m ago" [ref=f3e371]
+                  - cell [ref=f3e372]:
+                    - button [ref=f3e374]
+                - row [ref=f3e375]:
+                  - cell [ref=f3e376]:
+                    - checkbox [ref=f3e377]
+                  - cell [ref=f3e378]:
+                    - button "12_asset_freezing_order.pdf" [ref=f3e379]
+                  - cell "Document" [ref=f3e380]
+                  - cell "3.3 KB" [ref=f3e382]
+                  - cell "processed" [ref=f3e383]
+                  - cell "20 / 195" [ref=f3e385]
+                  - cell "16m ago" [ref=f3e386]
+                  - cell [ref=f3e387]:
+                    - button [ref=f3e389]
+        - separator [ref=f3e396]
+        - generic [ref=f3e407]:
+          - generic [ref=f3e408]:
+            - button "Details" [ref=f3e409]
+            - button "Processing" [ref=f3e412]
+            - button "AI Chat" [ref=f3e415]
+            - button "Notebook" [ref=f3e418]
+            - button [ref=f3e423]
+          - generic [ref=f3e428]:
+            - generic [ref=f3e434]:
+              - heading "01_whistleblower_report.pdf" [level=3] [ref=f3e435]
+              - paragraph [ref=f3e436]: PDF · 4.2 KB
+            - generic [ref=f3e437]:
+              - generic [ref=f3e438]: Processed
+              - generic [ref=f3e439]: Duplicate
+            - generic [ref=f3e440]:
+              - button "Open File" [ref=f3e441]
+              - button "Download" [ref=f3e442]
+            - generic [ref=f3e443]:
+              - button "Details" [ref=f3e444]
+              - generic [ref=f3e447]:
+                - generic [ref=f3e448]:
+                  - generic [ref=f3e451]: File size
+                  - generic [ref=f3e452]: 4.2 KB
+                - generic [ref=f3e453]:
+                  - generic [ref=f3e456]: Uploaded
+                  - generic [ref=f3e457]: 22/07/2026, 14:34:53
+                - generic [ref=f3e458]:
+                  - generic [ref=f3e461]: Processed
+                  - generic [ref=f3e462]: 22/07/2026, 15:44:50
+                - generic [ref=f3e463]:
+                  - generic [ref=f3e467]: SHA-256
+                  - generic [ref=f3e468]: f3ca38751ae4b974743770fada2499ed90bc8ba59cdb7831d5228b794f3650d8
+            - generic [ref=f3e469]:
+              - button "AI Summary" [ref=f3e470]
+              - generic [ref=f3e474]:
+                - heading "Overview" [level=2] [ref=f3e475]
+                - paragraph [ref=f3e476]:
+                  - text: "Whistleblower Complaint #WB-2024-0042 was filed on January 15, 2024, by an anonymous filer identified as being in Finance–Accounts Payable, with the employee ID redacted. The complainant states a belief that a systematic fraud scheme was operating within the procurement division and reports observing irregularities over the preceding 18 months. The complaint identifies Marcus Chen, Victoria Blackwood, and David Okonkwo under “Key Individuals Involved.” It states that Chen was Senior Procurement Manager who oversaw vendor relationships and contract approvals; that Blackwood was CEO of Nexus Trading Ltd; and that Okonkwo was Accounts Payable Supervisor. The complainant further states that Okonkwo approved payments without proper documentation, frequently processed urgent payments outside normal procedures, and had a close personal relationship with Chen."
+                  - button "01_whistleblower_report.pdf, p.1" [ref=f3e477] [cursor=pointer]
+                - paragraph [ref=f3e478]:
+                  - text: The complaint reports six payments to Nexus Trading Ltd dated from March 15 through December 20, 2023, with a listed total of €1,035,000. The listed descriptions are Strategic Consulting Phase 1, Market Research Services, Operational Advisory, Integration Support, Strategic Consulting Phase 2, and Year-End Advisory Services. The complainant states that Nexus was added as a vendor by Chen without standard onboarding; that its invoices lacked specific deliverables; that it had no website, LinkedIn presence, or verifiable business history; and that Blackwood’s signature appeared to match Chen’s handwriting. The complaint describes Nexus as an external vendor supplying “consulting services,” states that it was registered in the British Virgin Islands, and identifies its bank account as being at First Caribbean International Bank in Tortola.
+                  - button "01_whistleblower_report.pdf, p.2" [ref=f3e479] [cursor=pointer]
+                - heading "Key Entities" [level=2] [ref=f3e480]
+                - list [ref=f3e481]:
+                  - listitem [ref=f3e482]:
+                    - strong [ref=f3e483]: Anonymous complainant
+                    - text: — The complaint identifies the filer as anonymous, with an employee ID redacted, and lists the department as Finance – Accounts Payable.
+                    - button "01_whistleblower_report.pdf, p.1" [ref=f3e484] [cursor=pointer]
+                  - listitem [ref=f3e485]:
+                    - strong [ref=f3e486]: Marcus Chen
+                    - text: — Identified in the complaint as Senior Procurement Manager who had been with the company for seven years and oversaw vendor relationships and contract approvals. The complainant states that Chen recently purchased a luxury property in Monaco despite a “modest salary.”
+                    - button "01_whistleblower_report.pdf, p.1" [ref=f3e487] [cursor=pointer]
+                  - listitem [ref=f3e488]:
+                    - strong [ref=f3e489]: Victoria Blackwood
+                    - text: — Identified in the complaint as CEO of Nexus Trading Ltd. The complainant states that her signature appeared to match Chen’s handwriting.
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e490] [cursor=pointer]
+                  - listitem [ref=f3e491]:
+                    - strong [ref=f3e492]: David Okonkwo
+                    - text: — Identified in the complaint as Accounts Payable Supervisor. The complainant states that Okonkwo approved payments without proper documentation, frequently processed urgent payments outside normal procedures, and had a close personal relationship with Chen.
+                    - button "01_whistleblower_report.pdf, p.1" [ref=f3e493] [cursor=pointer]
+                  - listitem [ref=f3e494]:
+                    - strong [ref=f3e495]: Nexus Trading Ltd
+                    - text: — Described in the complaint as an external vendor supplying “consulting services” and as registered in the British Virgin Islands. The complainant states that its invoices lacked specific deliverables and that it had no website, LinkedIn presence, or verifiable business history.
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e496] [cursor=pointer]
+                  - listitem [ref=f3e497]:
+                    - strong [ref=f3e498]: First Caribbean International Bank, Tortola
+                    - text: — Identified in the complaint as the location of Nexus Trading Ltd’s bank account.
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e499] [cursor=pointer]
+                  - listitem [ref=f3e500]:
+                    - strong [ref=f3e501]: Luxury property in Monaco
+                    - text: — The complainant states that Chen recently purchased a luxury property in Monaco despite a “modest salary.”
+                    - button "01_whistleblower_report.pdf, p.1" [ref=f3e502] [cursor=pointer]
+                - heading "Key Facts & Dates" [level=2] [ref=f3e503]
+                - list [ref=f3e504]:
+                  - listitem [ref=f3e505]:
+                    - strong [ref=f3e506]: January 15, 2024
+                    - text: — The complaint lists this as its filing date.
+                    - button "01_whistleblower_report.pdf, p.1" [ref=f3e507] [cursor=pointer]
+                  - listitem [ref=f3e508]:
+                    - strong [ref=f3e509]: Over the preceding 18 months
+                    - text: — The complainant states that irregularities were observed over this period.
+                    - button "01_whistleblower_report.pdf, p.1" [ref=f3e510] [cursor=pointer]
+                  - listitem [ref=f3e511]:
+                    - strong [ref=f3e512]: March 15, 2023
+                    - text: — The complaint lists a €125,000 payment to Nexus Trading Ltd for “Strategic Consulting Phase 1.”
+                    - button "01_whistleblower_report.pdf, p.1" [ref=f3e513] [cursor=pointer]
+                  - listitem [ref=f3e514]:
+                    - strong [ref=f3e515]: May 22, 2023
+                    - text: — The complaint lists a €180,000 payment to Nexus Trading Ltd for “Market Research Services.”
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e516] [cursor=pointer]
+                  - listitem [ref=f3e517]:
+                    - strong [ref=f3e518]: July 8, 2023
+                    - text: — The complaint lists a €95,000 payment to Nexus Trading Ltd for “Operational Advisory.”
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e519] [cursor=pointer]
+                  - listitem [ref=f3e520]:
+                    - strong [ref=f3e521]: September 30, 2023
+                    - text: — The complaint lists a €210,000 payment to Nexus Trading Ltd for “Integration Support.”
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e522] [cursor=pointer]
+                  - listitem [ref=f3e523]:
+                    - strong [ref=f3e524]: November 12, 2023
+                    - text: — The complaint lists a €150,000 payment to Nexus Trading Ltd for “Strategic Consulting Phase 2.”
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e525] [cursor=pointer]
+                  - listitem [ref=f3e526]:
+                    - strong [ref=f3e527]: December 20, 2023
+                    - text: — The complaint lists a €275,000 payment to Nexus Trading Ltd for “Year-End Advisory Services.”
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e528] [cursor=pointer]
+                  - listitem [ref=f3e529]:
+                    - strong [ref=f3e530]: March–December 2023
+                    - text: — The complaint lists six payments to Nexus Trading Ltd totaling €1,035,000.
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e531] [cursor=pointer]
+                - heading "Notable Connections" [level=2] [ref=f3e532]
+                - list [ref=f3e533]:
+                  - listitem [ref=f3e534]:
+                    - strong [ref=f3e535]: Marcus Chen–Nexus Trading Ltd
+                    - text: — The complainant states that Chen added Nexus as a vendor without standard onboarding. The complaint also identifies Chen as overseeing vendor relationships and contract approvals.
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e536] [cursor=pointer]
+                  - listitem [ref=f3e537]:
+                    - strong [ref=f3e538]: Marcus Chen–Victoria Blackwood
+                    - text: — The complainant states that Blackwood’s signature appeared to match Chen’s handwriting.
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e539] [cursor=pointer]
+                  - listitem [ref=f3e540]:
+                    - strong [ref=f3e541]: Marcus Chen–David Okonkwo
+                    - text: — The complaint describes Chen and Okonkwo as having a close personal relationship.
+                    - button "01_whistleblower_report.pdf, p.1" [ref=f3e542] [cursor=pointer]
+                  - listitem [ref=f3e543]:
+                    - strong [ref=f3e544]: David Okonkwo–payment processing
+                    - text: — The complainant states that Okonkwo approved payments without proper documentation and frequently processed urgent payments outside normal procedures.
+                    - button "01_whistleblower_report.pdf, p.1" [ref=f3e545] [cursor=pointer]
+                  - listitem [ref=f3e546]:
+                    - strong [ref=f3e547]: Nexus Trading Ltd–British Virgin Islands/Tortola
+                    - text: — The complaint states that Nexus was registered in the British Virgin Islands and that its bank account was at First Caribbean International Bank in Tortola.
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e548] [cursor=pointer]
+                  - listitem [ref=f3e549]:
+                    - strong [ref=f3e550]: Nexus Trading Ltd–invoices and listed payments
+                    - text: — The complaint lists six Nexus payments totaling €1,035,000 and states that Nexus invoices lacked specific deliverables.
+                    - button "01_whistleblower_report.pdf, p.2" [ref=f3e551] [cursor=pointer]
+            - button "Extracted Entities 16" [ref=f3e553]:
+              - text: Extracted Entities
+              - generic [ref=f3e556]: "16"
+            - button "Key Relationships 14" [ref=f3e558]:
+              - text: Key Relationships
+              - generic [ref=f3e561]: "14"
+            - button "Processing Info" [ref=f3e563]
+  - region "Notifications alt+T"

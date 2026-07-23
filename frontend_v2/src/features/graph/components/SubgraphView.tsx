@@ -1,4 +1,4 @@
-import { useRef, useMemo, useState, useEffect, useCallback } from "react"
+import { lazy, Suspense, useRef, useMemo, useState, useEffect, useCallback } from "react"
 import ForceGraph2D, {
   type ForceGraphMethods,
   type LinkObject,
@@ -25,6 +25,11 @@ import {
   useSignificantManifest,
 } from "@/features/significant/hooks/use-significant"
 import { useCaseLayerStore } from "@/features/significant/stores/case-layer.store"
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
+
+const GraphCanvas3D = lazy(() =>
+  import("./GraphCanvas3D").then((module) => ({ default: module.GraphCanvas3D }))
+)
 
 interface SubgraphViewProps {
   caseId: string
@@ -55,7 +60,7 @@ export function SubgraphView({ caseId, graphData }: SubgraphViewProps) {
   const [confirmSignificantOpen, setConfirmSignificantOpen] = useState(false)
   const { theme } = useTheme()
 
-  const { subgraphNodeKeys, clearSubgraph, selectNodes, showRelationshipLabels } =
+  const { subgraphNodeKeys, clearSubgraph, selectNodes, showRelationshipLabels, graphDimension } =
     useGraphStore()
   const { entityKeySet: significantEntityKeys } = useSignificantManifest(caseId)
   const addSignificant = useAddSignificantEntities(caseId)
@@ -198,6 +203,17 @@ export function SubgraphView({ caseId, graphData }: SubgraphViewProps) {
 
       {/* Force graph — fills available space */}
       <div ref={containerRef} className="flex-1 min-h-0">
+        {graphDimension === "3d" ? (
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center bg-canvas">
+                <LoadingSpinner size="sm" />
+              </div>
+            }
+          >
+            <GraphCanvas3D data={subgraphData} variant="spotlight" />
+          </Suspense>
+        ) : (
         <ForceGraph2D
           ref={sgRef as React.RefObject<ForceGraphMethods<SpotlightNode, SpotlightLink>>}
           graphData={fgData}
@@ -256,6 +272,7 @@ export function SubgraphView({ caseId, graphData }: SubgraphViewProps) {
           cooldownTime={2000}
           d3AlphaDecay={0.03}
         />
+        )}
       </div>
 
       {/* Collapsible analysis section */}

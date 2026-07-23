@@ -1,6 +1,7 @@
-import { useRef, useState, useCallback, useMemo, useEffect } from "react"
+import { lazy, Suspense, useRef, useState, useCallback, useMemo, useEffect } from "react"
 import { useLocation, useParams } from "react-router-dom"
 import type { ForceGraphMethods } from "react-force-graph-2d"
+import type { ForceGraphMethods as ForceGraph3DMethods } from "react-force-graph-3d"
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -33,6 +34,10 @@ import type { NodeDetail } from "@/types/graph.types"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 
+const GraphCanvas3D = lazy(() =>
+  import("./GraphCanvas3D").then((module) => ({ default: module.GraphCanvas3D }))
+)
+
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
@@ -42,6 +47,7 @@ export function GraphPage() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const graphRef = useRef<ForceGraphMethods | undefined>(undefined)
+  const graph3dRef = useRef<ForceGraph3DMethods | undefined>(undefined)
   const caseLayer = useCaseLayer(caseId)
 
   /* ---- Data fetching ---- */
@@ -51,6 +57,7 @@ export function GraphPage() {
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const selectNodes = useGraphStore((s) => s.selectNodes)
   const clearSearch = useGraphStore((s) => s.clearSearch)
+  const graphDimension = useGraphStore((s) => s.graphDimension)
   const hasSelection = selectedNodeKeys.size > 0
 
   useEffect(() => {
@@ -268,6 +275,7 @@ export function GraphPage() {
       <GraphToolbar
         caseId={caseId!}
         graphRef={graphRef}
+        graph3dRef={graph3dRef}
         onOpenAddNode={() => setAddNodeOpen(true)}
         onOpenCreateRelationship={() => setCreateRelOpen(true)}
         onOpenForceControls={() => toggleToolOverlay("force-controls")}
@@ -290,11 +298,23 @@ export function GraphPage() {
             minSize="25"
           >
             <div className="relative h-full">
-              <GraphCanvas
-                data={displayData}
-                caseId={caseId!}
-                graphRef={graphRef}
-              />
+              {graphDimension === "3d" ? (
+                <Suspense
+                  fallback={
+                    <div className="flex h-full items-center justify-center bg-canvas">
+                      <LoadingSpinner size="lg" />
+                    </div>
+                  }
+                >
+                  <GraphCanvas3D data={displayData} graphRef={graph3dRef} />
+                </Suspense>
+              ) : (
+                <GraphCanvas
+                  data={displayData}
+                  caseId={caseId!}
+                  graphRef={graphRef}
+                />
+              )}
               <GraphLegend nodes={displayData.nodes} />
             </div>
           </ResizablePanel>

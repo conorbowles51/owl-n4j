@@ -17,6 +17,7 @@ import {
   EyeOff,
   X,
   HelpCircle,
+  Box,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,11 +28,13 @@ import {
 } from "@/components/ui/tooltip"
 import { useGraphStore } from "@/stores/graph.store"
 import type { ForceGraphMethods } from "react-force-graph-2d"
+import type { ForceGraphMethods as ForceGraph3DMethods } from "react-force-graph-3d"
 import type { CaseLayer } from "@/features/significant/types"
 
 interface GraphToolbarProps {
   caseId: string
   graphRef?: React.MutableRefObject<ForceGraphMethods | undefined>
+  graph3dRef?: React.MutableRefObject<ForceGraph3DMethods | undefined>
   onOpenAddNode?: () => void
   onOpenCreateRelationship?: () => void
   onOpenForceControls?: () => void
@@ -46,6 +49,7 @@ interface GraphToolbarProps {
 
 export function GraphToolbar({
   graphRef,
+  graph3dRef,
   onOpenAddNode,
   onOpenCreateRelationship,
   onOpenForceControls,
@@ -72,6 +76,8 @@ export function GraphToolbar({
     subgraphNodeKeys,
     spotlightVisible,
     toggleSpotlight,
+    graphDimension,
+    toggleGraphDimension,
   } = useGraphStore()
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -113,6 +119,13 @@ export function GraphToolbar({
   }
 
   const zoomIn = () => {
+    if (graphDimension === "3d") {
+      const fg = graph3dRef?.current
+      if (!fg) return
+      const { x, y, z } = fg.camera().position
+      fg.cameraPosition({ x: x * 0.75, y: y * 0.75, z: z * 0.75 }, undefined, 400)
+      return
+    }
     const fg = graphRef?.current
     if (!fg) return
     const z = fg.zoom()
@@ -120,6 +133,13 @@ export function GraphToolbar({
   }
 
   const zoomOut = () => {
+    if (graphDimension === "3d") {
+      const fg = graph3dRef?.current
+      if (!fg) return
+      const { x, y, z } = fg.camera().position
+      fg.cameraPosition({ x: x * 1.35, y: y * 1.35, z: z * 1.35 }, undefined, 400)
+      return
+    }
     const fg = graphRef?.current
     if (!fg) return
     const z = fg.zoom()
@@ -127,7 +147,11 @@ export function GraphToolbar({
   }
 
   const zoomToFit = () => {
-    graphRef?.current?.zoomToFit(400, 50)
+    if (graphDimension === "3d") {
+      graph3dRef?.current?.zoomToFit(400, 50)
+    } else {
+      graphRef?.current?.zoomToFit(400, 50)
+    }
   }
 
   return (
@@ -191,7 +215,7 @@ export function GraphToolbar({
       <div className="flex items-center gap-0.5 border-l border-border pl-2">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={zoomIn}>
+            <Button variant="ghost" size="icon-sm" onClick={zoomIn} aria-label="Zoom in">
               <ZoomIn className="size-3.5" />
             </Button>
           </TooltipTrigger>
@@ -199,7 +223,7 @@ export function GraphToolbar({
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={zoomOut}>
+            <Button variant="ghost" size="icon-sm" onClick={zoomOut} aria-label="Zoom out">
               <ZoomOut className="size-3.5" />
             </Button>
           </TooltipTrigger>
@@ -207,11 +231,27 @@ export function GraphToolbar({
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={zoomToFit}>
+            <Button variant="ghost" size="icon-sm" onClick={zoomToFit} aria-label="Fit graph to view">
               <Maximize2 className="size-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Fit to View</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={graphDimension === "3d" ? "secondary" : "ghost"}
+              size="icon-sm"
+              onClick={toggleGraphDimension}
+              aria-label={`Switch to ${graphDimension === "2d" ? "3D" : "2D"} graph view`}
+              aria-pressed={graphDimension === "3d"}
+            >
+              <Box className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Switch main and Spotlight graphs to {graphDimension === "2d" ? "3D" : "2D"}
+          </TooltipContent>
         </Tooltip>
       </div>
 
@@ -235,6 +275,8 @@ export function GraphToolbar({
               variant={selectionMode === "drag" ? "secondary" : "ghost"}
               size="icon-sm"
               onClick={() => setSelectionMode("drag")}
+              disabled={graphDimension === "3d"}
+              aria-label="Drag select"
             >
               <BoxSelect className="size-3.5" />
             </Button>

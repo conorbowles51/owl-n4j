@@ -38,11 +38,14 @@ const versionJsonPlugin: import("vite").Plugin = {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), versionJsonPlugin],
-  // Timeline is lazy-loaded, so its virtualizer may otherwise be discovered
-  // after the dev server has already served modules. Pre-bundle it at startup
-  // to avoid Vite invalidating the first Timeline import with a 504.
+  // Pre-bundle dependencies used by lazy views so their first activation does
+  // not invalidate the running dev server.
   optimizeDeps: {
-    include: ["@tanstack/react-virtual"],
+    include: [
+      "@tanstack/react-virtual",
+      "react-force-graph-3d",
+      "three-spritetext",
+    ],
   },
   define: {
     __BUILD_NAME__: JSON.stringify(buildInfo.displayName),

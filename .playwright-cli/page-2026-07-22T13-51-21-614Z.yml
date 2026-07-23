@@ -1,0 +1,505 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - link:
+            - /url: /cases
+        - navigation:
+          - region:
+            - paragraph: Investigation
+            - link:
+              - /url: /cases
+              - generic: Cases
+            - link:
+              - /url: /triage
+              - generic: Triage
+          - region:
+            - paragraph: Case views
+            - group:
+              - button [pressed]:
+                - generic: All data
+              - button:
+                - generic: Significant
+                - generic: "0"
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/graph
+              - generic: Graph
+              - generic: Ctrl+1
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/timeline
+              - generic: Timeline
+              - generic: Ctrl+2
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/map
+              - generic: Map
+              - generic: Ctrl+3
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/table
+              - generic: Table
+              - generic: Ctrl+4
+          - region:
+            - paragraph: Full case data
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/financial
+              - generic: Financial
+              - generic: Ctrl+5
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/cellebrite
+              - generic: Cellebrite
+              - generic: Ctrl+6
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/profiles
+              - generic: Profiles
+              - generic: Ctrl+7
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/evidence
+              - generic: Evidence
+              - generic: Ctrl+8
+          - region:
+            - paragraph: AI
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/chat
+              - generic: Chat
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/agent
+              - generic: Agent
+          - region:
+            - paragraph: Workspace
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/workspace
+              - generic: Workspace
+            - link:
+              - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/reports
+              - generic: Reports
+          - region:
+            - paragraph: Admin
+            - link:
+              - /url: /admin/ai-costs
+              - generic: AI Costs
+            - link:
+              - /url: /admin/updates
+              - generic: Updates
+            - link:
+              - /url: /admin/users
+              - generic: Users
+            - link:
+              - /url: /admin/profiles
+              - generic: Profiles
+        - generic:
+          - link:
+            - /url: /settings
+            - generic: Settings
+          - button:
+            - generic: Collapse
+      - generic:
+        - generic:
+          - generic:
+            - main:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - heading [level=3]: Folders
+                                      - generic:
+                                        - button
+                                        - button
+                                    - button:
+                                      - generic: All Files
+                                    - generic:
+                                      - button: New Folder
+                              - separator
+                              - generic:
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - navigation:
+                                        - button:
+                                          - generic: Root
+                                    - generic:
+                                      - generic:
+                                        - combobox:
+                                          - generic: Files in folder
+                                        - generic:
+                                          - textbox:
+                                            - /placeholder: Filter filenames...
+                                      - combobox:
+                                        - generic: All Status
+                                      - combobox:
+                                        - generic: All Types
+                                      - button: New Folder
+                                      - button: Upload
+                                      - button [disabled]: Process
+                                      - button [disabled]: Delete
+                                      - button: Jobs
+                                    - generic:
+                                      - generic:
+                                        - table:
+                                          - rowgroup:
+                                            - row:
+                                              - columnheader:
+                                                - checkbox
+                                              - columnheader: Name
+                                              - columnheader: Type
+                                              - columnheader: Size
+                                              - columnheader: Status
+                                              - columnheader: Entities
+                                              - columnheader: Date
+                                              - columnheader
+                                          - rowgroup:
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 01_whistleblower_report.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 4.2 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 16 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 02_company_registry_nexus.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 2.5 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 15 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 03_bank_statement_nexus.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 2.9 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 25 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 04_email_evidence.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 3.8 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 17 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 05_property_records_monaco.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 3.1 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 10 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 06_interview_marcus_chen.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 3.6 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 9 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 07_interview_david_okonkwo.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 3.6 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 11 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 08_forensic_accounting_report.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 3.7 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 25 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 09_phone_records_analysis.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 3.5 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 26 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 10_suspicious_activity_report.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 3.2 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 10 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 11_arrest_warrant_chen.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 3.2 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 14 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                                            - row:
+                                              - cell:
+                                                - checkbox
+                                              - cell:
+                                                - button: 12_asset_freezing_order.pdf
+                                              - cell:
+                                                - generic: Document
+                                              - cell: 3.3 KB
+                                              - cell:
+                                                - generic: processed
+                                              - cell: 20 / 195
+                                              - cell: 16m ago
+                                              - cell:
+                                                - generic:
+                                                  - button
+                      - separator
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - button: Details
+                              - button: Processing
+                              - button: AI Chat
+                              - button: Notebook
+                              - generic:
+                                - button
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic:
+                                        - generic:
+                                          - heading [level=3]: 01_whistleblower_report.pdf
+                                          - paragraph: PDF · 4.2 KB
+                                      - generic:
+                                        - generic: Processed
+                                        - generic: Duplicate
+                                      - generic:
+                                        - button: Open File
+                                        - button
+                                      - generic:
+                                        - button: Details
+                                        - generic:
+                                          - generic:
+                                            - generic: File size
+                                            - generic: 4.2 KB
+                                          - generic:
+                                            - generic: Uploaded
+                                            - generic: 22/07/2026, 14:34:53
+                                          - generic:
+                                            - generic: Processed
+                                            - generic: 22/07/2026, 15:44:50
+                                          - generic:
+                                            - generic: SHA-256
+                                            - generic: f3ca38751ae4b974743770fada2499ed90bc8ba59cdb7831d5228b794f3650d8
+                                      - generic:
+                                        - button: AI Summary
+                                        - generic:
+                                          - generic:
+                                            - heading [level=2]: Overview
+                                            - paragraph:
+                                              - text: "Whistleblower Complaint #WB-2024-0042 was filed on January 15, 2024, by an anonymous filer identified as being in Finance–Accounts Payable, with the employee ID redacted. The complainant states a belief that a systematic fraud scheme was operating within the procurement division and reports observing irregularities over the preceding 18 months. The complaint identifies Marcus Chen, Victoria Blackwood, and David Okonkwo under “Key Individuals Involved.” It states that Chen was Senior Procurement Manager who oversaw vendor relationships and contract approvals; that Blackwood was CEO of Nexus Trading Ltd; and that Okonkwo was Accounts Payable Supervisor. The complainant further states that Okonkwo approved payments without proper documentation, frequently processed urgent payments outside normal procedures, and had a close personal relationship with Chen."
+                                              - button: 01_whistleblower_report.pdf, p.1
+                                            - paragraph:
+                                              - text: The complaint reports six payments to Nexus Trading Ltd dated from March 15 through December 20, 2023, with a listed total of €1,035,000. The listed descriptions are Strategic Consulting Phase 1, Market Research Services, Operational Advisory, Integration Support, Strategic Consulting Phase 2, and Year-End Advisory Services. The complainant states that Nexus was added as a vendor by Chen without standard onboarding; that its invoices lacked specific deliverables; that it had no website, LinkedIn presence, or verifiable business history; and that Blackwood’s signature appeared to match Chen’s handwriting. The complaint describes Nexus as an external vendor supplying “consulting services,” states that it was registered in the British Virgin Islands, and identifies its bank account as being at First Caribbean International Bank in Tortola.
+                                              - button: 01_whistleblower_report.pdf, p.2
+                                            - heading [level=2]: Key Entities
+                                            - list:
+                                              - listitem:
+                                                - strong: Anonymous complainant
+                                                - text: — The complaint identifies the filer as anonymous, with an employee ID redacted, and lists the department as Finance – Accounts Payable.
+                                                - button: 01_whistleblower_report.pdf, p.1
+                                              - listitem:
+                                                - strong: Marcus Chen
+                                                - text: — Identified in the complaint as Senior Procurement Manager who had been with the company for seven years and oversaw vendor relationships and contract approvals. The complainant states that Chen recently purchased a luxury property in Monaco despite a “modest salary.”
+                                                - button: 01_whistleblower_report.pdf, p.1
+                                              - listitem:
+                                                - strong: Victoria Blackwood
+                                                - text: — Identified in the complaint as CEO of Nexus Trading Ltd. The complainant states that her signature appeared to match Chen’s handwriting.
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: David Okonkwo
+                                                - text: — Identified in the complaint as Accounts Payable Supervisor. The complainant states that Okonkwo approved payments without proper documentation, frequently processed urgent payments outside normal procedures, and had a close personal relationship with Chen.
+                                                - button: 01_whistleblower_report.pdf, p.1
+                                              - listitem:
+                                                - strong: Nexus Trading Ltd
+                                                - text: — Described in the complaint as an external vendor supplying “consulting services” and as registered in the British Virgin Islands. The complainant states that its invoices lacked specific deliverables and that it had no website, LinkedIn presence, or verifiable business history.
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: First Caribbean International Bank, Tortola
+                                                - text: — Identified in the complaint as the location of Nexus Trading Ltd’s bank account.
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: Luxury property in Monaco
+                                                - text: — The complainant states that Chen recently purchased a luxury property in Monaco despite a “modest salary.”
+                                                - button: 01_whistleblower_report.pdf, p.1
+                                            - heading [level=2]: Key Facts & Dates
+                                            - list:
+                                              - listitem:
+                                                - strong: January 15, 2024
+                                                - text: — The complaint lists this as its filing date.
+                                                - button: 01_whistleblower_report.pdf, p.1
+                                              - listitem:
+                                                - strong: Over the preceding 18 months
+                                                - text: — The complainant states that irregularities were observed over this period.
+                                                - button: 01_whistleblower_report.pdf, p.1
+                                              - listitem:
+                                                - strong: March 15, 2023
+                                                - text: — The complaint lists a €125,000 payment to Nexus Trading Ltd for “Strategic Consulting Phase 1.”
+                                                - button: 01_whistleblower_report.pdf, p.1
+                                              - listitem:
+                                                - strong: May 22, 2023
+                                                - text: — The complaint lists a €180,000 payment to Nexus Trading Ltd for “Market Research Services.”
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: July 8, 2023
+                                                - text: — The complaint lists a €95,000 payment to Nexus Trading Ltd for “Operational Advisory.”
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: September 30, 2023
+                                                - text: — The complaint lists a €210,000 payment to Nexus Trading Ltd for “Integration Support.”
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: November 12, 2023
+                                                - text: — The complaint lists a €150,000 payment to Nexus Trading Ltd for “Strategic Consulting Phase 2.”
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: December 20, 2023
+                                                - text: — The complaint lists a €275,000 payment to Nexus Trading Ltd for “Year-End Advisory Services.”
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: March–December 2023
+                                                - text: — The complaint lists six payments to Nexus Trading Ltd totaling €1,035,000.
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                            - heading [level=2]: Notable Connections
+                                            - list:
+                                              - listitem:
+                                                - strong: Marcus Chen–Nexus Trading Ltd
+                                                - text: — The complainant states that Chen added Nexus as a vendor without standard onboarding. The complaint also identifies Chen as overseeing vendor relationships and contract approvals.
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: Marcus Chen–Victoria Blackwood
+                                                - text: — The complainant states that Blackwood’s signature appeared to match Chen’s handwriting.
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: Marcus Chen–David Okonkwo
+                                                - text: — The complaint describes Chen and Okonkwo as having a close personal relationship.
+                                                - button: 01_whistleblower_report.pdf, p.1
+                                              - listitem:
+                                                - strong: David Okonkwo–payment processing
+                                                - text: — The complainant states that Okonkwo approved payments without proper documentation and frequently processed urgent payments outside normal procedures.
+                                                - button: 01_whistleblower_report.pdf, p.1
+                                              - listitem:
+                                                - strong: Nexus Trading Ltd–British Virgin Islands/Tortola
+                                                - text: — The complaint states that Nexus was registered in the British Virgin Islands and that its bank account was at First Caribbean International Bank in Tortola.
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                              - listitem:
+                                                - strong: Nexus Trading Ltd–invoices and listed payments
+                                                - text: — The complaint lists six Nexus payments totaling €1,035,000 and states that Nexus invoices lacked specific deliverables.
+                                                - button: 01_whistleblower_report.pdf, p.2
+                                      - generic:
+                                        - button:
+                                          - text: Extracted Entities
+                                          - generic: "16"
+                                      - generic:
+                                        - button:
+                                          - text: Key Relationships
+                                          - generic: "14"
+                                      - generic:
+                                        - button: Processing Info
+    - region "Notifications alt+T"
+  - dialog [ref=f3e567]:
+    - generic [ref=f3e568]:
+      - heading "01_whistleblower_report.pdf" [level=2] [ref=f3e573]
+      - generic [ref=f3e574]:
+        - generic [ref=f3e575]:
+          - button [active] [ref=f3e576]
+          - generic [ref=f3e577]: Page 1
+          - button [ref=f3e578]
+        - button "Open in new tab" [ref=f3e579]
+    - iframe [ref=f3e581]:
+      

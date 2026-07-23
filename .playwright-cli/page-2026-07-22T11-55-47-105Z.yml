@@ -1,0 +1,180 @@
+- generic [ref=f2e2]:
+  - generic [ref=f2e6]:
+    - complementary [ref=f2e7]:
+      - link "Loupe cases" [ref=f2e9] [cursor=pointer]:
+        - /url: /cases
+      - navigation [ref=f2e11]:
+        - region "Investigation" [ref=f2e12]:
+          - paragraph [ref=f2e13]: Investigation
+          - link "Cases" [ref=f2e14] [cursor=pointer]:
+            - /url: /cases
+          - link "Triage" [ref=f2e18] [cursor=pointer]:
+            - /url: /triage
+        - region "Admin" [ref=f2e23]:
+          - paragraph [ref=f2e24]: Admin
+          - link "AI Costs" [ref=f2e25] [cursor=pointer]:
+            - /url: /admin/ai-costs
+          - link "Updates" [ref=f2e29] [cursor=pointer]:
+            - /url: /admin/updates
+          - link "Users" [ref=f2e35] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Profiles" [ref=f2e42] [cursor=pointer]:
+            - /url: /admin/profiles
+      - generic [ref=f2e45]:
+        - link "Settings" [ref=f2e46] [cursor=pointer]:
+          - /url: /settings
+        - button "Collapse sidebar" [ref=f2e51]:
+          - generic [ref=f2e52]: Collapse
+    - main [ref=f2e56]:
+      - generic [ref=f2e60]:
+        - generic [ref=f2e61]:
+          - generic [ref=f2e62]:
+            - generic [ref=f2e63]: Instance-wide
+            - heading "AI settings" [level=1] [ref=f2e65]
+            - paragraph [ref=f2e66]: Connect providers once, then control the models Loupe uses for chat, agents, and evidence ingestion.
+          - button "Save routing" [disabled]
+        - navigation "Settings sections" [ref=f2e67]:
+          - link "General" [ref=f2e68] [cursor=pointer]:
+            - /url: /settings
+          - link "AI settings" [ref=f2e70] [cursor=pointer]:
+            - /url: /settings/ai
+        - generic [ref=f2e83]:
+          - generic [ref=f2e84]:
+            - paragraph [ref=f2e85]: Connections
+            - paragraph [ref=f2e86]: 1 / 3
+            - paragraph [ref=f2e87]: Cloud providers ready
+          - generic [ref=f2e88]:
+            - paragraph [ref=f2e89]: Default route
+            - paragraph [ref=f2e90]: OpenAI
+            - paragraph [ref=f2e91]: Across 7 AI workloads
+          - generic [ref=f2e92]:
+            - paragraph [ref=f2e93]: Credential security
+            - paragraph [ref=f2e94]: Encrypted at rest
+            - paragraph [ref=f2e98]: Keys are never shown again after saving
+        - region [ref=f2e99]:
+          - generic [ref=f2e100]:
+            - heading "Provider connections" [level=2] [ref=f2e101]
+            - paragraph [ref=f2e102]: Credentials are shared by this Loupe deployment.
+          - generic [ref=f2e103]:
+            - generic [ref=f2e104]:
+              - generic [ref=f2e108]:
+                - generic [ref=f2e109]: OA
+                - generic [ref=f2e110]:
+                  - generic [ref=f2e111]: OpenAI
+                  - generic [ref=f2e112]: Connected
+              - generic [ref=f2e116]:
+                - paragraph [ref=f2e117]: Generative models, embeddings, audio transcription, and optional vision.
+                - generic [ref=f2e119]:
+                  - generic [ref=f2e120]: ••••••••SFoA
+                  - generic [ref=f2e121]: Environment
+                - generic [ref=f2e122]:
+                  - button "Replace OpenAI" [ref=f2e123]: Replace
+                  - button "Test" [ref=f2e124]
+                  - button "Disconnect OpenAI" [disabled]
+            - generic [ref=f2e125]:
+              - generic [ref=f2e129]:
+                - generic [ref=f2e130]: AN
+                - generic [ref=f2e131]:
+                  - generic [ref=f2e132]: Anthropic
+                  - generic [ref=f2e133]: API key needed
+              - generic [ref=f2e137]:
+                - paragraph [ref=f2e138]: Claude models for chat, investigation agents, and evidence analysis.
+                - button "Configure Anthropic" [ref=f2e140]: Configure
+            - generic [ref=f2e141]:
+              - generic [ref=f2e145]:
+                - generic [ref=f2e146]: GO
+                - generic [ref=f2e147]:
+                  - generic [ref=f2e148]: Google Gemini
+                  - generic [ref=f2e149]: API key needed
+              - generic [ref=f2e153]:
+                - paragraph [ref=f2e154]: Gemini models for chat, structured extraction, and analysis.
+                - button "Configure Google Gemini" [ref=f2e156]: Configure
+        - generic [ref=f2e157]:
+          - generic [ref=f2e158]:
+            - generic [ref=f2e159]: Default generative provider
+            - paragraph [ref=f2e172]: Choosing a provider loads Loupe’s recommended model profile. Review and save to apply it.
+          - generic [ref=f2e174]:
+            - generic [ref=f2e175]:
+              - paragraph [ref=f2e176]: Provider profile
+              - paragraph [ref=f2e177]: Only connected providers can be selected.
+            - combobox "Default AI provider" [ref=f2e178]:
+              - generic: OpenAI
+        - generic [ref=f2e179]:
+          - button [expanded] [active] [ref=f2e181]:
+            - generic [ref=f2e182]:
+              - generic [ref=f2e183]: Advanced model routing
+              - paragraph [ref=f2e195]: Choose a different connected model for an individual Loupe workload.
+          - generic [ref=f2e245]:
+            - generic [ref=f2e246]:
+              - heading "Interactive" [level=3] [ref=f2e247]
+              - generic [ref=f2e248]:
+                - generic [ref=f2e249]:
+                  - paragraph [ref=f2e250]: AI chat
+                  - paragraph [ref=f2e251]: The main AI Chat tab and the right-rail chat.
+                - combobox [ref=f2e252]:
+                  - generic: GPT-5.6 Terra · OpenAI
+              - generic [ref=f2e253]:
+                - generic [ref=f2e254]:
+                  - paragraph [ref=f2e255]: AI agent
+                  - paragraph [ref=f2e256]: Tool-using investigation agents.
+                - combobox [ref=f2e257]:
+                  - generic: GPT-5.6 Sol · OpenAI
+            - generic [ref=f2e258]:
+              - heading "Ingestion" [level=3] [ref=f2e259]
+              - generic [ref=f2e260]:
+                - generic [ref=f2e261]:
+                  - paragraph [ref=f2e262]: Entity extraction
+                  - paragraph [ref=f2e263]: Entities, facts, and relationships extracted from source text.
+                - combobox [ref=f2e264]:
+                  - generic: GPT-5.6 Terra · OpenAI
+              - generic [ref=f2e265]:
+                - generic [ref=f2e266]:
+                  - paragraph [ref=f2e267]: Entity resolution
+                  - paragraph [ref=f2e268]: Deduplication and canonical identity decisions.
+                - combobox [ref=f2e269]:
+                  - generic: GPT-5.6 Terra · OpenAI
+              - generic [ref=f2e270]:
+                - generic [ref=f2e271]:
+                  - paragraph [ref=f2e272]: Entity summaries
+                  - paragraph [ref=f2e273]: Evidence-bound summaries shown on graph entities.
+                - combobox [ref=f2e274]:
+                  - generic: GPT-5.6 Terra · OpenAI
+              - generic [ref=f2e275]:
+                - generic [ref=f2e276]:
+                  - paragraph [ref=f2e277]: Document summaries
+                  - paragraph [ref=f2e278]: Comprehensive summaries shown with evidence files.
+                - combobox [ref=f2e279]:
+                  - generic: GPT-5.6 Sol · OpenAI
+              - generic [ref=f2e280]:
+                - generic [ref=f2e281]:
+                  - paragraph [ref=f2e282]: Fact checking
+                  - paragraph [ref=f2e283]: Claim entailment and final summary quality checks.
+                - combobox [ref=f2e284]:
+                  - generic: GPT-5.6 Terra · OpenAI
+        - region [ref=f2e198]:
+          - generic [ref=f2e199]:
+            - heading "Supporting AI services" [level=2] [ref=f2e200]
+            - paragraph [ref=f2e201]: These services support ingestion independently of the generative provider above.
+          - generic [ref=f2e203]:
+            - generic [ref=f2e204]:
+              - generic [ref=f2e209]:
+                - paragraph [ref=f2e210]: Search embeddings
+                - paragraph [ref=f2e211]: Powers semantic evidence and entity search.
+              - generic [ref=f2e212]:
+                - paragraph [ref=f2e213]: OpenAI
+                - paragraph [ref=f2e214]: Ready
+            - generic [ref=f2e217]:
+              - generic [ref=f2e222]:
+                - paragraph [ref=f2e223]: Audio transcription
+                - paragraph [ref=f2e224]: Transcribes uploaded audio before ingestion.
+              - generic [ref=f2e225]:
+                - paragraph [ref=f2e226]: OpenAI
+                - paragraph [ref=f2e227]: Ready
+            - generic [ref=f2e230]:
+              - generic [ref=f2e235]:
+                - paragraph [ref=f2e236]: PDF OCR
+                - paragraph [ref=f2e237]: Runs locally for scanned PDF pages.
+              - generic [ref=f2e238]:
+                - paragraph [ref=f2e239]: Local Tesseract
+                - paragraph [ref=f2e240]: Ready
+  - region "Notifications alt+T"

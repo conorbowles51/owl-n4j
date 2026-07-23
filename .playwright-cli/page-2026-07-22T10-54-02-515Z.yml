@@ -1,0 +1,118 @@
+- generic [ref=f2e2]:
+  - generic [ref=f2e6]:
+    - complementary [ref=f2e7]:
+      - link "Loupe cases" [ref=f2e9] [cursor=pointer]:
+        - /url: /cases
+      - navigation [ref=f2e11]:
+        - region "Investigation" [ref=f2e12]:
+          - paragraph [ref=f2e13]: Investigation
+          - link "Cases" [ref=f2e14] [cursor=pointer]:
+            - /url: /cases
+          - link "Triage" [ref=f2e18] [cursor=pointer]:
+            - /url: /triage
+        - region "Case views" [ref=f2e23]:
+          - paragraph [ref=f2e24]: Case views
+          - group "Case layer" [ref=f2e25]:
+            - button "All data" [pressed] [ref=f2e26]
+            - button "Significant, 0 marked" [ref=f2e32]:
+              - generic [ref=f2e35]: Significant
+              - generic [ref=f2e36]: "0"
+          - link "Graph Ctrl+1" [ref=f2e37] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/graph
+            - generic [ref=f2e43]: Graph
+            - generic [ref=f2e44]: Ctrl+1
+          - link "Timeline Ctrl+2" [ref=f2e45] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/timeline
+            - generic [ref=f2e49]: Timeline
+            - generic [ref=f2e50]: Ctrl+2
+          - link "Map Ctrl+3" [ref=f2e51] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/map
+            - generic [ref=f2e54]: Map
+            - generic [ref=f2e55]: Ctrl+3
+          - link "Table Ctrl+4" [ref=f2e56] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/table
+            - generic [ref=f2e59]: Table
+            - generic [ref=f2e60]: Ctrl+4
+        - region "Full case data" [ref=f2e61]:
+          - paragraph [ref=f2e62]: Full case data
+          - link "Financial Ctrl+5" [ref=f2e63] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/financial
+            - generic [ref=f2e66]: Financial
+            - generic [ref=f2e67]: Ctrl+5
+          - link "Cellebrite Ctrl+6" [ref=f2e68] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/cellebrite
+            - generic [ref=f2e71]: Cellebrite
+            - generic [ref=f2e72]: Ctrl+6
+          - link "Profiles Ctrl+7" [ref=f2e73] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/profiles
+            - generic [ref=f2e79]: Profiles
+            - generic [ref=f2e80]: Ctrl+7
+          - link "Evidence Ctrl+8" [ref=f2e81] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/evidence
+            - generic [ref=f2e85]: Evidence
+            - generic [ref=f2e86]: Ctrl+8
+        - region "AI" [ref=f2e87]:
+          - paragraph [ref=f2e88]: AI
+          - link "Chat" [ref=f2e89] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/chat
+          - link "Agent" [active] [ref=f2e93] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/agent
+        - region "Workspace" [ref=f2e98]:
+          - paragraph [ref=f2e99]: Workspace
+          - link "Workspace" [ref=f2e100] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/workspace
+          - link "Reports" [ref=f2e105] [cursor=pointer]:
+            - /url: /cases/90e67136-9824-4573-9615-26e11f66824d/reports
+        - region "Admin" [ref=f2e110]:
+          - paragraph [ref=f2e111]: Admin
+          - link "AI Costs" [ref=f2e112] [cursor=pointer]:
+            - /url: /admin/ai-costs
+          - link "Updates" [ref=f2e116] [cursor=pointer]:
+            - /url: /admin/updates
+          - link "Users" [ref=f2e122] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Profiles" [ref=f2e129] [cursor=pointer]:
+            - /url: /admin/profiles
+      - generic [ref=f2e132]:
+        - link "Settings" [ref=f2e133] [cursor=pointer]:
+          - /url: /settings
+        - button "Collapse sidebar" [ref=f2e138]:
+          - generic [ref=f2e139]: Collapse
+    - main [ref=f2e143]:
+      - generic [ref=f2e366]:
+        - complementary [ref=f2e367]:
+          - generic [ref=f2e368]:
+            - generic [ref=f2e369]:
+              - paragraph [ref=f2e370]: AI
+              - heading "Agent threads" [level=2] [ref=f2e371]
+            - button "New agent thread" [ref=f2e372]
+          - generic [ref=f2e373]: No agent threads yet.
+        - generic [ref=f2e375]:
+          - generic [ref=f2e378]:
+            - generic [ref=f2e379]:
+              - generic [ref=f2e385]:
+                - heading "AI Agent" [level=1] [ref=f2e386]
+                - paragraph [ref=f2e387]: New agent thread
+              - generic [ref=f2e388]:
+                - button "Agent settings" [ref=f2e389]
+                - combobox "Agent model" [ref=f2e390]:
+                  - generic: GPT-5.6 Sol
+                - generic [ref=f2e391]: 0 artifacts
+            - generic [ref=f2e394]:
+              - heading "Ask the agent to investigate" [level=2] [ref=f2e399]
+              - paragraph [ref=f2e400]: It can search the graph, inspect documents, run safe read-only Cypher, and build focused views.
+            - generic [ref=f2e402]:
+              - textbox "Ask the agent to answer, explore, or build a focused view..." [ref=f2e403]
+              - button "Send agent prompt" [disabled]
+          - separator [ref=f2e404]
+          - generic [ref=f2e415]:
+            - generic [ref=f2e420]:
+              - heading "Agent artifacts" [level=2] [ref=f2e421]
+              - paragraph [ref=f2e422]: Focused views generated from tool results
+            - generic [ref=f2e424]:
+              - heading "No artifact yet" [level=3] [ref=f2e430]
+              - paragraph [ref=f2e431]: Ask for a graph, table, chart, report, or map view.
+        - complementary [ref=f2e432]:
+          - button "Entity details" [ref=f2e433]
+          - button "Notebook" [ref=f2e434]
+  - region "Notifications alt+T"

@@ -1,0 +1,585 @@
+- generic [ref=f1e2]:
+  - generic [ref=f1e3]:
+    - complementary [ref=f1e4]:
+      - link "Loupe cases" [ref=f1e6] [cursor=pointer]:
+        - /url: /cases
+      - navigation [ref=f1e8]:
+        - region "Investigation" [ref=f1e9]:
+          - paragraph [ref=f1e10]: Investigation
+          - link "Cases" [ref=f1e11] [cursor=pointer]:
+            - /url: /cases
+          - link "Triage" [ref=f1e15] [cursor=pointer]:
+            - /url: /triage
+        - region "Case views" [ref=f1e20]:
+          - paragraph [ref=f1e21]: Case views
+          - group "Case layer" [ref=f1e22]:
+            - button "All data" [pressed] [ref=f1e23]
+            - button "Significant, 0 marked" [ref=f1e29]:
+              - generic [ref=f1e32]: Significant
+              - generic [ref=f1e33]: "0"
+          - link "Graph Ctrl+1" [ref=f1e34] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/graph
+            - generic [ref=f1e40]: Graph
+            - generic [ref=f1e41]: Ctrl+1
+          - link "Timeline Ctrl+2" [ref=f1e42] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/timeline
+            - generic [ref=f1e46]: Timeline
+            - generic [ref=f1e47]: Ctrl+2
+          - link "Map Ctrl+3" [ref=f1e48] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/map
+            - generic [ref=f1e51]: Map
+            - generic [ref=f1e52]: Ctrl+3
+          - link "Table Ctrl+4" [ref=f1e53] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/table
+            - generic [ref=f1e56]: Table
+            - generic [ref=f1e57]: Ctrl+4
+        - region "Full case data" [ref=f1e58]:
+          - paragraph [ref=f1e59]: Full case data
+          - link "Financial Ctrl+5" [ref=f1e60] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/financial
+            - generic [ref=f1e63]: Financial
+            - generic [ref=f1e64]: Ctrl+5
+          - link "Cellebrite Ctrl+6" [ref=f1e65] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/cellebrite
+            - generic [ref=f1e68]: Cellebrite
+            - generic [ref=f1e69]: Ctrl+6
+          - link "Profiles Ctrl+7" [ref=f1e70] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/profiles
+            - generic [ref=f1e76]: Profiles
+            - generic [ref=f1e77]: Ctrl+7
+          - link "Evidence Ctrl+8" [ref=f1e78] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/evidence
+            - generic [ref=f1e82]: Evidence
+            - generic [ref=f1e83]: Ctrl+8
+        - region "AI" [ref=f1e84]:
+          - paragraph [ref=f1e85]: AI
+          - link "Chat" [ref=f1e86] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/chat
+          - link "Agent" [ref=f1e90] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/agent
+        - region "Workspace" [ref=f1e95]:
+          - paragraph [ref=f1e96]: Workspace
+          - link "Workspace" [ref=f1e97] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/workspace
+          - link "Reports" [ref=f1e102] [cursor=pointer]:
+            - /url: /cases/8eba2803-bae8-4934-8d44-acc4b8c91d7c/reports
+        - region "Admin" [ref=f1e107]:
+          - paragraph [ref=f1e108]: Admin
+          - link "AI Costs" [ref=f1e109] [cursor=pointer]:
+            - /url: /admin/ai-costs
+          - link "Updates" [ref=f1e113] [cursor=pointer]:
+            - /url: /admin/updates
+          - link "Users" [ref=f1e119] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Profiles" [ref=f1e126] [cursor=pointer]:
+            - /url: /admin/profiles
+      - generic [ref=f1e129]:
+        - link "Settings" [ref=f1e130] [cursor=pointer]:
+          - /url: /settings
+        - button "Collapse sidebar" [ref=f1e135]:
+          - generic [ref=f1e136]: Collapse
+    - main [ref=f1e140]:
+      - generic [ref=f1e144]:
+        - generic [ref=f1e147]:
+          - generic [ref=f1e148]:
+            - textbox "Search entities..." [ref=f1e153]: Victoria Blackwood
+            - button "Types" [ref=f1e154]
+            - button "Columns (8)" [ref=f1e155]:
+              - text: Columns
+              - generic [ref=f1e156]: (8)
+            - generic [ref=f1e157]: 4 of 126 entities
+            - button "Add Entity" [ref=f1e158]
+            - button "Export CSV" [ref=f1e159]
+          - table [ref=f1e162]:
+            - rowgroup [ref=f1e163]:
+              - row [ref=f1e164]:
+                - columnheader [ref=f1e165]:
+                  - checkbox [ref=f1e166]
+                - columnheader [ref=f1e167] [cursor=pointer]
+                - columnheader "Type" [ref=f1e171] [cursor=pointer]
+                - columnheader "Connections" [ref=f1e175] [cursor=pointer]
+                - columnheader "Sources" [ref=f1e179] [cursor=pointer]
+                - columnheader "Amount" [ref=f1e183] [cursor=pointer]
+                - columnheader "Date" [ref=f1e187] [cursor=pointer]
+                - columnheader "File Name" [ref=f1e191] [cursor=pointer]
+                - columnheader "Location" [ref=f1e195] [cursor=pointer]
+            - rowgroup [ref=f1e199]:
+              - row [ref=f1e1131] [cursor=pointer]:
+                - cell [ref=f1e1132]:
+                  - checkbox [ref=f1e1133]
+                - cell [ref=f1e1134]:
+                  - generic [ref=f1e1135]:
+                    - generic [ref=f1e1136]:
+                      - text: Email from Marcus Chen to
+                      - mark [ref=f1e1340]: Victoria Blackwood
+                      - text: dated 2023-02-1...
+                    - button "Explore 2 relationships" [ref=f1e1137]
+                - cell [ref=f1e1143]
+                - cell "2" [ref=f1e1146]
+                - cell "0" [ref=f1e1148]
+                - cell "—" [ref=f1e1150]
+                - cell "—" [ref=f1e1151]
+                - cell "—" [ref=f1e1152]
+                - cell "—" [ref=f1e1153]
+              - row [ref=f1e1154] [cursor=pointer]:
+                - cell [ref=f1e1155]:
+                  - checkbox [ref=f1e1156]
+                - cell [ref=f1e1157]:
+                  - generic [ref=f1e1158]:
+                    - generic [ref=f1e1159]:
+                      - text: Email from
+                      - mark [ref=f1e1341]: Victoria Blackwood
+                      - text: to Marcus Chen dated 2023-02-1...
+                    - button "Explore 2 relationships" [ref=f1e1160]
+                - cell [ref=f1e1166]
+                - cell "2" [ref=f1e1169]
+                - cell "0" [ref=f1e1171]
+                - cell "—" [ref=f1e1173]
+                - cell "—" [ref=f1e1174]
+                - cell "—" [ref=f1e1175]
+                - cell "—" [ref=f1e1176]
+              - row [ref=f1e1342] [cursor=pointer]:
+                - cell [ref=f1e1343]:
+                  - checkbox [ref=f1e1344]
+                - cell [ref=f1e1345]:
+                  - generic [ref=f1e1346]:
+                    - generic [ref=f1e1347]:
+                      - text: Meeting of David Okonkwo and
+                      - mark [ref=f1e1348]: Victoria Blackwood
+                    - button "Explore 2 relationships" [ref=f1e1349]
+                - cell [ref=f1e1355]
+                - cell "2" [ref=f1e1358]
+                - cell "0" [ref=f1e1360]
+                - cell "—" [ref=f1e1362]
+                - cell "—" [ref=f1e1363]
+                - cell "—" [ref=f1e1364]
+                - cell "—" [ref=f1e1365]
+              - row [active] [ref=f1e1366] [cursor=pointer]:
+                - cell [ref=f1e1367]:
+                  - checkbox [ref=f1e1368]
+                - cell [ref=f1e1369]:
+                  - generic [ref=f1e1370]:
+                    - mark [ref=f1e1372]: Victoria Blackwood
+                    - button "Explore 24 relationships" [ref=f1e1373]
+                - cell [ref=f1e1379]
+                - cell "24" [ref=f1e1382]
+                - cell "0" [ref=f1e1384]
+                - cell "—" [ref=f1e1386]
+                - cell "—" [ref=f1e1387]
+                - cell "—" [ref=f1e1388]
+                - cell "—" [ref=f1e1389]
+          - generic [ref=f1e1326]:
+            - generic [ref=f1e1327]:
+              - generic [ref=f1e1328]: Rows per page
+              - combobox [ref=f1e1329]:
+                - generic: "50"
+            - generic [ref=f1e1330]: Showing 1-4 of 4
+            - generic [ref=f1e1331]:
+              - button [disabled]
+              - button [disabled]
+              - generic [ref=f1e1332]: 1 / 1
+              - button [disabled]
+              - button [disabled]
+        - separator [ref=f1e1390]
+        - generic [ref=f1e1401]:
+          - generic [ref=f1e1402]:
+            - button "Details" [ref=f1e1403]
+            - button "AI Chat" [ref=f1e1406]
+            - button "Notebook" [ref=f1e1409]
+            - button [ref=f1e1414]
+          - generic [ref=f1e1416]:
+            - generic [ref=f1e1417]:
+              - generic [ref=f1e1418]:
+                - generic [ref=f1e1419]:
+                  - generic [ref=f1e1420]: Person
+                  - heading "Victoria Blackwood" [level=3] [ref=f1e1422]
+                  - generic [ref=f1e1423]: Unverified
+                - paragraph [ref=f1e1424]: "also known as: Victoria, V. Blackwood, Victoria Blackwood"
+                - paragraph [ref=f1e1425]: Alleged Fictitious Identity; Company Director and Manager
+              - generic [ref=f1e1426]:
+                - button "Add to Significant" [ref=f1e1427]
+                - button [ref=f1e1428]
+                - button [ref=f1e1429]
+            - generic [ref=f1e1432]:
+              - generic [ref=f1e1433]:
+                - generic [ref=f1e1434]:
+                  - heading "Summary" [level=4] [ref=f1e1435]
+                  - button [ref=f1e1436]
+                - generic [ref=f1e1438]:
+                  - heading "Identity and Status" [level=2] [ref=f1e1439]
+                  - paragraph [ref=f1e1440]:
+                    - text: Victoria Blackwood is identified in company and property records as a
+                    - strong [ref=f1e1441]: British national
+                    - text: ", with a date of birth of"
+                    - strong [ref=f1e1442]: March 12, 1985
+                    - text: .
+                    - button "02_company_registry_nexus.pdf, p.1" [ref=f1e1443] [cursor=pointer]
+                    - button "05_property_records_monaco.pdf, p.2" [ref=f1e1444] [cursor=pointer]
+                  - paragraph [ref=f1e1445]:
+                    - text: A company-registry record lists an address of
+                    - strong [ref=f1e1446]: 45 Mayfair Gardens, London, W1K 2PQ, United Kingdom
+                    - text: .
+                    - button "02_company_registry_nexus.pdf, p.1" [ref=f1e1447] [cursor=pointer]
+                  - paragraph [ref=f1e1448]:
+                    - text: A forensic accounting report identifies
+                    - strong [ref=f1e1449]: Victoria Blackwood
+                    - text: as a
+                    - strong [ref=f1e1450]: fictitious identity
+                    - text: ", states that no record of this person exists in UK databases, and states that the passport used for company formation was believed to be forged."
+                    - button "08_forensic_accounting_report.pdf, p.2" [ref=f1e1451] [cursor=pointer]
+                  - heading "Corporate Roles and Ownership" [level=2] [ref=f1e1452]
+                  - list [ref=f1e1453]:
+                    - listitem [ref=f1e1454]:
+                      - strong [ref=f1e1455]: "Nexus Trading Ltd:"
+                      - text: Listed as a director, appointed
+                      - strong [ref=f1e1456]: February 14, 2022
+                      - text: .
+                      - button "02_company_registry_nexus.pdf, p.1" [ref=f1e1457] [cursor=pointer]
+                    - listitem [ref=f1e1458]:
+                      - strong [ref=f1e1459]: "Nexus Trading Ltd:"
+                      - text: A complaint identifies Victoria Blackwood as
+                      - strong [ref=f1e1460]: CEO
+                      - text: . The same complaint describes Nexus Trading Ltd as an external vendor supplying “consulting services.”
+                      - button "01_whistleblower_report.pdf, p.1" [ref=f1e1461] [cursor=pointer]
+                    - listitem [ref=f1e1462]:
+                      - strong [ref=f1e1463]: "Azure Horizon SARL:"
+                      - text: Listed as
+                      - strong [ref=f1e1464]: director
+                      - text: .
+                      - button "05_property_records_monaco.pdf, p.1" [ref=f1e1465] [cursor=pointer]
+                    - listitem [ref=f1e1466]:
+                      - strong [ref=f1e1467]: "Azure Horizon SARL:"
+                      - text: Listed as
+                      - strong [ref=f1e1468]: manager
+                      - text: .
+                      - button "05_property_records_monaco.pdf, p.2" [ref=f1e1469] [cursor=pointer]
+                    - listitem [ref=f1e1470]:
+                      - strong [ref=f1e1471]: "Azure Horizon SARL:"
+                      - text: Identified by a forensic accounting report as having Victoria Blackwood as its
+                      - strong [ref=f1e1472]: beneficial owner
+                      - text: .
+                      - button "08_forensic_accounting_report.pdf, p.1" [ref=f1e1473] [cursor=pointer]
+                  - heading "Documented Communications and Statements" [level=2] [ref=f1e1474]
+                  - paragraph [ref=f1e1475]:
+                    - text: An email account,
+                    - strong [ref=f1e1476]:
+                      - link "v.blackwood@protonmail.com" [ref=f1e1477] [cursor=pointer]:
+                        - /url: mailto:v.blackwood@protonmail.com
+                    - text: ", appears in correspondence addressed to"
+                    - strong [ref=f1e1478]:
+                      - link "m.chen@globaltech-ind.com" [ref=f1e1479] [cursor=pointer]:
+                        - /url: mailto:m.chen@globaltech-ind.com
+                    - text: .
+                    - button "04_email_evidence.pdf, p.1" [ref=f1e1480] [cursor=pointer]
+                  - paragraph [ref=f1e1481]:
+                    - text: In an email, Victoria stated that an invoice would be sent Monday and that she would set up another company in Luxembourg for the Monaco property purchase.
+                    - button "04_email_evidence.pdf, p.1" [ref=f1e1482] [cursor=pointer]
+                  - heading "Interview Account" [level=2] [ref=f1e1483]
+                  - paragraph [ref=f1e1484]:
+                    - text: David Okonkwo stated that Marcus Chen introduced him to Victoria Blackwood and that they met once on
+                    - strong [ref=f1e1485]: April 12, 2023
+                    - text: ", at a restaurant in Mayfair that he thought was"
+                    - strong [ref=f1e1486]: The Wolseley
+                    - text: .
+                    - button "07_interview_david_okonkwo.pdf, p.2" [ref=f1e1487] [cursor=pointer]
+                  - paragraph [ref=f1e1488]:
+                    - text: Sarah Mitchell asked Okonkwo whether he had received payments from Marcus Chen or Victoria Blackwood.
+                    - button "07_interview_david_okonkwo.pdf, p.1" [ref=f1e1489] [cursor=pointer]
+                  - heading "Complaint and Legal Materials" [level=2] [ref=f1e1490]
+                  - paragraph [ref=f1e1491]:
+                    - text: A complaint alleges that Victoria Blackwood’s signature appears to match Marcus Chen’s handwriting.
+                    - button "01_whistleblower_report.pdf, p.1" [ref=f1e1492] [cursor=pointer]
+                  - paragraph [ref=f1e1493]:
+                    - text: An arrest-warrant application alleges a conspiracy involving
+                    - strong [ref=f1e1494]: Marcus Wei Chen
+                    - text: ", Victoria Blackwood—whose identity is stated to be unknown—and David Okonkwo."
+                    - button "11_arrest_warrant_chen.pdf, p.1" [ref=f1e1495] [cursor=pointer]
+                  - paragraph [ref=f1e1496]:
+                    - text: Victoria Blackwood is listed as the
+                    - strong [ref=f1e1497]: fourth defendant
+                    - text: in the Worldwide Freezing Order,
+                    - strong [ref=f1e1498]: Case No. CL-2024-000892
+                    - text: . The order states that her identity is unknown.
+                    - button "12_asset_freezing_order.pdf, p.1" [ref=f1e1499] [cursor=pointer]
+                  - heading "Telephone Records" [level=2] [ref=f1e1500]
+                  - paragraph [ref=f1e1501]:
+                    - text: The UK mobile number
+                    - strong [ref=f1e1502]: +44 7911 123XXX
+                    - text: is registered to
+                    - strong [ref=f1e1503]: “V. Blackwood.”
+                    - text: During the analysis period, the number had
+                    - strong [ref=f1e1504]: 847 total calls
+                    - text: and
+                    - strong [ref=f1e1505]: 234 total SMS messages
+                    - text: .
+                    - button "09_phone_records_analysis.pdf, p.1" [ref=f1e1506] [cursor=pointer]
+                  - paragraph [ref=f1e1507]:
+                    - text: Phone records indicate
+                    - strong [ref=f1e1508]: 847 calls
+                    - text: between Marcus Chen and the UK mobile number registered to “V. Blackwood” between
+                    - strong [ref=f1e1509]: January 2023 and February 2024
+                    - text: . The phone-record analysis describes the pattern as primarily evenings and weekends. The record does
+                    - strong [ref=f1e1510]: not
+                    - text: establish that the initials “V. Blackwood” identify Victoria Blackwood.
+                    - button "08_forensic_accounting_report.pdf, p.1" [ref=f1e1511] [cursor=pointer]
+                    - button "09_phone_records_analysis.pdf, p.1" [ref=f1e1512] [cursor=pointer]
+                  - paragraph [ref=f1e1513]: "The phone-record entries list the following calls with contact “V. Blackwood”:"
+                  - list [ref=f1e1514]:
+                    - listitem [ref=f1e1515]:
+                      - strong [ref=f1e1516]: "2023-03-14:"
+                      - text: 45 minutes; labeled “Day before first payment.”
+                    - listitem [ref=f1e1517]:
+                      - strong [ref=f1e1518]: "2023-05-21:"
+                      - text: 38 minutes; labeled “Day before second payment.”
+                    - listitem [ref=f1e1519]:
+                      - strong [ref=f1e1520]: "2023-07-07:"
+                      - text: 52 minutes; labeled “Day before third payment.”
+                    - listitem [ref=f1e1521]:
+                      - strong [ref=f1e1522]: "2023-08-25:"
+                      - text: 1 hour 20 minutes; labeled “3 days before Monaco purchase.”
+                    - listitem [ref=f1e1523]:
+                      - strong [ref=f1e1524]: "2023-09-29:"
+                      - text: 41 minutes; labeled “Day before fourth payment.”
+                    - listitem [ref=f1e1525]:
+                      - strong [ref=f1e1526]: "2023-11-11:"
+                      - text: 35 minutes; labeled “Day before fifth payment.”
+                    - listitem [ref=f1e1527]:
+                      - strong [ref=f1e1528]: "2023-12-19:"
+                      - text: 55 minutes; labeled “Day before final payment.”
+                      - button "09_phone_records_analysis.pdf, p.1" [ref=f1e1529] [cursor=pointer]
+                  - paragraph [ref=f1e1530]:
+                    - text: The analysis identifies the longest recorded call for the number as
+                    - strong [ref=f1e1531]: 2 hours 14 minutes on December 15, 2023
+                    - text: ; the supplied facts do not identify the other party to that call.
+                    - button "09_phone_records_analysis.pdf, p.1" [ref=f1e1532] [cursor=pointer]
+                  - heading "Source References" [level=2] [ref=f1e1533]
+                  - list [ref=f1e1534]:
+                    - listitem [ref=f1e1535]:
+                      - button "01_whistleblower_report.pdf" [ref=f1e1536] [cursor=pointer]
+                    - listitem [ref=f1e1537]:
+                      - button "02_company_registry_nexus.pdf" [ref=f1e1538] [cursor=pointer]
+                    - listitem [ref=f1e1539]:
+                      - button "04_email_evidence.pdf" [ref=f1e1540] [cursor=pointer]
+                    - listitem [ref=f1e1541]:
+                      - button "05_property_records_monaco.pdf" [ref=f1e1542] [cursor=pointer]
+                    - listitem [ref=f1e1543]:
+                      - button "07_interview_david_okonkwo.pdf" [ref=f1e1544] [cursor=pointer]
+                    - listitem [ref=f1e1545]:
+                      - button "08_forensic_accounting_report.pdf" [ref=f1e1546] [cursor=pointer]
+                    - listitem [ref=f1e1547]:
+                      - button "09_phone_records_analysis.pdf" [ref=f1e1548] [cursor=pointer]
+                    - listitem [ref=f1e1549]:
+                      - button "11_arrest_warrant_chen.pdf" [ref=f1e1550] [cursor=pointer]
+                    - listitem [ref=f1e1551]:
+                      - button "12_asset_freezing_order.pdf" [ref=f1e1552] [cursor=pointer]
+              - generic [ref=f1e1553]:
+                - button "Verified Facts 21" [ref=f1e1554]:
+                  - text: Verified Facts
+                  - generic [ref=f1e1557]: "21"
+                - generic [ref=f1e1558]:
+                  - generic [ref=f1e1559]:
+                    - button [ref=f1e1560]
+                    - generic [ref=f1e1561]:
+                      - paragraph [ref=f1e1562]: Victoria Blackwood is listed as a director of Nexus Trading Ltd.
+                      - 'button "Source: 02_company_registry_nexus.pdf p.1" [ref=f1e1563]'
+                  - generic [ref=f1e1564]:
+                    - button [ref=f1e1565]
+                    - generic [ref=f1e1566]:
+                      - paragraph [ref=f1e1567]: Victoria Blackwood was appointed on February 14, 2022.
+                      - 'button "Source: 02_company_registry_nexus.pdf p.1" [ref=f1e1568]'
+                  - generic [ref=f1e1569]:
+                    - button [ref=f1e1570]
+                    - generic [ref=f1e1571]:
+                      - paragraph [ref=f1e1572]: Victoria Blackwood's nationality is British.
+                      - 'button "Source: 02_company_registry_nexus.pdf p.1" [ref=f1e1573]'
+                  - generic [ref=f1e1574]:
+                    - button [ref=f1e1575]
+                    - generic [ref=f1e1576]:
+                      - paragraph [ref=f1e1577]: Victoria Blackwood's address is 45 Mayfair Gardens, London, W1K 2PQ, United Kingdom.
+                      - 'button "Source: 02_company_registry_nexus.pdf p.1" [ref=f1e1578]'
+                  - generic [ref=f1e1579]:
+                    - button [ref=f1e1580]
+                    - generic [ref=f1e1581]:
+                      - paragraph [ref=f1e1582]: Victoria Blackwood stated that an invoice would be sent Monday.
+                      - 'button "Source: 04_email_evidence.pdf p.1" [ref=f1e1583]'
+                  - button "Show 16 more" [ref=f1e1584]
+              - generic [ref=f1e1585]:
+                - heading "Connections" [level=4] [ref=f1e1586]
+                - generic [ref=f1e1588]:
+                  - generic [ref=f1e1589]:
+                    - button "ALLEGED ASSOCIATE OF 1" [ref=f1e1590]:
+                      - generic [ref=f1e1593]: ALLEGED ASSOCIATE OF
+                      - generic [ref=f1e1594]: "1"
+                    - button "Person Marcus Wei Chen" [ref=f1e1596]:
+                      - generic [ref=f1e1597]: Person
+                      - generic [ref=f1e1599]: Marcus Wei Chen
+                  - generic [ref=f1e1600]:
+                    - button "DEFENDANT IN 1" [ref=f1e1601]:
+                      - generic [ref=f1e1604]: DEFENDANT IN
+                      - generic [ref=f1e1605]: "1"
+                    - button "LegalAction Worldwide Freezing Order, Case No. CL-2024-000892" [ref=f1e1607]:
+                      - generic [ref=f1e1608]: LegalAction
+                      - generic [ref=f1e1610]: Worldwide Freezing Order, Case No. CL-2024-000892
+                  - generic [ref=f1e1611]:
+                    - button "COMMUNICATED WITH 1" [ref=f1e1612]:
+                      - generic [ref=f1e1615]: COMMUNICATED WITH
+                      - generic [ref=f1e1616]: "1"
+                    - button "Person Marcus Wei Chen" [ref=f1e1618]:
+                      - generic [ref=f1e1619]: Person
+                      - generic [ref=f1e1621]: Marcus Wei Chen
+                  - generic [ref=f1e1622]:
+                    - button "PARTICIPATED IN 8" [ref=f1e1623]:
+                      - generic [ref=f1e1626]: PARTICIPATED IN
+                      - generic [ref=f1e1627]: "8"
+                    - generic [ref=f1e1628]:
+                      - button "Communication Marcus Chen–V. Blackwood call on 2023-11-11" [ref=f1e1629]:
+                        - generic [ref=f1e1630]: Communication
+                        - generic [ref=f1e1632]: Marcus Chen–V. Blackwood call on 2023-11-11
+                      - button "Communication Marcus Chen–V. Blackwood call on 2023-07-07" [ref=f1e1633]:
+                        - generic [ref=f1e1634]: Communication
+                        - generic [ref=f1e1636]: Marcus Chen–V. Blackwood call on 2023-07-07
+                      - button "Communication Marcus Chen–V. Blackwood call on 2023-12-19" [ref=f1e1637]:
+                        - generic [ref=f1e1638]: Communication
+                        - generic [ref=f1e1640]: Marcus Chen–V. Blackwood call on 2023-12-19
+                      - button "Communication Marcus Chen–V. Blackwood call on 2023-08-25" [ref=f1e1641]:
+                        - generic [ref=f1e1642]: Communication
+                        - generic [ref=f1e1644]: Marcus Chen–V. Blackwood call on 2023-08-25
+                      - button "Communication Marcus Chen–V. Blackwood call on 2023-03-14" [ref=f1e1645]:
+                        - generic [ref=f1e1646]: Communication
+                        - generic [ref=f1e1648]: Marcus Chen–V. Blackwood call on 2023-03-14
+                      - button "Communication Marcus Chen–V. Blackwood call on 2023-05-21" [ref=f1e1649]:
+                        - generic [ref=f1e1650]: Communication
+                        - generic [ref=f1e1652]: Marcus Chen–V. Blackwood call on 2023-05-21
+                      - button "Communication Marcus Chen–V. Blackwood call on 2023-09-29" [ref=f1e1653]:
+                        - generic [ref=f1e1654]: Communication
+                        - generic [ref=f1e1656]: Marcus Chen–V. Blackwood call on 2023-09-29
+                      - button "Event Meeting of David Okonkwo and Victoria Blackwood" [ref=f1e1657]:
+                        - generic [ref=f1e1658]: Event
+                        - generic [ref=f1e1660]: Meeting of David Okonkwo and Victoria Blackwood
+                  - generic [ref=f1e1661]:
+                    - button "BENEFICIAL OWNER OF 1" [ref=f1e1662]:
+                      - generic [ref=f1e1665]: BENEFICIAL OWNER OF
+                      - generic [ref=f1e1666]: "1"
+                    - button "Organization Azure Horizon SARL" [ref=f1e1668]:
+                      - generic [ref=f1e1669]: Organization
+                      - generic [ref=f1e1671]: Azure Horizon SARL
+                  - generic [ref=f1e1672]:
+                    - button "REGISTERED TO 1" [ref=f1e1673]:
+                      - generic [ref=f1e1676]: REGISTERED TO
+                      - generic [ref=f1e1677]: "1"
+                    - button "CyberIdentity +44 7911 123XXX" [ref=f1e1679]:
+                      - generic [ref=f1e1680]: CyberIdentity
+                      - generic [ref=f1e1682]: +44 7911 123XXX
+                  - generic [ref=f1e1683]:
+                    - button "PHONE CALL WITH 7" [ref=f1e1684]:
+                      - generic [ref=f1e1687]: PHONE CALL WITH
+                      - generic [ref=f1e1688]: "7"
+                    - generic [ref=f1e1689]:
+                      - 'button "Communication Phone call record: V. Blackwood — 2023-03-14" [ref=f1e1690]':
+                        - generic [ref=f1e1691]: Communication
+                        - generic [ref=f1e1693]: "Phone call record: V. Blackwood — 2023-03-14"
+                      - 'button "Communication Phone call record: V. Blackwood — 2023-09-29" [ref=f1e1694]':
+                        - generic [ref=f1e1695]: Communication
+                        - generic [ref=f1e1697]: "Phone call record: V. Blackwood — 2023-09-29"
+                      - 'button "Communication Phone call record: V. Blackwood — 2023-11-11" [ref=f1e1698]':
+                        - generic [ref=f1e1699]: Communication
+                        - generic [ref=f1e1701]: "Phone call record: V. Blackwood — 2023-11-11"
+                      - 'button "Communication Phone call record: V. Blackwood — 2023-07-07" [ref=f1e1702]':
+                        - generic [ref=f1e1703]: Communication
+                        - generic [ref=f1e1705]: "Phone call record: V. Blackwood — 2023-07-07"
+                      - 'button "Communication Phone call record: V. Blackwood — 2023-05-21" [ref=f1e1706]':
+                        - generic [ref=f1e1707]: Communication
+                        - generic [ref=f1e1709]: "Phone call record: V. Blackwood — 2023-05-21"
+                      - 'button "Communication Phone call record: V. Blackwood — 2023-12-19" [ref=f1e1710]':
+                        - generic [ref=f1e1711]: Communication
+                        - generic [ref=f1e1713]: "Phone call record: V. Blackwood — 2023-12-19"
+                      - 'button "Communication Phone call record: V. Blackwood — 2023-08-25" [ref=f1e1714]':
+                        - generic [ref=f1e1715]: Communication
+                        - generic [ref=f1e1717]: "Phone call record: V. Blackwood — 2023-08-25"
+                  - generic [ref=f1e1718]:
+                    - button "DIRECTOR OF 1" [ref=f1e1719]:
+                      - generic [ref=f1e1722]: DIRECTOR OF
+                      - generic [ref=f1e1723]: "1"
+                    - button "Organization Nexus Trading Ltd" [ref=f1e1725]:
+                      - generic [ref=f1e1726]: Organization
+                      - generic [ref=f1e1728]: Nexus Trading Ltd
+                  - generic [ref=f1e1729]:
+                    - button "RESIDED AT 1" [ref=f1e1730]:
+                      - generic [ref=f1e1733]: RESIDED AT
+                      - generic [ref=f1e1734]: "1"
+                    - button "Location 45 Mayfair Gardens" [ref=f1e1736]:
+                      - generic [ref=f1e1737]: Location
+                      - generic [ref=f1e1739]: 45 Mayfair Gardens
+                  - generic [ref=f1e1740]:
+                    - button "WORKS FOR 1" [ref=f1e1741]:
+                      - generic [ref=f1e1744]: WORKS FOR
+                      - generic [ref=f1e1745]: "1"
+                    - button "Organization Nexus Trading Ltd" [ref=f1e1747]:
+                      - generic [ref=f1e1748]: Organization
+                      - generic [ref=f1e1750]: Nexus Trading Ltd
+                  - generic [ref=f1e1751]:
+                    - button "ALLEGED SIGNATURE HANDWRITING MATCH 1" [ref=f1e1752]:
+                      - generic [ref=f1e1755]: ALLEGED SIGNATURE HANDWRITING MATCH
+                      - generic [ref=f1e1756]: "1"
+                    - button "Person Marcus Wei Chen" [ref=f1e1758]:
+                      - generic [ref=f1e1759]: Person
+                      - generic [ref=f1e1761]: Marcus Wei Chen
+              - generic [ref=f1e1763]:
+                - generic [ref=f1e1764]:
+                  - heading "Notebook" [level=4] [ref=f1e1769]
+                  - button "Add note" [ref=f1e1770]
+                - button "No notes linked to this item yet." [ref=f1e1771]
+              - generic [ref=f1e1774]:
+                - generic [ref=f1e1775]:
+                  - heading "Properties" [level=4] [ref=f1e1776]
+                  - button [ref=f1e1777]
+                - generic [ref=f1e1778]:
+                  - generic [ref=f1e1782]:
+                    - generic [ref=f1e1783]:
+                      - generic [ref=f1e1784]: country
+                      - generic [ref=f1e1785]: United Kingdom
+                    - generic [ref=f1e1786]:
+                      - generic [ref=f1e1787]: role
+                      - generic [ref=f1e1788]: Director of Nexus Trading Ltd
+                    - generic [ref=f1e1789]:
+                      - generic [ref=f1e1790]: aliases
+                      - generic [ref=f1e1791]: Victoria, V. Blackwood, Victoria Blackwood
+                    - generic [ref=f1e1792]:
+                      - generic [ref=f1e1793]: city
+                      - generic [ref=f1e1794]: London
+                    - generic [ref=f1e1795]:
+                      - generic [ref=f1e1796]: date of birth
+                      - generic [ref=f1e1797]: 1985-03-12
+                    - generic [ref=f1e1798]:
+                      - generic [ref=f1e1799]: telephone number
+                      - generic [ref=f1e1800]: +44 7911 123XXX
+                    - generic [ref=f1e1801]:
+                      - generic [ref=f1e1802]: source locations
+                      - generic [ref=f1e1803]: "[{\"source_document_id\": \"288aa9a1-0d13-49fa-bba0-0ca7c4218191\", \"revision_id\": \"3d4a8737adfbb2de8070876f2a3eafbcaa1abcdb069bbd673cab71e79ac9d9f5\", \"source_file\": \"02_company_registry_nexus.pdf\", \"chunk_index\": 0, \"page_start\": 1, \"page_end\": 1, \"quote_start_char\": 330, \"quote_end_char\": 461, \"coordinate_space\": \"document_text\", \"quote\": \"Victoria Blackwood (Appointed: February 14, 2022)\\nNationality: British\\nAddress: 45 Mayfair Gardens, London, W1K 2PQ, United Kingdom\"}, {\"source_document_id\": \"9be2701a-10ba-47a6-a631-9467a8c9556a\", \"revision_id\": \"f3dd01995f180c52b4d29b0b62253e09412c341326d6a9c91f8d879ce04984bb\", \"source_file\": \"04_email_evidence.pdf\", \"chunk_index\": 0, \"page_start\": 1, \"page_end\": 2, \"quote_start_char\": 615, \"quote_end_char\": 677, \"coordinate_space\": \"document_text\", \"quote\": \"From: v.blackwood@protonmail.com\\nTo: m.chen@globaltech-ind.com\"}, {\"source_document_id\": \"4f389f78-b939-4d59-aa44-0d4c60cbe840\", \"revision_id\": \"9c4bd02bb7f8908e986971a0b51f5298c9c72d13187ea11bba1d21754821d781\", \"source_file\": \"01_whistleblower_report.pdf\", \"chunk_index\": 0, \"page_start\": 1, \"page_end\": 2, \"quote_start_char\": 721, \"quote_end_char\": 816, \"coordinate_space\": \"document_text\", \"quote\": \"Victoria Blackwood - CEO of Nexus Trading Ltd\\n\\u2022 External vendor, supplies 'consulting services'\"}]"
+                    - generic [ref=f1e1804]:
+                      - generic [ref=f1e1805]: description
+                      - generic [ref=f1e1806]: Victoria Blackwood is the name used in records identifying a British national, born March 12, 1985, as director and manager of Azure Horizon SARL and as director of Nexus Trading Ltd, appointed February 14, 2022. A complaint identifies her as CEO of Nexus Trading Ltd. A forensic accounting report identifies the name as beneficial owner of Azure Horizon SARL, while stating that the identity is fictitious, has no UK-database record, and was associated with a passport believed to be forged. Court and warrant materials identify Victoria Blackwood as an identity-unknown defendant and alleged conspirator. The identity is also linked in records to a London address, a ProtonMail email account, and a telephone number registered to “V. Blackwood,” although the phone-record analysis does not establish that “V. Blackwood” identifies Victoria Blackwood.
+                    - generic [ref=f1e1807]:
+                      - generic [ref=f1e1808]: location raw
+                      - generic [ref=f1e1809]: 45 Mayfair Gardens, London, W1K 2PQ, United Kingdom
+                    - generic [ref=f1e1810]:
+                      - generic [ref=f1e1811]: telephone registration name
+                      - generic [ref=f1e1812]: V. Blackwood
+                    - generic [ref=f1e1813]:
+                      - generic [ref=f1e1814]: address
+                      - generic [ref=f1e1815]: 45 Mayfair Gardens, London, W1K 2PQ, United Kingdom
+                    - generic [ref=f1e1816]:
+                      - generic [ref=f1e1817]: email address
+                      - generic [ref=f1e1818]: v.blackwood@protonmail.com
+                    - generic [ref=f1e1819]:
+                      - generic [ref=f1e1820]: nationality
+                      - generic [ref=f1e1821]: British
+                    - generic [ref=f1e1822]:
+                      - generic [ref=f1e1823]: location specificity
+                      - generic [ref=f1e1824]: exact_address
+                  - group [ref=f1e1825]:
+                    - generic "Provenance / system metadata" [ref=f1e1826] [cursor=pointer]
+              - generic [ref=f1e1829]:
+                - heading "Sources" [level=4] [ref=f1e1830]
+                - paragraph [ref=f1e1831]: No sources
+  - region "Notifications alt+T"

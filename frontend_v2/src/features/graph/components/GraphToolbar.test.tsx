@@ -17,13 +17,14 @@ function renderToolbar() {
   )
 }
 
-describe("GraphToolbar search", () => {
+describe("GraphToolbar", () => {
   beforeEach(() => {
     vi.useFakeTimers()
     useGraphStore.setState({
       searchMode: "filter",
       searchDraft: "",
       appliedSearchQuery: "",
+      graphDimension: "2d",
     })
   })
 
@@ -75,5 +76,19 @@ describe("GraphToolbar search", () => {
     expect(input).toHaveFocus()
     expect(input.selectionStart).toBe(0)
     expect(input.selectionEnd).toBe(5)
+  })
+
+  it("uses one compact toggle for the main and Spotlight graph dimension", () => {
+    renderToolbar()
+    const toggle = screen.getByRole("button", { name: "Switch to 3D graph view" })
+
+    expect(toggle).toHaveAttribute("aria-pressed", "false")
+    fireEvent.click(toggle)
+
+    expect(useGraphStore.getState().graphDimension).toBe("3d")
+    expect(
+      screen.getByRole("button", { name: "Switch to 2D graph view" })
+    ).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Drag select" })).toBeDisabled()
   })
 })

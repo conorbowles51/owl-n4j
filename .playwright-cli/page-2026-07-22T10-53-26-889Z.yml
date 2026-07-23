@@ -1,0 +1,198 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - link:
+            - /url: /cases
+        - navigation:
+          - region:
+            - paragraph: Investigation
+            - link:
+              - /url: /cases
+              - generic: Cases
+            - link:
+              - /url: /triage
+              - generic: Triage
+          - region:
+            - paragraph: Admin
+            - link:
+              - /url: /admin/ai-costs
+              - generic: AI Costs
+            - link:
+              - /url: /admin/updates
+              - generic: Updates
+            - link:
+              - /url: /admin/users
+              - generic: Users
+            - link:
+              - /url: /admin/profiles
+              - generic: Profiles
+        - generic:
+          - link:
+            - /url: /settings
+            - generic: Settings
+          - button:
+            - generic: Collapse
+      - generic:
+        - generic:
+          - generic:
+            - main:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - heading [level=1]: Settings
+                        - paragraph: Manage your personal preferences
+                      - generic:
+                        - generic: Profile
+                        - generic:
+                          - generic:
+                            - generic:
+                              - paragraph: Your Name
+                              - paragraph: you@example.com
+                            - generic: super_admin
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: AI models
+                              - paragraph: Central defaults for ingestion, chat, and tool-using agents.
+                            - button [disabled]: Save
+                        - generic:
+                          - generic:
+                            - generic: Openai ready
+                            - generic: Anthropic — API key needed
+                            - generic: Google Gemini — API key needed
+                            - generic: Ollama ready
+                          - generic:
+                            - heading [level=3]: Interactive
+                            - generic:
+                              - generic:
+                                - paragraph: AI chat
+                                - paragraph: The main AI Chat tab and the right-rail chat.
+                              - combobox:
+                                - generic: GPT-5.6 Terra · openai
+                            - generic:
+                              - generic:
+                                - paragraph: AI agent
+                                - paragraph: Tool-using investigation agents.
+                              - combobox:
+                                - generic: GPT-5.6 Sol · openai
+                          - generic:
+                            - heading [level=3]: Ingestion
+                            - generic:
+                              - generic:
+                                - paragraph: Entity extraction
+                                - paragraph: Entities, facts, and relationships extracted from source text.
+                              - combobox:
+                                - generic: GPT-5.6 Terra · openai
+                            - generic:
+                              - generic:
+                                - paragraph: Entity resolution
+                                - paragraph: Deduplication and canonical identity decisions.
+                              - combobox:
+                                - generic: GPT-5.6 Terra · openai
+                            - generic:
+                              - generic:
+                                - paragraph: Entity summaries
+                                - paragraph: Evidence-bound summaries shown on graph entities.
+                              - combobox:
+                                - generic: GPT-5.6 Terra · openai
+                            - generic:
+                              - generic:
+                                - paragraph: Document summaries
+                                - paragraph: Comprehensive summaries shown with evidence files.
+                              - combobox [expanded]:
+                                - generic: GPT-5.6 Sol · openai
+                            - generic:
+                              - generic:
+                                - paragraph: Fact checking
+                                - paragraph: Claim entailment and final summary quality checks.
+                              - combobox:
+                                - generic: GPT-5.6 Terra · openai
+                      - generic:
+                        - generic: Appearance
+                        - generic:
+                          - generic:
+                            - generic:
+                              - paragraph: Theme
+                              - paragraph: Select your preferred color scheme
+                            - combobox:
+                              - generic: Dark
+                      - generic:
+                        - generic: Keyboard Shortcuts
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: Open command palette
+                              - generic: Ctrl+K
+                            - generic:
+                              - generic: Graph view
+                              - generic: Ctrl+1
+                            - generic:
+                              - generic: Timeline view
+                              - generic: Ctrl+2
+                            - generic:
+                              - generic: Map view
+                              - generic: Ctrl+3
+                            - generic:
+                              - generic: Table view
+                              - generic: Ctrl+4
+                            - generic:
+                              - generic: Financial view
+                              - generic: Ctrl+5
+                            - generic:
+                              - generic: Cellebrite view
+                              - generic: Ctrl+6
+                            - generic:
+                              - generic: Profiles view
+                              - generic: Ctrl+7
+                            - generic:
+                              - generic: Evidence view
+                              - generic: Ctrl+8
+                            - generic:
+                              - generic: Close modal / panel
+                              - generic: Escape
+                            - generic:
+                              - generic: Save (context-dependent)
+                              - generic: Ctrl+S
+                            - generic:
+                              - generic: Delete selected (with confirmation)
+                              - generic: Delete
+                      - generic:
+                        - generic: Notifications
+                        - generic:
+                          - generic:
+                            - generic:
+                              - paragraph: Processing complete
+                              - paragraph: Notify when evidence processing finishes
+                            - switch [checked]
+                          - generic:
+                            - generic:
+                              - paragraph: Chat responses
+                              - paragraph: Sound notification for AI responses
+                            - switch
+                          - generic:
+                            - generic:
+                              - paragraph: Error alerts
+                              - paragraph: Notify on system errors
+                            - switch [checked]
+                      - generic:
+                        - generic: Default Views
+                        - generic:
+                          - generic:
+                            - generic:
+                              - paragraph: Default case view
+                              - paragraph: View shown when opening a case
+                            - combobox:
+                              - generic: Graph
+    - region "Notifications alt+T"
+  - listbox [ref=f1e227]:
+    - option "GPT-5.6 Sol · openai" [active] [selected] [ref=f1e228]
+    - option "GPT-5.6 Terra · openai" [ref=f1e232]
+    - option "GPT-5.6 Luna · openai" [ref=f1e235]
+    - option "GPT-5 Mini · openai" [ref=f1e238]
+    - option "GPT-5 · openai" [ref=f1e241]
+    - option "GPT-4o · openai" [ref=f1e244]

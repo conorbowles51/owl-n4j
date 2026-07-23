@@ -1,0 +1,292 @@
+- generic [ref=f3e2]:
+  - generic [ref=f3e6]:
+    - complementary [ref=f3e7]:
+      - link "Loupe cases" [ref=f3e9] [cursor=pointer]:
+        - /url: /cases
+      - navigation [ref=f3e11]:
+        - region "Investigation" [ref=f3e12]:
+          - paragraph [ref=f3e13]: Investigation
+          - link "Cases" [ref=f3e14] [cursor=pointer]:
+            - /url: /cases
+          - link "Triage" [ref=f3e18] [cursor=pointer]:
+            - /url: /triage
+        - region "Case views" [ref=f3e23]:
+          - paragraph [ref=f3e24]: Case views
+          - group "Case layer" [ref=f3e25]:
+            - button "All data" [pressed] [ref=f3e26]
+            - button "Significant, 0 marked" [ref=f3e32]:
+              - generic [ref=f3e35]: Significant
+              - generic [ref=f3e36]: "0"
+          - link "Graph Ctrl+1" [ref=f3e37] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/graph
+            - generic [ref=f3e43]: Graph
+            - generic [ref=f3e44]: Ctrl+1
+          - link "Timeline Ctrl+2" [ref=f3e45] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/timeline
+            - generic [ref=f3e49]: Timeline
+            - generic [ref=f3e50]: Ctrl+2
+          - link "Map Ctrl+3" [ref=f3e51] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/map
+            - generic [ref=f3e54]: Map
+            - generic [ref=f3e55]: Ctrl+3
+          - link "Table Ctrl+4" [ref=f3e56] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/table
+            - generic [ref=f3e59]: Table
+            - generic [ref=f3e60]: Ctrl+4
+        - region "Full case data" [ref=f3e61]:
+          - paragraph [ref=f3e62]: Full case data
+          - link "Financial Ctrl+5" [ref=f3e63] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/financial
+            - generic [ref=f3e66]: Financial
+            - generic [ref=f3e67]: Ctrl+5
+          - link "Cellebrite Ctrl+6" [ref=f3e68] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/cellebrite
+            - generic [ref=f3e71]: Cellebrite
+            - generic [ref=f3e72]: Ctrl+6
+          - link "Profiles Ctrl+7" [ref=f3e73] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/profiles
+            - generic [ref=f3e79]: Profiles
+            - generic [ref=f3e80]: Ctrl+7
+          - link "Evidence Ctrl+8" [ref=f3e81] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/evidence
+            - generic [ref=f3e85]: Evidence
+            - generic [ref=f3e86]: Ctrl+8
+        - region "AI" [ref=f3e87]:
+          - paragraph [ref=f3e88]: AI
+          - link "Chat" [ref=f3e89] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/chat
+          - link "Agent" [ref=f3e93] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/agent
+        - region "Workspace" [ref=f3e98]:
+          - paragraph [ref=f3e99]: Workspace
+          - link "Workspace" [ref=f3e100] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/workspace
+          - link "Reports" [ref=f3e105] [cursor=pointer]:
+            - /url: /cases/1047895d-338d-493b-954b-403b5f8472f9/reports
+        - region "Admin" [ref=f3e110]:
+          - paragraph [ref=f3e111]: Admin
+          - link "AI Costs" [ref=f3e112] [cursor=pointer]:
+            - /url: /admin/ai-costs
+          - link "Updates" [ref=f3e116] [cursor=pointer]:
+            - /url: /admin/updates
+          - link "Users" [ref=f3e122] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Profiles" [ref=f3e129] [cursor=pointer]:
+            - /url: /admin/profiles
+      - generic [ref=f3e132]:
+        - link "Settings" [ref=f3e133] [cursor=pointer]:
+          - /url: /settings
+        - button "Collapse sidebar" [ref=f3e138]:
+          - generic [ref=f3e139]: Collapse
+    - main [ref=f3e143]:
+      - generic [ref=f3e147]:
+        - generic [ref=f3e150]:
+          - generic [ref=f3e151]:
+            - generic [ref=f3e152]:
+              - textbox "Search entities..." [ref=f3e156]
+              - generic: /
+            - button "Types" [ref=f3e157]
+            - button "Columns (8)" [ref=f3e158]:
+              - text: Columns
+              - generic [ref=f3e159]: (8)
+            - generic [ref=f3e160]: 3 entities
+            - button "Add Entity" [ref=f3e161]
+            - button "Export CSV" [ref=f3e162]
+          - table [ref=f3e165]:
+            - rowgroup [ref=f3e166]:
+              - row [ref=f3e167]:
+                - columnheader [ref=f3e168]:
+                  - checkbox [ref=f3e169]
+                - columnheader [ref=f3e170] [cursor=pointer]
+                - columnheader "Type" [ref=f3e174] [cursor=pointer]
+                - columnheader "Connections" [ref=f3e178] [cursor=pointer]
+                - columnheader "Sources" [ref=f3e182] [cursor=pointer]
+                - columnheader "Amount" [ref=f3e186] [cursor=pointer]
+                - columnheader "Date" [ref=f3e190] [cursor=pointer]
+                - columnheader "File Name" [ref=f3e194] [cursor=pointer]
+                - columnheader "Location" [ref=f3e198] [cursor=pointer]
+            - rowgroup [ref=f3e202]:
+              - row [ref=f3e203] [cursor=pointer]:
+                - cell [ref=f3e204]:
+                  - checkbox [ref=f3e205]
+                - cell "Nexus Provenance Ltd" [ref=f3e206]:
+                  - generic [ref=f3e207]:
+                    - generic [ref=f3e208]: Nexus Provenance Ltd
+                    - button "Explore 2 relationships" [ref=f3e209]
+                - cell [ref=f3e215]
+                - cell "2" [ref=f3e218]
+                - cell "0" [ref=f3e220]
+                - cell "—" [ref=f3e222]
+                - cell "—" [ref=f3e223]
+                - cell "—" [ref=f3e224]
+                - cell "—" [ref=f3e225]
+              - row [ref=f3e226] [cursor=pointer]:
+                - cell [ref=f3e227]:
+                  - checkbox [ref=f3e228]
+                - cell "Victoria Blackwood" [ref=f3e229]:
+                  - generic [ref=f3e230]:
+                    - generic [ref=f3e231]: Victoria Blackwood
+                    - button "Explore 1 relationships" [ref=f3e232]
+                - cell [ref=f3e238]
+                - cell "1" [ref=f3e241]
+                - cell "0" [ref=f3e243]
+                - cell "—" [ref=f3e245]
+                - cell "—" [ref=f3e246]
+                - cell "—" [ref=f3e247]
+                - cell "—" [ref=f3e248]
+              - row [active] [ref=f3e249] [cursor=pointer]:
+                - cell [ref=f3e250]:
+                  - checkbox [ref=f3e251]
+                - cell "Victoria Blackwood QC" [ref=f3e252]:
+                  - generic [ref=f3e253]:
+                    - generic [ref=f3e254]: Victoria Blackwood QC
+                    - button "Explore 1 relationships" [ref=f3e255]
+                - cell [ref=f3e261]
+                - cell "1" [ref=f3e264]
+                - cell "0" [ref=f3e266]
+                - cell "—" [ref=f3e268]
+                - cell "—" [ref=f3e269]
+                - cell "—" [ref=f3e270]
+                - cell "—" [ref=f3e271]
+          - generic [ref=f3e272]:
+            - generic [ref=f3e273]:
+              - generic [ref=f3e274]: Rows per page
+              - combobox [ref=f3e275]:
+                - generic: "50"
+            - generic [ref=f3e276]: Showing 1-3 of 3
+            - generic [ref=f3e277]:
+              - button [disabled]
+              - button [disabled]
+              - generic [ref=f3e278]: 1 / 1
+              - button [disabled]
+              - button [disabled]
+        - separator [ref=f3e284]
+        - generic [ref=f3e295]:
+          - generic [ref=f3e296]:
+            - button "Details" [ref=f3e297]
+            - button "AI Chat" [ref=f3e300]
+            - button "Notebook" [ref=f3e303]
+            - button [ref=f3e308]
+          - generic [ref=f3e310]:
+            - generic [ref=f3e311]:
+              - generic [ref=f3e312]:
+                - generic [ref=f3e313]:
+                  - generic [ref=f3e314]: Person
+                  - heading "Victoria Blackwood QC" [level=3] [ref=f3e316]
+                - paragraph [ref=f3e317]: "also known as: Victoria Blackwood, Victoria Blackwood QC, V. Blackwood QC"
+                - paragraph [ref=f3e318]: Director and Authorised Signatory
+              - generic [ref=f3e319]:
+                - button "Add to Significant" [ref=f3e320]
+                - button [ref=f3e321]
+                - button [ref=f3e322]
+            - generic [ref=f3e325]:
+              - generic [ref=f3e326]:
+                - generic [ref=f3e327]:
+                  - heading "Summary" [level=4] [ref=f3e328]
+                  - button [ref=f3e329]
+                - generic [ref=f3e331]:
+                  - heading "Person Profile" [level=2] [ref=f3e332]
+                  - paragraph [ref=f3e333]:
+                    - strong [ref=f3e334]: Victoria Blackwood QC
+                    - text: is identified in source records as a
+                    - strong [ref=f3e335]: Director
+                    - text: and
+                    - strong [ref=f3e336]: Authorised Signatory
+                    - text: of
+                    - strong [ref=f3e337]: Nexus Provenance Ltd.
+                  - heading "Names and Aliases" [level=2] [ref=f3e338]
+                  - list [ref=f3e339]:
+                    - listitem [ref=f3e340]:
+                      - strong [ref=f3e341]: "Canonical name:"
+                      - text: Victoria Blackwood QC
+                    - listitem [ref=f3e342]:
+                      - strong [ref=f3e343]: "Alias:"
+                      - text: Victoria Blackwood
+                    - listitem [ref=f3e344]:
+                      - strong [ref=f3e345]: "Alias:"
+                      - text: V. Blackwood QC
+                  - heading "Corporate Roles" [level=2] [ref=f3e346]
+                  - list [ref=f3e347]:
+                    - listitem [ref=f3e348]:
+                      - paragraph [ref=f3e349]:
+                        - strong [ref=f3e350]: Director — Nexus Provenance Ltd.
+                      - list [ref=f3e351]:
+                        - listitem [ref=f3e352]:
+                          - strong [ref=f3e353]: "Date:"
+                          - text: 2024-03-01
+                        - listitem [ref=f3e354]: The registry supplement names Victoria Blackwood QC as a director of Nexus Provenance Ltd.
+                        - listitem [ref=f3e355]: "Source quotation: “Victoria Blackwood QC - Director”"
+                        - listitem [ref=f3e356]: "Qualification: Directly documented."
+                        - listitem [ref=f3e357]: "Confidence recorded in the relationship: 0.96."
+                    - listitem [ref=f3e358]:
+                      - paragraph [ref=f3e359]:
+                        - strong [ref=f3e360]: Authorised Signatory — Nexus Provenance Ltd.
+                      - list [ref=f3e361]:
+                        - listitem [ref=f3e362]:
+                          - strong [ref=f3e363]: "Date:"
+                          - text: 2024-04-02
+                        - listitem [ref=f3e364]: The authorisation record lists V. Blackwood QC as an authorised signatory for Nexus Provenance Ltd.
+                        - listitem [ref=f3e365]: "Source quotation: “Authorised signatory: V. Blackwood QC”"
+                        - listitem [ref=f3e366]: "Qualification: Directly documented."
+                        - listitem [ref=f3e367]: "Confidence recorded in the relationship: 0.91."
+                  - heading "Source References" [level=2] [ref=f3e368]
+                  - list [ref=f3e369]:
+                    - listitem [ref=f3e370]:
+                      - button "registry-supplement.pdf" [ref=f3e371] [cursor=pointer]
+                    - listitem [ref=f3e372]:
+                      - button "authorisation.pdf" [ref=f3e373] [cursor=pointer]
+              - generic [ref=f3e374]:
+                - button "Verified Facts 2" [ref=f3e375]:
+                  - text: Verified Facts
+                  - generic [ref=f3e378]: "2"
+                - generic [ref=f3e379]:
+                  - generic [ref=f3e380]:
+                    - button [ref=f3e381]
+                    - generic [ref=f3e382]:
+                      - paragraph [ref=f3e383]: Victoria Blackwood QC is named as a director of Nexus Provenance Ltd.
+                      - 'button "Source: registry-supplement.pdf p.3" [ref=f3e384]'
+                  - generic [ref=f3e385]:
+                    - button [ref=f3e386]
+                    - generic [ref=f3e387]:
+                      - paragraph [ref=f3e388]: V. Blackwood QC is listed as an authorised signatory for Nexus Provenance Ltd.
+                      - 'button "Source: authorisation.pdf p.11" [ref=f3e389]'
+              - generic [ref=f3e390]:
+                - heading "Connections" [level=4] [ref=f3e391]
+                - generic [ref=f3e394]:
+                  - button "DIRECTOR OF 1" [ref=f3e395]:
+                    - generic [ref=f3e398]: DIRECTOR OF
+                    - generic [ref=f3e399]: "1"
+                  - button "Organization Nexus Provenance Ltd" [ref=f3e401]:
+                    - generic [ref=f3e402]: Organization
+                    - generic [ref=f3e404]: Nexus Provenance Ltd
+              - generic [ref=f3e406]:
+                - generic [ref=f3e407]:
+                  - heading "Notebook" [level=4] [ref=f3e412]
+                  - button "Add note" [ref=f3e413]
+                - button "No notes linked to this item yet." [ref=f3e414]
+              - generic [ref=f3e417]:
+                - generic [ref=f3e418]:
+                  - heading "Properties" [level=4] [ref=f3e419]
+                  - button [ref=f3e420]
+                - generic [ref=f3e421]:
+                  - generic [ref=f3e425]:
+                    - generic [ref=f3e426]:
+                      - generic [ref=f3e427]: aliases
+                      - generic [ref=f3e428]: Victoria Blackwood, Victoria Blackwood QC, V. Blackwood QC
+                    - generic [ref=f3e429]:
+                      - generic [ref=f3e430]: source locations
+                      - generic [ref=f3e431]: "[{\"page_end\": 3, \"file_name\": \"registry-supplement.pdf\", \"page_start\": 3}, {\"page_end\": 11, \"file_name\": \"authorisation.pdf\", \"page_start\": 11}]"
+                    - generic [ref=f3e432]:
+                      - generic [ref=f3e433]: description
+                      - generic [ref=f3e434]: Victoria Blackwood QC is named as a director of Nexus Provenance Ltd. in the registry supplement and is listed as an authorised signatory for Nexus Provenance Ltd. in the authorisation record.
+                    - generic [ref=f3e435]:
+                      - generic [ref=f3e436]: source claim ids
+                      - generic [ref=f3e437]: claim-registry-2, claim-authorisation-2
+                  - group [ref=f3e438]:
+                    - generic "Provenance / system metadata" [ref=f3e439] [cursor=pointer]
+              - generic [ref=f3e442]:
+                - heading "Sources" [level=4] [ref=f3e443]
+                - generic [ref=f3e444]:
+                  - button "registry-supplement.pdf" [ref=f3e445]
+                  - button "authorisation.pdf" [ref=f3e450]
+  - region "Notifications alt+T"

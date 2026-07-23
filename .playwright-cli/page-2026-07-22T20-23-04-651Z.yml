@@ -1,0 +1,25 @@
+- generic [ref=e2]:
+  - main [ref=e4]:
+    - img "Loupe" [ref=e7]
+    - region [ref=e8]:
+      - generic [ref=e9]:
+        - heading "Welcome back" [level=1] [ref=e10]
+        - paragraph [ref=e11]: Sign in to continue to your investigation workspace.
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: Username
+          - textbox "Username" [invalid] [ref=e15]:
+            - /placeholder: Enter your username
+            - text: admin
+        - generic [ref=e16]:
+          - generic [ref=e17]: Password
+          - generic [ref=e18]:
+            - textbox "Password" [invalid] [ref=e19]:
+              - /placeholder: Enter your password
+              - text: owlinvestigates
+            - button "Show password" [ref=e20]
+        - alert [ref=e31]: Invalid credentials
+        - button "Sign in" [ref=e30]
+      - paragraph [ref=e28]: Access is logged and monitored. Unauthorized use is prohibited.
+    - paragraph [ref=e29]: © 2026 Loupe
+  - region "Notifications alt+T"

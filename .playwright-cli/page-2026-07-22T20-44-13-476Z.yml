@@ -1,0 +1,138 @@
+- generic [ref=f7e2]:
+  - generic [ref=f7e6]:
+    - complementary [ref=f7e7]:
+      - link "Loupe cases" [ref=f7e9] [cursor=pointer]:
+        - /url: /cases
+      - navigation [ref=f7e11]:
+        - region "Investigation" [ref=f7e12]:
+          - paragraph [ref=f7e13]: Investigation
+          - link "Cases" [ref=f7e14] [cursor=pointer]:
+            - /url: /cases
+          - link "Triage" [ref=f7e18] [cursor=pointer]:
+            - /url: /triage
+        - region "Case views" [ref=f7e23]:
+          - paragraph [ref=f7e24]: Case views
+          - group "Case layer" [ref=f7e25]:
+            - button "All data" [pressed] [ref=f7e26]
+            - button "Significant, 0 marked" [ref=f7e32]:
+              - generic [ref=f7e35]: Significant
+              - generic [ref=f7e36]: "0"
+          - link "Graph Ctrl+1" [ref=f7e37] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/graph
+            - generic [ref=f7e43]: Graph
+            - generic [ref=f7e44]: Ctrl+1
+          - link "Timeline Ctrl+2" [ref=f7e45] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/timeline
+            - generic [ref=f7e49]: Timeline
+            - generic [ref=f7e50]: Ctrl+2
+          - link "Map Ctrl+3" [ref=f7e51] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/map
+            - generic [ref=f7e54]: Map
+            - generic [ref=f7e55]: Ctrl+3
+          - link "Table Ctrl+4" [ref=f7e56] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/table
+            - generic [ref=f7e59]: Table
+            - generic [ref=f7e60]: Ctrl+4
+        - region "Full case data" [ref=f7e61]:
+          - paragraph [ref=f7e62]: Full case data
+          - link "Financial Ctrl+5" [ref=f7e63] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/financial
+            - generic [ref=f7e66]: Financial
+            - generic [ref=f7e67]: Ctrl+5
+          - link "Cellebrite Ctrl+6" [ref=f7e68] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/cellebrite
+            - generic [ref=f7e71]: Cellebrite
+            - generic [ref=f7e72]: Ctrl+6
+          - link "Profiles Ctrl+7" [ref=f7e73] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/profiles
+            - generic [ref=f7e79]: Profiles
+            - generic [ref=f7e80]: Ctrl+7
+          - link "Evidence Ctrl+8" [ref=f7e81] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/evidence
+            - generic [ref=f7e85]: Evidence
+            - generic [ref=f7e86]: Ctrl+8
+        - region "AI" [ref=f7e87]:
+          - paragraph [ref=f7e88]: AI
+          - link "Chat" [ref=f7e89] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/chat
+          - link "Agent" [ref=f7e93] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/agent
+        - region "Workspace" [ref=f7e98]:
+          - paragraph [ref=f7e99]: Workspace
+          - link "Workspace" [ref=f7e100] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/workspace
+          - link "Reports" [ref=f7e105] [cursor=pointer]:
+            - /url: /cases/diagnostic-case/reports
+        - region "Admin" [ref=f7e110]:
+          - paragraph [ref=f7e111]: Admin
+          - link "AI Costs" [ref=f7e112] [cursor=pointer]:
+            - /url: /admin/ai-costs
+          - link "Updates" [ref=f7e116] [cursor=pointer]:
+            - /url: /admin/updates
+          - link "Users" [ref=f7e122] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Profiles" [ref=f7e129] [cursor=pointer]:
+            - /url: /admin/profiles
+      - generic [ref=f7e132]:
+        - link "Settings" [ref=f7e133] [cursor=pointer]:
+          - /url: /settings
+        - button "Collapse sidebar" [ref=f7e138]:
+          - generic [ref=f7e139]: Collapse
+    - main [ref=f7e143]:
+      - generic [ref=f7e148]:
+        - generic [ref=f7e149]:
+          - generic [ref=f7e150]:
+            - textbox "Filter graph entities" [ref=f7e155]:
+              - /placeholder: Filter graph...
+            - combobox "Graph search mode" [ref=f7e156]:
+              - option "Filter" [selected]
+              - option "Search"
+            - button "Filter syntax help" [ref=f7e157]
+            - generic [ref=f7e158]: 6 / 6
+          - generic [ref=f7e159]:
+            - button "Zoom in" [ref=f7e160]
+            - button "Zoom out" [ref=f7e161]
+            - button "Fit graph to view" [ref=f7e162]
+            - button "Switch to 3D graph view" [active] [ref=f7e227]
+          - generic [ref=f7e164]:
+            - button [ref=f7e165]
+            - button "Drag select" [ref=f7e166]
+          - generic [ref=f7e167]:
+            - button "Add Node" [ref=f7e168]
+            - button "Relationship" [ref=f7e169]
+          - generic [ref=f7e170]:
+            - button [ref=f7e171]
+            - button [ref=f7e172]
+            - button [ref=f7e173]
+            - button [ref=f7e174]
+          - generic [ref=f7e175]:
+            - button [ref=f7e176]
+            - button [ref=f7e177]
+        - generic [ref=f7e178]:
+          - generic [ref=f7e182]:
+            - generic [ref=f7e228]: 6 nodes · 7 edges
+            - generic [ref=f7e188]:
+              - button "Legend 4 types" [ref=f7e189]:
+                - generic [ref=f7e192]: Legend
+                - generic [ref=f7e193]: 4 types
+              - generic [ref=f7e194]:
+                - button "person 2" [ref=f7e195]:
+                  - generic [ref=f7e197]: person
+                  - generic [ref=f7e198]: "2"
+                - button "organization 2" [ref=f7e199]:
+                  - generic [ref=f7e201]: organization
+                  - generic [ref=f7e202]: "2"
+                - button "location 1" [ref=f7e203]:
+                  - generic [ref=f7e205]: location
+                  - generic [ref=f7e206]: "1"
+                - button "event 1" [ref=f7e207]:
+                  - generic [ref=f7e209]: event
+                  - generic [ref=f7e210]: "1"
+              - generic [ref=f7e212]:
+                - button "Select All" [ref=f7e213]
+                - button "Deselect" [ref=f7e214]
+          - generic [ref=f7e215]:
+            - button [ref=f7e216]
+            - button [ref=f7e218]
+            - button [ref=f7e219]
+  - region "Notifications alt+T"

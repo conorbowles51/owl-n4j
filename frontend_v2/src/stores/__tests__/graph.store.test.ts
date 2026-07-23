@@ -10,6 +10,7 @@ describe("graph.store", () => {
       searchDraft: "",
       appliedSearchQuery: "",
       filters: {},
+      graphDimension: "2d",
       viewSettings: {
         layout: "force",
         showLabels: true,
@@ -91,6 +92,17 @@ describe("graph.store", () => {
   })
 
   describe("view settings", () => {
+    it("toggles the shared graph dimension and exits drag selection in 3D", () => {
+      useGraphStore.setState({ selectionMode: "drag" })
+
+      useGraphStore.getState().toggleGraphDimension()
+      expect(useGraphStore.getState().graphDimension).toBe("3d")
+      expect(useGraphStore.getState().selectionMode).toBe("click")
+
+      useGraphStore.getState().toggleGraphDimension()
+      expect(useGraphStore.getState().graphDimension).toBe("2d")
+    })
+
     it("setViewSetting updates individual setting", () => {
       useGraphStore.getState().setViewSetting("layout", "radial")
       expect(useGraphStore.getState().viewSettings.layout).toBe("radial")

@@ -1,0 +1,200 @@
+- generic [ref=f4e2]:
+  - generic [ref=f4e6]:
+    - complementary [ref=f4e7]:
+      - link "Loupe cases" [ref=f4e9] [cursor=pointer]:
+        - /url: /cases
+      - navigation [ref=f4e11]:
+        - region "Investigation" [ref=f4e12]:
+          - paragraph [ref=f4e13]: Investigation
+          - link "Cases" [ref=f4e14] [cursor=pointer]:
+            - /url: /cases
+          - link "Triage" [ref=f4e18] [cursor=pointer]:
+            - /url: /triage
+        - region "Case views" [ref=f4e23]:
+          - paragraph [ref=f4e24]: Case views
+          - group "Case layer" [ref=f4e25]:
+            - button "All data" [pressed] [ref=f4e26]
+            - button "Significant, 0 marked" [ref=f4e32]:
+              - generic [ref=f4e35]: Significant
+              - generic [ref=f4e36]: "0"
+          - link "Graph Ctrl+1" [ref=f4e37] [cursor=pointer]:
+            - /url: /cases/verify-case/graph
+            - generic [ref=f4e43]: Graph
+            - generic [ref=f4e44]: Ctrl+1
+          - link "Timeline Ctrl+2" [ref=f4e45] [cursor=pointer]:
+            - /url: /cases/verify-case/timeline
+            - generic [ref=f4e49]: Timeline
+            - generic [ref=f4e50]: Ctrl+2
+          - link "Map Ctrl+3" [ref=f4e51] [cursor=pointer]:
+            - /url: /cases/verify-case/map
+            - generic [ref=f4e54]: Map
+            - generic [ref=f4e55]: Ctrl+3
+          - link "Table Ctrl+4" [ref=f4e56] [cursor=pointer]:
+            - /url: /cases/verify-case/table
+            - generic [ref=f4e59]: Table
+            - generic [ref=f4e60]: Ctrl+4
+        - region "Full case data" [ref=f4e61]:
+          - paragraph [ref=f4e62]: Full case data
+          - link "Financial Ctrl+5" [ref=f4e63] [cursor=pointer]:
+            - /url: /cases/verify-case/financial
+            - generic [ref=f4e66]: Financial
+            - generic [ref=f4e67]: Ctrl+5
+          - link "Cellebrite Ctrl+6" [ref=f4e68] [cursor=pointer]:
+            - /url: /cases/verify-case/cellebrite
+            - generic [ref=f4e71]: Cellebrite
+            - generic [ref=f4e72]: Ctrl+6
+          - link "Profiles Ctrl+7" [ref=f4e73] [cursor=pointer]:
+            - /url: /cases/verify-case/profiles
+            - generic [ref=f4e79]: Profiles
+            - generic [ref=f4e80]: Ctrl+7
+          - link "Evidence Ctrl+8" [ref=f4e81] [cursor=pointer]:
+            - /url: /cases/verify-case/evidence
+            - generic [ref=f4e85]: Evidence
+            - generic [ref=f4e86]: Ctrl+8
+        - region "AI" [ref=f4e87]:
+          - paragraph [ref=f4e88]: AI
+          - link "Chat" [ref=f4e89] [cursor=pointer]:
+            - /url: /cases/verify-case/chat
+          - link "Agent" [ref=f4e93] [cursor=pointer]:
+            - /url: /cases/verify-case/agent
+        - region "Workspace" [ref=f4e98]:
+          - paragraph [ref=f4e99]: Workspace
+          - link "Workspace" [ref=f4e100] [cursor=pointer]:
+            - /url: /cases/verify-case/workspace
+          - link "Reports" [ref=f4e105] [cursor=pointer]:
+            - /url: /cases/verify-case/reports
+        - region "Admin" [ref=f4e110]:
+          - paragraph [ref=f4e111]: Admin
+          - link "AI Costs" [ref=f4e112] [cursor=pointer]:
+            - /url: /admin/ai-costs
+          - link "Updates" [ref=f4e116] [cursor=pointer]:
+            - /url: /admin/updates
+          - link "Users" [ref=f4e122] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Profiles" [ref=f4e129] [cursor=pointer]:
+            - /url: /admin/profiles
+      - generic [ref=f4e132]:
+        - link "Settings" [ref=f4e133] [cursor=pointer]:
+          - /url: /settings
+        - button "Collapse sidebar" [ref=f4e138]:
+          - generic [ref=f4e139]: Collapse
+    - main [ref=f4e143]:
+      - generic [ref=f4e148]:
+        - generic [ref=f4e150]:
+          - generic [ref=f4e151]: verification
+          - generic [ref=f4e152]: Spotlight source
+          - generic [ref=f4e153]: 3D label verification
+        - generic [ref=f4e154]:
+          - generic [ref=f4e155]:
+            - textbox "Filter graph entities" [ref=f4e160]:
+              - /placeholder: Filter graph...
+            - combobox "Graph search mode" [ref=f4e161]:
+              - option "Filter" [selected]
+              - option "Search"
+            - button "Filter syntax help" [ref=f4e162]
+            - generic [ref=f4e163]: 6 / 6
+          - generic [ref=f4e164]:
+            - button "Zoom in" [ref=f4e165]
+            - button "Zoom out" [ref=f4e166]
+            - button "Fit graph to view" [ref=f4e167]
+            - button "Switch to 2D graph view" [active] [pressed] [ref=f4e329]
+          - generic [ref=f4e169]:
+            - button [ref=f4e170]
+            - button "Drag select" [disabled]
+          - generic [ref=f4e172]:
+            - button "Add Node" [ref=f4e173]
+            - button "Relationship" [ref=f4e174]
+          - generic [ref=f4e175]:
+            - button [ref=f4e176]
+            - button [ref=f4e177]
+            - button [ref=f4e178]
+            - button [ref=f4e179]
+          - generic [ref=f4e180]:
+            - button "5" [ref=f4e181]
+            - button [ref=f4e183]
+        - generic [ref=f4e185]:
+          - generic [ref=f4e188]:
+            - generic [ref=f4e330]:
+              - generic [ref=f4e331]: "Left-click: rotate, Mouse-wheel/middle-click: zoom, Right-click: pan"
+              - generic: 6 nodes · 7 edges · 3D
+            - generic [ref=f4e194]:
+              - button "Legend 4 types" [ref=f4e195]:
+                - generic [ref=f4e198]: Legend
+                - generic [ref=f4e199]: 4 types
+              - generic [ref=f4e200]:
+                - button "person 2" [ref=f4e201]:
+                  - generic [ref=f4e203]: person
+                  - generic [ref=f4e204]: "2"
+                - button "organization 2" [ref=f4e205]:
+                  - generic [ref=f4e207]: organization
+                  - generic [ref=f4e208]: "2"
+                - button "location 1" [ref=f4e209]:
+                  - generic [ref=f4e211]: location
+                  - generic [ref=f4e212]: "1"
+                - button "event 1" [ref=f4e213]:
+                  - generic [ref=f4e215]: event
+                  - generic [ref=f4e216]: "1"
+              - generic [ref=f4e217]:
+                - generic [ref=f4e218]:
+                  - button "Select All" [ref=f4e219]
+                  - button "Deselect" [ref=f4e220]
+                - generic [ref=f4e221]:
+                  - button "+ Spotlight" [ref=f4e222]
+                  - button "- Spotlight" [ref=f4e223]
+          - separator [ref=f4e224]
+          - generic [ref=f4e235]:
+            - generic [ref=f4e236]:
+              - heading "Spotlight (5)" [level=3] [ref=f4e237]
+              - generic [ref=f4e238]:
+                - button "Add 5 to Significant" [ref=f4e239]
+                - button "Clear" [ref=f4e240]
+            - button "Analysis" [ref=f4e246]
+          - separator [ref=f4e249]
+          - generic [ref=f4e260]:
+            - generic [ref=f4e261]:
+              - button "Details" [ref=f4e262]
+              - button "AI Chat" [ref=f4e265]
+              - button "Notebook" [ref=f4e268]
+              - button [ref=f4e273]
+            - generic [ref=f4e276]:
+              - generic [ref=f4e277]:
+                - generic [ref=f4e278]:
+                  - heading "5 nodes selected" [level=3] [ref=f4e279]
+                  - generic [ref=f4e280]:
+                    - generic [ref=f4e281]:
+                      - generic [ref=f4e282]: person
+                      - generic [ref=f4e284]: ×2
+                    - generic [ref=f4e285]:
+                      - generic [ref=f4e286]: organization
+                      - generic [ref=f4e288]: ×1
+                    - generic [ref=f4e289]:
+                      - generic [ref=f4e290]: location
+                      - generic [ref=f4e292]: ×1
+                    - generic [ref=f4e293]:
+                      - generic [ref=f4e294]: event
+                      - generic [ref=f4e296]: ×1
+                - button "Clear" [ref=f4e297]
+              - generic [ref=f4e298]:
+                - button "Add 5" [ref=f4e299]
+                - button "Merge" [ref=f4e300]
+                - button "Hide All" [ref=f4e301]
+                - button "Subgraph" [ref=f4e302]
+              - generic [ref=f4e303]:
+                - heading "Selected Entities" [level=4] [ref=f4e304]
+                - generic [ref=f4e308]:
+                  - generic [ref=f4e309]:
+                    - generic [ref=f4e310]: person
+                    - generic [ref=f4e312]: Alpha Morgan
+                  - generic [ref=f4e313]:
+                    - generic [ref=f4e314]: organization
+                    - generic [ref=f4e316]: Bravo Holdings
+                  - generic [ref=f4e317]:
+                    - generic [ref=f4e318]: location
+                    - generic [ref=f4e320]: Charlie Harbour
+                  - generic [ref=f4e321]:
+                    - generic [ref=f4e322]: event
+                    - generic [ref=f4e324]: Delta Conference
+                  - generic [ref=f4e325]:
+                    - generic [ref=f4e326]: person
+                    - generic [ref=f4e328]: Echo Montgomery with an exceptionally long full name
+  - region "Notifications alt+T"

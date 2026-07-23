@@ -21,6 +21,7 @@ interface ContextMenuData {
 type ContextMenuState = ContextMenuData | null
 
 export type GraphSearchMode = "filter" | "search"
+export type GraphDimension = "2d" | "3d"
 
 interface GraphStore {
   /* Selection */
@@ -31,6 +32,7 @@ interface GraphStore {
   appliedSearchQuery: string
   filters: Record<string, boolean>
   viewSettings: GraphViewSettings
+  graphDimension: GraphDimension
 
   /* Force simulation controls */
   linkDistance: number
@@ -67,6 +69,7 @@ interface GraphStore {
     key: K,
     value: GraphViewSettings[K]
   ) => void
+  toggleGraphDimension: () => void
 
   /* Actions: force controls */
   setLinkDistance: (val: number) => void
@@ -106,6 +109,7 @@ export const useGraphStore = create<GraphStore>((set) => ({
   appliedSearchQuery: "",
   filters: {},
   viewSettings: { layout: "force", showLabels: true, showEdgeLabels: false },
+  graphDimension: "2d",
 
   linkDistance: 200,
   chargeStrength: -50,
@@ -154,6 +158,13 @@ export const useGraphStore = create<GraphStore>((set) => ({
     set((s) => ({
       viewSettings: { ...s.viewSettings, [key]: value },
     })),
+
+  toggleGraphDimension: () =>
+    set((s) =>
+      s.graphDimension === "2d"
+        ? { graphDimension: "3d", selectionMode: "click" }
+        : { graphDimension: "2d" }
+    ),
 
   /* Force controls */
   setLinkDistance: (val) => set({ linkDistance: val }),

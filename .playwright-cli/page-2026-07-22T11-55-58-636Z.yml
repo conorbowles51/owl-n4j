@@ -1,0 +1,225 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - link:
+            - /url: /cases
+        - navigation:
+          - region:
+            - paragraph: Investigation
+            - link:
+              - /url: /cases
+              - generic: Cases
+            - link:
+              - /url: /triage
+              - generic: Triage
+          - region:
+            - paragraph: Admin
+            - link:
+              - /url: /admin/ai-costs
+              - generic: AI Costs
+            - link:
+              - /url: /admin/updates
+              - generic: Updates
+            - link:
+              - /url: /admin/users
+              - generic: Users
+            - link:
+              - /url: /admin/profiles
+              - generic: Profiles
+        - generic:
+          - link:
+            - /url: /settings
+            - generic: Settings
+          - button:
+            - generic: Collapse
+      - generic:
+        - generic:
+          - generic:
+            - main:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic: Instance-wide
+                          - heading [level=1]: AI settings
+                          - paragraph: Connect providers once, then control the models Loupe uses for chat, agents, and evidence ingestion.
+                        - button [disabled]: Save routing
+                      - navigation:
+                        - link:
+                          - /url: /settings
+                          - text: General
+                        - link:
+                          - /url: /settings/ai
+                          - text: AI settings
+                      - generic:
+                        - generic:
+                          - paragraph: Connections
+                          - paragraph: 1 / 3
+                          - paragraph: Cloud providers ready
+                        - generic:
+                          - paragraph: Default route
+                          - paragraph: OpenAI
+                          - paragraph: Across 7 AI workloads
+                        - generic:
+                          - paragraph: Credential security
+                          - paragraph: Encrypted at rest
+                          - paragraph: Keys are never shown again after saving
+                      - region:
+                        - generic:
+                          - heading [level=2]: Provider connections
+                          - paragraph: Credentials are shared by this Loupe deployment.
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic: OA
+                                  - generic:
+                                    - generic: OpenAI
+                                    - generic: Connected
+                            - generic:
+                              - paragraph: Generative models, embeddings, audio transcription, and optional vision.
+                              - generic:
+                                - generic:
+                                  - generic: ••••••••SFoA
+                                  - generic: Environment
+                              - generic:
+                                - button: Replace
+                                - button: Test
+                                - button [disabled]
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic: AN
+                                  - generic:
+                                    - generic: Anthropic
+                                    - generic: API key needed
+                            - generic:
+                              - paragraph: Claude models for chat, investigation agents, and evidence analysis.
+                              - generic:
+                                - button: Configure
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic: GO
+                                  - generic:
+                                    - generic: Google Gemini
+                                    - generic: API key needed
+                            - generic:
+                              - paragraph: Gemini models for chat, structured extraction, and analysis.
+                              - generic:
+                                - button: Configure
+                      - generic:
+                        - generic:
+                          - generic: Default generative provider
+                          - paragraph: Choosing a provider loads Loupe’s recommended model profile. Review and save to apply it.
+                        - generic:
+                          - generic:
+                            - generic:
+                              - paragraph: Provider profile
+                              - paragraph: Only connected providers can be selected.
+                            - combobox:
+                              - generic: OpenAI
+                      - generic:
+                        - generic:
+                          - button [expanded]:
+                            - generic:
+                              - generic: Advanced model routing
+                              - paragraph: Choose a different connected model for an individual Loupe workload.
+                        - generic:
+                          - generic:
+                            - heading [level=3]: Interactive
+                            - generic:
+                              - generic:
+                                - paragraph: AI chat
+                                - paragraph: The main AI Chat tab and the right-rail chat.
+                              - combobox:
+                                - generic: GPT-5.6 Terra · OpenAI
+                            - generic:
+                              - generic:
+                                - paragraph: AI agent
+                                - paragraph: Tool-using investigation agents.
+                              - combobox:
+                                - generic: GPT-5.6 Sol · OpenAI
+                          - generic:
+                            - heading [level=3]: Ingestion
+                            - generic:
+                              - generic:
+                                - paragraph: Entity extraction
+                                - paragraph: Entities, facts, and relationships extracted from source text.
+                              - combobox:
+                                - generic: GPT-5.6 Terra · OpenAI
+                            - generic:
+                              - generic:
+                                - paragraph: Entity resolution
+                                - paragraph: Deduplication and canonical identity decisions.
+                              - combobox:
+                                - generic: GPT-5.6 Terra · OpenAI
+                            - generic:
+                              - generic:
+                                - paragraph: Entity summaries
+                                - paragraph: Evidence-bound summaries shown on graph entities.
+                              - combobox:
+                                - generic: GPT-5.6 Terra · OpenAI
+                            - generic:
+                              - generic:
+                                - paragraph: Document summaries
+                                - paragraph: Comprehensive summaries shown with evidence files.
+                              - combobox:
+                                - generic: GPT-5.6 Sol · OpenAI
+                            - generic:
+                              - generic:
+                                - paragraph: Fact checking
+                                - paragraph: Claim entailment and final summary quality checks.
+                              - combobox:
+                                - generic: GPT-5.6 Terra · OpenAI
+                      - region:
+                        - generic:
+                          - heading [level=2]: Supporting AI services
+                          - paragraph: These services support ingestion independently of the generative provider above.
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - paragraph: Search embeddings
+                                  - paragraph: Powers semantic evidence and entity search.
+                              - generic:
+                                - paragraph: OpenAI
+                                - paragraph: Ready
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - paragraph: Audio transcription
+                                  - paragraph: Transcribes uploaded audio before ingestion.
+                              - generic:
+                                - paragraph: OpenAI
+                                - paragraph: Ready
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - paragraph: PDF OCR
+                                  - paragraph: Runs locally for scanned PDF pages.
+                              - generic:
+                                - paragraph: Local Tesseract
+                                - paragraph: Ready
+    - region "Notifications alt+T"
+  - dialog [ref=f2e288]:
+    - generic [ref=f2e289]:
+      - heading "Connect Anthropic" [level=2] [ref=f2e290]
+      - paragraph [ref=f2e291]: Loupe validates the key before encrypting it. A rejected replacement will not disturb the current connection.
+    - generic [ref=f2e292]:
+      - generic [ref=f2e293]: Anthropic API key
+      - textbox "Anthropic API key" [active] [ref=f2e294]:
+        - /placeholder: Paste API key
+      - paragraph [ref=f2e295]: The full key is submitted once and is never returned to this browser.
+    - generic [ref=f2e296]:
+      - button "Cancel" [ref=f2e297]
+      - button "Validate and connect" [disabled]
+    - button "Close" [ref=f2e298]
