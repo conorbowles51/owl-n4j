@@ -44,10 +44,75 @@ import { aiSettingsAPI } from "../api"
 import type { AIProviderConnection, AISettings } from "../types"
 import { SettingsNav } from "./SettingsNav"
 
-const PROVIDER_MARKS: Record<string, string> = {
-  openai: "OA",
-  anthropic: "AN",
-  gemini: "GO",
+function ProviderLogo({ provider }: { provider: string }) {
+  if (provider === "openai") {
+    return (
+      <svg
+        aria-hidden="true"
+        className="size-5"
+        data-testid="provider-logo-openai"
+        fill="currentColor"
+        focusable="false"
+        viewBox="0 0 24 24"
+      >
+        <path
+          fillRule="evenodd"
+          d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 0 0-.856 0l-5.97 3.473Zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 0 1 .476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163ZM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898ZM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128Zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472Zm-5.637-5.303-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 0 1 4.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 0 1-.476 0Zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523Zm5.899 2.83a5.947 5.947 0 0 0 5.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0 0 10.205 0a5.947 5.947 0 0 0-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 0 0 4.162 1.713Z"
+        />
+      </svg>
+    )
+  }
+
+  if (provider === "anthropic") {
+    return (
+      <svg
+        aria-hidden="true"
+        className="size-5"
+        data-testid="provider-logo-anthropic"
+        fill="currentColor"
+        focusable="false"
+        viewBox="0 0 24 24"
+      >
+        <path d="M13.827 3.52h3.603L24 20h-3.603l-6.57-16.48Zm-7.258 0h3.767L16.906 20h-3.674l-1.343-3.461H5.017L3.673 20H0L6.57 3.522Zm4.132 9.959L8.453 7.687 6.205 13.48H10.7Z" />
+      </svg>
+    )
+  }
+
+  if (provider === "gemini") {
+    const geminiPath =
+      "M20.616 10.835a14.147 14.147 0 0 1-4.45-3.001 14.111 14.111 0 0 1-3.678-6.452.503.503 0 0 0-.975 0 14.134 14.134 0 0 1-3.679 6.452 14.155 14.155 0 0 1-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 0 0 0 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 0 1 4.45 3.001 14.112 14.112 0 0 1 3.679 6.453.502.502 0 0 0 .975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 0 1 3.001-4.45 14.113 14.113 0 0 1 6.453-3.678.503.503 0 0 0 0-.975 13.245 13.245 0 0 1-2.003-.678Z"
+
+    return (
+      <svg
+        aria-hidden="true"
+        className="size-5"
+        data-testid="provider-logo-gemini"
+        focusable="false"
+        viewBox="0 0 24 24"
+      >
+        <path d={geminiPath} fill="#3186ff" />
+        <path d={geminiPath} fill="url(#gemini-green)" />
+        <path d={geminiPath} fill="url(#gemini-red)" />
+        <path d={geminiPath} fill="url(#gemini-yellow)" />
+        <defs>
+          <linearGradient id="gemini-green" x1="7" x2="11" y1="15.5" y2="12" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#08b962" />
+            <stop offset="1" stopColor="#08b962" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="gemini-red" x1="8" x2="11.5" y1="5.5" y2="11" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#f94543" />
+            <stop offset="1" stopColor="#f94543" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="gemini-yellow" x1="3.5" x2="17.5" y1="13.5" y2="12" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#fabc12" />
+            <stop offset=".46" stopColor="#fabc12" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+      </svg>
+    )
+  }
+
+  return <BrainCircuit aria-hidden="true" className="size-5" />
 }
 
 function statusLabel(provider: AIProviderConnection) {
@@ -252,8 +317,8 @@ export function AISettingsPage() {
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <div className="flex size-9 items-center justify-center rounded-lg border border-border/70 bg-muted/60 font-mono text-[11px] font-bold tracking-wide">
-                            {PROVIDER_MARKS[provider.id]}
+                          <div className="flex size-9 items-center justify-center rounded-lg border border-border/70 bg-muted/60 text-foreground">
+                            <ProviderLogo provider={provider.id} />
                           </div>
                           <div>
                             <CardTitle className="text-sm">{provider.display_name}</CardTitle>

@@ -96,6 +96,9 @@ describe("AISettingsPage", () => {
     expect(screen.getAllByText("OpenAI").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Anthropic").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Google Gemini").length).toBeGreaterThan(0)
+    expect(screen.getByTestId("provider-logo-openai")).toBeInTheDocument()
+    expect(screen.getByTestId("provider-logo-anthropic")).toBeInTheDocument()
+    expect(screen.getByTestId("provider-logo-gemini")).toBeInTheDocument()
     expect(screen.queryByText(/ollama/i)).not.toBeInTheDocument()
   })
 
