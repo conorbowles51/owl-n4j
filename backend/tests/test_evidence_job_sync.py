@@ -40,6 +40,7 @@ def _evidence_record(evidence_id, engine_job_id=None):
         processed_at=None,
         summary=None,
         transcription=None,
+        transcription_segments=None,
         entity_count=None,
         relationship_count=None,
     )
@@ -75,6 +76,39 @@ def test_reconcile_jobs_repairs_missing_engine_link_from_source_evidence_id() ->
     assert record.entity_count == 9
     assert record.relationship_count == 12
     assert db.flush_count == 1
+
+
+def test_reconcile_jobs_copies_diarized_transcript_segments() -> None:
+    evidence_id = uuid4()
+    engine_job_id = uuid4()
+    record = _evidence_record(evidence_id)
+    db = FakeDb([record])
+    segments = [
+        {
+            "id": "seg_1",
+            "start": 0.0,
+            "end": 2.1,
+            "speaker": "A",
+            "text": "Opening question.",
+        }
+    ]
+
+    updated = reconcile_jobs_payload(
+        db,
+        [
+            {
+                "id": str(engine_job_id),
+                "source_evidence_file_id": str(evidence_id),
+                "status": "completed",
+                "transcription": "Opening question.",
+                "transcription_segments": segments,
+            }
+        ],
+    )
+
+    assert updated == 1
+    assert record.transcription == "Opening question."
+    assert record.transcription_segments == segments
 
 
 def test_reconcile_jobs_ignores_older_failed_attempt_for_same_file() -> None:

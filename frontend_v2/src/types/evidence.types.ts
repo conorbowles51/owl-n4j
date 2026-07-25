@@ -1,3 +1,16 @@
+export interface TranscriptSegment {
+  id: string
+  start: number
+  end: number
+  speaker: string
+  text: string
+}
+
+export interface TranscriptSpeakerSettings {
+  speakers: Record<string, string>
+  merges: Record<string, string>
+}
+
 export interface EvidenceFile {
   id: string
   original_filename: string
@@ -12,6 +25,9 @@ export interface EvidenceFile {
   last_error?: string | null
   summary?: string | null
   transcription?: string | null
+  transcription_segments?: TranscriptSegment[]
+  transcription_speakers?: Record<string, string>
+  transcription_speaker_merges?: Record<string, string>
   entity_count?: number
   engine_job_id?: string | null
 }
@@ -248,6 +264,9 @@ export interface EvidenceFileRecord {
   legacy_id: string | null
   summary: string | null
   transcription: string | null
+  transcription_segments: TranscriptSegment[]
+  transcription_speakers: Record<string, string>
+  transcription_speaker_merges: Record<string, string>
   entity_count: number | null
   relationship_count: number | null
   last_processed_folder_id: string | null

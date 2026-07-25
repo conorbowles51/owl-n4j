@@ -17,6 +17,12 @@ import {
   Loader2,
 } from "lucide-react"
 import { openProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
+import { cn } from "@/lib/cn"
+import { AudioTranscriptViewer } from "@/features/evidence/components/AudioTranscriptViewer"
+import type {
+  TranscriptSegment,
+  TranscriptSpeakerSettings,
+} from "@/types/evidence.types"
 
 const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".tiff", ".tif"]
 const AUDIO_EXTS = [".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".wma"]
@@ -48,6 +54,13 @@ interface DocumentViewerProps {
   documentName?: string
   initialPage?: number
   navigationKey?: string
+  transcription?: string | null
+  transcriptionSegments?: TranscriptSegment[]
+  transcriptSpeakers?: Record<string, string>
+  transcriptSpeakerMerges?: Record<string, string>
+  onTranscriptSpeakerSettingsChange?: (
+    settings: TranscriptSpeakerSettings
+  ) => Promise<TranscriptSpeakerSettings | void>
 }
 
 export function DocumentViewer({
@@ -57,6 +70,11 @@ export function DocumentViewer({
   documentName,
   initialPage = 1,
   navigationKey,
+  transcription,
+  transcriptionSegments,
+  transcriptSpeakers,
+  transcriptSpeakerMerges,
+  onTranscriptSpeakerSettingsChange,
 }: DocumentViewerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -158,20 +176,20 @@ export function DocumentViewer({
 
       case "audio":
         return (
-          <div className="flex h-full items-center justify-center">
-            <div className="flex flex-col items-center gap-4 p-8">
-              <Music className="size-12 text-muted-foreground" />
-              <p className="text-sm font-medium">{documentName}</p>
-              <audio
-                controls
-                src={displayUrl ?? undefined}
-                className="w-full max-w-md"
-                onCanPlay={() => setLoading(false)}
-                onError={() => { setLoading(false); setError("Failed to load audio") }}
-                preload="metadata"
-              />
-            </div>
-          </div>
+          <AudioTranscriptViewer
+            audioUrl={displayUrl ?? undefined}
+            documentName={documentName}
+            transcription={transcription}
+            segments={transcriptionSegments}
+            speakers={transcriptSpeakers}
+            speakerMerges={transcriptSpeakerMerges}
+            onSpeakerSettingsChange={onTranscriptSpeakerSettingsChange}
+            onCanPlay={() => setLoading(false)}
+            onError={() => {
+              setLoading(false)
+              setError("Failed to load audio")
+            }}
+          />
         )
 
       case "video":
@@ -227,7 +245,15 @@ export function DocumentViewer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[65vw] w-[65vw] h-[90vh] flex flex-col p-0 gap-0" showCloseButton={false}>
+      <DialogContent
+        className={cn(
+          "h-[90vh] flex flex-col p-0 gap-0",
+          fileType === "audio"
+            ? "w-[88vw] sm:max-w-[88vw]"
+            : "w-[65vw] sm:max-w-[65vw]"
+        )}
+        showCloseButton={false}
+      >
         <DialogHeader className="flex-row items-center justify-between border-b border-border px-4 py-3 space-y-0">
           <div className="flex items-center gap-3">
             <IconComp className="size-5 text-muted-foreground" />

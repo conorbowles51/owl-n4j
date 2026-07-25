@@ -288,6 +288,7 @@ async def test_batch_activates_successful_text_only_documents_with_no_entities(
             [],
             None,
             None,
+            [],
             SimpleNamespace(
                 evidence_file_id=str(job_id),
                 revision_id="revision-1",

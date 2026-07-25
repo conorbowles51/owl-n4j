@@ -9,6 +9,7 @@ import type {
   AIModelPolicy,
   EvidenceDocumentMatchesResponse,
   EvidenceTextSearchResponse,
+  TranscriptSpeakerSettings,
 } from "@/types/evidence.types"
 
 export interface UploadResponse {
@@ -147,6 +148,18 @@ export const evidenceAPI = {
   },
 
   getFileUrl: (evidenceId: string) => `/api/evidence/${evidenceId}/file`,
+
+  updateTranscriptSpeakerSettings: (
+    evidenceId: string,
+    settings: TranscriptSpeakerSettings
+  ) =>
+    fetchAPI<TranscriptSpeakerSettings>(
+      `/api/evidence/${evidenceId}/transcript-speakers`,
+      {
+        method: "PUT",
+        body: settings,
+      }
+    ),
 
   getSummary: (filename: string, caseId: string) => {
     const qs = new URLSearchParams({ case_id: caseId })

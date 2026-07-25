@@ -59,6 +59,8 @@ class Job(Base):
     document_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Full audio transcript for audio/video evidence, when extraction produced one.
     transcription: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Ordered diarized turns: [{id, start, end, speaker, text}].
+    transcription_segments: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     source_evidence_file_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     pipeline_version: Mapped[str] = mapped_column(

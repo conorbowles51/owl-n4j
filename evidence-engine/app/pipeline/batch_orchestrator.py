@@ -21,7 +21,11 @@ from app.pipeline.extract_entities import (
     RawRelationship,
     extract_entities_and_relationships,
 )
-from app.pipeline.extract_text import extract_text, get_transcription
+from app.pipeline.extract_text import (
+    extract_text,
+    get_transcription,
+    get_transcription_segments,
+)
 from app.pipeline.pdf_extraction import PdfExtractionProgress
 from app.pipeline.generate_document_summary import generate_document_summary
 from app.pipeline.generate_summaries import generate_summaries
@@ -81,6 +85,7 @@ async def _update_job_status(
     relationship_count: int | None = None,
     document_summary: str | None = None,
     transcription: str | None = None,
+    transcription_segments: list[dict] | None = None,
     quality_report: dict | None = None,
     staged_revision: StagedChunkRevision | None = None,
 ) -> None:
@@ -99,6 +104,8 @@ async def _update_job_status(
             job.document_summary = document_summary
         if transcription is not None:
             job.transcription = transcription
+        if transcription_segments is not None:
+            job.transcription_segments = transcription_segments
         if quality_report is not None:
             job.quality_report = quality_report
         if staged_revision is not None and staged_revision.has_chunks:
@@ -144,6 +151,7 @@ async def _extract_file(
     list[RawRelationship],
     str | None,
     str | None,
+    list[dict],
     StagedChunkRevision,
 ]:
     async with ingestion_cost_context(
@@ -183,12 +191,14 @@ async def _extract_file(
                     doc=doc,
                 )
         transcription = get_transcription(doc)
+        transcription_segments = get_transcription_segments(doc)
         await _update_job_status(
             job_id,
             JobStatus.EXTRACTING_TEXT,
             0.15,
             "Text extracted",
             transcription=transcription,
+            transcription_segments=transcription_segments,
         )
 
         await _update_job_status(job_id, JobStatus.EXTRACTING_TEXT, 0.15, "Generating document summary...")
@@ -289,6 +299,7 @@ async def _extract_file(
             raw_rels,
             doc_summary,
             transcription,
+            transcription_segments,
             staged_revision,
         )
 
@@ -445,11 +456,22 @@ async def run_batch_pipeline(
         active_file_names: list[str] = []
         job_summaries: dict[uuid.UUID, str | None] = {}
         job_transcriptions: dict[uuid.UUID, str | None] = {}
+        job_transcription_segments: dict[uuid.UUID, list[dict]] = {}
         staged_chunk_revisions: list[StagedChunkRevision] = []
 
         for ji, extraction_result in zip(job_info, results):
             if isinstance(extraction_result, Exception):
-                logger.exception("Extraction failed for job %s (%s)", ji["id"], ji["file_name"])
+                logger.error(
+                    "Extraction failed for job %s (%s): %s",
+                    ji["id"],
+                    ji["file_name"],
+                    extraction_result,
+                    exc_info=(
+                        type(extraction_result),
+                        extraction_result,
+                        extraction_result.__traceback__,
+                    ),
+                )
                 await _update_job_status(
                     ji["id"],
                     JobStatus.FAILED,
@@ -459,9 +481,17 @@ async def run_batch_pipeline(
                 )
                 continue
 
-            raw_ents, raw_rels, doc_summary, transcription, staged_revision = extraction_result
+            (
+                raw_ents,
+                raw_rels,
+                doc_summary,
+                transcription,
+                transcription_segments,
+                staged_revision,
+            ) = extraction_result
             job_summaries[ji["id"]] = doc_summary
             job_transcriptions[ji["id"]] = transcription
+            job_transcription_segments[ji["id"]] = transcription_segments
             staged_chunk_revisions.append(staged_revision)
 
             prefix = f"{ji['id']}_"
@@ -501,6 +531,7 @@ async def run_batch_pipeline(
                     "No entities found",
                     document_summary=job_summaries.get(jid),
                     transcription=job_transcriptions.get(jid),
+                    transcription_segments=job_transcription_segments.get(jid),
                 )
             return
 
@@ -600,6 +631,7 @@ async def run_batch_pipeline(
                 relationship_count=len(resolved_rels),
                 document_summary=job_summaries.get(jid),
                 transcription=job_transcriptions.get(jid),
+                transcription_segments=job_transcription_segments.get(jid),
             )
 
         logger.info("Batch %s complete: %d entities, %d relationships", batch_id, len(resolved_ents), len(resolved_rels))

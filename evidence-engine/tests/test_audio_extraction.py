@@ -1,9 +1,15 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from app.pipeline import extract_text as extract_text_module
 from app.pipeline.extract_text import AudioTranscriptionError
+from app.services import openai_client as openai_client_module
+from app.services.openai_client import (
+    AudioTranscriptionProgress,
+    AudioTranscriptionResult,
+)
 
 
 class InputTooLargeError(Exception):
@@ -16,6 +22,11 @@ def audio_transcription_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         extract_text_module.settings,
         "audio_transcription_segment_seconds",
         240,
+    )
+    monkeypatch.setattr(
+        extract_text_module.settings,
+        "openai_transcription_model",
+        "gpt-4o-mini-transcribe",
     )
     monkeypatch.setattr(
         extract_text_module.settings,
@@ -38,7 +49,9 @@ async def test_short_audio_uses_single_transcription_call(
     def fail_split(*_args, **_kwargs):
         pytest.fail("short audio should not be split")
 
-    async def fake_transcribe(file_path: str, prompt: str | None = None) -> str:
+    async def fake_transcribe(
+        file_path: str, prompt: str | None = None, **_kwargs: object
+    ) -> str:
         calls.append({"path": file_path, "prompt": prompt})
         return "short transcript"
 
@@ -52,6 +65,141 @@ async def test_short_audio_uses_single_transcription_call(
     assert doc.metadata["segment_count"] == 1
     assert doc.metadata["duration_seconds"] == 30.0
     assert calls == [{"path": str(audio_file), "prompt": None}]
+
+
+@pytest.mark.asyncio
+async def test_structured_transcription_preserves_speaker_timestamps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audio_file = tmp_path / "interview.mp3"
+    audio_file.write_bytes(b"small audio")
+    monkeypatch.setattr(extract_text_module, "_probe_media_duration_seconds", lambda _: 30.0)
+    monkeypatch.setattr(
+        extract_text_module.settings,
+        "openai_transcription_model",
+        "gpt-4o-transcribe-diarize",
+    )
+
+    async def fake_transcribe(*_args: object, **_kwargs: object) -> AudioTranscriptionResult:
+        return AudioTranscriptionResult(
+            text="Hello. Hi there.",
+            segments=[
+                {"id": "seg_1", "start": 0.0, "end": 1.2, "speaker": "A", "text": "Hello."},
+                {"id": "seg_2", "start": 1.2, "end": 2.4, "speaker": "B", "text": "Hi there."},
+            ],
+            duration_seconds=30.0,
+            model="gpt-4o-transcribe-diarize",
+        )
+
+    monkeypatch.setattr(extract_text_module, "transcribe_audio", fake_transcribe)
+
+    doc = await extract_text_module._extract_audio(str(audio_file))
+
+    assert doc.text == "Hello. Hi there."
+    assert doc.metadata["transcription_segments"][1]["speaker"] == "B"
+    assert doc.metadata["transcription_segments"][1]["start"] == 1.2
+    assert doc.metadata["transcription_model"] == "gpt-4o-transcribe-diarize"
+
+
+@pytest.mark.asyncio
+async def test_audio_extraction_forwards_live_transcription_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audio_file = tmp_path / "progress.mp3"
+    audio_file.write_bytes(b"small audio")
+    updates: list[AudioTranscriptionProgress] = []
+    monkeypatch.setattr(extract_text_module, "_probe_media_duration_seconds", lambda _: 60.0)
+    monkeypatch.setattr(
+        extract_text_module.settings,
+        "openai_transcription_model",
+        "gpt-4o-transcribe-diarize",
+    )
+
+    async def fake_transcribe(
+        *_args: object,
+        progress_callback=None,
+        **kwargs: object,
+    ) -> AudioTranscriptionResult:
+        assert kwargs["duration_seconds"] == 60.0
+        assert kwargs["progress_total_seconds"] == 60.0
+        assert progress_callback is not None
+        await progress_callback(
+            AudioTranscriptionProgress(
+                message="Transcribing audio...",
+                completed=30.0,
+                total=60.0,
+            )
+        )
+        return AudioTranscriptionResult(
+            text="Halfway there.",
+            segments=[],
+            duration_seconds=60.0,
+            model="gpt-4o-transcribe-diarize",
+        )
+
+    async def report_progress(update: AudioTranscriptionProgress) -> None:
+        updates.append(update)
+
+    monkeypatch.setattr(extract_text_module, "transcribe_audio", fake_transcribe)
+
+    doc = await extract_text_module.extract_text(
+        str(audio_file),
+        audio_file.name,
+        progress_callback=report_progress,
+    )
+
+    assert doc.text == "Halfway there."
+    assert updates == [
+        AudioTranscriptionProgress(
+            message="Transcribing audio...",
+            completed=30.0,
+            total=60.0,
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_diarization_keeps_long_recording_in_one_request_when_under_size_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audio_file = tmp_path / "long-interview.mp3"
+    audio_file.write_bytes(b"small audio")
+    monkeypatch.setattr(extract_text_module, "_probe_media_duration_seconds", lambda _: 1800.0)
+    monkeypatch.setattr(
+        extract_text_module.settings,
+        "openai_transcription_model",
+        "gpt-4o-transcribe-diarize",
+    )
+
+    def fail_split(*_args: object, **_kwargs: object):
+        pytest.fail("server-side diarization chunking should keep this file intact")
+
+    async def fake_transcribe(*_args: object, **_kwargs: object) -> AudioTranscriptionResult:
+        return AudioTranscriptionResult(
+            text="Long interview",
+            segments=[
+                {
+                    "id": "seg_1",
+                    "start": 0.0,
+                    "end": 2.0,
+                    "speaker": "A",
+                    "text": "Long interview",
+                }
+            ],
+            duration_seconds=1800.0,
+            model="gpt-4o-transcribe-diarize",
+        )
+
+    monkeypatch.setattr(extract_text_module, "_split_audio_segments", fail_split)
+    monkeypatch.setattr(extract_text_module, "transcribe_audio", fake_transcribe)
+
+    doc = await extract_text_module._extract_audio(str(audio_file))
+
+    assert doc.metadata["segment_count"] == 1
+    assert doc.metadata["transcription_segments"][0]["speaker"] == "A"
 
 
 @pytest.mark.asyncio
@@ -77,7 +225,9 @@ async def test_long_audio_is_split_by_duration_and_context_is_prompted(
         created_segments.extend(segments)
         return segments
 
-    async def fake_transcribe(file_path: str, prompt: str | None = None) -> str:
+    async def fake_transcribe(
+        file_path: str, prompt: str | None = None, **_kwargs: object
+    ) -> str:
         transcript = f"transcript {Path(file_path).stem}"
         calls.append({"path": file_path, "prompt": prompt})
         return transcript
@@ -117,7 +267,9 @@ async def test_large_audio_splits_when_duration_probe_fails(
         segment.write_bytes(b"segment")
         return [segment]
 
-    async def fake_transcribe(_file_path: str, prompt: str | None = None) -> str:
+    async def fake_transcribe(
+        _file_path: str, prompt: str | None = None, **_kwargs: object
+    ) -> str:
         assert prompt is None
         return "large transcript"
 
@@ -131,6 +283,116 @@ async def test_large_audio_splits_when_duration_probe_fails(
     assert doc.metadata["segment_seconds"] == 240
     assert "duration_seconds" not in doc.metadata
     assert split_calls == [240]
+
+
+@pytest.mark.asyncio
+async def test_chunked_diarization_reuses_voice_references_for_stable_speakers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audio_file = tmp_path / "large-call.mp3"
+    audio_file.write_bytes(b"large audio")
+    captured_calls: list[dict] = []
+    monkeypatch.setattr(extract_text_module, "MAX_WHISPER_SIZE", 1)
+    monkeypatch.setattr(
+        extract_text_module.settings,
+        "openai_transcription_model",
+        "gpt-4o-transcribe-diarize",
+    )
+
+    def fake_probe(file_path: str) -> float:
+        return 480.0 if Path(file_path) == audio_file else 240.0
+
+    def fake_split(_file_path: str, output_dir: str, _seconds: int) -> list[Path]:
+        segments = [
+            Path(output_dir) / "segment_000.mp3",
+            Path(output_dir) / "segment_001.mp3",
+        ]
+        for segment in segments:
+            segment.write_bytes(b"chunk")
+        return segments
+
+    def fake_ffmpeg(args, **_kwargs):
+        assert args[0] == "ffmpeg"
+        return SimpleNamespace(returncode=0, stdout=b"voice-reference", stderr=b"")
+
+    async def fake_transcribe(file_path: str, **kwargs: object) -> AudioTranscriptionResult:
+        captured_calls.append({"path": file_path, **kwargs})
+        offset = float(kwargs["time_offset_seconds"])
+        return AudioTranscriptionResult(
+            text=f"Chunk at {offset}",
+            segments=[
+                {
+                    "id": f"segment-{offset}",
+                    "start": offset,
+                    "end": offset + 3.0,
+                    "speaker": "A",
+                    "text": f"Chunk at {offset}",
+                }
+            ],
+            duration_seconds=240.0,
+            model="gpt-4o-transcribe-diarize",
+        )
+
+    monkeypatch.setattr(extract_text_module, "_probe_media_duration_seconds", fake_probe)
+    monkeypatch.setattr(extract_text_module, "_split_audio_segments", fake_split)
+    monkeypatch.setattr(extract_text_module.subprocess, "run", fake_ffmpeg)
+    monkeypatch.setattr(extract_text_module, "transcribe_audio", fake_transcribe)
+
+    doc = await extract_text_module._extract_audio(str(audio_file))
+
+    assert captured_calls[0]["known_speaker_references"] is None
+    assert list(captured_calls[1]["known_speaker_references"]) == ["A"]
+    assert captured_calls[1]["speaker_id_prefix"] == ""
+    assert doc.metadata["speaker_reconciliation"] == "known_voice_references"
+    assert {segment["speaker"] for segment in doc.metadata["transcription_segments"]} == {
+        "A"
+    }
+
+
+@pytest.mark.asyncio
+async def test_diarization_timeout_before_first_event_falls_back_to_local_chunks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audio_file = tmp_path / "slow-call.mp3"
+    audio_file.write_bytes(b"audio")
+    calls: list[str] = []
+    monkeypatch.setattr(extract_text_module, "_probe_media_duration_seconds", lambda _: 480.0)
+    monkeypatch.setattr(
+        extract_text_module.settings,
+        "openai_transcription_model",
+        "gpt-4o-transcribe-diarize",
+    )
+
+    def fake_split(_file_path: str, output_dir: str, _seconds: int) -> list[Path]:
+        segment = Path(output_dir) / "segment_000.mp3"
+        segment.write_bytes(b"chunk")
+        return [segment]
+
+    async def fake_transcribe(file_path: str, **_kwargs: object) -> AudioTranscriptionResult:
+        calls.append(Path(file_path).name)
+        if Path(file_path) == audio_file:
+            raise openai_client_module.AudioTranscriptionRequestError(
+                "Request timed out before transcription began",
+                retryable=True,
+                stream_started=False,
+            )
+        return AudioTranscriptionResult(
+            text="Recovered from a local chunk.",
+            segments=[],
+            duration_seconds=240.0,
+            model="gpt-4o-transcribe-diarize",
+        )
+
+    monkeypatch.setattr(extract_text_module, "_split_audio_segments", fake_split)
+    monkeypatch.setattr(extract_text_module, "transcribe_audio", fake_transcribe)
+
+    doc = await extract_text_module._extract_audio(str(audio_file))
+
+    assert calls == ["slow-call.mp3", "segment_000.mp3"]
+    assert doc.text == "Recovered from a local chunk."
+    assert doc.metadata["transcription_fallback"] == "local_chunks_after_stream_timeout"
 
 
 @pytest.mark.asyncio
@@ -158,7 +420,9 @@ async def test_too_large_segment_retries_with_smaller_chunks(
             segments.append(segment)
         return segments
 
-    async def fake_transcribe(file_path: str, prompt: str | None = None) -> str:
+    async def fake_transcribe(
+        file_path: str, prompt: str | None = None, **_kwargs: object
+    ) -> str:
         calls.append({"path": file_path, "prompt": prompt})
         if Path(file_path).name == "segment_000.mp3":
             raise InputTooLargeError("chunk too large")
@@ -196,7 +460,9 @@ async def test_segment_failure_message_identifies_chunk(
         segment.write_bytes(b"segment")
         return [segment]
 
-    async def fake_transcribe(_file_path: str, prompt: str | None = None) -> str:
+    async def fake_transcribe(
+        _file_path: str, prompt: str | None = None, **_kwargs: object
+    ) -> str:
         raise InputTooLargeError("still too large")
 
     monkeypatch.setattr(extract_text_module, "_split_audio_segments", fake_split)

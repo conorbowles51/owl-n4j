@@ -756,6 +756,7 @@ class EvidenceDBStorage:
             ef.processed_at = None
             ef.engine_job_id = None
             ef.transcription = None
+            ef.transcription_segments = None
         db.flush()
 
     @staticmethod
@@ -1019,6 +1020,11 @@ class EvidenceDBStorage:
             "legacy_id": ef.legacy_id,
             "summary": ef.summary,
             "transcription": ef.transcription,
+            "transcription_segments": list(ef.transcription_segments or []),
+            "transcription_speakers": dict(ef.transcription_speakers or {}),
+            "transcription_speaker_merges": dict(
+                ef.transcription_speaker_merges or {}
+            ),
             "entity_count": ef.entity_count,
             "relationship_count": ef.relationship_count,
             "last_processed_folder_id": str(ef.last_processed_folder_id) if ef.last_processed_folder_id else None,

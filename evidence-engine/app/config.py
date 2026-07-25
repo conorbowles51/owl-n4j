@@ -68,9 +68,10 @@ class Settings(BaseSettings):
     pdf_ocr_page_timeout_seconds: int = 300
     pdf_ocr_max_concurrency: int = 2
     openai_vision_model: str = "gpt-4o"
-    openai_transcription_model: str = "gpt-4o-mini-transcribe"
+    openai_transcription_model: str = "gpt-4o-transcribe-diarize"
     audio_transcription_segment_seconds: int = 240
     audio_transcription_max_single_seconds: int = 240
+    audio_transcription_read_timeout_seconds: int = 900
 
     # Video processing
     video_frame_interval: int = 30  # seconds between extracted frames

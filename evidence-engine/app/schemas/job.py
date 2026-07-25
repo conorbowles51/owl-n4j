@@ -37,6 +37,7 @@ class JobResponse(BaseModel):
 
 class JobDetailResponse(JobResponse):
     transcription: str | None = None
+    transcription_segments: list[dict] | None = None
 
 
 class JobProgress(BaseModel):

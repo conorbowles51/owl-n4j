@@ -2,10 +2,11 @@ import asyncio
 import json
 import logging
 import subprocess
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable
 
 import httpx
-from openai import AsyncOpenAI
+from openai import APIConnectionError, APITimeoutError, AsyncOpenAI
 
 from app.config import settings
 from app.services.ai_model_policy import resolve_ai_model, resolve_provider_api_key
@@ -28,6 +29,43 @@ _OVERSIZED_REQUEST_MARKERS = (
     "request too large",
     "too large",
 )
+
+
+@dataclass(frozen=True)
+class AudioTranscriptionResult:
+    """Normalized transcription output used by the ingestion pipeline."""
+
+    text: str
+    segments: list[dict[str, Any]]
+    duration_seconds: float | None
+    model: str
+
+
+@dataclass(frozen=True)
+class AudioTranscriptionProgress:
+    """A durable progress/heartbeat update for an audio transcription."""
+
+    message: str
+    completed: float
+    total: float
+
+
+AudioProgressCallback = Callable[[AudioTranscriptionProgress], Awaitable[None]]
+
+
+class AudioTranscriptionRequestError(RuntimeError):
+    """A transport failure annotated with whether streaming had begun."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool,
+        stream_started: bool,
+    ) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+        self.stream_started = stream_started
 
 
 def get_openai_client() -> AsyncOpenAI:
@@ -423,47 +461,265 @@ async def embed_texts(
     return results
 
 
-async def transcribe_audio(file_path: str, prompt: str | None = None) -> str:
+def _response_payload(response: Any) -> dict[str, Any]:
+    if isinstance(response, dict):
+        return response
+    model_dump = getattr(response, "model_dump", None)
+    if callable(model_dump):
+        payload = model_dump()
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def _normalize_transcript_segments(
+    response: Any,
+    *,
+    time_offset_seconds: float,
+    segment_id_prefix: str,
+    speaker_id_prefix: str,
+) -> list[dict[str, Any]]:
+    payload = _response_payload(response)
+    raw_segments = payload.get("segments")
+    if not isinstance(raw_segments, list):
+        return []
+
+    segments: list[dict[str, Any]] = []
+    for index, raw_segment in enumerate(raw_segments):
+        if not isinstance(raw_segment, dict):
+            continue
+        text = str(raw_segment.get("text") or "").strip()
+        speaker = str(raw_segment.get("speaker") or "").strip()
+        try:
+            start = max(0.0, float(raw_segment.get("start") or 0.0))
+            end = max(start, float(raw_segment.get("end") or start))
+        except (TypeError, ValueError):
+            continue
+        if not text:
+            continue
+        raw_id = str(raw_segment.get("id") or index)
+        segments.append(
+            {
+                "id": f"{segment_id_prefix}{raw_id}",
+                "start": round(start + time_offset_seconds, 3),
+                "end": round(end + time_offset_seconds, 3),
+                "text": text,
+                "speaker": f"{speaker_id_prefix}{speaker or 'unknown'}",
+            }
+        )
+    return segments
+
+
+def _audio_transcription_timeout() -> httpx.Timeout:
+    return httpx.Timeout(
+        connect=30.0,
+        read=float(getattr(settings, "audio_transcription_read_timeout_seconds", 900)),
+        write=120.0,
+        pool=60.0,
+    )
+
+
+async def _report_audio_progress(
+    callback: AudioProgressCallback | None,
+    *,
+    message: str,
+    completed: float,
+    total: float,
+) -> None:
+    if callback is None:
+        return
+    await callback(
+        AudioTranscriptionProgress(
+            message=message,
+            completed=max(0.0, min(completed, total)) if total > 0 else max(0.0, completed),
+            total=max(0.0, total),
+        )
+    )
+
+
+async def transcribe_audio(
+    file_path: str,
+    prompt: str | None = None,
+    *,
+    time_offset_seconds: float = 0.0,
+    segment_id_prefix: str = "",
+    speaker_id_prefix: str = "",
+    duration_seconds: float | None = None,
+    progress_total_seconds: float | None = None,
+    progress_callback: AudioProgressCallback | None = None,
+    known_speaker_references: dict[str, str] | None = None,
+) -> AudioTranscriptionResult:
     client = get_openai_client()
+    model = settings.openai_transcription_model
+    diarization_enabled = model == "gpt-4o-transcribe-diarize"
+    if duration_seconds is None:
+        try:
+            probe = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "quiet",
+                    "-print_format",
+                    "json",
+                    "-show_format",
+                    file_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if probe.returncode == 0 and probe.stdout:
+                info = json.loads(probe.stdout)
+                duration = (info.get("format") or {}).get("duration")
+                if duration:
+                    duration_seconds = float(duration)
+        except Exception:
+            duration_seconds = None
+
+    total_seconds = progress_total_seconds or (
+        time_offset_seconds + (duration_seconds or 0.0)
+    )
+    await _report_audio_progress(
+        progress_callback,
+        message="Uploading audio for transcription...",
+        completed=time_offset_seconds,
+        total=total_seconds,
+    )
+
+    # Audio uploads are non-idempotent work. Do not let the SDK silently submit
+    # the same recording again after a read timeout.
+    transcription_client = client.with_options(max_retries=0)
+    response: Any = None
+    usage: Any = None
+    streamed_text = ""
+    streamed_segments: list[dict[str, Any]] = []
+    stream_started = False
+    transcription_started_reported = False
     with open(file_path, "rb") as f:
         async with _semaphore:
             kwargs: dict[str, Any] = {
-                "model": settings.openai_transcription_model,
+                "model": model,
                 "file": f,
+                "timeout": _audio_transcription_timeout(),
             }
-            if prompt:
+            if diarization_enabled:
+                # Speaker annotations are only returned in diarized_json. Server
+                # VAD is required for recordings longer than 30 seconds and also
+                # gives cleaner conversational turn boundaries for short files.
+                kwargs["response_format"] = "diarized_json"
+                kwargs["chunking_strategy"] = "auto"
+                kwargs["stream"] = True
+                known_speakers = [
+                    (name.strip(), reference)
+                    for name, reference in (known_speaker_references or {}).items()
+                    if name.strip() and reference
+                ][:4]
+                if known_speakers:
+                    kwargs["known_speaker_names"] = [
+                        name for name, _reference in known_speakers
+                    ]
+                    kwargs["known_speaker_references"] = [
+                        reference for _name, reference in known_speakers
+                    ]
+            elif prompt:
                 kwargs["prompt"] = prompt
-            resp = await client.audio.transcriptions.create(**kwargs)
-    duration_seconds = None
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "quiet",
-                "-print_format",
-                "json",
-                "-show_format",
-                file_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0 and result.stdout:
-            info = json.loads(result.stdout)
-            duration = (info.get("format") or {}).get("duration")
-            if duration:
-                duration_seconds = float(duration)
-    except Exception:
-        duration_seconds = None
+            try:
+                response = await transcription_client.audio.transcriptions.create(**kwargs)
+            except Exception as exc:
+                if not diarization_enabled:
+                    raise
+                raise AudioTranscriptionRequestError(
+                    str(exc),
+                    retryable=isinstance(
+                        exc,
+                        (APITimeoutError, APIConnectionError, httpx.TimeoutException),
+                    ),
+                    stream_started=False,
+                ) from exc
+
+            if diarization_enabled:
+                try:
+                    async for event in response:
+                        stream_started = True
+                        payload = _response_payload(event)
+                        event_type = payload.get("type")
+                        if (
+                            event_type == "transcript.text.delta"
+                            and not transcription_started_reported
+                        ):
+                            await _report_audio_progress(
+                                progress_callback,
+                                message="Audio transcription started",
+                                completed=time_offset_seconds,
+                                total=total_seconds,
+                            )
+                            transcription_started_reported = True
+                        elif event_type == "transcript.text.segment":
+                            streamed_segments.extend(
+                                _normalize_transcript_segments(
+                                    {"segments": [payload]},
+                                    time_offset_seconds=time_offset_seconds,
+                                    segment_id_prefix=segment_id_prefix,
+                                    speaker_id_prefix=speaker_id_prefix,
+                                )
+                            )
+                            segment_end = float(payload.get("end") or 0.0)
+                            await _report_audio_progress(
+                                progress_callback,
+                                message="Transcribing audio...",
+                                completed=time_offset_seconds + segment_end,
+                                total=total_seconds,
+                            )
+                        elif event_type == "transcript.text.done":
+                            streamed_text = str(payload.get("text") or "").strip()
+                            usage = payload.get("usage")
+                except Exception as exc:
+                    if isinstance(exc, AudioTranscriptionRequestError):
+                        raise
+                    raise AudioTranscriptionRequestError(
+                        str(exc),
+                        retryable=isinstance(
+                            exc,
+                            (APITimeoutError, APIConnectionError, httpx.TimeoutException),
+                        ),
+                        stream_started=stream_started,
+                    ) from exc
+            else:
+                usage = getattr(response, "usage", None)
+
+    completed_seconds = time_offset_seconds + (duration_seconds or 0.0)
+    await _report_audio_progress(
+        progress_callback,
+        message="Audio transcription complete",
+        completed=completed_seconds,
+        total=total_seconds,
+    )
     try:
         await record_openai_cost(
-            model_id=settings.openai_transcription_model,
+            model_id=model,
             operation_kind=CostOperationKind.TRANSCRIPTION,
-            usage=getattr(resp, "usage", None),
+            usage=usage,
             duration_seconds=duration_seconds,
         )
     except Exception as exc:
         logger.warning("Failed to record transcription cost: %s", exc)
-    return resp.text
+
+    payload = _response_payload(response)
+    text = (
+        streamed_text
+        if diarization_enabled
+        else str(payload.get("text") or getattr(response, "text", "") or "").strip()
+    )
+    return AudioTranscriptionResult(
+        text=text,
+        segments=streamed_segments
+        if diarization_enabled
+        else _normalize_transcript_segments(
+            response,
+            time_offset_seconds=time_offset_seconds,
+            segment_id_prefix=segment_id_prefix,
+            speaker_id_prefix=speaker_id_prefix,
+        ),
+        duration_seconds=duration_seconds,
+        model=model,
+    )

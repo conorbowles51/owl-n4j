@@ -135,6 +135,9 @@ class JobStatusSubscriber:
                                 transcription = job.get("transcription")
                                 if transcription is not None:
                                     ef.transcription = transcription
+                                transcription_segments = job.get("transcription_segments")
+                                if transcription_segments is not None:
+                                    ef.transcription_segments = transcription_segments
                                 ec = job.get("entity_count")
                                 rc = job.get("relationship_count")
                                 if ec is not None:
@@ -279,6 +282,9 @@ class JobStatusSubscriber:
                 transcription = job_detail.get("transcription")
                 if transcription is not None:
                     db_rec.transcription = transcription
+                transcription_segments = job_detail.get("transcription_segments")
+                if transcription_segments is not None:
+                    db_rec.transcription_segments = transcription_segments
 
                 entity_count = job_detail.get("entity_count")
                 rel_count = job_detail.get("relationship_count")

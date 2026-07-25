@@ -21,7 +21,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from starlette.requests import ClientDisconnect
 
@@ -176,6 +176,11 @@ def _evidence_record_from_db(record) -> dict:
         "engine_job_id": record.engine_job_id,
         "summary": record.summary,
         "transcription": record.transcription,
+        "transcription_segments": list(record.transcription_segments or []),
+        "transcription_speakers": dict(record.transcription_speakers or {}),
+        "transcription_speaker_merges": dict(
+            record.transcription_speaker_merges or {}
+        ),
         "entity_count": record.entity_count,
         "relationship_count": record.relationship_count,
         "processing_stale": record.processing_stale,
@@ -641,6 +646,9 @@ class EvidenceRecord(BaseModel):
     last_error: Optional[str] = None
     summary: Optional[str] = None  # Document summary if available
     transcription: Optional[str] = None  # Full audio transcript if available
+    transcription_segments: List[dict] = Field(default_factory=list)
+    transcription_speakers: Dict[str, str] = Field(default_factory=dict)
+    transcription_speaker_merges: Dict[str, str] = Field(default_factory=dict)
     entity_count: Optional[int] = None
     relationship_count: Optional[int] = None
     engine_job_id: Optional[str] = None  # Evidence engine job ID for progress tracking
@@ -676,6 +684,11 @@ class ProcessResponse(BaseModel):
     case_id: Optional[str] = None
     case_version: Optional[int] = None
     case_timestamp: Optional[str] = None
+
+
+class TranscriptSpeakersUpdate(BaseModel):
+    speakers: Dict[str, str]
+    merges: Dict[str, str] = Field(default_factory=dict)
 
 
 class EvidenceLog(BaseModel):
@@ -817,6 +830,92 @@ async def document_text_matches(
     )
     response.headers["Cache-Control"] = "no-store"
     return result
+
+
+@router.put("/{evidence_id}/transcript-speakers")
+async def update_transcript_speakers(
+    evidence_id: str,
+    update: TranscriptSpeakersUpdate,
+    db: Session = Depends(get_db),
+):
+    """Persist investigator-assigned names and reversible diarization label merges."""
+    record = _evidence_record_for_id(db, evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    segments = record.transcription_segments or []
+    known_speakers = {
+        str(segment.get("speaker"))
+        for segment in segments
+        if isinstance(segment, dict) and segment.get("speaker")
+    }
+    if len(update.speakers) > 32:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="A transcript can have at most 32 named speakers",
+        )
+
+    normalized: Dict[str, str] = {}
+    for raw_speaker, raw_name in update.speakers.items():
+        speaker = raw_speaker.strip()
+        name = raw_name.strip()
+        if speaker not in known_speakers:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Unknown transcript speaker: {speaker}",
+            )
+        if len(name) > 80:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Speaker names must be 80 characters or fewer",
+            )
+        if name:
+            normalized[speaker] = name
+
+    if len(update.merges) > 32:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="A transcript can have at most 32 speaker merges",
+        )
+
+    requested_merges: Dict[str, str] = {}
+    for raw_source, raw_target in update.merges.items():
+        source = raw_source.strip()
+        target = raw_target.strip()
+        if source not in known_speakers:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Unknown transcript speaker: {source}",
+            )
+        if target not in known_speakers:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Unknown transcript speaker: {target}",
+            )
+        if source != target:
+            requested_merges[source] = target
+
+    def resolve_merge_target(source: str) -> str:
+        current = source
+        visited: set[str] = set()
+        while current in requested_merges:
+            if current in visited:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="Speaker merges cannot contain a cycle",
+                )
+            visited.add(current)
+            current = requested_merges[current]
+        return current
+
+    normalized_merges = {
+        source: resolve_merge_target(source) for source in requested_merges
+    }
+
+    record.transcription_speakers = normalized
+    record.transcription_speaker_merges = normalized_merges
+    db.commit()
+    return {"speakers": normalized, "merges": normalized_merges}
 
 
 

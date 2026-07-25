@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useEffect, useState, useMemo } from "react"
 import {
   Info,
   Loader2,
@@ -49,10 +49,18 @@ import { useProcessBackground } from "../hooks/use-evidence-detail"
 import { useFileEntities, useFileRelationships } from "../hooks/use-file-entities"
 import { getDisplayStatus } from "../utils/display-status"
 import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
-import type { EvidenceFileRecord } from "@/types/evidence.types"
+import type {
+  EvidenceFileRecord,
+  TranscriptSegment,
+  TranscriptSpeakerSettings,
+} from "@/types/evidence.types"
 import { toast } from "sonner"
 import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
 import { TextSearchPanel } from "./TextSearchPanel"
+import {
+  getDefaultSpeakerNames,
+  resolveCanonicalSpeaker,
+} from "./audio-transcript.utils"
 
 // --- Shared helpers ---
 
@@ -344,10 +352,45 @@ function RelationshipList({ relationships }: { relationships: FileRelationship[]
   )
 }
 
-function TranscriptionPanel({ transcription }: { transcription: string | null }) {
-  const transcript = transcription?.trim()
+function formatTranscriptTime(seconds: number) {
+  const total = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+}
 
-  if (!transcript) {
+function TranscriptionPanel({
+  transcription,
+  segments,
+  speakers,
+  speakerMerges,
+}: {
+  transcription: string | null
+  segments: TranscriptSegment[]
+  speakers: Record<string, string>
+  speakerMerges: Record<string, string>
+}) {
+  const transcript = transcription?.trim()
+  const fallbackNames = useMemo(
+    () => getDefaultSpeakerNames(segments),
+    [segments]
+  )
+  const displaySpeakerName = (rawSpeaker: string) => {
+    const canonicalSpeaker = resolveCanonicalSpeaker(
+      rawSpeaker,
+      speakerMerges
+    )
+    return (
+      speakers[canonicalSpeaker] ||
+      fallbackNames.get(canonicalSpeaker) ||
+      canonicalSpeaker
+    )
+  }
+
+  if (!transcript && segments.length === 0) {
     return (
       <p className="py-4 text-sm text-muted-foreground">
         No transcription available for this audio file.
@@ -356,8 +399,31 @@ function TranscriptionPanel({ transcription }: { transcription: string | null })
   }
 
   return (
-    <div className="max-h-80 overflow-y-auto py-3 pr-2 text-sm leading-6 text-foreground">
-      <p className="whitespace-pre-wrap break-words">{transcript}</p>
+    <div className="max-h-80 overflow-y-auto py-3 pr-2">
+      {segments.length > 0 ? (
+        <div className="space-y-3">
+          <p className="rounded-md bg-amber-500/5 px-2.5 py-2 text-[11px] leading-4 text-muted-foreground">
+            Open the file for synchronized playback, transcript search, and speaker naming.
+          </p>
+          {segments.map((segment, index) => (
+            <div key={segment.id || `${segment.start}-${index}`} className="grid grid-cols-[44px_1fr] gap-2">
+              <span className="pt-0.5 font-mono text-[10px] text-muted-foreground">
+                {formatTranscriptTime(segment.start)}
+              </span>
+              <div>
+                <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                  {displaySpeakerName(segment.speaker)}
+                </p>
+                <p className="mt-0.5 text-xs leading-5 text-foreground">{segment.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+          {transcript}
+        </p>
+      )}
     </div>
   )
 }
@@ -373,6 +439,12 @@ function DetailsPanelContent({
 }) {
   const [viewerOpen, setViewerOpen] = useState(false)
   const [viewerPage, setViewerPage] = useState(1)
+  const [transcriptSpeakers, setTranscriptSpeakers] = useState(
+    file.transcription_speakers || {}
+  )
+  const [transcriptSpeakerMerges, setTranscriptSpeakerMerges] = useState(
+    file.transcription_speaker_merges || {}
+  )
   const fileUrl = evidenceAPI.getFileUrl(file.id)
   const ext = getExt(file.original_filename)
   const mediaType = getMediaType(file.original_filename)
@@ -385,6 +457,15 @@ function DetailsPanelContent({
   const isStale = displayStatus === "stale"
 
   const processMutation = useProcessBackground(caseId)
+
+  useEffect(() => {
+    setTranscriptSpeakers(file.transcription_speakers || {})
+    setTranscriptSpeakerMerges(file.transcription_speaker_merges || {})
+  }, [
+    file.id,
+    file.transcription_speaker_merges,
+    file.transcription_speakers,
+  ])
 
   // Only fetch entities/relationships for processed files
   const { data: entities, isLoading: entitiesLoading } = useFileEntities(
@@ -402,6 +483,28 @@ function DetailsPanelContent({
     void downloadProtectedFile(fileUrl, file.original_filename).catch((err: unknown) => {
       toast.error(err instanceof Error ? err.message : "Download failed")
     })
+  }
+
+  const handleTranscriptSpeakerSettingsChange = async (
+    settings: TranscriptSpeakerSettings
+  ) => {
+    try {
+      const result = await evidenceAPI.updateTranscriptSpeakerSettings(
+        file.id,
+        settings
+      )
+      setTranscriptSpeakers(result.speakers)
+      setTranscriptSpeakerMerges(result.merges)
+      toast.success("Speaker changes saved")
+      return result
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not save speaker changes"
+      )
+      throw error
+    }
   }
 
   return (
@@ -611,7 +714,12 @@ function DetailsPanelContent({
                   title="Transcription"
                   defaultOpen={Boolean(file.transcription?.trim())}
                 >
-                  <TranscriptionPanel transcription={file.transcription} />
+                  <TranscriptionPanel
+                    transcription={file.transcription}
+                    segments={file.transcription_segments || []}
+                    speakers={transcriptSpeakers}
+                    speakerMerges={transcriptSpeakerMerges}
+                  />
                 </CollapsibleSection>
               )}
 
@@ -705,6 +813,13 @@ function DetailsPanelContent({
         documentName={file.original_filename}
         initialPage={viewerPage}
         navigationKey={`${file.id}:${viewerPage}`}
+        transcription={file.transcription}
+        transcriptionSegments={file.transcription_segments || []}
+        transcriptSpeakers={transcriptSpeakers}
+        transcriptSpeakerMerges={transcriptSpeakerMerges}
+        onTranscriptSpeakerSettingsChange={
+          handleTranscriptSpeakerSettingsChange
+        }
       />
     </>
   )

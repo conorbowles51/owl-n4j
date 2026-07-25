@@ -61,6 +61,14 @@ def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
             db_rec.transcription = transcription
             changed = True
 
+        transcription_segments = job.get("transcription_segments")
+        if (
+            transcription_segments is not None
+            and db_rec.transcription_segments != transcription_segments
+        ):
+            db_rec.transcription_segments = transcription_segments
+            changed = True
+
         entity_count = job.get("entity_count")
         if entity_count is not None and db_rec.entity_count != entity_count:
             db_rec.entity_count = entity_count

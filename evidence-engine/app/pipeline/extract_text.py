@@ -20,7 +20,13 @@ import openpyxl
 
 from app.config import settings
 from app.pipeline.pdf_extraction import PdfProgressCallback, extract_pdf
-from app.services.openai_client import chat_completion, transcribe_audio
+from app.services.openai_client import (
+    AudioProgressCallback,
+    AudioTranscriptionRequestError,
+    AudioTranscriptionResult,
+    chat_completion,
+    transcribe_audio,
+)
 from app.utils.text_sanitize import sanitize_json, sanitize_text
 
 logger = logging.getLogger(__name__)
@@ -450,17 +456,125 @@ def _build_transcription_prompt(previous_transcript: str | None) -> str | None:
     )
 
 
+def _normalize_transcription_result(
+    result: AudioTranscriptionResult | str,
+) -> tuple[str, list[dict[str, Any]], str]:
+    """Accept the structured client result while keeping test/provider adapters simple."""
+    if isinstance(result, str):
+        return result.strip(), [], settings.openai_transcription_model
+    return result.text.strip(), list(result.segments), result.model
+
+
+def _build_speaker_reference_data_urls(
+    audio_path: str,
+    transcript_segments: list[dict[str, Any]],
+    *,
+    time_offset_seconds: float,
+    existing_speakers: set[str],
+) -> dict[str, str]:
+    """Extract one 2-10 second voice sample for each newly observed speaker."""
+    best_segments: dict[str, tuple[float, float]] = {}
+    for segment in transcript_segments:
+        speaker = str(segment.get("speaker") or "").strip()
+        if not speaker or speaker == "unknown" or speaker in existing_speakers:
+            continue
+        try:
+            start = float(segment.get("start") or 0.0) - time_offset_seconds
+            end = float(segment.get("end") or 0.0) - time_offset_seconds
+        except (TypeError, ValueError):
+            continue
+        duration = end - start
+        if duration < 2.0:
+            continue
+        previous = best_segments.get(speaker)
+        if previous is None or duration > previous[1]:
+            best_segments[speaker] = (max(0.0, start), duration)
+
+    references: dict[str, str] = {}
+    remaining_slots = max(0, 4 - len(existing_speakers))
+    for speaker, (start, duration) in list(best_segments.items())[:remaining_slots]:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-ss",
+                str(round(start, 3)),
+                "-t",
+                str(round(min(10.0, duration), 3)),
+                "-i",
+                audio_path,
+                "-map",
+                "0:a:0",
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "64k",
+                "-f",
+                "mp3",
+                "pipe:1",
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+        if result.returncode != 0 or not result.stdout:
+            logger.warning("Unable to build voice reference for speaker %s", speaker)
+            continue
+        encoded = base64.b64encode(result.stdout).decode("ascii")
+        references[speaker] = f"data:audio/mpeg;base64,{encoded}"
+    return references
+
+
 async def _transcribe_audio_segments(
     segments: list[Path],
     segment_seconds: int,
     transcripts: list[str],
+    transcript_segments: list[dict[str, Any]],
     stats: dict[str, int],
+    *,
+    start_offset_seconds: float = 0.0,
+    progress_total_seconds: float | None = None,
+    progress_callback: AudioProgressCallback | None = None,
+    speaker_references: dict[str, str] | None = None,
 ) -> None:
     total_segments = len(segments)
+    current_offset = start_offset_seconds
+    stable_speaker_references = (
+        speaker_references if speaker_references is not None else {}
+    )
     for index, segment in enumerate(segments, start=1):
         prompt = _build_transcription_prompt(transcripts[-1] if transcripts else None)
+        segment_duration = _probe_media_duration_seconds(str(segment)) or float(segment_seconds)
+        diarization_enabled = (
+            settings.openai_transcription_model == "gpt-4o-transcribe-diarize"
+        )
+        speaker_id_prefix = ""
+        if (
+            diarization_enabled
+            and not stable_speaker_references
+            and current_offset > 0
+        ):
+            # If no usable voice sample was found, do not pretend that a later
+            # chunk's anonymous A/B labels identify the same people.
+            speaker_id_prefix = f"chunk_{round(current_offset * 1000)}:"
         try:
-            transcript = await transcribe_audio(str(segment), prompt=prompt)
+            result = await transcribe_audio(
+                str(segment),
+                prompt=prompt,
+                time_offset_seconds=current_offset,
+                segment_id_prefix=f"chunk_{round(current_offset * 1000)}_",
+                speaker_id_prefix=speaker_id_prefix,
+                duration_seconds=segment_duration,
+                progress_total_seconds=progress_total_seconds,
+                progress_callback=progress_callback,
+                known_speaker_references=stable_speaker_references or None,
+            )
             stats["segment_count"] = stats.get("segment_count", 0) + 1
         except Exception as exc:
             if (
@@ -488,7 +602,12 @@ async def _transcribe_audio_segments(
                             retry_segments,
                             retry_seconds,
                             transcripts,
+                            transcript_segments,
                             stats,
+                            start_offset_seconds=current_offset,
+                            progress_total_seconds=progress_total_seconds,
+                            progress_callback=progress_callback,
+                            speaker_references=stable_speaker_references,
                         )
                     except Exception as retry_exc:
                         raise AudioTranscriptionError(
@@ -496,18 +615,34 @@ async def _transcribe_audio_segments(
                             f"{index}/{total_segments} after retrying with "
                             f"{retry_seconds}s chunks: {retry_exc}"
                         ) from retry_exc
+                current_offset += segment_duration
                 continue
 
             raise AudioTranscriptionError(
                 f"Audio transcription failed on segment {index}/{total_segments}: {exc}"
             ) from exc
 
-        transcript = transcript.strip()
+        transcript, timed_segments, _ = _normalize_transcription_result(result)
         if transcript:
             transcripts.append(transcript)
+        transcript_segments.extend(timed_segments)
+        if diarization_enabled and isinstance(result, AudioTranscriptionResult):
+            stable_speaker_references.update(
+                _build_speaker_reference_data_urls(
+                    str(segment),
+                    timed_segments,
+                    time_offset_seconds=current_offset,
+                    existing_speakers=set(stable_speaker_references),
+                )
+            )
+            stats["speaker_reference_count"] = len(stable_speaker_references)
+        current_offset += segment_duration
 
 
-async def _extract_audio(file_path: str) -> ExtractedDocument:
+async def _extract_audio(
+    file_path: str,
+    progress_callback: AudioProgressCallback | None = None,
+) -> ExtractedDocument:
     file_size = os.path.getsize(file_path)
     duration_seconds = _probe_media_duration_seconds(file_path)
     segment_seconds = _configured_audio_segment_seconds()
@@ -519,38 +654,90 @@ async def _extract_audio(file_path: str) -> ExtractedDocument:
     if duration_seconds is not None:
         metadata["duration_seconds"] = duration_seconds
 
+    # The diarization model can apply server-side VAD chunking while retaining
+    # speaker identity across the whole request. Keep a recording intact when
+    # it fits the upload limit; older transcription models still use the local
+    # duration cap.
+    supports_server_chunking = (
+        settings.openai_transcription_model == "gpt-4o-transcribe-diarize"
+    )
     should_segment = file_size > MAX_WHISPER_SIZE or (
-        duration_seconds is not None and duration_seconds > max_single_seconds
+        not supports_server_chunking
+        and duration_seconds is not None
+        and duration_seconds > max_single_seconds
     )
     if not should_segment:
         try:
-            transcript = await transcribe_audio(file_path)
+            result = await transcribe_audio(
+                file_path,
+                time_offset_seconds=0.0,
+                segment_id_prefix="chunk_0_",
+                duration_seconds=duration_seconds,
+                progress_total_seconds=duration_seconds,
+                progress_callback=progress_callback,
+            )
+            transcript, transcript_segments, transcription_model = (
+                _normalize_transcription_result(result)
+            )
             metadata["segment_count"] = 1
             metadata["transcription"] = transcript
+            metadata["transcription_segments"] = transcript_segments
+            metadata["transcription_model"] = transcription_model
             return ExtractedDocument(text=transcript, metadata=metadata)
         except Exception as exc:
-            if not _is_input_too_large_error(exc):
-                raise
-            logger.warning(
-                "Single audio transcription request was too large; falling back to %ss chunks",
-                segment_seconds,
+            timed_out_before_stream = (
+                isinstance(exc, AudioTranscriptionRequestError)
+                and exc.retryable
+                and not exc.stream_started
             )
+            if not _is_input_too_large_error(exc) and not timed_out_before_stream:
+                raise
+            if timed_out_before_stream:
+                metadata["transcription_fallback"] = (
+                    "local_chunks_after_stream_timeout"
+                )
+                logger.warning(
+                    "Diarized transcription timed out before its first event; "
+                    "falling back to %ss chunks",
+                    segment_seconds,
+                )
+            else:
+                metadata["transcription_fallback"] = (
+                    "local_chunks_after_input_too_large"
+                )
+                logger.warning(
+                    "Single audio transcription request was too large; "
+                    "falling back to %ss chunks",
+                    segment_seconds,
+                )
 
     stats = {"segment_count": 0}
     transcripts: list[str] = []
+    transcript_segments: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory() as segments_dir:
         segments = _split_audio_segments(file_path, segments_dir, segment_seconds)
         await _transcribe_audio_segments(
             segments,
             segment_seconds,
             transcripts,
+            transcript_segments,
             stats,
+            progress_total_seconds=duration_seconds,
+            progress_callback=progress_callback,
         )
 
     transcription = "\n\n".join(transcripts)
     metadata["segment_count"] = stats["segment_count"]
     metadata["segment_seconds"] = segment_seconds
     metadata["transcription"] = transcription
+    metadata["transcription_segments"] = transcript_segments
+    metadata["transcription_model"] = settings.openai_transcription_model
+    if settings.openai_transcription_model == "gpt-4o-transcribe-diarize":
+        metadata["speaker_reconciliation"] = (
+            "known_voice_references"
+            if stats.get("speaker_reference_count", 0)
+            else "chunk_scoped"
+        )
     return ExtractedDocument(
         text=transcription,
         metadata=metadata,
@@ -832,10 +1019,19 @@ def get_transcription(doc: ExtractedDocument) -> str | None:
     return None
 
 
+def get_transcription_segments(doc: ExtractedDocument) -> list[dict[str, Any]]:
+    """Return sanitized speaker/timestamp segments when diarization produced them."""
+    raw_segments = doc.metadata.get("transcription_segments")
+    if not isinstance(raw_segments, list):
+        return []
+    sanitized = sanitize_json(raw_segments)
+    return sanitized if isinstance(sanitized, list) else []
+
+
 async def extract_text(
     file_path: str,
     file_name: str,
-    progress_callback: PdfProgressCallback | None = None,
+    progress_callback: PdfProgressCallback | AudioProgressCallback | None = None,
 ) -> ExtractedDocument:
     ext = Path(file_name).suffix.lower()
 
@@ -877,7 +1073,7 @@ async def extract_text(
     elif ext in VIDEO_EXTENSIONS:
         doc = await _extract_video(file_path, file_name)
     elif ext in AUDIO_EXTENSIONS:
-        doc = await _extract_audio(file_path)
+        doc = await _extract_audio(file_path, progress_callback=progress_callback)
     elif ext in PLAIN_TEXT_EXTENSIONS:
         await asyncio.to_thread(_validate_text_input_size, file_path)
         text = await asyncio.to_thread(
