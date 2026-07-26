@@ -746,6 +746,9 @@
       -webkit-print-color-adjust: exact;
     }
     .topbar, .theme-toggle, .print-button, .copy-btn { display: none !important; }
+    /* Paper is a light ground whatever the screen theme was: primary lockup. */
+    .lockup .on-dark { display: none !important; }
+    .lockup .on-light { display: block !important; }
     .sheet { padding: 0 0 14pt; border-bottom: 0.5pt solid var(--line); break-inside: auto; overflow: visible; }
     .eyebrow { break-after: avoid; page-break-after: avoid; }
     tbody th.rowlab { width: auto; min-width: 96pt; }
@@ -971,15 +974,15 @@
   are the rows where they do not.</p>
   <div class="tablewrap">
   <table>
-    <thead><tr><th></th><th>The evidence platforms</th><th>Loupe</th></tr></thead>
+    <thead><tr><th scope="col"></th><th scope="col">The evidence platforms</th><th scope="col" class="is-loupe">Loupe</th></tr></thead>
     <tbody>
-      <tr><td class="rowlab">How a question is answered</td><td class="dim">Retrieve candidate passages, place them in a context window, ask a model to reason over them — the mechanism is identical across all of them</td><td class="win">Traverse a model of the case: a question resolves as a definite answer over everything ingested, not a sample of it</td></tr>
-      <tr><td class="rowlab">Published ceilings</td><td class="dim">Relativity caps at 300k documents per index and 5k per fact-extraction job; CoCounsel ~200 documents per run with quality degrading; Reveal states its Ask is “designed for precision, not recall”; Harvey runs a prompt per document and aggregates</td><td class="win">One question, put to the whole case</td></tr>
-      <tr><td class="rowlab">Phone evidence</td><td class="dim">Chats survive as documents; calls, contacts, locations and web history are flattened into spreadsheets; multi-device extractions unsupported outright; i2 removed native UFED import</td><td class="win">Devices, contact books, threads, calls and attachments as first-class citable objects</td></tr>
-      <tr><td class="rowlab">Evidence types in one model</td><td class="dim">Documents <em>or</em> devices. The eDiscovery tools model documents; the forensic tools model devices; neither models both</td><td class="win">Phone extractions, documents and financial records resolved into a single graph</td></tr>
-      <tr><td class="rowlab">Direction of the work</td><td class="dim">Reductive — cull a corpus down to a reviewable set. Success is fewer documents to read</td><td class="win">Constructive — every artifact ingested makes the model of the case richer</td></tr>
-      <tr><td class="rowlab">Where AI is configured</td><td class="dim">At review time, on a corpus whose shape is already fixed</td><td class="win">At ingestion, directing what is extracted and structured as evidence enters</td></tr>
-      <tr><td class="rowlab">What multimedia becomes</td><td class="dim">A searchable transcript — another document</td><td class="win">Entities resolved into the case model: a name spoken in a call is the same object as the name on a bank statement</td></tr>
+      <tr><th class="rowlab" scope="row">How a question is answered</th><td class="dim">Retrieve candidate passages, place them in a context window, ask a model to reason over them — the mechanism is identical across all of them</td><td class="win">Traverse a model of the case: a question resolves as a definite answer over everything ingested, not a sample of it</td></tr>
+      <tr><th class="rowlab" scope="row">Published ceilings</th><td class="dim">Relativity caps at 300k documents per index and 5k per fact-extraction job; CoCounsel ~200 documents per run with quality degrading; Reveal states its Ask is “designed for precision, not recall”; Harvey runs a prompt per document and aggregates</td><td class="win">One question, put to the whole case</td></tr>
+      <tr><th class="rowlab" scope="row">Phone evidence</th><td class="dim">Chats survive as documents; calls, contacts, locations and web history are flattened into spreadsheets; multi-device extractions unsupported outright; i2 removed native UFED import</td><td class="win">Devices, contact books, threads, calls and attachments as first-class citable objects</td></tr>
+      <tr><th class="rowlab" scope="row">Evidence types in one model</th><td class="dim">Documents <em>or</em> devices. The eDiscovery tools model documents; the forensic tools model devices; neither models both</td><td class="win">Phone extractions, documents and financial records resolved into a single graph</td></tr>
+      <tr><th class="rowlab" scope="row">Direction of the work</th><td class="dim">Reductive — cull a corpus down to a reviewable set. Success is fewer documents to read</td><td class="win">Constructive — every artifact ingested makes the model of the case richer</td></tr>
+      <tr><th class="rowlab" scope="row">Where AI is configured</th><td class="dim">At review time, on a corpus whose shape is already fixed</td><td class="win">At ingestion, directing what is extracted and structured as evidence enters</td></tr>
+      <tr><th class="rowlab" scope="row">What multimedia becomes</th><td class="dim">A searchable transcript — another document</td><td class="win">Entities resolved into the case model: a name spoken in a call is the same object as the name on a bank statement</td></tr>
     </tbody>
   </table>
   </div>
@@ -1133,7 +1136,7 @@
 <div class="sheet-inner">
   <p class="eyebrow">Market</p>
   <h2>Who buys this</h2>
-  <p class="big">First: <strong>defence-side private investigators and criminal-defence practices</strong> of roughly
+  <p class="lead">First: <strong>defence-side private investigators and criminal-defence practices</strong> of roughly
   five to fifty people, running federal and serious state matters. The defining characteristic is not size or sector —
   it is that this buyer <em>receives</em> evidence rather than collecting it, receives it in formats built by the other
   side, and has no way to analyse it properly. That is also the segment the incumbents structurally cannot serve.</p>
