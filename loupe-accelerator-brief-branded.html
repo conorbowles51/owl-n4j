@@ -1,0 +1,1310 @@
+<title>Loupe — What It Is &amp; Why It's Not a Chatbot</title>
+<style>
+  /* ===================================================================
+     Loupe Brand System v1.0 — July 2026
+     Tokens, type scale and interface language per the brand kit.
+
+     Single-file artifact: every asset is inline. The brand families are
+     named in the stacks with system fallbacks — the Google Fonts @import
+     in brand/loupe-brand.css cannot be used here, because the artifact
+     host enforces a strict CSP that blocks every external host.
+     =================================================================== */
+
+  :root {
+    color-scheme: dark;
+
+    /* --- Core palette ---------------------------------------------- */
+    --bg: #0b0c0f;
+    --bg-deep: #07080a;
+    --surface: #111216;
+    --surface-2: #17181c;
+    --surface-3: #202126;
+    --surface-raised: #25272d;
+    --ink: #f7f7f8;
+    --ink-soft: #bfc1c8;
+    --muted: #9a9da5;
+    --muted-strong: #71747c;
+    --line: #292b32;
+    --line-strong: #3b3d44;
+    --brand: #b41624;
+    --brand-bright: #e33b4c;
+    --brand-soft: #f35d6d;
+    --brand-pale: #ffe4e8;
+    --brand-wash: rgba(180, 22, 36, 0.12);
+    --on-brand: #ffffff;
+
+    /* --- Evidence semantics: reserve for entity meaning only -------- */
+    --person: #5571c8;
+    --organisation: #8060a9;
+    --location: #238a88;
+    --financial: #b37a2e;
+    --document: #72757e;
+    --event: #c25778;
+    --communication: #2c8197;
+    --success: #4fa477;
+
+    /* --- Composed colour values (kept inside the token block) ------- */
+    --select-wash: rgba(227, 59, 76, 0.5);
+    --signal-glow: 0 0 0 6px rgba(227, 59, 76, 0.11), 0 0 18px rgba(227, 59, 76, 0.6);
+    --grid-rgb: 154, 157, 165;
+    --grid-alpha: 0.032;
+    --page-glow: radial-gradient(circle at 82% 2%, rgba(180, 22, 36, 0.12), transparent 27rem);
+    --cover-glow: radial-gradient(circle at 78% 44%, rgba(180, 22, 36, 0.16), transparent 30rem);
+    --grad-display: linear-gradient(92deg, #f7f7f8, #e2a5ad 57%, #e33b4c);
+    --grad-ink: transparent;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 34px rgba(0, 0, 0, 0.22);
+
+    /* --- Type ------------------------------------------------------- */
+    --display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
+
+    /* --- Shape & space (4 / 8 / 12 / 16 / 24 / 32 / 48 / 64) -------- */
+    --radius-control: 5px;
+    --radius-panel: 8px;
+    --page: min(1080px, calc(100vw - 96px));
+    --topbar: 60px;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Light reading surface — brand kit §10: light pages for reading,
+     dark fields for covers and section dividers. Token values only:
+     no component below carries a theme-specific rule.
+     --brand-soft and --brand-bright collapse to Loupe red because the
+     pale accents fall under AA on paper (2.97:1). */
+  html[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f7f7f8;
+    --bg-deep: #ececef;
+    --surface: #ffffff;
+    --surface-2: #f2f2f4;
+    --surface-3: #ececef;
+    --surface-raised: #ffffff;
+    --ink: #15161a;
+    --ink-soft: #3d3f45;
+    --muted: #63666e;
+    --muted-strong: #83868e;
+    --line: #d9dae0;
+    --line-strong: #c2c4cb;
+    --brand-soft: #b41624;
+    --brand-bright: #b41624;
+    --grid-alpha: 0.05;
+    --grad-display: none;
+    --grad-ink: #b41624;
+    --shadow: 0 1px 2px rgba(32, 29, 30, 0.05), 0 8px 28px rgba(32, 29, 30, 0.06);
+  }
+
+  /* System preference, when the host has not stamped an explicit theme.
+     An explicit data-theme always wins, in both directions. */
+  @media (prefers-color-scheme: light) {
+    html:not([data-theme="dark"]) {
+      color-scheme: light;
+      --bg: #f7f7f8;
+      --bg-deep: #ececef;
+      --surface: #ffffff;
+      --surface-2: #f2f2f4;
+      --surface-3: #ececef;
+      --surface-raised: #ffffff;
+      --ink: #15161a;
+      --ink-soft: #3d3f45;
+      --muted: #63666e;
+      --muted-strong: #83868e;
+      --line: #d9dae0;
+      --line-strong: #c2c4cb;
+      --brand-soft: #b41624;
+      --brand-bright: #b41624;
+      --grid-alpha: 0.05;
+      --grad-display: none;
+      --grad-ink: #b41624;
+      --shadow: 0 1px 2px rgba(32, 29, 30, 0.05), 0 8px 28px rgba(32, 29, 30, 0.06);
+    }
+  }
+
+  /* --- Base -------------------------------------------------------- */
+  * { box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    background: var(--bg-deep);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { transition-duration: 0.01ms !important; }
+  }
+
+  body {
+    min-width: 320px;
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    background: var(--page-glow), var(--bg);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4 { font-family: var(--display); text-wrap: balance; margin: 0; }
+  p { margin: 0 0 14px; max-width: 70ch; }
+  a { color: var(--brand-soft); }
+  button { font: inherit; }
+  strong { font-weight: 600; color: var(--ink); }
+  em { font-style: italic; }
+
+  ::selection { color: var(--on-brand); background: var(--select-wash); }
+  :focus-visible { outline: 2px solid var(--brand-soft); outline-offset: 4px; }
+
+  section[id] { scroll-margin-top: calc(var(--topbar) + 16px); }
+
+  /* Mono is metadata only — eyebrows, labels, numbers, identifiers,
+     statuses. Never sentences. */
+  .eyebrow,
+  .k,
+  .topbar-meta,
+  .cover-kicker,
+  .cover-version span,
+  .toc .n,
+  .flow .step b,
+  .source,
+  thead th,
+  .theme-toggle button,
+  .copy-btn {
+    font-family: var(--mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* --- Topbar ------------------------------------------------------ */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    min-height: var(--topbar);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 8px 24px;
+    border-bottom: 1px solid var(--line-strong);
+    background: color-mix(in srgb, var(--bg-deep) 88%, transparent);
+    backdrop-filter: blur(18px);
+  }
+  .topbar-meta { display: flex; align-items: center; gap: 12px; }
+
+  /* Logo: supplied colourway per ground — knockout on dark, primary on
+     light. Never a CSS filter recolour. Clear space is inside the
+     viewBox. Renders 31px tall; digital minimum is 24px. */
+  .lockup { display: block; }
+  .lockup svg { display: block; width: 106px; height: auto; }
+  .lockup .on-light { display: none; }
+  html[data-theme="light"] .lockup .on-dark { display: none; }
+  html[data-theme="light"] .lockup .on-light { display: block; }
+  @media (prefers-color-scheme: light) {
+    html:not([data-theme="dark"]) .lockup .on-dark { display: none; }
+    html:not([data-theme="dark"]) .lockup .on-light { display: block; }
+  }
+  .lockup-mark svg { width: 26px; }
+
+  .theme-toggle {
+    display: inline-flex;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    background: var(--surface-2);
+  }
+  .theme-toggle button {
+    min-height: 34px;
+    padding: 6px 12px;
+    border: 0;
+    color: var(--muted);
+    cursor: pointer;
+    background: transparent;
+    font-size: 9px;
+    font-weight: 500;
+    transition: color 180ms ease, background 180ms ease;
+  }
+  .theme-toggle button[aria-pressed="true"] { color: var(--ink); background: var(--surface-raised); }
+  .theme-toggle button:hover { color: var(--ink); }
+
+  .print-button {
+    min-height: 36px;
+    padding: 7px 13px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    color: var(--ink-soft);
+    cursor: pointer;
+    background: var(--surface-2);
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    transition: color 180ms ease, border-color 180ms ease, transform 180ms var(--ease);
+  }
+  .print-button:hover { border-color: var(--brand-soft); color: var(--ink); transform: translateY(-1px); }
+
+  /* --- Sheets ------------------------------------------------------ */
+  .sheet {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    padding: 72px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .sheet-inner { position: relative; z-index: 2; width: var(--page); margin: 0 auto; }
+
+  /* Hairline field — structure, boundary, progression */
+  .grid-field::before,
+  .cover::before {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    content: "";
+    background-image:
+      linear-gradient(rgba(var(--grid-rgb), var(--grid-alpha)) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--grid-rgb), var(--grid-alpha)) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(circle at 62% 48%, black, transparent 77%);
+    -webkit-mask-image: radial-gradient(circle at 62% 48%, black, transparent 77%);
+  }
+
+  .eyebrow {
+    margin: 0 0 12px;
+    color: var(--brand-soft);
+    font-size: 9px;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  h2 {
+    max-width: 26ch;
+    font-size: clamp(28px, 3.4vw, 40px);
+    font-weight: 600;
+    line-height: 1.04;
+    letter-spacing: -0.045em;
+  }
+  h3 {
+    margin: 44px 0 4px;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
+  h3 + p, h3 + ul { margin-top: 12px; }
+
+  p.lead {
+    max-width: 68ch;
+    margin-top: 24px;
+    color: var(--ink-soft);
+    font-size: 18px;
+    line-height: 1.68;
+    letter-spacing: -0.01em;
+  }
+  h2 + p, h2 + .flow, h2 + .cardgrid, h2 + .blocks { margin-top: 24px; }
+  .soft { color: var(--muted); }
+
+  /* --- Cover ------------------------------------------------------- */
+  .cover {
+    padding: 84px 0 88px;
+    border-bottom: 1px solid var(--line-strong);
+    background: var(--cover-glow), var(--bg-deep);
+  }
+  .cover-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.12fr) minmax(300px, 0.8fr);
+    gap: 64px;
+    align-items: center;
+  }
+  .cover-kicker {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    max-width: none;
+    margin: 0;
+    color: var(--brand-soft);
+    font-size: 9px;
+    font-weight: 500;
+  }
+  /* Signal dot — the one active mark on the cover */
+  .cover-kicker i {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--brand-bright);
+    box-shadow: var(--signal-glow);
+  }
+  .cover h1 {
+    margin-top: 26px;
+    max-width: 20ch;
+    font-size: clamp(38px, 5vw, 62px);
+    font-weight: 600;
+    line-height: 0.98;
+    letter-spacing: -0.055em;
+  }
+  .cover h1 em {
+    font-style: normal;
+    color: var(--grad-ink);
+    background-image: var(--grad-display);
+    background-clip: text;
+    -webkit-background-clip: text;
+  }
+  .lede {
+    max-width: 58ch;
+    margin: 27px 0 0;
+    color: var(--ink-soft);
+    font-size: 18px;
+    line-height: 1.65;
+  }
+  .cover-version { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
+  .cover-version span {
+    padding: 7px 9px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    background: color-mix(in srgb, var(--surface) 70%, transparent);
+    font-size: 8px;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+  }
+
+  /* --- Contents ---------------------------------------------------- */
+  nav.toc {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: color-mix(in srgb, var(--surface) 86%, transparent);
+  }
+  nav.toc .k {
+    display: block;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted-strong);
+    font-size: 9px;
+    font-weight: 500;
+  }
+  nav.toc ol { margin: 0; padding: 0; list-style: none; }
+  nav.toc li { margin: 0; max-width: none; }
+  nav.toc a {
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 10px;
+    align-items: baseline;
+    min-height: 44px;
+    padding: 11px 20px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-size: 13.5px;
+    line-height: 1.35;
+    text-decoration: none;
+    transition: color 180ms ease, background 180ms ease, padding-left 240ms var(--ease);
+  }
+  nav.toc li:last-child a { border-bottom: 0; }
+  nav.toc a .n {
+    color: var(--brand-soft);
+    font-size: 9px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  nav.toc a:hover { padding-left: 26px; color: var(--ink); background: var(--surface-2); }
+
+  /* --- Lists: signal points mark each line ------------------------- */
+  ul { margin: 20px 0 14px; padding: 0; list-style: none; }
+  ul li {
+    position: relative;
+    max-width: 82ch;
+    margin: 0;
+    padding: 12px 0 12px 22px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-size: 14.5px;
+    line-height: 1.62;
+  }
+  ul li::before {
+    position: absolute;
+    top: 21px;
+    left: 2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--brand);
+    content: "";
+  }
+  ul li:first-child { border-top: 1px solid var(--line); }
+
+  /* --- Pipeline ---------------------------------------------------- */
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 8px; }
+  .flow .step {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 14px 9px 11px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    background: var(--surface-2);
+    font-size: 13.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .flow .step b {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--brand);
+    color: var(--on-brand);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- Cards ------------------------------------------------------- */
+  .cardgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(272px, 1fr));
+    gap: 16px;
+    margin: 32px 0 8px;
+  }
+  .card {
+    padding: 22px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--surface);
+    transition: border-color 180ms ease, transform 180ms var(--ease);
+  }
+  .card:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+  .card .k {
+    display: block;
+    margin-bottom: 12px;
+    color: var(--brand-soft);
+    font-size: 9px;
+    font-weight: 500;
+  }
+  .card h4 { margin: 0 0 10px; font-size: 17px; font-weight: 600; letter-spacing: -0.025em; }
+  .card p { margin: 0; max-width: none; color: var(--ink-soft); font-size: 13.5px; line-height: 1.62; }
+
+  /* --- Claim / pull statement -------------------------------------- */
+  .pullquote, .callout {
+    margin: 36px 0;
+    padding: 28px 32px;
+    border: 1px solid var(--line-strong);
+    border-left: 3px solid var(--brand);
+    border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
+    background: var(--surface);
+  }
+  .pullquote {
+    max-width: 74ch;
+    font-family: var(--display);
+    font-size: clamp(19px, 2vw, 25px);
+    font-weight: 500;
+    line-height: 1.36;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+  /* Attribution / provenance — cite at the point of claim */
+  .pullquote .who, .source {
+    display: block;
+    margin-top: 18px;
+    color: var(--muted-strong);
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    text-transform: uppercase;
+  }
+  .callout .k {
+    display: block;
+    margin-bottom: 14px;
+    color: var(--brand-soft);
+    font-size: 9px;
+    font-weight: 500;
+  }
+  .callout p {
+    margin: 0;
+    max-width: 74ch;
+    font-family: var(--display);
+    font-size: clamp(18px, 1.8vw, 23px);
+    font-weight: 500;
+    line-height: 1.38;
+    letter-spacing: -0.03em;
+  }
+
+  /* --- Comparison table -------------------------------------------- */
+  .tablewrap {
+    overflow-x: auto;
+    margin: 32px 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+  }
+  table { width: 100%; min-width: 820px; border-collapse: collapse; font-size: 13.5px; }
+  thead th {
+    padding: 15px 18px;
+    border-bottom: 1px solid var(--line-strong);
+    background: var(--surface-2);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 500;
+    text-align: left;
+    vertical-align: bottom;
+  }
+  thead th.is-loupe { color: var(--brand-soft); }
+  tbody th.rowlab {
+    width: 190px;
+    padding: 18px;
+    border-bottom: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    vertical-align: top;
+    white-space: normal;
+  }
+  tbody td {
+    padding: 18px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink-soft);
+    line-height: 1.58;
+    text-align: left;
+    vertical-align: top;
+  }
+  td.dim { color: var(--muted); }
+  /* Loupe column: tonal wash, never a fill — the one held state */
+  td.win { border-left: 1px solid var(--line); background: var(--brand-wash); color: var(--ink); }
+  tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+
+  /* --- Stat row ---------------------------------------------------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    margin: 32px 0 20px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--line);
+  }
+  .stat { padding: 24px 22px; background: var(--surface); }
+  .stat .n {
+    font-family: var(--display);
+    font-size: 38px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.045em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .stat .n em { font-style: normal; font-size: 22px; color: var(--brand-soft); }
+  .stat .l { margin-top: 12px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+
+  /* --- Capability surface ------------------------------------------ */
+  .surface-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 16px;
+    margin-top: 32px;
+  }
+  .surface {
+    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--surface);
+  }
+  .surface h3 {
+    margin: 0;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--line);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .surface ul { margin: 4px 0 0; }
+  .surface li { max-width: none; font-size: 13px; line-height: 1.58; }
+  .surface li:first-child { border-top: 0; }
+  .surface li:last-child { border-bottom: 0; padding-bottom: 0; }
+  .surface li::before { top: 19px; }
+
+  /* --- Ready-to-paste blocks --------------------------------------- */
+  .blocks { display: grid; gap: 16px; margin: 32px 0 0; }
+  .copyblock {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--surface);
+  }
+  .block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .copyblock .k { color: var(--brand-soft); font-size: 9px; font-weight: 500; }
+  .copy-btn {
+    min-height: 30px;
+    padding: 5px 11px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    color: var(--muted);
+    cursor: pointer;
+    background: var(--surface-3);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    transition: color 180ms ease, border-color 180ms ease;
+  }
+  .copy-btn:hover { color: var(--ink); border-color: var(--brand-soft); }
+  .block-body {
+    padding: 22px 20px;
+    max-width: 86ch;
+    color: var(--ink-soft);
+    font-size: 14.5px;
+    line-height: 1.68;
+  }
+
+  /* --- Note / footnote --------------------------------------------- */
+  .note {
+    max-width: 82ch;
+    margin: 24px 0 0;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    color: var(--muted-strong);
+    font-size: 12.5px;
+    line-height: 1.62;
+  }
+
+  /* --- Footer ------------------------------------------------------ */
+  footer { padding: 44px 0 56px; background: var(--bg-deep); }
+  .footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    width: var(--page);
+    margin: 0 auto;
+  }
+  /* A sentence — so it stays in the body family, never mono. */
+  .footer-inner p { margin: 0; max-width: 74ch; color: var(--muted-strong); font-size: 12.5px; }
+
+  /* --- Responsive --------------------------------------------------- */
+  @media (max-width: 1080px) {
+    :root { --page: calc(100vw - 56px); }
+    .cover-layout { grid-template-columns: 1fr; gap: 44px; }
+  }
+  @media (max-width: 640px) {
+    :root { --page: calc(100vw - 40px); }
+    .sheet { padding: 52px 0; }
+    .cover { padding: 56px 0 64px; }
+    .topbar { padding: 8px 16px; gap: 12px; }
+    .print-button { display: none; }
+    .surface-grid { grid-template-columns: 1fr; }
+  }
+
+  /* --- Print / PDF — brand kit §10 ---------------------------------
+     A4 · 14 mm outer margin · 11 pt body · 15 pt leading.
+     Light reading surface forced regardless of the on-screen theme;
+     red limited to headings, rules and evidence emphasis. */
+  @page { size: A4; margin: 14mm; }
+  @media print {
+    :root, html[data-theme] {
+      color-scheme: light;
+      --bg: #f7f7f8;
+      --bg-deep: #ffffff;
+      --surface: #ffffff;
+      --surface-2: #f2f2f4;
+      --surface-3: #ececef;
+      --surface-raised: #ffffff;
+      --ink: #15161a;
+      --ink-soft: #3d3f45;
+      --muted: #63666e;
+      --muted-strong: #83868e;
+      --line: #d9dae0;
+      --line-strong: #c2c4cb;
+      --brand-soft: #b41624;
+      --brand-bright: #b41624;
+      --grad-display: none;
+      --grad-ink: #b41624;
+      --page-glow: none;
+      --cover-glow: none;
+      --shadow: none;
+      --page: 100%;
+    }
+    html { background: var(--bg); }
+    body {
+      background: var(--bg);
+      font-size: 11pt;
+      line-height: 15pt;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .topbar, .theme-toggle, .print-button, .copy-btn { display: none !important; }
+    .sheet { padding: 0 0 14pt; border-bottom: 0.5pt solid var(--line); break-inside: auto; overflow: visible; }
+    .eyebrow { break-after: avoid; page-break-after: avoid; }
+    tbody th.rowlab { width: auto; min-width: 96pt; }
+    .cover { padding: 0 0 18pt; background: var(--bg); }
+    .cover h1 em {
+      color: var(--brand) !important;
+      background-image: none !important;
+      -webkit-text-fill-color: var(--brand);
+    }
+    .cover h1 { font-size: 26pt; }
+    h2 { font-size: 17pt; break-after: avoid; }
+    h3 { font-size: 12pt; break-after: avoid; }
+    .grid-field::before, .cover::before { display: none; }
+    .eyebrow, .k, .cover-kicker, .stat .n em { color: var(--brand) !important; }
+    .card, .stat, .surface, .copyblock, .pullquote, .callout, .flow .step,
+    tbody td, tbody th.rowlab, nav.toc {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    td.win { background: var(--brand-wash) !important; }
+    a { color: var(--ink); text-decoration: none; }
+    table { min-width: 0; font-size: 9pt; }
+    thead th { background: var(--surface-3) !important; color: var(--muted) !important; }
+    footer { padding: 14pt 0 0; background: var(--bg); }
+    ul li { font-size: 10pt; line-height: 14pt; }
+  }
+</style>
+
+<header class="topbar">
+  <span class="lockup" role="img" aria-label="Loupe">
+    <svg class="on-dark" viewBox="0 0 1408 417" fill="none" aria-hidden="true" focusable="false"><path class="loupe-ink" fill="#f7f7f8" fill-rule="evenodd" d="M365.2 415.9C362.3 415.4 358.3 414.2 356.2 413.1C354.1 412.1 342.8 401.1 330.5 388.4C318.5 375.8 297.5 354.0 283.9 340.0C270.4 326.0 258.0 313.0 256.5 311.2C253.4 307.5 252.7 307.4 249.2 309.9C247.7 310.9 242.4 313.8 237.4 316.4C175.4 347.8 100.1 335.1 49.5 284.5C9.6 244.8 -8.0 186.8 3.6 133.5C14.3 83.8 46.6 41.4 91.1 18.5C105.6 11.0 122.8 5.1 137.5 2.4C152.4 -0.3 180.7 -0.1 195.5 2.8C213.2 6.3 234.0 14.1 247.2 22.2L251.8 25.1L247.1 30.0C241.3 36.0 237.6 42.7 235.5 50.5C232.6 61.9 234.1 77.4 239.2 87.4L241.2 91.3L235.9 86.9C211.3 66.4 177.6 57.5 147.0 63.4C95.7 73.3 59.0 117.1 59.0 168.3C59.0 199.0 71.6 227.7 94.2 248.5C106.6 259.9 119.0 266.7 138.5 272.6C146.8 275.2 148.8 275.4 165.5 275.4C181.1 275.5 184.6 275.2 191.5 273.3C211.7 267.8 226.2 259.6 240.0 246.0C250.1 236.1 255.5 228.9 260.9 218.3C270.8 198.5 274.8 176.2 272.1 155.5C270.3 142.1 263.9 123.9 257.0 112.5C253.8 107.3 251.3 103.0 251.6 103.0C251.8 103.0 254.1 104.3 256.7 105.9C264.8 110.8 271.5 112.5 282.0 112.5C293.9 112.5 300.7 110.5 309.5 104.5C313.1 102.0 316.2 100.0 316.4 100.0C317.0 100.0 324.8 124.8 326.4 132.0C330.4 149.3 330.9 179.2 327.5 196.5C324.0 214.8 315.6 236.7 306.2 251.8C303.3 256.4 301.0 260.4 301.0 260.7C301.0 261.6 308.0 269.1 334.9 297.0C401.5 365.9 399.4 363.6 401.3 369.7C404.0 377.9 404.3 383.2 402.6 390.1C398.0 408.0 382.5 418.7 365.2 415.9ZM982.7 388.2C982.4 387.8 982.3 325.6 982.4 250.0L982.5 112.5L1009.8 112.2L1037.0 112.0L1037.2 118.2C1037.2 121.7 1037.3 126.2 1037.4 128.2C1037.4 130.3 1037.6 132.0 1037.7 132.0C1037.9 132.0 1041.0 129.6 1044.6 126.6C1053.0 119.6 1062.2 114.8 1073.5 111.4C1081.5 109.0 1084.1 108.7 1097.5 108.7C1109.5 108.6 1114.2 109.1 1121.0 110.8C1169.3 122.7 1198.5 168.3 1193.9 224.6C1191.7 252.4 1182.7 272.6 1164.6 290.5C1148.7 306.3 1131.9 314.7 1110.0 318.1C1086.6 321.7 1058.4 314.0 1043.4 299.8C1040.6 297.2 1038.0 295.0 1037.7 295.0C1037.3 295.0 1037.0 316.1 1037.0 342.0L1037.0 389.0L1010.1 389.0C995.2 389.0 982.9 388.7 982.7 388.2ZM642.0 322.0C599.9 316.9 564.4 286.6 552.6 245.6C540.0 202.2 554.6 157.5 590.4 129.6C610.1 114.2 630.8 107.0 655.5 107.0C684.5 107.0 708.4 116.7 729.2 136.8C751.5 158.4 763.1 188.0 761.7 220.0C760.6 244.2 752.4 265.4 736.4 285.0C723.0 301.5 699.0 316.0 677.9 320.4C668.7 322.3 650.6 323.1 642.0 322.0ZM1296.5 319.0C1260.3 315.7 1227.2 292.5 1212.1 260.0C1202.2 238.7 1199.9 210.5 1206.0 186.6C1215.2 150.5 1244.4 120.8 1280.6 110.8C1287.4 108.9 1291.1 108.6 1307.5 108.6C1324.4 108.5 1327.4 108.8 1335.0 110.8C1372.0 121.0 1399.8 152.0 1406.5 190.6C1408.0 199.5 1408.5 218.1 1407.4 226.4L1406.7 231.0L1331.8 231.0L1256.8 231.0L1257.5 234.2C1259.7 245.3 1271.2 260.0 1281.9 265.4C1288.7 268.9 1300.9 272.0 1307.7 272.0C1314.0 272.0 1326.3 269.6 1331.7 267.4C1337.6 264.9 1346.4 258.3 1350.9 253.0L1354.9 248.2L1378.2 255.8C1391.0 259.9 1401.6 263.4 1401.8 263.5C1402.3 264.0 1394.6 276.5 1390.4 282.1C1382.1 293.0 1368.6 303.6 1354.6 310.1C1339.8 317.0 1315.4 320.8 1296.5 319.0ZM837.0 316.0C825.5 313.5 820.8 311.7 812.3 306.4C797.0 296.9 785.1 278.8 781.0 258.9C779.2 250.1 779.0 244.8 779.0 180.8L779.0 112.0L806.0 112.0L832.9 112.0L833.2 174.8C833.5 237.1 833.5 237.5 835.7 243.0C838.9 250.9 846.4 258.9 854.3 262.9C859.9 265.7 862.3 266.3 869.8 266.8C876.2 267.1 880.1 266.8 884.1 265.7C894.4 262.7 903.8 253.8 908.3 243.0C910.5 237.6 910.5 236.9 911.0 175.0L911.5 112.5L938.2 112.2L965.0 112.0L965.0 213.0L965.0 314.0L938.2 313.8L911.5 313.5L911.2 304.3L910.9 295.0L903.9 300.9C900.1 304.1 893.9 308.4 890.2 310.3C876.3 317.6 854.9 319.9 837.0 316.0ZM481.0 179.0L481.0 43.0L508.5 43.0L536.0 43.0L535.7 178.8L535.5 314.5L508.2 314.8L481.0 315.0L481.0 179.0ZM676.6 286.7C693.2 281.9 709.2 269.1 718.4 253.4C743.2 211.1 721.7 157.1 674.8 144.0C660.0 139.9 646.9 140.4 630.8 145.7C611.0 152.2 593.4 169.5 586.0 189.8C579.8 206.9 579.7 224.0 585.9 240.9C590.5 253.4 596.2 261.7 607.2 271.7C617.2 280.7 629.1 286.3 643.8 289.0C651.7 290.5 667.6 289.4 676.6 286.7ZM1104.1 267.2C1126.8 260.9 1141.0 240.2 1141.0 213.5C1141.0 192.5 1133.1 176.2 1117.9 166.1C1102.2 155.6 1080.4 154.9 1062.9 164.2C1055.9 167.8 1046.5 176.9 1042.3 184.1C1035.6 195.3 1033.2 214.5 1036.5 228.9C1040.8 247.1 1055.7 262.7 1073.1 267.4C1080.9 269.5 1096.1 269.4 1104.1 267.2ZM1355.0 189.7C1355.0 182.2 1342.5 166.2 1332.4 160.8C1317.9 153.0 1296.2 153.0 1281.6 160.8C1271.6 166.1 1258.0 182.9 1258.0 189.9L1258.0 192.0L1306.5 192.0L1355.0 192.0L1355.0 189.7Z"/>
+  <path class="loupe-signal" fill="#e33b4c" fill-rule="evenodd" d="M643.0 279.5C629.7 276.8 621.5 272.5 611.7 263.1C597.2 249.2 590.3 232.2 591.2 212.6C592.6 185.5 610.8 161.9 636.5 154.0C671.6 143.2 708.5 163.7 717.7 199.0C720.2 208.7 720.0 223.6 717.2 233.5C707.8 266.4 675.8 286.2 643.0 279.5ZM667.2 265.9C686.0 261.9 703.0 243.4 706.0 223.5C708.6 207.3 703.5 192.2 691.2 179.6C671.7 159.6 637.0 160.6 618.0 181.7C608.9 191.8 605.0 202.0 605.0 216.0C605.0 231.2 609.2 241.3 620.0 252.0C630.3 262.3 640.8 266.8 654.7 266.9C658.7 267.0 664.3 266.5 667.2 265.9ZM270.9 100.4C264.6 98.2 255.6 90.9 251.9 85.2C247.3 77.9 245.7 71.0 246.3 61.3C247.2 46.8 253.8 36.7 266.7 30.3C273.6 26.9 274.9 26.6 282.3 26.7C297.7 26.8 309.5 34.2 316.2 47.8C319.2 53.9 319.5 55.3 319.5 64.0C319.5 72.2 319.1 74.3 316.8 79.2C313.1 87.1 306.0 94.4 298.4 98.1C290.5 102.0 278.4 103.0 270.9 100.4Z"/></svg>
+    <svg class="on-light" viewBox="0 0 1408 417" fill="none" aria-hidden="true" focusable="false"><path class="loupe-ink" fill="#0b0c0f" fill-rule="evenodd" d="M365.2 415.9C362.3 415.4 358.3 414.2 356.2 413.1C354.1 412.1 342.8 401.1 330.5 388.4C318.5 375.8 297.5 354.0 283.9 340.0C270.4 326.0 258.0 313.0 256.5 311.2C253.4 307.5 252.7 307.4 249.2 309.9C247.7 310.9 242.4 313.8 237.4 316.4C175.4 347.8 100.1 335.1 49.5 284.5C9.6 244.8 -8.0 186.8 3.6 133.5C14.3 83.8 46.6 41.4 91.1 18.5C105.6 11.0 122.8 5.1 137.5 2.4C152.4 -0.3 180.7 -0.1 195.5 2.8C213.2 6.3 234.0 14.1 247.2 22.2L251.8 25.1L247.1 30.0C241.3 36.0 237.6 42.7 235.5 50.5C232.6 61.9 234.1 77.4 239.2 87.4L241.2 91.3L235.9 86.9C211.3 66.4 177.6 57.5 147.0 63.4C95.7 73.3 59.0 117.1 59.0 168.3C59.0 199.0 71.6 227.7 94.2 248.5C106.6 259.9 119.0 266.7 138.5 272.6C146.8 275.2 148.8 275.4 165.5 275.4C181.1 275.5 184.6 275.2 191.5 273.3C211.7 267.8 226.2 259.6 240.0 246.0C250.1 236.1 255.5 228.9 260.9 218.3C270.8 198.5 274.8 176.2 272.1 155.5C270.3 142.1 263.9 123.9 257.0 112.5C253.8 107.3 251.3 103.0 251.6 103.0C251.8 103.0 254.1 104.3 256.7 105.9C264.8 110.8 271.5 112.5 282.0 112.5C293.9 112.5 300.7 110.5 309.5 104.5C313.1 102.0 316.2 100.0 316.4 100.0C317.0 100.0 324.8 124.8 326.4 132.0C330.4 149.3 330.9 179.2 327.5 196.5C324.0 214.8 315.6 236.7 306.2 251.8C303.3 256.4 301.0 260.4 301.0 260.7C301.0 261.6 308.0 269.1 334.9 297.0C401.5 365.9 399.4 363.6 401.3 369.7C404.0 377.9 404.3 383.2 402.6 390.1C398.0 408.0 382.5 418.7 365.2 415.9ZM982.7 388.2C982.4 387.8 982.3 325.6 982.4 250.0L982.5 112.5L1009.8 112.2L1037.0 112.0L1037.2 118.2C1037.2 121.7 1037.3 126.2 1037.4 128.2C1037.4 130.3 1037.6 132.0 1037.7 132.0C1037.9 132.0 1041.0 129.6 1044.6 126.6C1053.0 119.6 1062.2 114.8 1073.5 111.4C1081.5 109.0 1084.1 108.7 1097.5 108.7C1109.5 108.6 1114.2 109.1 1121.0 110.8C1169.3 122.7 1198.5 168.3 1193.9 224.6C1191.7 252.4 1182.7 272.6 1164.6 290.5C1148.7 306.3 1131.9 314.7 1110.0 318.1C1086.6 321.7 1058.4 314.0 1043.4 299.8C1040.6 297.2 1038.0 295.0 1037.7 295.0C1037.3 295.0 1037.0 316.1 1037.0 342.0L1037.0 389.0L1010.1 389.0C995.2 389.0 982.9 388.7 982.7 388.2ZM642.0 322.0C599.9 316.9 564.4 286.6 552.6 245.6C540.0 202.2 554.6 157.5 590.4 129.6C610.1 114.2 630.8 107.0 655.5 107.0C684.5 107.0 708.4 116.7 729.2 136.8C751.5 158.4 763.1 188.0 761.7 220.0C760.6 244.2 752.4 265.4 736.4 285.0C723.0 301.5 699.0 316.0 677.9 320.4C668.7 322.3 650.6 323.1 642.0 322.0ZM1296.5 319.0C1260.3 315.7 1227.2 292.5 1212.1 260.0C1202.2 238.7 1199.9 210.5 1206.0 186.6C1215.2 150.5 1244.4 120.8 1280.6 110.8C1287.4 108.9 1291.1 108.6 1307.5 108.6C1324.4 108.5 1327.4 108.8 1335.0 110.8C1372.0 121.0 1399.8 152.0 1406.5 190.6C1408.0 199.5 1408.5 218.1 1407.4 226.4L1406.7 231.0L1331.8 231.0L1256.8 231.0L1257.5 234.2C1259.7 245.3 1271.2 260.0 1281.9 265.4C1288.7 268.9 1300.9 272.0 1307.7 272.0C1314.0 272.0 1326.3 269.6 1331.7 267.4C1337.6 264.9 1346.4 258.3 1350.9 253.0L1354.9 248.2L1378.2 255.8C1391.0 259.9 1401.6 263.4 1401.8 263.5C1402.3 264.0 1394.6 276.5 1390.4 282.1C1382.1 293.0 1368.6 303.6 1354.6 310.1C1339.8 317.0 1315.4 320.8 1296.5 319.0ZM837.0 316.0C825.5 313.5 820.8 311.7 812.3 306.4C797.0 296.9 785.1 278.8 781.0 258.9C779.2 250.1 779.0 244.8 779.0 180.8L779.0 112.0L806.0 112.0L832.9 112.0L833.2 174.8C833.5 237.1 833.5 237.5 835.7 243.0C838.9 250.9 846.4 258.9 854.3 262.9C859.9 265.7 862.3 266.3 869.8 266.8C876.2 267.1 880.1 266.8 884.1 265.7C894.4 262.7 903.8 253.8 908.3 243.0C910.5 237.6 910.5 236.9 911.0 175.0L911.5 112.5L938.2 112.2L965.0 112.0L965.0 213.0L965.0 314.0L938.2 313.8L911.5 313.5L911.2 304.3L910.9 295.0L903.9 300.9C900.1 304.1 893.9 308.4 890.2 310.3C876.3 317.6 854.9 319.9 837.0 316.0ZM481.0 179.0L481.0 43.0L508.5 43.0L536.0 43.0L535.7 178.8L535.5 314.5L508.2 314.8L481.0 315.0L481.0 179.0ZM676.6 286.7C693.2 281.9 709.2 269.1 718.4 253.4C743.2 211.1 721.7 157.1 674.8 144.0C660.0 139.9 646.9 140.4 630.8 145.7C611.0 152.2 593.4 169.5 586.0 189.8C579.8 206.9 579.7 224.0 585.9 240.9C590.5 253.4 596.2 261.7 607.2 271.7C617.2 280.7 629.1 286.3 643.8 289.0C651.7 290.5 667.6 289.4 676.6 286.7ZM1104.1 267.2C1126.8 260.9 1141.0 240.2 1141.0 213.5C1141.0 192.5 1133.1 176.2 1117.9 166.1C1102.2 155.6 1080.4 154.9 1062.9 164.2C1055.9 167.8 1046.5 176.9 1042.3 184.1C1035.6 195.3 1033.2 214.5 1036.5 228.9C1040.8 247.1 1055.7 262.7 1073.1 267.4C1080.9 269.5 1096.1 269.4 1104.1 267.2ZM1355.0 189.7C1355.0 182.2 1342.5 166.2 1332.4 160.8C1317.9 153.0 1296.2 153.0 1281.6 160.8C1271.6 166.1 1258.0 182.9 1258.0 189.9L1258.0 192.0L1306.5 192.0L1355.0 192.0L1355.0 189.7Z"/>
+  <path class="loupe-signal" fill="#b41624" fill-rule="evenodd" d="M643.0 279.5C629.7 276.8 621.5 272.5 611.7 263.1C597.2 249.2 590.3 232.2 591.2 212.6C592.6 185.5 610.8 161.9 636.5 154.0C671.6 143.2 708.5 163.7 717.7 199.0C720.2 208.7 720.0 223.6 717.2 233.5C707.8 266.4 675.8 286.2 643.0 279.5ZM667.2 265.9C686.0 261.9 703.0 243.4 706.0 223.5C708.6 207.3 703.5 192.2 691.2 179.6C671.7 159.6 637.0 160.6 618.0 181.7C608.9 191.8 605.0 202.0 605.0 216.0C605.0 231.2 609.2 241.3 620.0 252.0C630.3 262.3 640.8 266.8 654.7 266.9C658.7 267.0 664.3 266.5 667.2 265.9ZM270.9 100.4C264.6 98.2 255.6 90.9 251.9 85.2C247.3 77.9 245.7 71.0 246.3 61.3C247.2 46.8 253.8 36.7 266.7 30.3C273.6 26.9 274.9 26.6 282.3 26.7C297.7 26.8 309.5 34.2 316.2 47.8C319.2 53.9 319.5 55.3 319.5 64.0C319.5 72.2 319.1 74.3 316.8 79.2C313.1 87.1 306.0 94.4 298.4 98.1C290.5 102.0 278.4 103.0 270.9 100.4Z"/></svg>
+  </span>
+  <div class="topbar-meta">
+    <div class="theme-toggle" role="group" aria-label="Reading surface">
+      <button type="button" data-theme-set="dark" aria-pressed="true">Dark</button>
+      <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+    </div>
+    <button class="print-button" type="button" onclick="window.print()">Print / Save PDF ↗</button>
+  </div>
+</header>
+
+<main>
+
+<section class="sheet cover">
+<div class="sheet-inner">
+<div class="cover-layout">
+<div>
+  <p class="cover-kicker"><i aria-hidden="true"></i>Accelerator application brief · internal draft · 25 Jul 2026</p>
+  <h1>Loupe answers questions across the <em>whole case</em> at once, not one document at a time.</h1>
+  <p class="lede">An investigation platform for fraud and criminal casework. Investigators upload everything a case contains — documents, phone extractions, financial records, audio — and Loupe resolves it into one connected model of the people, events, money and places inside it. Questions are answered by traversing that model, so a single question reaches every artifact in the case at once rather than a handful of documents at a time — and every fact it returns carries the page, quote and file it came from.</p>
+  <div class="cover-version">
+    <span>Working brand: Loupe</span>
+    <span>Tagline in market: “Find the signal in everything.”</span>
+    <span>Deployment: single-tenant, one instance per customer</span>
+  </div>
+</div>
+
+<nav class="toc" aria-label="Contents">
+  <span class="k">Contents</span>
+  <ol>
+    <li><a href="#problem"><span class="n">01</span>The problem</a></li>
+    <li><a href="#product"><span class="n">02</span>What Loupe actually is</a></li>
+    <li><a href="#workspace"><span class="n">03</span>One case, every lens</a></li>
+    <li><a href="#curation"><span class="n">04</span>Raw text, elevated: highlights &amp; Loupes</a></li>
+    <li><a href="#agent"><span class="n">05</span>An agent that does, not a chatbot that answers</a></li>
+    <li><a href="#differentiation"><span class="n">06</span>What makes this different from a straight LLM</a></li>
+    <li><a href="#engineering"><span class="n">07</span>Built like evidence infrastructure</a></li>
+    <li><a href="#capabilities"><span class="n">08</span>The full capability surface</a></li>
+    <li><a href="#market"><span class="n">09</span>Who buys this</a></li>
+    <li><a href="#application"><span class="n">10</span>Ready-to-paste blocks</a></li>
+  </ol>
+</nav>
+</div>
+</div>
+</section>
+
+<section class="sheet grid-field" id="problem">
+<div class="sheet-inner">
+  <p class="eyebrow">The problem</p>
+  <h2>Modern casework is a data problem wearing a legal costume</h2>
+<p><strong>A call at 02:14, a transfer of $8,400 and a line in a subpoena return are the same kind of citable object in Loupe — resolved into one model, each traceable to the artifact it came from.</strong> No other platform can say that. The evidence categories split the problem: the eDiscovery tools model documents and flatten phone data into spreadsheets, while the forensic tools model devices and leave documents outside the model entirely.</p>
+<p>And the defence cannot buy the analytics the prosecution runs on. GrayKey is not sold to the private sector at all; Cellebrite Pathfinder is marketed to law enforcement, government and intelligence. Defence teams receive phone extractions through read-only share links issued by the prosecution — reviewing the evidence inside the prosecution's tool, with the prosecution's permissions. Levelling the evidentiary playing field is not a slogan here; it is a description of a licensing structure.</p>
+  <p class="lead">A single serious-fraud or criminal case now arrives as thousands of documents, multi-gigabyte phone extractions with hundreds of thousands of events, bank records spanning tens of thousands of transactions, and hours of recorded audio. The tools investigators have are <strong>viewers</strong> — one phone at a time, one PDF at a time, one spreadsheet at a time.</p>
+  <p>The connections — the same person appearing in a witness statement, a WhatsApp thread and a beneficiary field; the meeting that happened two streets from the cash withdrawal — live in investigators' heads and on whiteboards. They don't scale, they don't survive staff turnover, and they can't be handed to a court.</p>
+  <p>Generic AI chatbots don't solve this. You can't paste a case into a context window, you can't cite a chat transcript in a brief, and you can't send evidence to a shared multi-tenant cloud. Investigation teams are simultaneously the group with the most to gain from AI and the group least able to use it off the shelf.</p>
+</div>
+</section>
+
+<section class="sheet" id="product">
+<div class="sheet-inner">
+  <p class="eyebrow">The product</p>
+  <h2>What Loupe actually is</h2>
+  <p>Loupe ingests every kind of case material through a structured pipeline and compiles it into a <strong>case knowledge graph</strong> — people, organisations, accounts, transactions, communications, events, locations, documents — held in a graph database, not a prompt. On top of that one model sit multiple investigative lenses, and an AI layer that is <em>bounded, audited and cited</em> rather than free-running.</p>
+
+  <div class="flow" aria-label="Pipeline">
+    <div class="step"><b>1</b>Ingest</div>
+    <div class="step"><b>2</b>Ground</div>
+    <div class="step"><b>3</b>Connect</div>
+    <div class="step"><b>4</b>Explore</div>
+    <div class="step"><b>5</b>Prove</div>
+  </div>
+
+  <ul>
+    <li><strong>Ingest.</strong> PDFs (with automatic OCR for scanned pages), Office documents, spreadsheets, email, images, video, audio — transcribed and <em>speaker-diarized</em>, with investigator-editable speaker naming — and Cellebrite phone extractions through a dedicated forensic parser.</li>
+    <li><strong>Ground.</strong> Every extracted fact is captured as a <em>grounded claim</em>: subject, predicate, the verbatim quote it rests on, the exact source location, and a confidence score. Claims pass an automated verification pass and carry review status (unreviewed / uncertain / verified / rejected) into the product.</li>
+    <li><strong>Connect.</strong> Entities are resolved and de-duplicated across documents (deterministic blocking → embedding similarity → model confirmation), then merged into the case graph without losing provenance — a merged entity keeps the sources of everything it absorbed.</li>
+    <li><strong>Explore.</strong> The same underlying model, through whichever lens fits the question: network graph (2D and 3D), chronological timeline, geographic map, sortable table, financial ledger, phone-report viewer, full-text evidence search.</li>
+    <li><strong>Prove.</strong> Citations that open the source document at the right page. A curated “Significant” layer that projects the case down to what matters for court, and <strong>Loupes</strong> — bonded collections of evidence that turn curated items into narratives: custom timelines, evidenced sequences, explained sets. Exports to CSV / PDF / DOCX. An audit log and a complete AI cost ledger underneath.</li>
+  </ul>
+</div>
+</section>
+
+<section class="sheet grid-field" id="workspace">
+<div class="sheet-inner">
+  <p class="eyebrow">The workspace</p>
+  <h2>One case, every lens</h2>
+  <p>Loupe meets investigators where casework actually starts — in the evidence and the day's work — with the analytical lenses one click away. Depth is there when you reach for it, never dumped on you when you open the door.</p>
+  <div class="cardgrid">
+    <div class="card"><span class="k">Evidence</span><h4>The source of truth</h4><p>Folder-organised evidence explorer with case-wide full-text search, side-by-side original-and-extracted-text viewing, AI document summaries with clickable sources, previews for every format, and diarized transcript viewing.</p></div>
+    <div class="card"><span class="k">Workspace</span><h4>The investigator's desk</h4><p>Findings, theories with confidence levels, witness matrix, tasks, deadlines, pinned evidence, linked notes and point-in-time case snapshots.</p></div>
+    <div class="card"><span class="k">AI chat</span><h4>Ask with citations</h4><p>Natural-language Q&amp;A over the case — no theory required. Answers come back cited and visual: a result graph and result set alongside the text, with citations that open the document at the cited page. Context can be the whole case, the Significant layer, or a hand-picked selection.</p></div>
+    <div class="card"><span class="k">Agent</span><h4>An investigator with tools</h4><p>Describe a scenario to test and the agent works it with a visible investigation trail — gathering, cross-referencing and building durable outputs: Loupes, graphs, tables, charts, reports, maps. Detailed below.</p></div>
+    <div class="card"><span class="k">Curation</span><h4>Significance, highlights &amp; Loupes</h4><p>Investigators highlight passages, elevate entities and events to Significant, and bind them into Loupes — bonded collections of evidence, like custom narrative timelines. Every surface can project down to the curated layer instantly.</p></div>
+    <div class="card"><span class="k">Graph</span><h4>The network view</h4><p>Force-directed graph of the whole case in 2D or 3D. Search with boolean operators, expand neighbourhoods, run pathfinding and centrality algorithms, merge duplicates with full audit, and spotlight saved subgraphs.</p></div>
+    <div class="card"><span class="k">Timeline</span><h4>What happened, in order</h4><p>Every dated fact in the case as a filterable, clustered event stream — by event type, by entity, by range — with export.</p></div>
+    <div class="card"><span class="k">Map</span><h4>Where it happened</h4><p>Geocoded locations with confidence tiers, a needs-review queue for uncertain geocodes, heatmaps, movement trails, proximity analysis, and draw-your-own-area filtering.</p></div>
+    <div class="card"><span class="k">Financial</span><h4>Follow the money</h4><p>Transaction ledger with categorisation, counterparty assignment, amount corrections with recorded reasons, sender/beneficiary flow tables, trend charts and PDF export.</p></div>
+    <div class="card"><span class="k">Phone</span><h4>Cellebrite, cross-device</h4><p>Purpose-built viewer for phone extractions: comms threads, unified contacts, location playback, files, and a cross-phone graph that surfaces shared contacts and co-occurring devices across multiple handsets.</p></div>
+    <div class="card"><span class="k">Triage</span><h4>Before ingestion</h4><p>Scan mounted drives, classify files against known-good/known-bad hash sets, profile users and artifacts — decide what deserves full processing before spending a cent on it.</p></div>
+    <div class="card"><span class="k">Admin</span><h4>Run it like infrastructure</h4><p>User and role management, AI spend dashboards with a per-operation cost ledger, system logs, background task monitoring, and in-product platform updates.</p></div>
+  </div>
+</div>
+</section>
+
+<section class="sheet" id="curation">
+<div class="sheet-inner">
+  <p class="eyebrow">Curation</p>
+  <h2>Raw text, elevated: highlights and Loupes</h2>
+  <p class="lead">Automated extraction is the floor, not the ceiling. Loupe exposes the raw text layer of every document and gives investigators the tools to elevate what matters — so the case model reflects investigative judgment, not just what a pipeline decided to extract.</p>
+
+  <h3>The extracted-text workbench</h3>
+  <ul>
+    <li><strong>Side-by-side verification.</strong> Open any document and see the original — the scanned page, the PDF, the image — beside the text Loupe extracted from it. What the system "read" is transparent and checkable against the source, which matters when an OCR error has evidential consequences.</li>
+    <li><strong>Case-wide text search.</strong> The extracted text is a first-class surface: find every place a name, phone number or phrase appears across the whole case, whichever document it's buried in. Sometimes you don't want the extracted structure — you want the raw words.</li>
+    <li><strong>Highlight to promote.</strong> A highlight isn't a visual marker — it's the mechanism that lifts raw text into the structured world: <em>this sentence matters; make it a significant item.</em></li>
+    <li><strong>Provenance comes free.</strong> A highlight is anchored in the extracted text, which is anchored to the source document — so anything promoted this way carries an exact reference to its document, location and original wording.</li>
+    <li><strong>The agent works at this layer too.</strong> Full-text search is exposed as an agent tool, so AI answers can draw on the actual words in the documents, not only what extraction promoted into the graph.</li>
+  </ul>
+
+  <h3>Loupes: bonded collections that carry meaning</h3>
+  <p>The platform's namesake object. A <strong>Loupe</strong> is a <strong>bonded collection</strong> — documents, highlighted passages, entities, events, bound together to explain something: an event, a sequence, a collection, a thing. You gather the evidence, and you examine it through a Loupe.</p>
+  <ul>
+    <li><strong>A first-class object, not a filter.</strong> A Loupe is its own node, with its own identity, description and significance: <em>what this is, and why it exists.</em> The collection carries meaning, not just membership.</li>
+    <li><strong>Custom timelines are the flagship.</strong> A Loupe of events, ordered in time, is a bespoke narrative timeline: events that each stand alone as significant items — a call, a meeting, a transfer — composed into the story that connects them.</li>
+    <li><strong>Layered significance.</strong> Significance isn't flat. Individually significant items can belong to a larger significant structure whose meaning sits above its parts — the narrative, not just the moments in it.</li>
+    <li><strong>One Loupe, many views.</strong> A Loupe built as a timeline is still a set of nodes: view the same Loupe in the graph, or through whichever lens fits the question. One underlying object; the view is your choice.</li>
+    <li><strong>Fed by highlights.</strong> Highlight five key sentences across three documents, bind them into a Loupe, and you have a curated, fully evidenced narrative — every element traceable back to its source line.</li>
+  </ul>
+</div>
+</section>
+
+<section class="sheet" id="agent">
+<div class="sheet-inner">
+  <p class="eyebrow">The agent</p>
+  <h2>An agent that does, not a chatbot that answers</h2>
+  <p class="lead">Most "AI on your data" products stop at question answering. Loupe's agent is an operator: it carries a toolbox, and it works a case the way an analyst does — searching, cross-referencing, querying, and <strong>building outputs you keep</strong>.</p>
+
+  <div class="pullquote">An investigator doesn't arrive with questions — they arrive with theories. Loupe is the first tool where the unit of work is a hypothesis rather than a query: describe the scenario you want to test, and the agent assembles the Loupe that proves — or breaks — it.<span class="who">The blank page, reimagined</span></div>
+
+  <p>That's the ceiling, not the entry bar. Simple stays simple: ask a plain question in chat and get a cited answer with a result graph and result set — no theory required. The hypothesis workbench is where you go on the days you arrive with one.</p>
+
+  <ul>
+    <li><strong>It investigates, visibly.</strong> Every run streams a live investigation trail — each tool call, each result — so the investigator watches the reasoning happen instead of trusting a black box.</li>
+    <li><strong>A real toolbox.</strong> Case overview, graph entity search and schema inspection, entity details and neighbourhoods, pathfinding between entities, full-text document search, timeline events, financial records, map locations — and safe read-only Cypher for the questions no canned filter covers: complex grouping, aggregation, cross-source joins. If the answer is in the case, the agent has a tool that can reach it.</li>
+    <li><strong>It builds, not just answers.</strong> The agent assembles artifacts — graphs, tables, charts, maps, full reports — that persist as case objects and export to CSV, PDF and DOCX. Ask for "a chart of cash withdrawals by week, grouped by account" and you get the chart, not a paragraph about it.</li>
+    <li><strong>It asks when unsure.</strong> Ambiguous request? The agent requests clarification with concrete options rather than guessing — and it can be cancelled mid-run at any point.</li>
+    <li><strong>It respects the frame.</strong> Scope it to the whole case, the Significant layer, or a hand-picked selection; it proposes, the investigator disposes — merges and case changes stay under human control.</li>
+    <li><strong>It's governed like everything else.</strong> Read-only, case-scoped database access with enforced limits; bounded run length; every run's cost recorded and attributed.</li>
+    <li><strong>The ceiling is the toolbox — and the toolbox grows.</strong> Because capability is delivered as tools, every new platform surface becomes something the agent can wield. Tools can build visualisations, compose queries, generate deliverables — anything the platform can do, the agent can be handed. The agent compounds with the product.</li>
+  </ul>
+
+  <h3>The hypothesis workbench</h3>
+  <p>Testing a theory against evidence cuts more than one way — and each of these is only possible because a structured claims model sits underneath. You cannot do any of them against a folder of PDFs.</p>
+  <ul>
+    <li><strong>Assemble the scenario.</strong> Describe the theory in plain language and the agent gathers the passages, entities, events and transactions that bear on it, and binds them into a Loupe — a bonded collection you can walk as a timeline, a graph, or a draft narrative, every element carrying its source.</li>
+    <li><strong>Hunt what breaks it.</strong> A theory populated by a machine is confirmation bias at speed — so the agent is built to argue the other way: the contradicting date, the document placing someone elsewhere, the innocent explanation sitting two hops away. <em>Loupe looks for what breaks your theory.</em> What survives that is defensible in a way a supporting-evidence pile never is.</li>
+    <li><strong>Find what isn't there.</strong> Retrieval can never surface a document that doesn't exist — a structured case model can enumerate absences: the undisclosed statement month, the four-day hole in a phone extraction, the invoice referenced in an email that appears nowhere in the production.</li>
+    <li><strong>Hypotheses that stay open.</strong> Cases arrive in tranches over months. A standing hypothesis re-evaluates as new material lands — "two of your five supporting passages are now contradicted by the latest disclosure bundle" — so the case file stays alive between hearings, not frozen at the last review.</li>
+  </ul>
+</div>
+</section>
+
+<section class="sheet grid-field" id="differentiation">
+<div class="sheet-inner">
+  <p class="eyebrow">Differentiation</p>
+  <h2>What makes this different from a straight LLM</h2>
+  <p class="lead">The honest answer to “isn't this just ChatGPT with files?” is architectural, not cosmetic. A chatbot <em>reads</em> evidence and produces prose. Loupe <em>compiles</em> evidence into a permanent, queryable, provenance-carrying structure — and then lets AI operate on that structure under guardrails.</p>
+  <p>This comparison comes first because it is the one most people make, and it is a false competitor. A general-purpose model with files attached looks like it could do this job and cannot — not for reasons of model quality, but because there is no case model underneath it. The comparison that actually decides a purchase is the one after it.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th scope="col"></th><th scope="col">A straight LLM</th><th scope="col" class="is-loupe">Loupe</th></tr></thead>
+    <tbody>
+      <tr><th class="rowlab" scope="row">Where the case lives</th><td class="dim">A context window — re-uploaded every session, forgotten after</td><td class="win">A persistent case knowledge graph plus vector and relational stores; the model of the case outlives every conversation</td></tr>
+      <tr><th class="rowlab" scope="row">Scale</th><td class="dim">Bounded by tokens — hundreds of pages at best</td><td class="win">Entire corpora: thousands of documents, multi-gigabyte phone reports, ledgers designed for tens of thousands of transactions</td></tr>
+      <tr><th class="rowlab" scope="row">Answers</th><td class="dim">Fluent, unsourced text</td><td class="win">Cited claims — click through to the exact page; the verbatim quote, source location and confidence are stored with every fact</td></tr>
+      <tr><th class="rowlab" scope="row">Hallucination</th><td class="dim">Mitigated by hoping</td><td class="win">Contained by design: a grounded-claims ledger, an automated verification pass, and explicit review states investigators control</td></tr>
+      <tr><th class="rowlab" scope="row">What the AI can do</th><td class="dim">Anything it decides to</td><td class="win">Cites every claim to the exact page and runs tools on the case model — building Loupes, groupings, visualisations and reports from plain instruction — with database access that stays case-scoped, read-only and limit-enforced; prompt-injection defenses; bounded runs with recorded cost</td></tr>
+      <tr><th class="rowlab" scope="row">Repeatability</th><td class="dim">Ask twice, get two answers</td><td class="win">Deterministic pipeline stages — OCR, transcription, parsing, hashing, dedupe, geocoding — produce the same structure every time; AI adds interpretation on top, labelled as such</td></tr>
+      <tr><th class="rowlab" scope="row">Human judgment</th><td class="dim">Lives outside the tool, lost between sessions</td><td class="win">Highlights, significance and Loupes — bonded collections of evidence, like custom narrative timelines — are durable objects in the case model; curation the whole system, including the agent, understands</td></tr>
+      <tr><th class="rowlab" scope="row">Confidentiality</th><td class="dim">Multi-tenant cloud</td><td class="win">Single-tenant: each customer gets their own isolated instance; evidence never leaves it and never trains anyone's model</td></tr>
+      <tr><th class="rowlab" scope="row">Output</th><td class="dim">A chat transcript</td><td class="win">An agent that builds durable artifacts — graphs, tables, charts, maps, reports — plus court-facing surfaces and CSV/PDF/DOCX exports, over an audit log</td></tr>
+      <tr><th class="rowlab" scope="row">Model dependence</th><td class="dim">The model <em>is</em> the product</td><td class="win">Models are interchangeable components — OpenAI, Anthropic and Gemini behind one routing policy, assignable per workload. The moat is the evidence layer, not the model</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3>And what makes it different from the investigation platforms</h3>
+  <p>The real field is Relativity, Everlaw, Harvey, Cellebrite and Nuix — mature products with persistent case files,
+  citation discipline, audit logs and deployment options. On most of the rows above they score level with Loupe. These
+  are the rows where they do not.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th></th><th>The evidence platforms</th><th>Loupe</th></tr></thead>
+    <tbody>
+      <tr><td class="rowlab">How a question is answered</td><td class="dim">Retrieve candidate passages, place them in a context window, ask a model to reason over them — the mechanism is identical across all of them</td><td class="win">Traverse a model of the case: a question resolves as a definite answer over everything ingested, not a sample of it</td></tr>
+      <tr><td class="rowlab">Published ceilings</td><td class="dim">Relativity caps at 300k documents per index and 5k per fact-extraction job; CoCounsel ~200 documents per run with quality degrading; Reveal states its Ask is “designed for precision, not recall”; Harvey runs a prompt per document and aggregates</td><td class="win">One question, put to the whole case</td></tr>
+      <tr><td class="rowlab">Phone evidence</td><td class="dim">Chats survive as documents; calls, contacts, locations and web history are flattened into spreadsheets; multi-device extractions unsupported outright; i2 removed native UFED import</td><td class="win">Devices, contact books, threads, calls and attachments as first-class citable objects</td></tr>
+      <tr><td class="rowlab">Evidence types in one model</td><td class="dim">Documents <em>or</em> devices. The eDiscovery tools model documents; the forensic tools model devices; neither models both</td><td class="win">Phone extractions, documents and financial records resolved into a single graph</td></tr>
+      <tr><td class="rowlab">Direction of the work</td><td class="dim">Reductive — cull a corpus down to a reviewable set. Success is fewer documents to read</td><td class="win">Constructive — every artifact ingested makes the model of the case richer</td></tr>
+      <tr><td class="rowlab">Where AI is configured</td><td class="dim">At review time, on a corpus whose shape is already fixed</td><td class="win">At ingestion, directing what is extracted and structured as evidence enters</td></tr>
+      <tr><td class="rowlab">What multimedia becomes</td><td class="dim">A searchable transcript — another document</td><td class="win">Entities resolved into the case model: a name spoken in a call is the same object as the name on a bank statement</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <span class="k">The one-sentence version</span>
+    <p>A straight LLM gives you a well-written opinion about the fraction of the evidence that fits in its context window. Loupe gives you a complete, permanent, cross-referenced model of <em>all</em> of it — where every claim carries its receipt, every AI action is bounded and costed, and everything you find leads back to a page you can put in front of a court.</p>
+  </div>
+</div>
+</section>
+
+<section class="sheet" id="engineering">
+<div class="sheet-inner">
+  <p class="eyebrow">Engineering</p>
+  <h2>Built like evidence infrastructure, not a demo</h2>
+  <ul>
+    <li><strong>Service architecture:</strong> a React investigation console; a FastAPI case API; a separate asynchronous evidence-engine (API + queue worker) that owns ingestion; Neo4j for the case graph; Postgres for cases, auth, workspace and audit state; ChromaDB for semantic retrieval; Redis for job orchestration with live progress over WebSockets.</li>
+    <li><strong>Provenance as a first-class data structure:</strong> the grounded-claims ledger ties each entity and relationship to quote, location, confidence and verification status — and provenance survives merges and re-ingestion by accumulation, never overwrite.</li>
+    <li><strong>AI under governance:</strong> per-workload model routing across three providers, encrypted credential storage, a spend ledger attributing every call to user, case and operation, and safety layers (read-only query enforcement, injection defenses, run caps) between the model and the evidence.</li>
+    <li><strong>Deployment model that matches the buyer:</strong> one isolated stack per customer — the architecture agencies and regulated firms can actually approve. Each customer runs in an isolated cloud project with private networking, immutable releases, encrypted off-instance backup and rehearsed restore.</li>
+  </ul>
+
+  <div class="stats" aria-label="Design targets">
+    <div class="stat"><div class="n">10k<em>+</em></div><div class="l">entities per case — dedupe design target</div></div>
+    <div class="stat"><div class="n">50k</div><div class="l">transactions per case, sub-2s filtering — financial target</div></div>
+    <div class="stat"><div class="n">35 <em>GB</em></div><div class="l">single phone report, 100k+ events — Cellebrite target</div></div>
+    <div class="stat"><div class="n">3</div><div class="l">AI providers behind one policy layer, routable per workload</div></div>
+  </div>
+  <p class="note">Design capacities — what the platform is built to handle. On real casework it has processed multi-gigabyte phone extractions, 10k+ audited financial transactions, and full document corpora on federal cases carried to trial.</p>
+</div>
+</section>
+
+<section class="sheet grid-field" id="capabilities">
+<div class="sheet-inner">
+  <p class="eyebrow">In depth</p>
+  <h2>The full capability surface</h2>
+  <p>Beyond the lenses, the platform carries a deep layer of investigative machinery — grouped here by what it means to the people who use it.</p>
+
+  <div class="surface-grid">
+  <div class="surface">
+  <h3>Court-ready reporting &amp; exports</h3>
+  <ul>
+    <li><strong>Significance-based report builder</strong> — client- and court-ready reports assembled from the curated Significant layer and from Loupes, whose bonded, source-linked structure is already the skeleton of a report</li>
+    <li><strong>Bespoke agent reports</strong> — scoped in natural language ("everything connecting X to the offshore accounts, March–June"), for internal use</li>
+    <li><strong>Complete 15-section case-file export</strong> with rendered graph, timeline and map visualisations inside the document</li>
+    <li>One export standard across every deliverable: server-side authorization, an export audit trail, integrity checks and confidentiality labels on every download path</li>
+    <li>Isolated server-side PDF/DOCX generation with sanitized rendering — hostile evidence content can never execute in a report</li>
+    <li>Snapshot exports, theory-scoped exports, map CSV, court-ready timeline exports; long-running exports survive interruption and retry</li>
+    <li>AI-assisted content <em>permanently visually distinguished</em> from human findings in every deliverable</li>
+  </ul>
+  </div>
+  <div class="surface">
+  <h3>Document understanding, deeper</h3>
+  <ul>
+    <li><strong>Executive summaries</strong> — a 70-page statement compressed to roughly one page, for every processed document, with its own tab and controls</li>
+    <li><strong>Folder processing profiles</strong> — behaviour attaches to folders: a "Bank statements" folder processes financially, an "Interviews" folder gets full summaries; starter profile library included</li>
+    <li>Original full-text tab beside every AI summary — the source is always one click away</li>
+    <li><strong>Context-aware agentic geocoding</strong> — locations are reasoned against the case graph before being committed, ending footnote-address noise</li>
+  </ul>
+  </div>
+  <div class="surface">
+  <h3>Evidence integrity &amp; chain of custody</h3>
+  <ul>
+    <li><strong>Immutable original storage</strong> with tamper-resistant handling history; recycle, legal hold, retention lifecycle and controlled hard delete</li>
+    <li>Idempotent, resumable, cancellable ingestion jobs with stage checkpoints — a crash never corrupts a case</li>
+    <li>Streamed quarantine intake with enforced limits, malware and archive-bomb defense, and safe, actionable rejection messages</li>
+    <li>Resumable multi-gigabyte uploads; deterministic duplicate handling; reconnect-safe progress and queue UI</li>
+    <li>Reviewed document-summary edits with full version history — the AI original is never erased</li>
+    <li>Provenance and review-status tiers attached to <em>every</em> extracted fact, preserved through merge, edit and conflict exposure</li>
+  </ul>
+  </div>
+  <div class="surface">
+  <h3>Investigation surfaces at full depth</h3>
+  <ul>
+    <li>Adaptive graph layouts with per-user persistence; a curated toolbar; schema-driven entity creation with duplicate detection</li>
+    <li>A relationship workflow that carries investigator provenance; lossless merges with pre-merge preview and immutable audit</li>
+    <li>Graph algorithms validated against fixtures, with plain-language explanations and honest failure states; centrality bounded for production-size graphs</li>
+    <li>Timeline: date-precision and time-source modelling, verified chronology with citations, saved-timeline curation, responsive at case scale</li>
+    <li>Map: relocate entities in place, coordinate validation with geocoding provenance, manual fixes that survive reprocessing and AI overwrite, free-text map search</li>
+    <li><strong>Honest full-dataset semantics everywhere</strong> — no hidden caps, visible truncation banners on every capped surface, auditable bulk edit</li>
+  </ul>
+  </div>
+  <div class="surface">
+  <h3>Governed AI, hardened further</h3>
+  <ul>
+    <li>Owner-private conversations; one chat context and selection pipeline reachable from every case view</li>
+    <li><strong>Durable citations</strong> that survive re-ingestion, with qualified (never over-confident) answers</li>
+    <li>Agent run limits, adversarial-input hardening, and investigator-approved merges only — the agent proposes, the human disposes</li>
+    <li>Provenance-stamped agent artifacts that persist as first-class case objects</li>
+    <li>AI budgets and spend caps with anomaly alerts, complete cost attribution and provider-outage resilience</li>
+  </ul>
+  </div>
+  <div class="surface">
+  <h3>Phone forensics, end to end</h3>
+  <ul>
+    <li>Full artifact coverage from UFED extractions — notifications, voicemail, network usage, journeys and more — behind <strong>fail-loud validation gates</strong>: nothing drops silently</li>
+    <li>Identity pipeline: E.164 phone normalization, device-owner inference, alias preservation; audited person merges that respect per-device naming</li>
+    <li>Timeline correctness — attribution, timezone handling, multi-source dedupe — plus inline media and virtualization sized for 35 GB / 100k+ event reports</li>
+    <li>Cross-phone <strong>directional flow graph</strong> with no silent caps; server-side graph search, path-flow and edge drill-down</li>
+    <li>A Cellebrite search &amp; discovery center; per-device client reports with callouts; locations rendered at full scale; authorised Cellebrite exports</li>
+    <li><strong>Ingest reconciliation:</strong> parsed artifacts are proven against the written case data for every report — nothing drops silently</li>
+  </ul>
+  </div>
+  <div class="surface">
+  <h3>Financial investigation, end to end</h3>
+  <ul>
+    <li><strong>Correctness first:</strong> decimal and currency-aware math, every unparseable amount surfaced and counted — never a silent zero</li>
+    <li>Designed for 50,000-transaction ledgers with sub-2-second filtering and concurrent-edit safety</li>
+    <li>Payments/Receipts semantics and the Money Flow union export; standardised financial and cost-ledger exports</li>
+    <li>A proven data heritage: 10k+ hand-curated, categorised, audited transactions from real casework</li>
+    <li>Per-value provenance: the file, page and quote behind every number</li>
+  </ul>
+  </div>
+  <div class="surface">
+  <h3>Enterprise security &amp; identity</h3>
+  <ul>
+    <li><strong>Authentication by default</strong> on every API route; object-level case-membership checks on every route family</li>
+    <li>Server-side sessions with revocation and login rate limiting; hardened cookies, CSRF protection, strict CORS</li>
+    <li>TOTP multi-factor authentication with recovery codes; self-service and admin-initiated password reset</li>
+    <li>The evidence engine locked behind authenticated backend-only access; shared secrets replaced; datastore ports closed</li>
+    <li>Case archive lifecycle, collaboration and ownership invariants, reversible user deactivation</li>
+  </ul>
+  </div>
+  <div class="surface">
+  <h3>Operations, recovery &amp; provisioning</h3>
+  <ul>
+    <li><strong>Immutable, append-only security audit trail</strong>, separated from technical logs, with retention and tamper-proofing</li>
+    <li>Encrypted off-instance backups with monitoring, a pre-deployment backup gate, and a <em>rehearsed, automated</em> clean restore</li>
+    <li>CI-built immutable releases with SBOM and vulnerability scanning; staged promotion; recovery-safe expand/contract migrations; rollback rehearsal</li>
+    <li>Trustworthy health and readiness endpoints gating every deploy; a production HTTPS edge</li>
+    <li><strong>Terraform per-customer provisioning</strong> — isolated cloud project per customer, ports 80/443 only — plus audited support access and offboarding with export, retention expiry and two-person deletion</li>
+    <li>Metrics coverage, alert rules with responder routing, and rehearsed six-service incident runbooks</li>
+    <li>A hard internal rule: <strong>no external case data enters an instance until the security, isolation, backup and legal gates pass</strong></li>
+  </ul>
+  </div>
+  <div class="surface">
+  <h3>Release quality &amp; compliance</h3>
+  <ul>
+    <li>Hard-gating CI on every pull request; browser end-to-end journeys for release-critical flows; a repeatable load-test harness with synthetic scale fixtures</li>
+    <li>Published data-scale limits with honest cap handling — a 571k-node corpus is the release verification benchmark</li>
+    <li>WCAG 2.1 AA accessibility and full keyboard operability</li>
+    <li>Versioned customer documentation, operator runbooks, and a legal/privacy/AI terms package with counsel review</li>
+    <li>First-run onboarding with a demo case, support channels, pilot commercial terms, and a full release drill with evidence capture before the first customer</li>
+  </ul>
+  </div>
+  </div>
+</div>
+</section>
+
+<section class="sheet" id="market">
+<div class="sheet-inner">
+  <p class="eyebrow">Market</p>
+  <h2>Who buys this</h2>
+  <p class="big">First: <strong>defence-side private investigators and criminal-defence practices</strong> of roughly
+  five to fifty people, running federal and serious state matters. The defining characteristic is not size or sector —
+  it is that this buyer <em>receives</em> evidence rather than collecting it, receives it in formats built by the other
+  side, and has no way to analyse it properly. That is also the segment the incumbents structurally cannot serve.</p>
+  <div class="cardgrid">
+    <div class="card"><h4>1 · Defence-side PI &amp; criminal defence</h4><p>The beachhead. Handed a phone extraction, a
+    disclosure bundle, subpoena returns and bank records — and locked out of the analytics the other side runs on.
+    Reached through the defence bar and through casework referral.</p></div>
+    <div class="card"><h4>2 · Corporate investigations &amp; compliance</h4><p>The right second market: higher contract
+    values, the same product, no phone-data dependency. Internal investigations on infrastructure the security team can
+    approve — nothing leaves the tenant.</p></div>
+    <div class="card"><h4>3 · Law firms &amp; disputes teams</h4><p>Case-corpus comprehension at discovery scale, with
+    citations that survive a partner's scrutiny. Follows the corporate motion.</p></div>
+    <div class="card"><h4>Later · Law enforcement, prosecutors &amp; financial-crime units</h4><p>Real fit, wrong first
+    fight. This is the market every incumbent was built for, with the longest procurement and the heaviest certification
+    burden. Entered from a position of strength, not from a standing start.</p></div>
+  </div>
+  <p>Pricing follows the work rather than the seat: <strong>per matter, in the $6,000–24,000 band</strong>, benchmarked
+  against the cost of a junior investigator or overseas review staff — the comparison our lead prospect made unprompted.
+  Per-gigabyte pricing, the industry default, charges by evidence volume and so pays the customer to keep evidence out
+  of the platform. That is incoherent for a product whose value grows with how much of the case it holds.</p>
+  <p><strong>Why now:</strong> three curves crossed. Digital evidence volume is exploding (a phone extraction in nearly every case). LLMs finally became good enough to read evidence at scale. And the evidence categories converged on cited document question-answering and stopped there — every major platform shipped it, and most now give it away. What none of them did was model the case. That is structural rather than an oversight: eDiscovery is a reductive discipline, built to cull a corpus down to a reviewable set, and investigation is a constructive one. If the job is to cull, a call log is noise to be dumped in a spreadsheet; if the job is to build a model, that same call log is connective tissue. Loupe is built for the second job.</p>
+</div>
+</section>
+
+<section class="sheet" id="application">
+<div class="sheet-inner">
+  <p class="eyebrow">Application material</p>
+  <h2>Ready-to-paste blocks</h2>
+
+  <div class="blocks">
+
+  <div class="copyblock">
+    <div class="block-head">
+      <span class="k">One-liner</span>
+      <button class="copy-btn" type="button" aria-label="Copy the One-liner block">Copy</button>
+    </div>
+    <div class="block-body">Loupe resolves every kind of case evidence — documents, phone extractions, financial records, audio — into one connected case model, so a single question reaches the whole case at once instead of one document at a time, and every answer carries the artifact it came from.</div>
+  </div>
+
+  <div class="copyblock">
+    <div class="block-head">
+      <span class="k">~50 words</span>
+      <button class="copy-btn" type="button" aria-label="Copy the ~50 words block">Copy</button>
+    </div>
+    <div class="block-body">Loupe is an investigation platform for fraud and criminal casework. It ingests every kind of case evidence and compiles it into a connected knowledge graph — explorable as a network, timeline, map and financial ledger — where a question is answered by traversing the whole case at once rather than by reading documents one at a time, and every fact returned carries its source page.</div>
+  </div>
+
+  <div class="copyblock">
+    <div class="block-head">
+      <span class="k">~100 words</span>
+      <button class="copy-btn" type="button" aria-label="Copy the ~100 words block">Copy</button>
+    </div>
+    <div class="block-body">Investigation teams drown in digital evidence: thousands of documents, multi-gigabyte phone extractions, tens of thousands of transactions per case. Their tools are viewers; the connections live in their heads. Loupe ingests everything through a forensic-grade pipeline and builds one case knowledge graph where every extracted fact carries its verbatim quote, source location and confidence. Investigators explore it as a graph, timeline, map, table and ledger; an agent answers questions put to the entire case at once, with citations, and runs tools across it — grouping transactions, generating visualisations, and assembling whole evidence collections from a plain instruction — under hard guardrails: case-scoped, cost-metered, every answer tied to citations an investigator can check. Deployed single-tenant, so evidence never leaves the customer's instance. It's the layer that makes AI usable — and defensible — in real casework.</div>
+  </div>
+
+  <div class="copyblock">
+    <div class="block-head">
+      <span class="k">The namesake feature</span>
+      <button class="copy-btn" type="button" aria-label="Copy the The namesake feature block">Copy</button>
+    </div>
+    <div class="block-body">Loupe is named for what investigators do inside it: gather evidence and examine it closely. A "Loupe" is the product's core curation object — a <strong>bonded collection</strong> of documents, highlighted passages, entities or events, with its own identity and description, bound together to explain an event, a sequence, or a thing. Bind five highlighted sentences from three documents into a Loupe and you have a fully evidenced narrative — viewable as a timeline, a graph, or whichever lens the question calls for. And the agent assembles them from plain language: describe the scenario, get the bonded collection that tests it.</div>
+  </div>
+
+  <div class="copyblock">
+    <div class="block-head">
+      <span class="k">The agent, one breath</span>
+      <button class="copy-btn" type="button" aria-label="Copy the The agent, one breath block">Copy</button>
+    </div>
+    <div class="block-body">An investigator doesn't have questions — they have theories. Loupe is the first tool where the unit of work is a hypothesis rather than a query: describe the scenario you want to test and the agent works the case — searching the graph and the raw document text, running safe read-only queries for complex grouping and aggregation — and assembles the Loupe that proves or breaks it, alongside durable outputs: tables, charts, timelines, maps, full reports. Reasoning trail visible, database access read-only and case-scoped, cost metered per run. Question-answering AI tells you about your evidence; an agent with tools produces the work product.</div>
+  </div>
+
+  <div class="copyblock">
+    <div class="block-head">
+      <span class="k">Differentiation, one breath</span>
+      <button class="copy-btn" type="button" aria-label="Copy the Differentiation, one breath block">Copy</button>
+    </div>
+    <div class="block-body">ChatGPT reads what fits in a prompt and gives you unsourced prose. Loupe compiles the entire case into permanent structure, cites every answer down to the page, bounds what the AI may touch, meters what it spends, and runs inside the customer's own instance. The model is a component; the evidence layer is the product.</div>
+  </div>
+
+  <div class="copyblock">
+    <div class="block-head">
+      <span class="k">Status</span>
+      <button class="copy-btn" type="button" aria-label="Copy the Status block">Copy</button>
+    </div>
+    <div class="block-body">Loupe is a working investigation platform in production use on real casework — multi-gigabyte phone extractions, tens of thousands of curated financial transactions, full document corpora — built inside a US private-investigations practice and used there to carry federal cases to completion: verifying discovery handed over by the prosecution, with three cases now gone to trial and more in active discovery phases. It runs single-tenant and hardened, behind a security-gated process for onboarding external customers' evidence.</div>
+  </div>
+  </div>
+</div>
+</section>
+
+</main>
+
+<footer>
+<div class="footer-inner">
+  <span class="lockup lockup-mark" role="img" aria-label="Loupe">
+    <svg class="on-dark" viewBox="0 0 404 417" fill="none" aria-hidden="true" focusable="false"><path class="loupe-ink" fill="#f7f7f8" fill-rule="evenodd" d="M365.2 415.9C362.3 415.4 358.3 414.2 356.2 413.1C354.1 412.1 342.8 401.1 330.5 388.4C318.5 375.8 297.5 354.0 283.9 340.0C270.4 326.0 258.0 313.0 256.5 311.2C253.4 307.5 252.7 307.4 249.2 309.9C247.7 310.9 242.4 313.8 237.4 316.4C175.4 347.8 100.1 335.1 49.5 284.5C9.6 244.8 -8.0 186.8 3.6 133.5C14.3 83.8 46.6 41.4 91.1 18.5C105.6 11.0 122.8 5.1 137.5 2.4C152.4 -0.3 180.7 -0.1 195.5 2.8C213.2 6.3 234.0 14.1 247.2 22.2L251.8 25.1L247.1 30.0C241.3 36.0 237.6 42.7 235.5 50.5C232.6 61.9 234.1 77.4 239.2 87.4L241.2 91.3L235.9 86.9C211.3 66.4 177.6 57.5 147.0 63.4C95.7 73.3 59.0 117.1 59.0 168.3C59.0 199.0 71.6 227.7 94.2 248.5C106.6 259.9 119.0 266.7 138.5 272.6C146.8 275.2 148.8 275.4 165.5 275.4C181.1 275.5 184.6 275.2 191.5 273.3C211.7 267.8 226.2 259.6 240.0 246.0C250.1 236.1 255.5 228.9 260.9 218.3C270.8 198.5 274.8 176.2 272.1 155.5C270.3 142.1 263.9 123.9 257.0 112.5C253.8 107.3 251.3 103.0 251.6 103.0C251.8 103.0 254.1 104.3 256.7 105.9C264.8 110.8 271.5 112.5 282.0 112.5C293.9 112.5 300.7 110.5 309.5 104.5C313.1 102.0 316.2 100.0 316.4 100.0C317.0 100.0 324.8 124.8 326.4 132.0C330.4 149.3 330.9 179.2 327.5 196.5C324.0 214.8 315.6 236.7 306.2 251.8C303.3 256.4 301.0 260.4 301.0 260.7C301.0 261.6 308.0 269.1 334.9 297.0C401.5 365.9 399.4 363.6 401.3 369.7C404.0 377.9 404.3 383.2 402.6 390.1C398.0 408.0 382.5 418.7 365.2 415.9Z"/>
+  <path class="loupe-signal" fill="#e33b4c" fill-rule="evenodd" d="M270.9 100.4C264.6 98.2 255.6 90.9 251.9 85.2C247.3 77.9 245.7 71.0 246.3 61.3C247.2 46.8 253.8 36.7 266.7 30.3C273.6 26.9 274.9 26.6 282.3 26.7C297.7 26.8 309.5 34.2 316.2 47.8C319.2 53.9 319.5 55.3 319.5 64.0C319.5 72.2 319.1 74.3 316.8 79.2C313.1 87.1 306.0 94.4 298.4 98.1C290.5 102.0 278.4 103.0 270.9 100.4Z"/></svg>
+    <svg class="on-light" viewBox="0 0 404 417" fill="none" aria-hidden="true" focusable="false"><path class="loupe-ink" fill="#0b0c0f" fill-rule="evenodd" d="M365.2 415.9C362.3 415.4 358.3 414.2 356.2 413.1C354.1 412.1 342.8 401.1 330.5 388.4C318.5 375.8 297.5 354.0 283.9 340.0C270.4 326.0 258.0 313.0 256.5 311.2C253.4 307.5 252.7 307.4 249.2 309.9C247.7 310.9 242.4 313.8 237.4 316.4C175.4 347.8 100.1 335.1 49.5 284.5C9.6 244.8 -8.0 186.8 3.6 133.5C14.3 83.8 46.6 41.4 91.1 18.5C105.6 11.0 122.8 5.1 137.5 2.4C152.4 -0.3 180.7 -0.1 195.5 2.8C213.2 6.3 234.0 14.1 247.2 22.2L251.8 25.1L247.1 30.0C241.3 36.0 237.6 42.7 235.5 50.5C232.6 61.9 234.1 77.4 239.2 87.4L241.2 91.3L235.9 86.9C211.3 66.4 177.6 57.5 147.0 63.4C95.7 73.3 59.0 117.1 59.0 168.3C59.0 199.0 71.6 227.7 94.2 248.5C106.6 259.9 119.0 266.7 138.5 272.6C146.8 275.2 148.8 275.4 165.5 275.4C181.1 275.5 184.6 275.2 191.5 273.3C211.7 267.8 226.2 259.6 240.0 246.0C250.1 236.1 255.5 228.9 260.9 218.3C270.8 198.5 274.8 176.2 272.1 155.5C270.3 142.1 263.9 123.9 257.0 112.5C253.8 107.3 251.3 103.0 251.6 103.0C251.8 103.0 254.1 104.3 256.7 105.9C264.8 110.8 271.5 112.5 282.0 112.5C293.9 112.5 300.7 110.5 309.5 104.5C313.1 102.0 316.2 100.0 316.4 100.0C317.0 100.0 324.8 124.8 326.4 132.0C330.4 149.3 330.9 179.2 327.5 196.5C324.0 214.8 315.6 236.7 306.2 251.8C303.3 256.4 301.0 260.4 301.0 260.7C301.0 261.6 308.0 269.1 334.9 297.0C401.5 365.9 399.4 363.6 401.3 369.7C404.0 377.9 404.3 383.2 402.6 390.1C398.0 408.0 382.5 418.7 365.2 415.9Z"/>
+  <path class="loupe-signal" fill="#b41624" fill-rule="evenodd" d="M270.9 100.4C264.6 98.2 255.6 90.9 251.9 85.2C247.3 77.9 245.7 71.0 246.3 61.3C247.2 46.8 253.8 36.7 266.7 30.3C273.6 26.9 274.9 26.6 282.3 26.7C297.7 26.8 309.5 34.2 316.2 47.8C319.2 53.9 319.5 55.3 319.5 64.0C319.5 72.2 319.1 74.3 316.8 79.2C313.1 87.1 306.0 94.4 298.4 98.1C290.5 102.0 278.4 103.0 270.9 100.4Z"/></svg>
+  </span>
+  <p>Loupe — connected intelligence for complex work. Compiled 25 July 2026 from the Loupe platform and product plans.</p>
+</div>
+</footer>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var buttons = Array.prototype.slice.call(document.querySelectorAll("[data-theme-set]"));
+
+    function currentTheme() {
+      var stamped = root.getAttribute("data-theme");
+      if (stamped === "light" || stamped === "dark") return stamped;
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light"
+        : "dark";
+    }
+
+    /* Reflect the live reading surface on the toggle, whoever set it —
+       this page, or the artifact host stamping data-theme on the root element. */
+    function syncToggle() {
+      var theme = currentTheme();
+      buttons.forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b.getAttribute("data-theme-set") === theme));
+      });
+    }
+
+    buttons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        root.setAttribute("data-theme", btn.getAttribute("data-theme-set"));
+        syncToggle();
+      });
+    });
+
+    new MutationObserver(syncToggle).observe(root, {
+      attributes: true, attributeFilter: ["data-theme"]
+    });
+    if (window.matchMedia) {
+      var mq = window.matchMedia("(prefers-color-scheme: light)");
+      if (mq.addEventListener) mq.addEventListener("change", syncToggle);
+      else if (mq.addListener) mq.addListener(syncToggle);
+    }
+    syncToggle();
+
+    /* Copy controls on the ready-to-paste blocks. navigator.clipboard is
+       undefined outside a secure context, so the fallback is not optional. */
+    document.querySelectorAll(".copy-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var body = btn.closest(".copyblock").querySelector(".block-body");
+        var text = body.innerText.trim();
+        var done = function () {
+          var was = btn.textContent;
+          btn.textContent = "Copied";
+          setTimeout(function () { btn.textContent = was; }, 1400);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, done);
+        } else {
+          var ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand("copy"); } catch (e) {}
+          document.body.removeChild(ta);
+          done();
+        }
+      });
+    });
+  })();
+</script>
+
+<!-- HOLD: not for external use until the CI/test story is in place (DKT-723).
+     "Development runs on an in-house autonomous AI engineering pipeline that takes
+     features from specification to reviewed pull request, letting a small team ship
+     at multi-team pace behind a security-gated release process." -->
