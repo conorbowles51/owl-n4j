@@ -1,0 +1,2930 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0c0f" />
+    <meta
+      name="description"
+      content="The Loupe visual and editorial brand system for web pages, product surfaces and documents."
+    />
+    <title>Loupe Brand System</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0c0f;
+        --bg-deep: #07080a;
+        --surface: #111216;
+        --surface-2: #17181c;
+        --surface-3: #202126;
+        --surface-raised: #25272d;
+        --ink: #f7f7f8;
+        --ink-soft: #bfc1c8;
+        --muted: #9a9da5;
+        --muted-strong: #71747c;
+        --line: #292b32;
+        --line-strong: #3b3d44;
+        --brand: #b41624;
+        --brand-bright: #e33b4c;
+        --brand-soft: #f35d6d;
+        --brand-pale: #ffe4e8;
+        --brand-wash: rgba(180, 22, 36, 0.12);
+        --person: #5571c8;
+        --organisation: #8060a9;
+        --location: #238a88;
+        --financial: #b37a2e;
+        --document: #72757e;
+        --event: #c25778;
+        --communication: #2c8197;
+        --success: #4fa477;
+        --paper: #f7f7f8;
+        --paper-soft: #ececef;
+        --paper-line: #d9dae0;
+        --paper-ink: #15161a;
+        --display: "Space Grotesk", "Segoe UI", sans-serif;
+        --sans: "IBM Plex Sans", "Segoe UI", sans-serif;
+        --mono: "IBM Plex Mono", Consolas, monospace;
+        --page: min(1180px, calc(100vw - 104px));
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        background: var(--bg-deep);
+      }
+
+      body {
+        min-width: 320px;
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 82% 2%, rgba(180, 22, 36, 0.12), transparent 27rem),
+          var(--bg);
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      h1,
+      h2,
+      h3,
+      p,
+      figure,
+      blockquote,
+      pre {
+        margin: 0;
+      }
+
+      h1,
+      h2,
+      h3 {
+        font-family: var(--display);
+        text-wrap: balance;
+      }
+
+      ::selection {
+        color: white;
+        background: rgba(227, 59, 76, 0.5);
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--brand-soft);
+        outline-offset: 4px;
+      }
+
+      .topbar {
+        position: fixed;
+        inset: 0 0 auto;
+        z-index: 100;
+        min-height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 10px 24px 10px 28px;
+        border-bottom: 1px solid rgba(59, 61, 68, 0.72);
+        background: rgba(8, 9, 11, 0.88);
+        backdrop-filter: blur(18px);
+      }
+
+      .topbar-brand {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+
+      .topbar-brand img {
+        width: 106px;
+        height: auto;
+        display: block;
+      }
+
+      .topbar-brand span,
+      .topbar-meta,
+      .eyebrow,
+      .spec-label,
+      .token-name,
+      .nav-rail a span,
+      .page-number {
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .topbar-brand span {
+        padding-left: 18px;
+        border-left: 1px solid var(--line);
+        color: var(--muted);
+      }
+
+      .topbar-meta {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        color: var(--muted-strong);
+      }
+
+      .print-button {
+        min-height: 38px;
+        padding: 8px 13px;
+        border: 1px solid var(--line-strong);
+        border-radius: 5px;
+        color: var(--ink-soft);
+        cursor: pointer;
+        background: var(--surface-2);
+        font-size: 12px;
+        font-weight: 600;
+        transition:
+          color 180ms ease,
+          border-color 180ms ease,
+          transform 180ms var(--ease);
+      }
+
+      .print-button:hover {
+        border-color: var(--brand-soft);
+        color: white;
+        transform: translateY(-1px);
+      }
+
+      .nav-rail {
+        position: fixed;
+        top: 64px;
+        bottom: 0;
+        left: 0;
+        z-index: 90;
+        width: 216px;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        padding: 44px 22px 28px;
+        border-right: 1px solid var(--line);
+        background: rgba(9, 10, 13, 0.96);
+      }
+
+      .nav-rail > span {
+        margin-bottom: 18px;
+        color: var(--brand-soft);
+        font-family: var(--mono);
+        font-size: 8px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .nav-rail a {
+        min-height: 42px;
+        display: grid;
+        grid-template-columns: 26px 1fr;
+        gap: 8px;
+        align-items: center;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+        transition: color 180ms ease, padding-left 240ms var(--ease);
+      }
+
+      .nav-rail a:last-of-type {
+        border-bottom: 1px solid var(--line);
+      }
+
+      .nav-rail a span {
+        color: var(--brand-soft);
+        font-size: 7px;
+      }
+
+      .nav-rail a:hover {
+        padding-left: 5px;
+        color: var(--ink);
+      }
+
+      .nav-note {
+        margin-top: auto;
+        padding-top: 24px;
+        color: var(--muted-strong);
+        font-size: 10px;
+        line-height: 1.55;
+      }
+
+      main {
+        margin-left: 216px;
+        padding-top: 64px;
+      }
+
+      .sheet {
+        position: relative;
+        min-height: 760px;
+        display: flex;
+        align-items: center;
+        isolation: isolate;
+        overflow: hidden;
+        padding: 112px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .sheet-inner {
+        position: relative;
+        z-index: 2;
+        width: var(--page);
+        margin: 0 auto;
+      }
+
+      .page-number {
+        position: absolute;
+        top: 34px;
+        right: max(28px, calc((100vw - 216px - var(--page)) / 2));
+        z-index: 3;
+        color: var(--muted-strong);
+      }
+
+      .eyebrow {
+        color: var(--brand-soft);
+      }
+
+      .sheet-heading {
+        max-width: 900px;
+      }
+
+      .sheet-heading h2 {
+        margin-top: 20px;
+        font-size: clamp(50px, 6.5vw, 92px);
+        font-weight: 600;
+        line-height: 0.94;
+        letter-spacing: -0.062em;
+      }
+
+      .sheet-heading h2 span,
+      .gradient-text {
+        color: transparent;
+        background: linear-gradient(96deg, #f5d9dd, #df8994 56%, #e33b4c);
+        background-clip: text;
+        -webkit-background-clip: text;
+      }
+
+      .sheet-heading > p:last-child {
+        max-width: 66ch;
+        margin-top: 26px;
+        color: var(--ink-soft);
+        font-size: 18px;
+        line-height: 1.68;
+      }
+
+      .cover {
+        min-height: calc(100svh - 64px);
+        padding: 84px 0;
+        background:
+          radial-gradient(circle at 77% 48%, rgba(180, 22, 36, 0.16), transparent 30rem),
+          #090a0d;
+      }
+
+      .cover::before,
+      .grid-field::before {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        content: "";
+        background-image:
+          linear-gradient(rgba(191, 193, 200, 0.032) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(191, 193, 200, 0.032) 1px, transparent 1px);
+        background-size: 64px 64px;
+        mask-image: radial-gradient(circle at 62% 48%, black, transparent 77%);
+      }
+
+      .cover-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr);
+        gap: 72px;
+        align-items: center;
+      }
+
+      .cover-kicker {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        color: var(--brand-soft);
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .cover-kicker i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--brand-bright);
+        box-shadow: 0 0 0 6px rgba(227, 59, 76, 0.11), 0 0 18px rgba(227, 59, 76, 0.6);
+      }
+
+      .cover h1 {
+        margin-top: 27px;
+        font-size: clamp(64px, 8vw, 126px);
+        font-weight: 600;
+        line-height: 0.86;
+        letter-spacing: -0.072em;
+      }
+
+      .cover h1 span {
+        display: block;
+        color: transparent;
+        background: linear-gradient(92deg, #f7f7f8, #e2a5ad 57%, #e33b4c);
+        background-clip: text;
+        -webkit-background-clip: text;
+      }
+
+      .cover-copy {
+        max-width: 54ch;
+        margin-top: 29px;
+        color: var(--ink-soft);
+        font-size: 18px;
+        line-height: 1.65;
+      }
+
+      .cover-version {
+        display: flex;
+        gap: 9px;
+        margin-top: 36px;
+      }
+
+      .cover-version span {
+        padding: 7px 9px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        background: rgba(17, 18, 22, 0.7);
+        font-family: var(--mono);
+        font-size: 7px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .cover-lens {
+        position: relative;
+        width: min(100%, 470px);
+        aspect-ratio: 1;
+        justify-self: center;
+      }
+
+      .cover-orbit {
+        position: absolute;
+        border: 1px solid rgba(243, 93, 109, 0.14);
+        border-radius: 50%;
+      }
+
+      .cover-orbit::before {
+        position: absolute;
+        inset: -2px;
+        border: 1px solid transparent;
+        border-top-color: rgba(243, 93, 109, 0.62);
+        border-radius: inherit;
+        content: "";
+        animation: cover-orbit-spin 21s linear infinite;
+      }
+
+      .cover-orbit-outer {
+        inset: 0;
+      }
+
+      .cover-orbit-inner {
+        inset: 14%;
+      }
+
+      .cover-orbit-inner::before {
+        border-top-color: transparent;
+        border-right-color: rgba(243, 93, 109, 0.34);
+        animation-duration: 14s;
+        animation-direction: reverse;
+      }
+
+      @keyframes cover-orbit-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .cover-lens-shell {
+        position: absolute;
+        inset: 21%;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at 40% 35%, rgba(227, 59, 76, 0.13), transparent 35%),
+          rgba(17, 18, 22, 0.88);
+        box-shadow:
+          0 0 0 1px rgba(247, 247, 248, 0.11),
+          0 34px 80px -30px rgba(0, 0, 0, 0.86),
+          inset 0 0 52px rgba(180, 22, 36, 0.08);
+      }
+
+      .cover-lens-ring {
+        position: absolute;
+        z-index: 2;
+        inset: 7%;
+        border: 13px solid rgba(247, 247, 248, 0.92);
+        border-radius: 50%;
+        box-shadow: 0 0 28px rgba(255, 255, 255, 0.07);
+      }
+
+      .cover-lens-handle {
+        position: absolute;
+        z-index: 1;
+        top: 79%;
+        left: 79%;
+        width: 46%;
+        height: 14px;
+        border-radius: 10px;
+        background: rgba(247, 247, 248, 0.94);
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.07);
+        transform: translateY(-50%) rotate(45deg);
+        transform-origin: left center;
+      }
+
+      .cover-lens-dot {
+        position: absolute;
+        z-index: 3;
+        top: 5%;
+        right: 15%;
+        width: 27px;
+        height: 27px;
+        border: 2px solid var(--brand-pale);
+        border-radius: 50%;
+        background: var(--brand-bright);
+        box-shadow: 0 0 22px rgba(227, 59, 76, 0.55);
+      }
+
+      .cover-network {
+        position: absolute;
+        inset: 23%;
+      }
+
+      .cover-network svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+
+      .cover-network-edges path {
+        fill: none;
+        stroke: rgba(243, 93, 109, 0.3);
+        stroke-width: 1.2;
+        stroke-dasharray: 4 5;
+        vector-effect: non-scaling-stroke;
+      }
+
+      .cover-network-glow {
+        fill: rgba(243, 93, 109, 0.11);
+      }
+
+      .cover-network-core {
+        stroke: var(--surface);
+        stroke-width: 3;
+      }
+
+      .cover-network-core.node-document { fill: var(--brand-soft); }
+      .cover-network-core.node-person { fill: var(--person); }
+      .cover-network-core.node-location { fill: var(--location); }
+      .cover-network-core.node-financial { fill: var(--financial); }
+      .cover-network-core.node-event { fill: var(--event); }
+
+      .manifesto {
+        padding: 144px 0;
+        background: #0d0e11;
+      }
+
+      .manifesto-line {
+        max-width: 1100px;
+        font-family: var(--display);
+        font-size: clamp(36px, 5.2vw, 76px);
+        font-weight: 500;
+        line-height: 1.08;
+        letter-spacing: -0.052em;
+      }
+
+      .manifesto-line em {
+        color: var(--brand-soft);
+        font-style: normal;
+      }
+
+      .principle-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        margin-top: 86px;
+        border: 1px solid var(--line);
+        background: var(--line);
+      }
+
+      .principle {
+        min-height: 244px;
+        padding: 28px;
+        background: linear-gradient(145deg, #17181c, #111216);
+      }
+
+      .principle > span {
+        color: var(--brand-soft);
+        font-family: var(--mono);
+        font-size: 8px;
+      }
+
+      .principle h3 {
+        margin-top: 64px;
+        font-size: 24px;
+        font-weight: 600;
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+      }
+
+      .principle p {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .logo-section {
+        background:
+          radial-gradient(circle at 82% 38%, rgba(180, 22, 36, 0.1), transparent 28rem),
+          #090a0d;
+      }
+
+      .logo-stage-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-top: 70px;
+      }
+
+      .logo-stage {
+        position: relative;
+        min-height: 330px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+      }
+
+      .logo-stage::before {
+        position: absolute;
+        inset: 0;
+        content: "";
+        opacity: 0.3;
+        background-image:
+          linear-gradient(rgba(191, 193, 200, 0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(191, 193, 200, 0.08) 1px, transparent 1px);
+        background-size: 42px 42px;
+      }
+
+      .logo-stage-dark {
+        background: #0b0c0f;
+      }
+
+      .logo-stage-light {
+        border-color: var(--paper-line);
+        background: var(--paper);
+      }
+
+      .logo-stage img {
+        position: relative;
+        z-index: 2;
+        width: min(78%, 390px);
+        height: auto;
+        display: block;
+      }
+
+      .logo-stage .spec-label {
+        position: absolute;
+        right: 18px;
+        bottom: 15px;
+        z-index: 2;
+        color: var(--muted-strong);
+        font-size: 7px;
+      }
+
+      .logo-stage-light .spec-label {
+        color: #696c75;
+      }
+
+      .logo-guidance {
+        display: grid;
+        grid-template-columns: 0.86fr 1.14fr;
+        gap: 62px;
+        margin-top: 64px;
+      }
+
+      .mark-spec {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 26px;
+        align-items: center;
+      }
+
+      .mark-box {
+        position: relative;
+        width: 160px;
+        aspect-ratio: 1;
+        display: grid;
+        place-items: center;
+        border: 1px dashed rgba(243, 93, 109, 0.36);
+        background: var(--surface);
+      }
+
+      .mark-box svg {
+        width: 76%;
+        height: 76%;
+      }
+
+      .mark-box::before,
+      .mark-box::after {
+        position: absolute;
+        color: var(--brand-soft);
+        font-family: var(--mono);
+        font-size: 6px;
+        content: "1x";
+      }
+
+      .mark-box::before { top: 4px; left: 50%; }
+      .mark-box::after { bottom: 48%; left: 4px; }
+
+      .mark-copy h3,
+      .guidance-list h3,
+      .type-role h3,
+      .sample-panel h3,
+      .voice-card h3 {
+        font-size: 23px;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+      }
+
+      .mark-copy p,
+      .guidance-list li,
+      .type-role p,
+      .sample-panel p,
+      .voice-card p {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.58;
+      }
+
+      .mark-copy p {
+        margin-top: 10px;
+      }
+
+      .specs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 18px;
+      }
+
+      .specs span {
+        padding: 10px;
+        border: 1px solid var(--line);
+        color: var(--ink-soft);
+        background: var(--surface);
+        font-family: var(--mono);
+        font-size: 7px;
+        text-transform: uppercase;
+      }
+
+      .guidance-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 34px;
+      }
+
+      .guidance-list ul {
+        margin: 19px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .guidance-list li {
+        position: relative;
+        padding: 12px 0 12px 20px;
+        border-top: 1px solid var(--line);
+      }
+
+      .guidance-list li::before {
+        position: absolute;
+        top: 19px;
+        left: 1px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        content: "";
+        background: var(--success);
+      }
+
+      .guidance-list.is-dont li::before {
+        border-radius: 0;
+        background: var(--brand-bright);
+        transform: rotate(45deg);
+      }
+
+      .colour-section {
+        background: #0d0e11;
+      }
+
+      .palette-group {
+        margin-top: 70px;
+      }
+
+      .palette-header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 17px;
+      }
+
+      .palette-header h3 {
+        font-size: 25px;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+      }
+
+      .palette-header p {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .swatch-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        border: 1px solid var(--line);
+      }
+
+      .swatch {
+        min-height: 210px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 18px;
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+        color: white;
+      }
+
+      .swatch:last-child {
+        border-right: 0;
+      }
+
+      .swatch.is-light {
+        color: #15161a;
+      }
+
+      .swatch-name {
+        font-family: var(--display);
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.035em;
+      }
+
+      .swatch-values {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        font-family: var(--mono);
+        font-size: 7px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .neutral-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        border: 1px solid var(--line);
+      }
+
+      .neutral {
+        min-height: 138px;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        padding: 13px;
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .neutral:last-child {
+        border-right: 0;
+      }
+
+      .neutral span {
+        font-family: var(--mono);
+        font-size: 7px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .entity-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 10px;
+      }
+
+      .entity-swatch {
+        min-height: 136px;
+        padding: 15px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .entity-swatch i {
+        width: 34px;
+        height: 34px;
+        display: block;
+        border: 5px solid #121318;
+        border-radius: 50%;
+        background: var(--entity);
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--entity), white 24%);
+      }
+
+      .entity-swatch strong {
+        display: block;
+        margin-top: 24px;
+        color: var(--ink-soft);
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .entity-swatch span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted-strong);
+        font-family: var(--mono);
+        font-size: 6px;
+        text-transform: uppercase;
+      }
+
+      .contrast-strip {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 1px;
+        margin-top: 24px;
+        background: var(--line);
+      }
+
+      .contrast-strip > div {
+        min-height: 92px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 14px;
+        background: var(--surface);
+      }
+
+      .contrast-strip strong {
+        font-family: var(--display);
+        font-size: 22px;
+        font-weight: 600;
+      }
+
+      .contrast-strip span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 6px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .type-section {
+        color: var(--paper-ink);
+        background: var(--paper);
+      }
+
+      .type-section .eyebrow {
+        color: var(--brand);
+      }
+
+      .type-section .sheet-heading > p:last-child {
+        color: #5e616a;
+      }
+
+      .type-display {
+        margin-top: 68px;
+        padding: 42px 0 32px;
+        border-top: 1px solid var(--paper-line);
+        border-bottom: 1px solid var(--paper-line);
+      }
+
+      .type-display p {
+        max-width: 1000px;
+        font-family: var(--display);
+        font-size: clamp(48px, 7vw, 102px);
+        font-weight: 600;
+        line-height: 0.91;
+        letter-spacing: -0.065em;
+      }
+
+      .type-display p span {
+        color: var(--brand-bright);
+      }
+
+      .type-meta {
+        display: flex;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      .type-meta span {
+        padding: 6px 8px;
+        border: 1px solid var(--paper-line);
+        color: #666a73;
+        background: #fff;
+        font-family: var(--mono);
+        font-size: 7px;
+        text-transform: uppercase;
+      }
+
+      .type-roles {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 50px;
+        margin-top: 64px;
+      }
+
+      .type-role {
+        padding-top: 20px;
+        border-top: 3px solid var(--paper-ink);
+      }
+
+      .type-role:nth-child(2) {
+        border-color: var(--brand-bright);
+      }
+
+      .type-role:nth-child(3) {
+        border-width: 1px;
+        border-color: #858891;
+      }
+
+      .type-role > span {
+        color: var(--brand);
+        font-family: var(--mono);
+        font-size: 8px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .type-role h3 {
+        margin-top: 17px;
+        color: var(--paper-ink);
+      }
+
+      .type-role p {
+        margin-top: 12px;
+        color: #5f626b;
+      }
+
+      .type-specimen {
+        margin-top: 24px;
+      }
+
+      .type-specimen.display {
+        font-family: var(--display);
+        font-size: 38px;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: -0.05em;
+      }
+
+      .type-specimen.sans {
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.68;
+      }
+
+      .type-specimen.mono {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        line-height: 1.7;
+        text-transform: uppercase;
+      }
+
+      .type-scale {
+        display: grid;
+        margin-top: 72px;
+        border-top: 1px solid var(--paper-line);
+      }
+
+      .type-scale-row {
+        min-height: 90px;
+        display: grid;
+        grid-template-columns: 110px 1fr 170px;
+        gap: 24px;
+        align-items: center;
+        border-bottom: 1px solid var(--paper-line);
+      }
+
+      .type-scale-row > span {
+        color: #747780;
+        font-family: var(--mono);
+        font-size: 8px;
+        text-transform: uppercase;
+      }
+
+      .type-scale-row > strong {
+        font-family: var(--display);
+        font-size: var(--size);
+        font-weight: var(--weight, 600);
+        line-height: var(--line-height, 1);
+        letter-spacing: var(--tracking, -0.045em);
+      }
+
+      .type-scale-row > code {
+        color: #747780;
+        font-family: var(--mono);
+        font-size: 8px;
+      }
+
+      .layout-section {
+        background:
+          radial-gradient(circle at 80% 34%, rgba(180, 22, 36, 0.12), transparent 30rem),
+          #0a0b0e;
+      }
+
+      .layout-showcase {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 54px;
+        align-items: start;
+        margin-top: 72px;
+      }
+
+      .twelve-grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 8px;
+        min-height: 390px;
+        padding: 22px;
+        border: 1px solid var(--line-strong);
+        background: var(--surface);
+      }
+
+      .twelve-grid > span {
+        display: flex;
+        align-items: end;
+        justify-content: center;
+        padding-bottom: 12px;
+        border: 1px solid rgba(243, 93, 109, 0.16);
+        color: var(--brand-soft);
+        background: rgba(180, 22, 36, 0.045);
+        font-family: var(--mono);
+        font-size: 6px;
+      }
+
+      .layout-rules {
+        display: grid;
+        border-top: 1px solid var(--line);
+      }
+
+      .layout-rule {
+        min-height: 97px;
+        display: grid;
+        grid-template-columns: 48px 1fr;
+        gap: 16px;
+        align-content: center;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .layout-rule > span {
+        color: var(--brand-soft);
+        font-family: var(--mono);
+        font-size: 8px;
+      }
+
+      .layout-rule strong {
+        font-family: var(--display);
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      .layout-rule p {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .spacing-scale {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 10px;
+        margin-top: 54px;
+      }
+
+      .space-token {
+        min-height: 130px;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        padding: 12px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .space-token i {
+        width: var(--space);
+        max-width: 100%;
+        height: var(--space);
+        max-height: 64px;
+        display: block;
+        margin-bottom: auto;
+        background: linear-gradient(135deg, var(--brand), var(--brand-soft));
+      }
+
+      .space-token strong {
+        font-family: var(--display);
+        font-size: 16px;
+      }
+
+      .space-token span {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 6px;
+      }
+
+      .components-section {
+        background: #0d0e11;
+      }
+
+      .component-canvas {
+        display: grid;
+        grid-template-columns: 0.8fr 1.2fr;
+        gap: 16px;
+        margin-top: 70px;
+      }
+
+      .sample-panel {
+        min-height: 340px;
+        padding: 30px;
+        border: 1px solid var(--line);
+        background:
+          linear-gradient(145deg, rgba(32, 33, 38, 0.62), rgba(17, 18, 22, 0.9));
+      }
+
+      .sample-panel h3 {
+        margin-top: 64px;
+      }
+
+      .sample-panel p {
+        max-width: 46ch;
+        margin-top: 12px;
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 30px;
+      }
+
+      .button-sample {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        gap: 11px;
+        padding: 10px 15px;
+        border: 1px solid var(--line-strong);
+        border-radius: 5px;
+        color: var(--ink-soft);
+        background: var(--surface-2);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .button-sample.primary {
+        border-color: var(--brand);
+        color: white;
+        background: var(--brand);
+      }
+
+      .button-sample.text {
+        border-color: transparent;
+        color: var(--brand-soft);
+        background: transparent;
+      }
+
+      .evidence-card {
+        min-height: 340px;
+        border: 1px solid var(--line-strong);
+        background: #0c0d10;
+      }
+
+      .evidence-card-bar {
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface-2);
+        font-family: var(--mono);
+        font-size: 7px;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+
+      .evidence-card-bar span:first-child {
+        color: var(--brand-soft);
+      }
+
+      .evidence-card-bar span:last-child {
+        color: #79bb97;
+      }
+
+      .evidence-card-main {
+        padding: 28px;
+      }
+
+      .evidence-card-main > span {
+        color: var(--brand-soft);
+        font-family: var(--mono);
+        font-size: 7px;
+        text-transform: uppercase;
+      }
+
+      .evidence-card-main h3 {
+        max-width: 17ch;
+        margin-top: 13px;
+        font-size: 32px;
+        font-weight: 500;
+        line-height: 1.03;
+        letter-spacing: -0.05em;
+      }
+
+      .source-row {
+        min-height: 65px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 25px;
+        padding: 10px 12px;
+        border: 1px solid rgba(243, 93, 109, 0.2);
+        background: rgba(180, 22, 36, 0.055);
+      }
+
+      .source-row > span {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        color: var(--brand-soft);
+        background: rgba(180, 22, 36, 0.14);
+        font-family: var(--mono);
+        font-size: 7px;
+      }
+
+      .source-row p {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .source-row strong {
+        color: var(--ink-soft);
+        font-size: 10px;
+        font-weight: 500;
+      }
+
+      .source-row small {
+        color: var(--muted-strong);
+        font-size: 8px;
+      }
+
+      .component-rules {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-top: 16px;
+      }
+
+      .component-rule {
+        min-height: 170px;
+        padding: 23px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .component-rule > i {
+        width: 46px;
+        height: 46px;
+        display: block;
+        margin-bottom: 24px;
+        border: 1px solid var(--line-strong);
+        background: var(--surface-2);
+      }
+
+      .component-rule:nth-child(2) > i {
+        border-radius: 8px;
+      }
+
+      .component-rule:nth-child(3) > i {
+        border-color: rgba(243, 93, 109, 0.26);
+        box-shadow: 0 15px 30px -20px rgba(0, 0, 0, 0.9);
+      }
+
+      .component-rule:nth-child(4) > i {
+        border-radius: 50%;
+        background: var(--brand-soft);
+        box-shadow: 0 0 18px rgba(243, 93, 109, 0.56);
+      }
+
+      .component-rule strong {
+        font-family: var(--display);
+        font-size: 17px;
+      }
+
+      .component-rule p {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .data-section {
+        background:
+          radial-gradient(circle at 22% 55%, rgba(35, 138, 136, 0.08), transparent 23rem),
+          #090a0d;
+      }
+
+      .data-layout {
+        display: grid;
+        grid-template-columns: 1.08fr 0.92fr;
+        gap: 64px;
+        align-items: center;
+        margin-top: 70px;
+      }
+
+      .network-demo {
+        position: relative;
+        min-height: 500px;
+        border: 1px solid var(--line-strong);
+        background:
+          radial-gradient(circle at 50% 50%, rgba(180, 22, 36, 0.12), transparent 16rem),
+          var(--surface);
+      }
+
+      .network-demo::before {
+        position: absolute;
+        inset: 0;
+        content: "";
+        background-image:
+          linear-gradient(rgba(191, 193, 200, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(191, 193, 200, 0.04) 1px, transparent 1px);
+        background-size: 40px 40px;
+      }
+
+      .network-demo svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .network-demo path {
+        fill: none;
+        stroke: rgba(191, 193, 200, 0.18);
+        stroke-width: 1;
+      }
+
+      .network-node {
+        position: absolute;
+        width: var(--node-size);
+        height: var(--node-size);
+        display: grid;
+        place-items: center;
+        border: 6px solid #121318;
+        border-radius: 50%;
+        color: white;
+        background: var(--node-colour);
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-colour), white 25%);
+        font-family: var(--mono);
+        font-size: 6px;
+      }
+
+      .network-node.n1 { top: 38%; left: 41%; }
+      .network-node.n2 { top: 15%; left: 18%; }
+      .network-node.n3 { top: 20%; right: 16%; }
+      .network-node.n4 { right: 12%; bottom: 17%; }
+      .network-node.n5 { bottom: 12%; left: 19%; }
+
+      .data-rules {
+        display: grid;
+        border-top: 1px solid var(--line);
+      }
+
+      .data-rule {
+        min-height: 112px;
+        display: grid;
+        grid-template-columns: 34px 1fr;
+        gap: 14px;
+        align-content: center;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .data-rule > span {
+        color: var(--brand-soft);
+        font-family: var(--mono);
+        font-size: 8px;
+      }
+
+      .data-rule strong {
+        font-family: var(--display);
+        font-size: 21px;
+        font-weight: 600;
+        letter-spacing: -0.035em;
+      }
+
+      .data-rule p {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .imagery-section {
+        background: #0d0e11;
+      }
+
+      .screenshot-frame {
+        margin-top: 72px;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        background: #111216;
+        box-shadow: 0 36px 90px -56px #000;
+      }
+
+      .screenshot-bar {
+        min-height: 46px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 7px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .screenshot-bar span:first-child {
+        color: var(--brand-soft);
+      }
+
+      .screenshot-frame img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .image-rules {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 22px;
+        margin-top: 38px;
+      }
+
+      .image-rule {
+        padding: 24px 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .image-rule span {
+        color: var(--brand-soft);
+        font-family: var(--mono);
+        font-size: 7px;
+      }
+
+      .image-rule h3 {
+        margin-top: 20px;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+      }
+
+      .image-rule p {
+        margin-top: 9px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .voice-section {
+        color: var(--paper-ink);
+        background: var(--paper);
+      }
+
+      .voice-section .eyebrow {
+        color: var(--brand);
+      }
+
+      .voice-section .sheet-heading > p:last-child {
+        color: #5e616a;
+      }
+
+      .voice-pillars {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1px;
+        margin-top: 68px;
+        border: 1px solid var(--paper-line);
+        background: var(--paper-line);
+      }
+
+      .voice-card {
+        min-height: 260px;
+        padding: 32px;
+        background: white;
+      }
+
+      .voice-card > span {
+        color: var(--brand);
+        font-family: var(--mono);
+        font-size: 8px;
+      }
+
+      .voice-card h3 {
+        margin-top: 58px;
+        color: var(--paper-ink);
+      }
+
+      .voice-card p {
+        max-width: 50ch;
+        margin-top: 10px;
+        color: #646770;
+      }
+
+      .message-stack {
+        margin-top: 54px;
+        border-top: 1px solid var(--paper-line);
+      }
+
+      .message-row {
+        min-height: 120px;
+        display: grid;
+        grid-template-columns: 150px 1fr;
+        gap: 30px;
+        align-items: center;
+        border-bottom: 1px solid var(--paper-line);
+      }
+
+      .message-row > span {
+        color: var(--brand);
+        font-family: var(--mono);
+        font-size: 8px;
+        text-transform: uppercase;
+      }
+
+      .message-row p {
+        max-width: 900px;
+        font-family: var(--display);
+        font-size: clamp(22px, 2.5vw, 36px);
+        font-weight: 500;
+        line-height: 1.18;
+        letter-spacing: -0.04em;
+      }
+
+      .voice-dos {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 34px;
+        margin-top: 58px;
+      }
+
+      .voice-list h3 {
+        font-size: 23px;
+        letter-spacing: -0.04em;
+      }
+
+      .voice-list ul {
+        margin: 16px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .voice-list li {
+        padding: 12px 0;
+        border-top: 1px solid var(--paper-line);
+        color: #62656e;
+        font-size: 13px;
+      }
+
+      .voice-list li::before {
+        display: inline-block;
+        width: 24px;
+        color: var(--success);
+        content: "•";
+      }
+
+      .voice-list.is-dont li::before {
+        color: var(--brand-bright);
+        content: "×";
+      }
+
+      .pdf-section {
+        background:
+          radial-gradient(circle at 18% 56%, rgba(180, 22, 36, 0.13), transparent 28rem),
+          #090a0d;
+      }
+
+      .pdf-layout {
+        display: grid;
+        grid-template-columns: 0.8fr 1.2fr;
+        gap: 74px;
+        align-items: center;
+        margin-top: 70px;
+      }
+
+      .a4-preview {
+        position: relative;
+        width: min(100%, 450px);
+        aspect-ratio: 210 / 297;
+        justify-self: center;
+        overflow: hidden;
+        color: var(--paper-ink);
+        background: var(--paper);
+        box-shadow: 0 40px 90px -38px #000;
+      }
+
+      .a4-preview::before {
+        position: absolute;
+        inset: 0;
+        content: "";
+        background-image:
+          linear-gradient(rgba(21, 22, 26, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(21, 22, 26, 0.04) 1px, transparent 1px);
+        background-size: 28px 28px;
+      }
+
+      .a4-preview-header {
+        position: relative;
+        min-height: 58px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 28px;
+        border-bottom: 1px solid var(--paper-line);
+      }
+
+      .a4-preview-header img {
+        width: 82px;
+        height: auto;
+      }
+
+      .a4-preview-header span,
+      .a4-preview-footer {
+        color: #71747c;
+        font-family: var(--mono);
+        font-size: 5px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .a4-preview-body {
+        position: relative;
+        padding: 44px 34px;
+      }
+
+      .a4-preview-body > span {
+        color: var(--brand);
+        font-family: var(--mono);
+        font-size: 6px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .a4-preview-body h3 {
+        max-width: 11ch;
+        margin-top: 16px;
+        font-size: 41px;
+        font-weight: 600;
+        line-height: 0.95;
+        letter-spacing: -0.055em;
+      }
+
+      .a4-preview-body > p {
+        max-width: 33ch;
+        margin-top: 19px;
+        color: #5f626b;
+        font-size: 9px;
+        line-height: 1.6;
+      }
+
+      .a4-finding {
+        margin-top: 40px;
+        padding: 16px;
+        border-left: 3px solid var(--brand-bright);
+        background: rgba(180, 22, 36, 0.07);
+      }
+
+      .a4-finding strong {
+        display: block;
+        font-family: var(--display);
+        font-size: 14px;
+      }
+
+      .a4-finding span {
+        display: block;
+        margin-top: 8px;
+        color: #71747c;
+        font-family: var(--mono);
+        font-size: 5px;
+      }
+
+      .a4-preview-footer {
+        position: absolute;
+        right: 28px;
+        bottom: 22px;
+        left: 28px;
+        display: flex;
+        justify-content: space-between;
+        padding-top: 10px;
+        border-top: 1px solid var(--paper-line);
+      }
+
+      .pdf-rules {
+        border-top: 1px solid var(--line);
+      }
+
+      .pdf-rule {
+        min-height: 110px;
+        display: grid;
+        grid-template-columns: 42px 1fr;
+        gap: 16px;
+        align-content: center;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .pdf-rule > span {
+        color: var(--brand-soft);
+        font-family: var(--mono);
+        font-size: 8px;
+      }
+
+      .pdf-rule strong {
+        font-family: var(--display);
+        font-size: 21px;
+        font-weight: 600;
+        letter-spacing: -0.035em;
+      }
+
+      .pdf-rule p {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .tokens-section {
+        background: #0d0e11;
+      }
+
+      .token-layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-top: 64px;
+      }
+
+      .code-block {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        background: #08090b;
+      }
+
+      .code-block-header {
+        min-height: 46px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 15px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        background: var(--surface);
+        font-family: var(--mono);
+        font-size: 7px;
+        text-transform: uppercase;
+      }
+
+      .copy-button {
+        padding: 5px 7px;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        color: var(--brand-soft);
+        cursor: pointer;
+        background: var(--surface-2);
+        font-family: var(--mono);
+        font-size: 6px;
+        text-transform: uppercase;
+      }
+
+      .code-block pre {
+        min-height: 430px;
+        overflow-x: auto;
+        padding: 22px;
+        color: var(--ink-soft);
+        font-family: var(--mono);
+        font-size: 10px;
+        line-height: 1.7;
+        tab-size: 2;
+      }
+
+      .code-key { color: #eaa0aa; }
+      .code-value { color: #9fd4bb; }
+      .code-comment { color: var(--muted-strong); }
+
+      .quick-reference {
+        min-height: 720px;
+        text-align: center;
+        background:
+          radial-gradient(circle at 50% 54%, rgba(180, 22, 36, 0.18), transparent 25rem),
+          #08090b;
+      }
+
+      .quick-reference .sheet-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .quick-reference-mark {
+        width: 88px;
+        height: 88px;
+        margin-bottom: 32px;
+      }
+
+      .quick-reference h2 {
+        font-size: clamp(58px, 8vw, 112px);
+        font-weight: 600;
+        line-height: 0.88;
+        letter-spacing: -0.068em;
+      }
+
+      .quick-reference h2 span {
+        display: block;
+        color: transparent;
+        background: linear-gradient(94deg, #f4dadd, #df8994, #e33b4c);
+        background-clip: text;
+        -webkit-background-clip: text;
+      }
+
+      .quick-reference > .sheet-inner > p {
+        max-width: 56ch;
+        margin-top: 27px;
+        color: var(--ink-soft);
+        font-size: 17px;
+      }
+
+      .quick-strip {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        margin-top: 54px;
+        border: 1px solid var(--line);
+        background: var(--line);
+      }
+
+      .quick-strip > div {
+        min-height: 118px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        background: var(--surface);
+      }
+
+      .quick-strip strong {
+        font-family: var(--display);
+        font-size: 18px;
+      }
+
+      .quick-strip span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 6px;
+        text-transform: uppercase;
+      }
+
+      .toast {
+        position: fixed;
+        right: 22px;
+        bottom: 22px;
+        z-index: 200;
+        padding: 10px 13px;
+        border: 1px solid rgba(79, 164, 119, 0.35);
+        border-radius: 4px;
+        color: #bde4ce;
+        background: #112018;
+        font-family: var(--mono);
+        font-size: 8px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(8px);
+        transition: opacity 180ms ease, transform 180ms var(--ease);
+      }
+
+      .toast.is-visible {
+        opacity: 1;
+        transform: none;
+      }
+
+      @media (max-width: 1080px) {
+        :root {
+          --page: min(100% - 48px, 920px);
+        }
+
+        .nav-rail {
+          display: none;
+        }
+
+        main {
+          margin-left: 0;
+        }
+
+        .page-number {
+          right: 24px;
+        }
+
+        .cover-layout,
+        .logo-guidance,
+        .layout-showcase,
+        .data-layout,
+        .pdf-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .cover-lens {
+          width: min(76vw, 460px);
+        }
+
+        .principle-grid,
+        .component-rules {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .entity-grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
+
+        .component-canvas {
+          grid-template-columns: 1fr;
+        }
+
+        .twelve-grid {
+          min-height: 280px;
+        }
+      }
+
+      @media (max-width: 720px) {
+        :root {
+          --page: min(100% - 28px, 660px);
+        }
+
+        .topbar {
+          padding-inline: 14px;
+        }
+
+        .topbar-brand span,
+        .topbar-meta > span {
+          display: none;
+        }
+
+        .topbar-brand img {
+          width: 92px;
+        }
+
+        .sheet {
+          min-height: auto;
+          padding: 94px 0;
+        }
+
+        .sheet-heading h2 {
+          font-size: clamp(46px, 13.5vw, 70px);
+        }
+
+        .sheet-heading > p:last-child {
+          font-size: 16px;
+        }
+
+        .cover {
+          padding-top: 100px;
+        }
+
+        .cover-layout {
+          gap: 50px;
+        }
+
+        .cover h1 {
+          font-size: clamp(58px, 17vw, 82px);
+        }
+
+        .cover-copy {
+          font-size: 16px;
+        }
+
+        .principle-grid,
+        .logo-stage-grid,
+        .type-roles,
+        .voice-pillars,
+        .voice-dos,
+        .token-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .logo-stage {
+          min-height: 250px;
+        }
+
+        .mark-spec {
+          grid-template-columns: 1fr;
+        }
+
+        .guidance-columns {
+          grid-template-columns: 1fr;
+        }
+
+        .swatch-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .swatch:nth-child(2) {
+          border-right: 0;
+        }
+
+        .neutral-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+
+        .neutral:nth-child(3) {
+          border-right: 0;
+        }
+
+        .entity-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .contrast-strip {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .type-scale-row {
+          grid-template-columns: 74px 1fr;
+        }
+
+        .type-scale-row > code {
+          display: none;
+        }
+
+        .spacing-scale {
+          grid-template-columns: repeat(4, 1fr);
+        }
+
+        .image-rules {
+          grid-template-columns: 1fr;
+        }
+
+        .message-row {
+          grid-template-columns: 1fr;
+          gap: 9px;
+          padding: 24px 0;
+        }
+
+        .quick-strip {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .code-block pre {
+          font-size: 9px;
+        }
+      }
+
+      @media print {
+        :root {
+          color-scheme: light;
+          --page: calc(100% - 28mm);
+        }
+
+        @page {
+          size: A4;
+          margin: 0;
+        }
+
+        html,
+        body {
+          width: 210mm;
+          background: white;
+          print-color-adjust: exact;
+          -webkit-print-color-adjust: exact;
+        }
+
+        .topbar,
+        .nav-rail,
+        .toast,
+        .copy-button {
+          display: none !important;
+        }
+
+        main {
+          margin: 0;
+          padding: 0;
+        }
+
+        .sheet {
+          width: 210mm;
+          min-height: 297mm;
+          padding: 24mm 0 20mm;
+          break-after: page;
+          page-break-after: always;
+        }
+
+        .sheet:last-child {
+          break-after: auto;
+          page-break-after: auto;
+        }
+
+        .page-number {
+          top: 11mm;
+          right: 14mm;
+        }
+
+        .cover {
+          min-height: 297mm;
+        }
+
+        .sheet-heading h2 {
+          font-size: 52pt;
+        }
+
+        .cover h1 {
+          font-size: 67pt;
+        }
+
+        /*
+         * Keep every chapter on a single A4 page. Chrome's print engine
+         * reflows zoomed content before pagination, so dense reference
+         * sections stay complete without clipping or orphan pages.
+         */
+        #logo .sheet-inner {
+          zoom: 0.8;
+        }
+
+        #colour .sheet-inner,
+        #type .sheet-inner {
+          zoom: 0.68;
+        }
+
+        #layout .sheet-inner {
+          zoom: 0.76;
+        }
+
+        #components .sheet-inner {
+          zoom: 0.66;
+        }
+
+        #data .sheet-inner {
+          zoom: 0.7;
+        }
+
+        #imagery .sheet-inner {
+          zoom: 0.91;
+        }
+
+        #voice .sheet-inner {
+          zoom: 0.56;
+        }
+
+        #pdf .sheet-inner {
+          zoom: 0.55;
+        }
+
+        .principle-grid {
+          margin-top: 18mm;
+        }
+
+        .logo-stage,
+        .sample-panel,
+        .evidence-card,
+        .network-demo,
+        .code-block,
+        .a4-preview {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+
+        .type-section,
+        .voice-section {
+          color: var(--paper-ink);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        *,
+        *::before,
+        *::after {
+          transition-duration: 0.001ms !important;
+          animation-duration: 0.001ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-brand">
+        <img src="./loupe-red-dark.png" alt="Loupe" />
+        <span>Brand system</span>
+      </div>
+      <div class="topbar-meta">
+        <span>Version 1.0 / July 2026</span>
+        <button class="print-button" type="button" onclick="window.print()">Print / Save PDF ↗</button>
+      </div>
+    </header>
+
+    <nav class="nav-rail" aria-label="Brand system sections">
+      <span>Contents</span>
+      <a href="#foundation"><span>01</span>Foundation</a>
+      <a href="#logo"><span>02</span>Logo</a>
+      <a href="#colour"><span>03</span>Colour</a>
+      <a href="#type"><span>04</span>Typography</a>
+      <a href="#layout"><span>05</span>Layout</a>
+      <a href="#components"><span>06</span>Interface language</a>
+      <a href="#data"><span>07</span>Data visualisation</a>
+      <a href="#imagery"><span>08</span>Imagery</a>
+      <a href="#voice"><span>09</span>Voice</a>
+      <a href="#pdf"><span>10</span>PDF guidance</a>
+      <a href="#tokens"><span>11</span>Tokens</a>
+      <p class="nav-note">
+        Use this system to keep product pages, marketing, reports and court-facing documents recognisably Loupe.
+      </p>
+    </nav>
+
+    <main>
+      <section class="sheet cover" id="top">
+        <div class="page-number">00 / 11</div>
+        <div class="sheet-inner cover-layout">
+          <div>
+            <p class="cover-kicker"><i aria-hidden="true"></i>Loupe brand system</p>
+            <h1>One system.<span>Every surface.</span></h1>
+            <p class="cover-copy">
+              A visual and editorial reference for product pages, marketing, reports and evidence-led documents.
+              Distinctive enough to recognise. Restrained enough to trust.
+            </p>
+            <div class="cover-version">
+              <span>Digital first</span>
+              <span>Print ready</span>
+              <span>Evidence led</span>
+            </div>
+          </div>
+          <div class="cover-lens" aria-hidden="true">
+            <div class="cover-orbit cover-orbit-outer"></div>
+            <div class="cover-orbit cover-orbit-inner"></div>
+            <div class="cover-lens-shell">
+              <div class="cover-lens-ring"></div>
+              <span class="cover-lens-dot"></span>
+              <div class="cover-lens-handle"></div>
+              <div class="cover-network">
+                <svg viewBox="0 0 240 240">
+                  <g class="cover-network-edges">
+                    <path d="M47 78L119 47L187 91L151 174L73 169L47 78Z" />
+                    <path d="M119 47L151 174M47 78L187 91M73 169L187 91" />
+                  </g>
+                  <g>
+                    <circle class="cover-network-glow node-document" cx="47" cy="78" r="13" />
+                    <circle class="cover-network-glow node-person" cx="119" cy="47" r="13" />
+                    <circle class="cover-network-glow node-location" cx="187" cy="91" r="13" />
+                    <circle class="cover-network-glow node-financial" cx="151" cy="174" r="13" />
+                    <circle class="cover-network-glow node-event" cx="73" cy="169" r="13" />
+                    <circle class="cover-network-core node-document" cx="47" cy="78" r="6" />
+                    <circle class="cover-network-core node-person" cx="119" cy="47" r="6" />
+                    <circle class="cover-network-core node-location" cx="187" cy="91" r="6" />
+                    <circle class="cover-network-core node-financial" cx="151" cy="174" r="6" />
+                    <circle class="cover-network-core node-event" cx="73" cy="169" r="6" />
+                  </g>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet manifesto grid-field" id="foundation">
+        <div class="page-number">01 / 11</div>
+        <div class="sheet-inner">
+          <p class="eyebrow">01 / Brand foundation</p>
+          <p class="manifesto-line">
+            Loupe turns raw case evidence into <em>connected, source-linked intelligence.</em>
+            The brand should make complexity feel structured, powerful and accountable.
+          </p>
+          <div class="principle-grid">
+            <article class="principle">
+              <span>01</span>
+              <h3>Clarity over spectacle</h3>
+              <p>Visual drama should reveal structure. Never decorate for its own sake.</p>
+            </article>
+            <article class="principle">
+              <span>02</span>
+              <h3>Evidence has gravity</h3>
+              <p>Sources, claims and provenance should always feel tangible and connected.</p>
+            </article>
+            <article class="principle">
+              <span>03</span>
+              <h3>Expertise stays visible</h3>
+              <p>AI supports judgment. It never replaces or obscures the investigator.</p>
+            </article>
+            <article class="principle">
+              <span>04</span>
+              <h3>Control builds trust</h3>
+              <p>Restraint, precision and clear boundaries communicate evidence-grade infrastructure.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet logo-section" id="logo">
+        <div class="page-number">02 / 11</div>
+        <div class="sheet-inner">
+          <header class="sheet-heading">
+            <p class="eyebrow">02 / Logo system</p>
+            <h2>The lens finds.<br /><span>The signal confirms.</span></h2>
+            <p>
+              Use the full wordmark whenever space allows. The lens mark may stand alone for favicons,
+              application icons and compact signatures after Loupe has been clearly identified.
+            </p>
+          </header>
+
+          <div class="logo-stage-grid">
+            <figure class="logo-stage logo-stage-dark">
+              <img src="./loupe-red-dark.png" alt="White Loupe wordmark for dark backgrounds" />
+              <figcaption class="spec-label">Primary / dark ground</figcaption>
+            </figure>
+            <figure class="logo-stage logo-stage-light">
+              <img src="./loupe-red-light.png" alt="Dark Loupe wordmark for light backgrounds" />
+              <figcaption class="spec-label">Primary / light ground</figcaption>
+            </figure>
+          </div>
+
+          <div class="logo-guidance">
+            <div class="mark-spec">
+              <div class="mark-box">
+                <svg viewBox="0 0 64 64" fill="none" aria-label="Loupe lens mark">
+                  <circle cx="27" cy="27" r="16" stroke="#F7F7F8" stroke-width="7" />
+                  <path d="m39 39 14 14" stroke="#F7F7F8" stroke-width="7" stroke-linecap="round" />
+                  <circle cx="42" cy="13" r="7" fill="#E33B4C" stroke="#FFE4E8" stroke-width="2" />
+                </svg>
+              </div>
+              <div class="mark-copy">
+                <h3>Clear space</h3>
+                <p>Maintain one signal-dot diameter around every side of the mark or wordmark.</p>
+                <div class="specs">
+                  <span>Digital min / 24 px</span>
+                  <span>Print min / 8 mm</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="guidance-columns">
+              <div class="guidance-list">
+                <h3>Always</h3>
+                <ul>
+                  <li>Use the supplied artwork.</li>
+                  <li>Choose the version with strongest contrast.</li>
+                  <li>Keep proportions and clear space intact.</li>
+                </ul>
+              </div>
+              <div class="guidance-list is-dont">
+                <h3>Never</h3>
+                <ul>
+                  <li>Recolour individual letterforms.</li>
+                  <li>Add effects, outlines or drop shadows.</li>
+                  <li>Stretch, rotate or place on busy imagery.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet colour-section" id="colour">
+        <div class="page-number">03 / 11</div>
+        <div class="sheet-inner">
+          <header class="sheet-heading">
+            <p class="eyebrow">03 / Colour</p>
+            <h2>Dark by default.<br /><span>Red with intent.</span></h2>
+            <p>
+              Loupe red identifies signal, action and active state. It is not a decorative wash.
+              Neutral surfaces carry the interface; semantic colours describe the evidence.
+            </p>
+          </header>
+
+          <div class="palette-group">
+            <div class="palette-header">
+              <h3>Core palette</h3>
+              <p>CMYK values are starting points; proof against the printer profile</p>
+            </div>
+            <div class="swatch-grid">
+              <div class="swatch" style="background:#0b0c0f">
+                <strong class="swatch-name">Obsidian</strong>
+                <span class="swatch-values"><b>#0B0C0F</b><b>RGB 11 / 12 / 15</b><b>CMYK 27 / 20 / 0 / 94</b></span>
+              </div>
+              <div class="swatch" style="background:#b41624">
+                <strong class="swatch-name">Loupe red</strong>
+                <span class="swatch-values"><b>#B41624</b><b>RGB 180 / 22 / 36</b><b>CMYK 0 / 88 / 80 / 29</b></span>
+              </div>
+              <div class="swatch" style="background:#e33b4c">
+                <strong class="swatch-name">Signal red</strong>
+                <span class="swatch-values"><b>#E33B4C</b><b>RGB 227 / 59 / 76</b><b>CMYK 0 / 74 / 67 / 11</b></span>
+              </div>
+              <div class="swatch is-light" style="background:#f7f7f8">
+                <strong class="swatch-name">Evidence white</strong>
+                <span class="swatch-values"><b>#F7F7F8</b><b>RGB 247 / 247 / 248</b><b>CMYK 0 / 0 / 0 / 3</b></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="palette-group">
+            <div class="palette-header">
+              <h3>Surface and text neutrals</h3>
+              <p>Use steps, not opacity, to preserve predictable contrast</p>
+            </div>
+            <div class="neutral-grid">
+              <div class="neutral" style="background:#07080a"><span>Deep<br />#07080A</span></div>
+              <div class="neutral" style="background:#111216"><span>Surface<br />#111216</span></div>
+              <div class="neutral" style="background:#17181c"><span>Surface 2<br />#17181C</span></div>
+              <div class="neutral" style="background:#292b32"><span>Line<br />#292B32</span></div>
+              <div class="neutral" style="background:#9a9da5;color:#0b0c0f"><span>Muted<br />#9A9DA5</span></div>
+              <div class="neutral" style="background:#bfc1c8;color:#0b0c0f"><span>Ink soft<br />#BFC1C8</span></div>
+            </div>
+          </div>
+
+          <div class="palette-group">
+            <div class="palette-header">
+              <h3>Evidence semantics</h3>
+              <p>Reserve for entity and data meaning; never use randomly</p>
+            </div>
+            <div class="entity-grid">
+              <div class="entity-swatch" style="--entity:var(--person)"><i></i><strong>Person</strong><span>#5571C8</span></div>
+              <div class="entity-swatch" style="--entity:var(--organisation)"><i></i><strong>Organisation</strong><span>#8060A9</span></div>
+              <div class="entity-swatch" style="--entity:var(--location)"><i></i><strong>Location</strong><span>#238A88</span></div>
+              <div class="entity-swatch" style="--entity:var(--financial)"><i></i><strong>Financial</strong><span>#B37A2E</span></div>
+              <div class="entity-swatch" style="--entity:var(--document)"><i></i><strong>Document</strong><span>#72757E</span></div>
+              <div class="entity-swatch" style="--entity:var(--event)"><i></i><strong>Event</strong><span>#C25778</span></div>
+              <div class="entity-swatch" style="--entity:var(--communication)"><i></i><strong>Communication</strong><span>#2C8197</span></div>
+            </div>
+            <div class="contrast-strip">
+              <div><strong>18.27:1</strong><span>Ink on obsidian</span></div>
+              <div><strong>10.88:1</strong><span>Ink soft on obsidian</span></div>
+              <div><strong>7.21:1</strong><span>Muted on obsidian</span></div>
+              <div><strong>6.82:1</strong><span>White on Loupe red</span></div>
+              <div><strong>6.14:1</strong><span>Signal soft on obsidian</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet type-section" id="type">
+        <div class="page-number">04 / 11</div>
+        <div class="sheet-inner">
+          <header class="sheet-heading">
+            <p class="eyebrow">04 / Typography</p>
+            <h2>Authority without noise.</h2>
+            <p>
+              Display type creates decisive hierarchy. Body type remains calm and readable. Mono type
+              labels systems, sources and precision metadata.
+            </p>
+          </header>
+
+          <div class="type-display">
+            <p>Bring structure to <span>complex evidence.</span></p>
+            <div class="type-meta">
+              <span>Space Grotesk 600</span>
+              <span>−6.5% tracking</span>
+              <span>91% leading</span>
+            </div>
+          </div>
+
+          <div class="type-roles">
+            <article class="type-role">
+              <span>Display / headlines</span>
+              <h3>Space Grotesk</h3>
+              <p>Use weights 500–700. Tighten display headlines as size increases.</p>
+              <p class="type-specimen display">Aa Bb 0123</p>
+            </article>
+            <article class="type-role">
+              <span>Sans / reading</span>
+              <h3>IBM Plex Sans</h3>
+              <p>Use 400 for body, 500 for labels and 600 for controls or short emphasis.</p>
+              <p class="type-specimen sans">Every finding stays tied to the evidence behind it.</p>
+            </article>
+            <article class="type-role">
+              <span>Mono / evidence</span>
+              <h3>IBM Plex Mono</h3>
+              <p>Use sparingly for indices, provenance, identifiers, dates and statuses.</p>
+              <p class="type-specimen mono">SOURCE / PAGE 18<br />CONFIDENCE / HIGH</p>
+            </article>
+          </div>
+
+          <div class="type-scale">
+            <div class="type-scale-row" style="--size:52px"><span>Display XL</span><strong>Find the signal.</strong><code>52 / 50 · 600 · −5.5%</code></div>
+            <div class="type-scale-row" style="--size:38px"><span>Display L</span><strong>Connected intelligence.</strong><code>38 / 39 · 600 · −4.5%</code></div>
+            <div class="type-scale-row" style="--size:26px"><span>Heading</span><strong>Evidence infrastructure</strong><code>26 / 30 · 600 · −3.5%</code></div>
+            <div class="type-scale-row" style="--size:18px;--tracking:-0.01em;--line-height:1.35"><span>Lead</span><strong>Every claim carries its receipt.</strong><code>18 / 25 · 400 · −1%</code></div>
+            <div class="type-scale-row" style="--size:14px;--tracking:0;--line-height:1.55;--weight:400"><span>Body</span><strong>Move from any finding to the source that supports it.</strong><code>14 / 22 · 400 · 0</code></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet layout-section" id="layout">
+        <div class="page-number">05 / 11</div>
+        <div class="sheet-inner">
+          <header class="sheet-heading">
+            <p class="eyebrow">05 / Layout and rhythm</p>
+            <h2>Editorial scale.<br /><span>Analytical precision.</span></h2>
+            <p>
+              Use generous negative space around decisive statements, then switch to controlled density
+              for evidence, data and comparison. The contrast is part of the brand.
+            </p>
+          </header>
+
+          <div class="layout-showcase">
+            <div class="twelve-grid" aria-label="Twelve-column layout grid">
+              <span>01</span><span>02</span><span>03</span><span>04</span><span>05</span><span>06</span>
+              <span>07</span><span>08</span><span>09</span><span>10</span><span>11</span><span>12</span>
+            </div>
+            <div class="layout-rules">
+              <div class="layout-rule"><span>01</span><div><strong>12-column web grid</strong><p>24 px desktop gutters; collapse to 6 and then 2 columns.</p></div></div>
+              <div class="layout-rule"><span>02</span><div><strong>1240 px content maximum</strong><p>48 px desktop page margins; 28 px on narrow screens.</p></div></div>
+              <div class="layout-rule"><span>03</span><div><strong>Asymmetric hierarchy</strong><p>Prefer 7/5 and 8/4 spans over equal three-column compositions.</p></div></div>
+              <div class="layout-rule"><span>04</span><div><strong>Hairline structure</strong><p>Use 1 px dividers to show systems, boundaries and progression.</p></div></div>
+            </div>
+          </div>
+
+          <div class="spacing-scale">
+            <div class="space-token" style="--space:4px"><i></i><strong>4</strong><span>Micro</span></div>
+            <div class="space-token" style="--space:8px"><i></i><strong>8</strong><span>XS</span></div>
+            <div class="space-token" style="--space:12px"><i></i><strong>12</strong><span>Small</span></div>
+            <div class="space-token" style="--space:16px"><i></i><strong>16</strong><span>Base</span></div>
+            <div class="space-token" style="--space:24px"><i></i><strong>24</strong><span>Medium</span></div>
+            <div class="space-token" style="--space:32px"><i></i><strong>32</strong><span>Large</span></div>
+            <div class="space-token" style="--space:48px"><i></i><strong>48</strong><span>XL</span></div>
+            <div class="space-token" style="--space:64px"><i></i><strong>64</strong><span>2XL</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet components-section" id="components">
+        <div class="page-number">06 / 11</div>
+        <div class="sheet-inner">
+          <header class="sheet-heading">
+            <p class="eyebrow">06 / Interface language</p>
+            <h2>Quiet surfaces.<br /><span>Decisive signals.</span></h2>
+            <p>
+              Components should feel engineered, not decorated. Use subtle elevation, restrained radius
+              and one clear red action or state per composition.
+            </p>
+          </header>
+
+          <div class="component-canvas">
+            <article class="sample-panel">
+              <p class="eyebrow">Action hierarchy</p>
+              <h3>One primary route forward.</h3>
+              <p>Secondary actions stay present without competing with the task that matters.</p>
+              <div class="button-row">
+                <span class="button-sample primary">Primary action <b>↗</b></span>
+                <span class="button-sample">Secondary action</span>
+                <span class="button-sample text">Text action →</span>
+              </div>
+            </article>
+
+            <article class="evidence-card">
+              <div class="evidence-card-bar">
+                <span>Grounded claim</span>
+                <span>● Provenance attached</span>
+              </div>
+              <div class="evidence-card-main">
+                <span>Structured finding</span>
+                <h3>A late account change preceded the transfer.</h3>
+                <div class="source-row">
+                  <span>PDF</span>
+                  <p><strong>06_interview_marcus_chen.pdf</strong><small>Page 18 · exact passage</small></p>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="component-rules">
+            <article class="component-rule"><i></i><strong>1 px borders</strong><p>Use #292B32 by default and #3B3D44 for stronger boundaries.</p></article>
+            <article class="component-rule"><i></i><strong>4–8 px radius</strong><p>Small radii keep the system controlled and avoid a soft consumer feel.</p></article>
+            <article class="component-rule"><i></i><strong>Subtle elevation</strong><p>Prefer tonal separation and long, restrained shadows over floating cards.</p></article>
+            <article class="component-rule"><i></i><strong>Signal points</strong><p>Dots mark active states, verified status and meaningful network nodes.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet data-section" id="data">
+        <div class="page-number">07 / 11</div>
+        <div class="sheet-inner">
+          <header class="sheet-heading">
+            <p class="eyebrow">07 / Data visualisation</p>
+            <h2>Meaning before colour.<br /><span>Source before style.</span></h2>
+            <p>
+              Every chart and graph must preserve legibility, semantic consistency and a route back
+              to the evidence. Colour identifies type; emphasis identifies investigative focus.
+            </p>
+          </header>
+
+          <div class="data-layout">
+            <figure class="network-demo">
+              <svg viewBox="0 0 600 500" aria-hidden="true">
+                <path d="M273 211L145 102M273 211L467 124M273 211L481 369M273 211L147 394M145 102L467 124M467 124L481 369M481 369L147 394M147 394L273 211" />
+              </svg>
+              <span class="network-node n1" style="--node-size:88px;--node-colour:var(--organisation)">ORG</span>
+              <span class="network-node n2" style="--node-size:50px;--node-colour:var(--person)">PERSON</span>
+              <span class="network-node n3" style="--node-size:55px;--node-colour:var(--financial)">PAYMENT</span>
+              <span class="network-node n4" style="--node-size:48px;--node-colour:var(--location)">PLACE</span>
+              <span class="network-node n5" style="--node-size:44px;--node-colour:var(--event)">EVENT</span>
+            </figure>
+            <div class="data-rules">
+              <div class="data-rule"><span>01</span><div><strong>Semantic colours stay stable</strong><p>A person is blue in a graph, timeline, table and report.</p></div></div>
+              <div class="data-rule"><span>02</span><div><strong>Loupe red means focus</strong><p>Use brand red for selection, investigative significance and primary action—not entity type.</p></div></div>
+              <div class="data-rule"><span>03</span><div><strong>Lines remain subordinate</strong><p>Relationships should support nodes and labels, not overwhelm them.</p></div></div>
+              <div class="data-rule"><span>04</span><div><strong>Never rely on colour alone</strong><p>Pair colour with labels, shapes, patterns or text for accessible interpretation.</p></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet imagery-section" id="imagery">
+        <div class="page-number">08 / 11</div>
+        <div class="sheet-inner">
+          <header class="sheet-heading">
+            <p class="eyebrow">08 / Product imagery</p>
+            <h2>Show the real product.<br /><span>Use fictional evidence.</span></h2>
+            <p>
+              Screenshots should demonstrate genuine workflows and current interface states using
+              invented people, organisations and documents created specifically for demonstration.
+            </p>
+          </header>
+
+          <figure class="screenshot-frame">
+            <figcaption class="screenshot-bar"><span>Actual product view</span><span>Fictional demonstration case</span></figcaption>
+            <img src="./product/loupe-graph-demo.png" alt="Loupe graph view using a fictional demonstration case" />
+          </figure>
+
+          <div class="image-rules">
+            <article class="image-rule"><span>01</span><h3>Current product only</h3><p>Do not recreate or approximate application screens in marketing artwork.</p></article>
+            <article class="image-rule"><span>02</span><h3>Frame with context</h3><p>Label the view, identify fictional case data and retain enough chrome to feel credible.</p></article>
+            <article class="image-rule"><span>03</span><h3>Protect sensitive data</h3><p>Never use live customer material, real case identifiers or recoverable personal information.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet voice-section" id="voice">
+        <div class="page-number">09 / 11</div>
+        <div class="sheet-inner">
+          <header class="sheet-heading">
+            <p class="eyebrow">09 / Editorial voice</p>
+            <h2>Confident. Precise. Evidenced.</h2>
+            <p>
+              Loupe speaks like an expert partner: direct enough to guide, rigorous enough to trust
+              and human enough to recognise that investigators—not models—make the judgment.
+            </p>
+          </header>
+
+          <div class="voice-pillars">
+            <article class="voice-card"><span>01</span><h3>Concrete, not abstract</h3><p>Name documents, devices, transactions, pages and sources. Avoid empty claims about “insights” or “transformation”.</p></article>
+            <article class="voice-card"><span>02</span><h3>Assured, not inflated</h3><p>Lead with what Loupe does and how it works. Let provenance and control carry the authority.</p></article>
+            <article class="voice-card"><span>03</span><h3>Intelligent, not academic</h3><p>Use plain language for sophisticated ideas. Short sentences give important claims weight.</p></article>
+            <article class="voice-card"><span>04</span><h3>Human-led, not autonomous</h3><p>Describe AI as bounded assistance. Keep expert review, curation and accountability visible.</p></article>
+          </div>
+
+          <div class="message-stack">
+            <div class="message-row"><span>Master line</span><p>Find the signal in everything.</p></div>
+            <div class="message-row"><span>One sentence</span><p>Loupe turns raw case evidence into connected, source-linked intelligence.</p></div>
+            <div class="message-row"><span>Differentiator</span><p>The model is a component. The evidence layer is the product.</p></div>
+            <div class="message-row"><span>Proof promise</span><p>Every claim carries its receipt.</p></div>
+          </div>
+
+          <div class="voice-dos">
+            <div class="voice-list">
+              <h3>Prefer</h3>
+              <ul>
+                <li>“Links every answer to the exact source.”</li>
+                <li>“A persistent model of the whole case.”</li>
+                <li>“AI bounded by case scope and policy.”</li>
+              </ul>
+            </div>
+            <div class="voice-list is-dont">
+              <h3>Avoid</h3>
+              <ul>
+                <li>“Revolutionary AI-powered insights.”</li>
+                <li>“Solve cases instantly.”</li>
+                <li>“Replace manual investigation.”</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet pdf-section" id="pdf">
+        <div class="page-number">10 / 11</div>
+        <div class="sheet-inner">
+          <header class="sheet-heading">
+            <p class="eyebrow">10 / Reports and PDFs</p>
+            <h2>Built to be read.<br /><span>Ready to be challenged.</span></h2>
+            <p>
+              Long-form documents use a light reading surface, restrained brand accents and persistent
+              provenance. The page should feel like evidence infrastructure—not a dark website printed out.
+            </p>
+          </header>
+
+          <div class="pdf-layout">
+            <figure class="a4-preview">
+              <div class="a4-preview-header">
+                <img src="./loupe-red-light.png" alt="Loupe" />
+                <span>Confidential / case review</span>
+              </div>
+              <div class="a4-preview-body">
+                <span>Investigation report / 04</span>
+                <h3>Payment routing findings</h3>
+                <p>A concise statement of what this section establishes, written for a reader who may not know the case.</p>
+                <div class="a4-finding">
+                  <strong>A late account change preceded the transfer.</strong>
+                  <span>Source / 06_interview_marcus_chen.pdf · p.18</span>
+                </div>
+              </div>
+              <figcaption class="a4-preview-footer"><span>Loupe / source-linked intelligence</span><span>04 / 18</span></figcaption>
+            </figure>
+
+            <div class="pdf-rules">
+              <div class="pdf-rule"><span>01</span><div><strong>Use light pages for reading</strong><p>Evidence white or pure white reduces ink use and supports long-form comprehension.</p></div></div>
+              <div class="pdf-rule"><span>02</span><div><strong>Reserve dark pages for covers</strong><p>Dark brand fields work best for section dividers, executive summaries and report covers.</p></div></div>
+              <div class="pdf-rule"><span>03</span><div><strong>Cite at the point of claim</strong><p>Use source name, page or row, and quote reference beside the finding—not in a distant appendix only.</p></div></div>
+              <div class="pdf-rule"><span>04</span><div><strong>Repeat document controls</strong><p>Headers and footers should carry confidentiality, case identity, version and pagination.</p></div></div>
+              <div class="pdf-rule"><span>05</span><div><strong>Print defaults</strong><p>A4 · 14 mm outer margin · 11 pt body · 15 pt leading · red limited to headings, rules and evidence emphasis.</p></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet tokens-section" id="tokens">
+        <div class="page-number">11 / 11</div>
+        <div class="sheet-inner">
+          <header class="sheet-heading">
+            <p class="eyebrow">11 / Implementation tokens</p>
+            <h2>Use the system.<br /><span>Keep it consistent.</span></h2>
+            <p>
+              These starter tokens cover the dominant visual language. Extend semantically rather than
+              creating one-off colours, spacing values or component-specific shadows.
+            </p>
+          </header>
+
+          <div class="token-layout">
+            <div class="code-block">
+              <div class="code-block-header"><span>loupe-tokens.css</span><button class="copy-button" type="button" data-copy="css-tokens">Copy</button></div>
+              <pre id="css-tokens"><code><span class="code-comment">/* Core visual tokens */</span>
+<span class="code-key">:root</span> {
+  <span class="code-key">--loupe-bg</span>: <span class="code-value">#0b0c0f</span>;
+  <span class="code-key">--loupe-surface</span>: <span class="code-value">#111216</span>;
+  <span class="code-key">--loupe-surface-2</span>: <span class="code-value">#17181c</span>;
+  <span class="code-key">--loupe-ink</span>: <span class="code-value">#f7f7f8</span>;
+  <span class="code-key">--loupe-ink-soft</span>: <span class="code-value">#bfc1c8</span>;
+  <span class="code-key">--loupe-muted</span>: <span class="code-value">#9a9da5</span>;
+  <span class="code-key">--loupe-line</span>: <span class="code-value">#292b32</span>;
+  <span class="code-key">--loupe-red</span>: <span class="code-value">#b41624</span>;
+  <span class="code-key">--loupe-signal</span>: <span class="code-value">#e33b4c</span>;
+  <span class="code-key">--loupe-signal-soft</span>: <span class="code-value">#f35d6d</span>;
+
+  <span class="code-key">--font-display</span>: <span class="code-value">"Space Grotesk", sans-serif</span>;
+  <span class="code-key">--font-body</span>: <span class="code-value">"IBM Plex Sans", sans-serif</span>;
+  <span class="code-key">--font-evidence</span>: <span class="code-value">"IBM Plex Mono", monospace</span>;
+
+  <span class="code-key">--radius-control</span>: <span class="code-value">5px</span>;
+  <span class="code-key">--radius-panel</span>: <span class="code-value">8px</span>;
+  <span class="code-key">--space-unit</span>: <span class="code-value">4px</span>;
+}</code></pre>
+            </div>
+
+            <div class="code-block">
+              <div class="code-block-header"><span>loupe-document.css</span><button class="copy-button" type="button" data-copy="pdf-tokens">Copy</button></div>
+              <pre id="pdf-tokens"><code><span class="code-comment">/* Print-safe document starter */</span>
+<span class="code-key">@page</span> {
+  size: <span class="code-value">A4</span>;
+  margin: <span class="code-value">14mm</span>;
+}
+
+<span class="code-key">body</span> {
+  color: <span class="code-value">#15161a</span>;
+  background: <span class="code-value">#f7f7f8</span>;
+  font: <span class="code-value">11pt/1.5 "IBM Plex Sans", sans-serif</span>;
+}
+
+<span class="code-key">h1, h2, h3</span> {
+  font-family: <span class="code-value">"Space Grotesk", sans-serif</span>;
+  letter-spacing: <span class="code-value">-0.04em</span>;
+}
+
+<span class="code-key">.source-citation</span> {
+  border-left: <span class="code-value">2px solid #e33b4c</span>;
+  padding-left: <span class="code-value">10pt</span>;
+  color: <span class="code-value">#5f626b</span>;
+  break-inside: <span class="code-value">avoid</span>;
+}
+
+<span class="code-key">@media print</span> {
+  * {
+    print-color-adjust: <span class="code-value">exact</span>;
+  }
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet quick-reference">
+        <div class="sheet-inner">
+          <svg class="quick-reference-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <circle cx="27" cy="27" r="16" stroke="#F7F7F8" stroke-width="7" />
+            <path d="m39 39 14 14" stroke="#F7F7F8" stroke-width="7" stroke-linecap="round" />
+            <circle cx="42" cy="13" r="7" fill="#E33B4C" stroke="#FFE4E8" stroke-width="2" />
+          </svg>
+          <h2>Find the signal.<span>Keep the receipt.</span></h2>
+          <p>
+            When in doubt: simplify the surface, strengthen the hierarchy, label the evidence and preserve the path to source.
+          </p>
+          <div class="quick-strip">
+            <div><strong>#B41624</strong><span>Loupe red</span></div>
+            <div><strong>Space Grotesk</strong><span>Display</span></div>
+            <div><strong>IBM Plex Sans</strong><span>Reading</span></div>
+            <div><strong>IBM Plex Mono</strong><span>Evidence</span></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast" role="status" aria-live="polite">Copied to clipboard</div>
+
+    <script>
+      const toast = document.querySelector(".toast")
+      let toastTimer
+
+      document.querySelectorAll("[data-copy]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const source = document.getElementById(button.dataset.copy)
+          if (!source) return
+          await navigator.clipboard.writeText(source.innerText)
+          clearTimeout(toastTimer)
+          toast.classList.add("is-visible")
+          toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 1500)
+        })
+      })
+    </script>
+  </body>
+</html>

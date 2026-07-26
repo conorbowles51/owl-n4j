@@ -1,0 +1,155 @@
+/* ==========================================================================
+   Loupe brand tokens — extracted from Loupe Brand System v1.0 (July 2026)
+   Drop this in, then use the variables. Do not introduce one-off colours.
+   ========================================================================== */
+
+/* Fonts — Space Grotesk (display), IBM Plex Sans (body), IBM Plex Mono (evidence) */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap");
+
+:root {
+  color-scheme: dark;
+
+  /* --- Core palette ------------------------------------------------------ */
+  --loupe-obsidian: #0b0c0f;   /* default page background          */
+  --loupe-red: #b41624;        /* Loupe red — signal, action       */
+  --loupe-signal: #e33b4c;     /* Signal red — brighter accent     */
+  --loupe-signal-soft: #f35d6d;/* focus rings, small accents       */
+  --loupe-signal-pale: #ffe4e8;
+  --loupe-wash: rgba(180, 22, 36, 0.12);
+  --loupe-white: #f7f7f8;      /* Evidence white                   */
+
+  /* --- Surfaces & text: use steps, never opacity ------------------------- */
+  --loupe-bg: #0b0c0f;
+  --loupe-bg-deep: #07080a;
+  --loupe-surface: #111216;
+  --loupe-surface-2: #17181c;
+  --loupe-surface-3: #202126;
+  --loupe-surface-raised: #25272d;
+  --loupe-ink: #f7f7f8;
+  --loupe-ink-soft: #bfc1c8;
+  --loupe-muted: #9a9da5;
+  --loupe-muted-strong: #71747c;
+  --loupe-line: #292b32;       /* 1px default border               */
+  --loupe-line-strong: #3b3d44;/* stronger boundary                */
+
+  /* --- Light / document surface ------------------------------------------ */
+  --loupe-paper: #f7f7f8;
+  --loupe-paper-soft: #ececef;
+  --loupe-paper-line: #d9dae0;
+  --loupe-paper-ink: #15161a;
+
+  /* --- Evidence semantics: reserve for entity meaning only --------------- */
+  --loupe-person: #5571c8;
+  --loupe-organisation: #8060a9;
+  --loupe-location: #238a88;
+  --loupe-financial: #b37a2e;
+  --loupe-document: #72757e;
+  --loupe-event: #c25778;
+  --loupe-communication: #2c8197;
+  --loupe-success: #4fa477;
+
+  /* --- Type ------------------------------------------------------------- */
+  --loupe-font-display: "Space Grotesk", "Segoe UI", sans-serif; /* 500–700 */
+  --loupe-font-body: "IBM Plex Sans", "Segoe UI", sans-serif;    /* 400/500/600 */
+  --loupe-font-evidence: "IBM Plex Mono", Consolas, monospace;   /* sparingly */
+
+  /* --- Shape & space ---------------------------------------------------- */
+  --loupe-radius-control: 5px;
+  --loupe-radius-panel: 8px;
+  --loupe-space-unit: 4px;      /* 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 */
+  --loupe-page: min(1240px, calc(100vw - 96px));
+  --loupe-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* --- Type scale (size / leading / tracking) ------------------------------ */
+.loupe-display-xl { font: 600 52px/50px var(--loupe-font-display); letter-spacing: -0.055em; }
+.loupe-display-l  { font: 600 38px/39px var(--loupe-font-display); letter-spacing: -0.045em; }
+.loupe-heading    { font: 600 26px/30px var(--loupe-font-display); letter-spacing: -0.035em; }
+.loupe-lead       { font: 400 18px/25px var(--loupe-font-body); letter-spacing: -0.01em; color: var(--loupe-ink-soft); }
+.loupe-body       { font: 400 14px/22px var(--loupe-font-body); }
+.loupe-eyebrow {
+  font: 500 9px/1.4 var(--loupe-font-evidence);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--loupe-signal-soft);
+}
+
+/* --- Base --------------------------------------------------------------- */
+body.loupe {
+  margin: 0;
+  min-width: 320px;
+  color: var(--loupe-ink);
+  background:
+    radial-gradient(circle at 82% 2%, rgba(180, 22, 36, 0.12), transparent 27rem),
+    var(--loupe-bg);
+  font-family: var(--loupe-font-body);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+body.loupe h1, body.loupe h2, body.loupe h3 {
+  font-family: var(--loupe-font-display);
+  text-wrap: balance;
+}
+.loupe ::selection { color: #fff; background: rgba(227, 59, 76, 0.5); }
+.loupe :focus-visible { outline: 2px solid var(--loupe-signal-soft); outline-offset: 4px; }
+
+/* --- Interface language ------------------------------------------------- */
+/* One primary red action or state per composition. */
+.loupe-btn-primary {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 10px 16px;
+  border: 1px solid var(--loupe-red);
+  border-radius: var(--loupe-radius-control);
+  color: #fff; background: var(--loupe-red);
+  font: 600 14px var(--loupe-font-body); cursor: pointer;
+  transition: transform 180ms var(--loupe-ease), background 180ms ease;
+}
+.loupe-btn-primary:hover { background: var(--loupe-signal); transform: translateY(-1px); }
+
+.loupe-btn-secondary {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 10px 16px;
+  border: 1px solid var(--loupe-line-strong);
+  border-radius: var(--loupe-radius-control);
+  color: var(--loupe-ink-soft); background: var(--loupe-surface-2);
+  font: 600 14px var(--loupe-font-body); cursor: pointer;
+}
+.loupe-btn-secondary:hover { border-color: var(--loupe-signal-soft); color: #fff; }
+
+.loupe-panel {
+  border: 1px solid var(--loupe-line);
+  border-radius: var(--loupe-radius-panel);
+  background: var(--loupe-surface);
+}
+
+/* Signal dot — active state, verified status, meaningful node */
+.loupe-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--loupe-signal);
+  box-shadow: 0 0 0 6px rgba(227, 59, 76, 0.11), 0 0 18px rgba(227, 59, 76, 0.6);
+}
+
+/* Provenance line — cite at the point of claim */
+.loupe-source {
+  font: 400 11px var(--loupe-font-evidence);
+  letter-spacing: 0.06em;
+  color: var(--loupe-muted);
+}
+
+/* --- Logo -------------------------------------------------------------- */
+/* Clear space = one signal-dot diameter on every side (baked into the PNGs).
+   Digital minimum 24px height. Never recolour, stretch, rotate or add effects. */
+.loupe-lockup { display: block; width: 106px; height: auto; }
+
+/* --- Print / document surface ------------------------------------------ */
+@page { size: A4; margin: 14mm; }
+@media print {
+  body.loupe {
+    color: var(--loupe-paper-ink);
+    background: var(--loupe-paper);
+    font-size: 11pt;
+    line-height: 15pt;
+  }
+  /* Red limited to headings, rules and evidence emphasis. */
+}
