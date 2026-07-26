@@ -1,55 +1,71 @@
 import { Reveal } from "../lib/Reveal"
 
 const controls = [
-  ["Deployment boundary", "Designed to operate inside controlled environments."],
-  ["Role-aware access", "Keep sensitive work visible to the right people."],
-  ["Source provenance", "Preserve the path from insight back to origin."],
-  ["Portable outputs", "Move findings into the formats your work requires."],
+  {
+    number: "01",
+    title: "One customer. One isolated stack.",
+    body: "Each customer gets a dedicated instance with private operating boundaries. Evidence never trains anyone else's model.",
+    meta: "Single tenant",
+  },
+  {
+    number: "02",
+    title: "Provenance survives the case",
+    body: "Quotes, source locations, confidence and review state accumulate through merges and re-ingestion rather than being overwritten.",
+    meta: "Evidence integrity",
+  },
+  {
+    number: "03",
+    title: "AI stays inside the boundary",
+    body: "Read-only case tools, prompt-injection defenses, run caps and investigator-approved changes constrain what automation may do.",
+    meta: "Governed AI",
+  },
+  {
+    number: "04",
+    title: "Every operation can be accounted for",
+    body: "Audit history, user attribution and a per-operation AI cost ledger make activity explainable to operators and reviewers.",
+    meta: "Operational control",
+  },
 ]
 
 export function TrustSection() {
   return (
-    <section className="trust-section" id="control">
-      <div className="container trust-layout">
-        <Reveal className="trust-copy">
-          <p className="section-index">04 / Control</p>
-          <h2>Clarity without<br />losing control.</h2>
+    <section className="trust-section trust-section-clean" id="control">
+      <div className="container">
+        <Reveal className="trust-heading">
+          <p className="section-index">06 / Evidence infrastructure</p>
+          <h2>
+            Built for the moment
+            <br />
+            <span>the answer is challenged.</span>
+          </h2>
           <p>
-            Powerful analysis means little without clear boundaries, accountable access and a
-            visible connection to the underlying material.
+            Investigation teams cannot send evidence to an opaque shared cloud and hope for the
+            best. Loupe is designed around isolation, provenance and control from the first file to
+            the final report.
           </p>
-          <ul>
-            {controls.map(([title, body], index) => (
-              <li key={title}>
-                <span>0{index + 1}</span>
-                <div><strong>{title}</strong><p>{body}</p></div>
-              </li>
-            ))}
-          </ul>
         </Reveal>
-        <Reveal className="control-console" delay={0.15}>
-          <div className="console-header">
-            <span>Loupe / Control plane</span>
-            <b><i /> Operational</b>
-          </div>
-          <div className="console-radar" aria-hidden="true">
-            <div className="radar-grid" />
-            <div className="radar-sweep" />
-            <i className="radar-point radar-point-a" />
-            <i className="radar-point radar-point-b" />
-            <i className="radar-point radar-point-c" />
-            <span className="radar-core" />
-          </div>
-          <div className="console-readouts">
-            <div><span>Access model</span><strong>Role aware</strong></div>
-            <div><span>Provenance</span><strong>Source linked</strong></div>
-            <div><span>Workspace</span><strong>Controlled</strong></div>
-          </div>
-          <div className="console-log">
-            <span>12:42:08</span><p>Source connection verified</p><b>OK</b>
-            <span>12:42:11</span><p>Workspace boundary checked</p><b>OK</b>
-            <span>12:42:14</span><p>Provenance path available</p><b>OK</b>
-          </div>
+
+        <div className="trust-grid trust-grid-clean">
+          {controls.map((control, index) => (
+            <Reveal as="article" className="trust-control trust-control-clean" delay={index * 0.07} key={control.number}>
+              <div className="trust-control-top">
+                <span>{control.number}</span>
+                <b>
+                  <i /> {control.meta}
+                </b>
+              </div>
+              <h3>{control.title}</h3>
+              <p>{control.body}</p>
+            </Reveal>
+          ))}
+        </div>
+
+        <Reveal className="trust-manifesto trust-manifesto-clean">
+          <span>The defensible chain</span>
+          <p>
+            Source to claim. Claim to finding. Finding to report. Every step stays visible, bounded
+            and ready to be examined.
+          </p>
         </Reveal>
       </div>
     </section>

@@ -4,29 +4,37 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#06151c" />
+    <meta name="theme-color" content="#0B0C0F" />
     <meta
       name="description"
-      content="Loupe turns complex documents, communications, events, locations and transactions into connected, explorable intelligence."
+      content="Loupe compiles complete case evidence into a permanent, source-linked intelligence layer that investigators can explore, test and defend."
     />
-    <meta property="og:title" content="Loupe — Find the signal in everything" />
+    <meta property="og:title" content="Loupe — The evidence layer for complex investigations" />
     <meta
       property="og:description"
-      content="Bring every source into one connected intelligence layer. Explore relationships, rebuild timelines and trace every insight to its origin."
+      content="One persistent case model. Every claim linked to its source. A governed agent that builds work instead of chat residue."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="/loupe-logo-transparent.png" />
+    <meta property="og:image" content="/loupe-red-dark.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <title>Loupe — Connected Intelligence</title>
+    <title>Loupe — Evidence infrastructure for complex investigations</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
       rel="stylesheet"
     />
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      try {
+        const savedTheme = window.localStorage.getItem("loupe-theme")
+        document.documentElement.dataset.theme = savedTheme === "light" ? "light" : "dark"
+      } catch {
+        document.documentElement.dataset.theme = "dark"
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

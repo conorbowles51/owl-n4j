@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
+import { AgentSection } from "./components/AgentSection"
 import { CapabilityMatrix } from "./components/CapabilityMatrix"
 import { ContactModal } from "./components/ContactModal"
+import { CurationSection } from "./components/CurationSection"
 import { FinalCta } from "./components/FinalCta"
 import { FlowSection } from "./components/FlowSection"
 import { Footer } from "./components/Footer"
@@ -40,6 +42,8 @@ export function App() {
         <ProductStage />
         <CapabilityMatrix />
         <FlowSection />
+        <CurationSection />
+        <AgentSection />
         <TrustSection />
         <FinalCta onContact={() => setContactOpen(true)} />
       </main>

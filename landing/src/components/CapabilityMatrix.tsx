@@ -1,94 +1,99 @@
 import { Reveal } from "../lib/Reveal"
 
-const capabilities = [
-  {
-    number: "01",
-    title: "Connect anything",
-    body: "Bring unstructured and structured sources together without flattening the context that makes them useful.",
-    visual: "sources",
-  },
-  {
-    number: "02",
-    title: "Traverse relationships",
-    body: "Move from a person to a document, transaction, event or location in a single connected model.",
-    visual: "graph",
-  },
-  {
-    number: "03",
-    title: "Rebuild chronology",
-    body: "Turn scattered dates and timestamps into an ordered, filterable account of what happened.",
-    visual: "timeline",
-  },
-  {
-    number: "04",
-    title: "Follow movement",
-    body: "Place events and entities in geographic context to reveal routes, clusters and converging activity.",
-    visual: "map",
-  },
-  {
-    number: "05",
-    title: "Trace value",
-    body: "Explore financial relationships and flows while preserving the records behind every connection.",
-    visual: "flow",
-  },
-  {
-    number: "06",
-    title: "Ask with evidence",
-    body: "Use natural language to explore the material and move directly from an answer to its supporting source.",
-    visual: "answer",
-  },
+const comparisonRows = [
+  ["Where the case lives", "A temporary context window", "A permanent, queryable case model"],
+  ["What fits", "The files and pages in the prompt", "The complete evidence corpus"],
+  ["What answers contain", "Fluent prose", "Claims linked to the exact source"],
+  ["Where judgment lives", "Outside the conversation", "Inside highlights, Significant and Loupes"],
+  ["What survives", "A chat transcript", "Graphs, tables, timelines, maps and reports"],
 ]
 
-function CapabilityVisual({ type }: { type: string }) {
-  if (type === "sources") {
-    return <div className="cap-source-stack" aria-hidden="true"><i /><i /><i /><span>PDF</span><b>CSV</b></div>
-  }
-  if (type === "graph") {
-    return <div className="cap-mini-graph" aria-hidden="true"><i /><i /><i /><i /><span /><span /><span /></div>
-  }
-  if (type === "timeline") {
-    return <div className="cap-timeline" aria-hidden="true"><span /><i /><i /><b /><i /></div>
-  }
-  if (type === "map") {
-    return <div className="cap-map" aria-hidden="true"><svg viewBox="0 0 220 100"><path d="M8 74C40 12 83 92 112 42s61 20 100-22" /><circle cx="54" cy="54" r="5" /><circle cx="114" cy="39" r="5" /><circle cx="187" cy="29" r="5" /></svg></div>
-  }
-  if (type === "flow") {
-    return <div className="cap-flow" aria-hidden="true"><span>€</span><i /><b>£</b><i /><strong>$</strong></div>
-  }
-  return <div className="cap-answer" aria-hidden="true"><span /><span /><span /><b>↗</b></div>
-}
+const capacities = [
+  ["35 GB", "single phone report"],
+  ["50k", "transactions per case"],
+  ["10k+", "entities per case"],
+]
+
+const principles = [
+  ["Compile, do not prompt", "The case becomes durable structure held beyond any conversation."],
+  ["Cite, do not hope", "Every fact carries its quote, source location, confidence and review state."],
+  ["Keep, do not repeat", "Investigator judgment and AI outputs persist as work the team can revisit."],
+]
+
 export function CapabilityMatrix() {
   return (
-    <section className="capabilities-section" id="capabilities">
+    <section className="difference-section" id="capabilities">
       <div className="container">
-        <Reveal className="section-heading section-heading-split">
-          <div>
-            <p className="section-index">02 / Capabilities</p>
-            <h2>From raw material<br />to clear direction.</h2>
-          </div>
+        <Reveal className="evidence-layer-heading">
+          <p className="section-index">02 / The architectural difference</p>
+          <h2>
+            The whole case.
+            <br />
+            <span>Not the part that fits in a prompt.</span>
+          </h2>
           <p>
-            Loupe is not another place to store information. It is the layer that makes everything
-            you already have understandable together.
+            A chatbot reads a selection and produces prose. Loupe compiles the complete case into a
+            permanent, provenance-carrying structure, then lets AI operate on that structure under
+            guardrails.
           </p>
         </Reveal>
-        <div className="capability-grid">
-          {capabilities.map((capability, index) => (
-            <Reveal
-              as="article"
-              className={`capability capability-${capability.visual}`}
-              delay={(index % 3) * 0.08}
-              key={capability.title}
-            >
-              <div className="capability-topline">
-                <span>{capability.number}</span>
-                <i aria-hidden="true" />
+
+        <div className="difference-layout">
+          <Reveal className="difference-statement" delay={0.08}>
+            <span>The honest answer</span>
+            <blockquote>
+              The model is a component.
+              <strong>The evidence layer is the product.</strong>
+            </blockquote>
+            <p>
+              Documents, phone extractions, financial records and media resolve into one model of
+              the people, events, money, places and sources inside the case.
+            </p>
+          </Reveal>
+
+          <Reveal className="difference-table" delay={0.14}>
+            <div role="table" aria-label="Straight LLM and Loupe comparison">
+              <div className="difference-row difference-head" role="row">
+                <span role="columnheader">What changes</span>
+                <span role="columnheader">A straight LLM</span>
+                <span role="columnheader">Loupe</span>
               </div>
-              <CapabilityVisual type={capability.visual} />
-              <h3>{capability.title}</h3>
-              <p>{capability.body}</p>
-            </Reveal>
-          ))}
+              {comparisonRows.map(([label, llm, loupe]) => (
+                <div className="difference-row" role="row" key={label}>
+                  <strong role="cell">{label}</strong>
+                  <span role="cell">{llm}</span>
+                  <span role="cell">
+                    <i aria-hidden="true" />
+                    {loupe}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Reveal>
         </div>
+
+        <Reveal className="difference-principles">
+          {principles.map(([title, body], index) => (
+            <article key={title}>
+              <span>0{index + 1}</span>
+              <h3>{title}</h3>
+              <p>{body}</p>
+            </article>
+          ))}
+        </Reveal>
+
+        <Reveal className="case-scale" delay={0.08}>
+          <div className="case-scale-intro">
+            <span>Designed for case scale</span>
+            <p>Built for the volume serious investigations actually produce.</p>
+          </div>
+          {capacities.map(([value, label]) => (
+            <div className="case-scale-stat" key={label}>
+              <strong>{value}</strong>
+              <span>{label}</span>
+            </div>
+          ))}
+        </Reveal>
       </div>
     </section>
   )

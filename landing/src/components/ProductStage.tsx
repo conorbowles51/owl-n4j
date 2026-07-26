@@ -1,194 +1,127 @@
-import { useState, type CSSProperties } from "react"
+import type { CSSProperties } from "react"
 import { Reveal } from "../lib/Reveal"
 
-const stages = [
+type PreviewMode = "evidence" | "graph" | "timeline" | "agent"
+
+type ProductStageItem = {
+  key: PreviewMode
+  number: string
+  label: string
+  body: string
+  meta: string
+  image: string
+  alt: string
+}
+
+const stages: ProductStageItem[] = [
   {
-    key: "ingest",
+    key: "evidence",
     number: "01",
-    label: "Bring every source into view",
-    body: "Documents, communications, media, locations and structured records enter one coherent workspace.",
-    meta: "Unified intake",
+    label: "Ingest every form of evidence",
+    body: "Upload and process case material while preserving the original file, folder and source context.",
+    meta: "Evidence workspace",
+    image: "/product/loupe-evidence-demo.png",
+    alt: "Loupe evidence workspace showing processed case documents, folder navigation and the selected interview document details.",
   },
   {
-    key: "connect",
+    key: "graph",
     number: "02",
-    label: "Reveal the relationships",
-    body: "Loupe resolves people, organisations, accounts, places and events into an explorable network.",
-    meta: "Connected model",
+    label: "Compile the case, do not prompt it",
+    body: "Resolve people, organisations, locations, events and records into a persistent knowledge graph.",
+    meta: "Graph view",
+    image: "/product/loupe-graph-demo.png",
+    alt: "Loupe graph view showing connected people, organisations, transactions and locations with Victoria Blackwood's details open.",
   },
   {
-    key: "sequence",
+    key: "timeline",
     number: "03",
     label: "Rebuild what happened",
-    body: "Move between graph, chronology, map, table and financial views without losing the underlying context.",
-    meta: "Multiple lenses",
+    body: "Order events from across the case, filter the chronology and open the evidence behind each entry.",
+    meta: "Timeline view",
+    image: "/product/loupe-timeline-demo.png",
+    alt: "Loupe timeline showing source-backed transactions and communications with an email event selected.",
   },
   {
-    key: "explain",
+    key: "agent",
     number: "04",
-    label: "Move from finding to proof",
-    body: "Ask complex questions, preserve the reasoning path and return to the exact material behind each answer.",
-    meta: "Source linked",
+    label: "Build work, not just answers",
+    body: "Use case-scoped tools to examine evidence and build focused, reviewable artifacts that persist.",
+    meta: "Agent workspace",
+    image: "/product/loupe-agent-demo.png",
+    alt: "Loupe AI Agent creating a focused table of the three largest transactions in a fictional case.",
   },
-]
-
-const graphNodes = [
-  { x: 145, y: 198, r: 13, type: "person", label: "M. Chen" },
-  { x: 260, y: 112, r: 16, type: "company", label: "Northstar" },
-  { x: 362, y: 202, r: 18, type: "focus", label: "Project Atlas" },
-  { x: 490, y: 126, r: 12, type: "account", label: "AC-2049" },
-  { x: 548, y: 258, r: 14, type: "location", label: "Dublin" },
-  { x: 410, y: 322, r: 11, type: "event", label: "Meeting" },
-  { x: 246, y: 294, r: 10, type: "document", label: "Memo 7" },
-  { x: 105, y: 322, r: 9, type: "event", label: "Transfer" },
-]
-
-const graphEdges = [
-  [0, 1], [0, 2], [0, 6], [1, 2], [1, 3], [2, 3], [2, 4], [2, 5], [2, 6], [3, 4], [4, 5], [5, 6], [6, 7],
 ]
 
 export function ProductStage() {
-  const [active, setActive] = useState(1)
-  const stage = stages[active]
-
   return (
     <section className="product-section" id="platform">
-      <div className="container">
+      <div className="container product-inner">
         <Reveal className="section-heading product-heading">
-          <p className="section-index">01 / Platform</p>
-          <h2>One intelligence layer.<br />Every perspective.</h2>
+          <p className="section-index">01 / Product</p>
+          <h2>One case. Every investigative view.</h2>
           <p>
-            Loupe keeps the same connected body of information beneath every view. Change the lens,
-            not the truth you are looking at.
+            Loupe keeps one case model beneath every workspace. Change the lens without
+            fragmenting the evidence, repeating the work or losing the path back to source.
           </p>
         </Reveal>
 
-        <div className="product-layout">
-          <Reveal className="product-steps" delay={0.1}>
-            {stages.map((item, index) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`product-step ${active === index ? "is-active" : ""}`}
-                aria-pressed={active === index}
-                onClick={() => setActive(index)}
-              >
-                <span className="product-step-number">{item.number}</span>
-                <span className="product-step-copy">
-                  <strong>{item.label}</strong>
-                  <small>{item.meta}</small>
+        <div className="product-case-stack">
+          <span className="product-case-thread" aria-hidden="true" />
+          {stages.map((item, index) => (
+            <article
+              className={`product-case-card product-mode-${item.key}`}
+              key={item.key}
+              style={
+                {
+                  "--stack-index": index,
+                  "--stack-depth": stages.length - index,
+                } as CSSProperties
+              }
+            >
+              <Reveal className="product-case-reveal" delay={Math.min(index * 0.04, 0.12)}>
+                <span className="product-case-node" aria-hidden="true">
+                  <i />
+                  {item.number}
                 </span>
-                <span className="product-step-marker" aria-hidden="true" />
-              </button>
-            ))}
-          </Reveal>
 
-          <Reveal className="product-window-wrap" delay={0.18}>
-            <div className={`product-window product-mode-${stage.key}`}>
-              <div className="window-chrome">
-                <span className="window-mark" aria-hidden="true">
-                  <i /><i /><b />
+                <span className="product-case-file-tab" aria-hidden="true">
+                  <b>{item.number}</b>
+                  <i>{item.meta}</i>
                 </span>
-                <div>
-                  <strong>Project Atlas</strong>
-                  <small>Connected workspace</small>
-                </div>
-                <div className="window-status">
-                  <i /> Live model
-                </div>
-              </div>
-              <div className="window-body">
-                <aside className="window-rail" aria-label="Preview navigation">
-                  {[
-                    ["⌘", "Network"],
-                    ["◷", "Timeline"],
-                    ["⌖", "Map"],
-                    ["▤", "Table"],
-                    ["↗", "Financial"],
-                  ].map(([icon, label], index) => (
-                    <span className={index === active || (active === 3 && index === 0) ? "is-active" : ""} key={label}>
-                      <b aria-hidden="true">{icon}</b>{label}
-                    </span>
-                  ))}
-                </aside>
-                <div className="source-drawer">
-                  <div className="source-drawer-title">
-                    <span>Sources</span><b>24</b>
-                  </div>
-                  {[
-                    ["Q4 review.pdf", "118 pages"],
-                    ["Messages export", "4,219 items"],
-                    ["Transactions.csv", "842 rows"],
-                    ["Field notes", "36 entries"],
-                  ].map(([name, count], index) => (
-                    <div className={`source-row ${index === active ? "is-active" : ""}`} key={name}>
-                      <i aria-hidden="true" />
-                      <span><strong>{name}</strong><small>{count}</small></span>
+
+                <div className="product-case-window">
+                  <div className="product-case-capture">
+                    <img
+                      src={item.image}
+                      alt={item.alt}
+                      width="2558"
+                      height="1265"
+                      decoding="async"
+                      loading={index < 2 ? "eager" : "lazy"}
+                      fetchPriority={index === 0 ? "high" : "auto"}
+                    />
+                    <span className="product-case-matte" aria-hidden="true" />
+                    <span className="product-case-scan" aria-hidden="true" />
+
+                    <div className="product-case-copy">
+                      <div>
+                        <span>
+                          {item.number} / {item.meta}
+                        </span>
+                        <h3>{item.label}</h3>
+                        <p>{item.body}</p>
+                      </div>
+                      <a href={item.image} target="_blank" rel="noreferrer">
+                        View full capture <i aria-hidden="true">&#8599;</i>
+                      </a>
                     </div>
-                  ))}
-                </div>
-                <div className="network-stage">
-                  <div className="network-toolbar">
-                    <span>Connected view</span>
-                    <span className="network-filter">All sources⌄</span>
-                  </div>
-                  <svg className="network-graph" viewBox="0 0 650 410" role="img" aria-label="Connected information preview">
-                    <defs>
-                      <radialGradient id="graph-focus">
-                        <stop offset="0" stopColor="#20c7c0" stopOpacity="0.95" />
-                        <stop offset="1" stopColor="#0e5d67" stopOpacity="0.3" />
-                      </radialGradient>
-                    </defs>
-                    <g className="graph-grid-lines">
-                      {Array.from({ length: 8 }, (_, index) => <line x1="0" x2="650" y1={index * 58} y2={index * 58} key={`h-${index}`} />)}
-                      {Array.from({ length: 11 }, (_, index) => <line y1="0" y2="410" x1={index * 65} x2={index * 65} key={`v-${index}`} />)}
-                    </g>
-                    <g className="graph-edges">
-                      {graphEdges.map(([from, to], index) => (
-                        <line
-                          key={`${from}-${to}`}
-                          x1={graphNodes[from].x}
-                          y1={graphNodes[from].y}
-                          x2={graphNodes[to].x}
-                          y2={graphNodes[to].y}
-                          style={{ "--edge-index": index } as CSSProperties}
-                        />
-                      ))}
-                    </g>
-                    <g className="graph-nodes">
-                      {graphNodes.map((node, index) => (
-                        <g className={`graph-node graph-node-${node.type}`} transform={`translate(${node.x} ${node.y})`} key={node.label}>
-                          <circle r={node.r + 8} className="node-halo" />
-                          <circle r={node.r} />
-                          <text y={node.r + 20} textAnchor="middle">{node.label}</text>
-                          {index === 2 && <circle r={node.r + 15} className="node-orbit" />}
-                        </g>
-                      ))}
-                    </g>
-                    <g className="timeline-overlay">
-                      <line x1="74" y1="320" x2="580" y2="320" />
-                      {[120, 226, 360, 486, 552].map((x, index) => (
-                        <g transform={`translate(${x} 320)`} key={x}>
-                          <circle r={index === 2 ? 7 : 4} />
-                          <text y="26" textAnchor="middle">{["09:12", "11:48", "14:06", "16:22", "18:10"][index]}</text>
-                        </g>
-                      ))}
-                    </g>
-                  </svg>
-                  <div className="source-citation">
-                    <span>Source-linked finding</span>
-                    <p>{stage.body}</p>
-                    <small>Q4 review.pdf · p. 47 <b>Open source ↗</b></small>
-                  </div>
-                  <div className="view-readout">
-                    <span>{stage.meta}</span>
-                    <strong>{String(active + 1).padStart(2, "0")}</strong>
+
+                    <span className="product-case-edge" aria-hidden="true" />
                   </div>
                 </div>
-              </div>
-            </div>
-            <p className="product-caption"><span>Live concept</span> One workspace, multiple analytical lenses.</p>
-          </Reveal>
+              </Reveal>
+            </article>
+          ))}
         </div>
       </div>
     </section>
