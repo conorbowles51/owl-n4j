@@ -131,3 +131,7 @@ docker-compose.override.yml
 
 # Deploy logs
 deploy/logs/
+
+# Local agent + backup state (large, machine-specific)
+.docket/
+backups/

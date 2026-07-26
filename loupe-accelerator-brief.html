@@ -1,0 +1,530 @@
+<title>Loupe — What It Is &amp; Why It's Not a Chatbot</title>
+<style>
+  :root {
+    --bg: #faf9f8;
+    --surface: #ffffff;
+    --ink: #201d1e;
+    --ink-soft: #55504f;
+    --ink-faint: #8a8382;
+    --line: #e6e1df;
+    --accent: #b41624;
+    --accent-bright: #e33b4c;
+    --accent-wash: #fbeef0;
+    --good: #1c7a4d;
+    --shadow: 0 1px 2px rgba(32,29,30,.05), 0 8px 28px rgba(32,29,30,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181a;
+      --surface: #1f2124;
+      --ink: #ece9e7;
+      --ink-soft: #b3adaa;
+      --ink-faint: #7d7774;
+      --line: #33363a;
+      --accent: #e33b4c;
+      --accent-bright: #f0576a;
+      --accent-wash: #2c1d20;
+      --good: #4dbd8a;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17181a; --surface: #1f2124; --ink: #ece9e7; --ink-soft: #b3adaa;
+    --ink-faint: #7d7774; --line: #33363a; --accent: #e33b4c; --accent-bright: #f0576a;
+    --accent-wash: #2c1d20; --good: #4dbd8a;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.25);
+  }
+  :root[data-theme="light"] {
+    --bg: #faf9f8; --surface: #ffffff; --ink: #201d1e; --ink-soft: #55504f;
+    --ink-faint: #8a8382; --line: #e6e1df; --accent: #b41624; --accent-bright: #e33b4c;
+    --accent-wash: #fbeef0; --good: #1c7a4d;
+    --shadow: 0 1px 2px rgba(32,29,30,.05), 0 8px 28px rgba(32,29,30,.06);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, "Segoe UI", system-ui, Roboto, "Helvetica Neue", sans-serif;
+    margin: 0; padding: 0;
+  }
+  .page { max-width: 76ch; margin: 0 auto; padding: 0 24px 96px; }
+
+  .eyebrow {
+    font: 600 11.5px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
+    margin: 0 0 10px;
+  }
+  .eyebrow.quiet { color: var(--ink-faint); }
+
+  header.hero { padding: 72px 0 28px; border-bottom: 1px solid var(--line); }
+  .hero h1 {
+    font-size: clamp(30px, 5.2vw, 44px); line-height: 1.12; letter-spacing: -.022em;
+    font-weight: 700; margin: 0 0 18px; text-wrap: balance;
+  }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero .lede { font-size: 19px; line-height: 1.6; color: var(--ink-soft); margin: 0; max-width: 62ch; }
+  .hero .meta {
+    margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px 18px;
+    font: 500 12.5px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--ink-faint);
+  }
+  .hero .meta span::before { content: "— "; color: var(--accent); }
+
+  section { margin-top: 64px; }
+  h2 {
+    font-size: 25px; letter-spacing: -.015em; line-height: 1.25; font-weight: 700;
+    margin: 0 0 16px; text-wrap: balance;
+  }
+  h3 { font-size: 17px; font-weight: 650; margin: 28px 0 8px; letter-spacing: -.01em; }
+  p { margin: 0 0 14px; max-width: 70ch; }
+  p.big { font-size: 18px; line-height: 1.62; }
+  .soft { color: var(--ink-soft); }
+  strong { font-weight: 650; }
+  a { color: var(--accent); }
+
+  .pullquote {
+    border-left: 3px solid var(--accent); padding: 6px 0 6px 22px; margin: 26px 0;
+    font-size: 20px; line-height: 1.5; font-weight: 560; letter-spacing: -.01em;
+    max-width: 62ch; text-wrap: balance;
+  }
+  .pullquote .who {
+    display: block; margin-top: 10px;
+    font: 500 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--ink-faint); letter-spacing: .08em; text-transform: uppercase;
+  }
+
+  .cardgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 22px 0; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 18px 16px; box-shadow: var(--shadow);
+  }
+  .card h4 { margin: 0 0 6px; font-size: 14.5px; font-weight: 650; letter-spacing: -.005em; }
+  .card p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-soft); }
+  .card .k {
+    font: 600 10.5px/1.3 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--accent);
+    display: block; margin-bottom: 8px;
+  }
+
+  .flow { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 8px; }
+  .flow .step {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+    padding: 7px 16px; font-size: 13.5px; font-weight: 600; white-space: nowrap;
+  }
+  .flow .step b { color: var(--accent); font-weight: 700; margin-right: 6px; font-variant-numeric: tabular-nums; }
+
+  .tablewrap { overflow-x: auto; margin: 22px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+  th, td { text-align: left; padding: 12px 16px; vertical-align: top; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: none; }
+  thead th {
+    font: 650 11.5px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint);
+    background: color-mix(in srgb, var(--surface) 60%, var(--bg));
+  }
+  td.dim { color: var(--ink-soft); }
+  td.win { color: var(--ink); }
+  td.win::before { content: "●"; color: var(--accent); font-size: 9px; vertical-align: 2px; margin-right: 8px; }
+  th.rowlab, td.rowlab { font-weight: 650; white-space: nowrap; color: var(--ink); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px 12px; box-shadow: var(--shadow);
+  }
+  .stat .n { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--accent); }
+  .stat .l { font-size: 12px; line-height: 1.45; color: var(--ink-soft); margin-top: 3px; }
+
+  .callout {
+    background: var(--accent-wash); border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+    border-radius: 10px; padding: 18px 20px; margin: 24px 0;
+  }
+  .callout p { margin: 0 0 8px; font-size: 14.5px; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .k {
+    font: 650 11px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--accent);
+    display: block; margin-bottom: 8px;
+  }
+
+  ul { padding-left: 22px; margin: 0 0 14px; }
+  li { margin-bottom: 7px; max-width: 66ch; }
+  li::marker { color: var(--accent); }
+
+  ol.epics { padding-left: 26px; margin: 14px 0; column-gap: 40px; }
+  ol.epics li { font-size: 14px; margin-bottom: 5px; }
+  ol.epics li b { font-weight: 650; }
+  ol.epics li span { color: var(--ink-soft); }
+  @media (min-width: 720px) { ol.epics { columns: 2; } }
+
+  .copyblock {
+    background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 16px 20px; margin: 14px 0; font-size: 15px; line-height: 1.6;
+  }
+  .copyblock .k {
+    font: 650 10.5px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint);
+    display: block; margin-bottom: 6px;
+  }
+
+  footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid var(--line);
+    font: 500 12px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--ink-faint); }
+
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  section[id] { scroll-margin-top: 24px; }
+
+  nav.toc {
+    margin: 28px 0 0; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px 20px 16px; box-shadow: var(--shadow);
+  }
+  nav.toc .k {
+    font: 650 11px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint);
+    display: block; margin-bottom: 10px;
+  }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr; gap: 2px 28px; }
+  @media (min-width: 640px) { nav.toc ol { grid-template-columns: 1fr 1fr; } }
+  nav.toc a {
+    display: flex; align-items: baseline; gap: 10px; padding: 6px 6px; border-radius: 6px;
+    text-decoration: none; color: var(--ink); font-size: 14px; font-weight: 550; line-height: 1.35;
+  }
+  nav.toc a:hover { background: var(--accent-wash); color: var(--accent); }
+  nav.toc a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  nav.toc a .n {
+    font: 600 11.5px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--accent); font-variant-numeric: tabular-nums; flex: none;
+  }
+</style>
+
+<div class="page">
+
+<header class="hero">
+  <p class="eyebrow">Accelerator application brief · internal draft · 25 Jul 2026</p>
+  <h1>Loupe turns raw case evidence into connected, <em>source-linked</em> intelligence.</h1>
+  <p class="lede">An investigation platform for fraud and criminal casework. Investigators upload everything a case contains — documents, phone extractions, financial records, audio — and Loupe builds one connected model of the people, events, money and places inside it, where every single fact links back to the page, quote and file it came from.</p>
+  <div class="hero meta">
+    <span>Working brand: Loupe</span>
+    <span>Tagline in market: “Find the signal in everything.”</span>
+    <span>Deployment: single-tenant, one instance per customer</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <span class="k">Contents</span>
+  <ol>
+    <li><a href="#problem"><span class="n">01</span>The problem</a></li>
+    <li><a href="#product"><span class="n">02</span>What Loupe actually is</a></li>
+    <li><a href="#workspace"><span class="n">03</span>One case, every lens</a></li>
+    <li><a href="#curation"><span class="n">04</span>Raw text, elevated: highlights &amp; Loupes</a></li>
+    <li><a href="#agent"><span class="n">05</span>An agent that does, not a chatbot that answers</a></li>
+    <li><a href="#differentiation"><span class="n">06</span>What makes this different from a straight LLM</a></li>
+    <li><a href="#engineering"><span class="n">07</span>Built like evidence infrastructure</a></li>
+    <li><a href="#capabilities"><span class="n">08</span>The full capability surface</a></li>
+    <li><a href="#market"><span class="n">09</span>Who buys this</a></li>
+    <li><a href="#application"><span class="n">10</span>Ready-to-paste blocks</a></li>
+  </ol>
+</nav>
+
+<section id="problem">
+  <p class="eyebrow quiet">The problem</p>
+  <h2>Modern casework is a data problem wearing a legal costume</h2>
+  <p class="big">A single serious-fraud or criminal case now arrives as thousands of documents, multi-gigabyte phone extractions with hundreds of thousands of events, bank records spanning tens of thousands of transactions, and hours of recorded audio. The tools investigators have are <strong>viewers</strong> — one phone at a time, one PDF at a time, one spreadsheet at a time.</p>
+  <p>The connections — the same person appearing in a witness statement, a WhatsApp thread and a beneficiary field; the meeting that happened two streets from the cash withdrawal — live in investigators' heads and on whiteboards. They don't scale, they don't survive staff turnover, and they can't be handed to a court.</p>
+  <p>Generic AI chatbots don't solve this. You can't paste a case into a context window, you can't cite a chat transcript in a brief, and you can't send evidence to a shared multi-tenant cloud. Investigation teams are simultaneously the group with the most to gain from AI and the group least able to use it off the shelf.</p>
+</section>
+
+<section id="product">
+  <p class="eyebrow quiet">The product</p>
+  <h2>What Loupe actually is</h2>
+  <p>Loupe ingests every kind of case material through a structured pipeline and compiles it into a <strong>case knowledge graph</strong> — people, organisations, accounts, transactions, communications, events, locations, documents — held in a graph database, not a prompt. On top of that one model sit multiple investigative lenses, and an AI layer that is <em>bounded, audited and cited</em> rather than free-running.</p>
+
+  <div class="flow" aria-label="Pipeline">
+    <div class="step"><b>1</b>Ingest</div>
+    <div class="step"><b>2</b>Ground</div>
+    <div class="step"><b>3</b>Connect</div>
+    <div class="step"><b>4</b>Explore</div>
+    <div class="step"><b>5</b>Prove</div>
+  </div>
+
+  <ul>
+    <li><strong>Ingest.</strong> PDFs (with automatic OCR for scanned pages), Office documents, spreadsheets, email, images, video, audio — transcribed and <em>speaker-diarized</em>, with investigator-editable speaker naming — and Cellebrite phone extractions through a dedicated forensic parser.</li>
+    <li><strong>Ground.</strong> Every extracted fact is captured as a <em>grounded claim</em>: subject, predicate, the verbatim quote it rests on, the exact source location, and a confidence score. Claims pass an automated verification pass and carry review status (unreviewed / uncertain / verified / rejected) into the product.</li>
+    <li><strong>Connect.</strong> Entities are resolved and de-duplicated across documents (deterministic blocking → embedding similarity → model confirmation), then merged into the case graph without losing provenance — a merged entity keeps the sources of everything it absorbed.</li>
+    <li><strong>Explore.</strong> The same underlying model, through whichever lens fits the question: network graph (2D and 3D), chronological timeline, geographic map, sortable table, financial ledger, phone-report viewer, full-text evidence search.</li>
+    <li><strong>Prove.</strong> Citations that open the source document at the right page. A curated “Significant” layer that projects the case down to what matters for court, and <strong>Loupes</strong> — bonded collections of evidence that turn curated items into narratives: custom timelines, evidenced sequences, explained sets. Exports to CSV / PDF / DOCX. An audit log and a complete AI cost ledger underneath.</li>
+  </ul>
+</section>
+
+<section id="workspace">
+  <p class="eyebrow quiet">The workspace</p>
+  <h2>One case, every lens</h2>
+  <p>Loupe meets investigators where casework actually starts — in the evidence and the day's work — with the analytical lenses one click away. Depth is there when you reach for it, never dumped on you when you open the door.</p>
+  <div class="cardgrid">
+    <div class="card"><span class="k">Evidence</span><h4>The source of truth</h4><p>Folder-organised evidence explorer with case-wide full-text search, side-by-side original-and-extracted-text viewing, AI document summaries with clickable sources, previews for every format, and diarized transcript viewing.</p></div>
+    <div class="card"><span class="k">Workspace</span><h4>The investigator's desk</h4><p>Findings, theories with confidence levels, witness matrix, tasks, deadlines, pinned evidence, linked notes and point-in-time case snapshots.</p></div>
+    <div class="card"><span class="k">AI chat</span><h4>Ask with citations</h4><p>Natural-language Q&amp;A over the case — no theory required. Answers come back cited and visual: a result graph and result set alongside the text, with citations that open the document at the cited page. Context can be the whole case, the Significant layer, or a hand-picked selection.</p></div>
+    <div class="card"><span class="k">Agent</span><h4>An investigator with tools</h4><p>Describe a scenario to test and the agent works it with a visible investigation trail — gathering, cross-referencing and building durable outputs: Loupes, graphs, tables, charts, reports, maps. Detailed below.</p></div>
+    <div class="card"><span class="k">Curation</span><h4>Significance, highlights &amp; Loupes</h4><p>Investigators highlight passages, elevate entities and events to Significant, and bind them into Loupes — bonded collections of evidence, like custom narrative timelines. Every surface can project down to the curated layer instantly.</p></div>
+    <div class="card"><span class="k">Graph</span><h4>The network view</h4><p>Force-directed graph of the whole case in 2D or 3D. Search with boolean operators, expand neighbourhoods, run pathfinding and centrality algorithms, merge duplicates with full audit, and spotlight saved subgraphs.</p></div>
+    <div class="card"><span class="k">Timeline</span><h4>What happened, in order</h4><p>Every dated fact in the case as a filterable, clustered event stream — by event type, by entity, by range — with export.</p></div>
+    <div class="card"><span class="k">Map</span><h4>Where it happened</h4><p>Geocoded locations with confidence tiers, a needs-review queue for uncertain geocodes, heatmaps, movement trails, proximity analysis, and draw-your-own-area filtering.</p></div>
+    <div class="card"><span class="k">Financial</span><h4>Follow the money</h4><p>Transaction ledger with categorisation, counterparty assignment, amount corrections with recorded reasons, sender/beneficiary flow tables, trend charts and PDF export.</p></div>
+    <div class="card"><span class="k">Phone</span><h4>Cellebrite, cross-device</h4><p>Purpose-built viewer for phone extractions: comms threads, unified contacts, location playback, files, and a cross-phone graph that surfaces shared contacts and co-occurring devices across multiple handsets.</p></div>
+    <div class="card"><span class="k">Triage</span><h4>Before ingestion</h4><p>Scan mounted drives, classify files against known-good/known-bad hash sets, profile users and artifacts — decide what deserves full processing before spending a cent on it.</p></div>
+    <div class="card"><span class="k">Admin</span><h4>Run it like infrastructure</h4><p>User and role management, AI spend dashboards with a per-operation cost ledger, system logs, background task monitoring, and in-product platform updates.</p></div>
+  </div>
+</section>
+
+<section id="curation">
+  <p class="eyebrow quiet">Curation</p>
+  <h2>Raw text, elevated: highlights and Loupes</h2>
+  <p class="big">Automated extraction is the floor, not the ceiling. Loupe exposes the raw text layer of every document and gives investigators the tools to elevate what matters — so the case model reflects investigative judgment, not just what a pipeline decided to extract.</p>
+
+  <h3>The extracted-text workbench</h3>
+  <ul>
+    <li><strong>Side-by-side verification.</strong> Open any document and see the original — the scanned page, the PDF, the image — beside the text Loupe extracted from it. What the system "read" is transparent and checkable against the source, which matters when an OCR error has evidential consequences.</li>
+    <li><strong>Case-wide text search.</strong> The extracted text is a first-class surface: find every place a name, phone number or phrase appears across the whole case, whichever document it's buried in. Sometimes you don't want the extracted structure — you want the raw words.</li>
+    <li><strong>Highlight to promote.</strong> A highlight isn't a visual marker — it's the mechanism that lifts raw text into the structured world: <em>this sentence matters; make it a significant item.</em></li>
+    <li><strong>Provenance comes free.</strong> A highlight is anchored in the extracted text, which is anchored to the source document — so anything promoted this way carries an exact reference to its document, location and original wording.</li>
+    <li><strong>The agent works at this layer too.</strong> Full-text search is exposed as an agent tool, so AI answers can draw on the actual words in the documents, not only what extraction promoted into the graph.</li>
+  </ul>
+
+  <h3>Loupes: bonded collections that carry meaning</h3>
+  <p>The platform's namesake object. A <strong>Loupe</strong> is a <strong>bonded collection</strong> — documents, highlighted passages, entities, events, bound together to explain something: an event, a sequence, a collection, a thing. You gather the evidence, and you examine it through a Loupe.</p>
+  <ul>
+    <li><strong>A first-class object, not a filter.</strong> A Loupe is its own node, with its own identity, description and significance: <em>what this is, and why it exists.</em> The collection carries meaning, not just membership.</li>
+    <li><strong>Custom timelines are the flagship.</strong> A Loupe of events, ordered in time, is a bespoke narrative timeline: events that each stand alone as significant items — a call, a meeting, a transfer — composed into the story that connects them.</li>
+    <li><strong>Layered significance.</strong> Significance isn't flat. Individually significant items can belong to a larger significant structure whose meaning sits above its parts — the narrative, not just the moments in it.</li>
+    <li><strong>One Loupe, many views.</strong> A Loupe built as a timeline is still a set of nodes: view the same Loupe in the graph, or through whichever lens fits the question. One underlying object; the view is your choice.</li>
+    <li><strong>Fed by highlights.</strong> Highlight five key sentences across three documents, bind them into a Loupe, and you have a curated, fully evidenced narrative — every element traceable back to its source line.</li>
+  </ul>
+</section>
+
+<section id="agent">
+  <p class="eyebrow quiet">The agent</p>
+  <h2>An agent that does, not a chatbot that answers</h2>
+  <p class="big">Most "AI on your data" products stop at question answering. Loupe's agent is an operator: it carries a toolbox, and it works a case the way an analyst does — searching, cross-referencing, querying, and <strong>building outputs you keep</strong>.</p>
+
+  <div class="pullquote">An investigator doesn't arrive with questions — they arrive with theories. Loupe is the first tool where the unit of work is a hypothesis rather than a query: describe the scenario you want to test, and the agent assembles the Loupe that proves — or breaks — it.<span class="who">The blank page, reimagined</span></div>
+
+  <p>That's the ceiling, not the entry bar. Simple stays simple: ask a plain question in chat and get a cited answer with a result graph and result set — no theory required. The hypothesis workbench is where you go on the days you arrive with one.</p>
+
+  <ul>
+    <li><strong>It investigates, visibly.</strong> Every run streams a live investigation trail — each tool call, each result — so the investigator watches the reasoning happen instead of trusting a black box.</li>
+    <li><strong>A real toolbox.</strong> Case overview, graph entity search and schema inspection, entity details and neighbourhoods, pathfinding between entities, full-text document search, timeline events, financial records, map locations — and safe read-only Cypher for the questions no canned filter covers: complex grouping, aggregation, cross-source joins. If the answer is in the case, the agent has a tool that can reach it.</li>
+    <li><strong>It builds, not just answers.</strong> The agent assembles artifacts — graphs, tables, charts, maps, full reports — that persist as case objects and export to CSV, PDF and DOCX. Ask for "a chart of cash withdrawals by week, grouped by account" and you get the chart, not a paragraph about it.</li>
+    <li><strong>It asks when unsure.</strong> Ambiguous request? The agent requests clarification with concrete options rather than guessing — and it can be cancelled mid-run at any point.</li>
+    <li><strong>It respects the frame.</strong> Scope it to the whole case, the Significant layer, or a hand-picked selection; it proposes, the investigator disposes — merges and case changes stay under human control.</li>
+    <li><strong>It's governed like everything else.</strong> Read-only, case-scoped database access with enforced limits; bounded run length; every run's cost recorded and attributed.</li>
+    <li><strong>The ceiling is the toolbox — and the toolbox grows.</strong> Because capability is delivered as tools, every new platform surface becomes something the agent can wield. Tools can build visualisations, compose queries, generate deliverables — anything the platform can do, the agent can be handed. The agent compounds with the product.</li>
+  </ul>
+
+  <h3>The hypothesis workbench</h3>
+  <p>Testing a theory against evidence cuts more than one way — and each of these is only possible because a structured claims model sits underneath. You cannot do any of them against a folder of PDFs.</p>
+  <ul>
+    <li><strong>Assemble the scenario.</strong> Describe the theory in plain language and the agent gathers the passages, entities, events and transactions that bear on it, and binds them into a Loupe — a bonded collection you can walk as a timeline, a graph, or a draft narrative, every element carrying its source.</li>
+    <li><strong>Hunt what breaks it.</strong> A theory populated by a machine is confirmation bias at speed — so the agent is built to argue the other way: the contradicting date, the document placing someone elsewhere, the innocent explanation sitting two hops away. <em>Loupe looks for what breaks your theory.</em> What survives that is defensible in a way a supporting-evidence pile never is.</li>
+    <li><strong>Find what isn't there.</strong> Retrieval can never surface a document that doesn't exist — a structured case model can enumerate absences: the undisclosed statement month, the four-day hole in a phone extraction, the invoice referenced in an email that appears nowhere in the production.</li>
+    <li><strong>Hypotheses that stay open.</strong> Cases arrive in tranches over months. A standing hypothesis re-evaluates as new material lands — "two of your five supporting passages are now contradicted by the latest disclosure bundle" — so the case file stays alive between hearings, not frozen at the last review.</li>
+  </ul>
+</section>
+
+<section id="differentiation">
+  <p class="eyebrow quiet">Differentiation</p>
+  <h2>What makes this different from a straight LLM</h2>
+  <p class="big">The honest answer to “isn't this just ChatGPT with files?” is architectural, not cosmetic. A chatbot <em>reads</em> evidence and produces prose. Loupe <em>compiles</em> evidence into a permanent, queryable, provenance-carrying structure — and then lets AI operate on that structure under guardrails.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th></th><th>A straight LLM</th><th>Loupe</th></tr></thead>
+    <tbody>
+      <tr><td class="rowlab">Where the case lives</td><td class="dim">A context window — re-uploaded every session, forgotten after</td><td class="win">A persistent case knowledge graph plus vector and relational stores; the model of the case outlives every conversation</td></tr>
+      <tr><td class="rowlab">Scale</td><td class="dim">Bounded by tokens — hundreds of pages at best</td><td class="win">Entire corpora: thousands of documents, multi-gigabyte phone reports, ledgers designed for tens of thousands of transactions</td></tr>
+      <tr><td class="rowlab">Answers</td><td class="dim">Fluent, unsourced text</td><td class="win">Cited claims — click through to the exact page; the verbatim quote, source location and confidence are stored with every fact</td></tr>
+      <tr><td class="rowlab">Hallucination</td><td class="dim">Mitigated by hoping</td><td class="win">Contained by design: a grounded-claims ledger, an automated verification pass, and explicit review states investigators control</td></tr>
+      <tr><td class="rowlab">What the AI can do</td><td class="dim">Anything it decides to</td><td class="win">Cites every claim to the exact page and runs tools on the case model — building Loupes, groupings, visualisations and reports from plain instruction — with database access that stays case-scoped, read-only and limit-enforced; prompt-injection defenses; bounded runs with recorded cost</td></tr>
+      <tr><td class="rowlab">Repeatability</td><td class="dim">Ask twice, get two answers</td><td class="win">Deterministic pipeline stages — OCR, transcription, parsing, hashing, dedupe, geocoding — produce the same structure every time; AI adds interpretation on top, labelled as such</td></tr>
+      <tr><td class="rowlab">Human judgment</td><td class="dim">Lives outside the tool, lost between sessions</td><td class="win">Highlights, significance and Loupes — bonded collections of evidence, like custom narrative timelines — are durable objects in the case model; curation the whole system, including the agent, understands</td></tr>
+      <tr><td class="rowlab">Confidentiality</td><td class="dim">Multi-tenant cloud</td><td class="win">Single-tenant: each customer gets their own isolated instance; evidence never leaves it and never trains anyone's model</td></tr>
+      <tr><td class="rowlab">Output</td><td class="dim">A chat transcript</td><td class="win">An agent that builds durable artifacts — graphs, tables, charts, maps, reports — plus court-facing surfaces and CSV/PDF/DOCX exports, over an audit log</td></tr>
+      <tr><td class="rowlab">Model dependence</td><td class="dim">The model <em>is</em> the product</td><td class="win">Models are interchangeable components — OpenAI, Anthropic and Gemini behind one routing policy, assignable per workload. The moat is the evidence layer, not the model</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <span class="k">The one-sentence version</span>
+    <p>A straight LLM gives you a well-written opinion about the fraction of the evidence that fits in its context window. Loupe gives you a complete, permanent, cross-referenced model of <em>all</em> of it — where every claim carries its receipt, every AI action is bounded and costed, and everything you find leads back to a page you can put in front of a court.</p>
+  </div>
+</section>
+
+<section id="engineering">
+  <p class="eyebrow quiet">Engineering</p>
+  <h2>Built like evidence infrastructure, not a demo</h2>
+  <ul>
+    <li><strong>Service architecture:</strong> a React investigation console; a FastAPI case API; a separate asynchronous evidence-engine (API + queue worker) that owns ingestion; Neo4j for the case graph; Postgres for cases, auth, workspace and audit state; ChromaDB for semantic retrieval; Redis for job orchestration with live progress over WebSockets.</li>
+    <li><strong>Provenance as a first-class data structure:</strong> the grounded-claims ledger ties each entity and relationship to quote, location, confidence and verification status — and provenance survives merges and re-ingestion by accumulation, never overwrite.</li>
+    <li><strong>AI under governance:</strong> per-workload model routing across three providers, encrypted credential storage, a spend ledger attributing every call to user, case and operation, and safety layers (read-only query enforcement, injection defenses, run caps) between the model and the evidence.</li>
+    <li><strong>Deployment model that matches the buyer:</strong> one isolated stack per customer — the architecture agencies and regulated firms can actually approve. Each customer runs in an isolated cloud project with private networking, immutable releases, encrypted off-instance backup and rehearsed restore.</li>
+  </ul>
+
+  <div class="stats" aria-label="Design targets">
+    <div class="stat"><div class="n">10k+</div><div class="l">entities per case — dedupe design target</div></div>
+    <div class="stat"><div class="n">50k</div><div class="l">transactions per case, sub-2s filtering — financial target</div></div>
+    <div class="stat"><div class="n">35 GB</div><div class="l">single phone report, 100k+ events — Cellebrite target</div></div>
+    <div class="stat"><div class="n">3</div><div class="l">AI providers behind one policy layer, routable per workload</div></div>
+  </div>
+  <p class="soft" style="font-size:13px">Design capacities — what the platform is built to handle. On real casework it has processed multi-gigabyte phone extractions, 10k+ audited financial transactions, and full document corpora on federal cases carried to trial.</p>
+</section>
+
+<section id="capabilities">
+  <p class="eyebrow quiet">In depth</p>
+  <h2>The full capability surface</h2>
+  <p>Beyond the lenses, the platform carries a deep layer of investigative machinery — grouped here by what it means to the people who use it.</p>
+
+  <h3>Court-ready reporting &amp; exports</h3>
+  <ul>
+    <li><strong>Significance-based report builder</strong> — client- and court-ready reports assembled from the curated Significant layer and from Loupes, whose bonded, source-linked structure is already the skeleton of a report</li>
+    <li><strong>Bespoke agent reports</strong> — scoped in natural language ("everything connecting X to the offshore accounts, March–June"), for internal use</li>
+    <li><strong>Complete 15-section case-file export</strong> with rendered graph, timeline and map visualisations inside the document</li>
+    <li>One export standard across every deliverable: server-side authorization, an export audit trail, integrity checks and confidentiality labels on every download path</li>
+    <li>Isolated server-side PDF/DOCX generation with sanitized rendering — hostile evidence content can never execute in a report</li>
+    <li>Snapshot exports, theory-scoped exports, map CSV, court-ready timeline exports; long-running exports survive interruption and retry</li>
+    <li>AI-assisted content <em>permanently visually distinguished</em> from human findings in every deliverable</li>
+  </ul>
+
+  <h3>Document understanding, deeper</h3>
+  <ul>
+    <li><strong>Executive summaries</strong> — a 70-page statement compressed to roughly one page, for every processed document, with its own tab and controls</li>
+    <li><strong>Folder processing profiles</strong> — behaviour attaches to folders: a "Bank statements" folder processes financially, an "Interviews" folder gets full summaries; starter profile library included</li>
+    <li>Original full-text tab beside every AI summary — the source is always one click away</li>
+    <li><strong>Context-aware agentic geocoding</strong> — locations are reasoned against the case graph before being committed, ending footnote-address noise</li>
+  </ul>
+
+  <h3>Evidence integrity &amp; chain of custody</h3>
+  <ul>
+    <li><strong>Immutable original storage</strong> with tamper-resistant handling history; recycle, legal hold, retention lifecycle and controlled hard delete</li>
+    <li>Idempotent, resumable, cancellable ingestion jobs with stage checkpoints — a crash never corrupts a case</li>
+    <li>Streamed quarantine intake with enforced limits, malware and archive-bomb defense, and safe, actionable rejection messages</li>
+    <li>Resumable multi-gigabyte uploads; deterministic duplicate handling; reconnect-safe progress and queue UI</li>
+    <li>Reviewed document-summary edits with full version history — the AI original is never erased</li>
+    <li>Provenance and review-status tiers attached to <em>every</em> extracted fact, preserved through merge, edit and conflict exposure</li>
+  </ul>
+
+  <h3>Investigation surfaces at full depth</h3>
+  <ul>
+    <li>Adaptive graph layouts with per-user persistence; a curated toolbar; schema-driven entity creation with duplicate detection</li>
+    <li>A relationship workflow that carries investigator provenance; lossless merges with pre-merge preview and immutable audit</li>
+    <li>Graph algorithms validated against fixtures, with plain-language explanations and honest failure states; centrality bounded for production-size graphs</li>
+    <li>Timeline: date-precision and time-source modelling, verified chronology with citations, saved-timeline curation, responsive at case scale</li>
+    <li>Map: relocate entities in place, coordinate validation with geocoding provenance, manual fixes that survive reprocessing and AI overwrite, free-text map search</li>
+    <li><strong>Honest full-dataset semantics everywhere</strong> — no hidden caps, visible truncation banners on every capped surface, auditable bulk edit</li>
+  </ul>
+
+  <h3>Governed AI, hardened further</h3>
+  <ul>
+    <li>Owner-private conversations; one chat context and selection pipeline reachable from every case view</li>
+    <li><strong>Durable citations</strong> that survive re-ingestion, with qualified (never over-confident) answers</li>
+    <li>Agent run limits, adversarial-input hardening, and investigator-approved merges only — the agent proposes, the human disposes</li>
+    <li>Provenance-stamped agent artifacts that persist as first-class case objects</li>
+    <li>AI budgets and spend caps with anomaly alerts, complete cost attribution and provider-outage resilience</li>
+  </ul>
+
+  <h3>Phone forensics, end to end</h3>
+  <ul>
+    <li>Full artifact coverage from UFED extractions — notifications, voicemail, network usage, journeys and more — behind <strong>fail-loud validation gates</strong>: nothing drops silently</li>
+    <li>Identity pipeline: E.164 phone normalization, device-owner inference, alias preservation; audited person merges that respect per-device naming</li>
+    <li>Timeline correctness — attribution, timezone handling, multi-source dedupe — plus inline media and virtualization sized for 35 GB / 100k+ event reports</li>
+    <li>Cross-phone <strong>directional flow graph</strong> with no silent caps; server-side graph search, path-flow and edge drill-down</li>
+    <li>A Cellebrite search &amp; discovery center; per-device client reports with callouts; locations rendered at full scale; authorised Cellebrite exports</li>
+    <li><strong>Ingest reconciliation:</strong> parsed artifacts are proven against the written case data for every report — nothing drops silently</li>
+  </ul>
+
+  <h3>Financial investigation, end to end</h3>
+  <ul>
+    <li><strong>Correctness first:</strong> decimal and currency-aware math, every unparseable amount surfaced and counted — never a silent zero</li>
+    <li>Designed for 50,000-transaction ledgers with sub-2-second filtering and concurrent-edit safety</li>
+    <li>Payments/Receipts semantics and the Money Flow union export; standardised financial and cost-ledger exports</li>
+    <li>A proven data heritage: 10k+ hand-curated, categorised, audited transactions from real casework</li>
+    <li>Per-value provenance: the file, page and quote behind every number</li>
+  </ul>
+
+  <h3>Enterprise security &amp; identity</h3>
+  <ul>
+    <li><strong>Authentication by default</strong> on every API route; object-level case-membership checks on every route family</li>
+    <li>Server-side sessions with revocation and login rate limiting; hardened cookies, CSRF protection, strict CORS</li>
+    <li>TOTP multi-factor authentication with recovery codes; self-service and admin-initiated password reset</li>
+    <li>The evidence engine locked behind authenticated backend-only access; shared secrets replaced; datastore ports closed</li>
+    <li>Case archive lifecycle, collaboration and ownership invariants, reversible user deactivation</li>
+  </ul>
+
+  <h3>Operations, recovery &amp; provisioning</h3>
+  <ul>
+    <li><strong>Immutable, append-only security audit trail</strong>, separated from technical logs, with retention and tamper-proofing</li>
+    <li>Encrypted off-instance backups with monitoring, a pre-deployment backup gate, and a <em>rehearsed, automated</em> clean restore</li>
+    <li>CI-built immutable releases with SBOM and vulnerability scanning; staged promotion; recovery-safe expand/contract migrations; rollback rehearsal</li>
+    <li>Trustworthy health and readiness endpoints gating every deploy; a production HTTPS edge</li>
+    <li><strong>Terraform per-customer provisioning</strong> — isolated cloud project per customer, ports 80/443 only — plus audited support access and offboarding with export, retention expiry and two-person deletion</li>
+    <li>Metrics coverage, alert rules with responder routing, and rehearsed six-service incident runbooks</li>
+    <li>A hard internal rule: <strong>no external case data enters an instance until the security, isolation, backup and legal gates pass</strong></li>
+  </ul>
+
+  <h3>Release quality &amp; compliance</h3>
+  <ul>
+    <li>Hard-gating CI on every pull request; browser end-to-end journeys for release-critical flows; a repeatable load-test harness with synthetic scale fixtures</li>
+    <li>Published data-scale limits with honest cap handling — a 571k-node corpus is the release verification benchmark</li>
+    <li>WCAG 2.1 AA accessibility and full keyboard operability</li>
+    <li>Versioned customer documentation, operator runbooks, and a legal/privacy/AI terms package with counsel review</li>
+    <li>First-run onboarding with a demo case, support channels, pilot commercial terms, and a full release drill with evidence capture before the first customer</li>
+  </ul>
+</section>
+
+<section id="market">
+  <p class="eyebrow quiet">Market</p>
+  <h2>Who buys this</h2>
+  <div class="cardgrid">
+    <div class="card"><h4>Financial-crime &amp; fraud units</h4><p>The money view plus the graph: ledgers, counterparties, flow — connected to the people and communications around them.</p></div>
+    <div class="card"><h4>Law enforcement &amp; prosecutors</h4><p>Phone extractions, timelines and maps in one place, with the provenance chain court work demands.</p></div>
+    <div class="card"><h4>Law firms &amp; disputes teams</h4><p>Case-corpus comprehension at discovery scale, with citations that survive a partner's scrutiny.</p></div>
+    <div class="card"><h4>Corporate investigations &amp; compliance</h4><p>Internal investigations on infrastructure the security team can approve — nothing leaves the tenant.</p></div>
+  </div>
+  <p><strong>Why now:</strong> three curves crossed. Digital evidence volume is exploding (a phone extraction in nearly every case). LLMs finally became good enough to read evidence at scale. And bare LLMs remain unusable in evidence contexts — no provenance, no audit, no confidentiality. The gap between those last two facts is exactly where Loupe sits: the trust layer that makes AI admissible in investigative work.</p>
+</section>
+
+<section id="application">
+  <p class="eyebrow quiet">Application material</p>
+  <h2>Ready-to-paste blocks</h2>
+
+  <div class="copyblock"><span class="k">One-liner</span>
+  Loupe turns raw case evidence — documents, phone extractions, financial records, audio — into one connected, source-linked intelligence layer that investigators can explore, question and take to court.</div>
+
+  <div class="copyblock"><span class="k">~50 words</span>
+  Loupe is an investigation platform for fraud and criminal casework. It ingests every kind of case evidence and compiles it into a connected knowledge graph — explorable as a network, timeline, map and financial ledger — where AI answers questions with citations and every fact links back to its source page.</div>
+
+  <div class="copyblock"><span class="k">~100 words</span>
+  Investigation teams drown in digital evidence: thousands of documents, multi-gigabyte phone extractions, tens of thousands of transactions per case. Their tools are viewers; the connections live in their heads. Loupe ingests everything through a forensic-grade pipeline and builds one case knowledge graph where every extracted fact carries its verbatim quote, source location and confidence. Investigators explore it as a graph, timeline, map, table and ledger; an agent answers with citations and runs tools across the case — grouping transactions, generating visualisations, and assembling whole evidence collections from a plain instruction — under hard guardrails: case-scoped, cost-metered, every answer tied to citations an investigator can check. Deployed single-tenant, so evidence never leaves the customer's instance. It's the layer that makes AI usable — and defensible — in real casework.</div>
+
+  <div class="copyblock"><span class="k">The namesake feature</span>
+  Loupe is named for what investigators do inside it: gather evidence and examine it closely. A "Loupe" is the product's core curation object — a <strong>bonded collection</strong> of documents, highlighted passages, entities or events, with its own identity and description, bound together to explain an event, a sequence, or a thing. Bind five highlighted sentences from three documents into a Loupe and you have a fully evidenced narrative — viewable as a timeline, a graph, or whichever lens the question calls for. And the agent assembles them from plain language: describe the scenario, get the bonded collection that tests it.</div>
+
+  <div class="copyblock"><span class="k">The agent, one breath</span>
+  An investigator doesn't have questions — they have theories. Loupe is the first tool where the unit of work is a hypothesis rather than a query: describe the scenario you want to test and the agent works the case — searching the graph and the raw document text, running safe read-only queries for complex grouping and aggregation — and assembles the Loupe that proves or breaks it, alongside durable outputs: tables, charts, timelines, maps, full reports. Reasoning trail visible, database access read-only and case-scoped, cost metered per run. Question-answering AI tells you about your evidence; an agent with tools produces the work product.</div>
+
+  <div class="copyblock"><span class="k">Differentiation, one breath</span>
+  ChatGPT reads what fits in a prompt and gives you unsourced prose. Loupe compiles the entire case into permanent structure, cites every answer down to the page, bounds what the AI may touch, meters what it spends, and runs inside the customer's own instance. The model is a component; the evidence layer is the product.</div>
+
+  <div class="copyblock"><span class="k">Status</span>
+  Loupe is a working investigation platform in production use on real casework — multi-gigabyte phone extractions, tens of thousands of curated financial transactions, full document corpora — built inside a US private-investigations practice and used there to carry federal cases to completion: verifying discovery handed over by the prosecution, with three cases now gone to trial and more in active discovery phases. It runs single-tenant and hardened, behind a security-gated process for onboarding external customers' evidence.</div>
+</section>
+
+<footer>
+  Loupe — connected intelligence for complex work. Compiled 25 July 2026 from the Loupe platform and product plans.
+</footer>
+
+<!-- HOLD: not for external use until the CI/test story is in place (DKT-723).
+     "Development runs on an in-house autonomous AI engineering pipeline that takes
+     features from specification to reviewed pull request, letting a small team ship
+     at multi-team pace behind a security-gated release process." -->
+
+</div>
