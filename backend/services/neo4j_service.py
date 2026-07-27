@@ -492,10 +492,18 @@ class Neo4jService:
 
                 links = []
                 if node_keys:
+                    # Case-scope BOTH endpoints, not just the relationship.
+                    # `key` is not unique across cases — the orphaned zombie
+                    # ingestion (a32edfa3) carries nodes with the very same
+                    # keys as this case, so matching on key alone binds the
+                    # zombie's twin and expands from its corrupt relationship
+                    # chain ("NOT PART OF CHAIN") -> 500. Filtering a/b on
+                    # case_id keeps traversal on this case's clean chains.
                     rels_result = session.run(
                         """
                         MATCH (a)-[r]->(b)
-                        WHERE a.key IN $node_keys AND b.key IN $node_keys
+                        WHERE a.case_id = $case_id AND b.case_id = $case_id
+                          AND a.key IN $node_keys AND b.key IN $node_keys
                           AND r.case_id = $case_id
                         RETURN a.key AS source, b.key AS target,
                                type(r) AS type, r.weight AS weight
@@ -571,9 +579,13 @@ class Neo4jService:
 
             if node_keys and len(node_keys) > 0:
                 keys_list = list(node_keys)
+                # Case-scope both endpoints — see the degree-capped branch
+                # above: matching on `key` alone binds the orphaned zombie
+                # case's same-keyed nodes and walks its corrupt chains.
                 rels_query = """
                     MATCH (a)-[r]->(b)
-                    WHERE a.key IN $node_keys AND b.key IN $node_keys
+                    WHERE a.case_id = $case_id AND b.case_id = $case_id
+                      AND a.key IN $node_keys AND b.key IN $node_keys
                       AND r.case_id = $case_id
                     RETURN
                         a.key AS source,
@@ -615,7 +627,7 @@ class Neo4jService:
             # Get the central node and neighbours - always filter by case_id
             result = session.run(
                 f"""
-                MATCH path = (center {{key: $key}})-[*1..{depth}]-(neighbour)
+                MATCH path = (center {{key: $key, case_id: $case_id}})-[*1..{depth}]-(neighbour)
                 WHERE neighbour.case_id = $case_id
                 WITH center, neighbour, relationships(path) AS rels
                 UNWIND rels AS r

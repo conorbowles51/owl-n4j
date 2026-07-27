@@ -62,6 +62,16 @@ class EvidenceRecord(BaseModel):
     processed_at: Optional[str] = None
     last_error: Optional[str] = None
     summary: Optional[str] = None  # Document summary if available
+    # Cellebrite report-folder rows. `sync_filesystem` registers one record per
+    # UFED report root (see _register_cellebrite_dir_record) and tags it with
+    # these fields; the Process Evidence UI keys off `is_cellebrite_folder` to
+    # list them as processable reports rather than loose files. Without them
+    # declared here the response model silently drops the tags and every report
+    # folder renders in the generic unprocessed-files bucket.
+    is_cellebrite_folder: Optional[bool] = None
+    cellebrite_report_name: Optional[str] = None
+    cellebrite_device_model: Optional[str] = None
+    cellebrite_phone_numbers: Optional[List[str]] = None
 
 
 class EvidenceListResponse(BaseModel):
