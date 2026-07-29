@@ -226,11 +226,42 @@ Cut your comparison table to five rows. These five:
 | | A straight LLM | Loupe |
 |---|---|---|
 | **Where the case lives** | A context window, forgotten after | A persistent case knowledge graph — outlives every conversation |
-| **Scale** | Hundreds of pages at best | Entire corpora: thousands of documents, multi-gigabyte phone reports |
+| **Scale** | Hundreds of pages at best | A real case: ten phones, 200,000 documents, 500 hours of audio — 435GB, all of it modelled |
 | **What the AI does** | Answers in prose, one conversation at a time | **Cites every claim** to the exact page — and **runs tools on the case model:** builds Loupes, groupings and outputs from plain instruction |
 | **Confidentiality** | Multi-tenant cloud | Single-tenant: evidence never leaves the customer's instance |
 | **Human judgment** | Lives outside the tool — lost between sessions | Highlights, significance and **Loupes** — bonded collections of evidence, like custom narrative timelines — are **durable objects in the case model.** The investigator's thinking is stored, not retyped |
 | **Model dependence** | The model *is* the product | Models are interchangeable components. **The moat is the evidence layer.** |
+
+**Two changes on 29 July, and the first one matters more than it looks.**
+
+**The "What the AI does" row led with citation, and that is the wrong claim to lead
+with.** Finding F1 of the competitive analysis is emphatic: citations commoditised
+between November 2025 and February 2026 — Relativity, Everlaw, DISCO and Reveal all
+ship them and most give them away — so leading with provenance is arguing about a free
+feature. The row now leads with **how the answer is reached**: a straight LLM retrieves
+a sample of what fits and reasons over it, and *you cannot know what it missed*; Loupe
+traverses the model and returns the actual matching set. Completeness is the claim.
+Citation stays in the row, in second place, where it belongs — a consequence of the
+structure rather than the pitch.
+
+**Scale is now a real case rather than an adjective.** "Thousands of documents,
+multi-gigabyte phone reports" is the sort of phrase every vendor writes. Ten phones,
+200,000 documents, 500 hours of audio, 435GB is a case, and it is the same case the
+per-matter economics on slide 10 are built from — so the two slides corroborate each
+other instead of sitting in separate registers.
+
+**And a line was added beneath the table**, because the slide otherwise clears a low
+bar. Beating ChatGPT is not the achievement; the specialists publish their own
+ceilings, and quoting them converts the slide from *"we are better than a chatbot"* to
+*"we are better than the category"* at the cost of one sentence: Relativity caps at
+300,000 documents per index and 5,000 per extraction job, CoCounsel manages ~200 per
+run, and Reveal's own documentation states its search is "designed for precision, not
+recall". Those are their numbers, from their documentation, which is what makes them
+usable.
+
+**Six rows, not seven.** An earlier revision split retrieval-versus-traversal into its
+own row and the table overflowed the slide. The two AI points belong together anyway —
+how the answer is reached, and what the agent then does with it.
 
 The **Human judgment** row is new, from the 25 July brief, and it earns its place —
 take six rows rather than cut it. It is the only row that answers the question a

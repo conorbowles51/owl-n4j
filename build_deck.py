@@ -413,9 +413,9 @@ def slide5(prs):
         ("Where the case lives", "A context window, forgotten after",
          "A persistent case knowledge graph — outlives every conversation"),
         ("Scale", "Hundreds of pages at best",
-         "Entire corpora: thousands of documents, multi-gigabyte phone reports"),
-        ("What the AI does", "Answers in prose, one conversation at a time",
-         "Cites every claim to the page — and runs tools: builds Loupes, groupings and outputs from plain instruction"),
+         "A real case: ten phones, 200,000 documents, 500 hours of audio — 435GB, all of it modelled"),
+        ("What the AI does", "Retrieves a sample of what fits and reasons over it in prose. You cannot know what it missed",
+         "Traverses the model and returns the actual matching set, every claim carrying its page — then runs tools: Loupes, groupings, timelines, outputs"),
         ("Confidentiality", "Multi-tenant cloud",
          "Single-tenant: evidence never leaves the customer's instance"),
         ("Human judgment", "Lives outside the tool — lost between sessions",
@@ -424,8 +424,8 @@ def slide5(prs):
          "Models are interchangeable components. The moat is the evidence layer."),
     ]
 
-    tbl_shape = s.shapes.add_table(len(rows) + 1, 3, MARGIN_L, Inches(1.85),
-                                   BODY_W, Inches(4.05))
+    tbl_shape = s.shapes.add_table(len(rows) + 1, 3, MARGIN_L, Inches(1.8),
+                                   BODY_W, Inches(4.25))
     tbl = tbl_shape.table
     tbl.columns[0].width = Inches(2.6)
     tbl.columns[1].width = Inches(4.3)
@@ -461,12 +461,17 @@ def slide5(prs):
             para(tf, text, size=12, colour=colour, bold=bold, first=True,
                  space_before=0, line=1.15)
 
-    tf = textbox(s, MARGIN_L, Inches(6.15), BODY_W, Inches(1.0))
-    para(tf, "A straight LLM gives you a well-written opinion about the "
-             "fraction of the evidence that fits in its context window. Loupe "
-             "gives you a complete, permanent, cross-referenced model of all of "
-             "it — where **every claim carries its receipt.**",
-         size=16, colour=PAPER, first=True, space_before=0)
+    tf = textbox(s, MARGIN_L, Inches(6.32), BODY_W, Inches(1.1))
+    para(tf, "**And not only ChatGPT — the specialists publish their own ceilings.** "
+             "Relativity caps at 300,000 documents per index and 5,000 per extraction "
+             "job; CoCounsel manages ~200 per run; Reveal states its search is "
+             "\u201cdesigned for precision, not recall\u201d.",
+         size=12, colour=MUTED, first=True, space_before=0)
+    para(tf, "A straight LLM gives you a well-written opinion about the fraction of "
+             "the evidence that fits in its context window. Loupe gives you a "
+             "complete, permanent, cross-referenced model of all of it — where "
+             "**every claim carries its receipt.**",
+         size=14, colour=PAPER, space_before=8)
 
     notes(s, """The HUMAN JUDGMENT row is the one that answers the question a
 technical investor is actually holding: what stops Microsoft GraphRAG
