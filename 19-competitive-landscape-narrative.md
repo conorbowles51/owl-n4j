@@ -668,8 +668,8 @@ does today — which is to pay a forensic vendor to extract each device, pay per
 host the result somewhere it cannot be properly analysed, pay an examiner by the hour to look at
 parts of it, and then pay its own people to stitch the pieces together by hand.
 
-On a serious matter that runs to **$34,000–$131,000 and sixty to a hundred hours before anyone has
-answered a question about the evidence** — and the largest single line in it, hosting, is charged per
+On a serious matter that runs to **$34,000–$131,000 and sixty to a hundred hours of evidence
+handling before anyone has answered a question about it** — and the largest single line in it, hosting, is charged per
 gigabyte per month, so it grows with exactly the material this platform exists to model. A 435GB
 federal case costs $4,350 a month to keep hosted. The outcome that money buys is a spreadsheet.
 
@@ -692,7 +692,7 @@ product already scores respectably in.
 
 > **A serious case burns $34,000–$131,000 on processing, hosting and examiner time before anyone has
 > answered a single question about the evidence. Loupe replaces that layer for a fraction of it —
-> and hands back sixty to a hundred investigator hours per matter.**
+> and hands back thirty to fifty investigator hours per matter.**
 
 Everything below is the working behind those four paragraphs.
 
@@ -748,7 +748,7 @@ murder, 286 capital. Investigator time bills $85–225/hour (average $132), para
 | **Hosting** | $1,800 | **$21,600** | **$28,800** | **$104,400** |
 | Examiner analysis | $2,400 | $12,000 | $16,000 | $24,000 |
 | **Displaced subtotal** | **$4,350** | **$34,200** | **$45,600** | **$130,575** |
-| Hours released | 20h → $1,496 | 58h → $4,384 | 87h → $6,510 | 100h → $7,508 |
+| Evidence-handling hours → **hours saved** | 20h → **10h** | 58h → **29h** | 87h → **43h** | 100h → **50h** |
 | **Displaceable value** | **$5,846** | **$38,584** | **$52,110** | **$138,082** |
 | Captured at $12,000 | 205% | 31% | 23% | 9% |
 

@@ -640,71 +640,82 @@ calls — which is exactly what slide 9 asks NDRC to fund.""")
 
 
 def slide6c(prs):
-    """Customer value — what a case costs today, and what comes back."""
+    """Customer value — the same case costed today and with Loupe."""
     s = blank(prs); bg(s)
-    from pptx.enum.shapes import MSO_SHAPE
     kicker(s, "Customer value")
-    heading(s, "We don't ask for new budget.\nWe displace one that already exists.", size=30)
+    heading(s, "Today a serious case costs $38–139k.\nWith Loupe, $16–20k.", size=30)
     rule(s, Inches(2.35), width=Inches(1.1))
 
-    tf = textbox(s, MARGIN_L, Inches(2.55), BODY_W, Inches(0.62))
-    para(tf, "Before anyone has answered a question about the evidence, a serious "
-             "matter has already paid a forensic vendor, a processing bill, and "
-             "hosting charged **per gigabyte per month for the life of the case** — "
-             "to have phone data come out as spreadsheets.",
-         size=14, colour=PAPER, first=True, space_before=0)
+    tf = textbox(s, MARGIN_L, Inches(2.52), BODY_W, Inches(0.5))
+    para(tf, "Same case, same evidence, both columns. Ranges run from a two-phone "
+             "fraud matter to a ten-phone federal case.",
+         size=13, colour=MUTED, first=True, space_before=0)
 
-    stats = [
-        ("$34–131k", "of spend displaced per serious case — processing, hosting and examiner analysis"),
-        ("58–100 hrs", "of investigator and paralegal time returned on the same case"),
-        ("$0.9–1.9M", "of displaceable value carried by one practice every year"),
-        ("$4,350 / mo", "what hosting a single 435GB federal case costs today, for as long as it runs"),
+    rows = [
+        ("Forensic extraction — devices still go to a vendor", "$3,650 – 8,450", "$3,650 – 8,450"),
+        ("Processing, hosting and examiner analysis", "$34,200 – 130,575", "—"),
+        ("Loupe, per matter", "—", "$12,000"),
+        ("Cash per case", "$37,850 – 139,025", "$15,650 – 20,450"),
+        ("Investigator and paralegal hours on evidence handling", "58 – 100 hrs", "29 – 50 hrs"),
     ]
-    cw, cg = Inches(2.87), Inches(0.17)
-    for i, (big, label) in enumerate(stats):
-        left = MARGIN_L + i * (cw + cg)
-        box = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, Inches(3.42), cw, Inches(1.72))
-        box.fill.solid(); box.fill.fore_color.rgb = PANEL
-        box.line.color.rgb = ACCENT_SOLID if i < 3 else ACCENT_DIM
-        box.line.width = Pt(1.25)
-        box.shadow.inherit = False
-        t = textbox(s, left + Inches(0.17), Inches(3.58), cw - Inches(0.34), Inches(1.45))
-        para(t, big, size=27, colour=PAPER, bold=True, first=True, space_before=0,
-             font=FONT_H)
-        para(t, label, size=11.5, colour=MUTED, space_before=8)
+    tbl_shape = s.shapes.add_table(len(rows) + 1, 3, MARGIN_L, Inches(3.1),
+                                   BODY_W, Inches(2.5))
+    tbl = tbl_shape.table
+    tbl.columns[0].width = Inches(6.3)
+    tbl.columns[1].width = Inches(2.65)
+    tbl.columns[2].width = Inches(2.68)
 
-    tf2 = textbox(s, MARGIN_L, Inches(5.42), BODY_W, Inches(1.4))
-    para(tf2, "**Priced at $12,000 a matter**, against $34,000–$131,000 it removes and "
-              "the hours it hands back. The extraction bill stays — devices still go to "
-              "a vendor. Everything downstream of it does not.",
-         size=15, colour=PAPER, first=True, space_before=0)
-    para(tf2, "Displaceable value moves twenty-four times between the smallest and "
-              "largest matters, so price scales with device count, data volume and "
-              "duration — the same drivers as the bill it replaces. **Setting that "
-              "scaling is what the pilot is for.**",
+    for c, text in enumerate(["Per serious case", "Today", "With Loupe"]):
+        cell = tbl.cell(0, c)
+        cell.fill.solid(); cell.fill.fore_color.rgb = INK
+        cell.margin_left = Inches(0.12); cell.margin_top = Inches(0.04)
+        cell.margin_bottom = Inches(0.04)
+        para(cell.text_frame, text, size=12,
+             colour=(ACCENT if c == 2 else MUTED), bold=True, first=True,
+             space_before=0)
+
+    for r, (label, today, withl) in enumerate(rows, start=1):
+        total = label.startswith("Cash")
+        for c, text in enumerate([label, today, withl]):
+            cell = tbl.cell(r, c)
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = PANEL if total else INK
+            cell.margin_left = Inches(0.12); cell.margin_top = Inches(0.05)
+            cell.margin_bottom = Inches(0.05)
+            tfc = cell.text_frame; tfc.word_wrap = True
+            para(tfc, text, size=13,
+                 colour=(PAPER if (c == 0 or total) else (ACCENT if c == 2 else MUTED)),
+                 bold=total, first=True, space_before=0)
+
+    tf2 = textbox(s, MARGIN_L, Inches(5.78), BODY_W, Inches(1.3))
+    para(tf2, "**Saved: $22,000–119,000 and 29–50 hours per case.** Across a practice "
+              "running fifteen to thirty serious matters a year, that is "
+              "**$0.6–1.4M and 550–1,150 hours returned.**",
+         size=16, colour=PAPER, first=True, space_before=0)
+    para(tf2, "The extraction bill is unchanged — we analyse what was produced, we do "
+              "not acquire it. Everything downstream of it is what we replace.",
          size=13, colour=MUTED, space_before=9)
 
-    notes(s, """Four numbers. Say them slowly and do not add a fifth.
+    notes(s, """Both columns are the same case. That is the whole point of the slide —
+it is not a claim about savings in the abstract, it is one matter costed twice.
 
 The buyer is not choosing between us and a competitor. They are choosing between us
-and what they do today: pay a forensic vendor to extract each device, pay per gigabyte
-per MONTH to host the result somewhere it cannot be properly analysed, pay an examiner
-by the hour to look at parts of it, then pay their own people to stitch it together.
+and what they do today: a forensic vendor per device, processing and hosting charged
+per gigabyte per MONTH for the life of the matter, an examiner by the hour, and their
+own people stitching it together.
 
-Hosting is the line that breaks, and it is the sharpest number in the study. Charged
-per gigabyte per month for the life of the matter, it scales with exactly the evidence
-we model. A 435GB federal case is $4,350 a month. The outcome that money buys is a
-spreadsheet.
+Hosting is the line that breaks. A 435GB federal case is $4,350 a month, every month,
+and the outcome that money buys is a spreadsheet. If one number lands, make it that.
 
-If asked where the numbers come from: published 2026 rates. eDiscovery processing
-$3-10/GB and hosting $5-15/GB/month from the Winter 2026 pricing survey; forensic
-vendor rate cards at $3,650 for a one-or-two-device case; examiner analysis $300-500/h;
-case hours from RAND's National Public Defense Workload Study; investigator time
-$85-225/h. The one modelled assumption is the share of case hours that is evidence
-handling — say so if pressed, do not pretend it is measured.
+CONCEDE THE EXTRACTION BILL OUT LOUD. Devices still go to a vendor and we do not
+displace that. Saying so is what makes the other numbers credible.
 
-Do not claim we remove the extraction bill. We do not, and conceding it is what makes
-the rest credible.""")
+Provenance if pressed: published 2026 rates — eDiscovery processing $3-10/GB and
+hosting $5-15/GB/month from the Winter 2026 pricing survey; forensic vendor rate
+cards; examiner analysis $300-500/h; case hours from RAND's National Public Defense
+Workload Study; investigator $85-225/h, paralegal $100-200/h. The single modelled
+assumption is the share of case hours that is evidence handling, and that half of it
+goes. Say so plainly — do not present it as measured.""")
     return s
 
 
