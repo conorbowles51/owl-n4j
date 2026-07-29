@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react"
-import { AgentSection } from "./components/AgentSection"
-import { CapabilityMatrix } from "./components/CapabilityMatrix"
 import { ContactModal } from "./components/ContactModal"
-import { CurationSection } from "./components/CurationSection"
 import { FinalCta } from "./components/FinalCta"
-import { FlowSection } from "./components/FlowSection"
 import { Footer } from "./components/Footer"
 import { Hero } from "./components/Hero"
+import {
+  CaseModelStory,
+  DifferenceSection,
+  ImpactSection,
+  LoupeWorkflowSection,
+  ProblemSection,
+  ProofSection,
+} from "./components/NarrativeSections"
 import { Navigation } from "./components/Navigation"
-import { ProductStage } from "./components/ProductStage"
-import { TrustSection } from "./components/TrustSection"
+import { ProductExplorer } from "./components/ProductExplorer"
 
 export function App() {
   const [contactOpen, setContactOpen] = useState(false)
@@ -39,12 +42,13 @@ export function App() {
       <Navigation onContact={() => setContactOpen(true)} />
       <main id="main-content">
         <Hero onContact={() => setContactOpen(true)} />
-        <ProductStage />
-        <CapabilityMatrix />
-        <FlowSection />
-        <CurationSection />
-        <AgentSection />
-        <TrustSection />
+        <ProblemSection />
+        <CaseModelStory />
+        <ProductExplorer />
+        <LoupeWorkflowSection />
+        <DifferenceSection />
+        <ProofSection />
+        <ImpactSection />
         <FinalCta onContact={() => setContactOpen(true)} />
       </main>
       <Footer onContact={() => setContactOpen(true)} />

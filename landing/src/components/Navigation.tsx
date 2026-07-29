@@ -7,10 +7,9 @@ interface NavigationProps {
 }
 
 const links = [
-  { href: "#platform", label: "Product" },
-  { href: "#capabilities", label: "Why Loupe" },
-  { href: "#agent", label: "Agent" },
-  { href: "#control", label: "Security" },
+  { href: "#platform", label: "Platform" },
+  { href: "#workflow", label: "How it works" },
+  { href: "#proof", label: "Trust" },
 ]
 
 export function Navigation({ onContact }: NavigationProps) {
@@ -54,7 +53,7 @@ export function Navigation({ onContact }: NavigationProps) {
         <div className="nav-actions">
           <ThemeToggle />
           <button className="button button-quiet nav-contact" type="button" onClick={onContact}>
-            Request a walkthrough
+            Book a walkthrough
             <span aria-hidden="true">↗</span>
           </button>
           <button
@@ -90,7 +89,7 @@ export function Navigation({ onContact }: NavigationProps) {
             onContact()
           }}
         >
-          Request a walkthrough
+          Book a walkthrough
         </button>
       </div>
     </header>

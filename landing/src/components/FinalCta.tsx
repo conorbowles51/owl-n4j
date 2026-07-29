@@ -11,21 +11,16 @@ export function FinalCta({ onContact }: FinalCtaProps) {
       <div className="final-lens" aria-hidden="true"><i /><i /></div>
       <div className="container final-cta-inner">
         <Reveal>
-          <p className="section-index">Find the signal in everything</p>
-          <h2>Bring the case.<br /><span>Keep the receipt.</span></h2>
+          <p className="section-index">See the whole case</p>
+          <h2>Bring the evidence.<br /><span>Find the connections.</span></h2>
           <p>
-            See how Loupe turns complex evidence into connected, source-linked intelligence your
-            team can explore, explain and defend.
+            See how Loupe gives your team a connected, source-linked view of complex evidence—from
+            first review to final finding.
           </p>
-          <div className="final-audiences" aria-label="Teams Loupe supports">
-            <span>Fraud teams</span>
-            <span>Law enforcement</span>
-            <span>Legal disputes</span>
-            <span>Corporate investigations</span>
-          </div>
           <button className="button button-primary button-large" type="button" onClick={onContact}>
             Request a private walkthrough <span aria-hidden="true">↗</span>
           </button>
+          <a className="final-cta-email" href="mailto:sales@loupe.ie">sales@loupe.ie</a>
         </Reveal>
       </div>
     </section>
