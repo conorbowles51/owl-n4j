@@ -801,12 +801,27 @@ requires it.
 | **Single-tenant deployment** | Already built | — | The strongest control in the set, and it is a product decision rather than a compliance one: another firm's evidence never shares a tenant with anyone. |
 | **Start the SOC 2 clock** | GRC tooling **$6–30k/yr** | Begins immediately | The observation window is the long pole. Putting controls in place and starting the window now means that when a deal requires Type II you are months into it rather than starting from zero. **SOC 2 Type I** ($12–40k, 3–8 months) is the optional stepping stone if a buyer needs something formal sooner. |
 
-**The line to hold in the room:** *we are not certified yet, and we are not pretending
-to be. Evidence is deployed single-tenant so it never shares an environment, we hold
-Cyber Essentials, we have an independent penetration test report, and the SOC 2
-observation window is running. When a customer's counsel needs the certificate, the
-clock is already most of the way through.* That is a better answer than a certificate
-nobody asked for yet, and it costs a fraction of one.
+**None of this exists yet, and the slide must not imply it does.** Cyber Essentials, the
+penetration test and the security package are **things this raise pays for** — that is
+precisely why they are on the use-of-funds list rather than the traction slide. The only
+item already in place is single-tenant deployment, because that is a product decision
+rather than a purchase.
+
+**Indicative near-term spend:** Cyber Essentials all-in ~£1,800–3,500, an independent
+penetration test $4–12k, and either GRC tooling at $6–30k a year or policies and manual
+evidence collection to begin with. Call it **€8–18k on the lean path** — a visible slice
+of €100k, and the slice that decides whether a first external customer can say yes.
+
+**The line to hold in the room:** *we are not certified, and full certification is not
+what €100k should buy — SOC 2 Type II alone is a six-to-twenty-month process because of
+the observation window. What this funds is the evidence a firm's counsel actually asks
+for, inside the funded period: single-tenant deployment so another firm's evidence never
+shares an environment, Cyber Essentials, an independent penetration test, and a written
+security package — with the SOC 2 observation window started, so the certificate is
+months closer the day a deal needs it.*
+
+That is future tense on purpose. It is also the honest answer, and it converts the
+weakest item in the diligence list into a funded, dated plan with a number against it.
 
 **Do not put per-line euro amounts on the slide.** The categories are the answer; a
 breakdown invites arithmetic against a fixed €100k and turns a commercialisation raise

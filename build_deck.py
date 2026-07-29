@@ -842,7 +842,7 @@ def slide9(prs):
          space_before=0)
     bullets(tfa, [
         "- **Two founders full-time** — clearing the security gate and running the agreed pilot to a signed contract. The pilot candidate is already secured.",
-        "- **A security posture we can evidence now** — Cyber Essentials, an independent penetration test, and a written security package. Full certification is bought when a deal requires it, not held in advance.",
+        "- **The security evidence a firm's counsel asks for** — Cyber Essentials, an independent penetration test and a written security package, plus starting the SOC 2 observation window. Cheap and fast; full certification is bought when a deal requires it.",
         "- **Single-tenant infrastructure** for the first external customers — one instance each, so it scales with customers rather than ahead of them.",
         "- **Processing and inference** across pilot matters. The per-matter cost model is what the pilot establishes.",
     ], size=12, colour=PAPER, gap=6, first_flag=True)
