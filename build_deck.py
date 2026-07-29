@@ -303,17 +303,45 @@ Say it, pause, then move to slide 4 and show the answer.""")
 def slide4(prs):
     s = blank(prs); bg(s)
     kicker(s, "Product")
-    heading(s, "Evidence in. One connected model out.", size=32)
-    rule(s, Inches(1.85), width=Inches(1.1))
+    heading(s, "Evidence in. One connected model out.", size=31)
+    rule(s, Inches(1.78), width=Inches(1.1))
 
-    # two screenshot placeholders
     from pptx.enum.shapes import MSO_SHAPE
+
+    tf = textbox(s, MARGIN_L, Inches(1.92), BODY_W, Inches(0.62))
+    para(tf, "Phone extractions and call logs, documents, images, audio, financial "
+             "records — everything a case arrives with — resolved at ingestion into "
+             "**one model**, where a call, a transfer and a line in a subpoena return "
+             "are the same kind of citable object.",
+         size=14, colour=PAPER, first=True, space_before=0)
+
+    # the same model, read five ways
+    lbl = textbox(s, MARGIN_L, Inches(2.64), Inches(3.2), Inches(0.3))
+    p_ = para(lbl, "ONE MODEL, MANY PERSPECTIVES", size=10, colour=ACCENT,
+              bold=True, first=True, space_before=0)
+    for r in p_.runs:
+        r.font.name = FONT_M
+
+    lenses = ["Financial explorer", "Multi-phone view", "Timeline", "Graph",
+              "Agent query"]
+    cw, cg = Inches(2.28), Inches(0.14)
+    for i, name in enumerate(lenses):
+        chip = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
+                                  MARGIN_L + i * (cw + cg), Inches(2.98),
+                                  cw, Inches(0.44))
+        chip.fill.solid(); chip.fill.fore_color.rgb = PANEL
+        chip.line.color.rgb = ACCENT_SOLID; chip.line.width = Pt(1)
+        chip.shadow.inherit = False
+        ctf = chip.text_frame; ctf.word_wrap = True
+        ctf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        para(ctf, name, size=12, colour=PAPER, bold=True, first=True,
+             space_before=0, align=PP_ALIGN.CENTER)
+
     # Drop a real screenshot in at either path and it is used automatically;
-    # otherwise the labelled placeholder is drawn. Target 5.4 x 2.85in at 16:9-ish
-    # — 1620 x 855 px at 300dpi, or any image of that ratio.
+    # otherwise the labelled placeholder is drawn. Target 5.4 x 2.0in.
     for i, (label, sub, shot) in enumerate([
         ("SCREENSHOT — A LOUPE",
-         "Five highlighted passages from three documents,\nbound into one evidenced narrative timeline.",
+         "Passages, entities and events from several sources,\nbound into one evidenced finding.",
          "deck-assets/slide4-loupe.png"),
         ("SCREENSHOT — CITED AI ANSWER, MID-CLICK",
          "Opening the source document\nat the cited page.",
@@ -321,70 +349,58 @@ def slide4(prs):
     ]):
         left = MARGIN_L + i * Inches(6.0)
         if os.path.exists(shot):
-            pic = s.shapes.add_picture(shot, left, Inches(2.35),
-                                       width=Inches(5.4), height=Inches(2.85))
+            pic = s.shapes.add_picture(shot, left, Inches(3.60),
+                                       width=Inches(5.4), height=Inches(1.95))
             pic.line.color.rgb = ACCENT_DIM
             pic.line.width = Pt(1)
             continue
-        box = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, Inches(2.35),
-                                 Inches(5.4), Inches(2.85))
+        box = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, Inches(3.60),
+                                 Inches(5.4), Inches(1.95))
         box.fill.solid()
         box.fill.fore_color.rgb = PANEL
         box.line.color.rgb = ACCENT_DIM
         box.line.width = Pt(1)
         box.shadow.inherit = False
-        tf = box.text_frame
-        tf.word_wrap = True
-        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-        para(tf, label, size=13, colour=ACCENT, bold=True, first=True,
+        tfb = box.text_frame
+        tfb.word_wrap = True
+        tfb.vertical_anchor = MSO_ANCHOR.MIDDLE
+        para(tfb, label, size=12, colour=ACCENT, bold=True, first=True,
              space_before=0, align=PP_ALIGN.CENTER)
-        para(tf, sub, size=14, colour=MUTED, space_before=10,
+        para(tfb, sub, size=12, colour=MUTED, space_before=8,
              align=PP_ALIGN.CENTER)
 
-    tf = textbox(s, MARGIN_L, Inches(5.5), BODY_W, Inches(1.5))
-    para(tf, "Every fact carries the verbatim quote, source location and "
-             "confidence it rests on.",
-         size=18, colour=PAPER, first=True, space_before=0)
-    para(tf, "Investigators highlight what matters and bind it into **Loupes** "
-             "— evidenced collections that carry the narrative, not just the "
-             "extraction. The product is named after them.",
-         size=15, colour=MUTED, space_before=10)
-    para(tf, "Ingest  →  Ground  →  Connect  →  Explore  →  Prove",
-         size=17, colour=ACCENT, bold=True, space_before=14)
+    tf2 = textbox(s, MARGIN_L, Inches(5.72), BODY_W, Inches(1.5))
+    para(tf2, "**A Loupe is a bonded collection** — the passages, entities, events and "
+              "transactions that establish one thing, each carrying the quote, page and "
+              "file it came from.",
+         size=13.5, colour=PAPER, first=True, space_before=0)
+    para(tf2, "Investigators work the perspectives, find what matters, and bind it into "
+              "a Loupe. **Loupes move into the case, and the case is built out of "
+              "them** — conclusion, justification and evidence, assembled as the "
+              "investigation runs rather than written up at the end.",
+         size=13.5, colour=MUTED, space_before=8)
 
-    notes(s, """Two screenshots only. Resist the feature list.
+    notes(s, """The slide has three beats. Say them in order and do not add a fourth.
 
-The right-hand screenshot is the whole pitch. An investor who understands that
-one click understands the company. Rehearse it as a live demo if you get a
-meeting. Capture it with the RESULT GRAPH VISIBLE beside the cited text — that
-shows the answer being grounded and structured in one frame, and it keeps the
-graph in the deck where it belongs: as a result, not a landing page.
+ONE — everything goes in. Phone extractions, call logs, documents, images, audio,
+financial records. Resolved at ingestion into one model, not stored as files
+alongside each other.
 
-DO NOT LEAD WITH THE CASE GRAPH. A hairball is the most clichéd image in this
-category — Palantir, i2, Siren, Linkurious all lead with it. It puts you in the
-comparison slides 5 and 6 spend their time declining, and nobody parses a dense
-graph at slide scale anyway. Same reason the product's default view is moving off
-it: a case that opens on ten thousand nodes is useless to a working investigator.
+TWO — one model, read five ways. Financial explorer, multi-phone view, timeline,
+graph, agent query. These are not five features; they are five perspectives on the
+same structure, which is why a finding in one is the same object in another.
 
-NAME THE LOUPE. A Loupe is the product's core curation object — a bonded
-collection of documents, highlighted passages, entities and events, with its own
-identity and description, bound together to explain an event, a sequence or a
-thing. It is why the company is called what it is, and it is the thing a
-competitor cannot copy by improving their extraction. Pre-empts "isn't this just
-an extraction pipeline?" before slide 5 has to argue it.
+THREE — and this is the beat that is usually undersold. The investigator finds
+what matters and binds it into a Loupe. Loupes move into the case, and the case is
+BUILT out of them. That is the difference between a tool that answers questions and
+a tool that produces the work product. Every competitor's collection holds documents
+and facts derived from documents; a Loupe can hold a call, a transfer and a location
+as members.
 
-A Loupe is also the better picture: a timeline reads in three seconds, it shows
-evidence a person bound deliberately rather than connections a machine inferred,
-and no competitor's deck has this image.
+Do not say the product is named after them — it adds nothing and costs a sentence.
 
-Keep the graph for the demo and for the answer when a technical partner asks what
-is underneath. And if you get to demo anything beyond the citation click, demo the
-Loupe being built: highlight five sentences across three documents, bind them, and
-you have a fully evidenced narrative viewable as a timeline or a graph.
-
-IN YOUR POCKET: "We moved the default view off the graph because opening a case on
-ten thousand nodes is what every tool in this category does, and it's useless to a
-working investigator." Small, concrete evidence for slide 6's customer-led claim.""")
+Screenshots: the right-hand one is the whole pitch. Capture it with the result graph
+visible beside the cited text. DO NOT LEAD WITH THE CASE GRAPH as a hairball.""")
     return s
 
 

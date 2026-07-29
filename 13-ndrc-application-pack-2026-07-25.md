@@ -169,92 +169,53 @@ is an answer to it. Say it, pause, then move to slide 4 and show the answer.
 
 ### Slide 4 — Product
 
-Two screenshots only. Resist the feature list.
-
-> **Left:** a Loupe — five highlighted passages from three documents, bound into one
-> evidenced narrative timeline.
+> **Evidence in. One connected model out.**
 >
-> **Right:** an AI answer with a citation, mid-click, opening the source document at
-> the cited page.
+> Phone extractions and call logs, documents, images, audio, financial records —
+> everything a case arrives with — resolved at ingestion into **one model**, where a
+> call, a transfer and a line in a subpoena return are the same kind of citable object.
 >
-> **Caption:** Evidence in. One connected model out. Every fact carries the verbatim
-> quote, source location and confidence it rests on.
+> **ONE MODEL, MANY PERSPECTIVES**
+> `Financial explorer` · `Multi-phone view` · `Timeline` · `Graph` · `Agent query`
 >
-> Ingest → Ground → Connect → Explore → Prove
+> *[screenshot — a Loupe]* *[screenshot — cited AI answer, mid-click]*
+>
+> **A Loupe is a bonded collection** — the passages, entities, events and transactions
+> that establish one thing, each carrying the quote, page and file it came from.
+>
+> Investigators work the perspectives, find what matters, and bind it into a Loupe.
+> **Loupes move into the case, and the case is built out of them** — conclusion,
+> justification and evidence, assembled as the investigation runs rather than written
+> up at the end.
 
-Speaker note: the right-hand screenshot is the whole pitch. An investor who
-understands that one click understands the company. Rehearse it as a live demo if
-you get a meeting.
+**Three beats, in order. Do not add a fourth.**
 
-**Capture the right-hand shot with the result graph visible.** The 25 July brief notes
-that AI chat now returns *"a result graph and result set alongside the text"* — so the
-citation click and the structured result appear in one frame. That is a materially
-better screenshot than prose-plus-citation, because it shows the answer being **grounded
-and structured at the same time**, which is the whole differentiation argument in a
-single image. It also keeps the graph in the deck where it belongs: as a *result*, not
-as a landing page.
+**One — everything goes in.** Phone extractions, call logs, documents, images, audio,
+financial records, resolved at ingestion into one model rather than stored as files
+beside each other. "Evidence in, one connected model out" is the right headline but it
+is abstract on its own; the list is what makes it land.
 
-**Do not lead with the case graph.** This changed, and the reason is the same reason
-the product's default view is changing: a case that opens on ten thousand nodes is
-overwhelming to an investigator, and it is illegible on a projected slide. Three
-specific problems with a graph as the hero image:
+**Two — one model, read five ways.** Financial explorer, multi-phone view, timeline,
+graph, agent query. Stress that these are **not five features but five perspectives on
+the same structure** — which is why something found in one is the same object in
+another. A feature list invites "so does everyone else"; a single model read five ways
+does not.
 
-- **It is the category's most clichéd picture.** Palantir, i2, Siren, Linkurious all
-  lead with it. It says "we are in this category" at exactly the moment slides 5 and 6
-  are arguing you are serving a tier the category does not reach. In a Dublin room
-  where someone may have seen a Siren deck, it invites the comparison you spend two
-  slides declining.
-- **Nobody parses it.** A reader registers "graph product" and moves on. That is the
-  entire return on the most valuable image in the deck.
-- **It shows connection a machine inferred, not judgment a person applied** — which is
-  the weaker half of your argument.
+**Three — and this is the beat that has been undersold.** The investigator works those
+perspectives, finds what is significant, and binds it into a Loupe. **Loupes move into
+the case, and the case is built out of them.** That is the difference between a tool
+that answers questions and a tool that produces the work product. Every competitor's
+equivalent collection holds documents and facts derived from documents; a Loupe can hold
+a call, a transfer and a location as members — which is exactly what finding F10 in the
+competitive analysis establishes, and it is the one place the analysis and the product
+demo say the same thing.
 
-**A Loupe does the same job better.** It is legible in three seconds because a timeline
-reads left to right. It shows evidence from multiple sources bound deliberately, which
-is the **Human judgment** row on slide 5 and your actual defensibility argument. And no
-competitor's deck has this picture. It also makes the slide internally coherent — the
-caption already names Loupes; showing a graph underneath it is a mismatch.
+The case is therefore **assembled as the investigation runs**, not written up at the
+end. Say that plainly — it is the constructive-versus-reductive argument (finding F3)
+expressed as a workflow rather than as a theory.
 
-**Screenshot whatever the product actually opens on.** If a partner gets a live demo
-and the app opens somewhere other than what slide 4 showed, that is a small, free
-credibility scratch. Let the default-view decision drive the screenshot, not the
-reverse. ✅ **Settled by the 25 July brief**, which now says the workspace *"meets
-investigators where casework actually starts — in the evidence and the day's work — with
-the analytical lenses one click away. Depth is there when you reach for it, never dumped
-on you when you open the door."* That is the right decision and it is also a good line;
-it belongs in the verbal answer, not on the slide.
-
-**Keep the graph — move it to the demo and to the answer.** It is what says "real
-infrastructure, not a chat wrapper," and you will want it when a technical partner asks
-what is underneath. It should not be the first thing a reader sees.
-
-**And the default-view decision is itself pitch material.** *"We moved the default off
-the graph because opening a case on ten thousand nodes is what every tool in this
-category does, and it is useless to a working investigator."* That is small, concrete
-evidence for slide 6's claim that every feature came from a real investigator on a live
-case — a claim currently asserted rather than shown. Keep it in your pocket for the
-meeting.
-
-**One line to add under the caption:**
-
-> Investigators highlight what matters and bind it into **Loupes** — evidenced
-> collections that carry the narrative, not just the extraction.
-
-Worth the space. It pre-empts "isn't this just an extraction pipeline?" before slide 5
-has to argue it, and it sets up the **Human judgment** row that follows.
-
-**Name the Loupe, and name it here.** The product is named after its core curation
-object — a bonded collection of documents, highlighted passages, entities and events
-with its own identity and description, bound together to explain an event, a sequence
-or a thing. That is not a feature detail; it is the reason the company is called what
-it is, and it is the thing a competitor cannot copy by improving their extraction. A
-deck that never explains its own name leaves the strongest structural idea on the
-table.
-
-Keep it to one line on the slide. The full highlights-and-Loupes story is a demo, and
-it is a good one: highlight five sentences across three documents, bind them into a
-Loupe, and you have a fully evidenced narrative viewable as a timeline or a graph. If
-you get to demo anything beyond the citation click, demo this.
+**Do not say the product is named after Loupes.** It adds nothing and costs a sentence
+that should be spent on the paragraph above.
 
 ---
 
