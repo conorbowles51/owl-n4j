@@ -437,7 +437,7 @@ def slide5(prs):
         ("Scale", "Hundreds of pages at best",
          "A real case: ten phones, 200,000 documents, 500 hours of audio — 435GB, all of it modelled"),
         ("What the AI does", "Retrieves a sample of what fits and reasons over it in prose. You cannot know what it missed",
-         "Traverses a model of the whole case and returns the complete matching set — every claim cited, and the citation covers all of it because retrieval was not a sample"),
+         "Traverses a model of the whole case and returns the complete matching set — every claim cited, and the citation covers all of it, not a sample"),
         ("Confidentiality", "Multi-tenant cloud",
          "Single-tenant: evidence never leaves the customer's instance"),
         ("Human judgment", "Lives outside the tool — lost between sessions",
@@ -476,24 +476,22 @@ def slide5(prs):
             cell.fill.solid()
             cell.fill.fore_color.rgb = PANEL if r % 2 else INK
             cell.margin_left = Inches(0.12)
-            cell.margin_top = Inches(0.045)
-            cell.margin_bottom = Inches(0.045)
+            cell.margin_top = Inches(0.025)
+            cell.margin_bottom = Inches(0.025)
             tf = cell.text_frame
             tf.word_wrap = True
             para(tf, text, size=12, colour=colour, bold=bold, first=True,
                  space_before=0, line=1.15)
 
-    tf = textbox(s, MARGIN_L, Inches(6.42), BODY_W, Inches(1.0))
+    tf = textbox(s, MARGIN_L, Inches(6.18), BODY_W, Inches(1.2))
     para(tf, "**And not only ChatGPT — the specialists publish their own ceilings.** "
-             "Relativity caps at 300,000 documents per index and 5,000 per extraction "
-             "job; CoCounsel manages ~200 per run; Reveal states its search is "
-             "\u201cdesigned for precision, not recall\u201d.",
+             "Relativity caps at 300,000 documents per index; Reveal states its search "
+             "is \u201cdesigned for precision, not recall\u201d.",
          size=12, colour=MUTED, first=True, space_before=0)
     para(tf, "A straight LLM gives you a well-written opinion about the fraction of "
-             "the evidence that fits in its context window. Loupe gives you a "
-             "complete, permanent, cross-referenced model of all of it — where "
-             "**every claim carries its receipt.**",
-         size=14, colour=PAPER, space_before=8)
+             "the evidence that fits in its context window. Loupe models all of it — "
+             "and **every claim carries its receipt.**",
+         size=13.5, colour=PAPER, space_before=7)
 
     notes(s, """The HUMAN JUDGMENT row is the one that answers the question a
 technical investor is actually holding: what stops Microsoft GraphRAG
@@ -591,10 +589,10 @@ def slide5b(prs):
     cols = [
         ("They model the evidence — and won't sell it to you",
          "Cellebrite · Magnet · Palantir · Pathfinder",
-         "Real structure, real graphs, and they own the extraction. Pathfinder is "
-         "marketed solely to law enforcement and intelligence; GrayKey is not sold to "
-         "the private sector at all. What a defence practice can buy is examiner "
-         "tooling — five kinds of device, no kinds of document."),
+         "They own the extraction and build real graphs. Pathfinder is sold only to "
+         "law enforcement and intelligence; GrayKey not to the private sector at all. "
+         "What a practice can buy is examiner tooling — five kinds of device, no "
+         "kinds of document."),
         ("They'll sell to you — and treat a phone as an attachment",
          "Relativity · Everlaw · DISCO · Reveal · Harvey · CoCounsel",
          "Excellent at documents, purchasable, and the phone data does not survive "
@@ -604,34 +602,35 @@ def slide5b(prs):
          "TrialKit · Matey · JusticeText · Longeye",
          "Four funded companies selling AI to criminal defence, $2.5–7.5M seed each, "
          "with the bar associations and the certifications. **None of them has a "
-         "graph.** All four answer by retrieval."),
+         "graph.** All four answer by retrieval — which returns what looked relevant "
+         "and cannot tell you what it missed. **On a defence matter the thing you "
+         "never saw is the thing that loses the case.**"),
     ]
     cw, cg = Inches(3.85), Inches(0.2)
     for i, (title, names, body) in enumerate(cols):
         left = MARGIN_L + i * (cw + cg)
-        box = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, Inches(2.92), cw, Inches(2.85))
+        box = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, Inches(2.86), cw, Inches(2.96))
         box.fill.solid(); box.fill.fore_color.rgb = PANEL
         box.line.color.rgb = ACCENT_DIM if i < 2 else ACCENT_SOLID
         box.line.width = Pt(1.25)
         box.shadow.inherit = False
-        t = textbox(s, left + Inches(0.18), Inches(3.06), cw - Inches(0.36), Inches(2.6))
+        t = textbox(s, left + Inches(0.18), Inches(2.99), cw - Inches(0.36), Inches(2.75))
         para(t, title, size=14, colour=PAPER, bold=True, first=True, space_before=0,
              font=FONT_H)
         pn = para(t, names, size=10.5, colour=ACCENT, space_before=7)
         for r in pn.runs:
             r.font.name = FONT_M
-        para(t, body, size=11.5, colour=MUTED, space_before=8)
+        para(t, body, size=11, colour=MUTED, space_before=7)
 
-    tf2 = textbox(s, MARGIN_L, Inches(6.0), BODY_W, Inches(1.2))
+    tf2 = textbox(s, MARGIN_L, Inches(5.98), BODY_W, Inches(1.4))
     para(tf2, "**Not one of the forty-seven holds device data, financial records and "
-              "documents in a single model.** That is not an accident of scoring — "
-              "modelling evidence and serving this buyer are different problems sold "
-              "to different customers, and whoever solved one has no commercial "
-              "reason to solve the other.",
-         size=15, colour=PAPER, first=True, space_before=0)
+              "documents in a single model** — and that is structural, not an accident "
+              "of scoring. Modelling evidence and serving this buyer are different "
+              "problems sold to different customers.",
+         size=14.5, colour=PAPER, first=True, space_before=0)
     para(tf2, "We know because we went looking for a platform to run live federal "
               "casework, tried several, and none could work the case.",
-         size=13, colour=ACCENT, bold=True, space_before=9)
+         size=13.5, colour=ACCENT, bold=True, space_before=10)
 
     notes(s, """This is the slide that earns the right to slide 4. Do not skip it.
 
@@ -930,7 +929,7 @@ def slide7(prs):
         para(tf, bio, size=11, colour=MUTED, space_before=9)
         para(tf, flag, size=11, colour=ACCENT, bold=True, space_before=9)
 
-    tf = textbox(s, MARGIN_L, Inches(6.72), BODY_W, Inches(0.72))
+    tf = textbox(s, MARGIN_L, Inches(6.62), BODY_W, Inches(0.8))
     para(tf, "Seven years building investigative intelligence software for "
              "enterprise buyers, and a decade running federal casework as the "
              "kind of investigator who has to live with the result. "
@@ -1059,7 +1058,7 @@ def slide9(prs):
         "- **Two founders full-time** — clearing the security gate and running the agreed pilot to a signed contract. The pilot candidate is already secured.",
         "- **The security evidence a firm's counsel asks for** — Cyber Essentials, an independent penetration test and a written security package, plus starting the SOC 2 observation window. Cheap and fast; full certification is bought when a deal requires it.",
         "- **Single-tenant infrastructure** for the first external customers — one instance each, so it scales with customers rather than ahead of them.",
-        "- **Processing and inference** across pilot matters. The per-matter cost model is what the pilot establishes.",
+        "- **Processing and inference** across pilot matters — the cost model the pilot establishes.",
     ], size=12, colour=PAPER, gap=6, first_flag=True)
 
     tf2 = textbox(s, Inches(7.65), Inches(2.42), Inches(4.85), Inches(4.2))
@@ -1072,7 +1071,7 @@ def slide9(prs):
         "- Introductions into Irish and UK professional-services buyers — ACFE Ireland, Chartered Accountants Ireland forensic group, Law Society criminal law committee",
     ], size=12, colour=PAPER, gap=7, first_flag=True)
 
-    tf3 = textbox(s, MARGIN_L, Inches(6.78), BODY_W, Inches(0.62))
+    tf3 = textbox(s, MARGIN_L, Inches(6.72), BODY_W, Inches(0.72))
     para(tf3, "We are not asking anyone to fund the invention of a product. We "
               "are asking them to fund the distance between **works** and "
               "**sold.**",
