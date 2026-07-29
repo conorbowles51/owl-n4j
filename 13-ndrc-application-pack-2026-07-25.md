@@ -49,11 +49,11 @@ flag, provided you say it first.
 
 ## Part 2 — The deck, slide by slide
 
-**Eleven slides.** Every product claim below traces to code on
+**Twelve slides.** Every product claim below traces to code on
 `integration/evidence-main-reunion` unless marked **[ROADMAP]**. Claims-safety notes
 are drawn from the "Claims to avoid" list — honour them.
 
-**Slide 8 is the growth path**, added 29 July and built into `build_deck.py` as
+**Slide 9 is the growth path**, added 29 July and built into `build_deck.py` as
 `slide6b()`. It sits between Market and Team because a market slide that states a
 pool without stating what share of it the plan needs invites the question rather
 than answering it.
@@ -177,43 +177,43 @@ their evidence.
 > **~6% of fraud examiners are confident explaining how their AI reaches its
 > conclusions.** *(ACFE 2026 anti-fraud technology benchmarking)*
 
-**Curve 3 was rewritten on 29 July. Three claims about provenance, kept separate —
-because collapsing them is easy and produces bad positioning.**
+**On provenance — the word names two different things, and the difference is the
+product. Do not concede the term.**
 
-1. **Provenance is valuable to the customer.** Permanently. A defence lawyer who cannot
-   trace a claim back to a page cannot use the output at all. This has not changed and
-   will not.
-2. **Provenance is a differentiator.** No longer true. Between November 2025 and
-   February 2026 the specialists shipped it — Relativity's aiR refuses to emit a fact it
-   cannot match to source text; Everlaw's Deep Dive answers "insufficient evidence"
-   rather than invent one.
-3. **Provenance has pricing power.** No. Most of them give it away.
+**What the competitors ship** is a citation attached to passages a retriever surfaced.
+It tells you where that text came from. It cannot tell you what was missed, because the
+retrieval was a sample — which is why their own documentation is so careful about it:
+Reveal states its search is "designed for precision, not recall"; Relativity caps
+extraction at 5,000 documents per job; Harvey runs one prompt per document and
+aggregates.
 
-**Only (2) and (3) changed.** Commoditisation is a statement about the market, not about
-whether the feature earns its place in the product — so provenance stays stated
-everywhere it is true (slide 4's Loupes carry the quote, page and file; slide 5's AI row
-carries the page), and the *differentiation* argument rests on grounding instead. Those
-are compatible positions, not competing ones.
+**What Loupe ships** is provenance grounded in case-wide concrete retrieval. Every node
+in the case model carries its source, and an answer is a **traversal over the whole
+model** rather than a sample of it. The citation is a property of the structure, not
+something attached afterwards — and it covers the complete matching set.
 
-**What the old curve actually said, in fairness to it:** *"bare LLMs remain unusable in
-evidence work — no provenance, no audit, no confidentiality."* That is a claim about
-**ChatGPT**, and it is still true. It was not the error.
+**So the accurate claim is not "we also cite."** It is: *everyone can cite what they
+retrieved; we can cite what we retrieved and tell you it is everything, because
+retrieval here is a traversal over a model of the whole case.* Citation over a sample
+commoditised. **Citation over a complete traversal did not — because nobody else has the
+model to do it over.**
 
-**Why it was still worth replacing.** Slide 3 is the market-timing argument, and the
-bare-LLM point is slide 5's entire job — the deck was making it twice and making it
-weakly the first time. Curve 3 now carries the timing claim that only slide 3 can make:
-the category converged on cited answers and stopped there, dateable to a four-month
-window. Everyone can cite a document; nobody modelled the case. That sets up slide 4 and
-leaves slide 5 to do the ChatGPT comparison properly.
+That is one claim, not two. Provenance and completeness are the same property seen from
+two sides, and separating them — as an earlier revision of this pack did — gives away
+the strongest thing on the slide.
 
-**The conclusion moved from "trust layer" to "the layer underneath the answer" for the
-same reason** — not because trust is worthless, but because a trust layer is what
-several well-funded competitors already sell, and a case model is not.
+**Curve 3 was still rewritten on 29 July, for a different reason.** The old version read
+*"bare LLMs remain unusable in evidence work — no provenance, no audit, no
+confidentiality."* That is a claim about **ChatGPT** and it is still true — it was not
+wrong. But it is slide 5's entire job, so the deck was making it twice and weakly the
+first time. Slide 3 is the market-timing argument, and curve 3 now carries the claim
+only slide 3 can make: the category converged on cited answers inside a four-month
+window and stopped there. Everyone can cite a document; nobody modelled the case.
 
-**The ACFE 6% statistic reads better against the new curve.** "Only ~6% of fraud
-examiners are confident explaining how their AI reaches its conclusions" is a grounding
-statistic rather than a provenance one: it says the answer has nothing underneath it
-that a professional can stand over. Say it, pause, then show slide 4.
+**The ACFE 6% statistic is the proof of the distinction.** "Only ~6% of fraud examiners
+are confident explaining how their AI reaches its conclusions" — in a market where
+citation is universal and free. If citation alone were sufficient, that number would not
+be 6%. Say it, pause, then show slide 4.
 
 Speaker note: the 6% stat is the strongest number in your material. The entire product
 is an answer to it. Say it, pause, then move to slide 4 and show the answer.
@@ -287,12 +287,12 @@ Cut your comparison table to five rows. These five:
 
 **Two changes on 29 July, and the first one matters more than it looks.**
 
-**The "What the AI does" row led with citation, which is the right feature to have and
-the wrong one to lead with.** Provenance is not worth less to the customer than it was —
-a claim that cannot be traced to a page is unusable — but it stopped being a
-*differentiator* between November 2025 and February 2026, when Relativity, Everlaw,
-DISCO and Reveal all shipped it and most gave it away. A row that leads with it is
-competing on the axis where every rival is already free. The row now leads with **how the answer is reached**: a straight LLM retrieves
+**The "What the AI does" row led with citation as a standalone claim, and that is what
+gives the axis away.** Cited-over-a-sample is what every rival ships free. The row now
+states the two halves as one thing — the answer is a traversal over the whole model
+*and* every claim carries its page — because that combination is the differentiator and
+neither half is on its own. Leading with the citation alone invites "so does everyone
+else", and it is true of the version they mean. The row now leads with **how the answer is reached**: a straight LLM retrieves
 a sample of what fits and reasons over it, and *you cannot know what it missed*; Loupe
 traverses the model and returns the actual matching set. Completeness is the claim.
 Citation stays in the row, in second place, where it belongs — a consequence of the
@@ -486,7 +486,51 @@ live open item, not a solved one.)
 
 ---
 
-### Slide 6 — Market and lead customer
+### Slide 6 — The field
+
+> **Forty-seven platforms. The intersection is empty.**
+>
+> We assessed the category on thirty axes before we built. It splits into two halves
+> that never meet — and the buyer sits in the gap between them.
+>
+> | **They model the evidence — and won't sell it to you** | **They'll sell to you — and treat a phone as an attachment** | **Same buyer as us — and no case model** |
+> |---|---|---|
+> | *Cellebrite · Magnet · Palantir · Pathfinder* | *Relativity · Everlaw · DISCO · Reveal · Harvey · CoCounsel* | *TrialKit · Matey · JusticeText · Longeye* |
+> | Real structure, real graphs, and they own the extraction. Pathfinder is marketed solely to law enforcement and intelligence; GrayKey is not sold to the private sector at all. What a defence practice can buy is examiner tooling — five kinds of device, no kinds of document. | Excellent at documents, purchasable, and the phone data does not survive the door. Call logs emerge as Excel, conversations are split every thousand messages, multi-device extractions are unsupported. | Four funded companies selling AI to criminal defence, $2.5–7.5M seed each, with the bar associations and the certifications. **None of them has a graph.** All four answer by retrieval. |
+>
+> **Not one of the forty-seven holds device data, financial records and documents in a
+> single model.** That is not an accident of scoring — modelling evidence and serving
+> this buyer are different problems sold to different customers, and whoever solved one
+> has no commercial reason to solve the other.
+>
+> **We know because we went looking for a platform to run live federal casework, tried
+> several, and none could work the case.**
+
+**Why this slide is separate from slide 5, rather than folded into it.** Slide 5
+answers *"isn't this just ChatGPT?"* — a question every investor asks and one the LLM
+comparison answers properly. This slide answers *"who else does this?"*, which is a
+different question with a different set of names. Collapsing them would have cost the
+LLM comparison, and that comparison is the one that gets asked first.
+
+**The two-halves finding is the competitive argument, and it is structural.** Say it as
+structure, not as a scoreboard: modelling evidence and serving this buyer are different
+engineering problems sold to different customers. That is why the gap persists rather
+than closing next quarter.
+
+**Land the last line slowly.** It converts the whole analysis from research into
+experience, and it is the one claim in the deck a panel cannot discount.
+
+**Answers to have ready.** *Closest competitor* is Matey — same buyer, sells through
+NACDL and a state defence bar, holds SOC 2 Type II and ISO 27001 today. Name it before
+they find it, then note that none of the four has a graph and that building one is
+eighteen months they can afford — which is precisely why the pilot and the security work
+in the ask are urgent. *Harvey* — over $1B raised, priced for the AmLaw 100 at ~$360k
+seat minimums, no evidence model; not our fight and not our buyer. *Siren* — do not
+raise it; if it comes up it is a compliment, per blocker 5d.
+
+---
+
+### Slide 7 — Market and lead customer
 
 > **Every feature in Loupe was requested by a working investigator on a live case.**
 >
@@ -595,7 +639,7 @@ Global forensic accounting ~$18–20B, US ~$10.5B, highly fragmented.
 
 ---
 
-### Slide 7 — Customer value
+### Slide 8 — Customer value
 
 > **We don't ask for new budget. We displace one that already exists.**
 >
@@ -639,7 +683,7 @@ asked rather than presenting it as measured.
 
 ---
 
-### Slide 8 — Growth path
+### Slide 9 — Growth path
 
 > **Ten million in ARR is 104 firms and under 2% of one market.**
 >
@@ -679,7 +723,7 @@ reason the pilot in slide 10 is the thing being funded.
 
 ---
 
-### Slide 9 — Team
+### Slide 10 — Team
 
 > **Neil Byrne — CEO.** **Seven years at Siren**, the Irish investigative-intelligence
 > platform — the same category, selling to law enforcement, intelligence and
@@ -761,7 +805,7 @@ the domain founder is where the customers are.
 
 ---
 
-### Slide 10 — Status and traction
+### Slide 11 — Status and traction
 
 **Lead with the fact, not the caveat. Loupe is a working platform that has done the
 job.** Everything else on this slide is context for that sentence.
@@ -860,7 +904,7 @@ the artifact when someone says "show me."*
 
 ---
 
-### Slide 11 — The ask
+### Slide 12 — The ask
 
 > **€100k. What it buys: the first paying customer outside the practice that built it.**
 >
@@ -1338,7 +1382,7 @@ one is the vendor's own documentation conceding the ceiling:
 That is retrieval-versus-traversal argued with their numbers instead of our adjectives. It also
 answers blocker #8 — *"why not a $20 Claude subscription?"* — in the same breath.
 
-### Slide 6 — Market and lead customer  ← **the biggest upgrade**
+### Slide 7 — Market and lead customer  ← **the biggest upgrade**
 
 This slide currently leans on ACFE membership (~95k) and Harvey's ARR as proxies. Both are
 reachability and adjacency signals, not market size. Replace with the per-matter economics:
@@ -1391,7 +1435,7 @@ vendor rates, so Europe beyond Ireland and the UK is a partner-led motion. And *
 before policing in the UK**: CPIA disclosure obligations are gated at 8 in the policing profile and
 Loupe scores 2, the heaviest single gap in the study for that buyer.
 
-### Slide 11 — The ask, and pricing
+### Slide 12 — The ask, and pricing
 
 **Displaceable value moves 24× between the smallest and largest matters.** A flat $6–24k per-matter
 band captures 205% of a one-phone case and 9% of a ten-phone federal one. The pilot NDRC is being

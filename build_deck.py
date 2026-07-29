@@ -423,7 +423,7 @@ def slide5(prs):
         ("Scale", "Hundreds of pages at best",
          "A real case: ten phones, 200,000 documents, 500 hours of audio — 435GB, all of it modelled"),
         ("What the AI does", "Retrieves a sample of what fits and reasons over it in prose. You cannot know what it missed",
-         "Traverses the model and returns the actual matching set, every claim carrying its page — then runs tools: Loupes, groupings, timelines, outputs"),
+         "Traverses a model of the whole case and returns the complete matching set — every claim cited, and the citation covers all of it because retrieval was not a sample"),
         ("Confidentiality", "Multi-tenant cloud",
          "Single-tenant: evidence never leaves the customer's instance"),
         ("Human judgment", "Lives outside the tool — lost between sessions",
@@ -469,7 +469,7 @@ def slide5(prs):
             para(tf, text, size=12, colour=colour, bold=bold, first=True,
                  space_before=0, line=1.15)
 
-    tf = textbox(s, MARGIN_L, Inches(6.32), BODY_W, Inches(1.1))
+    tf = textbox(s, MARGIN_L, Inches(6.42), BODY_W, Inches(1.0))
     para(tf, "**And not only ChatGPT — the specialists publish their own ceilings.** "
              "Relativity caps at 300,000 documents per index and 5,000 per extraction "
              "job; CoCounsel manages ~200 per run; Reveal states its search is "
@@ -558,6 +558,85 @@ hypotheses that re-evaluate. These are the most quotable claims you have, which 
 them the ones you get asked to demo. One rule: don't say it until it has demoed clean
 once. Anything not landed on submission day becomes the roadmap answer — the toolbox
 above carries the pitch without it. Blocker 5g.""")
+    return s
+
+
+def slide5b(prs):
+    """The field — 47 platforms, and why the intersection is empty."""
+    s = blank(prs); bg(s)
+    from pptx.enum.shapes import MSO_SHAPE
+    kicker(s, "The field")
+    heading(s, "Forty-seven platforms. The intersection is empty.", size=30)
+    rule(s, Inches(2.05), width=Inches(1.1))
+
+    tf = textbox(s, MARGIN_L, Inches(2.22), BODY_W, Inches(0.5))
+    para(tf, "We assessed the category on thirty axes before we built. It splits into "
+             "two halves that never meet — and the buyer sits in the gap between them.",
+         size=14, colour=PAPER, first=True, space_before=0)
+
+    cols = [
+        ("They model the evidence — and won't sell it to you",
+         "Cellebrite · Magnet · Palantir · Pathfinder",
+         "Real structure, real graphs, and they own the extraction. Pathfinder is "
+         "marketed solely to law enforcement and intelligence; GrayKey is not sold to "
+         "the private sector at all. What a defence practice can buy is examiner "
+         "tooling — five kinds of device, no kinds of document."),
+        ("They'll sell to you — and treat a phone as an attachment",
+         "Relativity · Everlaw · DISCO · Reveal · Harvey · CoCounsel",
+         "Excellent at documents, purchasable, and the phone data does not survive "
+         "the door. Call logs emerge as Excel, conversations are split every thousand "
+         "messages, multi-device extractions are unsupported."),
+        ("Same buyer as us — and no case model",
+         "TrialKit · Matey · JusticeText · Longeye",
+         "Four funded companies selling AI to criminal defence, $2.5–7.5M seed each, "
+         "with the bar associations and the certifications. **None of them has a "
+         "graph.** All four answer by retrieval."),
+    ]
+    cw, cg = Inches(3.85), Inches(0.2)
+    for i, (title, names, body) in enumerate(cols):
+        left = MARGIN_L + i * (cw + cg)
+        box = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, Inches(2.92), cw, Inches(2.85))
+        box.fill.solid(); box.fill.fore_color.rgb = PANEL
+        box.line.color.rgb = ACCENT_DIM if i < 2 else ACCENT_SOLID
+        box.line.width = Pt(1.25)
+        box.shadow.inherit = False
+        t = textbox(s, left + Inches(0.18), Inches(3.06), cw - Inches(0.36), Inches(2.6))
+        para(t, title, size=14, colour=PAPER, bold=True, first=True, space_before=0,
+             font=FONT_H)
+        pn = para(t, names, size=10.5, colour=ACCENT, space_before=7)
+        for r in pn.runs:
+            r.font.name = FONT_M
+        para(t, body, size=11.5, colour=MUTED, space_before=8)
+
+    tf2 = textbox(s, MARGIN_L, Inches(6.0), BODY_W, Inches(1.2))
+    para(tf2, "**Not one of the forty-seven holds device data, financial records and "
+              "documents in a single model.** That is not an accident of scoring — "
+              "modelling evidence and serving this buyer are different problems sold "
+              "to different customers, and whoever solved one has no commercial "
+              "reason to solve the other.",
+         size=15, colour=PAPER, first=True, space_before=0)
+    para(tf2, "We know because we went looking for a platform to run live federal "
+              "casework, tried several, and none could work the case.",
+         size=13, colour=ACCENT, bold=True, space_before=9)
+
+    notes(s, """This is the slide that earns the right to slide 4. Do not skip it.
+
+The two-halves finding is the whole competitive argument and it is structural, not a
+scoring artifact. Say the last line slowly — it converts the analysis from research
+into experience, and it is the one claim a panel cannot discount.
+
+If asked "who is the closest competitor?" the answer is Matey: same buyer, sells
+through NACDL and a state defence bar, holds SOC 2 Type II and ISO 27001 today. Say
+that before they find it. Then: none of the four has a graph, and that is eighteen
+months of work they can afford — which is exactly why the pilot and the certification
+work in the ask are urgent rather than nice to have.
+
+If asked about Harvey: over $1B raised, priced for the AmLaw 100 at ~$360k seat
+minimums, no evidence model. Not our fight and not our buyer.
+
+Do not name Siren here. If it comes up, it is a compliment: built for enterprise LE
+and intelligence buyers who come with solutions engineering attached, and good at
+that. A fifteen-person practice cannot buy the engineer — that tier is what we serve.""")
     return s
 
 
@@ -1025,7 +1104,7 @@ def main():
     prs.slide_height = H
 
     for fn in (slide1, slide2, slide3, slide4, slide5,
-               slide6, slide6c, slide6b, slide7, slide8, slide9):
+               slide5b, slide6, slide6c, slide6b, slide7, slide8, slide9):
         fn(prs)
 
     out = "Loupe-NDRC-deck.pptx"
