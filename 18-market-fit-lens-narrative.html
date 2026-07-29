@@ -1,0 +1,5573 @@
+<title>Loupe — Market Fit Lens: full narrative</title>
+<style>
+/* Loupe Brand System v1.0 — tokens per loupe-brand/brand/loupe-brand.css.
+   Webfonts are not requested: the publishing CSP blocks external hosts, so the
+   families are named first in each stack with system fallbacks. */
+:root{
+  color-scheme:dark;
+  --loupe-red:#b41624; --loupe-signal:#e33b4c; --loupe-signal-soft:#f35d6d;
+  --loupe-white:#f7f7f8;
+  --loupe-bg:#0b0c0f; --loupe-bg-deep:#07080a; --loupe-surface:#111216;
+  --loupe-surface-2:#17181c; --loupe-surface-3:#202126; --loupe-surface-raised:#25272d;
+  --loupe-ink:#f7f7f8; --loupe-ink-soft:#bfc1c8; --loupe-muted:#9a9da5;
+  --loupe-muted-strong:#71747c; --loupe-line:#292b32; --loupe-line-strong:#3b3d44;
+  --loupe-paper:#f7f7f8; --loupe-paper-white:#fff; --loupe-paper-2:#f2f2f4;
+  --loupe-paper-soft:#ececef; --loupe-paper-line:#d9dae0; --loupe-paper-line-strong:#c2c4cb;
+  --loupe-paper-ink:#15161a; --loupe-paper-ink-soft:#3d3f45; --loupe-paper-muted:#63666e;
+  --loupe-paper-muted-strong:#83868e; --loupe-financial:#b37a2e; --loupe-location:#238a88;
+  --display:"Space Grotesk","Segoe UI",system-ui,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Consolas,monospace;
+  --r-control:5px; --r-panel:8px;
+  --page:var(--loupe-bg); --deep:var(--loupe-bg-deep); --surf:var(--loupe-surface);
+  --surf2:var(--loupe-surface-2); --surf3:var(--loupe-surface-3); --raised:var(--loupe-surface-raised);
+  --ink:var(--loupe-ink); --ink2:var(--loupe-ink-soft); --ink3:var(--loupe-muted); --ink4:var(--loupe-muted-strong);
+  --rule:var(--loupe-line); --rule2:var(--loupe-line-strong);
+  --accent:var(--loupe-signal-soft); --accent-solid:var(--loupe-red);
+  --accent-soft:rgba(180,22,36,.16); --wash:rgba(180,22,36,.12);
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
+}
+@media (prefers-color-scheme:light){
+  :root:where(:not([data-theme="dark"])){
+    color-scheme:light; --loupe-signal-soft:#b41624;
+    --page:var(--loupe-paper); --deep:var(--loupe-paper-soft); --surf:var(--loupe-paper-white);
+    --surf2:var(--loupe-paper-2); --surf3:var(--loupe-paper-soft); --raised:var(--loupe-paper-white);
+    --ink:var(--loupe-paper-ink); --ink2:var(--loupe-paper-ink-soft); --ink3:var(--loupe-paper-muted);
+    --ink4:var(--loupe-paper-muted-strong); --rule:var(--loupe-paper-line); --rule2:var(--loupe-paper-line-strong);
+    --accent:#b41624; --accent-soft:rgba(180,22,36,.09); --wash:rgba(180,22,36,.05);
+    --shadow:0 1px 2px rgba(19,26,28,.05),0 8px 24px -12px rgba(19,26,28,.16);
+  }
+}
+:root[data-theme="light"]{
+  color-scheme:light; --loupe-signal-soft:#b41624;
+  --page:var(--loupe-paper); --deep:var(--loupe-paper-soft); --surf:var(--loupe-paper-white);
+  --surf2:var(--loupe-paper-2); --surf3:var(--loupe-paper-soft); --raised:var(--loupe-paper-white);
+  --ink:var(--loupe-paper-ink); --ink2:var(--loupe-paper-ink-soft); --ink3:var(--loupe-paper-muted);
+  --ink4:var(--loupe-paper-muted-strong); --rule:var(--loupe-paper-line); --rule2:var(--loupe-paper-line-strong);
+  --accent:#b41624; --accent-soft:rgba(180,22,36,.09); --wash:rgba(180,22,36,.05);
+  --shadow:0 1px 2px rgba(19,26,28,.05),0 8px 24px -12px rgba(19,26,28,.16);
+}
+*{box-sizing:border-box}
+html{background:var(--page);scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.68;
+  background:radial-gradient(circle at 84% 1%,var(--wash),transparent 27rem) var(--page);
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.wrap{max-width:1180px;margin:0 auto;padding:0 32px 96px}
+.topbar{display:flex;align-items:center;gap:16px;padding:20px 0 0}
+.eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.themer{display:flex;gap:6px;margin-left:auto}
+.themer button{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;padding:6px 10px;
+  background:var(--surf2);color:var(--ink3);border:1px solid var(--rule2);border-radius:var(--r-control);cursor:pointer}
+.themer button[aria-pressed="true"]{background:var(--raised);color:var(--ink)}
+/* headings */
+h1,h2,h3,h4{font-family:var(--display);font-weight:600;letter-spacing:-.035em;text-wrap:balance;
+  scroll-margin-top:18px}
+h1{font-size:clamp(32px,4.4vw,50px);line-height:1.04;letter-spacing:-.05em;margin:34px 0 10px;max-width:22ch}
+h2{font-size:29px;line-height:1.16;margin:56px 0 14px;padding-top:18px;border-top:1px solid var(--rule2)}
+h3{font-size:20px;margin:34px 0 10px;color:var(--ink)}
+h4{font-size:16px;margin:26px 0 8px;color:var(--ink)}
+p{margin:0 0 15px;color:var(--ink2);max-width:78ch}
+strong{color:var(--ink);font-weight:600}
+em{font-style:italic}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+hr{border:0;border-top:1px solid var(--rule);margin:36px 0}
+ul,ol{margin:0 0 16px;padding-left:20px;max-width:78ch}
+li{margin-bottom:7px;color:var(--ink2)}
+code{font-family:var(--mono);font-size:.88em;background:var(--surf2);border:1px solid var(--rule);
+  border-radius:3px;padding:1px 5px;color:var(--ink)}
+blockquote{margin:24px 0;padding:20px 24px;background:var(--surf);border:1px solid var(--rule);
+  border-left:3px solid var(--accent-solid);border-radius:0 var(--r-panel) var(--r-panel) 0;box-shadow:var(--shadow)}
+blockquote p{margin:0 0 10px;max-width:none}
+blockquote p:last-child{margin:0}
+blockquote h2{border:0;padding:0;margin:0 0 12px;font-size:19px;color:var(--accent)}
+/* tables scroll inside their own container, never the page */
+.tblwrap{overflow-x:auto;border:1px solid var(--rule);border-radius:var(--r-panel);
+  background:var(--surf);box-shadow:var(--shadow);margin:22px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:520px}
+th,td{padding:10px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+thead th{background:var(--surf2);color:var(--ink3);font-family:var(--mono);font-weight:500;
+  font-size:9px;letter-spacing:.11em;text-transform:uppercase;white-space:nowrap;
+  border-bottom:1px solid var(--rule2);position:sticky;top:0;z-index:2}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--accent-soft)}
+td strong{color:var(--ink)}
+/* contents */
+.toc{background:var(--surf);border:1px solid var(--rule);border-radius:var(--r-panel);
+  padding:24px 26px;margin:32px 0 8px;box-shadow:var(--shadow)}
+.toc>.eyebrow{display:block;color:var(--accent);margin-bottom:14px}
+.toc ol{list-style:none;margin:0;padding:0;columns:2;column-gap:38px;max-width:none}
+@media (max-width:760px){.toc ol{columns:1}}
+.toc li{margin:0;break-inside:avoid}
+.toc a{display:block;padding:6px 0;color:var(--ink2);text-decoration:none;font-size:14px;
+  border-bottom:1px solid transparent;transition:color .12s}
+.toc a:hover{color:var(--ink)}
+.toc a .n{font-family:var(--mono);font-size:10px;color:var(--accent);margin-right:9px}
+.toc li.sub a{padding-left:22px;font-size:13px;color:var(--ink3)}
+.toc li.sub a:hover{color:var(--ink2)}
+@media print{.themer,.toc{display:none}body{background:#fff}}
+</style>
+<div class="wrap">
+<div class="topbar"><span class="eyebrow">Loupe · competitive analysis · internal</span><div class="themer" role="group" aria-label="Reading surface"><button type="button" data-set="light" aria-pressed="false">Light</button><button type="button" data-set="dark" aria-pressed="false">Dark</button></div></div>
+<h1>Loupe — Market Fit Lens: full narrative</h1>
+<nav class="toc" aria-label="Contents"><span class="eyebrow">Contents</span><ol><li><a href="#internal-working-document-not-for-external-use"><span class="n">01</span>⚠️ INTERNAL WORKING DOCUMENT — NOT FOR EXTERNAL USE</a></li><li><a href="#1-what-this-instrument-measures"><span class="n">02</span>1. What this instrument measures</a></li><li class="sub"><a href="#how-scores-are-banded">How scores are banded</a></li><li class="sub"><a href="#the-five-groups">The five groups</a></li><li><a href="#2-the-headline-result-computed"><span class="n">03</span>2. The headline result, computed</a></li><li><a href="#3-where-loupe-leads-and-by-how-much"><span class="n">04</span>3. Where Loupe leads, and by how much</a></li><li><a href="#4-where-loupe-is-beaten-and-what-it-costs"><span class="n">05</span>4. Where Loupe is beaten, and what it costs</a></li><li><a href="#5-price-bands-who-you-actually-meet-at-each-budget"><span class="n">06</span>5. Price bands — who you actually meet at each budget</a></li><li><a href="#6-reach-how-many-markets-a-platform-can-actually-be-sold-int"><span class="n">07</span>6. Reach — how many markets a platform can actually be sold into</a></li><li><a href="#7-the-markets-ranked-by-where-loupe-actually-stands"><span class="n">08</span>7. The markets, ranked by where Loupe actually stands</a></li><li><a href="#7a-what-each-market-is-worth"><span class="n">09</span>7a. What each market is worth</a></li><li class="sub"><a href="#the-conclusion">The conclusion</a></li><li class="sub"><a href="#the-evidence-behind-it-market-by-market">The evidence behind it — market by market</a></li><li class="sub"><a href="#what-a-case-costs-line-by-line">What a case costs, line by line</a></li><li class="sub"><a href="#how-many-matters">How many matters</a></li><li class="sub"><a href="#the-growth-path-four-stages-and-what-each-requires">The growth path — four stages, and what each requires</a></li><li class="sub"><a href="#ireland-the-uk-and-europe">Ireland, the UK and Europe</a></li><li class="sub"><a href="#the-regional-plan">The regional plan</a></li><li class="sub"><a href="#sources">Sources</a></li><li><a href="#8-the-field-platform-by-platform-against-loupe"><span class="n">10</span>8. The field, platform by platform, against Loupe</a></li><li class="sub"><a href="#the-nine-that-outscore-loupe">The nine that outscore Loupe</a></li><li class="sub"><a href="#the-forensics-and-law-enforcement-tier">The forensics and law-enforcement tier</a></li><li class="sub"><a href="#the-ediscovery-tier-the-mirror-image-cohort">The eDiscovery tier — the mirror-image cohort</a></li><li class="sub"><a href="#the-graph-and-intelligence-tier">The graph and intelligence tier</a></li><li class="sub"><a href="#the-defence-native-cohort-the-real-comparison-set">The defence-native cohort — the real comparison set</a></li><li class="sub"><a href="#the-legal-ai-tier">The legal-AI tier</a></li><li class="sub"><a href="#the-case-management-tier">The case-management tier</a></li><li class="sub"><a href="#nearest-neighbours-by-score-profile">Nearest neighbours by score profile</a></li><li><a href="#9-kaseware-and-altia-where-their-graphs-actually-come-from"><span class="n">11</span>9. Kaseware and Altia — where their graphs actually come from</a></li><li><a href="#10-what-is-still-unverified"><span class="n">12</span>10. What is still unverified</a></li><li><a href="#11-how-to-use-this-instrument"><span class="n">13</span>11. How to use this instrument</a></li><li><a href="#a-the-thirty-axes"><span class="n">14</span>A. The thirty axes</a></li><li><a href="#b-all-47-platforms-totals-and-group-subtotals"><span class="n">15</span>B. All 47 platforms — totals and group subtotals</a></li><li><a href="#c-full-score-matrix-47-platforms-30-axes"><span class="n">16</span>C. Full score matrix — 47 platforms × 30 axes</a></li><li><a href="#d-market-profiles-requirements-gates-and-results"><span class="n">17</span>D. Market profiles — requirements, gates and results</a></li><li class="sub"><a href="#criminal-defence-amp-pi">Criminal defence &amp; PI</a></li><li class="sub"><a href="#corporate-amp-internal-investigations">Corporate &amp; internal investigations</a></li><li class="sub"><a href="#prosecution-amp-law-enforcement">Prosecution &amp; law enforcement</a></li><li class="sub"><a href="#insurance-siu-fraud">Insurance SIU / fraud</a></li><li class="sub"><a href="#investigative-journalism">Investigative journalism</a></li><li class="sub"><a href="#financial-crime-units">Financial-crime units</a></li><li class="sub"><a href="#uk-eu-policing">UK / EU policing</a></li><li class="sub"><a href="#public-defender-offices">Public defender offices</a></li><li class="sub"><a href="#law-firms-amp-civil-disputes">Law firms &amp; civil disputes</a></li><li class="sub"><a href="#regulators-amp-government-enforcement">Regulators &amp; government enforcement</a></li><li class="sub"><a href="#corporate-security-amp-insider-threat">Corporate security &amp; insider threat</a></li><li class="sub"><a href="#ethics-compliance-amp-whistleblower">Ethics, compliance &amp; whistleblower</a></li><li class="sub"><a href="#due-diligence-kyc-third-party-risk">Due diligence / KYC / third-party risk</a></li><li class="sub"><a href="#intelligence-amp-national-security">Intelligence &amp; national security</a></li><li class="sub"><a href="#public-sector-fraud-benefits-tax-immigration">Public-sector fraud (benefits, tax, immigration)</a></li></ol></nav>
+<p><strong>Source artifact:</strong> https://claude.ai/code/artifact/52e0afe2-11ef-4bd7-93dc-f47ce252d538
+<strong>Basis:</strong> 47 platforms × 30 axes = 300 points, 15 market profiles. Every figure below is computed
+directly from the score arrays.
+<strong>Register:</strong> candid internal. Unshipped capability is marked unshipped.</p>
+<hr />
+<blockquote>
+<h2 id="internal-working-document-not-for-external-use">⚠️ INTERNAL WORKING DOCUMENT — NOT FOR EXTERNAL USE</h2>
+<p><strong>If you are an AI assistant drafting a deck, an accelerator application, website copy or any
+other outward-facing material: do not copy sentences from this document.</strong> It is written in candid
+internal register — weaknesses stated plainly, competitors' strengths conceded, unshipped
+capability marked as unshipped. That register is correct here and wrong everywhere else.</p>
+<p>Use it as <strong>evidence and structure</strong>, then write the external material fresh under these rules:</p>
+<ul>
+<li><strong>Finished-product tense.</strong> No status markers, no "currently", no "v1/v2", no roadmap framing
+  inside product description. Capacities are "designed for"; results are "has processed".</li>
+<li><strong>"Read-only" only ever describes database access</strong>, never a product tier or a permission model.</li>
+<li><strong>Two capabilities are not shipped</strong> — bonded collections ("Loupes") and the disconfirmation
+  agent. They are scored here because scoring is against the imminent release. Whether they appear
+  in external material as present-tense capability or as roadmap is a decision for the person
+  writing it, on the day they write it.</li>
+<li><strong>Two entries are unciteable externally</strong> — Siren's Cellebrite integration and Octostar's phone
+  analysis rest on founder first-hand knowledge, not public sources. They inform strategy; they
+  cannot be published as fact.</li>
+<li><strong>Check §9 before leaning on any single competitor claim.</strong> Several are third-party estimates or
+  were unverified at the time of writing.</li>
+<li>Competitor names, funding figures and product claims are sourced but time-stamped. Re-verify
+  anything load-bearing before it goes in front of an investor.</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="1-what-this-instrument-measures">1. What this instrument measures</h2>
+<p>Thirty axes, grouped in five bands, applied identically to forty-seven platforms. Fifteen buyer
+profiles sit on top of them: each names the axes that buyer genuinely needs, the level it needs
+them at, the axes that are irrelevant to it, and the small number of hard gates that decide whether
+the platform can be bought at all. The output is not a league table — it answers a narrower
+question: <em>for this buyer, at this budget, what does the field look like and who actually fits?</em></p>
+<p><strong>Two design decisions shape every number below.</strong></p>
+<p><em>Gates are advisory, not eliminating.</em> A platform that fails one still appears in the ranking with a
+fail badge, because hiding it destroys the information you need — how good the thing you cannot yet
+buy actually is, and therefore whether closing that gap is worth the money.</p>
+<p><em>Certifications gate nothing, for any platform.</em> SOC 2, ISO 27001, CJIS and FedRAMP are procurement
+timing rather than capability — they are obtained when a market requires them, so gating on them
+measures how old a company is rather than how well its product fits. The axis stays scored and
+visible; it contributes to no gate and no fit percentage. Counted instead as a weighted requirement,
+fit percentages move by one to four points and one market ordering changes: criminal defence, where
+Loupe would sit second rather than first.</p>
+<h3 id="how-scores-are-banded">How scores are banded</h3>
+<ul>
+<li><strong>8–10</strong> — shipped and evidenced in product documentation, release notes or press.</li>
+<li><strong>3–7</strong> — partial, gated, or claimed but unverified.</li>
+<li><strong>0–2</strong> — no public evidence. Searched for in product pages, docs, release notes and press,
+  and not found. That is absence of evidence, not proven absence, and the distinction is stated
+  wherever it changes a conclusion.</li>
+</ul>
+<p>Loupe's own row is scored on the same basis as every competitor, and against the <strong>imminent
+release</strong> rather than today's build — bonded collections ("Loupes") and the disconfirmation agent
+are both in that release. Competitors are scored symmetrically on shipped-and-announced
+capability; several of theirs are announced-not-GA too, DISCO's scaled agentic AI among them.</p>
+<h3 id="the-five-groups">The five groups</h3>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Axes</th>
+<th>Points</th>
+<th>What it asks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Evidence modelling</strong></td>
+<td>1–6</td>
+<td>60</td>
+<td>Does the platform build a model of the case, or hold files?</td>
+</tr>
+<tr>
+<td><strong>B — Investigative analysis</strong></td>
+<td>7–11</td>
+<td>50</td>
+<td>Once modelled, what can you do with it — links, time, place, money, outside sources?</td>
+</tr>
+<tr>
+<td><strong>C — Processing &amp; casework</strong></td>
+<td>12–18</td>
+<td>70</td>
+<td>Can it decode what arrives, and can a team actually run a case in it?</td>
+</tr>
+<tr>
+<td><strong>D — AI layer</strong></td>
+<td>19–21</td>
+<td>30</td>
+<td>Cited answers, agentic work, and hunting for what breaks the theory.</td>
+</tr>
+<tr>
+<td><strong>E — Readiness &amp; commercial</strong></td>
+<td>22–30</td>
+<td>90</td>
+<td>Can this buyer procure it, trust it, deploy it, and will the vendor survive?</td>
+</tr>
+</tbody>
+</table></div>
+<p>Group E is the largest at 90 points, and deliberately so. For most of these fifteen buyers,
+procurement decides the outcome before capability is ever assessed — which is why readiness carries
+more weight here than any single capability band.</p>
+<hr />
+<h2 id="2-the-headline-result-computed">2. The headline result, computed</h2>
+<p><strong>Loupe scores 168 of 300 and ranks 10th of 47.</strong> Nine platforms score above it: Palantir (201),
+Magnet Axiom (190), Exterro FTK/ARMOUR (177), Relativity aiR (176), Cellebrite Guardian (175),
+Everlaw (175), Cellebrite Pathfinder (169), Cognyte NEXYTE (169) and Nuix Neo (169).</p>
+<p>The shape of that number is more useful than the number:</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Loupe</th>
+<th>Field median</th>
+<th>Field leader</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A — Evidence modelling /60</td>
+<td><strong>55</strong></td>
+<td>19</td>
+<td>Loupe</td>
+</tr>
+<tr>
+<td>B — Investigative analysis /50</td>
+<td>30</td>
+<td>19</td>
+<td>Palantir / Altia (40 / 37)</td>
+</tr>
+<tr>
+<td>C — Processing &amp; casework /70</td>
+<td><strong>26</strong></td>
+<td>32</td>
+<td>Relativity (61)</td>
+</tr>
+<tr>
+<td>D — AI layer /30</td>
+<td><strong>24</strong></td>
+<td>10</td>
+<td>Loupe</td>
+</tr>
+<tr>
+<td>E — Readiness &amp; commercial /90</td>
+<td><strong>33</strong></td>
+<td>48</td>
+<td>Magnet (73)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Loupe is first in the study on evidence modelling by seventeen points over Palantir, first on the
+AI layer, and <strong>fourth from bottom on readiness</strong> — only Octostar, Trackops and CROSStrax score
+lower. That inversion is the entire strategic position: the product is a long way ahead of the
+company.</p>
+<h2 id="3-where-loupe-leads-and-by-how-much">3. Where Loupe leads, and by how much</h2>
+<p>Loupe is the outright or joint leader on eight of the thirty axes:</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Axis</th>
+<th>Loupe</th>
+<th>Nearest rival</th>
+<th>Gap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3 · Cross-source unification</td>
+<td><strong>10</strong></td>
+<td>Longeye 7</td>
+<td>+3, sole leader</td>
+</tr>
+<tr>
+<td>5 · Multimodal entities into the model</td>
+<td><strong>9</strong></td>
+<td>Cognyte / Axon 7</td>
+<td>+2, sole leader</td>
+</tr>
+<tr>
+<td>21 · Disconfirmation detection</td>
+<td><strong>8</strong></td>
+<td>JusticeText 6</td>
+<td>+2, sole leader</td>
+</tr>
+<tr>
+<td>1 · Auto-built case graph</td>
+<td>9</td>
+<td>Palantir 9</td>
+<td>joint</td>
+</tr>
+<tr>
+<td>4 · Whole-corpus relational query</td>
+<td>9</td>
+<td>Palantir, Siren 9</td>
+<td>joint</td>
+</tr>
+<tr>
+<td>8 · Timeline &amp; chronology</td>
+<td>8</td>
+<td>six others at 8</td>
+<td>joint</td>
+</tr>
+<tr>
+<td>18 · Durable judgment objects</td>
+<td>9</td>
+<td>Everlaw, CaseMap+, Casefleet 9</td>
+<td>joint</td>
+</tr>
+<tr>
+<td>30 · Deployment control</td>
+<td>9</td>
+<td>Palantir, Exterro, Nuix 9</td>
+<td>joint</td>
+</tr>
+</tbody>
+</table></div>
+<p>Three of those eight are sole leads, and <strong>cross-source unification at 10 is the only score of 10
+Loupe holds anywhere.</strong> That is the differentiator, stated in the instrument's own terms: not the
+graph (Palantir ties), not traversal (Palantir and Siren tie), not durable work product (three
+others tie) — but phone, documents and financial records resolving into <em>one</em> model where the
+same person is the same object across all three. The median score on that axis across 47
+platforms is <strong>2</strong>.</p>
+<p>Two more axes are worth reading as near-leads: <strong>per-claim provenance 9</strong> (only Clearbrief's 10 is
+higher, and Clearbrief does nothing else — 119 total, 37th) and <strong>financial/transaction analysis
+8</strong>, second only to DataWalk's 9.</p>
+<h2 id="4-where-loupe-is-beaten-and-what-it-costs">4. Where Loupe is beaten, and what it costs</h2>
+<p>Ten axes where Loupe scores 3 or below — every one of them in groups C and E:</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Axis</th>
+<th>Loupe</th>
+<th>Field median</th>
+<th>Leader</th>
+<th>What the gap means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>11 · OSINT &amp; external enrichment</td>
+<td><strong>0</strong></td>
+<td>3</td>
+<td>Babel Street, Neotas, Maltego 10</td>
+<td>No route to reach outside the case at all. Kills due diligence and corporate security.</td>
+</tr>
+<tr>
+<td>16 · Analytics / TAR</td>
+<td><strong>0</strong></td>
+<td>3</td>
+<td>Relativity 10</td>
+<td>No active learning, threading or near-dupe. Kills civil litigation.</td>
+</tr>
+<tr>
+<td>24 · Ecosystem integrations</td>
+<td><strong>0</strong></td>
+<td>6</td>
+<td>CoCounsel 10</td>
+<td>No iManage, NetDocuments, Clio, Westlaw. Every absence is a manual step a rival removed.</td>
+</tr>
+<tr>
+<td>25 · Evidence acquisition</td>
+<td><strong>0</strong></td>
+<td>2</td>
+<td>Magnet, Cellebrite ×2 10</td>
+<td>Analysis-only. Hard gate in national security; irrelevant defence-side.</td>
+</tr>
+<tr>
+<td>22 · Certifications &amp; compliance</td>
+<td><strong>1</strong></td>
+<td>7</td>
+<td>Palantir, Casepoint 10</td>
+<td>Scored but excluded from fit and gating — procurement timing, not capability. See §2.</td>
+</tr>
+<tr>
+<td>14 · Review workflow at scale</td>
+<td><strong>1</strong></td>
+<td>3</td>
+<td>Everlaw, Relativity 10</td>
+<td>No batching, coding panels, reviewer QC.</td>
+</tr>
+<tr>
+<td>15 · Disclosure &amp; production</td>
+<td><strong>2</strong></td>
+<td>3</td>
+<td>Relativity 10</td>
+<td>No redaction, privilege log, Bates, load files.</td>
+</tr>
+<tr>
+<td>26 · Acquisition &amp; parsing validation</td>
+<td><strong>2</strong></td>
+<td>4</td>
+<td>Magnet, Exterro, Pathfinder 9</td>
+<td>No NIST CFTT testing, no published error rates, no testimony history.</td>
+</tr>
+<tr>
+<td>23 · Proven scale</td>
+<td><strong>3</strong></td>
+<td>7</td>
+<td>Palantir, Relativity, Pathfinder, Axon 10</td>
+<td>Federal matters tried is better evidence of value, weaker evidence of volume.</td>
+</tr>
+<tr>
+<td>28 · Vendor viability &amp; support</td>
+<td><strong>3</strong></td>
+<td>7</td>
+<td>Palantir, Cellebrite, Relativity +4 10</td>
+<td>Pre-seed against $1B-raised Harvey. Structural, not fixable this year.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Three of these are <strong>deliberate scope decisions rather than deficiencies</strong> — OSINT, evidence
+acquisition and review-at-scale are marked <em>not applicable</em> in the criminal-defence profile,
+because a defence practice receives evidence and never collects it. The lens excludes N/A axes
+from the fit denominator entirely, which is why Loupe's defence fit is 87% while its raw total is
+56% of the maximum. The other seven are real gaps with real prices attached.</p>
+<h2 id="5-price-bands-who-you-actually-meet-at-each-budget">5. Price bands — who you actually meet at each budget</h2>
+<p>Entry price is the annual cost to get in the door. Four bands, and the distribution is the most
+commercially useful fact in the study.</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Band</th>
+<th>Platforms</th>
+<th>Best total</th>
+<th>Median total</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>&lt; $10k</strong></td>
+<td>8</td>
+<td>CoCounsel 140</td>
+<td>121</td>
+</tr>
+<tr>
+<td><strong>$10–50k</strong></td>
+<td>14</td>
+<td><strong>Exterro FTK/ARMOUR 177</strong>, then <strong>Loupe 168</strong></td>
+<td>130</td>
+</tr>
+<tr>
+<td><strong>$50–300k</strong></td>
+<td>18</td>
+<td>Magnet 190</td>
+<td>139</td>
+</tr>
+<tr>
+<td><strong>$300k+</strong></td>
+<td>7</td>
+<td>Palantir 201</td>
+<td>150</td>
+</tr>
+</tbody>
+</table></div>
+<p>Read down the columns and the barbell is obvious. Below $10,000 sit document tools and one legacy
+charting product — CoCounsel, i2, Casefleet, Maltego, Clearbrief, Case Closed, and at the very
+bottom CROSStrax ($35/month, 73 points) and Trackops ($99/month, 68 points), both built
+specifically for private investigators and both last in the study on evidence modelling. Above
+$300,000 sit the platforms that model evidence properly. The middle is thin.</p>
+<p><strong>Loupe is second of fourteen in the $10–50k band, and the only platform in that band above 160
+other than Exterro.</strong> That is the commercial position in one line: real evidence capability at a
+price a fifteen-person practice can authorise without a procurement process. Everything else
+capable of doing this work costs four to twenty times more.</p>
+<p>The band comparison that should be in the accelerator deck is Loupe against its own price cohort,
+not against Palantir:</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Total</th>
+<th>A /60</th>
+<th>E /90</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Exterro FTK / ARMOUR</td>
+<td>177</td>
+<td>31</td>
+<td>70</td>
+<td>The genuine threat. Agentic forensics, shipped 9 Jul 2026, sells to law firms.</td>
+</tr>
+<tr>
+<td><strong>Loupe</strong></td>
+<td><strong>168</strong></td>
+<td><strong>55</strong></td>
+<td><strong>33</strong></td>
+<td>Leads the band on evidence modelling by 24 points; last on readiness.</td>
+</tr>
+<tr>
+<td>Reveal / Logikcull</td>
+<td>143</td>
+<td>19</td>
+<td>48</td>
+<td>Document culling, not evidence modelling.</td>
+</tr>
+<tr>
+<td>Matey / CrimD</td>
+<td>140</td>
+<td>30</td>
+<td>48</td>
+<td>Same buyer, same pitch, both certifications.</td>
+</tr>
+<tr>
+<td>CaseMap+ AI</td>
+<td>139</td>
+<td>19</td>
+<td>51</td>
+<td>LexisNexis distribution.</td>
+</tr>
+<tr>
+<td>Longeye</td>
+<td>138</td>
+<td>32</td>
+<td>50</td>
+<td>a16z-backed, GovCloud, free to public defenders.</td>
+</tr>
+<tr>
+<td>JusticeText</td>
+<td>132</td>
+<td>23</td>
+<td>47</td>
+<td>$4.0M ARR, 4,100+ attorneys.</td>
+</tr>
+<tr>
+<td>TrialKit</td>
+<td>128</td>
+<td>33</td>
+<td>39</td>
+<td>20+ defence firms, closest to the stated buyer.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="6-reach-how-many-markets-a-platform-can-actually-be-sold-int">6. Reach — how many markets a platform can actually be sold into</h2>
+<p>With certifications excluded, the remaining gates measure something a vendor cannot simply buy:
+commercial accessibility, deployment control, and the ability to acquire evidence. That produces
+the most useful single number in the instrument — <strong>reach</strong>, the count of the fifteen buyer
+profiles a platform clears every gate for.</p>
+<p><strong>No platform of forty-seven reaches all fifteen. Only eight reach more than twelve.</strong></p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Reach</th>
+<th>Platform</th>
+<th>Avg fit across 15 markets</th>
+<th>Entry price</th>
+<th>Total</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>14</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>83.5%</td>
+<td>$50–300k</td>
+<td>190</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>79.5%</td>
+<td>$10–50k</td>
+<td>177</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Longeye</td>
+<td>66.1%</td>
+<td>$10–50k</td>
+<td>138</td>
+</tr>
+<tr>
+<td>14</td>
+<td>IBM i2</td>
+<td>63.9%</td>
+<td>&lt;$10k</td>
+<td>133</td>
+</tr>
+<tr>
+<td><strong>13</strong></td>
+<td><strong>Loupe</strong></td>
+<td><strong>75.3%</strong></td>
+<td><strong>$10–50k</strong></td>
+<td><strong>168</strong></td>
+</tr>
+<tr>
+<td>13</td>
+<td>Kaseware</td>
+<td>60.9%</td>
+<td>$50–300k</td>
+<td>122</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Linkurious</td>
+<td>55.3%</td>
+<td>$10–50k</td>
+<td>106</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Case Closed Software</td>
+<td>49.1%</td>
+<td>&lt;$10k</td>
+<td>100</td>
+</tr>
+</tbody>
+</table></div>
+<p>Read against the platforms that outscore Loupe overall, reach is where the field separates:</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Total</th>
+<th>Reach</th>
+<th>Avg fit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Palantir Gotham / AIP</td>
+<td>201</td>
+<td>11/15</td>
+<td><strong>88.3%</strong> — highest average fit in the study, top-3 in all fifteen</td>
+</tr>
+<tr>
+<td>Magnet Axiom</td>
+<td>190</td>
+<td><strong>14/15</strong></td>
+<td>83.5%</td>
+</tr>
+<tr>
+<td>Exterro FTK / ARMOUR</td>
+<td>177</td>
+<td><strong>14/15</strong></td>
+<td>79.5%</td>
+</tr>
+<tr>
+<td>Relativity (aiR)</td>
+<td>176</td>
+<td><strong>3/15</strong></td>
+<td>71.3%</td>
+</tr>
+<tr>
+<td>Cellebrite Guardian</td>
+<td>175</td>
+<td>10/15</td>
+<td>79.6%</td>
+</tr>
+<tr>
+<td>Everlaw</td>
+<td>175</td>
+<td><strong>4/15</strong></td>
+<td>72.9%</td>
+</tr>
+<tr>
+<td>Cellebrite Pathfinder</td>
+<td>169</td>
+<td>10/15</td>
+<td>74.5%</td>
+</tr>
+<tr>
+<td>Cognyte NEXYTE</td>
+<td>169</td>
+<td>12/15</td>
+<td>82.9%</td>
+</tr>
+<tr>
+<td>Nuix Neo</td>
+<td>169</td>
+<td>12/15</td>
+<td>77.0%</td>
+</tr>
+<tr>
+<td><strong>Loupe</strong></td>
+<td><strong>168</strong></td>
+<td><strong>13/15</strong></td>
+<td><strong>75.3%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Relativity and Everlaw are the finding here.</strong> They score 176 and 175 — above Loupe — and reach
+three and four markets respectively. A high total earned in group C (review at scale, TAR,
+disclosure) buys you civil litigation and almost nothing else. Loupe's 168 is spread differently
+and reaches thirteen.</p>
+<p>Palantir is the mirror: the best average fit anywhere, top-3 in every one of the fifteen, and it
+can be sold into eleven because its commercial model excludes the rest.</p>
+<h2 id="7-the-markets-ranked-by-where-loupe-actually-stands">7. The markets, ranked by where Loupe actually stands</h2>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Market</th>
+<th>Loupe fit</th>
+<th>Rank</th>
+<th>Gates failed</th>
+<th>Platforms clearing all gates</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Criminal defence &amp; PI</td>
+<td><strong>87%</strong></td>
+<td><strong>1 of 47</strong></td>
+<td>none</td>
+<td>10</td>
+</tr>
+<tr>
+<td>Public defender offices</td>
+<td>86%</td>
+<td>3</td>
+<td>commercial accessibility</td>
+<td>9</td>
+</tr>
+<tr>
+<td>Investigative journalism</td>
+<td>84%</td>
+<td>3</td>
+<td>none</td>
+<td>31</td>
+</tr>
+<tr>
+<td>Insurance SIU / fraud</td>
+<td>77%</td>
+<td><strong>7</strong></td>
+<td>none</td>
+<td>47</td>
+</tr>
+<tr>
+<td>Corporate security &amp; insider threat</td>
+<td>75%</td>
+<td>13</td>
+<td>none</td>
+<td>27</td>
+</tr>
+<tr>
+<td>Ethics, compliance &amp; whistleblower</td>
+<td>74%</td>
+<td>18</td>
+<td>none</td>
+<td>23</td>
+</tr>
+<tr>
+<td>Due diligence / KYC</td>
+<td>74%</td>
+<td>12</td>
+<td>none</td>
+<td>47</td>
+</tr>
+<tr>
+<td>Intelligence &amp; national security</td>
+<td>74%</td>
+<td>8</td>
+<td>evidence acquisition</td>
+<td>4</td>
+</tr>
+<tr>
+<td>Corporate &amp; internal investigations</td>
+<td>73%</td>
+<td>15</td>
+<td>none</td>
+<td>27</td>
+</tr>
+<tr>
+<td>Regulators &amp; government enforcement</td>
+<td>73%</td>
+<td>8</td>
+<td>none</td>
+<td>23</td>
+</tr>
+<tr>
+<td>Financial-crime units</td>
+<td>72%</td>
+<td>17</td>
+<td>none</td>
+<td>27</td>
+</tr>
+<tr>
+<td>Public-sector fraud</td>
+<td>72%</td>
+<td>14</td>
+<td>none</td>
+<td>23</td>
+</tr>
+<tr>
+<td>Prosecution &amp; law enforcement</td>
+<td>70%</td>
+<td>15</td>
+<td>none</td>
+<td>23</td>
+</tr>
+<tr>
+<td>UK / EU policing</td>
+<td>70%</td>
+<td>15</td>
+<td>none</td>
+<td>17</td>
+</tr>
+<tr>
+<td>Law firms &amp; civil disputes</td>
+<td><strong>68%</strong></td>
+<td><strong>20</strong></td>
+<td>none</td>
+<td>47</td>
+</tr>
+</tbody>
+</table></div>
+<p>Loupe's fit sits in a narrow band — 68% to 87% — across every buyer in the study. That flatness is
+itself the result: <strong>this is a platform with one shape, which fits one buyer outstandingly and most
+others adequately.</strong> It is first in criminal defence and third in journalism and public defence;
+seventh in insurance SIU; and its floor is civil litigation, where the requirement set is review at
+scale 9, disclosure 9, TAR 8 and processing breadth 8 against Loupe's 1, 2, 0 and 5.</p>
+<p><strong>Insurance SIU is the most under-considered market in the set.</strong> No gate of any kind for any
+platform, budgets that exist, financial analysis and OSINT dominant — Loupe scores 8 and 0. The
+OSINT gap is the barrier, and unlike a certificate it is a build item that changes the fit number.</p>
+<hr />
+<hr />
+<h2 id="7a-what-each-market-is-worth">7a. What each market is worth</h2>
+<h3 id="the-conclusion">The conclusion</h3>
+<p><strong>The field splits into two halves that never meet, and the buyer sits in the gap between them.</strong></p>
+<p>One half can model evidence. Cellebrite, Magnet and Palantir build real structure out of what they
+ingest — and either they will not sell to a defence practice at all, or what they model is devices
+and nothing else. Magnet unifies five kinds of hardware and no kinds of document. Pathfinder builds
+a genuine graph and is marketed solely to law enforcement, government and intelligence.</p>
+<p>The other half serves the buyer. Relativity, Everlaw, DISCO, Reveal, Harvey, CoCounsel — all
+purchasable, all excellent at documents, and all of them treat a phone extraction as an attachment.
+Relativity's own documentation says call logs emerge "only as call log data in Excel format, not as
+individual records," and that multi-device extractions are unsupported outright.</p>
+<p>Forty-seven platforms, and the intersection is empty. That is not an artifact of how the axes were
+drawn — it is structural. Modelling evidence and serving this buyer are different engineering
+problems sold to different customers, and the companies that solved one have no commercial reason to
+solve the other. Four funded startups have entered the defence-AI category in eighteen months, which
+settles the question of whether the buyer spends. <strong>None of them has a graph.</strong></p>
+<p><strong>The gap is not that nobody is good enough. It is that the capability and the customer live in
+different companies.</strong>
+<strong>One more thing this explains.</strong> The team went looking for a platform to run live federal casework,
+<strong>tried a number of them, and none could work the case.</strong> Building was the second choice, not the
+first. That is the structural finding arriving as lived experience rather than as analysis — a buyer
+in this position evaluates the market and finds that everything able to model the evidence will not
+sell to them, and everything that will sell to them treats a phone extraction as an attachment.
+Trying several and finding none fit is the predicted outcome, not bad luck.</p>
+<hr />
+<p><strong>On cost, the finding is simpler and more useful: this budget is already being spent.</strong></p>
+<p>A defence team does not choose between Loupe and a competitor. It chooses between Loupe and what it
+does today — which is to pay a forensic vendor to extract each device, pay per gigabyte per month to
+host the result somewhere it cannot be properly analysed, pay an examiner by the hour to look at
+parts of it, and then pay its own people to stitch the pieces together by hand.</p>
+<p>On a serious matter that runs to <strong>$34,000–$131,000 and sixty to a hundred hours before anyone has
+answered a question about the evidence</strong> — and the largest single line in it, hosting, is charged per
+gigabyte per month, so it grows with exactly the material this platform exists to model. A 435GB
+federal case costs $4,350 a month to keep hosted. The outcome that money buys is a spreadsheet.</p>
+<p><strong>So the sale is not "find budget for this." It is "you are already paying for this, and here is what
+you are getting for it."</strong> That is a far easier conversation, and it is why the absence of an
+analyst category for defence-side investigation software does not indicate an absent market. The
+spend is real, recurring and per-matter. It simply flows to vendors rather than to software, which
+is what a category looks like immediately before it forms.</p>
+<p>The one line that does not move is extraction: devices still go out to a vendor at $3,650 a case.
+Everything downstream of it does.</p>
+<p><strong>The scale of it.</strong> Somewhere between 48,000 and 125,000 evidence-heavy private criminal-defence
+matters run in the United States each year, carrying <strong>$1.0–7.5B</strong> of displaceable spend, inside a
+services market above $15B. Capturing a fifth of the displaceable value across one to five thousand
+firms is a <strong>$350M–$900M</strong> business — before any of the adjacent markets, all of which this same
+product already scores respectably in.</p>
+<p><strong>The sentence for a room:</strong></p>
+<blockquote>
+<p><strong>A serious case burns $34,000–$131,000 on processing, hosting and examiner time before anyone has
+answered a single question about the evidence. Loupe replaces that layer for a fraction of it —
+and hands back sixty to a hundred investigator hours per matter.</strong></p>
+</blockquote>
+<p>Everything below is the working behind those four paragraphs.</p>
+<hr />
+<h3 id="the-evidence-behind-it-market-by-market">The evidence behind it — market by market</h3>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Market</th>
+<th>Sized category</th>
+<th>2026 size</th>
+<th>Forecast</th>
+<th>Loupe fit</th>
+<th><strong>Loupe rank</strong></th>
+<th>Reach</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Prosecution &amp; law enforcement</strong></td>
+<td>Law enforcement software</td>
+<td><strong>$22.0–22.9B</strong></td>
+<td>$39.2B by 2032 (9.8%)</td>
+<td>70%</td>
+<td>15th</td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Law firms &amp; civil disputes</strong></td>
+<td>eDiscovery incl. services (software only $8.6B)</td>
+<td><strong>$20.7B</strong></td>
+<td>$23.7–31.5B by 2030</td>
+<td>68%</td>
+<td><strong>20th — worst</strong></td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Intelligence &amp; national security</strong></td>
+<td>OSINT</td>
+<td><strong>$8.7–23B</strong></td>
+<td>$34.1B by 2035 (16.4%)</td>
+<td>74%</td>
+<td>8th</td>
+<td><strong>fails acquisition</strong></td>
+</tr>
+<tr>
+<td><strong>Insurance SIU / fraud</strong></td>
+<td>Insurance fraud detection</td>
+<td><strong>$8.5–11.3B</strong></td>
+<td>$19.6B by 2030 (<strong>23.2% — fastest</strong>)</td>
+<td>77%</td>
+<td>7th</td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Corporate &amp; internal investigations</strong></td>
+<td>Investigation management software</td>
+<td><strong>$8.1B</strong></td>
+<td>$21.5B by 2033 (14.8%)</td>
+<td>73%</td>
+<td>15th</td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Corporate security &amp; insider threat</strong></td>
+<td>Insider threat protection</td>
+<td><strong>$5.7–6.6B</strong></td>
+<td>$20.2B by 2035 (13.1%)</td>
+<td>75%</td>
+<td>13th</td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Due diligence / KYC</strong></td>
+<td>KYC software $2.5B · KYC broad $7.8B · DD services $2.5B</td>
+<td><strong>$2.5–7.8B</strong></td>
+<td>DD services $5.2B by 2034</td>
+<td>74%</td>
+<td>12th</td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Financial-crime units</strong></td>
+<td>AML software</td>
+<td><strong>$2.8–4.0B</strong></td>
+<td>$6.5–6.8B by 2032–34</td>
+<td>72%</td>
+<td>17th</td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Ethics, compliance &amp; whistleblower</strong></td>
+<td>Whistleblowing software</td>
+<td><strong>$0.28B</strong></td>
+<td>$0.46B by 2033 (6.5%)</td>
+<td>74%</td>
+<td>18th</td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>UK / EU policing</strong></td>
+<td>Inside law enforcement software</td>
+<td><em>not separately sized</em></td>
+<td>—</td>
+<td>70%</td>
+<td>15th</td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Regulators &amp; government enforcement</strong></td>
+<td>Spans law enforcement + investigation mgmt</td>
+<td><em>not separately sized</em></td>
+<td>—</td>
+<td>73%</td>
+<td>8th</td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Public-sector fraud</strong></td>
+<td>Spans law enforcement + fraud detection</td>
+<td><em>not separately sized</em></td>
+<td>—</td>
+<td>72%</td>
+<td>14th</td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Criminal defence &amp; PI</strong></td>
+<td>No software category — services substitution</td>
+<td><strong>services pool</strong></td>
+<td>—</td>
+<td><strong>87%</strong></td>
+<td><strong>1st — best</strong></td>
+<td>clears</td>
+</tr>
+<tr>
+<td><strong>Public defender offices</strong></td>
+<td>Grant-funded; no commercial category</td>
+<td><em>effectively unpriced</em></td>
+<td>—</td>
+<td>86%</td>
+<td>3rd</td>
+<td><strong>fails accessibility</strong></td>
+</tr>
+<tr>
+<td><strong>Investigative journalism</strong></td>
+<td>No market — donated and grant-funded</td>
+<td><em>unsized by design</em></td>
+<td>—</td>
+<td>84%</td>
+<td>3rd</td>
+<td>clears</td>
+</tr>
+</tbody>
+</table></div>
+<p>Read the rank column down the page. The table is ordered by market size, and the ranks run 15th,
+20th, 8th, 7th, 15th — with <strong>1st</strong> appearing only at the bottom, beside the one market that has no
+size at all. <strong>Loupe fits best exactly where the analysts have drawn no category.</strong></p>
+<p>Insurance SIU is the exception worth watching: seventh of forty-seven, no gate for any platform, and
+the fastest-growing category in the set. The only thing between Loupe and the top of that table is
+OSINT, scored 0 — a build item, not a commercial barrier.</p>
+<h3 id="what-a-case-costs-line-by-line">What a case costs, line by line</h3>
+<p>Three lines exist in every phone-heavy defence matter, and only one survives.</p>
+<p><strong>Retained — extraction.</strong> Devices still go to a forensic vendor: $1,575–2,975 per phone, $3,650 flat
+for a one-or-two-device case, +$600 per device beyond. Loupe analyses what was produced rather than
+acquiring it. This line is untouched and is never claimed as a saving.</p>
+<p><strong>Displaced — processing, hosting, examiner analysis.</strong> Processing $3–10/GB; hosting <strong>$5–15 per
+gigabyte per month</strong> for the life of the matter; examiner analysis $300–500/hour.</p>
+<p><strong>Released — investigator and paralegal hours.</strong> RAND's National Public Defense Workload Study puts
+defence work at 35 hours for a low-severity felony, 57 mid, 99 high, 167 for sex offences, 248 for
+murder, 286 capital. Investigator time bills $85–225/hour (average $132), paralegal $100–200.</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Per matter</th>
+<th>Mid felony<br>57h · 1 phone · 30GB</th>
+<th>Doc-heavy fraud<br>2 phones · 300k docs · 120GB</th>
+<th>Serious multi-defendant<br>4 phones · 160GB</th>
+<th>Large federal<br>10 phones · 200k docs · 435GB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Retained</strong> — extraction</td>
+<td>$3,650</td>
+<td>$3,650</td>
+<td>$4,850</td>
+<td>$8,450</td>
+</tr>
+<tr>
+<td>Processing</td>
+<td>$150</td>
+<td>$600</td>
+<td>$800</td>
+<td>$2,175</td>
+</tr>
+<tr>
+<td><strong>Hosting</strong></td>
+<td>$1,800</td>
+<td><strong>$21,600</strong></td>
+<td><strong>$28,800</strong></td>
+<td><strong>$104,400</strong></td>
+</tr>
+<tr>
+<td>Examiner analysis</td>
+<td>$2,400</td>
+<td>$12,000</td>
+<td>$16,000</td>
+<td>$24,000</td>
+</tr>
+<tr>
+<td><strong>Displaced subtotal</strong></td>
+<td><strong>$4,350</strong></td>
+<td><strong>$34,200</strong></td>
+<td><strong>$45,600</strong></td>
+<td><strong>$130,575</strong></td>
+</tr>
+<tr>
+<td>Hours released</td>
+<td>20h → $1,496</td>
+<td>58h → $4,384</td>
+<td>87h → $6,510</td>
+<td>100h → $7,508</td>
+</tr>
+<tr>
+<td><strong>Displaceable value</strong></td>
+<td><strong>$5,846</strong></td>
+<td><strong>$38,584</strong></td>
+<td><strong>$52,110</strong></td>
+<td><strong>$138,082</strong></td>
+</tr>
+<tr>
+<td>Captured at $12,000</td>
+<td>205%</td>
+<td>31%</td>
+<td>23%</td>
+<td>9%</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Hosting is the line that breaks</strong>, and it is the whole commercial argument. Charged per gigabyte
+per month for the life of the matter, it scales with precisely the evidence this platform models. A
+435GB federal case is $4,350 a month — over $100,000 across two years, more than three quarters of
+everything displaceable, spent to have phone data emerge as spreadsheets. At 800GB it is $8,000 a
+month.</p>
+<p><strong>A flat per-matter price is wrong at both ends.</strong> Displaceable value moves 24× between the smallest
+and largest matters. At $12,000 the platform captures 205% of a one-phone case and 9% of a ten-phone
+federal one. Price has to scale with device count, data volume and duration — the same drivers as
+the model it displaces. That is a decision to make before a number is quoted to a prospect.</p>
+<p><strong>Two assumptions carry the labour row and should be tested rather than asserted:</strong> that roughly 35%
+of case hours are evidence handling, and that half of that is removed. The vendor rates are published
+and the case hours are RAND's; only the labour conversion is modelled. Matey publishes "90% time
+saved on discovery review and $40K+ saved per case" for the same buyer, which corroborates the
+magnitude without validating the split.</p>
+<p><strong>One limit, stated plainly.</strong> This holds for firms that already pay a vendor to process and host. A
+share of small practices receive a hard drive and host nothing — there is no invoice to displace, and
+the value is capability rather than substituted spend. It splits the pitch: <em>cheaper than what you
+pay now</em> for the hosting firms, <em>you can finally do this at all</em> for the rest.</p>
+<h3 id="how-many-matters">How many matters</h3>
+<p>US felony filings run <strong>1.6–2.5M a year</strong>. Around a fifth are privately retained — <strong>320,000 to
+500,000 matters</strong>. The evidence-heavy share carrying phone extractions and real document volume is
+conservatively 15–25%: <strong>48,000–125,000 matters a year</strong>. At $20,000–60,000 of displaceable spend
+each, that is <strong>$1.0–7.5B flowing through private US criminal-defence matters annually</strong>, inside a
+services market exceeding $15B.</p>
+<p><strong>On that felony figure.</strong> BJS no longer publishes a national felony filing total — its series ended
+with collections closed in 2006, and the live collection reports processing characteristics rather
+than volumes. The Court Statistics Project holds the number but publishes it only through an
+interactive dashboard that is not machine-readable: <strong>Explore court caseload data → Criminal →
+Incoming → Felony</strong> returns it in about two minutes for anyone with a browser, and that is the right
+way to replace this range with a figure. The bound above is built from CSP's 70M total state court
+filings (2024), the historical BJS series, and California's published 183,151 felony filings.</p>
+<p>At a fifth of displaceable value across 1,000–5,000 target firms, the bottom-up market is
+<strong>$350M–$900M</strong>, with a path above a billion at the top of that firm range.</p>
+<h3 id="the-growth-path-four-stages-and-what-each-requires">The growth path — four stages, and what each requires</h3>
+<p>Priced at a blended <strong>$12,000 per matter</strong>. A typical boutique runs about eight evidence-heavy
+matters a year and is worth roughly <strong>$96,000 annually</strong>; an active practice at twenty matters is
+worth $240,000. The figures below use the conservative rate throughout.</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><strong>1 · Proof</strong><br>Owl &amp; Ireland</th>
+<th><strong>2 · The engine</strong><br>United States</th>
+<th><strong>3 · Second geography</strong><br>+ United Kingdom</th>
+<th><strong>4 · Expansion</strong><br>+ Europe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ARR</strong></td>
+<td><strong>$0.5M</strong></td>
+<td><strong>$5M</strong></td>
+<td><strong>$10M</strong></td>
+<td><strong>$25M</strong></td>
+</tr>
+<tr>
+<td>Customers</td>
+<td>5</td>
+<td>52</td>
+<td>104</td>
+<td>260</td>
+</tr>
+<tr>
+<td>Matters / year</td>
+<td>42</td>
+<td>417</td>
+<td>833</td>
+<td>2,083</td>
+</tr>
+<tr>
+<td>Share of the US evidence-heavy pool</td>
+<td>—</td>
+<td>0.3–0.9%</td>
+<td>0.7–1.7%</td>
+<td>1.7–4.3%</td>
+</tr>
+<tr>
+<td>Addressable pool added</td>
+<td>Irish criminal legal aid €123M (services)</td>
+<td>48,000–125,000 matters/yr carrying <strong>$1.0–7.5B</strong> displaceable</td>
+<td>~80,200 open Crown Court cases → 104,500 by 2029; UK is 21.76% of European forensics (~$525M)</td>
+<td>European digital forensics <strong>$2.41B → $3.89B</strong>; legal tech <strong>$6.81B → $15.45B</strong></td>
+</tr>
+<tr>
+<td>Channel</td>
+<td>Law Society and Criminal Legal Aid panel</td>
+<td>The defence bar — the channel Matey has proven</td>
+<td>Law Society and Criminal Law Solicitors' Association</td>
+<td>Partner-led, per jurisdiction</td>
+</tr>
+<tr>
+<td>What gates it</td>
+<td>A validated price from real matters</td>
+<td>The bar channel converting</td>
+<td>The per-matter model rebuilt on UK vendor and Legal Aid Agency rates</td>
+<td>Partners, because every jurisdiction has its own procedure and disclosure regime</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>The point of the staircase is the customer and matter counts, not the ARR.</strong> Ten million in
+recurring revenue requires 104 customers running 833 matters between them — <strong>under two per cent of
+the US evidence-heavy pool alone</strong>, before the UK or Europe contribute anything. Twenty-five million
+requires 260 firms. Against a target population of one to five thousand practices, none of these
+stages asks for market dominance. They ask for a channel that works and a price that holds.</p>
+<p><strong>Each stage is gated on one thing rather than many</strong>, which is what makes the sequence testable.
+Stage 1 exists to produce a validated price and nameable references — it is not a revenue stage and
+should not be defended as one. Stage 2 is where the business is. Stage 3 adds a second geography with
+the same buyer shape and a funded government backlog behind it. Stage 4 trades direct selling for
+partners and rests on the deployment-control advantage.</p>
+<p>Customer counts assume the conservative eight-matter firm. At the twenty-matter active practice the
+same revenue needs two and a half times fewer customers — 42 firms for $10M rather than 104. The
+real mix will sit between the two, and the first cohort is what establishes which.</p>
+<h3 id="ireland-the-uk-and-europe">Ireland, the UK and Europe</h3>
+<p>The analysis above is US-shaped because the beachhead is. The same structure exists in Europe, and
+for an Irish company it is the nearer market.</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>Scale</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Europe — digital forensics</strong></td>
+<td><strong>$2.41B (2026) → $3.89B by 2031</strong>, 10.06% CAGR</td>
+<td>Software is 44.6% of it; services growing fastest at 11.0% as corporates outsource evidence collection</td>
+</tr>
+<tr>
+<td><strong>UK — share of that</strong></td>
+<td><strong>21.76% of the European market</strong>, roughly <strong>$525M</strong></td>
+<td>The largest single European market for exactly this work</td>
+</tr>
+<tr>
+<td><strong>Europe — legal technology</strong></td>
+<td><strong>$6.81B (2026) → $15.45B by 2034</strong>, 10.78% CAGR</td>
+<td>Europe is <strong>25% of the global legal-tech market</strong>; the UK holds the largest European share</td>
+</tr>
+<tr>
+<td><strong>England &amp; Wales — serious criminal caseload</strong></td>
+<td><strong>~80,200 open Crown Court cases</strong> (Dec 2025), receipts near series highs</td>
+<td>Projected to <strong>99,000–114,000 by March 2029</strong> — central estimate 104,500</td>
+</tr>
+<tr>
+<td><strong>England &amp; Wales — criminal legal aid</strong></td>
+<td>~55% of all legal aid expenditure; <strong>+£92M</strong> announced July 2025, fee increases December 2025</td>
+<td>Spend is rising, not falling</td>
+</tr>
+<tr>
+<td><strong>Ireland — criminal legal aid</strong></td>
+<td><strong>€123M allocated for 2026</strong>, up €27M</td>
+<td>Full restoration of criminal legal aid fees</td>
+</tr>
+<tr>
+<td><strong>Ireland — Courts Service</strong></td>
+<td><strong>€215M</strong> total spend, up 8%, plus 20 additional judges in 2026</td>
+<td>Capacity is being funded</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Three things make Europe more than a second market.</strong></p>
+<p><strong>The Crown Court backlog is a stated government problem with money behind it.</strong> Eighty thousand
+open serious cases, rising toward a projected 104,500, with new funding directed at clearing them.
+A tool whose measurable effect is removing hours from evidence handling on serious matters is
+aligned to a published policy objective rather than merely to a firm's margin. That is an unusually
+favourable position for a procurement conversation.</p>
+<p><strong>Data residency is worth more here.</strong> Deployment control — single-tenant, in-jurisdiction,
+sovereign — is scored at 9, joint highest in the study. Under GDPR and the CPIA disclosure regime
+that is not a preference but frequently a requirement, and most of the American-owned competitors in
+this field score 2–6 on it. In the UK/EU policing profile deployment is gated at 7 and only ten of
+forty-seven platforms clear every gate.</p>
+<p><strong>Ireland is small, and that is not the point of it.</strong> €123M of criminal legal aid is not a market
+to build a company on. It is a credible home reference, a jurisdiction where a Dublin-based company
+can run a first public-sector pilot, and the entry point to a European digital-forensics market
+growing at 10% a year in which the UK alone is a fifth.</p>
+<p><strong>What is not yet sized.</strong> Europe-wide criminal case volumes are not consolidated the way US state
+court data is — each jurisdiction publishes separately, and any European equivalent of the per-matter
+model above would have to be rebuilt per country on local vendor rates and local counsel rates. The
+figures here are market-level, not bottom-up, and should be treated as the weaker half of the
+evidence until that work is done.</p>
+<h3 id="the-regional-plan">The regional plan</h3>
+<p>Three jurisdictions, three different jobs. They are sequenced by what each one is <em>for</em>, not by size.</p>
+<h4 id="ireland-the-reference-not-the-revenue">Ireland — the reference, not the revenue</h4>
+<p>€123M of criminal legal aid and a €215M Courts Service is not a market to build a company on, and
+should never be presented as one. Ireland's job is to produce the first nameable customer in the
+company's own jurisdiction.</p>
+<ul>
+<li><strong>Buyer:</strong> criminal defence solicitors' practices doing Circuit and Central Criminal Court work,
+  and the firms on the Criminal Legal Aid panel.</li>
+<li><strong>Route:</strong> the Law Society and the Criminal Legal Aid panel are the equivalent of the US defence
+  bar channel that Matey proved works. Same playbook, smaller room, shorter path to the people who
+  matter.</li>
+<li><strong>What it unlocks:</strong> a European reference customer, a jurisdiction where a Dublin company can run
+  a first public-sector conversation without an ocean in the way, and the Dogpatch and NDRC network
+  as introduction surface.</li>
+<li><strong>Gates:</strong> none that bite. EU data residency is trivially satisfied by single-tenant deployment,
+  which is scored 9.</li>
+<li><strong>Fee restoration in 2026 (+€27M) means the segment's budget is rising</strong>, not being cut.</li>
+</ul>
+<h4 id="united-kingdom-the-first-real-european-revenue">United Kingdom — the first real European revenue</h4>
+<p>The UK is 21.76% of the European digital-forensics market, roughly <strong>$525M</strong>, and it has the
+clearest funded pain of any jurisdiction in this study.</p>
+<ul>
+<li><strong>Buyer:</strong> criminal defence solicitors running Crown Court work — the same shape as the US
+  beachhead, receiving evidence they cannot analyse.</li>
+<li><strong>The tailwind is a government problem with money attached.</strong> ~80,200 open Crown Court cases at
+  December 2025, receipts near series highs, projected to 99,000–114,000 by March 2029. Criminal
+  legal aid is ~55% of legal aid spend, with £92M added in July 2025 and fees raised that December.
+  A product that removes hours from evidence handling on serious matters is aligned to a published
+  policy objective, which is a materially different conversation from selling efficiency to a firm.</li>
+<li><strong>Route:</strong> the Law Society and the Criminal Law Solicitors' Association mirror the NACDL channel.
+  Legal Aid Agency rates set the economics, so the per-matter model has to be rebuilt on UK vendor
+  and counsel rates before a price is quoted.</li>
+<li><strong>Sequence: defence first, policing much later.</strong> In the UK/EU policing profile, disclosure and
+  production mechanics are gated at 8 under CPIA and <strong>Loupe scores 2</strong> — the heaviest single gap
+  anywhere in the study for that buyer. Defence-side work does not carry the disclosure duty in the
+  same way, which is precisely why it is the entry point and prosecution is not.</li>
+<li><strong>BlueLight Commercial's role as a policing procurement gatekeeper is unconfirmed</strong> and should be
+  established before any public-sector effort is planned around it.</li>
+</ul>
+<h4 id="europe-expansion-on-a-structural-advantage">Europe — expansion, on a structural advantage</h4>
+<ul>
+<li><strong>Size:</strong> digital forensics $2.41B (2026) → $3.89B by 2031 at 10.06%; legal technology $6.81B →
+  $15.45B by 2034 at 10.78%, with Europe holding 25% of the global legal-tech market.</li>
+<li><strong>The advantage is deployment.</strong> Single-tenant, in-jurisdiction, sovereign deployment is scored 9,
+  joint highest in the study, while most American-owned competitors score 2–6. Under GDPR that
+  converts from a preference into a procurement requirement, and it is the one axis where being a
+  European company with European hosting is worth more than being a larger American one.</li>
+<li><strong>The obstacle is fragmentation.</strong> Every jurisdiction has its own procedure, its own disclosure
+  regime, its own languages and its own vendor rate card. There is no European equivalent of the US
+  state-court dataset, so both the market sizing and the per-matter model have to be rebuilt country
+  by country. Treat Europe beyond Ireland and the UK as a partner-led motion rather than a direct
+  one, and do not carry a single European TAM figure into an investor conversation as though it were
+  addressable in one go.</li>
+</ul>
+<h4 id="what-this-means-for-the-sequence">What this means for the sequence</h4>
+<p>Ireland produces the reference. The UK produces the first European revenue and has the strongest
+policy tailwind of any market here. The US remains the largest opportunity and the one the product
+was built inside. Europe beyond those two is a later, partner-led motion whose value is the
+deployment-control advantage rather than any single national market.</p>
+<h3 id="sources">Sources</h3>
+<p>Figures are 2026 estimates published by Grand View Research, Fortune Business Insights, Mordor
+Intelligence, MarketsandMarkets, Precedence Research, Verified Market Reports, Research and Markets,
+ComplexDiscovery and IBISWorld, retrieved 29 July 2026. Where houses disagree the range is given
+rather than a midpoint. <strong>None of these is a primary source commissioned for this study</strong>, and any
+figure used in an investor document should be re-checked against the underlying report rather than
+the press summary.</p>
+<p><strong>The $3.5B-by-2030 "global investigations market" figure circulating internally matches none of
+these categories</strong> and is most likely a narrow regional or sub-segment estimate. It should not be
+used.</p>
+<hr />
+<h2 id="8-the-field-platform-by-platform-against-loupe">8. The field, platform by platform, against Loupe</h2>
+<p>Every entry gives the total, the entry price band, how many of the thirty axes it beats Loupe on
+and loses to Loupe on, and what that trade actually means commercially. The pattern repeats so
+consistently it is worth stating up front: <strong>almost every platform in this study beats Loupe on
+readiness and loses to it on evidence modelling.</strong> The exceptions are the interesting ones.</p>
+<h3 id="the-nine-that-outscore-loupe">The nine that outscore Loupe</h3>
+<p><strong>Palantir Gotham / AIP — 201, $300k+. Beats Loupe on 15 axes, loses on 10.</strong>
+The only platform that matches Loupe on both auto-built graph (9) and whole-corpus traversal (9),
+and it does so with certifications 10, proven scale 10, vendor viability 10 and deployment
+control 9. It is what Loupe looks like with fifteen years and a defence budget behind it. The
+trade is stark: Palantir scores <strong>1 on commercial accessibility</strong> — averaging over a million
+dollars per deal — and <strong>2 on disconfirmation</strong> against Loupe's 8. It wins twelve of the fifteen
+markets on fit and cannot be bought by any buyer in the beachhead. In investor terms Palantir is
+the proof the architecture is right, not the competitor to fear.</p>
+<p><strong>Magnet Axiom / Magnet One — 190, $50–300k. Beats on 15, loses on 12.</strong>
+The broadest reach in the study — it clears every gate in fourteen of the fifteen markets, more
+than any platform except Exterro, Longeye and i2, and at a far higher average fit than those three.
+Evidence acquisition 10, parsing validation 9, certifications 8, vendor viability 9. Loupe beats it on
+financial analysis <strong>8 v 1</strong>, disconfirmation 8 v 1, cross-source unification 10 v 5 and
+whole-corpus query 9 v 5. Magnet unifies five kinds of device and no kinds of document — that is
+the entire gap, and it is the gap the product argument rests on.</p>
+<p><strong>Exterro FTK / ARMOUR — 177, $10–50k. Beats on 15, loses on 13.</strong>
+The nearest competitive threat in the whole study, because it is in Loupe's own price band, sells
+openly to law firms (accessibility 6, the highest of the nine), clears the defence gates, and on
+9 July 2026 shipped ARMOUR — agentic forensics scoring <strong>9 on agentic task execution, the only
+score in the study above Loupe's 8 on any AI axis.</strong> Loupe beats it on disconfirmation 8 v 1,
+financial analysis 8 v 2, auto-built graph 9 v 3 and cross-source unification 10 v 5. If one
+competitor closes the evidence-model gap in the next two years, it is this one.</p>
+<p><strong>Relativity (aiR) — 176, $50–300k. Beats on 15, loses on 13.</strong>
+The mirror image of Loupe. Relativity scores <strong>61 of 70</strong> on processing and casework — TAR 10,
+review at scale 10, disclosure 10 — and <strong>20 of 60</strong> on evidence modelling. Loupe beats it on
+cross-source unification 10 v 2, multimodal 9 v 2, device data 9 v 2, graph 9 v 2 and traversal
+9 v 3. Two products that barely overlap, sold into overlapping rooms. Relativity wins civil
+litigation and cannot answer a relational question; Loupe answers relational questions and cannot
+run a document review.</p>
+<p><strong>Cellebrite Guardian Investigate — 175, $50–300k. Beats on 14, loses on 13.</strong>
+Device data 10, acquisition 10, vendor viability 10, certifications 8. Loupe beats it on
+disconfirmation 8 v 0, per-claim provenance 9 v 3, financial analysis 8 v 2 and durable judgment
+objects 9 v 3. Guardian is the T1 threat in the landscape doc for a reason: every capability
+needed to serve defence teams is built, and the only barrier is a go-to-market choice.
+Accessibility 1 is that choice, and choices reverse.</p>
+<p><strong>Everlaw — 175, $50–300k. Beats on 14, loses on 12.</strong>
+Cited document Q&amp;A 10 — the highest in the study, above Loupe's 8 — plus review at scale 10, TAR
+9, provenance 9 and durable judgment objects 9 (tied with Loupe). Everlaw is the strongest
+counter-example to a naive "nobody else builds work product" claim. It loses on cross-source
+unification 10 v 2, multimodal 9 v 2, disconfirmation 8 v 1 and deployment control 9 v 2. Its
+Storybuilder fact model is genuinely excellent and document-scoped; it cannot hold a call.</p>
+<p><strong>Cellebrite Pathfinder — 169, $50–300k. Beats on 16, loses on 13.</strong>
+The platform that disproves "nobody builds a graph": auto-built graph 7, link analysis 9, device
+data 10, geospatial 9, acquisition 10, proven scale 10. Loupe beats it on disconfirmation 8 v 0,
+financial analysis 8 v 2, durable judgment 9 v 3, AI defensibility 8 v 2 and unification 10 v 4.
+Pathfinder is sold solely to law enforcement, government and intelligence — accessibility 1 — and
+a Florida State Attorney's office publishes instructions telling defence counsel to view
+extractions through read-only Guardian links. The graph exists; the defence cannot buy it.</p>
+<p><strong>Cognyte NEXYTE — 169, $300k+. Beats on 14, loses on 15.</strong>
+The only platform in the top nine that loses to Loupe on more axes than it wins. Strong across
+group B — link analysis 8, geospatial 8, OSINT 7 — with multimodal 7, the second highest after
+Loupe. Loses on disconfirmation 8 v 1, provenance 9 v 4, device data 9 v 4, AI defensibility 8 v 3.
+A national-intelligence platform priced accordingly.</p>
+<p><strong>Nuix Neo — 169, $300k+. Beats on 13, loses on 16.</strong>
+Processing breadth <strong>10 — the study's benchmark</strong>, 1,000+ file types including forensic images —
+plus case workflow 9 and TAR 8. Loses to Loupe on sixteen axes including disconfirmation 8 v 0,
+unification 10 v 4, traversal 9 v 4 and multimodal 9 v 4. Nuix acquired Linkurious for €20M
+(signed 4 Dec 2025, closed that month) and when that integration ships, an enterprise-priced
+version of Loupe's architecture exists. No shipped integration as of July 2026.</p>
+<h3 id="the-forensics-and-law-enforcement-tier">The forensics and law-enforcement tier</h3>
+<p><strong>Axon (Records / Evidence) — 158, $50–300k.</strong> Owns the body-camera ecosystem outright:
+acquisition 9, certifications 9, vendor viability 10, proven scale 10, multimodal 7. Loses to
+Loupe on <strong>seventeen</strong> axes including financial analysis 8 v 1 and traversal 9 v 3. Law-enforcement
+only, which is the only thing keeping it out of a defence buyer's comparison.</p>
+<p><strong>NICE Investigate — 153, $50–300k.</strong> Digital evidence management with strong disclosure (8) and
+workflow (8). Loses on seventeen axes. The pattern across this tier is identical — excellent at
+custody, acquisition and disclosure; nearly absent on modelling and AI.</p>
+<h3 id="the-ediscovery-tier-the-mirror-image-cohort">The eDiscovery tier — the mirror-image cohort</h3>
+<p><strong>DISCO (Cecilia) 144</strong>, <strong>Reveal / Logikcull 143</strong>, <strong>Casepoint 141</strong>. All three beat Loupe on
+review at scale, TAR, disclosure, certifications and integrations; all three lose on 15–17 axes
+concentrated in evidence modelling. Casepoint holds <strong>certifications 10</strong> — FedRAMP High with DOD
+IL5/IL6 — and scores <strong>1 on cross-source unification, 1 on graph, 1 on device data.</strong> Reveal's
+own documentation states Ask is "designed for precision, not recall." This tier is where the
+reductive-versus-constructive argument in the landscape doc is most visible in the numbers:
+group C strong, group A empty.</p>
+<h3 id="the-graph-and-intelligence-tier">The graph and intelligence tier</h3>
+<p><strong>DataWalk 145, $300k+</strong> — financial analysis <strong>9, the study leader</strong>, graph 8, traversal 8, link
+analysis 8. The closest analogue to Loupe's architecture at the top of the market, and it loses on
+durable judgment 9 v 2, device data 9 v 3, provenance 9 v 4 and disconfirmation 8 v 0. Entry
+around $560,000.</p>
+<p><strong>Babel Street 150</strong> and <strong>Neotas 130</strong> — OSINT 10 each, and device data 0. <strong>Maltego 123</strong> —
+link analysis 9, OSINT 10, and <strong>9 of 60</strong> on evidence modelling; it is an analyst's canvas fed by
+outbound queries, with no path for received discovery. <strong>IBM i2 133</strong> — link analysis <strong>10, the
+study leader</strong>, and <strong>0 on all three AI axes</strong>; no LLM in any tier, and native UFED import was
+removed at version 9.1.0. <strong>Siren 125</strong> — traversal 9 (tied with Loupe), graph 8, and case
+workflow 2. <strong>Linkurious 106</strong> — graph 8, traversal 8, processing breadth 1: a front end that
+requires an already-populated graph database. <strong>Octostar 110</strong> — traversal 8, and the lowest
+readiness score in the study at 28 of 90.</p>
+<p>The tier's collective lesson is the F9 finding in numeric form: the graph vendors have the model
+and no pipeline; the legal vendors have the pipeline and no model. Nobody has both. That
+intersection is 19 points of Loupe's 55-point lead in group A.</p>
+<h3 id="the-defence-native-cohort-the-real-comparison-set">The defence-native cohort — the real comparison set</h3>
+<p>These four are the companies Loupe is actually competing with for the same buyer, and they are
+funded at $2.5M–$7.5M seed, not war chests.</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>Total</th>
+<th>Band</th>
+<th>Certs</th>
+<th>Graph</th>
+<th>Device</th>
+<th>Unification</th>
+<th>Disconf</th>
+<th>Provenance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Loupe</strong></td>
+<td><strong>168</strong></td>
+<td>$10–50k</td>
+<td><strong>1</strong></td>
+<td><strong>9</strong></td>
+<td><strong>9</strong></td>
+<td><strong>10</strong></td>
+<td><strong>8</strong></td>
+<td><strong>9</strong></td>
+</tr>
+<tr>
+<td>Matey / CrimD</td>
+<td>140</td>
+<td>$10–50k</td>
+<td><strong>9</strong></td>
+<td>2</td>
+<td>5</td>
+<td>5</td>
+<td>0</td>
+<td>8</td>
+</tr>
+<tr>
+<td>Longeye</td>
+<td>138</td>
+<td>$10–50k</td>
+<td>8</td>
+<td>1</td>
+<td>6</td>
+<td>7</td>
+<td>0</td>
+<td>8</td>
+</tr>
+<tr>
+<td>JusticeText</td>
+<td>132</td>
+<td>$10–50k</td>
+<td>6</td>
+<td>1</td>
+<td>0</td>
+<td>4</td>
+<td><strong>6</strong></td>
+<td>7</td>
+</tr>
+<tr>
+<td>TrialKit</td>
+<td>128</td>
+<td>$10–50k</td>
+<td>4</td>
+<td>2</td>
+<td>7</td>
+<td>6</td>
+<td>0</td>
+<td>8</td>
+</tr>
+</tbody>
+</table></div>
+<p>Loupe outscores all four by 28–40 points, and every one of them currently holds certifications Loupe does not.
+<strong>Matey holds SOC 2 Type II and ISO 27001 today and sells to the same buyer through NACDL and a
+state defence bar.</strong> Longeye runs single-tenant on AWS GovCloud (deployment 8) and intends to give
+the platform to public defenders free. JusticeText is the only competitor with a real
+disconfirmation capability — Miranda AI at 6 — and it is narrow: inconsistencies across A/V
+discovery, not a claims ledger. TrialKit claims phone extractions as an input type, not a modelled
+device.</p>
+<p>None of the four has a graph. All four have the category label, the bar associations and the
+certifications. That is the competitive position in one paragraph.</p>
+<h3 id="the-legal-ai-tier">The legal-AI tier</h3>
+<p><strong>CoCounsel 140, &lt;$10k</strong> — ecosystem integrations <strong>10, the study leader</strong>, vendor viability 10,
+and device data 0, graph 2, geospatial 0. <strong>Harvey 127, $300k+</strong> — provenance 8, agentic 8, cited
+Q&amp;A 9, and <strong>1 on link analysis, 0 on geospatial, 1 on cross-source unification</strong>; over $1B raised
+at an $11B valuation, priced for the AmLaw 100 with seat minimums near $360,000/year.
+<strong>Hebbia 122</strong> — agentic 8, cited Q&amp;A 8, timeline <strong>0</strong>. <strong>Clearbrief 119, &lt;$10k</strong> — per-claim
+provenance <strong>10 and AI defensibility 10, both study leaders</strong>, on a total of 119; it does one
+thing better than anyone and almost nothing else. <strong>CaseMap+ AI 139</strong> — durable judgment 9 (tied
+with Loupe), LexisNexis distribution at integrations 9.</p>
+<h3 id="the-case-management-tier">The case-management tier</h3>
+<p><strong>Hubstream 144</strong>, <strong>Ontic 127</strong>, <strong>Kaseware 122</strong>, <strong>Comtrac 122</strong>, <strong>Resolver 114</strong>,
+<strong>Case IQ 111</strong>, <strong>Case Closed 100</strong>, <strong>HR Acuity 96</strong>, <strong>Omnigo 93</strong>, <strong>CROSStrax 73</strong>,
+<strong>Trackops 68</strong>. Case workflow scores of 8–9 throughout against <strong>Loupe's 4</strong> — the axis where
+Loupe ranks 39th of 47. Comtrac is the most interesting of them: its "Elementising Evidence"
+methodology maps exhibits to the elements of an offence and scores <strong>durable judgment objects 8</strong>,
+the closest shipped analogue anywhere to the Loupes thesis, on a total of 122.</p>
+<p>CROSStrax ($35/month) and Trackops ($99/month) are built specifically for private investigators —
+the exact beachhead buyer — and score 73 and 68, last and second-last in the study. They are the
+proof of the whitespace: <strong>the beachhead buyer already owns cheap case management and owns nothing
+that analyses evidence.</strong></p>
+<h3 id="nearest-neighbours-by-score-profile">Nearest neighbours by score profile</h3>
+<p>Ranking every platform by total absolute difference across all thirty axes gives the platforms
+that most resemble Loupe in <em>shape</em> rather than in score:</p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>L1 distance</th>
+<th>Total</th>
+<th>Why it resembles Loupe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Longeye</td>
+<td>94</td>
+<td>138</td>
+<td>Same buyer, same evidence mix claimed, no graph</td>
+</tr>
+<tr>
+<td>TrialKit</td>
+<td>94</td>
+<td>128</td>
+<td>Same buyer, device data 7, no graph</td>
+</tr>
+<tr>
+<td>DataWalk</td>
+<td>95</td>
+<td>145</td>
+<td>Graph + financial + traversal, enterprise-priced</td>
+</tr>
+<tr>
+<td>Octostar</td>
+<td>96</td>
+<td>110</td>
+<td>Graph-native, traversal 8, no readiness</td>
+</tr>
+<tr>
+<td>Siren</td>
+<td>97</td>
+<td>125</td>
+<td>Traversal 9, graph 8, no case workflow</td>
+</tr>
+<tr>
+<td>Palantir</td>
+<td>101</td>
+<td>201</td>
+<td>Same architecture, opposite commercial position</td>
+</tr>
+</tbody>
+</table></div>
+<p>The farthest are Relativity (150), Casepoint (145) and HR Acuity (144) — the pure review and pure
+workflow platforms. This is a useful diligence answer: <em>the products that look most like Loupe are
+either priced out of the beachhead or have no evidence model; the products that share the buyer
+have no graph.</em></p>
+<hr />
+<h2 id="9-kaseware-and-altia-where-their-graphs-actually-come-from">9. Kaseware and Altia — where their graphs actually come from</h2>
+<p>Whether Kaseware's and Altia's link analysis is auto-built from ingested evidence or charted by an
+analyst decides whether the auto-built-graph claim can stand. Direct research on vendor
+documentation answers it, and the answer changes two rows.</p>
+<p><strong>Kaseware — the graph is genuinely auto-built.</strong> Kaseware's link-analysis page states charts are
+"automatically generated from case and entity data without any manual effort" and update in real
+time as information enters the system. Its AI services page goes further: entity extraction that
+"identif[ies] people, organizations, locations, and events across documents and data feeds,"
+extraction of "names, dates, locations, and other key details from unstructured data,"
+AI-enhanced OCR for scanned documents, speech-to-text for "interviews, calls, and field
+recordings," translation across 160+ languages, and relationship mapping that "connect[s] entities
+across data sources to detect links." No evidence of UFED/Cellebrite parsing or financial-statement
+parsing was found.</p>
+<p><em>Proposed revision:</em> axis 1 (auto-built graph) <strong>5 → 7</strong>; axis 5 (multimodal entities) <strong>2 → 5</strong>;
+axis 6 (per-claim provenance) <strong>2 → 3</strong> (drill-through to source document, not quote-and-page).
+New total <strong>122 → 128</strong>.</p>
+<p><strong>Altia — provenance is real, the graph is not.</strong> Altia's Financial Investigation Toolkit "allows
+investigators to upload, scan, and extract data from bank statements in a structured, reliable
+format," and "structures and indexes that information so every transaction, source, and disclosure
+can be traced back to its origin." It "automatically logs every data ingestion with timestamps and
+source references." That is genuine per-claim provenance over financial evidence. But FIT is
+financial-only, holds no phone or communications data, sits in a separate product from the Insight
+case-management module, and no evidence was found of automatic entity or relationship extraction
+from the parsed financial data.</p>
+<p><em>Proposed revision:</em> axis 6 (per-claim provenance) <strong>2 → 6</strong>; axis 10 (financial analysis)
+<strong>7 → 8</strong>. New total <strong>140 → 145</strong>.</p>
+<p><strong>What this does to the claims.</strong> It kills the loose version of "nobody else auto-builds a graph"
+— Kaseware does, from ingested documents and audio. It leaves the precise version untouched and
+in fact strengthens it: <em>no platform holds device data, financial records and documents in one
+model.</em> Kaseware has no device or financial parsing; Altia has financial parsing with excellent
+provenance and no device data (score 1) and no unified model. The claim was already qualified to
+"cross-evidence-type, never graph" in the landscape doc — this research confirms that wording was
+the right call and supplies the evidence for it.</p>
+<p><strong>Held pending sign-off</strong>, listed here so the change is auditable rather than silent. Neither
+revision alters a market outcome or a finding.</p>
+<hr />
+<h2 id="10-what-is-still-unverified">10. What is still unverified</h2>
+<ul>
+<li><strong>Comtrac</strong> has no full dossier — the closest analogue to the Loupes thesis is covered in a
+  paragraph. It should have one.</li>
+<li><strong>Price bands are entry-point estimates.</strong> Several vendors publish nothing; Harvey, Hebbia,
+  CoCounsel and Everlaw seat prices are third-party estimates.</li>
+<li><strong>Loupe's own row scores the imminent release</strong>, not today's build. Loupes and the
+  disconfirmation agent are in that release and are not yet shipped. The lens footer states this;
+  any external use must too.</li>
+<li><strong>Market sizes are analyst estimates, not primary research.</strong> §7a sizes every market from
+  published reports; the houses disagree by two to three times on several categories and none of
+  those categories was drawn around this product. Re-check any figure against the underlying report
+  before it goes in an investor document.</li>
+</ul>
+<h2 id="11-how-to-use-this-instrument">11. How to use this instrument</h2>
+<ul>
+<li><strong>For a specific prospect:</strong> pick their market, pick their budget, read the gate column first.
+  Capability arguments are wasted on a buyer whose procurement gate you fail.</li>
+<li><strong>For the accelerator application:</strong> the three sentences that carry are — <em>no platform of
+  forty-seven can be sold into all fifteen markets, and only eight reach more than twelve; Loupe
+  reaches thirteen</em>; <em>the two platforms scoring above Loupe on review-heavy capability, Relativity
+  and Everlaw, reach three and four markets between them — a high total earned in one group buys
+  one market</em>; and <em>Loupe is second of fourteen in its price band and leads that band on evidence
+  modelling by twenty-two points.</em> All three are comparative rather than self-descriptive, which is
+  the register a diligence panel trusts.</li>
+<li><strong>For roadmap argument:</strong> the axes where movement changes the most outcomes are, in order —
+  OSINT (0, and it caps insurance SIU, due diligence and corporate security), case workflow (4,
+  and it caps every corporate and government market), review-at-scale and disclosure (1 and 2,
+  which together decide civil litigation, the largest spend pool and Loupe's weakest market), and
+  evidence acquisition (0, the only thing keeping Loupe out of national security). Certifications
+  are deliberately absent from this list: they are bought when a deal needs them and they change
+  no fit number.</li>
+</ul>
+<hr />
+<h1>Data appendix</h1>
+<p>Everything below is generated directly from the published artifact's score arrays.</p>
+<h2 id="a-the-thirty-axes">A. The thirty axes</h2>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Group</th>
+<th>Axis</th>
+<th>What it measures</th>
+<th>Leader(s)</th>
+<th>Median</th>
+<th>Loupe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>A</td>
+<td><strong>Auto-built case graph</strong></td>
+<td>Whether the platform builds a persistent model of people, organisations, accounts and events — and the relationships between them — automatically as…</td>
+<td>Loupe, Palantir Gotham / AIP — 9</td>
+<td>3</td>
+<td><strong>9</strong> (#1)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>A</td>
+<td><strong>Device data as structured evidence</strong></td>
+<td>Whether a phone or device extraction becomes first-class objects — individual calls, contacts, messages, locations — that can each be queried and…</td>
+<td>Magnet Axiom / Magnet One, Cellebrite Guardian Investigate, Cellebrite Pathfinder — 10</td>
+<td>1</td>
+<td><strong>9</strong> (#4)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>A</td>
+<td><strong>Cross-source unification</strong></td>
+<td>Whether phone data, documents and financial records resolve into one model, so the same person is the same object across all three. Most platforms…</td>
+<td>Loupe — 10</td>
+<td>2</td>
+<td><strong>10</strong> (#1)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>A</td>
+<td><strong>Whole-corpus relational query</strong></td>
+<td>Whether a question whose answer depends on relationships can be answered across everything ingested, with a definite result — rather than by…</td>
+<td>Loupe, Palantir Gotham / AIP, Siren — 9</td>
+<td>4</td>
+<td><strong>9</strong> (#1)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>A</td>
+<td><strong>Multimodal entities into the model</strong></td>
+<td>Whether names and places spoken in audio or shown in video and images become the same objects as those in documents — not merely a searchable…</td>
+<td>Loupe — 9</td>
+<td>2</td>
+<td><strong>9</strong> (#1)</td>
+</tr>
+<tr>
+<td>6</td>
+<td>A</td>
+<td><strong>Per-claim provenance</strong></td>
+<td>Whether every extracted fact carries the exact quote, page and file it came from, stored with the fact itself — so any assertion can be traced back…</td>
+<td>Clearbrief — 10</td>
+<td>5</td>
+<td><strong>9</strong> (#2)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>B</td>
+<td><strong>Link / network analysis</strong></td>
+<td>How mature the tooling is for exploring connections visually: expanding a person's neighbourhood, finding paths between two entities, ranking by…</td>
+<td>IBM i2 (i2 Group) — 10</td>
+<td>4</td>
+<td><strong>7</strong> (#11)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>B</td>
+<td><strong>Timeline &amp; chronology</strong></td>
+<td>Whether dated facts assemble into a filterable chronology that persists as a work product with its citations intact, rather than a one-off view…</td>
+<td>Loupe, Palantir Gotham / AIP, Magnet Axiom / Magnet One +7 — 8</td>
+<td>5</td>
+<td><strong>8</strong> (#1)</td>
+</tr>
+<tr>
+<td>9</td>
+<td>B</td>
+<td><strong>Geospatial analysis</strong></td>
+<td>Mapping of located evidence — movement trails, proximity between events, heatmaps — and the ability to ask questions about where something…</td>
+<td>Palantir Gotham / AIP, Magnet Axiom / Magnet One, Cellebrite Pathfinder — 9</td>
+<td>3</td>
+<td><strong>7</strong> (#6)</td>
+</tr>
+<tr>
+<td>10</td>
+<td>B</td>
+<td><strong>Financial / transaction analysis</strong></td>
+<td>Handling of ledgers and transactions: categorisation, resolving who the counterparty actually is, tracing flows between parties, and keeping the…</td>
+<td>DataWalk — 9</td>
+<td>2</td>
+<td><strong>8</strong> (#2)</td>
+</tr>
+<tr>
+<td>11</td>
+<td>B</td>
+<td><strong>OSINT &amp; external enrichment</strong></td>
+<td>Ability to reach outside the case for open-source material — corporate registries, social media, adverse media, sanctions lists, court records — and…</td>
+<td>Babel Street, Neotas, Maltego — 10</td>
+<td>3</td>
+<td><strong>0</strong> (#47)</td>
+</tr>
+<tr>
+<td>12</td>
+<td>C</td>
+<td><strong>Processing &amp; format breadth</strong></td>
+<td>How many file types and container formats the ingestion engine can decode, including forensic disk images, nested archives and email stores. Nuix's…</td>
+<td>Nuix Neo — 10</td>
+<td>5</td>
+<td><strong>5</strong> (#18)</td>
+</tr>
+<tr>
+<td>13</td>
+<td>C</td>
+<td><strong>Case &amp; investigation workflow</strong></td>
+<td>Managing the investigation itself: intake, assignment, tasks, status, supervisor oversight — and whether the case exists as an object with a…</td>
+<td>Nuix Neo, Hubstream, Ontic +5 — 9</td>
+<td>6</td>
+<td><strong>4</strong> (#39)</td>
+</tr>
+<tr>
+<td>14</td>
+<td>C</td>
+<td><strong>Review workflow at scale</strong></td>
+<td>Machinery for teams reviewing large document sets: batching work out, coding panels, tracking reviewer progress and sampling for quality…</td>
+<td>Everlaw, Relativity (aiR) — 10</td>
+<td>3</td>
+<td><strong>1</strong> (#42)</td>
+</tr>
+<tr>
+<td>15</td>
+<td>C</td>
+<td><strong>Disclosure &amp; production mechanics</strong></td>
+<td>Producing evidence to another party to a required standard: redaction, privilege logs, Bates numbering, load files and the production formats a court…</td>
+<td>Relativity (aiR) — 10</td>
+<td>3</td>
+<td><strong>2</strong> (#36)</td>
+</tr>
+<tr>
+<td>16</td>
+<td>C</td>
+<td><strong>Analytics / TAR</strong></td>
+<td>Technology-assisted review — active learning that predicts relevance, email threading, near-duplicate detection, conceptual clustering. This is what…</td>
+<td>Relativity (aiR) — 10</td>
+<td>3</td>
+<td><strong>0</strong> (#47)</td>
+</tr>
+<tr>
+<td>17</td>
+<td>C</td>
+<td><strong>Collaboration &amp; permissions</strong></td>
+<td>Multiple people working one case safely: granular access control, need-to-know segregation, shared work product, and an audit of who did…</td>
+<td>Everlaw, Relativity (aiR) — 9</td>
+<td>7</td>
+<td><strong>5</strong> (#34)</td>
+</tr>
+<tr>
+<td>18</td>
+<td>C</td>
+<td><strong>Durable judgment objects</strong></td>
+<td>Whether an investigator's conclusions persist as first-class objects in the system — curated collections, approved facts, built narratives — rather…</td>
+<td>Loupe, Everlaw, CaseMap+ AI (LexisNexis) +1 — 9</td>
+<td>5</td>
+<td><strong>9</strong> (#1)</td>
+</tr>
+<tr>
+<td>19</td>
+<td>D</td>
+<td><strong>Cited document Q&amp;A</strong></td>
+<td>Quality of natural-language question answering over the evidence, with each answer linked back to the source documents it rests…</td>
+<td>Everlaw — 10</td>
+<td>5</td>
+<td><strong>8</strong> (#5)</td>
+</tr>
+<tr>
+<td>20</td>
+<td>D</td>
+<td><strong>Agentic task execution</strong></td>
+<td>Whether the AI can carry out multi-step work using tools and produce outputs you keep — tables, charts, reports, collections — rather than only…</td>
+<td>Exterro FTK / ARMOUR — 9</td>
+<td>4</td>
+<td><strong>8</strong> (#2)</td>
+</tr>
+<tr>
+<td>21</td>
+<td>D</td>
+<td><strong>Disconfirmation detection</strong></td>
+<td>Whether the platform actively hunts for what contradicts a theory: the inconsistent date, the document placing someone elsewhere, the material that…</td>
+<td>Loupe — 8</td>
+<td>0</td>
+<td><strong>8</strong> (#1)</td>
+</tr>
+<tr>
+<td>22</td>
+<td>E</td>
+<td><strong>Certifications &amp; compliance</strong></td>
+<td>Independently audited security and compliance credentials — SOC 2 Type II, ISO 27001, CJIS, FedRAMP. Usually the first question a client's counsel…</td>
+<td>Palantir Gotham / AIP, Casepoint — 10</td>
+<td>7</td>
+<td><strong>1</strong> (#47)</td>
+</tr>
+<tr>
+<td>23</td>
+<td>E</td>
+<td><strong>Proven scale</strong></td>
+<td>Published, verifiable evidence of the volumes the platform actually handles in production — data processed, customers, corpus sizes — as distinct…</td>
+<td>Palantir Gotham / AIP, Relativity (aiR), Cellebrite Pathfinder +1 — 10</td>
+<td>7</td>
+<td><strong>3</strong> (#44)</td>
+</tr>
+<tr>
+<td>24</td>
+<td>E</td>
+<td><strong>Ecosystem integrations</strong></td>
+<td>Connections into the systems the work already lives in: document management, case and practice management, legal research, and third-party data…</td>
+<td>CoCounsel (Thomson Reuters) — 10</td>
+<td>6</td>
+<td><strong>0</strong> (#47)</td>
+</tr>
+<tr>
+<td>25</td>
+<td>E</td>
+<td><strong>Evidence acquisition</strong></td>
+<td>Whether the vendor can collect evidence at source — extract a device, image an endpoint, pull from cloud accounts — rather than only analysing what…</td>
+<td>Magnet Axiom / Magnet One, Cellebrite Guardian Investigate, Cellebrite Pathfinder — 10</td>
+<td>2</td>
+<td><strong>0</strong> (#33)</td>
+</tr>
+<tr>
+<td>26</td>
+<td>E</td>
+<td><strong>Acquisition &amp; parsing validation</strong></td>
+<td>Whether the tool's collection and decoding has been independently tested and has survived challenge in court: NIST CFTT test reports, published error…</td>
+<td>Magnet Axiom / Magnet One, Exterro FTK / ARMOUR, Cellebrite Pathfinder — 9</td>
+<td>4</td>
+<td><strong>2</strong> (#43)</td>
+</tr>
+<tr>
+<td>27</td>
+<td>E</td>
+<td><strong>Defensibility of AI output</strong></td>
+<td>Whether AI-produced findings can be audited and challenged: recorded prompts and outputs, explicit human review status, AI content visibly…</td>
+<td>Clearbrief — 10</td>
+<td>5</td>
+<td><strong>8</strong> (#5)</td>
+</tr>
+<tr>
+<td>28</td>
+<td>E</td>
+<td><strong>Vendor viability &amp; support</strong></td>
+<td>Whether the company will still be there and able to support you — funding and revenue, headcount, support commitments, training and professional…</td>
+<td>Palantir Gotham / AIP, Cellebrite Guardian Investigate, Relativity (aiR) +4 — 10</td>
+<td>7</td>
+<td><strong>3</strong> (#46)</td>
+</tr>
+<tr>
+<td>29</td>
+<td>E</td>
+<td><strong>Commercial accessibility</strong></td>
+<td>Whether the target buyer can realistically buy it at all: the entry price, minimum commitments, whether there is a self-serve route, and whether the…</td>
+<td>CROSStrax, Trackops — 10</td>
+<td>5</td>
+<td><strong>7</strong> (#10)</td>
+</tr>
+<tr>
+<td>30</td>
+<td>E</td>
+<td><strong>Deployment control</strong></td>
+<td>Whether the customer can run it in isolation — single-tenant, on-premises, or in their own sovereign cloud — so evidence never sits in a shared…</td>
+<td>Loupe, Palantir Gotham / AIP, Exterro FTK / ARMOUR +1 — 9</td>
+<td>5</td>
+<td><strong>9</strong> (#1)</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="b-all-47-platforms-totals-and-group-subtotals">B. All 47 platforms — totals and group subtotals</h2>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Rank</th>
+<th>Platform</th>
+<th>Entry price</th>
+<th>A /60</th>
+<th>B /50</th>
+<th>C /70</th>
+<th>D /30</th>
+<th>E /90</th>
+<th><strong>Total /300</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Palantir Gotham / AIP</td>
+<td>$300k+</td>
+<td>40</td>
+<td>40</td>
+<td>41</td>
+<td>16</td>
+<td>64</td>
+<td><strong>201</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>$50–300k</td>
+<td>38</td>
+<td>27</td>
+<td>40</td>
+<td>12</td>
+<td>73</td>
+<td><strong>190</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>$10–50k</td>
+<td>31</td>
+<td>20</td>
+<td>40</td>
+<td>16</td>
+<td>70</td>
+<td><strong>177</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td>Relativity (aiR)</td>
+<td>$50–300k</td>
+<td>20</td>
+<td>16</td>
+<td>61</td>
+<td>16</td>
+<td>63</td>
+<td><strong>176</strong></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>$50–300k</td>
+<td>35</td>
+<td>29</td>
+<td>37</td>
+<td>11</td>
+<td>63</td>
+<td><strong>175</strong></td>
+</tr>
+<tr>
+<td>6</td>
+<td>Everlaw</td>
+<td>$50–300k</td>
+<td>24</td>
+<td>16</td>
+<td>60</td>
+<td>17</td>
+<td>58</td>
+<td><strong>175</strong></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Cellebrite Pathfinder</td>
+<td>$50–300k</td>
+<td>37</td>
+<td>31</td>
+<td>30</td>
+<td>7</td>
+<td>64</td>
+<td><strong>169</strong></td>
+</tr>
+<tr>
+<td>8</td>
+<td>Cognyte NEXYTE</td>
+<td>$300k+</td>
+<td>33</td>
+<td>35</td>
+<td>34</td>
+<td>13</td>
+<td>54</td>
+<td><strong>169</strong></td>
+</tr>
+<tr>
+<td>9</td>
+<td>Nuix Neo</td>
+<td>$300k+</td>
+<td>27</td>
+<td>19</td>
+<td>54</td>
+<td>11</td>
+<td>58</td>
+<td><strong>169</strong></td>
+</tr>
+<tr>
+<td>10</td>
+<td><strong>Loupe</strong></td>
+<td>$10–50k</td>
+<td>55</td>
+<td>30</td>
+<td>26</td>
+<td>24</td>
+<td>33</td>
+<td><strong>168</strong></td>
+</tr>
+<tr>
+<td>11</td>
+<td>Axon (Records / Evidence)</td>
+<td>$50–300k</td>
+<td>25</td>
+<td>18</td>
+<td>40</td>
+<td>10</td>
+<td>65</td>
+<td><strong>158</strong></td>
+</tr>
+<tr>
+<td>12</td>
+<td>NICE Investigate</td>
+<td>$50–300k</td>
+<td>28</td>
+<td>21</td>
+<td>41</td>
+<td>6</td>
+<td>57</td>
+<td><strong>153</strong></td>
+</tr>
+<tr>
+<td>13</td>
+<td>Babel Street</td>
+<td>$300k+</td>
+<td>25</td>
+<td>33</td>
+<td>25</td>
+<td>12</td>
+<td>55</td>
+<td><strong>150</strong></td>
+</tr>
+<tr>
+<td>14</td>
+<td>DataWalk</td>
+<td>$300k+</td>
+<td>33</td>
+<td>34</td>
+<td>28</td>
+<td>8</td>
+<td>42</td>
+<td><strong>145</strong></td>
+</tr>
+<tr>
+<td>15</td>
+<td>Hubstream</td>
+<td>$50–300k</td>
+<td>24</td>
+<td>31</td>
+<td>36</td>
+<td>8</td>
+<td>45</td>
+<td><strong>144</strong></td>
+</tr>
+<tr>
+<td>16</td>
+<td>DISCO (Cecilia)</td>
+<td>$50–300k</td>
+<td>20</td>
+<td>12</td>
+<td>52</td>
+<td>15</td>
+<td>45</td>
+<td><strong>144</strong></td>
+</tr>
+<tr>
+<td>17</td>
+<td>Reveal / Logikcull</td>
+<td>$10–50k</td>
+<td>19</td>
+<td>13</td>
+<td>52</td>
+<td>11</td>
+<td>48</td>
+<td><strong>143</strong></td>
+</tr>
+<tr>
+<td>18</td>
+<td>Casepoint</td>
+<td>$300k+</td>
+<td>16</td>
+<td>9</td>
+<td>49</td>
+<td>12</td>
+<td>55</td>
+<td><strong>141</strong></td>
+</tr>
+<tr>
+<td>19</td>
+<td>Altia</td>
+<td>$50–300k</td>
+<td>17</td>
+<td>37</td>
+<td>30</td>
+<td>6</td>
+<td>50</td>
+<td><strong>140</strong></td>
+</tr>
+<tr>
+<td>20</td>
+<td>CoCounsel (Thomson Reuters)</td>
+<td>&lt;$10k</td>
+<td>18</td>
+<td>12</td>
+<td>35</td>
+<td>16</td>
+<td>59</td>
+<td><strong>140</strong></td>
+</tr>
+<tr>
+<td>21</td>
+<td>Matey / CrimD</td>
+<td>$10–50k</td>
+<td>30</td>
+<td>14</td>
+<td>37</td>
+<td>11</td>
+<td>48</td>
+<td><strong>140</strong></td>
+</tr>
+<tr>
+<td>22</td>
+<td>CaseMap+ AI (LexisNexis)</td>
+<td>$10–50k</td>
+<td>19</td>
+<td>18</td>
+<td>41</td>
+<td>10</td>
+<td>51</td>
+<td><strong>139</strong></td>
+</tr>
+<tr>
+<td>23</td>
+<td>Longeye</td>
+<td>$10–50k</td>
+<td>32</td>
+<td>15</td>
+<td>30</td>
+<td>11</td>
+<td>50</td>
+<td><strong>138</strong></td>
+</tr>
+<tr>
+<td>24</td>
+<td>Blackdot Videris</td>
+<td>$50–300k</td>
+<td>19</td>
+<td>33</td>
+<td>25</td>
+<td>10</td>
+<td>47</td>
+<td><strong>134</strong></td>
+</tr>
+<tr>
+<td>25</td>
+<td>IBM i2 (i2 Group)</td>
+<td>&lt;$10k</td>
+<td>18</td>
+<td>35</td>
+<td>28</td>
+<td>0</td>
+<td>52</td>
+<td><strong>133</strong></td>
+</tr>
+<tr>
+<td>26</td>
+<td>JusticeText</td>
+<td>$10–50k</td>
+<td>23</td>
+<td>11</td>
+<td>35</td>
+<td>16</td>
+<td>47</td>
+<td><strong>132</strong></td>
+</tr>
+<tr>
+<td>27</td>
+<td>Casefleet</td>
+<td>&lt;$10k</td>
+<td>19</td>
+<td>16</td>
+<td>36</td>
+<td>12</td>
+<td>48</td>
+<td><strong>131</strong></td>
+</tr>
+<tr>
+<td>28</td>
+<td>Neotas</td>
+<td>$50–300k</td>
+<td>16</td>
+<td>28</td>
+<td>25</td>
+<td>10</td>
+<td>51</td>
+<td><strong>130</strong></td>
+</tr>
+<tr>
+<td>29</td>
+<td>TrialKit</td>
+<td>$10–50k</td>
+<td>33</td>
+<td>12</td>
+<td>33</td>
+<td>11</td>
+<td>39</td>
+<td><strong>128</strong></td>
+</tr>
+<tr>
+<td>30</td>
+<td>Ontic</td>
+<td>$50–300k</td>
+<td>16</td>
+<td>24</td>
+<td>32</td>
+<td>6</td>
+<td>49</td>
+<td><strong>127</strong></td>
+</tr>
+<tr>
+<td>31</td>
+<td>Harvey</td>
+<td>$300k+</td>
+<td>17</td>
+<td>10</td>
+<td>35</td>
+<td>17</td>
+<td>48</td>
+<td><strong>127</strong></td>
+</tr>
+<tr>
+<td>32</td>
+<td>Siren</td>
+<td>$50–300k</td>
+<td>29</td>
+<td>30</td>
+<td>19</td>
+<td>9</td>
+<td>38</td>
+<td><strong>125</strong></td>
+</tr>
+<tr>
+<td>33</td>
+<td>Maltego</td>
+<td>&lt;$10k</td>
+<td>9</td>
+<td>31</td>
+<td>20</td>
+<td>5</td>
+<td>58</td>
+<td><strong>123</strong></td>
+</tr>
+<tr>
+<td>34</td>
+<td>Kaseware</td>
+<td>$50–300k</td>
+<td>15</td>
+<td>26</td>
+<td>30</td>
+<td>4</td>
+<td>47</td>
+<td><strong>122</strong></td>
+</tr>
+<tr>
+<td>35</td>
+<td>Comtrac</td>
+<td>$10–50k</td>
+<td>16</td>
+<td>13</td>
+<td>40</td>
+<td>10</td>
+<td>43</td>
+<td><strong>122</strong></td>
+</tr>
+<tr>
+<td>36</td>
+<td>Hebbia</td>
+<td>$10–50k</td>
+<td>20</td>
+<td>7</td>
+<td>35</td>
+<td>16</td>
+<td>44</td>
+<td><strong>122</strong></td>
+</tr>
+<tr>
+<td>37</td>
+<td>Clearbrief</td>
+<td>&lt;$10k</td>
+<td>15</td>
+<td>10</td>
+<td>26</td>
+<td>16</td>
+<td>52</td>
+<td><strong>119</strong></td>
+</tr>
+<tr>
+<td>38</td>
+<td>Resolver (Kroll)</td>
+<td>$50–300k</td>
+<td>9</td>
+<td>17</td>
+<td>33</td>
+<td>8</td>
+<td>47</td>
+<td><strong>114</strong></td>
+</tr>
+<tr>
+<td>39</td>
+<td>Case IQ</td>
+<td>$10–50k</td>
+<td>9</td>
+<td>14</td>
+<td>33</td>
+<td>7</td>
+<td>48</td>
+<td><strong>111</strong></td>
+</tr>
+<tr>
+<td>40</td>
+<td>Octostar</td>
+<td>$50–300k</td>
+<td>28</td>
+<td>25</td>
+<td>21</td>
+<td>8</td>
+<td>28</td>
+<td><strong>110</strong></td>
+</tr>
+<tr>
+<td>41</td>
+<td>Linkurious</td>
+<td>$10–50k</td>
+<td>19</td>
+<td>25</td>
+<td>18</td>
+<td>5</td>
+<td>39</td>
+<td><strong>106</strong></td>
+</tr>
+<tr>
+<td>42</td>
+<td>ShadowDragon</td>
+<td>$50–300k</td>
+<td>14</td>
+<td>27</td>
+<td>13</td>
+<td>4</td>
+<td>45</td>
+<td><strong>103</strong></td>
+</tr>
+<tr>
+<td>43</td>
+<td>Case Closed Software</td>
+<td>&lt;$10k</td>
+<td>13</td>
+<td>16</td>
+<td>27</td>
+<td>2</td>
+<td>42</td>
+<td><strong>100</strong></td>
+</tr>
+<tr>
+<td>44</td>
+<td>HR Acuity</td>
+<td>$10–50k</td>
+<td>9</td>
+<td>9</td>
+<td>30</td>
+<td>5</td>
+<td>43</td>
+<td><strong>96</strong></td>
+</tr>
+<tr>
+<td>45</td>
+<td>Omnigo</td>
+<td>$10–50k</td>
+<td>8</td>
+<td>14</td>
+<td>27</td>
+<td>3</td>
+<td>41</td>
+<td><strong>93</strong></td>
+</tr>
+<tr>
+<td>46</td>
+<td>CROSStrax</td>
+<td>&lt;$10k</td>
+<td>6</td>
+<td>14</td>
+<td>20</td>
+<td>2</td>
+<td>31</td>
+<td><strong>73</strong></td>
+</tr>
+<tr>
+<td>47</td>
+<td>Trackops</td>
+<td>&lt;$10k</td>
+<td>6</td>
+<td>11</td>
+<td>19</td>
+<td>2</td>
+<td>30</td>
+<td><strong>68</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="c-full-score-matrix-47-platforms-30-axes">C. Full score matrix — 47 platforms × 30 axes</h2>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>1</th>
+<th>2</th>
+<th>3</th>
+<th>4</th>
+<th>5</th>
+<th>6</th>
+<th>7</th>
+<th>8</th>
+<th>9</th>
+<th>10</th>
+<th>11</th>
+<th>12</th>
+<th>13</th>
+<th>14</th>
+<th>15</th>
+<th>16</th>
+<th>17</th>
+<th>18</th>
+<th>19</th>
+<th>20</th>
+<th>21</th>
+<th>22</th>
+<th>23</th>
+<th>24</th>
+<th>25</th>
+<th>26</th>
+<th>27</th>
+<th>28</th>
+<th>29</th>
+<th>30</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Palantir Gotham / AIP</td>
+<td>9</td>
+<td>4</td>
+<td>6</td>
+<td>9</td>
+<td>6</td>
+<td>6</td>
+<td>9</td>
+<td>8</td>
+<td>9</td>
+<td>7</td>
+<td>7</td>
+<td>7</td>
+<td>6</td>
+<td>4</td>
+<td>3</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+<td>6</td>
+<td>8</td>
+<td>2</td>
+<td>10</td>
+<td>10</td>
+<td>8</td>
+<td>4</td>
+<td>6</td>
+<td>6</td>
+<td>10</td>
+<td>1</td>
+<td>9</td>
+</tr>
+<tr>
+<td>Magnet Axiom / Magnet One</td>
+<td>5</td>
+<td>10</td>
+<td>5</td>
+<td>5</td>
+<td>6</td>
+<td>7</td>
+<td>7</td>
+<td>8</td>
+<td>9</td>
+<td>1</td>
+<td>2</td>
+<td>7</td>
+<td>7</td>
+<td>5</td>
+<td>6</td>
+<td>3</td>
+<td>7</td>
+<td>5</td>
+<td>6</td>
+<td>5</td>
+<td>1</td>
+<td>8</td>
+<td>9</td>
+<td>7</td>
+<td>10</td>
+<td>9</td>
+<td>8</td>
+<td>9</td>
+<td>5</td>
+<td>8</td>
+</tr>
+<tr>
+<td>Exterro FTK / ARMOUR</td>
+<td>3</td>
+<td>7</td>
+<td>5</td>
+<td>5</td>
+<td>4</td>
+<td>7</td>
+<td>4</td>
+<td>8</td>
+<td>3</td>
+<td>2</td>
+<td>3</td>
+<td>8</td>
+<td>6</td>
+<td>5</td>
+<td>5</td>
+<td>4</td>
+<td>7</td>
+<td>5</td>
+<td>6</td>
+<td>9</td>
+<td>1</td>
+<td>7</td>
+<td>8</td>
+<td>6</td>
+<td>8</td>
+<td>9</td>
+<td>9</td>
+<td>8</td>
+<td>6</td>
+<td>9</td>
+</tr>
+<tr>
+<td>Relativity (aiR)</td>
+<td>2</td>
+<td>2</td>
+<td>2</td>
+<td>3</td>
+<td>2</td>
+<td>9</td>
+<td>4</td>
+<td>8</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>8</td>
+<td>6</td>
+<td>10</td>
+<td>10</td>
+<td>10</td>
+<td>9</td>
+<td>8</td>
+<td>9</td>
+<td>5</td>
+<td>2</td>
+<td>9</td>
+<td>10</td>
+<td>9</td>
+<td>4</td>
+<td>7</td>
+<td>9</td>
+<td>10</td>
+<td>2</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Cellebrite Guardian Investigate</td>
+<td>6</td>
+<td>10</td>
+<td>6</td>
+<td>5</td>
+<td>5</td>
+<td>3</td>
+<td>7</td>
+<td>8</td>
+<td>7</td>
+<td>2</td>
+<td>5</td>
+<td>6</td>
+<td>7</td>
+<td>4</td>
+<td>6</td>
+<td>3</td>
+<td>8</td>
+<td>3</td>
+<td>5</td>
+<td>6</td>
+<td>0</td>
+<td>8</td>
+<td>9</td>
+<td>8</td>
+<td>10</td>
+<td>8</td>
+<td>3</td>
+<td>10</td>
+<td>1</td>
+<td>6</td>
+</tr>
+<tr>
+<td>Everlaw</td>
+<td>2</td>
+<td>3</td>
+<td>2</td>
+<td>6</td>
+<td>2</td>
+<td>9</td>
+<td>4</td>
+<td>8</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>8</td>
+<td>6</td>
+<td>10</td>
+<td>9</td>
+<td>9</td>
+<td>9</td>
+<td>9</td>
+<td>10</td>
+<td>6</td>
+<td>1</td>
+<td>9</td>
+<td>9</td>
+<td>7</td>
+<td>3</td>
+<td>6</td>
+<td>8</td>
+<td>9</td>
+<td>5</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Cellebrite Pathfinder</td>
+<td>7</td>
+<td>10</td>
+<td>4</td>
+<td>6</td>
+<td>6</td>
+<td>4</td>
+<td>9</td>
+<td>8</td>
+<td>9</td>
+<td>2</td>
+<td>3</td>
+<td>6</td>
+<td>5</td>
+<td>3</td>
+<td>4</td>
+<td>3</td>
+<td>6</td>
+<td>3</td>
+<td>3</td>
+<td>4</td>
+<td>0</td>
+<td>8</td>
+<td>10</td>
+<td>8</td>
+<td>10</td>
+<td>9</td>
+<td>2</td>
+<td>10</td>
+<td>1</td>
+<td>6</td>
+</tr>
+<tr>
+<td>Cognyte NEXYTE</td>
+<td>7</td>
+<td>4</td>
+<td>5</td>
+<td>6</td>
+<td>7</td>
+<td>4</td>
+<td>8</td>
+<td>7</td>
+<td>8</td>
+<td>5</td>
+<td>7</td>
+<td>5</td>
+<td>7</td>
+<td>3</td>
+<td>3</td>
+<td>4</td>
+<td>7</td>
+<td>5</td>
+<td>6</td>
+<td>6</td>
+<td>1</td>
+<td>7</td>
+<td>8</td>
+<td>6</td>
+<td>7</td>
+<td>5</td>
+<td>3</td>
+<td>8</td>
+<td>2</td>
+<td>8</td>
+</tr>
+<tr>
+<td>Nuix Neo</td>
+<td>4</td>
+<td>5</td>
+<td>4</td>
+<td>4</td>
+<td>4</td>
+<td>6</td>
+<td>5</td>
+<td>5</td>
+<td>3</td>
+<td>4</td>
+<td>2</td>
+<td>10</td>
+<td>9</td>
+<td>8</td>
+<td>7</td>
+<td>8</td>
+<td>7</td>
+<td>5</td>
+<td>6</td>
+<td>5</td>
+<td>0</td>
+<td>7</td>
+<td>9</td>
+<td>7</td>
+<td>6</td>
+<td>8</td>
+<td>3</td>
+<td>7</td>
+<td>2</td>
+<td>9</td>
+</tr>
+<tr>
+<td><strong>Loupe</strong></td>
+<td>9</td>
+<td>9</td>
+<td>10</td>
+<td>9</td>
+<td>9</td>
+<td>9</td>
+<td>7</td>
+<td>8</td>
+<td>7</td>
+<td>8</td>
+<td>0</td>
+<td>5</td>
+<td>4</td>
+<td>1</td>
+<td>2</td>
+<td>0</td>
+<td>5</td>
+<td>9</td>
+<td>8</td>
+<td>8</td>
+<td>8</td>
+<td>1</td>
+<td>3</td>
+<td>0</td>
+<td>0</td>
+<td>2</td>
+<td>8</td>
+<td>3</td>
+<td>7</td>
+<td>9</td>
+</tr>
+<tr>
+<td>Axon (Records / Evidence)</td>
+<td>3</td>
+<td>3</td>
+<td>4</td>
+<td>3</td>
+<td>7</td>
+<td>5</td>
+<td>3</td>
+<td>6</td>
+<td>6</td>
+<td>1</td>
+<td>2</td>
+<td>5</td>
+<td>8</td>
+<td>4</td>
+<td>8</td>
+<td>3</td>
+<td>8</td>
+<td>4</td>
+<td>4</td>
+<td>6</td>
+<td>0</td>
+<td>9</td>
+<td>10</td>
+<td>8</td>
+<td>9</td>
+<td>7</td>
+<td>5</td>
+<td>10</td>
+<td>1</td>
+<td>6</td>
+</tr>
+<tr>
+<td>NICE Investigate</td>
+<td>4</td>
+<td>4</td>
+<td>6</td>
+<td>4</td>
+<td>5</td>
+<td>5</td>
+<td>5</td>
+<td>6</td>
+<td>5</td>
+<td>2</td>
+<td>3</td>
+<td>6</td>
+<td>8</td>
+<td>4</td>
+<td>8</td>
+<td>3</td>
+<td>8</td>
+<td>4</td>
+<td>3</td>
+<td>3</td>
+<td>0</td>
+<td>8</td>
+<td>8</td>
+<td>7</td>
+<td>6</td>
+<td>7</td>
+<td>5</td>
+<td>8</td>
+<td>2</td>
+<td>6</td>
+</tr>
+<tr>
+<td>Babel Street</td>
+<td>5</td>
+<td>0</td>
+<td>1</td>
+<td>6</td>
+<td>5</td>
+<td>8</td>
+<td>7</td>
+<td>5</td>
+<td>7</td>
+<td>4</td>
+<td>10</td>
+<td>3</td>
+<td>4</td>
+<td>2</td>
+<td>2</td>
+<td>4</td>
+<td>5</td>
+<td>5</td>
+<td>7</td>
+<td>5</td>
+<td>0</td>
+<td>8</td>
+<td>7</td>
+<td>7</td>
+<td>8</td>
+<td>4</td>
+<td>7</td>
+<td>7</td>
+<td>2</td>
+<td>5</td>
+</tr>
+<tr>
+<td>DataWalk</td>
+<td>8</td>
+<td>3</td>
+<td>5</td>
+<td>8</td>
+<td>5</td>
+<td>4</td>
+<td>8</td>
+<td>6</td>
+<td>6</td>
+<td>9</td>
+<td>5</td>
+<td>5</td>
+<td>5</td>
+<td>3</td>
+<td>2</td>
+<td>5</td>
+<td>6</td>
+<td>2</td>
+<td>4</td>
+<td>4</td>
+<td>0</td>
+<td>6</td>
+<td>6</td>
+<td>6</td>
+<td>1</td>
+<td>4</td>
+<td>4</td>
+<td>6</td>
+<td>1</td>
+<td>8</td>
+</tr>
+<tr>
+<td>Hubstream</td>
+<td>6</td>
+<td>2</td>
+<td>4</td>
+<td>5</td>
+<td>3</td>
+<td>4</td>
+<td>8</td>
+<td>7</td>
+<td>7</td>
+<td>4</td>
+<td>5</td>
+<td>4</td>
+<td>9</td>
+<td>3</td>
+<td>4</td>
+<td>4</td>
+<td>7</td>
+<td>5</td>
+<td>4</td>
+<td>4</td>
+<td>0</td>
+<td>7</td>
+<td>7</td>
+<td>5</td>
+<td>2</td>
+<td>5</td>
+<td>3</td>
+<td>6</td>
+<td>3</td>
+<td>7</td>
+</tr>
+<tr>
+<td>DISCO (Cecilia)</td>
+<td>1</td>
+<td>2</td>
+<td>2</td>
+<td>5</td>
+<td>2</td>
+<td>8</td>
+<td>1</td>
+<td>8</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>7</td>
+<td>5</td>
+<td>9</td>
+<td>8</td>
+<td>7</td>
+<td>8</td>
+<td>8</td>
+<td>8</td>
+<td>7</td>
+<td>0</td>
+<td>6</td>
+<td>7</td>
+<td>6</td>
+<td>2</td>
+<td>6</td>
+<td>7</td>
+<td>5</td>
+<td>4</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Reveal / Logikcull</td>
+<td>3</td>
+<td>2</td>
+<td>2</td>
+<td>3</td>
+<td>2</td>
+<td>7</td>
+<td>5</td>
+<td>5</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>8</td>
+<td>5</td>
+<td>9</td>
+<td>8</td>
+<td>9</td>
+<td>8</td>
+<td>5</td>
+<td>7</td>
+<td>4</td>
+<td>0</td>
+<td>7</td>
+<td>7</td>
+<td>6</td>
+<td>2</td>
+<td>6</td>
+<td>5</td>
+<td>6</td>
+<td>6</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Casepoint</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>4</td>
+<td>2</td>
+<td>7</td>
+<td>2</td>
+<td>4</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>7</td>
+<td>5</td>
+<td>9</td>
+<td>9</td>
+<td>7</td>
+<td>8</td>
+<td>4</td>
+<td>7</td>
+<td>5</td>
+<td>0</td>
+<td>10</td>
+<td>8</td>
+<td>5</td>
+<td>2</td>
+<td>7</td>
+<td>6</td>
+<td>7</td>
+<td>2</td>
+<td>8</td>
+</tr>
+<tr>
+<td>Altia</td>
+<td>5</td>
+<td>1</td>
+<td>3</td>
+<td>4</td>
+<td>2</td>
+<td>2</td>
+<td>7</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+<td>9</td>
+<td>4</td>
+<td>8</td>
+<td>2</td>
+<td>3</td>
+<td>2</td>
+<td>7</td>
+<td>4</td>
+<td>3</td>
+<td>3</td>
+<td>0</td>
+<td>6</td>
+<td>8</td>
+<td>6</td>
+<td>3</td>
+<td>5</td>
+<td>3</td>
+<td>8</td>
+<td>4</td>
+<td>7</td>
+</tr>
+<tr>
+<td>CoCounsel (Thomson Reuters)</td>
+<td>2</td>
+<td>0</td>
+<td>2</td>
+<td>3</td>
+<td>3</td>
+<td>8</td>
+<td>1</td>
+<td>5</td>
+<td>0</td>
+<td>2</td>
+<td>4</td>
+<td>5</td>
+<td>6</td>
+<td>5</td>
+<td>4</td>
+<td>4</td>
+<td>6</td>
+<td>5</td>
+<td>9</td>
+<td>7</td>
+<td>0</td>
+<td>8</td>
+<td>9</td>
+<td>10</td>
+<td>0</td>
+<td>4</td>
+<td>8</td>
+<td>10</td>
+<td>7</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Matey / CrimD</td>
+<td>2</td>
+<td>5</td>
+<td>5</td>
+<td>4</td>
+<td>6</td>
+<td>8</td>
+<td>2</td>
+<td>6</td>
+<td>2</td>
+<td>2</td>
+<td>2</td>
+<td>6</td>
+<td>6</td>
+<td>5</td>
+<td>5</td>
+<td>3</td>
+<td>6</td>
+<td>6</td>
+<td>7</td>
+<td>4</td>
+<td>0</td>
+<td>9</td>
+<td>5</td>
+<td>5</td>
+<td>0</td>
+<td>3</td>
+<td>8</td>
+<td>6</td>
+<td>9</td>
+<td>3</td>
+</tr>
+<tr>
+<td>CaseMap+ AI (LexisNexis)</td>
+<td>5</td>
+<td>0</td>
+<td>3</td>
+<td>4</td>
+<td>2</td>
+<td>5</td>
+<td>3</td>
+<td>7</td>
+<td>1</td>
+<td>2</td>
+<td>5</td>
+<td>6</td>
+<td>6</td>
+<td>5</td>
+<td>5</td>
+<td>4</td>
+<td>6</td>
+<td>9</td>
+<td>6</td>
+<td>4</td>
+<td>0</td>
+<td>8</td>
+<td>8</td>
+<td>9</td>
+<td>0</td>
+<td>5</td>
+<td>5</td>
+<td>9</td>
+<td>4</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Longeye</td>
+<td>1</td>
+<td>6</td>
+<td>7</td>
+<td>4</td>
+<td>6</td>
+<td>8</td>
+<td>2</td>
+<td>5</td>
+<td>2</td>
+<td>4</td>
+<td>2</td>
+<td>6</td>
+<td>5</td>
+<td>4</td>
+<td>4</td>
+<td>3</td>
+<td>6</td>
+<td>2</td>
+<td>7</td>
+<td>4</td>
+<td>0</td>
+<td>8</td>
+<td>4</td>
+<td>4</td>
+<td>0</td>
+<td>4</td>
+<td>7</td>
+<td>6</td>
+<td>9</td>
+<td>8</td>
+</tr>
+<tr>
+<td>Blackdot Videris</td>
+<td>5</td>
+<td>0</td>
+<td>2</td>
+<td>5</td>
+<td>2</td>
+<td>5</td>
+<td>8</td>
+<td>4</td>
+<td>4</td>
+<td>8</td>
+<td>9</td>
+<td>3</td>
+<td>5</td>
+<td>2</td>
+<td>2</td>
+<td>4</td>
+<td>5</td>
+<td>4</td>
+<td>5</td>
+<td>5</td>
+<td>0</td>
+<td>6</td>
+<td>6</td>
+<td>6</td>
+<td>7</td>
+<td>3</td>
+<td>4</td>
+<td>6</td>
+<td>4</td>
+<td>5</td>
+</tr>
+<tr>
+<td>IBM i2 (i2 Group)</td>
+<td>6</td>
+<td>1</td>
+<td>2</td>
+<td>5</td>
+<td>2</td>
+<td>2</td>
+<td>10</td>
+<td>7</td>
+<td>7</td>
+<td>6</td>
+<td>5</td>
+<td>3</td>
+<td>6</td>
+<td>2</td>
+<td>3</td>
+<td>3</td>
+<td>5</td>
+<td>6</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>7</td>
+<td>8</td>
+<td>6</td>
+<td>2</td>
+<td>6</td>
+<td>0</td>
+<td>7</td>
+<td>8</td>
+<td>8</td>
+</tr>
+<tr>
+<td>JusticeText</td>
+<td>1</td>
+<td>0</td>
+<td>4</td>
+<td>3</td>
+<td>8</td>
+<td>7</td>
+<td>1</td>
+<td>7</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>5</td>
+<td>6</td>
+<td>4</td>
+<td>4</td>
+<td>3</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>4</td>
+<td>6</td>
+<td>6</td>
+<td>7</td>
+<td>5</td>
+<td>0</td>
+<td>4</td>
+<td>6</td>
+<td>7</td>
+<td>9</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Casefleet</td>
+<td>4</td>
+<td>0</td>
+<td>2</td>
+<td>3</td>
+<td>2</td>
+<td>8</td>
+<td>3</td>
+<td>8</td>
+<td>2</td>
+<td>2</td>
+<td>1</td>
+<td>4</td>
+<td>6</td>
+<td>4</td>
+<td>4</td>
+<td>3</td>
+<td>6</td>
+<td>9</td>
+<td>6</td>
+<td>4</td>
+<td>2</td>
+<td>8</td>
+<td>5</td>
+<td>6</td>
+<td>0</td>
+<td>4</td>
+<td>9</td>
+<td>6</td>
+<td>8</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Neotas</td>
+<td>4</td>
+<td>0</td>
+<td>2</td>
+<td>3</td>
+<td>3</td>
+<td>4</td>
+<td>6</td>
+<td>4</td>
+<td>3</td>
+<td>5</td>
+<td>10</td>
+<td>3</td>
+<td>5</td>
+<td>2</td>
+<td>3</td>
+<td>3</td>
+<td>5</td>
+<td>4</td>
+<td>5</td>
+<td>4</td>
+<td>1</td>
+<td>7</td>
+<td>7</td>
+<td>6</td>
+<td>5</td>
+<td>4</td>
+<td>6</td>
+<td>7</td>
+<td>5</td>
+<td>4</td>
+</tr>
+<tr>
+<td>TrialKit</td>
+<td>2</td>
+<td>7</td>
+<td>6</td>
+<td>4</td>
+<td>6</td>
+<td>8</td>
+<td>2</td>
+<td>5</td>
+<td>2</td>
+<td>1</td>
+<td>2</td>
+<td>6</td>
+<td>6</td>
+<td>4</td>
+<td>4</td>
+<td>3</td>
+<td>6</td>
+<td>4</td>
+<td>7</td>
+<td>4</td>
+<td>0</td>
+<td>4</td>
+<td>4</td>
+<td>4</td>
+<td>0</td>
+<td>3</td>
+<td>7</td>
+<td>5</td>
+<td>9</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Ontic</td>
+<td>4</td>
+<td>0</td>
+<td>3</td>
+<td>3</td>
+<td>2</td>
+<td>4</td>
+<td>5</td>
+<td>5</td>
+<td>5</td>
+<td>2</td>
+<td>7</td>
+<td>3</td>
+<td>9</td>
+<td>2</td>
+<td>3</td>
+<td>2</td>
+<td>8</td>
+<td>5</td>
+<td>3</td>
+<td>3</td>
+<td>0</td>
+<td>9</td>
+<td>8</td>
+<td>6</td>
+<td>3</td>
+<td>3</td>
+<td>4</td>
+<td>8</td>
+<td>4</td>
+<td>4</td>
+</tr>
+<tr>
+<td>Harvey</td>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+<td>4</td>
+<td>3</td>
+<td>8</td>
+<td>1</td>
+<td>5</td>
+<td>0</td>
+<td>2</td>
+<td>2</td>
+<td>5</td>
+<td>5</td>
+<td>5</td>
+<td>4</td>
+<td>4</td>
+<td>7</td>
+<td>5</td>
+<td>9</td>
+<td>8</td>
+<td>0</td>
+<td>8</td>
+<td>8</td>
+<td>8</td>
+<td>0</td>
+<td>3</td>
+<td>7</td>
+<td>10</td>
+<td>1</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Siren</td>
+<td>8</td>
+<td>3</td>
+<td>4</td>
+<td>9</td>
+<td>1</td>
+<td>4</td>
+<td>8</td>
+<td>6</td>
+<td>6</td>
+<td>4</td>
+<td>6</td>
+<td>4</td>
+<td>2</td>
+<td>2</td>
+<td>1</td>
+<td>3</td>
+<td>5</td>
+<td>2</td>
+<td>4</td>
+<td>4</td>
+<td>1</td>
+<td>4</td>
+<td>6</td>
+<td>6</td>
+<td>1</td>
+<td>3</td>
+<td>3</td>
+<td>5</td>
+<td>2</td>
+<td>8</td>
+</tr>
+<tr>
+<td>Maltego</td>
+<td>4</td>
+<td>0</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>2</td>
+<td>9</td>
+<td>4</td>
+<td>5</td>
+<td>3</td>
+<td>10</td>
+<td>2</td>
+<td>4</td>
+<td>1</td>
+<td>2</td>
+<td>2</td>
+<td>5</td>
+<td>4</td>
+<td>2</td>
+<td>3</td>
+<td>0</td>
+<td>6</td>
+<td>7</td>
+<td>9</td>
+<td>7</td>
+<td>5</td>
+<td>4</td>
+<td>7</td>
+<td>7</td>
+<td>6</td>
+</tr>
+<tr>
+<td>Kaseware</td>
+<td>5</td>
+<td>1</td>
+<td>2</td>
+<td>3</td>
+<td>2</td>
+<td>2</td>
+<td>7</td>
+<td>7</td>
+<td>7</td>
+<td>2</td>
+<td>3</td>
+<td>3</td>
+<td>9</td>
+<td>2</td>
+<td>2</td>
+<td>1</td>
+<td>8</td>
+<td>5</td>
+<td>2</td>
+<td>2</td>
+<td>0</td>
+<td>6</td>
+<td>7</td>
+<td>6</td>
+<td>1</td>
+<td>4</td>
+<td>3</td>
+<td>7</td>
+<td>6</td>
+<td>7</td>
+</tr>
+<tr>
+<td>Comtrac</td>
+<td>3</td>
+<td>1</td>
+<td>2</td>
+<td>2</td>
+<td>2</td>
+<td>6</td>
+<td>3</td>
+<td>5</td>
+<td>2</td>
+<td>2</td>
+<td>1</td>
+<td>3</td>
+<td>9</td>
+<td>4</td>
+<td>7</td>
+<td>2</td>
+<td>7</td>
+<td>8</td>
+<td>5</td>
+<td>4</td>
+<td>1</td>
+<td>5</td>
+<td>6</td>
+<td>4</td>
+<td>1</td>
+<td>5</td>
+<td>5</td>
+<td>6</td>
+<td>5</td>
+<td>6</td>
+</tr>
+<tr>
+<td>Hebbia</td>
+<td>2</td>
+<td>0</td>
+<td>1</td>
+<td>5</td>
+<td>4</td>
+<td>8</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>4</td>
+<td>2</td>
+<td>6</td>
+<td>4</td>
+<td>6</td>
+<td>3</td>
+<td>4</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>8</td>
+<td>0</td>
+<td>8</td>
+<td>7</td>
+<td>6</td>
+<td>0</td>
+<td>3</td>
+<td>7</td>
+<td>8</td>
+<td>2</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Clearbrief</td>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>10</td>
+<td>0</td>
+<td>6</td>
+<td>0</td>
+<td>1</td>
+<td>3</td>
+<td>3</td>
+<td>4</td>
+<td>2</td>
+<td>5</td>
+<td>2</td>
+<td>4</td>
+<td>6</td>
+<td>8</td>
+<td>3</td>
+<td>5</td>
+<td>8</td>
+<td>5</td>
+<td>8</td>
+<td>0</td>
+<td>5</td>
+<td>10</td>
+<td>6</td>
+<td>8</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Resolver (Kroll)</td>
+<td>2</td>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>3</td>
+<td>4</td>
+<td>4</td>
+<td>3</td>
+<td>3</td>
+<td>3</td>
+<td>3</td>
+<td>9</td>
+<td>3</td>
+<td>3</td>
+<td>2</td>
+<td>8</td>
+<td>5</td>
+<td>4</td>
+<td>4</td>
+<td>0</td>
+<td>8</td>
+<td>9</td>
+<td>7</td>
+<td>0</td>
+<td>3</td>
+<td>3</td>
+<td>9</td>
+<td>4</td>
+<td>4</td>
+</tr>
+<tr>
+<td>Case IQ</td>
+<td>2</td>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>3</td>
+<td>3</td>
+<td>4</td>
+<td>2</td>
+<td>3</td>
+<td>2</td>
+<td>3</td>
+<td>9</td>
+<td>3</td>
+<td>3</td>
+<td>2</td>
+<td>8</td>
+<td>5</td>
+<td>4</td>
+<td>3</td>
+<td>0</td>
+<td>9</td>
+<td>8</td>
+<td>7</td>
+<td>0</td>
+<td>3</td>
+<td>3</td>
+<td>8</td>
+<td>6</td>
+<td>4</td>
+</tr>
+<tr>
+<td>Octostar</td>
+<td>6</td>
+<td>4</td>
+<td>4</td>
+<td>8</td>
+<td>2</td>
+<td>4</td>
+<td>6</td>
+<td>5</td>
+<td>4</td>
+<td>4</td>
+<td>6</td>
+<td>4</td>
+<td>3</td>
+<td>2</td>
+<td>1</td>
+<td>3</td>
+<td>5</td>
+<td>3</td>
+<td>4</td>
+<td>4</td>
+<td>0</td>
+<td>2</td>
+<td>2</td>
+<td>5</td>
+<td>3</td>
+<td>2</td>
+<td>3</td>
+<td>3</td>
+<td>1</td>
+<td>7</td>
+</tr>
+<tr>
+<td>Linkurious</td>
+<td>8</td>
+<td>0</td>
+<td>1</td>
+<td>8</td>
+<td>0</td>
+<td>2</td>
+<td>8</td>
+<td>5</td>
+<td>4</td>
+<td>5</td>
+<td>3</td>
+<td>1</td>
+<td>4</td>
+<td>1</td>
+<td>1</td>
+<td>2</td>
+<td>5</td>
+<td>4</td>
+<td>2</td>
+<td>3</td>
+<td>0</td>
+<td>5</td>
+<td>5</td>
+<td>6</td>
+<td>0</td>
+<td>3</td>
+<td>2</td>
+<td>6</td>
+<td>5</td>
+<td>7</td>
+</tr>
+<tr>
+<td>ShadowDragon</td>
+<td>3</td>
+<td>0</td>
+<td>1</td>
+<td>3</td>
+<td>2</td>
+<td>5</td>
+<td>6</td>
+<td>4</td>
+<td>5</td>
+<td>3</td>
+<td>9</td>
+<td>2</td>
+<td>2</td>
+<td>1</td>
+<td>1</td>
+<td>2</td>
+<td>3</td>
+<td>2</td>
+<td>2</td>
+<td>2</td>
+<td>0</td>
+<td>5</td>
+<td>5</td>
+<td>8</td>
+<td>8</td>
+<td>3</td>
+<td>2</td>
+<td>5</td>
+<td>4</td>
+<td>5</td>
+</tr>
+<tr>
+<td>Case Closed Software</td>
+<td>3</td>
+<td>1</td>
+<td>2</td>
+<td>3</td>
+<td>1</td>
+<td>3</td>
+<td>4</td>
+<td>4</td>
+<td>4</td>
+<td>2</td>
+<td>2</td>
+<td>3</td>
+<td>8</td>
+<td>2</td>
+<td>3</td>
+<td>3</td>
+<td>5</td>
+<td>3</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>7</td>
+<td>5</td>
+<td>4</td>
+<td>1</td>
+<td>4</td>
+<td>2</td>
+<td>5</td>
+<td>6</td>
+<td>8</td>
+</tr>
+<tr>
+<td>HR Acuity</td>
+<td>2</td>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>3</td>
+<td>2</td>
+<td>4</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>2</td>
+<td>9</td>
+<td>2</td>
+<td>3</td>
+<td>3</td>
+<td>7</td>
+<td>4</td>
+<td>3</td>
+<td>2</td>
+<td>0</td>
+<td>8</td>
+<td>8</td>
+<td>6</td>
+<td>0</td>
+<td>2</td>
+<td>3</td>
+<td>8</td>
+<td>5</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Omnigo</td>
+<td>2</td>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>2</td>
+<td>3</td>
+<td>4</td>
+<td>5</td>
+<td>1</td>
+<td>1</td>
+<td>3</td>
+<td>8</td>
+<td>2</td>
+<td>3</td>
+<td>1</td>
+<td>7</td>
+<td>3</td>
+<td>2</td>
+<td>1</td>
+<td>0</td>
+<td>6</td>
+<td>6</td>
+<td>5</td>
+<td>1</td>
+<td>4</td>
+<td>2</td>
+<td>6</td>
+<td>6</td>
+<td>5</td>
+</tr>
+<tr>
+<td>CROSStrax</td>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>2</td>
+<td>2</td>
+<td>3</td>
+<td>3</td>
+<td>2</td>
+<td>4</td>
+<td>2</td>
+<td>7</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>5</td>
+<td>2</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>2</td>
+<td>3</td>
+<td>5</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>4</td>
+<td>10</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Trackops</td>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>3</td>
+<td>3</td>
+<td>2</td>
+<td>2</td>
+<td>2</td>
+<td>7</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>4</td>
+<td>2</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>2</td>
+<td>3</td>
+<td>4</td>
+<td>1</td>
+<td>2</td>
+<td>1</td>
+<td>4</td>
+<td>10</td>
+<td>3</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="d-market-profiles-requirements-gates-and-results">D. Market profiles — requirements, gates and results</h2>
+<h3 id="criminal-defence-amp-pi">Criminal defence &amp; PI</h3>
+<p>This buyer <strong>receives</strong> evidence and never collects it, so OSINT, evidence acquisition, review-at-scale and TAR are genuinely not applicable rather than weaknesses — they are excluded from the fit calculation entirely. What remains is narrow and deep: the phone extraction that arrives in nearly every case, held in one model alongside the documents and bank records, every claim traceable to a page, and a chronology that can go in front of a judge. <strong>Disconfirmation is a core requirement here and nowhere else at this weight</strong> — breaking the prosecution's theory is the job. Gated on certifications, purchasability and single-tenant deployment, because privileged material under a protective order fails all three tests otherwise.</p>
+<ul>
+<li><strong>Gates:</strong> Commercial accessibility ≥ 5, Deployment control ≥ 6</li>
+<li><strong>Not applicable here:</strong> OSINT &amp; external enrichment, Review workflow at scale, Analytics / TAR, Certifications &amp; compliance, Evidence acquisition</li>
+<li><strong>Core requirements (12):</strong> Auto-built case graph ≥6, Device data as structured evidence ≥7, Cross-source unification ≥7, Whole-corpus relational query ≥6, Multimodal entities into the model ≥5, Per-claim provenance ≥8, Timeline &amp; chronology ≥6, Financial / transaction analysis ≥5, Processing &amp; format breadth ≥5, Durable judgment objects ≥5, Cited document Q&amp;A ≥6, Disconfirmation detection ≥4</li>
+<li><strong>Loupe:</strong> fit <strong>87%</strong>, core met 12/12, rank <strong>1 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 10 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>87%</td>
+<td><strong>Loupe</strong></td>
+<td>12/12</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>86%</td>
+<td>Palantir Gotham / AIP</td>
+<td>8/12</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>6/12</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Cognyte NEXYTE</td>
+<td>8/12</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>76%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>5/12</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>74%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>5/12</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>71%</td>
+<td>Cellebrite Pathfinder</td>
+<td>6/12</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>71%</td>
+<td>Nuix Neo</td>
+<td>3/12</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>68%</td>
+<td>DataWalk</td>
+<td>6/12</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>67%</td>
+<td>Everlaw</td>
+<td>6/12</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="corporate-amp-internal-investigations">Corporate &amp; internal investigations</h3>
+<p>A workflow market first. Case management, collaboration across legal, HR and security, and enterprise procurement discipline dominate; phone evidence is incidental. Certifications gate hard and deployment gates alongside them — the security team has to be able to approve it, and nothing leaves the tenant.</p>
+<ul>
+<li><strong>Gates:</strong> Deployment control ≥ 5</li>
+<li><strong>Not applicable here:</strong> Certifications &amp; compliance, Evidence acquisition</li>
+<li><strong>Core requirements (16):</strong> Auto-built case graph ≥6, Cross-source unification ≥6, Whole-corpus relational query ≥7, Per-claim provenance ≥7, Link / network analysis ≥5, Timeline &amp; chronology ≥6, Financial / transaction analysis ≥6, OSINT &amp; external enrichment ≥5, Processing &amp; format breadth ≥6, Case &amp; investigation workflow ≥7, Collaboration &amp; permissions ≥6, Durable judgment objects ≥5, Cited document Q&amp;A ≥6, Proven scale ≥6, Ecosystem integrations ≥5, Vendor viability &amp; support ≥6</li>
+<li><strong>Loupe:</strong> fit <strong>73%</strong>, core met 9/16, rank <strong>15 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 27 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>89%</td>
+<td>Palantir Gotham / AIP</td>
+<td>14/16</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>84%</td>
+<td>Cognyte NEXYTE</td>
+<td>11/16</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>82%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>11/16</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>9/16</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>11/16</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>Nuix Neo</td>
+<td>9/16</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>DataWalk</td>
+<td>10/16</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>77%</td>
+<td>Hubstream</td>
+<td>10/16</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>75%</td>
+<td>Everlaw</td>
+<td>9/16</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>75%</td>
+<td>NICE Investigate</td>
+<td>9/16</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>73%</td>
+<td><strong>Loupe</strong></td>
+<td>9/16</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="prosecution-amp-law-enforcement">Prosecution &amp; law enforcement</h3>
+<p>This buyer <strong>owns the extraction</strong>, so device data and acquisition are core rather than optional, and disclosure to the defence is a legal duty rather than a convenience. Forensic validation gates the courtroom — a tool whose parsing has never been tested is a Daubert problem. Certifications sit at CJIS and FedRAMP class.</p>
+<ul>
+<li><strong>Gates:</strong> Deployment control ≥ 6</li>
+<li><strong>Not applicable here:</strong> Certifications &amp; compliance</li>
+<li><strong>Core requirements (22):</strong> Auto-built case graph ≥7, Device data as structured evidence ≥8, Cross-source unification ≥6, Whole-corpus relational query ≥6, Multimodal entities into the model ≥6, Per-claim provenance ≥7, Link / network analysis ≥7, Timeline &amp; chronology ≥7, Geospatial analysis ≥7, OSINT &amp; external enrichment ≥5, Processing &amp; format breadth ≥6, Case &amp; investigation workflow ≥8, Disclosure &amp; production mechanics ≥7, Collaboration &amp; permissions ≥6, Durable judgment objects ≥5, Cited document Q&amp;A ≥5, Proven scale ≥7, Ecosystem integrations ≥6, Evidence acquisition ≥6, Acquisition &amp; parsing validation ≥8, Defensibility of AI output ≥8, Vendor viability &amp; support ≥6</li>
+<li><strong>Loupe:</strong> fit <strong>70%</strong>, core met 12/22, rank <strong>15 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 23 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>88%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>16/22</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>86%</td>
+<td>Palantir Gotham / AIP</td>
+<td>15/22</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>84%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>14/22</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>82%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>12/22</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>82%</td>
+<td>Cognyte NEXYTE</td>
+<td>14/22</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Cellebrite Pathfinder</td>
+<td>14/22</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>77%</td>
+<td>Nuix Neo</td>
+<td>11/22</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>77%</td>
+<td>NICE Investigate</td>
+<td>9/22</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>74%</td>
+<td>Axon (Records / Evidence)</td>
+<td>8/22</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>73%</td>
+<td>Babel Street</td>
+<td>11/22</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>70%</td>
+<td><strong>Loupe</strong></td>
+<td>12/22</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="insurance-siu-fraud">Insurance SIU / fraud</h3>
+<p><strong>The only market in the set with no hard gate.</strong> SIU teams buy tools without a federal certification regime standing over them. Financial analysis and OSINT dominate, because the claim and the claimant's public footprint are the case.</p>
+<ul>
+<li><strong>Gates:</strong> none — the only ungated market</li>
+<li><strong>Not applicable here:</strong> Certifications &amp; compliance, Evidence acquisition</li>
+<li><strong>Core requirements (17):</strong> Auto-built case graph ≥6, Cross-source unification ≥6, Whole-corpus relational query ≥6, Per-claim provenance ≥6, Link / network analysis ≥6, Timeline &amp; chronology ≥6, Geospatial analysis ≥6, Financial / transaction analysis ≥7, OSINT &amp; external enrichment ≥7, Processing &amp; format breadth ≥5, Case &amp; investigation workflow ≥7, Collaboration &amp; permissions ≥5, Cited document Q&amp;A ≥5, Proven scale ≥5, Ecosystem integrations ≥5, Vendor viability &amp; support ≥5, Commercial accessibility ≥6</li>
+<li><strong>Loupe:</strong> fit <strong>77%</strong>, core met 12/17, rank <strong>7 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 47 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>87%</td>
+<td>Palantir Gotham / AIP</td>
+<td>15/17</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>83%</td>
+<td>Cognyte NEXYTE</td>
+<td>13/17</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>82%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>11/17</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>12/17</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>DataWalk</td>
+<td>11/17</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>9/17</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>77%</td>
+<td><strong>Loupe</strong></td>
+<td>12/17</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>77%</td>
+<td>Hubstream</td>
+<td>9/17</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>75%</td>
+<td>Nuix Neo</td>
+<td>8/17</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>75%</td>
+<td>Altia</td>
+<td>10/17</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="investigative-journalism">Investigative journalism</h3>
+<p>Excellent proof, terrible revenue. Provenance sits at 8 and disconfirmation is core, because publication standards demand verification before print. Accessibility is gated at 4 — there is no budget here, and the platforms that serve this market donate their way in. Deployment matters for source protection.</p>
+<ul>
+<li><strong>Gates:</strong> Commercial accessibility ≥ 4</li>
+<li><strong>Not applicable here:</strong> Disclosure &amp; production mechanics, Certifications &amp; compliance, Evidence acquisition, Acquisition &amp; parsing validation, Defensibility of AI output</li>
+<li><strong>Core requirements (16):</strong> Auto-built case graph ≥6, Cross-source unification ≥6, Whole-corpus relational query ≥7, Multimodal entities into the model ≥5, Per-claim provenance ≥8, Link / network analysis ≥6, Timeline &amp; chronology ≥6, Geospatial analysis ≥5, Financial / transaction analysis ≥5, OSINT &amp; external enrichment ≥6, Processing &amp; format breadth ≥6, Collaboration &amp; permissions ≥5, Durable judgment objects ≥6, Cited document Q&amp;A ≥6, Disconfirmation detection ≥5, Deployment control ≥6</li>
+<li><strong>Loupe:</strong> fit <strong>84%</strong>, core met 14/16, rank <strong>3 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 31 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>91%</td>
+<td>Palantir Gotham / AIP</td>
+<td>14/16</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>84%</td>
+<td>Cognyte NEXYTE</td>
+<td>10/16</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>84%</td>
+<td><strong>Loupe</strong></td>
+<td>14/16</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>8/16</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>9/16</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>76%</td>
+<td>DataWalk</td>
+<td>9/16</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>74%</td>
+<td>Babel Street</td>
+<td>7/16</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>73%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>5/16</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>73%</td>
+<td>Cellebrite Pathfinder</td>
+<td>8/16</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>73%</td>
+<td>Nuix Neo</td>
+<td>4/16</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="financial-crime-units">Financial-crime units</h3>
+<p>Whole-corpus relational query at 8 and financial analysis at 8; phone evidence is genuinely not applicable and excluded. Gated on certifications and on sovereign or on-premises deployment — a regulated institution cannot put transaction data in a shared tenant.</p>
+<ul>
+<li><strong>Gates:</strong> Deployment control ≥ 5</li>
+<li><strong>Not applicable here:</strong> Device data as structured evidence, Certifications &amp; compliance, Evidence acquisition</li>
+<li><strong>Core requirements (17):</strong> Auto-built case graph ≥7, Cross-source unification ≥6, Whole-corpus relational query ≥8, Per-claim provenance ≥6, Link / network analysis ≥7, Timeline &amp; chronology ≥6, Financial / transaction analysis ≥8, OSINT &amp; external enrichment ≥6, Processing &amp; format breadth ≥5, Case &amp; investigation workflow ≥6, Analytics / TAR ≥5, Collaboration &amp; permissions ≥5, Cited document Q&amp;A ≥5, Agentic task execution ≥5, Proven scale ≥7, Ecosystem integrations ≥6, Vendor viability &amp; support ≥6</li>
+<li><strong>Loupe:</strong> fit <strong>72%</strong>, core met 11/17, rank <strong>17 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 27 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>92%</td>
+<td>Palantir Gotham / AIP</td>
+<td>16/17</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>85%</td>
+<td>Cognyte NEXYTE</td>
+<td>12/17</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>83%</td>
+<td>DataWalk</td>
+<td>10/17</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>11/17</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>11/17</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>10/17</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>77%</td>
+<td>Nuix Neo</td>
+<td>10/17</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>76%</td>
+<td>Babel Street</td>
+<td>9/17</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>76%</td>
+<td>Hubstream</td>
+<td>6/17</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>75%</td>
+<td>Everlaw</td>
+<td>11/17</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>72%</td>
+<td><strong>Loupe</strong></td>
+<td>11/17</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="uk-eu-policing">UK / EU policing</h3>
+<p>Prosecution's shape with stricter obligations. <strong>Disclosure sits at 8</strong> because CPIA duties are harder than the US equivalent, and <strong>deployment is gated at 7</strong> — the data must stay in jurisdiction. Forensic validation at 8.</p>
+<ul>
+<li><strong>Gates:</strong> Deployment control ≥ 7</li>
+<li><strong>Not applicable here:</strong> Certifications &amp; compliance</li>
+<li><strong>Core requirements (22):</strong> Auto-built case graph ≥7, Device data as structured evidence ≥8, Cross-source unification ≥6, Whole-corpus relational query ≥6, Multimodal entities into the model ≥6, Per-claim provenance ≥7, Link / network analysis ≥7, Timeline &amp; chronology ≥7, Geospatial analysis ≥7, OSINT &amp; external enrichment ≥5, Processing &amp; format breadth ≥6, Case &amp; investigation workflow ≥8, Disclosure &amp; production mechanics ≥8, Collaboration &amp; permissions ≥6, Durable judgment objects ≥5, Cited document Q&amp;A ≥5, Proven scale ≥6, Ecosystem integrations ≥6, Evidence acquisition ≥6, Acquisition &amp; parsing validation ≥8, Defensibility of AI output ≥8, Vendor viability &amp; support ≥6</li>
+<li><strong>Loupe:</strong> fit <strong>70%</strong>, core met 12/22, rank <strong>15 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 17 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>88%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>16/22</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>86%</td>
+<td>Palantir Gotham / AIP</td>
+<td>15/22</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>84%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>14/22</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>82%</td>
+<td>Cognyte NEXYTE</td>
+<td>14/22</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>81%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>12/22</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Cellebrite Pathfinder</td>
+<td>14/22</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>77%</td>
+<td>Nuix Neo</td>
+<td>10/22</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>77%</td>
+<td>NICE Investigate</td>
+<td>9/22</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>74%</td>
+<td>Axon (Records / Evidence)</td>
+<td>8/22</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>73%</td>
+<td>Babel Street</td>
+<td>11/22</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>70%</td>
+<td><strong>Loupe</strong></td>
+<td>12/22</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="public-defender-offices">Public defender offices</h3>
+<p>The same evidence problem as private defence on completely different economics. <strong>Multimodal sits at 8</strong> because bodycam and jail-call volume is the defining burden — it is an entire company's business model. <strong>Accessibility is gated at 8</strong>: one competitor intends to give the platform away here and another already covers CJA panel attorneys at no cost, so anything that is not free or near-free loses on price before it is evaluated on merit.</p>
+<ul>
+<li><strong>Gates:</strong> Commercial accessibility ≥ 8</li>
+<li><strong>Not applicable here:</strong> OSINT &amp; external enrichment, Review workflow at scale, Analytics / TAR, Certifications &amp; compliance, Evidence acquisition</li>
+<li><strong>Core requirements (16):</strong> Auto-built case graph ≥5, Device data as structured evidence ≥6, Cross-source unification ≥6, Whole-corpus relational query ≥5, Multimodal entities into the model ≥8, Per-claim provenance ≥8, Timeline &amp; chronology ≥6, Processing &amp; format breadth ≥5, Case &amp; investigation workflow ≥6, Collaboration &amp; permissions ≥6, Durable judgment objects ≥5, Cited document Q&amp;A ≥6, Disconfirmation detection ≥4, Proven scale ≥6, Vendor viability &amp; support ≥5, Deployment control ≥5</li>
+<li><strong>Loupe:</strong> fit <strong>86%</strong>, core met 12/16, rank <strong>3 of 47</strong>, gates failed: Commercial accessibility (needs 8, has 7)</li>
+<li><strong>Platforms clearing every gate:</strong> 9 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>89%</td>
+<td>Palantir Gotham / AIP</td>
+<td>12/16</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>88%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>12/16</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>86%</td>
+<td><strong>Loupe</strong></td>
+<td>12/16</td>
+<td>$10–50k</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>84%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>11/16</td>
+<td>$10–50k</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>84%</td>
+<td>Cognyte NEXYTE</td>
+<td>11/16</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>11/16</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>Nuix Neo</td>
+<td>8/16</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>77%</td>
+<td>Cellebrite Pathfinder</td>
+<td>9/16</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>76%</td>
+<td>NICE Investigate</td>
+<td>8/16</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Commercial accessibility</td>
+</tr>
+<tr>
+<td>75%</td>
+<td>Matey / CrimD</td>
+<td>8/16</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="law-firms-amp-civil-disputes">Law firms &amp; civil disputes</h3>
+<p>The eDiscovery majors' home turf, the largest spend pool in the study, and <strong>the market Loupe is furthest from serving</strong>. Review at scale 9, disclosure and production 9, TAR 8, processing breadth 8. None of the evidence-modelling advantage matters if you cannot batch, code, quality-check, redact, log privilege and produce to a court's format.</p>
+<ul>
+<li><strong>Gates:</strong> none — the only ungated market</li>
+<li><strong>Not applicable here:</strong> Geospatial analysis, Certifications &amp; compliance, Evidence acquisition</li>
+<li><strong>Core requirements (19):</strong> Auto-built case graph ≥5, Cross-source unification ≥5, Whole-corpus relational query ≥7, Per-claim provenance ≥7, Timeline &amp; chronology ≥7, Financial / transaction analysis ≥5, Processing &amp; format breadth ≥8, Case &amp; investigation workflow ≥6, Review workflow at scale ≥9, Disclosure &amp; production mechanics ≥9, Analytics / TAR ≥8, Collaboration &amp; permissions ≥7, Durable judgment objects ≥6, Cited document Q&amp;A ≥7, Agentic task execution ≥5, Proven scale ≥8, Ecosystem integrations ≥7, Vendor viability &amp; support ≥7, Deployment control ≥4</li>
+<li><strong>Loupe:</strong> fit <strong>68%</strong>, core met 10/19, rank <strong>20 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 47 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>85%</td>
+<td>Palantir Gotham / AIP</td>
+<td>13/19</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>82%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>11/19</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>82%</td>
+<td>Nuix Neo</td>
+<td>9/19</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>81%</td>
+<td>Everlaw</td>
+<td>14/19</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>10/19</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Relativity (aiR)</td>
+<td>14/19</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>Cognyte NEXYTE</td>
+<td>10/19</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>75%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>10/19</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>74%</td>
+<td>Reveal / Logikcull</td>
+<td>6/19</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>73%</td>
+<td>CaseMap+ AI (LexisNexis)</td>
+<td>7/19</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>68%</td>
+<td><strong>Loupe</strong></td>
+<td>10/19</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="regulators-amp-government-enforcement">Regulators &amp; government enforcement</h3>
+<p>Provenance at 8 and durable judgment objects at 7, because mapping evidence to <strong>offence elements</strong> is the work product rather than a by-product. Disclosure at 8 — the brief of evidence goes to prosecution and has to survive it.</p>
+<ul>
+<li><strong>Gates:</strong> Deployment control ≥ 6</li>
+<li><strong>Not applicable here:</strong> Certifications &amp; compliance</li>
+<li><strong>Core requirements (22):</strong> Auto-built case graph ≥6, Device data as structured evidence ≥6, Cross-source unification ≥7, Whole-corpus relational query ≥6, Multimodal entities into the model ≥5, Per-claim provenance ≥8, Link / network analysis ≥6, Timeline &amp; chronology ≥7, Financial / transaction analysis ≥7, OSINT &amp; external enrichment ≥5, Processing &amp; format breadth ≥6, Case &amp; investigation workflow ≥8, Disclosure &amp; production mechanics ≥8, Collaboration &amp; permissions ≥6, Durable judgment objects ≥7, Cited document Q&amp;A ≥6, Disconfirmation detection ≥5, Proven scale ≥6, Ecosystem integrations ≥5, Acquisition &amp; parsing validation ≥7, Defensibility of AI output ≥7, Vendor viability &amp; support ≥6</li>
+<li><strong>Loupe:</strong> fit <strong>73%</strong>, core met 13/22, rank <strong>8 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 23 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>86%</td>
+<td>Palantir Gotham / AIP</td>
+<td>14/22</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>82%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>12/22</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>10/22</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>12/22</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>Cognyte NEXYTE</td>
+<td>11/22</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>75%</td>
+<td>Nuix Neo</td>
+<td>8/22</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>73%</td>
+<td>Everlaw</td>
+<td>12/22</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>73%</td>
+<td><strong>Loupe</strong></td>
+<td>13/22</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>73%</td>
+<td>NICE Investigate</td>
+<td>9/22</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>72%</td>
+<td>Relativity (aiR)</td>
+<td>12/22</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="corporate-security-amp-insider-threat">Corporate security &amp; insider threat</h3>
+<p><strong>OSINT at 8</strong> — threat-actor research, social listening and public records are the daily work — and workflow at 8, because the incident-to-investigation lifecycle is the product. Geospatial matters here in a way it does not for document-led markets: facilities, travel, executive protection.</p>
+<ul>
+<li><strong>Gates:</strong> Deployment control ≥ 5</li>
+<li><strong>Not applicable here:</strong> Review workflow at scale, Certifications &amp; compliance</li>
+<li><strong>Core requirements (18):</strong> Auto-built case graph ≥6, Cross-source unification ≥5, Whole-corpus relational query ≥6, Multimodal entities into the model ≥5, Per-claim provenance ≥6, Link / network analysis ≥7, Timeline &amp; chronology ≥6, Geospatial analysis ≥7, OSINT &amp; external enrichment ≥8, Processing &amp; format breadth ≥5, Case &amp; investigation workflow ≥8, Collaboration &amp; permissions ≥7, Durable judgment objects ≥5, Cited document Q&amp;A ≥5, Agentic task execution ≥5, Proven scale ≥6, Ecosystem integrations ≥6, Vendor viability &amp; support ≥6</li>
+<li><strong>Loupe:</strong> fit <strong>75%</strong>, core met 12/18, rank <strong>13 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 27 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>90%</td>
+<td>Palantir Gotham / AIP</td>
+<td>16/18</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>88%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>14/18</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>88%</td>
+<td>Cognyte NEXYTE</td>
+<td>15/18</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>85%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>13/18</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>81%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>11/18</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Babel Street</td>
+<td>12/18</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Cellebrite Pathfinder</td>
+<td>10/18</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Nuix Neo</td>
+<td>10/18</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>DataWalk</td>
+<td>10/18</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Hubstream</td>
+<td>9/18</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>75%</td>
+<td><strong>Loupe</strong></td>
+<td>12/18</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="ethics-compliance-amp-whistleblower">Ethics, compliance &amp; whistleblower</h3>
+<p><strong>Workflow at 9 and collaboration at 8.</strong> Intake, triage, investigation and resolution is the entire product, and anonymity plus need-to-know segregation is not negotiable. Certifications gate at 7 — the most privacy-sensitive market in the set, with works councils and data-protection regimes on top of the usual audit.</p>
+<ul>
+<li><strong>Gates:</strong> Deployment control ≥ 6</li>
+<li><strong>Not applicable here:</strong> Device data as structured evidence, Geospatial analysis, Certifications &amp; compliance, Evidence acquisition</li>
+<li><strong>Core requirements (15):</strong> Auto-built case graph ≥4, Cross-source unification ≥4, Whole-corpus relational query ≥5, Multimodal entities into the model ≥5, Per-claim provenance ≥7, Timeline &amp; chronology ≥6, Financial / transaction analysis ≥5, Processing &amp; format breadth ≥5, Case &amp; investigation workflow ≥9, Collaboration &amp; permissions ≥8, Durable judgment objects ≥5, Cited document Q&amp;A ≥5, Proven scale ≥6, Ecosystem integrations ≥6, Vendor viability &amp; support ≥6</li>
+<li><strong>Loupe:</strong> fit <strong>74%</strong>, core met 10/15, rank <strong>18 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 23 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>89%</td>
+<td>Palantir Gotham / AIP</td>
+<td>13/15</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>85%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>12/15</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>85%</td>
+<td>Cognyte NEXYTE</td>
+<td>12/15</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>85%</td>
+<td>Nuix Neo</td>
+<td>9/15</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>84%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>10/15</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>11/15</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Hubstream</td>
+<td>8/15</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Everlaw</td>
+<td>10/15</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>NICE Investigate</td>
+<td>9/15</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>DataWalk</td>
+<td>10/15</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>74%</td>
+<td><strong>Loupe</strong></td>
+<td>10/15</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="due-diligence-kyc-third-party-risk">Due diligence / KYC / third-party risk</h3>
+<p><strong>OSINT at 9 and evidence acquisition at 8.</strong> You have to go and collect — nothing is handed to you, there is no discovery bundle. Structurally the wrong shape for a platform built to model evidence it receives.</p>
+<ul>
+<li><strong>Gates:</strong> none — the only ungated market</li>
+<li><strong>Not applicable here:</strong> Device data as structured evidence, Certifications &amp; compliance, Acquisition &amp; parsing validation, Defensibility of AI output</li>
+<li><strong>Core requirements (19):</strong> Auto-built case graph ≥6, Cross-source unification ≥5, Whole-corpus relational query ≥6, Per-claim provenance ≥7, Link / network analysis ≥7, Financial / transaction analysis ≥7, OSINT &amp; external enrichment ≥9, Processing &amp; format breadth ≥4, Case &amp; investigation workflow ≥6, Collaboration &amp; permissions ≥5, Durable judgment objects ≥5, Cited document Q&amp;A ≥6, Agentic task execution ≥6, Proven scale ≥6, Ecosystem integrations ≥6, Evidence acquisition ≥8, Vendor viability &amp; support ≥6, Commercial accessibility ≥6, Deployment control ≥5</li>
+<li><strong>Loupe:</strong> fit <strong>74%</strong>, core met 13/19, rank <strong>12 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 47 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>87%</td>
+<td>Palantir Gotham / AIP</td>
+<td>15/19</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>86%</td>
+<td>Cognyte NEXYTE</td>
+<td>14/19</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>84%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>13/19</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>82%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>14/19</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Babel Street</td>
+<td>12/19</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Blackdot Videris</td>
+<td>8/19</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>12/19</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>78%</td>
+<td>Nuix Neo</td>
+<td>9/19</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>76%</td>
+<td>Hubstream</td>
+<td>9/19</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>75%</td>
+<td>Altia</td>
+<td>10/19</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>74%</td>
+<td><strong>Loupe</strong></td>
+<td>13/19</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="intelligence-amp-national-security">Intelligence &amp; national security</h3>
+<p>The highest bar anywhere: certifications gated at 8, deployment gated at 8 for sovereign and air-gapped operation, and <strong>acquisition gated at 6</strong> — an analysis-only tool cannot serve this buyer at all, however good the analysis.</p>
+<ul>
+<li><strong>Gates:</strong> Evidence acquisition ≥ 6, Deployment control ≥ 8</li>
+<li><strong>Not applicable here:</strong> Certifications &amp; compliance</li>
+<li><strong>Core requirements (20):</strong> Auto-built case graph ≥8, Device data as structured evidence ≥7, Cross-source unification ≥7, Whole-corpus relational query ≥8, Multimodal entities into the model ≥7, Per-claim provenance ≥6, Link / network analysis ≥8, Timeline &amp; chronology ≥7, Geospatial analysis ≥8, Financial / transaction analysis ≥6, OSINT &amp; external enrichment ≥7, Processing &amp; format breadth ≥7, Case &amp; investigation workflow ≥6, Collaboration &amp; permissions ≥7, Durable judgment objects ≥5, Cited document Q&amp;A ≥5, Agentic task execution ≥6, Proven scale ≥8, Ecosystem integrations ≥6, Vendor viability &amp; support ≥7</li>
+<li><strong>Loupe:</strong> fit <strong>74%</strong>, core met 11/20, rank <strong>8 of 47</strong>, gates failed: Evidence acquisition (needs 6, has 0)</li>
+<li><strong>Platforms clearing every gate:</strong> 4 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>91%</td>
+<td>Palantir Gotham / AIP</td>
+<td>17/20</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Evidence acquisition</td>
+</tr>
+<tr>
+<td>84%</td>
+<td>Cognyte NEXYTE</td>
+<td>13/20</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>82%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>12/20</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>9/20</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>77%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>12/20</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>74%</td>
+<td>Cellebrite Pathfinder</td>
+<td>7/20</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>74%</td>
+<td>Nuix Neo</td>
+<td>9/20</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>74%</td>
+<td><strong>Loupe</strong></td>
+<td>11/20</td>
+<td>$10–50k</td>
+<td><strong>fails:</strong> Evidence acquisition</td>
+</tr>
+<tr>
+<td>73%</td>
+<td>DataWalk</td>
+<td>5/20</td>
+<td>$300k+</td>
+<td><strong>fails:</strong> Evidence acquisition</td>
+</tr>
+<tr>
+<td>71%</td>
+<td>Hubstream</td>
+<td>5/20</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Evidence acquisition, Deployment control</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="public-sector-fraud-benefits-tax-immigration">Public-sector fraud (benefits, tax, immigration)</h3>
+<p>Population scale. Whole-corpus query at 8, financial analysis at 8 and proven scale at 8 — the corpora are enormous and the cases are individually small, which inverts the economics of every tool built for one big matter.</p>
+<ul>
+<li><strong>Gates:</strong> Deployment control ≥ 6</li>
+<li><strong>Not applicable here:</strong> Certifications &amp; compliance</li>
+<li><strong>Core requirements (23):</strong> Auto-built case graph ≥6, Cross-source unification ≥6, Whole-corpus relational query ≥8, Per-claim provenance ≥7, Link / network analysis ≥7, Timeline &amp; chronology ≥6, Geospatial analysis ≥5, Financial / transaction analysis ≥8, OSINT &amp; external enrichment ≥6, Processing &amp; format breadth ≥6, Case &amp; investigation workflow ≥7, Disclosure &amp; production mechanics ≥6, Analytics / TAR ≥6, Collaboration &amp; permissions ≥6, Durable judgment objects ≥5, Cited document Q&amp;A ≥5, Agentic task execution ≥6, Disconfirmation detection ≥5, Proven scale ≥8, Ecosystem integrations ≥6, Acquisition &amp; parsing validation ≥6, Defensibility of AI output ≥6, Vendor viability &amp; support ≥6</li>
+<li><strong>Loupe:</strong> fit <strong>72%</strong>, core met 13/23, rank <strong>14 of 47</strong>, gates failed: <strong>none</strong></li>
+<li><strong>Platforms clearing every gate:</strong> 23 of 47</li>
+</ul>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Fit</th>
+<th>Platform</th>
+<th>Core met</th>
+<th>Entry price</th>
+<th>Gate status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>90%</td>
+<td>Palantir Gotham / AIP</td>
+<td>18/23</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>83%</td>
+<td>Magnet Axiom / Magnet One</td>
+<td>15/23</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>81%</td>
+<td>Cognyte NEXYTE</td>
+<td>13/23</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>Cellebrite Guardian Investigate</td>
+<td>15/23</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>79%</td>
+<td>Exterro FTK / ARMOUR</td>
+<td>12/23</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>76%</td>
+<td>Nuix Neo</td>
+<td>11/23</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>75%</td>
+<td>Everlaw</td>
+<td>14/23</td>
+<td>$50–300k</td>
+<td><strong>fails:</strong> Deployment control</td>
+</tr>
+<tr>
+<td>74%</td>
+<td>NICE Investigate</td>
+<td>11/23</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>74%</td>
+<td>DataWalk</td>
+<td>9/23</td>
+<td>$300k+</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>74%</td>
+<td>Hubstream</td>
+<td>8/23</td>
+<td>$50–300k</td>
+<td>clears all gates</td>
+</tr>
+<tr>
+<td>72%</td>
+<td><strong>Loupe</strong></td>
+<td>13/23</td>
+<td>$10–50k</td>
+<td>clears all gates</td>
+</tr>
+</tbody>
+</table></div>
+</div>
+<script>
+(function(){
+  var r=document.documentElement;
+  document.querySelectorAll('.themer button').forEach(function(b){
+    b.addEventListener('click',function(){
+      r.dataset.theme=b.dataset.set;
+      document.querySelectorAll('.themer button').forEach(function(o){
+        o.setAttribute('aria-pressed', String(o===b));
+      });
+    });
+  });
+})();
+</script>
