@@ -49,7 +49,7 @@ export function ContactModal({ open, onClose }: ContactModalProps) {
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    const recipient = import.meta.env.VITE_CONTACT_EMAIL || ""
+    const recipient = import.meta.env.VITE_CONTACT_EMAIL || "sales@loupe.ie"
     const subject = encodeURIComponent("Loupe walkthrough request")
     const body = encodeURIComponent(
       `Name: ${data.get("name")}\nOrganisation: ${data.get("organisation")}\nEmail: ${data.get("email")}\n\nWhat I would like to explore:\n${data.get("message")}`
