@@ -229,6 +229,14 @@ def slide2(prs):
               "the first.",
          size=14, colour=MUTED, italic=True, space_before=6)
 
+
+    tf3 = textbox(s, MARGIN_L, Inches(6.4), BODY_W, Inches(1.0))
+    para(tf3, "**And the tools that could hold it throw it away.** Relativity's own "
+              "processing documentation says call logs emerge \u201conly as call log "
+              "data in Excel format, not as individual records,\u201d and that "
+              "multi-device extractions are unsupported. Everlaw splits conversations "
+              "every thousand messages; Reveal slices them into 24-hour blocks.",
+         size=13, colour=MUTED, first=True, space_before=0)
     notes(s, """ORIGIN STORY — this is your strongest beat.
 
 "We tried to buy it, it failed on a live case, so we built it" is behavioural
@@ -271,20 +279,20 @@ def slide3(prs):
          "A phone extraction now appears in nearly every case."),
         ("02", "LLMs became good enough",
          "to read evidence at scale."),
-        ("03", "Bare LLMs remain unusable in evidence work",
-         "— no provenance, no audit, no confidentiality."),
+        ("03", "The category converged on cited answers — and stopped there.",
+         "Relativity folded aiR into its base rate in November 2025; Everlaw bundled three AI features into core pricing the same month; DISCO announced agentic AI at no extra cost in February 2026. Everyone can cite a document. Nobody modelled the case."),
     ]
     firstdone = False
     for num, bold_part, rest in items:
         p = para(tf, num, size=13, colour=ACCENT, bold=True,
                  first=(not firstdone), space_before=16)
         firstdone = True
-        para(tf, f"**{bold_part}** {rest}", size=18, space_before=2)
+        para(tf, f"**{bold_part}** {rest}", size=15, space_before=2)
 
     tf2 = textbox(s, Inches(7.75), Inches(2.35), Inches(4.75), Inches(3.8))
-    para(tf2, "The gap between (2) and (3) is exactly where Loupe sits:",
+    para(tf2, "That is the gap Loupe was built into:",
          size=17, colour=MUTED, first=True, space_before=0)
-    para(tf2, "the trust layer that makes AI admissible in investigative work.",
+    para(tf2, "the layer underneath the answer — a model of the whole case, so a question can be put to all of it at once.",
          size=23, colour=ACCENT, bold=True, space_before=10)
     para(tf2, "Only ~25% of anti-fraud programmes use AI/ML today — and only "
               "**~6% of fraud examiners are confident explaining how their AI "

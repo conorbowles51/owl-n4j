@@ -145,6 +145,19 @@ Judgement calls, and the third one is the important one:
 
 ---
 
+**Added 29 July — the incumbents' own documentation.** The slide argued that existing
+tools are viewers, which is true and assertable. The stronger version is the same claim
+in the vendors' words: Relativity's processing documentation states that call logs
+emerge "only as call log data in Excel format, not as individual records" and that
+multi-device extractions are unsupported; Everlaw splits conversations every thousand
+messages; Reveal slices them into 24-hour blocks. **A panel discounts your
+characterisation of a competitor and cannot discount the competitor's own manual.**
+
+It also sets up the money on slide 7: the buyer is already paying to have this done to
+their evidence.
+
+---
+
 ### Slide 3 — Why now
 
 > **Three curves crossed.**
@@ -152,15 +165,38 @@ Judgement calls, and the third one is the important one:
 > 1. **Digital evidence volume exploded.** A phone extraction now appears in nearly
 >    every case.
 > 2. **LLMs became good enough** to read evidence at scale.
-> 3. **Bare LLMs remain unusable in evidence work** — no provenance, no audit, no
->    confidentiality.
+> 3. **The category converged on cited answers — and stopped there.** Relativity
+>    folded aiR into its base rate in November 2025; Everlaw bundled three AI features
+>    into core pricing the same month; DISCO announced agentic AI at no extra cost in
+>    February 2026. Everyone can cite a document. Nobody modelled the case.
 >
-> The gap between (2) and (3) is exactly where Loupe sits: **the trust layer that
-> makes AI admissible in investigative work.**
+> That is the gap Loupe was built into: **the layer underneath the answer — a model of
+> the whole case, so a question can be put to all of it at once.**
 >
 > Supporting signal: only ~25% of anti-fraud programmes use AI/ML today — and only
 > **~6% of fraud examiners are confident explaining how their AI reaches its
 > conclusions.** *(ACFE 2026 anti-fraud technology benchmarking)*
+
+**Curve 3 was rewritten on 29 July, and the old version would have been challenged.**
+It read *"bare LLMs remain unusable in evidence work — no provenance, no audit, no
+confidentiality"*, and the conclusion positioned Loupe as *"the trust layer that makes
+AI admissible."* That was true in early 2025 and is not true now. Finding F1 of the
+competitive analysis dates the change precisely: between November 2025 and February
+2026 the specialists shipped provenance and most gave it away. Relativity's aiR refuses
+to emit a fact it cannot match to source text; Everlaw's Deep Dive answers "insufficient
+evidence" rather than invent one. **Anyone in the room who knows the category would have
+taken that bullet apart, and positioning on the trust layer is positioning on a free
+feature.**
+
+The replacement is stronger for the same slide-space: it is dateable, it is verifiable
+from vendor announcements, and it sets up slide 4 exactly — everyone can cite a
+document, nobody modelled the case.
+
+**The ACFE 6% stat still earns its place, and reads better against the new curve.**
+"Only ~6% of fraud examiners are confident explaining how their AI reaches its
+conclusions" is not really a provenance statistic — it is a grounding one. It says the
+answer has nothing underneath it that a professional can stand over. Say it, pause, then
+show slide 4.
 
 Speaker note: the 6% stat is the strongest number in your material. The entire product
 is an answer to it. Say it, pause, then move to slide 4 and show the answer.
