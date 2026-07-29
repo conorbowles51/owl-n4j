@@ -639,6 +639,75 @@ calls — which is exactly what slide 9 asks NDRC to fund.""")
     return s
 
 
+def slide6c(prs):
+    """Customer value — what a case costs today, and what comes back."""
+    s = blank(prs); bg(s)
+    from pptx.enum.shapes import MSO_SHAPE
+    kicker(s, "Customer value")
+    heading(s, "We don't ask for new budget.\nWe displace one that already exists.", size=30)
+    rule(s, Inches(2.35), width=Inches(1.1))
+
+    tf = textbox(s, MARGIN_L, Inches(2.55), BODY_W, Inches(0.62))
+    para(tf, "Before anyone has answered a question about the evidence, a serious "
+             "matter has already paid a forensic vendor, a processing bill, and "
+             "hosting charged **per gigabyte per month for the life of the case** — "
+             "to have phone data come out as spreadsheets.",
+         size=14, colour=PAPER, first=True, space_before=0)
+
+    stats = [
+        ("$34–131k", "of spend displaced per serious case — processing, hosting and examiner analysis"),
+        ("58–100 hrs", "of investigator and paralegal time returned on the same case"),
+        ("$0.9–1.9M", "of displaceable value carried by one practice every year"),
+        ("$4,350 / mo", "what hosting a single 435GB federal case costs today, for as long as it runs"),
+    ]
+    cw, cg = Inches(2.87), Inches(0.17)
+    for i, (big, label) in enumerate(stats):
+        left = MARGIN_L + i * (cw + cg)
+        box = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, Inches(3.42), cw, Inches(1.72))
+        box.fill.solid(); box.fill.fore_color.rgb = PANEL
+        box.line.color.rgb = ACCENT_SOLID if i < 3 else ACCENT_DIM
+        box.line.width = Pt(1.25)
+        box.shadow.inherit = False
+        t = textbox(s, left + Inches(0.17), Inches(3.58), cw - Inches(0.34), Inches(1.45))
+        para(t, big, size=27, colour=PAPER, bold=True, first=True, space_before=0,
+             font=FONT_H)
+        para(t, label, size=11.5, colour=MUTED, space_before=8)
+
+    tf2 = textbox(s, MARGIN_L, Inches(5.42), BODY_W, Inches(1.4))
+    para(tf2, "**Priced at $12,000 a matter**, against $34,000–$131,000 it removes and "
+              "the hours it hands back. The extraction bill stays — devices still go to "
+              "a vendor. Everything downstream of it does not.",
+         size=15, colour=PAPER, first=True, space_before=0)
+    para(tf2, "Displaceable value moves twenty-four times between the smallest and "
+              "largest matters, so price scales with device count, data volume and "
+              "duration — the same drivers as the bill it replaces. **Setting that "
+              "scaling is what the pilot is for.**",
+         size=13, colour=MUTED, space_before=9)
+
+    notes(s, """Four numbers. Say them slowly and do not add a fifth.
+
+The buyer is not choosing between us and a competitor. They are choosing between us
+and what they do today: pay a forensic vendor to extract each device, pay per gigabyte
+per MONTH to host the result somewhere it cannot be properly analysed, pay an examiner
+by the hour to look at parts of it, then pay their own people to stitch it together.
+
+Hosting is the line that breaks, and it is the sharpest number in the study. Charged
+per gigabyte per month for the life of the matter, it scales with exactly the evidence
+we model. A 435GB federal case is $4,350 a month. The outcome that money buys is a
+spreadsheet.
+
+If asked where the numbers come from: published 2026 rates. eDiscovery processing
+$3-10/GB and hosting $5-15/GB/month from the Winter 2026 pricing survey; forensic
+vendor rate cards at $3,650 for a one-or-two-device case; examiner analysis $300-500/h;
+case hours from RAND's National Public Defense Workload Study; investigator time
+$85-225/h. The one modelled assumption is the share of case hours that is evidence
+handling — say so if pressed, do not pretend it is measured.
+
+Do not claim we remove the extraction bill. We do not, and conceding it is what makes
+the rest credible.""")
+    return s
+
+
 def slide6b(prs):
     """Growth path — four stages, each with the customers and matters it needs."""
     s = blank(prs); bg(s)
@@ -937,7 +1006,7 @@ def main():
     prs.slide_height = H
 
     for fn in (slide1, slide2, slide3, slide4, slide5,
-               slide6, slide6b, slide7, slide8, slide9):
+               slide6, slide6c, slide6b, slide7, slide8, slide9):
         fn(prs)
 
     out = "Loupe-NDRC-deck.pptx"

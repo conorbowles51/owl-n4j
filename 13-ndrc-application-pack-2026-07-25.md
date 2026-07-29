@@ -49,11 +49,11 @@ flag, provided you say it first.
 
 ## Part 2 — The deck, slide by slide
 
-**Ten slides.** Every product claim below traces to code on
+**Eleven slides.** Every product claim below traces to code on
 `integration/evidence-main-reunion` unless marked **[ROADMAP]**. Claims-safety notes
 are drawn from the "Claims to avoid" list — honour them.
 
-**Slide 7 is the growth path**, added 29 July and built into `build_deck.py` as
+**Slide 8 is the growth path**, added 29 July and built into `build_deck.py` as
 `slide6b()`. It sits between Market and Team because a market slide that states a
 pool without stating what share of it the plan needs invites the question rather
 than answering it.
@@ -541,7 +541,51 @@ Global forensic accounting ~$18–20B, US ~$10.5B, highly fragmented.
 
 ---
 
-### Slide 7 — Growth path
+### Slide 7 — Customer value
+
+> **We don't ask for new budget. We displace one that already exists.**
+>
+> Before anyone has answered a question about the evidence, a serious matter has
+> already paid a forensic vendor, a processing bill, and hosting charged **per gigabyte
+> per month for the life of the case** — to have phone data come out as spreadsheets.
+>
+> | **$34–131k** | **58–100 hrs** | **$0.9–1.9M** | **$4,350 / mo** |
+> |---|---|---|---|
+> | of spend displaced per serious case — processing, hosting and examiner analysis | of investigator and paralegal time returned on the same case | of displaceable value carried by one practice every year | what hosting a single 435GB federal case costs today, for as long as it runs |
+>
+> **Priced at $12,000 a matter**, against $34,000–$131,000 it removes and the hours it
+> hands back. The extraction bill stays — devices still go to a vendor. Everything
+> downstream of it does not.
+>
+> Displaceable value moves twenty-four times between the smallest and largest matters,
+> so price scales with device count, data volume and duration — the same drivers as the
+> bill it replaces. **Setting that scaling is what the pilot is for.**
+
+**Why this slide exists.** The market slide sizes the opportunity; it says nothing
+about what a single customer gets. Four numbers close that gap, and they are the same
+four the competitive analysis derives at length — consolidated here rather than
+reproduced. Do not bring the per-line breakdown into the room; it is in §7a of the
+Market Fit Lens narrative if anyone asks for the working.
+
+**Hosting is the sharpest number in the entire study for this buyer.** Charged per
+gigabyte per month for the life of the matter, it scales with exactly the evidence this
+platform models. A 435GB federal case is $4,350 a month, and the outcome that money
+buys is a spreadsheet. If one number lands in the room, make it that one.
+
+**Concede the extraction bill, out loud.** Devices still go to a forensic vendor at
+around $3,650 a case and we do not displace it. Saying so is what makes the other three
+numbers credible — an unconceded overclaim invites a panel to discount the whole slide.
+
+**Provenance of the figures, if pressed:** published 2026 rates — eDiscovery processing
+$3–10/GB and hosting $5–15/GB per month from the Winter 2026 pricing survey; forensic
+vendor rate cards; examiner analysis $300–500/hour; case hours from RAND's National
+Public Defense Workload Study; investigator time $85–225/hour. **The one modelled
+assumption is the share of case hours that is evidence handling.** Say that plainly if
+asked rather than presenting it as measured.
+
+---
+
+### Slide 8 — Growth path
 
 > **Ten million in ARR is 104 firms and under 2% of one market.**
 >
@@ -581,7 +625,7 @@ reason the pilot in slide 10 is the thing being funded.
 
 ---
 
-### Slide 8 — Team
+### Slide 9 — Team
 
 > **Neil Byrne — CEO.** **Seven years at Siren**, the Irish investigative-intelligence
 > platform — the same category, selling to law enforcement, intelligence and
@@ -663,7 +707,7 @@ the domain founder is where the customers are.
 
 ---
 
-### Slide 9 — Status and traction
+### Slide 10 — Status and traction
 
 **Lead with the fact, not the caveat. Loupe is a working platform that has done the
 job.** Everything else on this slide is context for that sentence.
@@ -762,7 +806,7 @@ the artifact when someone says "show me."*
 
 ---
 
-### Slide 10 — The ask
+### Slide 11 — The ask
 
 > **€100k. What it buys: the first paying customer outside the practice that built it.**
 >
@@ -1293,7 +1337,7 @@ vendor rates, so Europe beyond Ireland and the UK is a partner-led motion. And *
 before policing in the UK**: CPIA disclosure obligations are gated at 8 in the policing profile and
 Loupe scores 2, the heaviest single gap in the study for that buyer.
 
-### Slide 10 — The ask, and pricing
+### Slide 11 — The ask, and pricing
 
 **Displaceable value moves 24× between the smallest and largest matters.** A flat $6–24k per-matter
 band captures 205% of a one-phone case and 9% of a ten-phone federal one. The pilot NDRC is being
