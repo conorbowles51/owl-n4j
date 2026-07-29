@@ -510,7 +510,7 @@ live open item, not a solved one.)
 > | **They model the evidence — and won't sell it to you** | **They'll sell to you — and treat a phone as an attachment** | **Same buyer as us — and no case model** |
 > |---|---|---|
 > | *Cellebrite · Magnet · Palantir · Pathfinder* | *Relativity · Everlaw · DISCO · Reveal · Harvey · CoCounsel* | *TrialKit · Matey · JusticeText · Longeye* |
-> | Real structure, real graphs, and they own the extraction. Pathfinder is marketed solely to law enforcement and intelligence; GrayKey is not sold to the private sector at all. What a defence practice can buy is examiner tooling — five kinds of device, no kinds of document. | Excellent at documents, purchasable, and the phone data does not survive the door. Call logs emerge as Excel, conversations are split every thousand messages, multi-device extractions are unsupported. | Four funded companies selling AI to criminal defence, $2.5–7.5M seed each, with the bar associations and the certifications. **None of them has a graph.** All four answer by retrieval. |
+> | Real structure, real graphs, and they own the extraction. Pathfinder is marketed solely to law enforcement and intelligence; GrayKey is not sold to the private sector at all. What a practice can buy is examiner tooling — five kinds of device, no kinds of document. | Excellent at documents, purchasable, and the phone data does not survive the door. Call logs emerge as Excel, conversations are split every thousand messages, multi-device extractions are unsupported. | Four funded companies selling AI to criminal defence, $2.5–7.5M seed each, with the bar associations and the certifications. **None of them has a graph.** All four answer by retrieval — which returns what looked relevant and cannot tell you what it missed. **On a defence matter the thing you never saw is the thing that loses the case.** |
 >
 > **Not one of the forty-seven holds device data, financial records and documents in a
 > single model.** That is not an accident of scoring — modelling evidence and serving
@@ -519,6 +519,16 @@ live open item, not a solved one.)
 >
 > **We know because we went looking for a platform to run live federal casework, tried
 > several, and none could work the case.**
+
+**The clause added to column three is the one that makes the column matter.** "None of
+them has a graph" is a technical observation, and a partner may not know why it should
+worry them. *Retrieval returns what looked relevant and cannot tell you what it missed*
+gives the mechanism; *on a defence matter the thing you never saw is the thing that
+loses the case* gives the stake. Without both, the column reads as an architecture
+preference rather than a professional risk.
+
+It is the same claim slide 5 makes against a straight LLM, applied to the funded
+competitors — which is why both slides exist.
 
 **Why this slide is separate from slide 5, rather than folded into it.** Slide 5
 answers *"isn't this just ChatGPT?"* — a question every investor asks and one the LLM
