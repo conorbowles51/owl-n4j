@@ -593,10 +593,11 @@ reason the pilot in slide 10 is the thing being funded.
 
 > **Neil Byrne — CEO.** **Seven years at Siren**, the Irish investigative-intelligence
 > platform — the same category, selling to law enforcement, intelligence and
-> financial-crime teams. Built bespoke investigative solutions for **every Siren
-> customer I worked with**, and spoke with **hundreds of analysts** across conference
-> talks and deployments. 10+ years across data engineering, AI systems and full-stack
-> development. **Full-time on close.**
+> financial-crime teams. **Solutions engineer: I managed customer accounts and built
+> the customisations each client needed to make the platform fit their process.**
+> Spoke with **hundreds of analysts** across conference talks and deployments. 10+
+> years across data engineering, AI systems and full-stack development.
+> **Full-time on close.**
 >
 > **Conor Bowles — CTO.** Data infrastructure, security and scalable systems. Core
 > engineering, database architecture, deployment operations. **Full-time on close.**
@@ -610,6 +611,31 @@ reason the pilot in slide 10 is the thing being funded.
 > buyers, and a decade running federal casework as the kind of investigator who has to
 > live with the result. Our CPO has run federal cases to completion inside this
 > platform.
+
+**The line to say out loud, and the strongest thing on this slide:** *I was the
+solutions engineer. When an enterprise buys an investigative platform, it buys
+configuration and support attached — and I was the person who built the customisations
+that made it fit. A fifteen-person practice cannot buy me. That is why Loupe has to
+work out of the box.* Slide 6 argues that the tier below has the same casework
+complexity and none of the implementation budget; this is that argument in the first
+person, from the person who used to be the implementation budget. It also answers the
+Siren question (blocker 5d) as a compliment rather than a comparison.
+
+**Holding item — the Udemy line.** Neil is currently a sales solutions engineer at
+Udemy across large-enterprise and strategic accounts, which extends the same discipline
+to a larger commercial scale and is worth one clause:
+
+> **Currently a sales solutions engineer at Udemy across large-enterprise and strategic
+> accounts** — the same discipline at enterprise scale: technical discovery, and
+> building what a large customer actually needs.
+
+**Do not add it until blocker #1 (current-employer IP review) is closed.** Naming the
+current employer on the team slide walks a reader straight to "was this built on their
+time?", and ~55% of commits were made while employed there. Once the waiver is in hand
+it is a non-issue and the clause should go in — LinkedIn is a required form field, so
+they will see Udemy regardless, and it is better framed by you than discovered by them.
+Put it immediately before "Full-time on close" so the fact and its resolution land
+together.
 
 Speaker note: **lead with Siren.** It is the strongest founder-market-fit signal you
 have and it was missing from every earlier version of this material. NDRC will know

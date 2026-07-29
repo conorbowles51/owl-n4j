@@ -690,10 +690,11 @@ def slide7(prs):
         ("Neil Byrne", "CEO",
          "Seven years at Siren, the Irish investigative-intelligence platform — "
          "the same category, selling to law enforcement, intelligence and "
-         "financial-crime teams. Built bespoke solutions for every Siren "
-         "customer I worked with; spoke with hundreds of analysts across "
-         "conference talks and deployments. 10+ years in data engineering, AI "
-         "systems and full-stack development.",
+         "financial-crime teams. **Solutions engineer: managed customer accounts "
+         "and built the customisations each client needed to make the platform "
+         "fit their process.** Spoke with hundreds of analysts across conference "
+         "talks and deployments. 10+ years in data engineering, AI systems and "
+         "full-stack development.",
          "Full-time on close."),
         ("Conor Bowles", "CTO",
          "Data infrastructure, security and scalable systems. Core engineering, "
