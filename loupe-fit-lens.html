@@ -1,0 +1,648 @@
+<title>Loupe — Market Fit Lens</title>
+<style>
+/* Loupe Brand System v1.0 — tokens per loupe-brand/brand/loupe-brand.css.
+   The kit's Google Fonts @import cannot be used here: the artifact host enforces a
+   strict CSP that blocks every external host, so the families are named in the stacks
+   with system fallbacks. No one-off colours. */
+:root{
+  color-scheme:dark;
+  --loupe-obsidian:#0b0c0f; --loupe-red:#b41624; --loupe-signal:#e33b4c;
+  --loupe-signal-soft:#f35d6d; --loupe-signal-pale:#ffe4e8;
+  --loupe-wash:rgba(180,22,36,.12); --loupe-white:#f7f7f8;
+  --loupe-bg:#0b0c0f; --loupe-bg-deep:#07080a; --loupe-surface:#111216;
+  --loupe-surface-2:#17181c; --loupe-surface-3:#202126; --loupe-surface-raised:#25272d;
+  --loupe-ink:#f7f7f8; --loupe-ink-soft:#bfc1c8; --loupe-muted:#9a9da5;
+  --loupe-muted-strong:#71747c; --loupe-line:#292b32; --loupe-line-strong:#3b3d44;
+  --loupe-paper:#f7f7f8; --loupe-paper-soft:#ececef; --loupe-paper-line:#d9dae0;
+  --loupe-paper-ink:#15161a;
+  --loupe-person:#5571c8; --loupe-organisation:#8060a9; --loupe-location:#238a88;
+  --loupe-financial:#b37a2e; --loupe-document:#72757e; --loupe-event:#c25778;
+  --loupe-communication:#2c8197; --loupe-success:#4fa477;
+  --loupe-font-display:"Space Grotesk","Segoe UI",sans-serif;
+  --loupe-font-body:"IBM Plex Sans","Segoe UI",sans-serif;
+  --loupe-font-evidence:"IBM Plex Mono",Consolas,monospace;
+  --loupe-radius-control:5px; --loupe-radius-panel:8px;
+  --loupe-ease:cubic-bezier(.22,1,.36,1);
+
+  /* roles — the only tokens components reference */
+  --page:var(--loupe-bg); --deep:var(--loupe-bg-deep); --surf:var(--loupe-surface);
+  --surf2:var(--loupe-surface-2); --surf3:var(--loupe-surface-3); --raised:var(--loupe-surface-raised);
+  --ink:var(--loupe-ink); --ink2:var(--loupe-ink-soft); --ink3:var(--loupe-muted); --ink4:var(--loupe-muted-strong);
+  --rule:var(--loupe-line); --rule2:var(--loupe-line-strong);
+  --signal:var(--loupe-signal); --accent:var(--loupe-signal-soft); --accent-solid:var(--loupe-red);
+  --wash:var(--loupe-wash); --accent-soft:rgba(180,22,36,.16);
+  --good:var(--loupe-success); --warn:var(--loupe-financial); --core:var(--loupe-location);
+  --display:var(--loupe-font-display); --body:var(--loupe-font-body); --mono:var(--loupe-font-evidence);
+  --r:var(--loupe-radius-control); --rp:var(--loupe-radius-panel); --ease:var(--loupe-ease);
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
+}
+/* Brand kit §7: the pale accent falls under AA on paper, so it collapses to Loupe red. */
+@media (prefers-color-scheme:light){
+  :root:where(:not([data-theme="dark"])){
+    color-scheme:light;
+    --accent:var(--loupe-red);
+    --page:var(--loupe-paper); --deep:var(--loupe-paper-soft); --surf:#fff;
+    --surf2:#f2f2f4; --surf3:var(--loupe-paper-soft); --raised:#fff;
+    --ink:var(--loupe-paper-ink); --ink2:#3d3f45; --ink3:#63666e; --ink4:#83868e;
+    --rule:var(--loupe-paper-line); --rule2:#c2c4cb;
+    --wash:rgba(180,22,36,.05); --accent-soft:rgba(180,22,36,.09);
+    --shadow:0 1px 2px rgba(19,26,28,.05),0 8px 24px -12px rgba(19,26,28,.16);
+  }
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --accent:var(--loupe-red);
+  --page:var(--loupe-paper); --deep:var(--loupe-paper-soft); --surf:#fff;
+  --surf2:#f2f2f4; --surf3:var(--loupe-paper-soft); --raised:#fff;
+  --ink:var(--loupe-paper-ink); --ink2:#3d3f45; --ink3:#63666e; --ink4:#83868e;
+  --rule:var(--loupe-paper-line); --rule2:#c2c4cb;
+  --wash:rgba(180,22,36,.05); --accent-soft:rgba(180,22,36,.09);
+  --shadow:0 1px 2px rgba(19,26,28,.05),0 8px 24px -12px rgba(19,26,28,.16);
+}
+*{box-sizing:border-box}
+html{background:var(--page)}
+body{margin:0;color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;
+  background:radial-gradient(circle at 85% -2%,var(--wash),transparent 26rem) var(--page);
+  -webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-family:var(--display);font-weight:600;letter-spacing:-.035em;text-wrap:balance}
+p{margin:0 0 12px;max-width:74ch}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+.wrap{max-width:1400px;margin:0 auto;padding:0 32px 96px}
+.eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+
+/* masthead */
+.mast{padding:56px 0 24px;border-bottom:1px solid var(--rule2)}
+.kick{display:flex;align-items:center;gap:11px;color:var(--accent);margin-bottom:20px}
+.kick::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--signal);
+  box-shadow:0 0 0 6px rgba(227,59,76,.11),0 0 18px rgba(227,59,76,.6)}
+.mast h1{font-size:clamp(30px,4vw,48px);line-height:1.04;letter-spacing:-.05em;max-width:22ch}
+.mast .thesis{font-size:17px;line-height:1.62;color:var(--ink2);max-width:70ch;margin:18px 0 0}
+.meta{display:flex;flex-wrap:wrap;font-family:var(--mono);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink3);border-top:1px solid var(--rule);margin-top:24px;padding-top:14px}
+.meta div{padding-right:20px;margin-right:20px;border-right:1px solid var(--rule)}
+.meta div:last-child{border-right:0;margin-right:0;padding-right:0}
+.meta b{color:var(--ink);font-weight:600}
+
+/* controls */
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;
+  padding:24px;margin:24px 0 0;background:var(--surf);border:1px solid var(--rule);border-radius:var(--rp);box-shadow:var(--shadow)}
+.ctl>.eyebrow{display:block;margin-bottom:10px;color:var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{font:600 12px var(--body);padding:7px 11px;background:var(--surf2);color:var(--ink3);
+  border:1px solid var(--rule2);border-radius:var(--r);cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+.chips button:hover{border-color:var(--accent);color:var(--ink)}
+.chips button[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
+.toggle{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:13px;color:var(--ink2)}
+.toggle input{accent-color:var(--accent-solid);width:16px;height:16px}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin:24px 0}
+.tile{background:var(--surf);border:1px solid var(--rule);border-radius:var(--rp);padding:20px;
+  display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow)}
+.tile .n{font-family:var(--display);font-size:34px;line-height:1;font-weight:600;letter-spacing:-.045em;
+  font-variant-numeric:tabular-nums}
+.tile .l{font-size:12px;line-height:1.45;color:var(--ink3)}
+.tile.hot .n{color:var(--accent)}
+
+/* panels */
+.panel{background:var(--surf);border:1px solid var(--rule);border-radius:var(--rp);
+  padding:24px;margin:24px 0;box-shadow:var(--shadow)}
+.panel h2{font-size:22px;letter-spacing:-.03em;margin-bottom:6px}
+.panel .sub{color:var(--ink2);font-size:14.5px;max-width:78ch;margin-bottom:18px}
+.mktsize{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;margin:0 0 18px;padding:14px 16px;
+  background:var(--surf2);border:1px solid var(--rule);border-radius:var(--rp)}
+.mktsize .szlab{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.mktsize b{font-family:var(--display);font-size:19px;font-weight:600;letter-spacing:-.02em;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.mktsize .szw{flex:1 1 22rem;min-width:16rem;font-size:13.5px;line-height:1.55;color:var(--ink2)}
+.why{background:var(--surf2);border-left:3px solid var(--accent-solid);border-radius:0 var(--rp) var(--rp) 0;
+  padding:16px 18px;margin:0 0 20px;font-size:14.5px;line-height:1.62;color:var(--ink2)}
+.why strong{color:var(--ink)}
+
+/* requirement groups */
+.reqgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.reqcol{border:1px solid var(--rule);border-radius:var(--rp);overflow:hidden;background:var(--surf2)}
+.reqcol h3{font-size:11px;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;
+  padding:11px 14px;border-bottom:1px solid var(--rule);color:var(--ink3);font-weight:500}
+.reqcol.gate h3{color:var(--accent);background:var(--accent-soft)}
+.reqcol ul{margin:0;padding:0;list-style:none}
+.reqcol li{display:flex;justify-content:space-between;gap:12px;padding:9px 14px;
+  border-bottom:1px solid var(--rule);font-size:13px;color:var(--ink2)}
+.reqcol li:last-child{border-bottom:0}
+.reqcol li b{font-family:var(--mono);font-size:12px;color:var(--ink);font-weight:600;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* table */
+.tblwrap{overflow-x:auto;border:1px solid var(--rule);border-radius:var(--rp);background:var(--surf);
+  box-shadow:var(--shadow);max-height:70vh;overflow-y:auto}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+thead th{position:sticky;top:0;z-index:3;background:var(--surf2);color:var(--ink3);
+  font-family:var(--mono);font-weight:500;font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  border-bottom:1px solid var(--rule2);padding:11px 12px;text-align:right;white-space:nowrap}
+thead th:first-child{text-align:left}
+tbody td{border-bottom:1px solid var(--rule);padding:9px 12px;text-align:right;
+  font-variant-numeric:tabular-nums;color:var(--ink2);white-space:nowrap}
+tbody td:first-child{text-align:left;color:var(--ink);white-space:normal}
+tbody tr:hover td{background:var(--accent-soft)}
+tbody tr.me td{background:var(--accent-soft);border-bottom-color:var(--accent-solid)}
+tbody tr.me td:first-child{font-weight:700;color:var(--accent)}
+tbody tr.sel td{box-shadow:inset 0 0 0 1px var(--signal)}
+.pick{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
+.pick:hover{color:var(--accent)}
+.bar{position:relative;display:inline-block;min-width:112px;height:16px;background:var(--surf3);
+  border-radius:2px;overflow:hidden;vertical-align:middle}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--core);display:block}
+tr.me .bar i{background:var(--accent-solid)}
+.bar b{position:relative;z-index:2;display:block;text-align:right;padding-right:6px;
+  font-family:var(--mono);font-size:11px;line-height:16px;color:var(--ink);font-weight:600}
+.badge{display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:.08em;
+  text-transform:uppercase;padding:3px 7px;border-radius:3px;border:1px solid}
+.badge.ok{color:var(--good);border-color:var(--good);background:rgba(79,164,119,.1)}
+.badge.no{color:var(--soft);border-color:var(--accent-solid);background:var(--accent-soft)}
+
+/* comparison */
+.cmp{margin-top:24px}
+.cmpnote{font-size:15px;line-height:1.68;color:var(--ink2);max-width:80ch}
+.cmpnote strong{color:var(--ink)}
+.cmpnote .hl{color:var(--accent);font-weight:600}
+.empty{color:var(--ink4);font-size:14px;font-style:italic}
+.axtbl td:first-child{white-space:normal;min-width:220px}
+.miss{color:var(--soft)}
+.hit{color:var(--good)}
+.na{color:var(--ink4)}
+
+footer{border-top:1px solid var(--rule);margin-top:48px;padding-top:20px;
+  font-size:12px;color:var(--ink4);max-width:80ch}
+.themer{display:flex;gap:6px;margin-left:auto}
+.topbar{display:flex;align-items:center;gap:16px;padding-top:20px}
+.themer button{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;padding:6px 10px;
+  background:var(--surf2);color:var(--ink3);border:1px solid var(--rule2);border-radius:var(--r);cursor:pointer}
+.themer button[aria-pressed="true"]{background:var(--raised);color:var(--ink)}
+@media (max-width:720px){.wrap{padding:0 18px 64px}.meta div{border-right:0;margin-right:14px}}
+
+::selection{color:#fff;background:rgba(227,59,76,.5)}
+.mast h1{font-family:var(--display);font-weight:600;letter-spacing:-.055em}
+.panel h2{font-weight:600;letter-spacing:-.035em}
+@page{size:A4;margin:14mm}
+@media print{
+  :root{--page:var(--loupe-paper);--surf:#fff;--surf2:#f2f2f4;--ink:var(--loupe-paper-ink);
+        --ink2:#3d3f45;--ink3:#63666e;--rule:var(--loupe-paper-line);--accent:var(--loupe-red);--shadow:none}
+  body{background:var(--page);font-size:11pt;line-height:15pt;print-color-adjust:exact}
+  .controls,.themer,.topbar{display:none!important}
+  .panel,.tile,.tblwrap{break-inside:avoid}
+}
+
+/* Sticky control bar — appears once the main controls scroll away, so the market
+   and budget are always reachable from the table without scrolling back up. */
+.stickybar{position:fixed;top:0;left:0;right:0;z-index:80;
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:10px 32px;background:color-mix(in srgb,var(--deep) 94%,transparent);
+  backdrop-filter:blur(18px);border-bottom:1px solid var(--rule2);
+  transform:translateY(-101%);transition:transform 220ms var(--ease);box-shadow:var(--shadow)}
+.stickybar.on{transform:none}
+.stickybar label{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:9px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
+.stickybar select{font:600 13px var(--body);padding:7px 10px;background:var(--surf2);color:var(--ink);
+  border:1px solid var(--rule2);border-radius:var(--r);cursor:pointer;max-width:60vw}
+.stickybar select:hover{border-color:var(--accent)}
+.sbread{margin-left:auto;display:flex;align-items:center;gap:14px;font-family:var(--mono);
+  font-size:11px;color:var(--ink3);white-space:nowrap}
+.sbread b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.sbread .gate{color:var(--accent)}
+@media (max-width:720px){.stickybar{padding:8px 18px;gap:10px}.sbread{display:none}}
+@media print{.stickybar{display:none!important}}
+
+/* Axis definitions on hover and keyboard focus. One shared node positioned in JS so
+   it can never be clipped by a panel's overflow. */
+#tip{position:fixed;z-index:200;max-width:34rem;padding:12px 14px;pointer-events:none;
+  background:var(--raised);color:var(--ink2);border:1px solid var(--rule2);
+  border-left:3px solid var(--accent-solid);border-radius:0 var(--rp) var(--rp) 0;
+  font:400 13.5px/1.55 var(--body);box-shadow:var(--shadow);opacity:0;
+  transition:opacity 120ms ease;visibility:hidden}
+#tip.on{opacity:1;visibility:visible}
+#tip b{display:block;margin-bottom:5px;color:var(--ink);font:600 12px var(--body)}
+[data-tip]{cursor:help}
+.reqcol li[data-tip]:hover,.reqcol li[data-tip]:focus-visible{background:var(--accent-soft)}
+
+/* Loupe row pinned beneath the header while scrolling the platform list, so any
+   row can be lined up against it column by column. --thead-h is measured in JS. */
+.tblwrap tbody tr.me td{position:sticky;top:var(--thead-h,34px);z-index:2;
+  background:color-mix(in srgb,var(--accent-solid) 14%,var(--surf));
+  box-shadow:inset 0 -1px 0 var(--accent-solid)}
+.tblwrap tbody tr.me:hover td{background:color-mix(in srgb,var(--accent-solid) 20%,var(--surf))}
+</style>
+
+<div id="tip" role="tooltip" aria-hidden="true"></div>
+
+<div class="stickybar" id="sb" role="region" aria-label="Market and budget controls">
+  <label>Market <select id="sbM"></select></label>
+  <label>Budget <select id="sbP"></select></label>
+  <div class="sbread" id="sbR"></div>
+</div>
+
+<div class="wrap">
+<div class="topbar">
+  <span class="eyebrow">Loupe · competitive analysis · internal</span>
+  <div class="themer" role="group" aria-label="Reading surface">
+    <button type="button" data-set="light" aria-pressed="false">Light</button>
+    <button type="button" data-set="dark" aria-pressed="false">Dark</button>
+  </div>
+</div>
+
+<header class="mast">
+  <div class="kick eyebrow">Market fit lens · 47 platforms · 30 axes</div>
+  <h1>No platform fits every buyer. Change the market and the field reorders.</h1>
+  <p class="thesis">Forty-seven platforms scored on thirty axes — how each one models evidence, what it
+  can do with that model, whether a team can run a case through it, what its AI layer is worth, and
+  whether an institution can procure, deploy and rely on it. Pick a market and a budget to see what
+  that buyer actually requires, who meets it, and what stands in the way.</p>
+  <p class="thesis">The instrument exists because the search it describes actually happened: a team
+  went looking for a platform to run live federal casework, tried several, and none could work the
+  case. What follows is the field measured against that requirement.</p>
+  <p class="thesis">Across the fifteen buyer profiles, <strong>not one platform of forty-seven can be
+  sold into all of them</strong>, and only eight reach more than twelve. Loupe reaches
+  <strong>thirteen</strong>, at an average fit of 75% — third of that group behind Magnet Axiom and
+  Exterro FTK, and the only one of the three that models documents and financial records alongside
+  device data. The two it does not reach are public defence, where competitors give the product away,
+  and national security, which requires collecting evidence rather than receiving it.</p>
+  <div class="meta">
+    <div><b>47</b> platforms</div>
+    <div><b>30</b> axes</div>
+    <div><b>15</b> markets</div>
+    <div>Loupe ranks <b id="mRank">10th</b> overall</div>
+    <div>Rebuilt <b>27 Jul 2026</b></div>
+  </div>
+</header>
+
+<div class="controls">
+  <div class="ctl">
+    <span class="eyebrow">Market</span>
+    <div class="chips" id="mkt"></div>
+  </div>
+  <div class="ctl">
+    <span class="eyebrow">Budget — annual cost to get in the door</span>
+    <div class="chips" id="price"></div>
+    <label class="toggle"><input type="checkbox" id="enforce"> Enforce gates (hide platforms that fail)</label>
+  </div>
+</div>
+
+<div class="tiles" id="tiles"></div>
+
+<section class="panel">
+  <h2 id="reqTitle">What this buyer requires</h2>
+  <p class="sub" id="reqSub"></p>
+  <div class="mktsize" id="mktsize"></div>
+  <div class="why" id="why"></div>
+  <div class="reqgrid" id="req"></div>
+</section>
+
+<section class="panel">
+  <h2>Fit against this market</h2>
+  <p class="sub">Fit is weighted attainment across Core and Useful requirements. <strong>Gates are
+  advisory — a platform that fails one still appears, ranked on fit</strong>, because hiding it
+  destroys the information you would use to decide whether closing that gap is worth it.
+  Click a platform name to add it to the comparison below.</p>
+  <div class="tblwrap">
+    <table>
+      <thead><tr>
+        <th>Platform</th><th>Fit</th><th>Core met</th><th>Gates</th><th>Score /300</th><th>Entry price</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel cmp">
+  <h2>Comparison</h2>
+  <p class="sub">Selected platforms against the market profile and against each other.</p>
+  <div id="cmp"><p class="empty">Select one or more platforms above.</p></div>
+</section>
+
+<footer>
+  Scores are judgements from published product documentation, release notes and press, banded
+  8–10 shipped and evidenced · 3–7 partial, gated or unverified · 0–2 no public evidence. Where a
+  capability was searched for and not found, that is absence of evidence rather than proven absence.
+  Price bands are entry-point estimates; several vendors publish nothing. Loupe's own row is scored on the same basis as every competitor, against the imminent release rather than today's build — bonded collections and the disconfirmation agent are both in that release. Competitors are likewise scored on shipped-and-announced capability.
+  <br><br>
+  <strong>Certifications are scored but excluded from market fit, for every platform equally.</strong> SOC 2, ISO 27001, CJIS and FedRAMP are procurement timing rather than capability — they are obtained when a market requires them, so gating on them measures how old a company is rather than how well its product fits the buyer. The axis stays visible in the matrix so no position is hidden. Counted instead as a weighted requirement, fit percentages move by one to four points and one market ordering changes: criminal defence, where Loupe would sit second rather than first. Market sizes are 2026 analyst estimates (Grand View, Fortune Business Insights, Mordor, MarketsandMarkets, Precedence, Verified Market Reports, Research and Markets, ComplexDiscovery, IBISWorld), retrieved 29 July 2026; ranges are given where houses disagree, which on several categories is by two to three times. None is a primary source commissioned for this study. Internal candid register.
+</footer>
+</div>
+
+<script>
+const AX=[
+ ["Auto-built case graph","A"],["Device data as structured evidence","A"],["Cross-source unification","A"],
+ ["Whole-corpus relational query","A"],["Multimodal entities into the model","A"],["Per-claim provenance","A"],
+ ["Link / network analysis","B"],["Timeline & chronology","B"],["Geospatial analysis","B"],
+ ["Financial / transaction analysis","B"],["OSINT & external enrichment","B"],
+ ["Processing & format breadth","C"],["Case & investigation workflow","C"],["Review workflow at scale","C"],
+ ["Disclosure & production mechanics","C"],["Analytics / TAR","C"],["Collaboration & permissions","C"],
+ ["Durable judgment objects","C"],
+ ["Cited document Q&A","D"],["Agentic task execution","D"],["Disconfirmation detection","D"],
+ ["Certifications & compliance","E"],["Proven scale","E"],["Ecosystem integrations","E"],
+ ["Evidence acquisition","E"],["Acquisition & parsing validation","E"],["Defensibility of AI output","E"],["Vendor viability & support","E"],
+ ["Commercial accessibility","E"],["Deployment control","E"]];
+
+const DEF=["Whether the platform builds a persistent model of people, organisations, accounts and events — and the relationships between them — automatically as evidence is ingested, rather than needing an analyst to draw it by hand or an engineer to build the pipeline.", "Whether a phone or device extraction becomes first-class objects — individual calls, contacts, messages, locations — that can each be queried and cited, rather than being flattened into spreadsheets or treated as attachments.", "Whether phone data, documents and financial records resolve into one model, so the same person is the same object across all three. Most platforms model one of the three well and treat the others as files.", "Whether a question whose answer depends on relationships can be answered across everything ingested, with a definite result — rather than by retrieving a sample of likely passages and asking a model to reason over them.", "Whether names and places spoken in audio or shown in video and images become the same objects as those in documents — not merely a searchable transcript sitting alongside the evidence.", "Whether every extracted fact carries the exact quote, page and file it came from, stored with the fact itself — so any assertion can be traced back and checked by someone who doubts it.", "How mature the tooling is for exploring connections visually: expanding a person's neighbourhood, finding paths between two entities, ranking by centrality, and the analyst workflow built around all that.", "Whether dated facts assemble into a filterable chronology that persists as a work product with its citations intact, rather than a one-off view generated on request.", "Mapping of located evidence — movement trails, proximity between events, heatmaps — and the ability to ask questions about where something happened.", "Handling of ledgers and transactions: categorisation, resolving who the counterparty actually is, tracing flows between parties, and keeping the arithmetic correct at volume.", "Ability to reach outside the case for open-source material — corporate registries, social media, adverse media, sanctions lists, court records — and bring it into the analysis.", "How many file types and container formats the ingestion engine can decode, including forensic disk images, nested archives and email stores. Nuix's 1,000-plus types is the benchmark here.", "Managing the investigation itself: intake, assignment, tasks, status, supervisor oversight — and whether the case exists as an object with a lifecycle rather than just a folder.", "Machinery for teams reviewing large document sets: batching work out, coding panels, tracking reviewer progress and sampling for quality control.", "Producing evidence to another party to a required standard: redaction, privilege logs, Bates numbering, load files and the production formats a court or regulator expects.", "Technology-assisted review — active learning that predicts relevance, email threading, near-duplicate detection, conceptual clustering. This is what makes a very large corpus economic to review at all.", "Multiple people working one case safely: granular access control, need-to-know segregation, shared work product, and an audit of who did what.", "Whether an investigator's conclusions persist as first-class objects in the system — curated collections, approved facts, built narratives — rather than as loose notes or a report generated at the end.", "Quality of natural-language question answering over the evidence, with each answer linked back to the source documents it rests on.", "Whether the AI can carry out multi-step work using tools and produce outputs you keep — tables, charts, reports, collections — rather than only answering questions in a chat.", "Whether the platform actively hunts for what contradicts a theory: the inconsistent date, the document placing someone elsewhere, the material that should exist and does not.", "Independently audited security and compliance credentials — SOC 2 Type II, ISO 27001, CJIS, FedRAMP. Usually the first question a client's counsel asks, and in most markets a hard procurement gate.", "Published, verifiable evidence of the volumes the platform actually handles in production — data processed, customers, corpus sizes — as distinct from design targets or marketing claims.", "Connections into the systems the work already lives in: document management, case and practice management, legal research, and third-party data providers. Every integration missing is a manual step a rival has removed.", "Whether the vendor can collect evidence at source — extract a device, image an endpoint, pull from cloud accounts — rather than only analysing what somebody else produced and handed over.", "Whether the tool's collection and decoding has been independently tested and has survived challenge in court: NIST CFTT test reports, published error rates, and a history of expert testimony standing up.", "Whether AI-produced findings can be audited and challenged: recorded prompts and outputs, explicit human review status, AI content visibly distinguished from human work, and a trail that cannot be quietly edited.", "Whether the company will still be there and able to support you — funding and revenue, headcount, support commitments, training and professional services. A capable product from a vendor that may not survive procurement is a risk, not a feature.", "Whether the target buyer can realistically buy it at all: the entry price, minimum commitments, whether there is a self-serve route, and whether the vendor sells into that segment in the first place.", "Whether the customer can run it in isolation — single-tenant, on-premises, or in their own sovereign cloud — so evidence never sits in a shared environment with other people's cases."];
+const BANDS=["<$10k","$10–50k","$50–300k","$300k+"];
+
+// [name, priceBand, 29 scores]
+const P=[
+["Loupe",1,[9,9,10,9,9,9,7,8,7,8,0,5,4,1,2,0,5,9,8,8,8,1,3,0,0,2,8,3,7,9]],
+["Palantir Gotham / AIP",3,[9,4,6,9,6,6,9,8,9,7,7,7,6,4,3,6,8,7,6,8,2,10,10,8,4,6,6,10,1,9]],
+["Magnet Axiom / Magnet One",2,[5,10,5,5,6,7,7,8,9,1,2,7,7,5,6,3,7,5,6,5,1,8,9,7,10,9,8,9,5,8]],
+["Cellebrite Guardian Investigate",2,[6,10,6,5,5,3,7,8,7,2,5,6,7,4,6,3,8,3,5,6,0,8,9,8,10,8,3,10,1,6]],
+["Exterro FTK / ARMOUR",1,[3,7,5,5,4,7,4,8,3,2,3,8,6,5,5,4,7,5,6,9,1,7,8,6,8,9,9,8,6,9]],
+["Everlaw",2,[2,3,2,6,2,9,4,8,1,2,1,8,6,10,9,9,9,9,10,6,1,9,9,7,3,6,8,9,5,2]],
+["Relativity (aiR)",2,[2,2,2,3,2,9,4,8,1,2,1,8,6,10,10,10,9,8,9,5,2,9,10,9,4,7,9,10,2,3]],
+["Cellebrite Pathfinder",2,[7,10,4,6,6,4,9,8,9,2,3,6,5,3,4,3,6,3,3,4,0,8,10,8,10,9,2,10,1,6]],
+["Cognyte NEXYTE",3,[7,4,5,6,7,4,8,7,8,5,7,5,7,3,3,4,7,5,6,6,1,7,8,6,7,5,3,8,2,8]],
+["Nuix Neo",3,[4,5,4,4,4,6,5,5,3,4,2,10,9,8,7,8,7,5,6,5,0,7,9,7,6,8,3,7,2,9]],
+["Axon (Records / Evidence)",2,[3,3,4,3,7,5,3,6,6,1,2,5,8,4,8,3,8,4,4,6,0,9,10,8,9,7,5,10,1,6]],
+["NICE Investigate",2,[4,4,6,4,5,5,5,6,5,2,3,6,8,4,8,3,8,4,3,3,0,8,8,7,6,7,5,8,2,6]],
+["Babel Street",3,[5,0,1,6,5,8,7,5,7,4,10,3,4,2,2,4,5,5,7,5,0,8,7,7,8,4,7,7,2,5]],
+["Hubstream",2,[6,2,4,5,3,4,8,7,7,4,5,4,9,3,4,4,7,5,4,4,0,7,7,5,2,5,3,6,3,7]],
+["DataWalk",3,[8,3,5,8,5,4,8,6,6,9,5,5,5,3,2,5,6,2,4,4,0,6,6,6,1,4,4,6,1,8]],
+["Reveal / Logikcull",1,[3,2,2,3,2,7,5,5,1,1,1,8,5,9,8,9,8,5,7,4,0,7,7,6,2,6,5,6,6,3]],
+["DISCO (Cecilia)",2,[1,2,2,5,2,8,1,8,1,1,1,7,5,9,8,7,8,8,8,7,0,6,7,6,2,6,7,5,4,2]],
+["Altia",2,[5,1,3,4,2,2,7,6,8,7,9,4,8,2,3,2,7,4,3,3,0,6,8,6,3,5,3,8,4,7]],
+["Casepoint",3,[1,1,1,4,2,7,2,4,1,1,1,7,5,9,9,7,8,4,7,5,0,10,8,5,2,7,6,7,2,8]],
+["CaseMap+ AI (LexisNexis)",1,[5,0,3,4,2,5,3,7,1,2,5,6,6,5,5,4,6,9,6,4,0,8,8,9,0,5,5,9,4,3]],
+["IBM i2 (i2 Group)",0,[6,1,2,5,2,2,10,7,7,6,5,3,6,2,3,3,5,6,0,0,0,7,8,6,2,6,0,7,8,8]],
+["CoCounsel (Thomson Reuters)",0,[2,0,2,3,3,8,1,5,0,2,4,5,6,5,4,4,6,5,9,7,0,8,9,10,0,4,8,10,7,3]],
+["Matey / CrimD",1,[2,5,5,4,6,8,2,6,2,2,2,6,6,5,5,3,6,6,7,4,0,9,5,5,0,3,8,6,9,3]],
+["Longeye",1,[1,6,7,4,6,8,2,5,2,4,2,6,5,4,4,3,6,2,7,4,0,8,4,4,0,4,7,6,9,8]],
+["Blackdot Videris",2,[5,0,2,5,2,5,8,4,4,8,9,3,5,2,2,4,5,4,5,5,0,6,6,6,7,3,4,6,4,5]],
+["JusticeText",1,[1,0,4,3,8,7,1,7,1,1,1,5,6,4,4,3,7,6,6,4,6,6,7,5,0,4,6,7,9,3]],
+["Neotas",2,[4,0,2,3,3,4,6,4,3,5,10,3,5,2,3,3,5,4,5,4,1,7,7,6,5,4,6,7,5,4]],
+["Ontic",2,[4,0,3,3,2,4,5,5,5,2,7,3,9,2,3,2,8,5,3,3,0,9,8,6,3,3,4,8,4,4]],
+["Siren",2,[8,3,4,9,1,4,8,6,6,4,6,4,2,2,1,3,5,2,4,4,1,4,6,6,1,3,3,5,2,8]],
+["Casefleet",0,[4,0,2,3,2,8,3,8,2,2,1,4,6,4,4,3,6,9,6,4,2,8,5,6,0,4,9,6,8,2]],
+["TrialKit",1,[2,7,6,4,6,8,2,5,2,1,2,6,6,4,4,3,6,4,7,4,0,4,4,4,0,3,7,5,9,3]],
+["Harvey",3,[1,0,1,4,3,8,1,5,0,2,2,5,5,5,4,4,7,5,9,8,0,8,8,8,0,3,7,10,1,3]],
+["Maltego",0,[4,0,1,1,1,2,9,4,5,3,10,2,4,1,2,2,5,4,2,3,0,6,7,9,7,5,4,7,7,6]],
+["Kaseware",2,[5,1,2,3,2,2,7,7,7,2,3,3,9,2,2,1,8,5,2,2,0,6,7,6,1,4,3,7,6,7]],
+["Comtrac",1,[3,1,2,2,2,6,3,5,2,2,1,3,9,4,7,2,7,8,5,4,1,5,6,4,1,5,5,6,5,6]],
+["Hebbia",1,[2,0,1,5,4,8,1,0,0,4,2,6,4,6,3,4,6,6,8,8,0,8,7,6,0,3,7,8,2,3]],
+["Resolver (Kroll)",2,[2,0,1,2,1,3,4,4,3,3,3,3,9,3,3,2,8,5,4,4,0,8,9,7,0,3,3,9,4,4]],
+["Clearbrief",0,[1,0,1,2,1,10,0,6,0,1,3,3,4,2,5,2,4,6,8,3,5,8,5,8,0,5,10,6,8,2]],
+["Case IQ",1,[2,0,1,2,1,3,3,4,2,3,2,3,9,3,3,2,8,5,4,3,0,9,8,7,0,3,3,8,6,4]],
+["Octostar",2,[6,4,4,8,2,4,6,5,4,4,6,4,3,2,1,3,5,3,4,4,0,2,2,5,3,2,3,3,1,7]],
+["Linkurious",1,[8,0,1,8,0,2,8,5,4,5,3,1,4,1,1,2,5,4,2,3,0,5,5,6,0,3,2,6,5,7]],
+["ShadowDragon",2,[3,0,1,3,2,5,6,4,5,3,9,2,2,1,1,2,3,2,2,2,0,5,5,8,8,3,2,5,4,5]],
+["Case Closed Software",0,[3,1,2,3,1,3,4,4,4,2,2,3,8,2,3,3,5,3,1,1,0,7,5,4,1,4,2,5,6,8]],
+["HR Acuity",1,[2,0,1,2,1,3,2,4,1,1,1,2,9,2,3,3,7,4,3,2,0,8,8,6,0,2,3,8,5,3]],
+["Omnigo",1,[2,0,1,2,1,2,3,4,5,1,1,3,8,2,3,1,7,3,2,1,0,6,6,5,1,4,2,6,6,5]],
+["CROSStrax",0,[1,0,1,1,1,2,2,3,3,2,4,2,7,1,2,1,5,2,1,1,0,2,3,5,1,2,1,4,10,3]],
+["Trackops",0,[1,0,1,1,1,2,1,3,3,2,2,2,7,1,2,1,4,2,1,1,0,2,3,4,1,2,1,4,10,3]]
+];
+
+// band codes: G=gate C=core U=useful N=n/a ; number = threshold
+const M={
+defence:{n:"Criminal defence & PI",
+ b:["C6","C7","C7","C6","C5","C8","U","C6","U","C5","N","C5","U","N","U","N","U","C5","C6","U","C4","N","U","U","N","U","U","U","G5","G6"],
+ w:"This buyer <strong>receives</strong> evidence and never collects it, so OSINT, evidence acquisition, review-at-scale and TAR are genuinely not applicable rather than weaknesses — they are excluded from the fit calculation entirely. What remains is narrow and deep: the phone extraction that arrives in nearly every case, held in one model alongside the documents and bank records, every claim traceable to a page, and a chronology that can go in front of a judge. <strong>Disconfirmation is a core requirement here and nowhere else at this weight</strong> — breaking the prosecution's theory is the job. Gated on purchasability and single-tenant deployment, because privileged material under a protective order fails both tests otherwise.",
+ sz:"No software category — services substitution", szw:"US criminal-defence firm revenue exceeds <b>$15B a year</b> across ~252,000 practitioners; private investigation services run <b>~$22B globally</b>. Per-matter pricing competes with investigator hours, not a software budget."},
+corporate:{n:"Corporate & internal investigations",
+ b:["C6","U","C6","C7","U","C7","C5","C6","U","C6","C5","C6","C7","U","U","U","C6","C5","C6","U","U","N","C6","C5","N","U","U","C6","U","G5"],
+ w:"A workflow market first. Case management, collaboration across legal, HR and security, and enterprise procurement discipline dominate; phone evidence is incidental. Deployment gates here — the security team has to be able to approve it, and nothing leaves the tenant.",
+ sz:"$8.1B → $21.5B by 2033 · 14.8% CAGR", szw:"Investigation management software. The category Gartner draws around case-and-investigation platforms, and the natural second market."},
+prosecution:{n:"Prosecution & law enforcement",
+ b:["C7","C8","C6","C6","C6","C7","C7","C7","C7","U","C5","C6","C8","U","C7","U","C6","C5","C5","U","U","N","C7","C6","C6","C8","C8","C6","U","G6"],
+ w:"This buyer <strong>owns the extraction</strong>, so device data and acquisition are core rather than optional, and disclosure to the defence is a legal duty rather than a convenience. Forensic validation gates the courtroom — a tool whose parsing has never been tested is a Daubert problem. Certification expectations sit at CJIS and FedRAMP class, and are treated as a timing question rather than a gate.",
+ sz:"$22.0–22.9B → $39.2B by 2032 · 9.8% CAGR", szw:"Law enforcement software — <b>the largest pool in the study</b>, and the one every incumbent here was built for."},
+insurance:{n:"Insurance SIU / fraud",
+ b:["C6","U","C6","C6","U","C6","C6","C6","C6","C7","C7","C5","C7","U","U","U","C5","U","C5","U","U","N","C5","C5","N","U","U","C5","C6","U"],
+ w:"<strong>No hard gate of any kind.</strong> SIU teams buy tools without a federal certification regime standing over them. Financial analysis and OSINT dominate, because the claim and the claimant's public footprint are the case.",
+ sz:"$8.5–11.3B → $19.6B by 2030 · <b>23.2% CAGR</b>", szw:"Insurance fraud detection — <b>the fastest-growing category in the set</b>, and the only market with no hard gate for any platform."},
+journalism:{n:"Investigative journalism",
+ b:["C6","U","C6","C7","C5","C8","C6","C6","C5","C5","C6","C6","U","U","N","U","C5","C6","C6","U","C5","N","U","U","N","N","N","U","G4","C6"],
+ w:"Excellent proof, terrible revenue. Provenance sits at 8 and disconfirmation is core, because publication standards demand verification before print. Accessibility is gated at 4 — there is no budget here, and the platforms that serve this market donate their way in. Deployment matters for source protection.",
+ sz:"Unsized by design", szw:"No commercial market: the platforms serving it donate their way in. Treat as proof and marketing, not revenue."},
+fincrime:{n:"Financial-crime units",
+ b:["C7","N","C6","C8","U","C6","C7","C6","U","C8","C6","C5","C6","U","U","C5","C5","U","C5","C5","U","N","C7","C6","N","U","U","C6","U","G5"],
+ w:"Whole-corpus relational query at 8 and financial analysis at 8; phone evidence is genuinely not applicable and excluded. Gated on sovereign or on-premises deployment — a regulated institution cannot put transaction data in a shared tenant.",
+ sz:"$2.8–4.0B → $6.5–6.8B by 2032–34 · 11–15% CAGR", szw:"AML software. Smaller than its profile suggests, and Quantexa, DataWalk and Siren are entrenched."},
+ukpolice:{n:"UK / EU policing",
+ b:["C7","C8","C6","C6","C6","C7","C7","C7","C7","U","C5","C6","C8","U","C8","U","C6","C5","C5","U","U","N","C6","C6","C6","C8","C8","C6","U","G7"],
+ w:"Prosecution's shape with stricter obligations. <strong>Disclosure sits at 8</strong> because CPIA duties are harder than the US equivalent, and <strong>deployment is gated at 7</strong> — the data must stay in jurisdiction. Forensic validation at 8.",
+ sz:"Subset of law enforcement software", szw:"Not separately sized; the $22.0–22.9B law enforcement software pool covers it, with UK/EU procurement running through different channels."},
+pubdef:{n:"Public defender offices",
+ b:["C5","C6","C6","C5","C8","C8","U","C6","U","U","N","C5","C6","N","U","N","C6","C5","C6","U","C4","N","C6","U","N","U","U","C5","G8","C5"],
+ w:"The same evidence problem as private defence on completely different economics. <strong>Multimodal sits at 8</strong> because bodycam and jail-call volume is the defining burden — it is an entire company's business model. <strong>Accessibility is gated at 8</strong>: one competitor intends to give the platform away here and another already covers CJA panel attorneys at no cost, so anything that is not free or near-free loses on price before it is evaluated on merit.",
+ sz:"Effectively unpriced", szw:"Grant-funded, with competitors giving the product away. The one public datapoint is a $17,300 one-year county contract, paid by a grant."},
+civil:{n:"Law firms & civil disputes",
+ b:["C5","U","C5","C7","U","C7","U","C7","N","C5","U","C8","C6","C9","C9","C8","C7","C6","C7","C5","U","N","C8","C7","N","U","U","C7","U","C4"],
+ w:"The eDiscovery majors' home turf, the largest spend pool in the study, and <strong>the market Loupe is furthest from serving</strong>. Review at scale 9, disclosure and production 9, TAR 8, processing breadth 8. None of the evidence-modelling advantage matters if you cannot batch, code, quality-check, redact, log privilege and produce to a court's format.",
+ sz:"$20.7B total · $8.6B software → $23.7–31.5B by 2030", szw:"eDiscovery. <b>The second-largest pool in the study and the market this platform is furthest from serving</b> — it is won on review at scale, privilege logs and production formats."},
+regulator:{n:"Regulators & government enforcement",
+ b:["C6","C6","C7","C6","C5","C8","C6","C7","U","C7","C5","C6","C8","U","C8","U","C6","C7","C6","U","C5","N","C6","C5","U","C7","C7","C6","U","G6"],
+ w:"Provenance at 8 and durable judgment objects at 7, because mapping evidence to <strong>offence elements</strong> is the work product rather than a by-product. Disclosure at 8 — the brief of evidence goes to prosecution and has to survive it.",
+ sz:"Spans law enforcement + investigation management", szw:"Not separately sized. Budget sits inside the $22B law enforcement and $8.1B investigation management categories."},
+corpsec:{n:"Corporate security & insider threat",
+ b:["C6","U","C5","C6","C5","C6","C7","C6","C7","U","C8","C5","C8","N","U","U","C7","C5","C5","C5","U","N","C6","C6","U","U","U","C6","U","G5"],
+ w:"<strong>OSINT at 8</strong> — threat-actor research, social listening and public records are the daily work — and workflow at 8, because the incident-to-investigation lifecycle is the product. Geospatial matters here in a way it does not for document-led markets: facilities, travel, executive protection.",
+ sz:"$5.7–6.6B → $20.2B by 2035 · 13.1% CAGR", szw:"Insider threat protection. Strong growth, and OSINT-led — the axis scored 0 here."},
+ethics:{n:"Ethics, compliance & whistleblower",
+ b:["C4","N","C4","C5","C5","C7","U","C6","N","C5","U","C5","C9","U","U","U","C8","C5","C5","U","U","N","C6","C6","N","U","U","C6","U","G6"],
+ w:"<strong>Workflow at 9 and collaboration at 8.</strong> Intake, triage, investigation and resolution is the entire product, and anonymity plus need-to-know segregation is not negotiable. The most privacy-sensitive market in the set, with works councils and data-protection regimes on top of the usual audit.",
+ sz:"$0.28B → $0.46B by 2033 · 6.5% CAGR", szw:"Whistleblowing software — <b>by far the smallest category sized</b>. Good fit, negligible market."},
+diligence:{n:"Due diligence / KYC / third-party risk",
+ b:["C6","N","C5","C6","U","C7","C7","U","U","C7","C9","C4","C6","U","U","U","C5","C5","C6","C6","U","N","C6","C6","C8","N","N","C6","C6","C5"],
+ w:"<strong>OSINT at 9 and evidence acquisition at 8.</strong> You have to go and collect — nothing is handed to you, there is no discovery bundle. Structurally the wrong shape for a platform built to model evidence it receives.",
+ sz:"$2.5–7.8B · third-party DD services $2.5B → $5.2B by 2034", szw:"KYC software $2.5B; KYC broadly $7.8B. Structurally the wrong shape — you collect rather than receive."},
+natsec:{n:"Intelligence & national security",
+ b:["C8","C7","C7","C8","C7","C6","C8","C7","C8","C6","C7","C7","C6","U","U","U","C7","C5","C5","C6","U","N","C8","C6","G6","U","U","C7","U","G8"],
+ w:"The highest bar anywhere: deployment gated at 8 for sovereign and air-gapped operation, and <strong>acquisition gated at 6</strong> — an analysis-only tool cannot serve this buyer at all, however good the analysis.",
+ sz:"$8.7–23B → $34.1B by 2035 · 16.4% CAGR", szw:"OSINT — the widest analyst spread in the study. Gated on evidence acquisition, which analysis-only tooling cannot clear."},
+pubfraud:{n:"Public-sector fraud (benefits, tax, immigration)",
+ b:["C6","U","C6","C8","U","C7","C7","C6","C5","C8","C6","C6","C7","U","C6","C6","C6","C5","C5","C6","C5","N","C8","C6","U","C6","C6","C6","U","G6"],
+ w:"Population scale. Whole-corpus query at 8, financial analysis at 8 and proven scale at 8 — the corpora are enormous and the cases are individually small, which inverts the economics of every tool built for one big matter.",
+ sz:"Spans law enforcement + fraud detection", szw:"Not separately sized. Population-scale corpora with individually small cases, which inverts the economics of tools built for one big matter."}
+};
+
+let mk="defence", pb=null, sel=[], enforce=false;
+
+const parse=b=>({k:b[0],t:b.length>1?+b.slice(1):0});
+const W={C:3,U:1};
+
+function evalP(p,prof){
+  const s=p[2]; let num=0,den=0,coreMet=0,coreTot=0,gates=[];
+  prof.forEach((bd,i)=>{
+    const {k,t}=parse(bd);
+    if(k==="N") return;
+    if(k==="G"){ gates.push({i,t,v:s[i],ok:s[i]>=t}); return; }
+    const att = k==="C" ? Math.min(s[i]/t,1) : s[i]/10;
+    num += W[k]*att; den += W[k];
+    if(k==="C"){ coreTot++; if(s[i]>=t) coreMet++; }
+  });
+  return {fit: den? Math.round(num/den*100):0, coreMet, coreTot, gates,
+          failed: gates.filter(g=>!g.ok), total: s.reduce((a,b)=>a+b,0)};
+}
+
+function view(){
+  const prof=M[mk].b;
+  let list=P.map(p=>({p,e:evalP(p,prof)}));
+  if(pb!==null) list=list.filter(x=>x.p[1]===pb);
+  if(enforce) list=list.filter(x=>x.e.failed.length===0);
+  list.sort((a,b)=>b.e.fit-a.e.fit || b.e.total-a.e.total);
+  return list;
+}
+
+function chips(){
+  document.getElementById("mkt").innerHTML=Object.keys(M).map(k=>
+    `<button type="button" data-m="${k}" aria-pressed="${k===mk}">${M[k].n}</button>`).join("");
+  document.getElementById("price").innerHTML=
+    `<button type="button" data-p="all" aria-pressed="${pb===null}">Any budget</button>`+
+    BANDS.map((b,i)=>`<button type="button" data-p="${i}" aria-pressed="${pb===i}">${b}</button>`).join("");
+}
+
+function tiles(l){
+  const clear=l.filter(x=>x.e.failed.length===0).length;
+  const lo=l.find(x=>x.p[0]==="Loupe");
+  const top=l[0];
+  const loRank=lo?l.indexOf(lo)+1:null;
+  document.getElementById("tiles").innerHTML=`
+   <div class="tile"><span class="n">${l.length}</span><span class="l">platforms in view</span></div>
+   <div class="tile"><span class="n">${clear}</span><span class="l">clear every gate for this market</span></div>
+   <div class="tile ${lo&&lo.e.failed.length?"hot":""}"><span class="n">${lo?lo.e.fit+"%":"—"}</span>
+     <span class="l">Loupe fit${loRank?` · ranked ${ord(loRank)} of ${l.length}`:" · not in this budget"}</span></div>
+   <div class="tile"><span class="n">${top?top.e.fit+"%":"—"}</span><span class="l">best fit — ${top?top.p[0]:"—"}</span></div>
+   <div class="tile ${lo&&lo.e.failed.length?"hot":""}"><span class="n">${lo?lo.e.failed.length:"—"}</span>
+     <span class="l">gates Loupe fails here</span></div>`;
+}
+
+const ord=n=>n+(["th","st","nd","rd"][(n%100-20)%10]||["th","st","nd","rd"][n%100]||"th");
+
+function req(){
+  const prof=M[mk].b, groups={G:[],C:[],U:[],N:[]};
+  prof.forEach((bd,i)=>{const {k,t}=parse(bd);groups[k].push({i,t});});
+  document.getElementById("reqTitle").textContent=`What a ${M[mk].n.toLowerCase()} buyer requires`;
+  document.getElementById("reqSub").textContent=
+    `${groups.G.length} gates · ${groups.C.length} core requirements · ${groups.U.length} useful · ${groups.N.length} not applicable to this market and excluded from the fit calculation.`;
+  document.getElementById("why").innerHTML=M[mk].w;
+  var szEl=document.getElementById("mktsize");
+  if(szEl) szEl.innerHTML = M[mk].sz ?
+    '<span class="szlab">Market size</span><b>'+M[mk].sz+'</b><span class="szw">'+M[mk].szw+'</span>' : '';
+  const col=(t,cls,items,fmt)=>items.length?
+    `<div class="reqcol ${cls}"><h3>${t}</h3><ul>${items.map(fmt).join("")}</ul></div>`:"";
+  const li=(x,val)=>`<li data-ax="${x.i}" data-tip tabindex="0"><span>${AX[x.i][0]}</span><b>${val}</b></li>`;
+  document.getElementById("req").innerHTML=
+    col(`Gates — ${groups.G.length}`,"gate",groups.G,x=>li(x,`min ${x.t}`))+
+    col(`Core — ${groups.C.length}`,"",groups.C,x=>li(x,`min ${x.t}`))+
+    col(`Useful — ${groups.U.length}`,"",groups.U,x=>li(x,"—"))+
+    col(`Not applicable — ${groups.N.length}`,"",groups.N,x=>li(x,"n/a"));
+}
+
+function rows(l){
+  document.getElementById("rows").innerHTML=l.map(({p,e})=>{
+    const g=e.failed.length===0
+      ?`<span class="badge ok">all ${e.gates.length} pass</span>`
+      :`<span class="badge no">${e.failed.map(f=>AX[f.i][0].split(" ")[0].toLowerCase()+" "+f.v+"/"+f.t).join(", ")}</span>`;
+    return `<tr class="${p[0]==="Loupe"?"me":""} ${sel.includes(p[0])?"sel":""}">
+      <td><button class="pick" data-s="${p[0]}">${p[0]}</button></td>
+      <td><span class="bar"><i style="width:${e.fit}%"></i><b>${e.fit}%</b></span></td>
+      <td>${e.coreMet}/${e.coreTot}</td>
+      <td>${g}</td>
+      <td>${e.total}</td>
+      <td>${BANDS[p[1]]}</td></tr>`;}).join("");
+}
+
+function cmp(){
+  const box=document.getElementById("cmp");
+  if(!sel.length){box.innerHTML='<p class="empty">Select one or more platforms above.</p>';return;}
+  const prof=M[mk].b;
+  const chosen=sel.map(n=>P.find(p=>p[0]===n)).filter(Boolean);
+  const all=view();
+  const idx=[];prof.forEach((b,i)=>{if(parse(b).k!=="N")idx.push(i);});
+  let t=`<div class="tblwrap"><table class="axtbl"><thead><tr><th>Requirement</th><th>Needs</th>${
+    chosen.map(c=>`<th>${c[0]}</th>`).join("")}</tr></thead><tbody>`;
+  idx.forEach(i=>{
+    const {k,t:th}=parse(prof[i]);
+    t+=`<tr><td data-ax="${i}" data-tip tabindex="0">${AX[i][0]}${k==="G"?' <span class="badge no">gate</span>':""}</td><td>${k==="U"?'<span class="na">—</span>':th}</td>`+
+      chosen.map(c=>{const v=c[2][i];
+        const cls=k==="U"?"":(v>=th?"hit":"miss");
+        return `<td class="${cls}">${v}</td>`;}).join("")+`</tr>`;
+  });
+  t+=`</tbody></table></div>`;
+  chosen.forEach(c=>{
+    const e=evalP(c,prof), rank=all.findIndex(x=>x.p[0]===c[0])+1;
+    const shortfalls=[];
+    prof.forEach((b,i)=>{const {k,t:th}=parse(b);if(k==="C"&&c[2][i]<th)shortfalls.push(`${AX[i][0].toLowerCase()} (${c[2][i]} against ${th})`);});
+    const strengths=[];
+    prof.forEach((b,i)=>{const {k,t:th}=parse(b);if(k==="C"&&c[2][i]-th>=3)strengths.push(`${AX[i][0].toLowerCase()} (${c[2][i]} against ${th})`);});
+    t+=`<p class="cmpnote" style="margin-top:20px">Against the <strong>${M[mk].n}</strong> profile,
+      <span class="hl">${c[0]}</span> meets <strong>${e.coreMet} of ${e.coreTot}</strong> core requirements
+      for a fit of <strong>${e.fit}%</strong>${rank?`, ranking <strong>${ord(rank)}</strong> of ${all.length} in view`:""}.
+      ${strengths.length?`It exceeds the bar most clearly on ${list(strengths.slice(0,3))}. `:""}
+      ${shortfalls.length?`It falls short on ${list(shortfalls.slice(0,4))}${shortfalls.length>4?`, and ${shortfalls.length-4} more`:""}. `:"It meets every core requirement. "}
+      ${e.failed.length?`<strong class="miss">It fails ${e.failed.length} gate${e.failed.length>1?"s":""}:</strong> ${
+        list(e.failed.map(f=>`${AX[f.i][0].toLowerCase()}, scoring ${f.v} against a required ${f.t}`))}. Gates are advisory here — the platform is ranked on fit regardless, so the cost of closing that gap can be weighed against what it unlocks.`
+        :`<strong class="hit">It clears every gate for this market.</strong>`}</p>`;
+  });
+  box.innerHTML=t;
+}
+const list=a=>a.length<2?a[0]||"":a.slice(0,-1).join(", ")+" and "+a[a.length-1];
+
+function sync(){
+  const mSel=document.getElementById("sbM"), pSel=document.getElementById("sbP");
+  if(!mSel.options.length){
+    mSel.innerHTML=Object.keys(M).map(k=>`<option value="${k}">${M[k].n}</option>`).join("");
+    pSel.innerHTML=`<option value="all">Any budget</option>`+
+      BANDS.map((b,i)=>`<option value="${i}">${b}</option>`).join("");
+  }
+  mSel.value=mk; pSel.value=(pb===null?"all":String(pb));
+  const l=view(), lo=l.find(x=>x.p[0]==="Loupe"), top=l[0];
+  document.getElementById("sbR").innerHTML=
+    (lo?`Loupe <b>${lo.e.fit}%</b> · ${ord(l.indexOf(lo)+1)} of ${l.length}`
+       :`Loupe <b>—</b> not in this budget`)+
+    (lo&&lo.e.failed.length?` <span class="gate">· ${lo.e.failed.length} gate${lo.e.failed.length>1?"s":""} failed</span>`:"")+
+    (top?` &nbsp;|&nbsp; best <b>${top.e.fit}%</b> ${top.p[0]}`:"");
+}
+function measureHead(){
+  const w=document.querySelector(".tblwrap"), th=w&&w.querySelector("thead");
+  if(w&&th) w.style.setProperty("--thead-h", th.offsetHeight+"px");
+}
+function render(){chips();req();const l=view();tiles(l);rows(l);cmp();sync();requestAnimationFrame(measureHead);
+  const lo=P.find(p=>p[0]==="Loupe");
+  document.getElementById("mRank").textContent=ord(P.map(p=>p[2].reduce((a,b)=>a+b,0))
+    .map((t,i)=>({t,i})).sort((a,b)=>b.t-a.t).findIndex(x=>P[x.i][0]==="Loupe")+1);}
+
+document.addEventListener("click",e=>{
+  const m=e.target.closest("[data-m]"), p=e.target.closest("[data-p]"),
+        s=e.target.closest("[data-s]"), th=e.target.closest("[data-set]");
+  if(m){mk=m.dataset.m;render();}
+  else if(p){pb=p.dataset.p==="all"?null:+p.dataset.p;render();}
+  else if(s){const n=s.dataset.s;sel=sel.includes(n)?sel.filter(x=>x!==n):sel.concat(n);render();}
+  else if(th){const v=th.dataset.set;document.documentElement.dataset.theme=v;
+    document.querySelectorAll("[data-set]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.set===v));}
+});
+document.getElementById("enforce").addEventListener("change",e=>{enforce=e.target.checked;render();});
+document.getElementById("sbM").addEventListener("change",e=>{mk=e.target.value;render();});
+document.getElementById("sbP").addEventListener("change",e=>{pb=e.target.value==="all"?null:+e.target.value;render();});
+// show the bar only once the full control panel has scrolled out of view
+new IntersectionObserver(([e])=>{
+  document.getElementById("sb").classList.toggle("on", !e.isIntersecting && e.boundingClientRect.top<0);
+},{threshold:0}).observe(document.querySelector(".controls"));
+
+const tip=document.getElementById("tip");
+function showTip(el){
+  const i=+el.dataset.ax; if(isNaN(i)||!DEF[i]) return;
+  tip.innerHTML=`<b>${AX[i][0]}</b>${DEF[i]}`;
+  tip.classList.add("on"); tip.setAttribute("aria-hidden","false");
+  const r=el.getBoundingClientRect(), t=tip.getBoundingClientRect();
+  let left=Math.min(r.left, innerWidth-t.width-16);
+  let top=r.bottom+8; if(top+t.height>innerHeight-12) top=Math.max(12,r.top-t.height-8);
+  tip.style.left=Math.max(12,left)+"px"; tip.style.top=top+"px";
+}
+function hideTip(){tip.classList.remove("on");tip.setAttribute("aria-hidden","true");}
+["mouseenter","focus"].forEach(ev=>document.addEventListener(ev,e=>{
+  const el=e.target.closest&&e.target.closest("[data-tip]"); if(el) showTip(el);},true));
+["mouseleave","blur"].forEach(ev=>document.addEventListener(ev,e=>{
+  if(e.target.closest&&e.target.closest("[data-tip]")) hideTip();},true));
+addEventListener("keydown",e=>{if(e.key==="Escape")hideTip()});
+addEventListener("scroll",hideTip,true);
+addEventListener("resize",measureHead);
+
+render();
+</script>

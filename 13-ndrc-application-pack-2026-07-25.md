@@ -8,9 +8,17 @@ Prepared 25 July 2026. Companion to `09-gtm-research-pack`, `10-ceo-operating-pl
 applications, no deadline.
 
 **Critical structural fact:** the application form has no essay questions. It collects
-name, email, phone, LinkedIn, county, co-founder details, fundraising status, a
-website URL and **a PDF pitch deck**. The deck carries 100% of the application. Nothing
-in this repo is read unless it is in the deck.
+name, email, phone, LinkedIn, county, gender identity, co-founder details, fundraising
+status, a website URL and **a PDF pitch deck**. The deck carries 100% of the
+application. Nothing in this repo is read unless it is in the deck.
+
+**Verified against the live form at `accelerator.ndrc.ie/apply` on 29 July 2026.** The
+only stated deck requirement is *"Please upload pitch deck. Format: PDF."* — **no slide
+count, no page limit, no required sections.** Deck length is therefore an editorial
+decision, not a constraint; make it as long as it needs to be and no longer. Terms
+confirmed: **€100,000 through a founder-friendly, uncapped SAFE**, for "early-stage,
+globally scalable tech startups", with investment available "as early as formation".
+Rolling — no deadline visible on the form.
 
 ---
 
@@ -29,6 +37,7 @@ in this repo is read unless it is in the deck.
 | Co-founders? | **Yes — 2** |
 | Co-founder 1 | Conor Bowles — CTO — email, LinkedIn, county |
 | Co-founder 2 | Alexandra Solórzano — CPO — email, LinkedIn — **"Not based on Island of Ireland"** |
+| Gender identity | Woman · Man · Non-binary · Prefer not to say · Other — *asked of the applicant; decide and move on* |
 
 Note on the last row: selecting the non-Ireland option for Alex is correct and honest.
 Pre-empt it on the team slide rather than letting it surface as a surprise — the
@@ -40,9 +49,14 @@ flag, provided you say it first.
 
 ## Part 2 — The deck, slide by slide
 
-Nine slides. Every product claim below traces to code on
+**Ten slides.** Every product claim below traces to code on
 `integration/evidence-main-reunion` unless marked **[ROADMAP]**. Claims-safety notes
 are drawn from the "Claims to avoid" list — honour them.
+
+**Slide 7 is the growth path**, added 29 July and built into `build_deck.py` as
+`slide6b()`. It sits between Market and Team because a market slide that states a
+pool without stating what share of it the plan needs invites the question rather
+than answering it.
 
 ---
 
@@ -451,17 +465,37 @@ live open item, not a solved one.)
 > **Expansion:** financial-crime & fraud units · law enforcement & prosecutors · law
 > firms & disputes teams · corporate investigations & compliance.
 >
-> **The addressable community is organised and reachable:** ACFE has ~95k members and
-> ~60k CFEs worldwide, with chapters, conferences and directories — including an
-> Ireland chapter since 2016.
+> **Channel — this buyer is organised and reachable.** ACFE has ~95k members and ~60k
+> CFEs worldwide, with chapters, conferences and directories, including an Ireland
+> chapter since 2016. The defence bar is the same shape: a competitor reached national
+> presence through a national association and one state bar.
 >
-> **Adjacent validation:** Harvey at ~$190M ARR and an $11B valuation proves legal-AI
-> spend is real — and stays BigLaw-focused, leaving the boutique tier open.
+> **Why we know the gap is real.** We tried a number of platforms on live federal
+> casework before we built anything. None of them could work the case.
 
 Add to this slide, as the closing line:
 
-> **We evaluated the alternatives on a live case before we built anything. That is
-> why we know the gap is real.**
+> **We did not set out to build a platform. We went looking for one, tried several,
+> and none could work the case.**
+
+**Two deliberate changes, made 29 July.** *Reachable* became **Channel**, because ACFE
+membership is a distribution fact rather than a market-size one and it answers a
+question the growth slide does not — how these buyers are reached. And the **Harvey
+adjacent-validation line was removed**: market weight is now carried by slide 7's own
+numbers, and naming Harvey on a slide invites two bad reactions in a room — *"so why
+aren't you Harvey?"* and *"Harvey will crush you."* Neither is true. Harvey scores 127
+in the study, is priced for the AmLaw 100 with seat minimums near $360k a year, and has
+no evidence model at all. **That is an excellent answer in the meeting if asked, and a
+liability volunteered on a slide.**
+
+**On the origin story — say "a number of platforms", never name one.** The evaluation
+was plural, which is both more accurate and safer: naming a single vendor turns a
+systematic evaluation into what sounds like a grievance, and that is a scored negative
+(see blocker 5d). The plural version is also the stronger claim, because it is exactly
+what the structural finding predicts — the field splits into platforms that model
+evidence but will not sell to a defence practice, and platforms that serve this buyer
+but treat a phone extraction as an attachment. Trying several and finding none fit is
+the expected outcome, not bad luck.
 
 **A second use case surfaced in discovery — and it may be the better wedge.**
 
@@ -515,7 +549,47 @@ Global forensic accounting ~$18–20B, US ~$10.5B, highly fragmented.
 
 ---
 
-### Slide 7 — Team
+### Slide 7 — Growth path
+
+> **Ten million in ARR is 104 firms and under 2% of one market.**
+>
+> Priced at a blended **$12,000 per matter**. A boutique running eight evidence-heavy
+> matters a year is worth $96,000 annually; an active practice at twenty is worth
+> $240,000. These figures use the conservative rate throughout.
+>
+> | | **1 · Proof**<br>Owl & Ireland | **2 · Engine**<br>United States | **3 · Second geography**<br>+ UK | **4 · Expansion**<br>+ Europe |
+> |---|---|---|---|---|
+> | **ARR** | **$0.5M** | **$5M** | **$10M** | **$25M** |
+> | Customers | 5 | 52 | 104 | 260 |
+> | Matters / yr | 42 | 417 | 833 | 2,083 |
+> | Share of US pool | — | 0.3–0.9% | 0.7–1.7% | 1.7–4.3% |
+>
+> Stage 1 produces references and a validated price. Stage 2 is the business —
+> 48,000–125,000 evidence-heavy matters a year carrying $1.0–7.5B of displaceable
+> spend, reached through the defence bar. Stage 3 adds the UK: ~80,200 open Crown
+> Court cases rising toward 104,500 by 2029, same buyer shape, same channel, with a
+> funded government backlog behind it. Stage 4 is partner-led across Europe on a
+> deployment-control advantage that is a procurement requirement under GDPR.
+
+**Speaker note.** The point is the middle two rows, not the ARR. None of these stages
+asks for market dominance against a target population of one to five thousand
+practices — they ask for a channel that works and a price that holds. Each is gated on
+exactly one thing: stage 1 a validated price from real matters, stage 2 the bar channel
+converting, stage 3 the per-matter model rebuilt on UK vendor and Legal Aid Agency
+rates, stage 4 partners.
+
+**If asked why stage 1 is so small:** because it is not a revenue stage and should not
+be defended as one. Its output is a nameable reference and a price that survived contact
+with real matters — which is what stage 2 needs to exist.
+
+**If asked about the firm mix:** customer counts assume the conservative eight-matter
+firm. At a twenty-matter active practice, $10M needs 42 firms rather than 104. The real
+mix sits between the two and the first cohort establishes which — which is another
+reason the pilot in slide 10 is the thing being funded.
+
+---
+
+### Slide 8 — Team
 
 > **Neil Byrne — CEO.** **Seven years at Siren**, the Irish investigative-intelligence
 > platform — the same category, selling to law enforcement, intelligence and
@@ -552,7 +626,7 @@ the domain founder is where the customers are.
 
 ---
 
-### Slide 8 — Status and traction
+### Slide 9 — Status and traction
 
 **Lead with the fact, not the caveat. Loupe is a working platform that has done the
 job.** Everything else on this slide is context for that sentence.
@@ -651,7 +725,7 @@ the artifact when someone says "show me."*
 
 ---
 
-### Slide 9 — The ask
+### Slide 10 — The ask
 
 > **€100k. What it buys: the first paying customer outside the practice that built it.**
 >
@@ -862,7 +936,7 @@ a high cost to applying at half strength.
 | 2 | **"Loupe" trademark clearance** | Neil | Incorporating and building a deck around the name. CRO CORE check **plus IPOI/EUIPO search in Class 9 and 42** — "Loupe" is a common optical term with marks in adjacent hardware/photography spaces. Cheap now, expensive after launch. |
 | 3 | **Incorporate the Irish LTD** | Neil + Conor | NDRC needs an entity. Neil + Conor as directors (PPSN holders, no VIF delay); Alex's third issued shortly after while value is nominal; start her BEN2/VIF in parallel. |
 | 4 | **IP assignment deeds — all three founders** | All | Company must own the IP before any investor diligence. Sign the week the cert lands; do not wait for the full SHA. |
-| 5 | **A per-case unit economic** | Neil + Conor | *Replaces the old "2–3 pricing conversations" item — see note below.* You do not need a price to submit, but you must be able to answer "what does a case cost you to run, and what does it displace?" Take the ~$70/1,600-page datapoint, extrapolate to a representative matter, and set it against the junior-investigator hours it replaces. One slide's worth of arithmetic. |
+| 5 | ~~**A per-case unit economic**~~ **— CLOSED 29 Jul, see Part 6** | Neil + Conor | *Replaces the old "2–3 pricing conversations" item — see note below.* The arithmetic now exists from published vendor rates: displaced spend of $34k–$131k per matter, hours released on top, extraction retained. You do not need a price to submit, but you must be able to answer "what does a case cost you to run, and what does it displace?" Take the ~$70/1,600-page datapoint, extrapolate to a representative matter, and set it against the junior-investigator hours it replaces. One slide's worth of arithmetic. |
 | 5c | **Write down the Octostar failure mode** | Neil + Alex | The origin story is the deck's strongest beat, and "what specifically couldn't it do?" is the most likely follow-up question in the meeting. One paragraph, specific, rehearsed. Without it, naming a competitor is a liability rather than an asset. |
 | 5d | **Rehearse the Siren answer in one non-defensive sentence** | Neil | You will be asked how Loupe relates to Siren, and possibly by someone who knows them. The answer is a compliment, not a comparison: *Siren is built for enterprise LE and intelligence buyers who come with solutions engineering attached, and it is good at that. A 15-person PI firm cannot buy the engineer — that tier is what we serve.* Anything that sounds like a grievance, or like you left with something, is a scored negative. |
 | 5e | **Re-estimate the roadmap, and decide what to publish** | Neil + Conor | The ~4,200-hour figure is inflated and it was doing real damage — it made a working product look like a year of unbuilt work. Two decisions: (a) get an honest number for **the security-gate work that unblocks the first external customer**, which is the only estimate slide 9 needs; (b) decide whether the full-roadmap hours appear anywhere at all. Recommendation: they don't. Show the 13 epics as ambition and scope, without an hours total. Nobody asks for one, and volunteering it only ever creates arithmetic that works against you. |
@@ -1009,3 +1083,137 @@ pilot-shaped, not interview-shaped.** Every one of them — price, mechanism, ed
 choice, AI-cost model, gross margin — is answered by running one real case for one
 real firm. That is the correct thing to be raising for, and it is worth saying to
 NDRC in exactly those words.
+
+---
+
+## Part 6 — What the competitive research supplies, slide by slide
+
+Added 29 July 2026. Sources: `18-market-fit-lens-narrative.md` and
+`19-competitive-landscape-narrative.md` (both internal candid register — **translate, never paste**),
+sitting behind the Competitive Landscape and Market Fit Lens artifacts.
+
+**Blocker #5 is now closed.** *"A per-case unit economic — what does a case cost you to run, and
+what does it displace?"* The arithmetic exists, built from published vendor rates rather than
+estimates. It is the strongest single addition to this deck.
+
+### Slide 2 — The problem
+
+The blind spot is now documented from the incumbents' own materials, which is far stronger than
+asserting it:
+
+- Relativity's processing documentation: calls, contacts, calendar, locations, web history and
+  installed apps flatten into Excel in an "Other Data" folder; call logs emerge **"only as call log
+  data in Excel format, not as individual records"**; voicemail unsupported; **multi-device
+  extractions unsupported outright**.
+- Everlaw splits conversations every thousand messages. Reveal slices them into 24-hour blocks,
+  each block becoming "a document."
+- i2 removed native UFED import at 9.1.0 and now tells customers to export CSV.
+
+Pair it with what that costs: **a 435GB federal matter is $4,350 a month to keep hosted** — over
+$100,000 across a two-year case — to have the phone data come out as spreadsheets. Problem and
+price on one slide.
+
+### Slide 3 — Why now
+
+The citation layer commoditised inside four months, and it is dateable: Relativity folded aiR into
+the base rate November 2025; Everlaw bundled three AI features into core pricing the same month;
+DISCO announced agentic AI at no additional cost February 2026; Reveal gave its review engine away
+through 2025. **Everyone can cite a document; the pricing power left that layer.** Combined with
+evidence volume — ten-phone cases and six-figure document sets as routine — that is the "why now"
+without needing a market-growth chart.
+
+### Slide 5 — Why this isn't ChatGPT with files
+
+The competitor-published limits are the most quotable material in the entire study, because each
+one is the vendor's own documentation conceding the ceiling:
+
+- Relativity: **300,000 documents per index**, 1.5M per workspace, fact extraction **5,000 documents
+  per job**.
+- CoCounsel: **~200 documents per comparison run**, quality explicitly degrading at volume.
+- Reveal: Ask is **"designed for precision, not recall"** and cannot find all instances of anything.
+- Harvey: **one prompt per document** across a vault, aggregated.
+
+That is retrieval-versus-traversal argued with their numbers instead of our adjectives. It also
+answers blocker #8 — *"why not a $20 Claude subscription?"* — in the same breath.
+
+### Slide 6 — Market and lead customer  ← **the biggest upgrade**
+
+This slide currently leans on ACFE membership (~95k) and Harvey's ARR as proxies. Both are
+reachability and adjacency signals, not market size. Replace with the per-matter economics:
+
+| Per matter | Doc-heavy fraud | Serious multi-defendant | Large federal |
+|---|---|---|---|
+| Displaced (processing, hosting, examiner analysis) | $34,200 | $45,600 | $130,575 |
+| Hours released | $4,384 | $6,510 | $7,508 |
+| **Displaceable value** | **$38,584** | **$52,110** | **$138,082** |
+
+Then the pool: **US criminal-defence firm revenue exceeds $15B a year** across ~252,000
+practitioners; a practice on a realistic case mix carries **$0.89M–$1.94M of displaceable value
+annually**; bottom-up at a fifth of that across 1,000–5,000 target firms is **$350M–$900M**.
+
+**Say the extraction line is retained.** Devices still go to a forensic vendor — $3,650 for a
+one-or-two-device case. Conceding it makes every other number credible, and a panel that finds an
+unconceded overclaim discounts the whole slide.
+
+**"Why this tier is empty — and stays empty"** now has evidence rather than assertion: GrayKey is
+restricted to law enforcement and public safety, with Magnet stating plainly it is not available to
+the private sector; Cellebrite Pathfinder is marketed solely to law enforcement, government and
+intelligence; and **a Florida State Attorney's office publishes instructions telling defence counsel
+to view extractions through read-only share links in the prosecution's own tool.** That last one is
+the single most vivid fact in the corpus and belongs in the meeting even if it does not fit the
+slide.
+
+### Slide 6 — the Irish and European case, which NDRC will care about most
+
+NDRC is an Irish programme. A US-only market slide invites the obvious question, so answer it before
+it is asked. The regional plan is in §7a / §6a of the narratives; the short form:
+
+- **Ireland is the reference, not the revenue.** €123M of criminal legal aid for 2026 (up €27M) and
+  a €215M Courts Service is not a market to build a company on and should not be presented as one.
+  Its job is the first nameable customer in the company's own jurisdiction, reached through the Law
+  Society and the Criminal Legal Aid panel — the same bar-association channel Matey proved in the US.
+- **The UK is the first real European revenue, and it has the strongest tailwind in the study.**
+  21.76% of the European digital-forensics market (~$525M), and a funded government problem:
+  **~80,200 open Crown Court cases** at December 2025, projected to **99,000–114,000 by March 2029**,
+  with £92M added to criminal legal aid in July 2025. A product that removes hours from evidence
+  handling on serious matters is aligned to a published policy objective, not just a firm's margin.
+- **Europe is a structural advantage, not just a bigger number.** Single-tenant, in-jurisdiction
+  deployment scores 9 — joint highest of forty-seven platforms — while most American-owned
+  competitors score 2–6. Under GDPR that is a procurement requirement rather than a preference, and
+  it is the one axis where being a European company beats being a larger American one. Europe is 25%
+  of the global legal-tech market ($6.81B in 2026 → $15.45B by 2034).
+
+**Two things to be disciplined about.** Do not carry a single European TAM into the room as though
+it were addressable in one go — every jurisdiction has its own procedure, disclosure regime and
+vendor rates, so Europe beyond Ireland and the UK is a partner-led motion. And **sequence defence
+before policing in the UK**: CPIA disclosure obligations are gated at 8 in the policing profile and
+Loupe scores 2, the heaviest single gap in the study for that buyer.
+
+### Slide 10 — The ask, and pricing
+
+**Displaceable value moves 24× between the smallest and largest matters.** A flat $6–24k per-matter
+band captures 205% of a one-phone case and 9% of a ten-phone federal one. The pilot NDRC is being
+asked to fund is exactly what settles it — price should scale with device count, data volume and
+duration, which are the same drivers as the model it displaces. Framing the ask as *"fund the pilot
+that sets the scaling"* is sharper than *"fund the pilot that sets the price."*
+
+### For the meeting, not the deck
+
+- **Competition.** Four funded companies already sell AI to criminal defence — TrialKit $4.25M,
+  Matey $7.5M (verified: Timespan Ventures, Neo, Streamlined, Aug 2025), JusticeText $4.0M ARR
+  across 4,100 attorneys, Longeye $5M from a16z. **None has a graph.** Knowing this cold, and
+  naming them first, reads as command of the category. Pretending the category is empty does not
+  survive one search.
+- **Matey is the closest comparable** — same buyer, sells through NACDL and a state defence bar,
+  and holds SOC 2 Type II and ISO 27001 today.
+- **The honest ranking.** Nine of forty-seven platforms outscore Loupe overall; seven of those
+  cannot be sold to a defence practice at all. Volunteering that is a strength — it shows the matrix
+  was not built to flatter.
+- **Siren** — blocker 5d's one-sentence answer, unchanged.
+
+### Do not use
+
+The narratives are candid internal register. Specifically keep out of the deck: Loupe's own axis
+scores and rank; the weaknesses table; anything describing civil litigation as the market Loupe is
+furthest from serving; the founder-knowledge entries on Siren and Octostar, which are unciteable;
+and the two unshipped capabilities unless they have demoed clean, per blocker 5g.

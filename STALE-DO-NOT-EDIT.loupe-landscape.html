@@ -110,6 +110,16 @@ section{padding-top:64px;scroll-margin-top:20px}
 .callout .eyebrow{margin-bottom:8px}
 .callout p:last-child{margin-bottom:0}
 .callout p{margin:0 0 .8em}
+.axtblwrap{overflow-x:auto;border:1px solid var(--rule);border-radius:var(--r-panel);margin:20px 0;background:var(--surf)}
+table.axtbl{border-collapse:collapse;width:100%;font-size:13.5px;min-width:520px}
+table.axtbl caption{caption-side:top;text-align:left;padding:12px 14px;font-family:var(--mono);font-size:9px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border-bottom:1px solid var(--rule)}
+table.axtbl th{text-align:left;padding:10px 14px;font-family:var(--mono);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink3);font-weight:500;border-bottom:1px solid var(--rule2);background:var(--surf2)}
+table.axtbl td{padding:10px 14px;border-bottom:1px solid var(--rule);color:var(--ink2);vertical-align:top}
+table.axtbl tr:last-child td{border-bottom:0}
+table.axtbl td.y{color:var(--good)} table.axtbl td.n{color:var(--accent)} table.axtbl td.p{color:var(--partial)}
+table.axtbl .dim{color:var(--ink4)}
 </style>
 
 <div class="shell">
@@ -161,12 +171,13 @@ section{padding-top:64px;scroll-margin-top:20px}
 <header class="mast">
   <div class="kicker">Competitive landscape &amp; beachhead assessment</div>
   <h1>Everyone can cite a document. Nobody can query a case.</h1>
-  <p class="thesis">Twenty-six platforms across six categories, assessed on the axes Loupe actually
-  competes on. The category has converged on citations — retrieval over one document at a time, with a
-  model reasoning in the gap. Loupe's answer is a graph of the whole case: concrete grounding, so a
-  question can be put to the entire evidence corpus at once and answered reliably.</p>
+  <p class="thesis">Forty-seven platforms across seven categories, assessed on twenty-nine axes —
+  including the ones Loupe loses. The category has converged on citations — retrieval over one
+  document at a time, with a model reasoning in the gap. Loupe's answer is a graph of the whole case:
+  concrete grounding, so a question can be put to the entire evidence corpus at once and answered
+  reliably. Ten platforms score above it overall. None of them can be sold to a defence practice.</p>
   <div class="meta">
-    <div><b>26</b> platforms profiled</div>
+    <div><b>47</b> platforms profiled</div>
     <div><b>17</b> research sweeps</div>
     <div><b>350+</b> cited sources</div>
     <div>Compiled <b>26 July 2026</b></div>
@@ -224,9 +235,7 @@ section{padding-top:64px;scroll-margin-top:20px}
     label — though none of the four has a graph, and all four answer by retrieval.</p>
 
     <p>And the evidence that would populate such a graph is being discarded before it arrives.
-    <strong>Across all twenty-six platforms, not one models
-    a phone call, a bank transfer and a document passage as citable objects in a single case
-    graph.</strong> The eDiscovery majors ingest Cellebrite extractions and then flatten calls, contacts,
+    <strong>Across all forty-seven platforms, not one models a phone call, a bank transfer and a document passage as citable objects in a single case graph.</strong> Be precise about what this does and does not claim: <em>graph</em> is not the differentiator. Cellebrite Pathfinder genuinely builds one — entity resolution correlating phone numbers, user IDs and usernames across platforms, multi-device analysis, cross-case identifier search — and Kaseware and Altia both ship link analysis and entity recognition. What none of them holds is <em>documents and financial records in the same model as the device data</em>. The claim is cross-evidence-type, never graph. The eDiscovery majors ingest Cellebrite extractions and then flatten calls, contacts,
     locations, web history and installed apps into Excel spreadsheets in an "Other Data" folder;
     Relativity's own processing documentation confirms call logs emerge "only as call log data in
     Excel format, not as individual records," and that multi-device extractions are unsupported.
@@ -236,10 +245,10 @@ section{padding-top:64px;scroll-margin-top:20px}
   </div>
 
   <div class="tiles">
-    <div class="tile"><span class="n">99<span style="font-size:17px;color:var(--ink3)">/120</span></span><span class="l">Loupe's capability score — first of twenty-six</span></div>
+    <div class="tile"><span class="n">99<span style="font-size:17px;color:var(--ink3)">/120</span></span><span class="l">Loupe's evidence-modelling score — first of forty-seven, by a wide margin</span></div>
     <div class="tile warn"><span class="n">5<span style="font-size:17px;color:var(--ink3)">/40</span></span><span class="l">Loupe's readiness score — certifications, scale, integrations, acquisition. Near last.</span></div>
-    <div class="tile"><span class="n">0</span><span class="l">platforms of 26 that answer a whole-case question by traversing a model instead of retrieving passages</span></div>
-    <div class="tile"><span class="n">0</span><span class="l">platforms of 26 that model phone, financial and document evidence in one cited graph</span></div>
+    <div class="tile"><span class="n">0</span><span class="l">platforms of 47 that answer a whole-case question by traversing a model instead of retrieving passages</span></div>
+    <div class="tile"><span class="n">0</span><span class="l">platforms of 47 that model phone, financial and document evidence in one cited graph</span></div>
     <div class="tile"><span class="n">0</span><span class="l">platforms marketing contradiction or disconfirmation detection</span></div>
     <div class="tile warn"><span class="n">4</span><span class="l">funded AI-native competitors already selling to criminal defence</span></div>
     <div class="tile warn"><span class="n">2</span><span class="l">certifications a direct competitor holds that Loupe does not</span></div>
@@ -1906,6 +1915,22 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
         <p>What defence teams <em>can</em> buy — Magnet Axiom, Exterro FTK, Cellebrite Physical
         Analyzer — is device-by-device examiner tooling with no cross-evidence analytical model. Siren
         has genuine native Cellebrite connectors, and gates them to "qualifying organisations."</p>
+        <div class="axtblwrap"><table class="axtbl">
+          <caption>Who can actually buy the tooling — the single most decisive table in this research</caption>
+          <thead><tr><th>Tool</th><th>Defence teams / PIs can buy?</th></tr></thead>
+          <tbody>
+          <tr><td>Cellebrite UFED / Physical Analyzer <span class="dim">(extraction, decode)</span></td><td class="y">Yes — sold to private consultants including defence experts</td></tr>
+          <tr><td>Cellebrite Premium / Inseyets advanced unlocking</td><td class="p">Effectively no — marketed to law enforcement and government; no policy document found</td></tr>
+          <tr><td><b>Cellebrite Pathfinder</b> <span class="dim">(the analytics layer)</span></td><td class="n">No defence sales channel found anywhere — law enforcement, government, intelligence and corporate only</td></tr>
+          <tr><td>Cellebrite Guardian</td><td class="n">Read-only shared access from prosecutors, not a licence</td></tr>
+          <tr><td>GrayKey / ArtifactIQ</td><td class="n">Explicitly not available to the private sector</td></tr>
+          <tr><td>Magnet Axiom / Axiom Cyber</td><td class="y">Yes — no stated restriction</td></tr>
+          <tr><td>Nuix, Exterro FTK</td><td class="p">Yes, but priced and skilled for enterprise; small practices priced out</td></tr>
+          </tbody></table></div>
+        <p>Read the middle rows together and the asymmetry is exact: what the defence <em>can</em>
+        buy is device-by-device examiner tooling. Every layer that reasons <em>across</em> the
+        evidence is either sold only to the other side, or handed to the defence as a read-only link
+        issued by the prosecutor.</p>
         <div class="verdict"><b>So</b> — "levelling the evidentiary playing field" is not a slogan
         here, it is a description of a licensing structure. It should be said plainly and sourced.</div>
       </div>
@@ -1953,8 +1978,7 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
         case, where nothing is modelled until you model it.</p>
         <div class="verdict"><b>So</b> — the intersection of graph-native and pipeline-native is
         genuinely unoccupied, and it is exactly what whole-corpus querying requires: you need both a model
-        to traverse and a way to build it from the evidence as received. An architecture claim a technical
-        investor can verify in a demo, and more durable than any feature claim.</div>
+        to traverse and a way to build it from the evidence as received. An <strong>architecture claim</strong> — a statement about what the system is built on rather than what features it has. A feature claim ("we have a timeline view") can be copied in a sprint and cannot be proved in a meeting; an architecture claim can be tested live in ten minutes and takes a competitor eighteen months to close. That is why it is worth leading with.</div>
       </div>
     </div>
 
@@ -1963,7 +1987,7 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
       <div>
         <h3>Durable narrative objects exist — but none of them can hold a phone call</h3>
         <p>The "Loupes" concept is less unique than it looked, and the precise version of it is more
-        unique than it looked. Everlaw's Storybuilder Fact Management, shipped December 2025, makes
+        unique than it looked. The sharpest example is <strong>Comtrac</strong>, whose "Elementising Evidence" methodology maps exhibits directly to the <em>elements of an offence</em> and auto-populates an investigation matrix with what must be proven — the closest shipped analogue anywhere to a curated, evidenced collection assembled to establish something. It is exhibit-scoped and cannot hold a call or a transfer, but it is a more serious precedent than anything in eDiscovery. Everlaw's Storybuilder Fact Management, shipped December 2025, makes
         facts first-class objects linked to evidence, people, depositions and drafts — and it is now
         bundled free. DISCO Timelines persist from case opening to trial with facts dragged straight
         from the document viewer. Relativity's aiR for Case Strategy classifies facts as helpful or
@@ -1981,14 +2005,25 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
     <div class="find">
       <div class="idx">F11</div>
       <div>
-        <h3>Disconfirmation is the last genuinely unclaimed idea in the category</h3>
-        <p>Across twenty-six platforms, not one markets contradiction detection or disconfirmation as
-        a capability. The nearest approaches are narrow: Relativity's helpful-versus-harmful fact
-        classification and gap-spotting; NexLaw ChronoVault flagging conflicting testimony and timeline
-        gaps; JusticeText's Miranda AI identifying inconsistencies across evidence; Siren's K9 flagging
-        its own uncertainty; Clearbrief's cite-checking, which catches fabricated citations in your own
-        filing. Octostar used the word "contradictions" once, on a conference booth sign, with no
-        product behind it.</p>
+        <h3>Disconfirmation is unclaimed — but narrow versions of it already exist, so the claim has to be precise</h3>
+        <p>No platform in the set markets contradiction detection or disconfirmation as a headline
+        capability, and that remains true. But the capability itself is not absent, and the earlier
+        version of this finding overstated the gap. <strong>JusticeText's Miranda AI identifies
+        inconsistencies across evidence, and Clearbrief's cite-checking catches fabricated citations
+        — 6 and 5 respectively on this axis.</strong> Both are narrow: Miranda compares across
+        A/V discovery, Clearbrief checks citations inside your own filing. Neither runs
+        disconfirmation as a first-class capability over a structured claims model, which is the
+        version that is defensible rather than a feature, and which is in Loupe's imminent release. Other near approaches: Relativity's
+        helpful-versus-harmful fact classification and gap-spotting; NexLaw ChronoVault flagging
+        conflicting testimony and timeline gaps; Siren's K9 flagging its own uncertainty. Octostar
+        used the word "contradictions" once, on a conference booth sign, with no product behind it.</p>
+        <p><strong>The honest position: the category label is unclaimed and two competitors ship
+        adjacent capability, so "nobody does this" is the wrong sentence.</strong> The right one is
+        narrower and survives scrutiny: no platform runs disconfirmation over a structured claims
+        ledger, and the claims ledger is what makes the difference between flagging an
+        inconsistency and enumerating what would break a theory — including the document that
+        does not exist. That is the version to demo, and the one competitors cannot bolt on
+        without the evidence model underneath.</p>
         <p>This also happens to be the answer to the strongest objection the hypothesis framing
         invites. An investigator who states a theory and has a machine populate it is doing
         confirmation bias at speed, and opposing counsel will say exactly that. A tool that
@@ -2038,15 +2073,12 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
     structurally underserved by every incumbent, and the reason is economic rather than technical.
     Harvey prices for the AmLaw 100 with seat minimums that put entry near $360,000 a year. Relativity
     sells small firms exclusively through a partner channel. DataWalk starts around $560,000. Palantir
-    averages over a million per deal. Casepoint sells to federal agencies. The two genuinely
-    small-buyer-accessible products in the whole set — i2 Analyst's Notebook at roughly $7,160 a year
-    and Logikcull's pay-as-you-go tier — are a manual charting tool with no LLM and a
-    document-hosting service respectively.</p>
+    averages over a million per deal. Casepoint sells to federal agencies. The products a small practice can actually authorise are workflow tools, not analysis. <strong>CROSStrax runs $35 a month and Trackops $99 a month, both built specifically for private investigators — the exact beachhead buyer — and both score at the very bottom of the study on evidence modelling</strong> (Trackops 6 of 60, the lowest of all forty-seven). i2 Analyst's Notebook at roughly $7,160 a year is a manual charting tool with no LLM in any tier, and Logikcull's pay-as-you-go tier is document hosting. <strong>The buyer already owns cheap case management and owns nothing that analyses evidence.</strong> That, precisely, is the gap.</p>
   </div>
 
   <div class="callout">
-    <div class="eyebrow">The one to watch</div>
-    <p>Everlaw for Good is free, covers CJA panel attorneys explicitly, and has passed $6M in donated
+    <div class="eyebrow">The one to watch — a competitor's strategy, not ours</div>
+    <p><strong>To be unambiguous: giving Loupe away to public defenders is not the plan, and this section is the reason we do not enter that market first.</strong> The free tiers described here belong to rivals. Everlaw for Good is free, covers CJA panel attorneys explicitly, and has passed $6M in donated
     technology across 235–300 organisations. It is charity-funded, which caps how far it can scale —
     but it means a federal defence attorney can already get a serious platform for nothing. Any pricing
     conversation in this segment happens in that shadow.</p>
@@ -2152,6 +2184,13 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
   </div>
 
   <div class="prose" style="margin-top:30px">
+    <h3 style="font-size:19px;margin-bottom:10px">The three models, plainly</h3>
+    <p><strong>Per seat</strong> — you pay per named user per year, regardless of how much work they
+    do. Harvey and CoCounsel price this way. <strong>Per gigabyte</strong> — you pay by the volume of
+    evidence loaded into the platform; the eDiscovery default, used by Relativity and Everlaw.
+    <strong>Per matter</strong> — you pay a fee per case, sized to the case. Two of those three are
+    actively wrong for this product, and the reasons are below.</p>
+
     <h3 style="font-size:19px;margin-bottom:10px">What this implies for Loupe's model</h3>
     <p>Price per matter, not per seat — and note that per-gigabyte pricing is not neutral. It charges
     by evidence volume, which means it pays the customer to keep evidence <em>out</em> of the platform.
@@ -2246,6 +2285,36 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
     <div class="trow">
       <div class="rk">T2</div>
       <div>
+        <h4>Exterro ARMOUR makes agentic forensics auditable — and shipped three weeks ago</h4>
+        <p>Launched 9 July 2026, the most aggressive agentic move in the study. The investigator
+        "starts with the question" and the agent plans and executes governed forensic work — collection
+        across live endpoints, cloud, identities and communications, memory acquisition, artifact
+        analysis, event correlation, timeline reconstruction — producing "an auditable evidence record
+        designed to withstand legal and regulatory scrutiny." <strong>It is the only platform of
+        forty-seven that scores above Loupe on an AI axis</strong> (9 against 8 on agentic execution).
+        Above the Law's assessment: fast, auditable, and about to bloody Daubert. Openly sold to law
+        firms, unlike Pathfinder.</p>
+        <span class="tag">Immediate · shipped · beats Loupe on agentic execution</span>
+      </div>
+    </div>
+
+    <div class="trow">
+      <div class="rk">T3</div>
+      <div>
+        <h4>Axon moves up from records into investigation</h4>
+        <p>The same shape as the Cellebrite threat from the opposite direction. Axon owns the
+        body-camera and digital-evidence ecosystem outright, and Draft One — report drafting from
+        body-worn audio — is reported to cut administrative time 50–80%, with Axon Evidence spanning
+        "capturing, reviewing and disclosing." It scores 153 in this study, above Loupe. The install
+        base is already locked in and the acquisition layer is theirs. Law-enforcement-only today,
+        which is the only thing keeping it out of the comparison a defence buyer runs.</p>
+        <span class="tag">Structural · owns acquisition and the install base</span>
+      </div>
+    </div>
+
+    <div class="trow">
+      <div class="rk">T4</div>
+      <div>
         <h4>MCP flattens the integration layer and the agent stops being the product</h4>
         <p>Claude for Legal launched in May 2026 with a litigation plugin and twenty-plus connectors
         including Relativity, Everlaw and Consilio. Everlaw shipped its own Anthropic MCP integration
@@ -2257,7 +2326,7 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
     </div>
 
     <div class="trow mid">
-      <div class="rk">T3</div>
+      <div class="rk">T5</div>
       <div>
         <h4>The funded defence-native startups add a device model</h4>
         <p>TrialKit already claims phone extractions and has the LA County Public Defender. Matey has
@@ -2269,10 +2338,11 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
     </div>
 
     <div class="trow mid">
-      <div class="rk">T4</div>
+      <div class="rk">T6</div>
       <div>
         <h4>Nuix completes the Linkurious integration</h4>
-        <p>Nuix acquired Linkurious for €20M, completing in April 2026 — the strongest strategic
+        <p>Nuix acquired Linkurious for €20M — signed 4 December 2025 and closed that month on French
+        FDI approval — the strongest strategic
         convergence with Loupe's architecture in the entire set. Nuix Neo processes 1,000+ file types
         including forensic images; Linkurious brings the graph. No shipped integration existed as of
         July 2026. When it ships, an enterprise-priced version of Loupe's architecture exists.</p>
@@ -2281,7 +2351,7 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
     </div>
 
     <div class="trow low">
-      <div class="rk">T5</div>
+      <div class="rk">T7</div>
       <div>
         <h4>Free tiers compress the price floor</h4>
         <p>Everlaw for Good covers CJA panel attorneys at no cost. Longeye intends to give its platform
@@ -2292,7 +2362,7 @@ table.plain td:first-child{font-family:var(--mono);font-size:12.5px;white-space:
     </div>
 
     <div class="trow low">
-      <div class="rk">T6</div>
+      <div class="rk">T8</div>
       <div>
         <h4>Open-source graph RAG closes the plumbing gap</h4>
         <p>LightRAG indexes 500 pages for about $0.50 in three minutes at 70–90% of Microsoft

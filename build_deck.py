@@ -10,22 +10,37 @@ Speaker notes are condensed from the surrounding commentary.
 not a finished visual identity.
 """
 
+import os
+
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 
 # ---------------------------------------------------------------- palette
+# Loupe Brand System v1.0 — tokens taken from loupe-brand/brand/loupe-brand.css.
+# No one-off colours. Red is signal, action and investigative focus; it is never
+# an entity. The evidence-semantic hues (person blue, financial amber, location
+# teal ...) are reserved for entity meaning and must not be used as decoration.
 
-INK        = RGBColor(0x0E, 0x14, 0x1B)   # near-black background
-PAPER      = RGBColor(0xF4, 0xF6, 0xF8)   # primary text
-MUTED      = RGBColor(0x9A, 0xA7, 0xB4)   # secondary text
-ACCENT     = RGBColor(0xE8, 0xB3, 0x39)   # amber - highlight
-ACCENT_DIM = RGBColor(0x6E, 0x87, 0x9B)   # rule lines
-PANEL      = RGBColor(0x18, 0x21, 0x2B)   # table / panel fill
+INK        = RGBColor(0x0B, 0x0C, 0x0F)   # --loupe-obsidian, page ground
+DEEP       = RGBColor(0x07, 0x08, 0x0A)   # --loupe-bg-deep, cover / divider ground
+PAPER      = RGBColor(0xF7, 0xF7, 0xF8)   # --loupe-ink / evidence white
+INK_SOFT   = RGBColor(0xBF, 0xC1, 0xC8)   # --loupe-ink-soft, secondary copy
+MUTED      = RGBColor(0x9A, 0x9D, 0xA5)   # --loupe-muted, labels
+ACCENT     = RGBColor(0xE3, 0x3B, 0x4C)   # --loupe-signal, accents on dark ground
+ACCENT_SOLID = RGBColor(0xB4, 0x16, 0x24) # --loupe-red, filled marks
+ACCENT_DIM = RGBColor(0x3B, 0x3D, 0x44)   # --loupe-line-strong, rules
+PANEL      = RGBColor(0x11, 0x12, 0x16)   # --loupe-surface, table / panel fill
 
-FONT_H = "Helvetica Neue"
-FONT_B = "Helvetica Neue"
+# Space Grotesk display, IBM Plex Sans body, IBM Plex Mono for labels and figures.
+# PowerPoint substitutes if a font is absent, so export the PDF on a machine with
+# all three installed.
+FONT_H = "Space Grotesk"
+FONT_B = "IBM Plex Sans"
+FONT_M = "IBM Plex Mono"
+
+LOGO_KNOCKOUT = "loupe-brand/brand/logo/loupe-lockup-knockout.png"
 
 W = Inches(13.333)
 H = Inches(7.5)
@@ -128,9 +143,11 @@ def kicker(slide, text, top=Inches(0.55)):
     tf = textbox(slide, MARGIN_L, top, BODY_W, Inches(0.3))
     p = para(tf, text.upper(), size=11, colour=ACCENT, bold=True, first=True,
              space_before=0)
-    p.font.name = FONT_H
+    # Brand kit: mono is metadata only — eyebrows, labels, numbers, statuses.
+    p.font.name = FONT_M
     for r in p.runs:
         r.font.size = Pt(11)
+        r.font.name = FONT_M
     return tf
 
 
@@ -160,12 +177,15 @@ def bullets(tf, items, size=17, colour=PAPER, gap=9, first_flag=None):
 # ---------------------------------------------------------------- slides
 
 def slide1(prs):
-    s = blank(prs); bg(s)
-    tf = textbox(s, MARGIN_L, Inches(2.45), BODY_W, Inches(2.6))
-    para(tf, "Loupe", size=88, colour=PAPER, bold=True, first=True,
-         space_before=0, font=FONT_H, line=1.0)
+    s = blank(prs); bg(s, colour=DEEP)          # cover sits on the deep ground
+    # Supplied artwork, knockout colourway for a dark ground. Never a recoloured
+    # or retyped wordmark; clear space is baked into the file.
+    if os.path.exists(LOGO_KNOCKOUT):
+        s.shapes.add_picture(LOGO_KNOCKOUT, MARGIN_L, Inches(2.35),
+                             width=Inches(4.3))
+    tf = textbox(s, MARGIN_L, Inches(3.62), BODY_W, Inches(2.6))
     para(tf, "Find the signal in everything.", size=27, colour=ACCENT,
-         space_before=16)
+         space_before=0, first=True)
     para(tf, "An investigation platform for fraud and criminal casework.",
          size=19, colour=MUTED, space_before=22)
     para(tf, "Dublin, Ireland.", size=19, colour=MUTED, space_before=4)
@@ -288,13 +308,24 @@ def slide4(prs):
 
     # two screenshot placeholders
     from pptx.enum.shapes import MSO_SHAPE
-    for i, (label, sub) in enumerate([
+    # Drop a real screenshot in at either path and it is used automatically;
+    # otherwise the labelled placeholder is drawn. Target 5.4 x 2.85in at 16:9-ish
+    # — 1620 x 855 px at 300dpi, or any image of that ratio.
+    for i, (label, sub, shot) in enumerate([
         ("SCREENSHOT — A LOUPE",
-         "Five highlighted passages from three documents,\nbound into one evidenced narrative timeline."),
+         "Five highlighted passages from three documents,\nbound into one evidenced narrative timeline.",
+         "deck-assets/slide4-loupe.png"),
         ("SCREENSHOT — CITED AI ANSWER, MID-CLICK",
-         "Opening the source document\nat the cited page."),
+         "Opening the source document\nat the cited page.",
+         "deck-assets/slide4-citation.png"),
     ]):
         left = MARGIN_L + i * Inches(6.0)
+        if os.path.exists(shot):
+            pic = s.shapes.add_picture(shot, left, Inches(2.35),
+                                       width=Inches(5.4), height=Inches(2.85))
+            pic.line.color.rgb = ACCENT_DIM
+            pic.line.width = Pt(1)
+            continue
         box = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, Inches(2.35),
                                  Inches(5.4), Inches(2.85))
         box.fill.solid()
@@ -539,21 +570,22 @@ def slide6(prs):
               "law firms & disputes teams · corporate investigations & "
               "compliance.",
          size=12, colour=MUTED, space_before=3)
-    para(tf2, "Reachable", size=12, colour=ACCENT, bold=True, space_before=11)
-    para(tf2, "ACFE has ~95k members and ~60k CFEs worldwide, with chapters, "
-              "conferences and directories — including an Ireland chapter since "
-              "2016.",
+    para(tf2, "Channel", size=12, colour=ACCENT, bold=True, space_before=11)
+    para(tf2, "This buyer is organised and reachable. ACFE has ~95k members and "
+              "~60k CFEs worldwide, with chapters, conferences and directories — "
+              "including an Ireland chapter since 2016. The defence bar is the "
+              "same shape: a competitor reached national presence through a "
+              "national association and one state bar.",
          size=12, colour=MUTED, space_before=3)
-    para(tf2, "Adjacent validation", size=12, colour=ACCENT, bold=True,
+    para(tf2, "Why we know the gap is real", size=12, colour=ACCENT, bold=True,
          space_before=11)
-    para(tf2, "Harvey at ~$190M ARR and an $11B valuation proves legal-AI spend "
-              "is real — and stays BigLaw-focused, leaving the boutique tier "
-              "open.",
-         size=12, colour=MUTED, space_before=3)
+    para(tf2, "**We tried a number of platforms on live federal casework before "
+              "we built anything. None of them could work the case.**",
+         size=12, space_before=3)
 
     tf3 = textbox(s, MARGIN_L, Inches(6.75), BODY_W, Inches(0.6))
-    para(tf3, "We evaluated the alternatives on a live case before we built "
-              "anything. That is why we know the gap is real.",
+    para(tf3, "We did not set out to build a platform. We went looking for one, "
+              "tried several, and none could work the case.",
          size=16, colour=ACCENT, bold=True, first=True, space_before=0)
 
     notes(s, """Market sizing is desk research, not primary — label it as such.
@@ -583,6 +615,67 @@ Other anchors: Valid8 ~$42k/yr, CaseWare IDEA.
 
 The pricing question is closed by running a paid pilot, not by booking more
 calls — which is exactly what slide 9 asks NDRC to fund.""")
+    return s
+
+
+def slide6b(prs):
+    """Growth path — four stages, each with the customers and matters it needs."""
+    s = blank(prs); bg(s)
+    kicker(s, "Growth path")
+    heading(s, "Ten million in ARR is 104 firms\nand under 2% of one market.", size=29)
+    rule(s, Inches(2.05), width=Inches(1.1))
+
+    tf = textbox(s, MARGIN_L, Inches(2.3), BODY_W, Inches(0.7))
+    para(tf, "Priced at a blended $12,000 per matter. A boutique running eight "
+             "evidence-heavy matters a year is worth $96,000 annually; an active "
+             "practice at twenty is worth $240,000. These figures use the "
+             "conservative rate throughout.",
+         size=12, colour=MUTED, first=True, space_before=0)
+
+    stages = [
+        ("Stage 1 · proof", "Owl & Ireland", "$0.5M", "5 customers", "42 matters / yr",
+         "References and a validated price. Not a revenue stage."),
+        ("Stage 2 · the engine", "United States", "$5M", "52 customers", "417 matters / yr",
+         "0.3–0.9% of 48,000–125,000 evidence-heavy matters a year."),
+        ("Stage 3 · second geography", "+ United Kingdom", "$10M", "104 customers", "833 matters / yr",
+         "80,200 open Crown Court cases, rising. Same buyer, same channel."),
+        ("Stage 4 · expansion", "+ Europe", "$25M", "260 customers", "2,083 matters / yr",
+         "$2.41B forensics, $6.81B legal tech. Partner-led per jurisdiction."),
+    ]
+
+    col_w = Inches(2.95)
+    gap   = Inches(0.19)
+    top   = Inches(3.12)
+    for i, (phase, name, arr, cust, matters, note) in enumerate(stages):
+        left = MARGIN_L + (col_w + gap) * i
+        box = s.shapes.add_shape(1, left, top, col_w, Inches(3.34))   # rectangle
+        box.fill.solid(); box.fill.fore_color.rgb = PANEL
+        box.line.color.rgb = ACCENT_DIM if i == 0 else ACCENT_SOLID
+        box.line.width = Pt(1.25)
+        box.shadow.inherit = False
+        box.text_frame.text = ""
+
+        t = textbox(s, left + Inches(0.16), top + Inches(0.16),
+                    col_w - Inches(0.32), Inches(3.0))
+        pph = para(t, phase.upper(), size=9, colour=ACCENT, bold=True,
+                   first=True, space_before=0)
+        for r in pph.runs:
+            r.font.name = FONT_M
+        para(t, name, size=15, colour=PAPER, bold=True, space_before=8, font=FONT_H)
+        para(t, arr + "  ARR", size=25, colour=PAPER, bold=True, space_before=8,
+             font=FONT_H)
+        pc = para(t, cust + "\n" + matters, size=12, colour=ACCENT, space_before=8)
+        for r in pc.runs:
+            r.font.name = FONT_M
+        para(t, note, size=11, colour=MUTED, space_before=10)
+
+    notes(s, "The point is the middle two rows, not the ARR. 104 customers running "
+             "833 matters is under two per cent of the US evidence-heavy pool alone, "
+             "before the UK or Europe contribute anything. Against one to five thousand "
+             "target practices, none of these stages asks for market dominance — they "
+             "ask for a channel that works and a price that holds. Each stage is gated "
+             "on one thing: stage 1 a validated price, stage 2 the bar channel "
+             "converting, stage 3 the model rebuilt on UK rates, stage 4 partners.")
     return s
 
 
@@ -803,7 +896,7 @@ def main():
     prs.slide_height = H
 
     for fn in (slide1, slide2, slide3, slide4, slide5,
-               slide6, slide7, slide8, slide9):
+               slide6, slide6b, slide7, slide8, slide9):
         fn(prs)
 
     out = "Loupe-NDRC-deck.pptx"
