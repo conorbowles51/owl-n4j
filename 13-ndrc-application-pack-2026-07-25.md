@@ -177,26 +177,43 @@ their evidence.
 > **~6% of fraud examiners are confident explaining how their AI reaches its
 > conclusions.** *(ACFE 2026 anti-fraud technology benchmarking)*
 
-**Curve 3 was rewritten on 29 July, and the old version would have been challenged.**
-It read *"bare LLMs remain unusable in evidence work — no provenance, no audit, no
-confidentiality"*, and the conclusion positioned Loupe as *"the trust layer that makes
-AI admissible."* That was true in early 2025 and is not true now. Finding F1 of the
-competitive analysis dates the change precisely: between November 2025 and February
-2026 the specialists shipped provenance and most gave it away. Relativity's aiR refuses
-to emit a fact it cannot match to source text; Everlaw's Deep Dive answers "insufficient
-evidence" rather than invent one. **Anyone in the room who knows the category would have
-taken that bullet apart, and positioning on the trust layer is positioning on a free
-feature.**
+**Curve 3 was rewritten on 29 July. Three claims about provenance, kept separate —
+because collapsing them is easy and produces bad positioning.**
 
-The replacement is stronger for the same slide-space: it is dateable, it is verifiable
-from vendor announcements, and it sets up slide 4 exactly — everyone can cite a
-document, nobody modelled the case.
+1. **Provenance is valuable to the customer.** Permanently. A defence lawyer who cannot
+   trace a claim back to a page cannot use the output at all. This has not changed and
+   will not.
+2. **Provenance is a differentiator.** No longer true. Between November 2025 and
+   February 2026 the specialists shipped it — Relativity's aiR refuses to emit a fact it
+   cannot match to source text; Everlaw's Deep Dive answers "insufficient evidence"
+   rather than invent one.
+3. **Provenance has pricing power.** No. Most of them give it away.
 
-**The ACFE 6% stat still earns its place, and reads better against the new curve.**
-"Only ~6% of fraud examiners are confident explaining how their AI reaches its
-conclusions" is not really a provenance statistic — it is a grounding one. It says the
-answer has nothing underneath it that a professional can stand over. Say it, pause, then
-show slide 4.
+**Only (2) and (3) changed.** Commoditisation is a statement about the market, not about
+whether the feature earns its place in the product — so provenance stays stated
+everywhere it is true (slide 4's Loupes carry the quote, page and file; slide 5's AI row
+carries the page), and the *differentiation* argument rests on grounding instead. Those
+are compatible positions, not competing ones.
+
+**What the old curve actually said, in fairness to it:** *"bare LLMs remain unusable in
+evidence work — no provenance, no audit, no confidentiality."* That is a claim about
+**ChatGPT**, and it is still true. It was not the error.
+
+**Why it was still worth replacing.** Slide 3 is the market-timing argument, and the
+bare-LLM point is slide 5's entire job — the deck was making it twice and making it
+weakly the first time. Curve 3 now carries the timing claim that only slide 3 can make:
+the category converged on cited answers and stopped there, dateable to a four-month
+window. Everyone can cite a document; nobody modelled the case. That sets up slide 4 and
+leaves slide 5 to do the ChatGPT comparison properly.
+
+**The conclusion moved from "trust layer" to "the layer underneath the answer" for the
+same reason** — not because trust is worthless, but because a trust layer is what
+several well-funded competitors already sell, and a case model is not.
+
+**The ACFE 6% statistic reads better against the new curve.** "Only ~6% of fraud
+examiners are confident explaining how their AI reaches its conclusions" is a grounding
+statistic rather than a provenance one: it says the answer has nothing underneath it
+that a professional can stand over. Say it, pause, then show slide 4.
 
 Speaker note: the 6% stat is the strongest number in your material. The entire product
 is an answer to it. Say it, pause, then move to slide 4 and show the answer.
@@ -270,11 +287,12 @@ Cut your comparison table to five rows. These five:
 
 **Two changes on 29 July, and the first one matters more than it looks.**
 
-**The "What the AI does" row led with citation, and that is the wrong claim to lead
-with.** Finding F1 of the competitive analysis is emphatic: citations commoditised
-between November 2025 and February 2026 — Relativity, Everlaw, DISCO and Reveal all
-ship them and most give them away — so leading with provenance is arguing about a free
-feature. The row now leads with **how the answer is reached**: a straight LLM retrieves
+**The "What the AI does" row led with citation, which is the right feature to have and
+the wrong one to lead with.** Provenance is not worth less to the customer than it was —
+a claim that cannot be traced to a page is unusable — but it stopped being a
+*differentiator* between November 2025 and February 2026, when Relativity, Everlaw,
+DISCO and Reveal all shipped it and most gave it away. A row that leads with it is
+competing on the axis where every rival is already free. The row now leads with **how the answer is reached**: a straight LLM retrieves
 a sample of what fits and reasons over it, and *you cannot know what it missed*; Loupe
 traverses the model and returns the actual matching set. Completeness is the claim.
 Citation stays in the row, in second place, where it belongs — a consequence of the
