@@ -759,13 +759,65 @@ the artifact when someone says "show me."*
 > external revenue is the **security gate** — the isolation, backup and legal stages
 > that let another firm's privileged evidence enter the system — and the pilot itself.
 >
-> **Use of funds:** two founders full-time, clearing those gates, and running the
-> agreed pilot to a signed contract. **The pilot candidate is already secured.**
+> **Use of funds**
 >
-> **What we want from NDRC beyond capital:** Dublin base at Dogpatch, EIR time on
-> pricing and enterprise sales motion, and introductions into Irish and UK
-> professional-services buyers — ACFE Ireland, Chartered Accountants Ireland forensic
-> group, Law Society criminal law committee.
+> - **Two founders full-time** — clearing the security gate and running the agreed
+>   pilot to a signed contract. **The pilot candidate is already secured.**
+> - **A security posture we can evidence now** — Cyber Essentials, an independent
+>   penetration test, and a written security package. Full certification is bought
+>   when a deal requires it, not held in advance.
+> - **Single-tenant infrastructure** for the first external customers. Deployment is
+>   one instance per customer by design, so infrastructure scales with customers
+>   rather than sitting idle ahead of them.
+> - **Processing and inference** across pilot matters — the cases are large, and the
+>   per-matter cost model is what the pilot exists to establish.
+>
+> **What we want from NDRC beyond capital**
+>
+> - **Go-to-market guidance.** The channel is identified — bar associations and
+>   professional bodies — and the pricing model is per-matter rather than per-seat.
+>   Both need pressure-testing by people who have built a repeatable motion before.
+> - Dublin base at Dogpatch Labs.
+> - EIR time on pricing structure and enterprise sales motion.
+> - Introductions into Irish and UK professional-services buyers — ACFE Ireland,
+>   Chartered Accountants Ireland forensic group, Law Society criminal law committee.
+
+**On the certification line — what to do before certification, and why.**
+
+Full certification is not the near-term move. Pursued together, SOC 2 Type II and ISO
+27001 run **$65–95k** — the entire raise — and SOC 2 Type II alone takes **6–20 months**
+because it requires a 3–12 month observation window. Buying a certificate is not
+something €100k can do quickly, and the competitive analysis already establishes that
+certification is procurement timing rather than capability: it is obtained when a market
+requires it.
+
+**What can be done in the meantime is cheap, fast and answers the same question:**
+
+| Step | Cost | Time | What it gives you |
+|---|---|---|---|
+| **Cyber Essentials** | **£330–500** assessment; ~£1,800–3,500 all-in | Weeks | A recognised UK government-backed standard and a certificate to name. Cyber Essentials **Plus** is £1,500–8,000 if a buyer wants the audited version. |
+| **Independent penetration test** | **$4–12k** at startup scale | 2–4 weeks | The report counsel actually wants to read — and the same artifact gets attached to SOC 2 and ISO questionnaires later, so it is not throwaway spend. |
+| **Written security package** | Time only | Days | Architecture and data-flow documentation, DPA, sub-processor list, retention and deletion policy, incident response, access control and audit trail. Most security questionnaires are answerable from this. |
+| **Single-tenant deployment** | Already built | — | The strongest control in the set, and it is a product decision rather than a compliance one: another firm's evidence never shares a tenant with anyone. |
+| **Start the SOC 2 clock** | GRC tooling **$6–30k/yr** | Begins immediately | The observation window is the long pole. Putting controls in place and starting the window now means that when a deal requires Type II you are months into it rather than starting from zero. **SOC 2 Type I** ($12–40k, 3–8 months) is the optional stepping stone if a buyer needs something formal sooner. |
+
+**The line to hold in the room:** *we are not certified yet, and we are not pretending
+to be. Evidence is deployed single-tenant so it never shares an environment, we hold
+Cyber Essentials, we have an independent penetration test report, and the SOC 2
+observation window is running. When a customer's counsel needs the certificate, the
+clock is already most of the way through.* That is a better answer than a certificate
+nobody asked for yet, and it costs a fraction of one.
+
+**Do not put per-line euro amounts on the slide.** The categories are the answer; a
+breakdown invites arithmetic against a fixed €100k and turns a commercialisation raise
+into a budget defence. Have the numbers ready verbally: the SOC 2 slice, the monthly
+infrastructure cost per tenant, and the per-matter inference cost from the pilot.
+
+**The infrastructure line is also a margin conversation waiting to happen** — it
+connects directly to open item #7, whether AI cost is bundled or passed through. If
+asked, the honest answer is that single-tenant deployment is a deliberate product
+decision driven by the buyer's data-residency requirement, and the pilot is what sizes
+its cost.
 
 Speaker note — **do not put an hours figure on this slide, and do not pre-empt an
 arithmetic problem you don't have.**

@@ -830,28 +830,34 @@ def slide9(prs):
             size=29)
     rule(s, Inches(2.15), width=Inches(1.1))
 
-    tf = textbox(s, MARGIN_L, Inches(2.5), Inches(6.3), Inches(3.6))
+    tf = textbox(s, MARGIN_L, Inches(2.42), Inches(6.35), Inches(1.15))
     para(tf, "The platform works and has closed real federal cases. What "
              "stands between it and external revenue is the **security gate** — "
              "the isolation, backup and legal stages that let another firm's "
              "privileged evidence enter the system — and the pilot itself.",
-         size=16, first=True, space_before=0)
-    para(tf, "Use of funds", size=13, colour=ACCENT, bold=True, space_before=18)
-    para(tf, "Two founders full-time, clearing those gates, and running the "
-             "agreed pilot to a signed contract. **The pilot candidate is "
-             "already secured.**",
-         size=15, space_before=5)
+         size=14, first=True, space_before=0)
 
-    tf2 = textbox(s, Inches(7.65), Inches(2.5), Inches(4.85), Inches(3.6))
+    tfa = textbox(s, MARGIN_L, Inches(3.62), Inches(6.35), Inches(3.0))
+    para(tfa, "Use of funds", size=12, colour=ACCENT, bold=True, first=True,
+         space_before=0)
+    bullets(tfa, [
+        "- **Two founders full-time** — clearing the security gate and running the agreed pilot to a signed contract. The pilot candidate is already secured.",
+        "- **A security posture we can evidence now** — Cyber Essentials, an independent penetration test, and a written security package. Full certification is bought when a deal requires it, not held in advance.",
+        "- **Single-tenant infrastructure** for the first external customers — one instance each, so it scales with customers rather than ahead of them.",
+        "- **Processing and inference** across pilot matters. The per-matter cost model is what the pilot establishes.",
+    ], size=12, colour=PAPER, gap=6, first_flag=True)
+
+    tf2 = textbox(s, Inches(7.65), Inches(2.42), Inches(4.85), Inches(4.2))
     para(tf2, "What we want from NDRC beyond capital",
-         size=13, colour=ACCENT, bold=True, first=True, space_before=0)
+         size=12, colour=ACCENT, bold=True, first=True, space_before=0)
     bullets(tf2, [
+        "- **Go-to-market guidance.** The channel is identified — bar associations and professional bodies — and pricing is per-matter rather than per-seat. Both need pressure-testing by people who have built a repeatable motion.",
         "- Dublin base at Dogpatch Labs",
-        "- EIR time on pricing and enterprise sales motion",
+        "- EIR time on pricing structure and enterprise sales motion",
         "- Introductions into Irish and UK professional-services buyers — ACFE Ireland, Chartered Accountants Ireland forensic group, Law Society criminal law committee",
-    ], size=14, colour=PAPER, gap=8, first_flag=True)
+    ], size=12, colour=PAPER, gap=7, first_flag=True)
 
-    tf3 = textbox(s, MARGIN_L, Inches(6.35), BODY_W, Inches(1.0))
+    tf3 = textbox(s, MARGIN_L, Inches(6.78), BODY_W, Inches(0.62))
     para(tf3, "We are not asking anyone to fund the invention of a product. We "
               "are asking them to fund the distance between **works** and "
               "**sold.**",
