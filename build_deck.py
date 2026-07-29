@@ -698,16 +698,19 @@ def slide6(prs):
               "same shape: a competitor reached national presence through a "
               "national association and one state bar.",
          size=12, colour=MUTED, space_before=3)
-    para(tf2, "Why we know the gap is real", size=12, colour=ACCENT, bold=True,
+    para(tf2, "How many of them", size=12, colour=ACCENT, bold=True,
          space_before=11)
-    para(tf2, "**We tried a number of platforms on live federal casework before "
-              "we built anything. None of them could work the case.**",
-         size=12, space_before=3)
+    para(tf2, "**48,000–125,000 evidence-heavy private criminal-defence matters run "
+              "in the US every year**, across a target population of one to five "
+              "thousand practices. The UK adds ~80,200 open Crown Court cases, rising.",
+         size=12, colour=MUTED, space_before=3)
 
-    tf3 = textbox(s, MARGIN_L, Inches(6.75), BODY_W, Inches(0.6))
-    para(tf3, "We did not set out to build a platform. We went looking for one, "
-              "tried several, and none could work the case.",
-         size=16, colour=ACCENT, bold=True, first=True, space_before=0)
+    tf3 = textbox(s, MARGIN_L, Inches(6.15), Inches(6.35), Inches(1.15))
+    para(tf3, "This buyer receives evidence, cannot collect it, and cannot buy the "
+              "analytics the other side runs on.",
+         size=15, colour=ACCENT, bold=True, first=True, space_before=0)
+    para(tf3, "That is the whole opportunity.",
+         size=15, colour=ACCENT, bold=True, space_before=4)
 
     notes(s, """Market sizing is desk research, not primary — label it as such.
 Global forensic accounting ~$18–20B, US ~$10.5B, highly fragmented.
@@ -869,6 +872,15 @@ def slide6b(prs):
         for r in pc.runs:
             r.font.name = FONT_M
         para(t, note, size=11, colour=MUTED, space_before=10)
+
+    tf3 = textbox(s, MARGIN_L, Inches(6.52), BODY_W, Inches(0.9))
+    para(tf3, "**Each stage is gated on one thing, which is what makes the sequence "
+              "testable.** Stage 1: a price validated on real matters. Stage 2: the "
+              "bar-association channel converting. Stage 3: the per-matter model "
+              "rebuilt on UK vendor and Legal Aid Agency rates. Stage 4: partners, "
+              "because every jurisdiction carries its own procedure and disclosure "
+              "regime.",
+         size=12.5, colour=PAPER, first=True, space_before=0)
 
     notes(s, "The point is the middle two rows, not the ARR. 104 customers running "
              "833 matters is under two per cent of the US evidence-heavy pool alone, "

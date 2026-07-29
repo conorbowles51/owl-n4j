@@ -584,13 +584,31 @@ raise it; if it comes up it is a compliment, per blocker 5d.
 > chapter since 2016. The defence bar is the same shape: a competitor reached national
 > presence through a national association and one state bar.
 >
-> **Why we know the gap is real.** We tried a number of platforms on live federal
-> casework before we built anything. None of them could work the case.
+> **How many of them.** 48,000–125,000 evidence-heavy private criminal-defence matters
+> run in the US every year, across a target population of one to five thousand
+> practices. The UK adds ~80,200 open Crown Court cases, rising.
 
 Add to this slide, as the closing line:
 
-> **We did not set out to build a platform. We went looking for one, tried several,
-> and none could work the case.**
+> **This buyer receives evidence, cannot collect it, and cannot buy the analytics the
+> other side runs on. That is the whole opportunity.**
+
+**Two changes on 29 July, both about repetition and altitude.**
+
+**The origin story was on this slide twice** — once as its own block and once as the
+closing line — and slide 6 now ends on it as well. Three times across two consecutive
+slides turns the strongest thing in the deck into a refrain. It belongs to slide 6,
+which is where the competitive claim needs it. This slide closes on the buyer instead:
+*receives evidence, cannot collect it, cannot buy the analytics the other side runs
+on* — which is the definition the whole beachhead rests on and was previously only
+implied.
+
+**The slide had no sense of scale.** It is titled market and lead customer and named
+neither a market size nor a count of buyers. The channel block says these people are
+reachable; the new block says how many there are — 48,000–125,000 evidence-heavy
+matters a year across one to five thousand practices, plus ~80,200 open Crown Court
+cases in the UK. Slides 8 and 9 carry value and growth; this slide now carries the
+buyer and the count, which is the division that stops all three repeating each other.
 
 **Two deliberate changes, made 29 July.** *Reachable* became **Channel**, because ACFE
 membership is a distribution fact rather than a market-size one and it answers a
@@ -744,6 +762,15 @@ with real matters — which is what stage 2 needs to exist.
 firm. At a twenty-matter active practice, $10M needs 42 firms rather than 104. The real
 mix sits between the two and the first cohort establishes which — which is another
 reason the pilot in slide 10 is the thing being funded.
+
+---
+
+**The growth slide had an inch of dead space and its best content in the notes.**
+"Each stage is gated on one thing" is now on the slide: stage 1 a price validated on
+real matters, stage 2 the bar channel converting, stage 3 the per-matter model rebuilt
+on UK vendor and Legal Aid Agency rates, stage 4 partners. That converts the slide from
+a projection — which every deck has and nobody believes — into a plan with
+preconditions, and preconditions are what a panel can actually interrogate.
 
 ---
 
