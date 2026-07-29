@@ -603,10 +603,10 @@ reason the pilot in slide 10 is the thing being funded.
 > rests on is his: extract entities and events from evidence with an LLM at ingestion,
 > resolve them into a graph, and query that concrete structure afterwards — so an
 > answer is a traversal over modelled evidence rather than a retrieval over text. He
-> wrote the first commit — LLM client, graph client and ingestion pipeline — and 240+
-> since: case-level isolation enforced in the database, entity resolution, the split
-> between verified facts and AI inference, and the performance work that keeps very
-> large cases traversable. **Full-time on close.**
+> wrote the first commit and has led engineering since. **Drives the enterprise
+> platform**, while features are proven on live casework first and promoted once they
+> mature — so nothing reaches the deployable product until it has survived a real
+> matter. **Full-time on close.**
 >
 > **Alexandra Solórzano — CPO.** 10+ years as a licensed private investigator on
 > federal criminal defence and financial fraud casework — **and the product's
@@ -643,17 +643,18 @@ What it adds is the commercial half of founder-market fit, which the slide other
 lacks: Siren gives the domain, Udemy gives enterprise and strategic account scale, and
 together they say the same discipline twice at two sizes.
 
-**Evidence for Conor's bio, if it is ever questioned.** The repository's initial commit
-is his — 8 December 2025, 9,202 insertions across 45 files, containing `llm_client.py`,
-`neo4j_client.py` and the ingestion pipeline. That is the architecture, present from the
-first commit: LLM extraction into a graph, queried afterwards as concrete structure.
-244 commits since, concentrated in `neo4j_service.py`, the graph and evidence routers,
-and the Postgres models. Specific milestones worth knowing: case_id made mandatory
-across every Neo4j query so a query that fails to filter by case returns nothing (the
-isolation guarantee slide 10's security gate depends on); separation of verified facts
-from AI insights with manual verification, which is the provenance model; role-based
-access with case-specific permissions; and LOD rendering with a lightweight graph
-endpoint to keep large cases interactive.
+**Backing for Conor's bio, if it is ever probed.** The repository's initial commit is
+his — 8 December 2025, 9,202 insertions across 45 files, containing the LLM client, the
+graph client and the ingestion pipeline. The architecture is present from the first
+commit rather than adopted later, and there are 244 commits behind it. That is the fact
+to have ready; the slide does not need the granular list, and reciting one sounds
+defensive rather than confident.
+
+**On the two-track model — never say "v1" and "v2" externally.** The house rule is one
+product. The promotion discipline is the point worth making and it stands on its own:
+features are built and proven against live casework, and promoted into the deployable
+enterprise platform once they have matured. Said that way it reads as engineering
+judgement. Said as version numbers it reads as an unfinished product.
 
 Speaker note: **lead with Siren.** It is the strongest founder-market-fit signal you
 have and it was missing from every earlier version of this material. NDRC will know

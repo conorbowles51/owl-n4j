@@ -702,11 +702,11 @@ def slide7(prs):
          "his: extract entities and events from evidence with an LLM at "
          "ingestion, resolve them into a graph, and query that concrete "
          "structure afterwards — so an answer is a traversal over modelled "
-         "evidence, not a retrieval over text. He wrote the first commit — LLM "
-         "client, graph client and ingestion pipeline — and 240+ since: "
-         "case-level isolation enforced in the database, entity resolution, the "
-         "split between verified facts and AI inference, and the performance "
-         "work that keeps very large cases traversable.",
+         "evidence, not a retrieval over text. He wrote the first commit and has "
+         "led engineering since. **Drives the enterprise platform**, while "
+         "features are proven on live casework first and promoted once they "
+         "mature — so nothing reaches the deployable product until it has "
+         "survived a real matter.",
          "Full-time on close."),
         ("Alexandra Solórzano", "CPO",
          "10+ years as a licensed private investigator on federal criminal "
