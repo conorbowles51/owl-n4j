@@ -183,14 +183,28 @@ def slide1(prs):
     if os.path.exists(LOGO_KNOCKOUT):
         s.shapes.add_picture(LOGO_KNOCKOUT, MARGIN_L, Inches(2.35),
                              width=Inches(4.3))
-    tf = textbox(s, MARGIN_L, Inches(3.62), BODY_W, Inches(2.6))
-    para(tf, "Find the signal in everything.", size=27, colour=ACCENT,
+    tf = textbox(s, MARGIN_L, Inches(3.55), BODY_W, Inches(2.9))
+    para(tf, "Find the signal in everything.", size=25, colour=ACCENT,
          space_before=0, first=True)
-    para(tf, "An investigation platform for fraud and criminal casework.",
-         size=19, colour=MUTED, space_before=22)
-    para(tf, "Dublin, Ireland.", size=19, colour=MUTED, space_before=4)
-    rule(s, Inches(6.25))
-    notes(s, "One line only. Do not open with the product.")
+    para(tf, "Everyone can cite a document. Nobody can query a case.",
+         size=30, colour=PAPER, bold=True, space_before=20, font=FONT_H)
+    para(tf, "An investigation platform for fraud and criminal casework — "
+             "in production use on real federal matters.",
+         size=17, colour=MUTED, space_before=20)
+    para(tf, "Dublin, Ireland.", size=17, colour=MUTED, space_before=4)
+    rule(s, Inches(6.6))
+    notes(s, """This deck is submitted as a PDF and read without anyone in the room —
+the form has no essay questions, so the cover is the highest-attention moment in the
+whole application and it has to earn the next page.
+
+"Find the signal in everything" is the tagline. The line under it is the argument, and
+it is the one sentence that frames every slide that follows.
+
+"In production use on real federal matters" is on the cover deliberately. A cold reader
+deciding whether to keep going is helped more by knowing this is not a concept than by
+anything else we could put there.
+
+If you ever present this live, drop to the tagline alone and say the rest.""")
     return s
 
 
@@ -972,8 +986,8 @@ def slide8(prs):
     para(tf2, "Built so far, verifiable", size=12, colour=ACCENT, bold=True,
          first=True, space_before=0)
     bullets(tf2, [
-        "- ~180,000 lines across a React console, a FastAPI case API and a separate asynchronous evidence engine",
-        "- 913 commits since December 2025 — two primary engineers",
+        "- Federal cases carried to completion — multi-gigabyte phone extractions, tens of thousands of curated financial transactions, full document corpora",
+        "- A React console, a FastAPI case API and a separate asynchronous evidence engine, built since December 2025 by two engineers",
         "- Neo4j (case graph) · Postgres (cases, auth, audit) · ChromaDB (retrieval) · Redis (jobs)",
         "- Three AI providers behind one routing policy — the model is a swappable component",
         "- Single-tenant deployment: one isolated stack per customer",

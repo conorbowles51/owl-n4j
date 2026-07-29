@@ -62,13 +62,27 @@ than answering it.
 
 ### Slide 1 — Title
 
-> **Loupe**
+> **[Loupe wordmark]**
 > Find the signal in everything.
 >
-> An investigation platform for fraud and criminal casework.
+> **Everyone can cite a document. Nobody can query a case.**
+>
+> An investigation platform for fraud and criminal casework — in production use on
+> real federal matters.
 > Dublin, Ireland.
 
-Speaker note: one line only. Do not open with the product.
+**The old note here read "one line only, do not open with the product." That is advice
+for a deck you present. This one is not presented.** The form has no essay questions and
+no interview before submission — the PDF is read cold, so the cover is the
+highest-attention moment in the entire application and it has to earn the next page.
+
+Three things now do that. The **tagline** stays. The **thesis** underneath it is the one
+sentence that frames every slide that follows, and it is the same line the competitive
+analysis is built on. And **"in production use on real federal matters"** is on the
+cover deliberately: a cold reader deciding whether to keep going is helped more by
+knowing this is not a concept than by anything else that could sit there.
+
+If you ever present this live, drop back to the tagline alone and say the rest.
 
 ---
 
@@ -901,6 +915,29 @@ the artifact when someone says "show me."*
 > If a distinction genuinely matters in the room — an older deployment versus the
 > current hardened one — draw it verbally, once, in answer to a direct question. Never
 > in the deck.
+
+**Two engineering lines were changed on 29 July, and one was removed on purpose.**
+
+"~180,000 lines of code" is gone. Lines of code is a weak metric to an investor at the
+best of times, and here it invites exactly the question blocker #10 warns about — *how
+much of your codebase has a human read?* — where the honest answer today is ~15–20% test
+coverage and no CI. Volunteering a number that provokes a question you would rather
+answer later is the same error as putting an hours figure on the ask.
+
+"913 commits" is gone for the same reason: it is a velocity claim with no explanation
+attached, and the explanation is the AI engineering pipeline, which blocker #10
+recommends holding back until CI is landed.
+
+**What replaced them is stronger anyway** — what the platform has actually handled:
+federal cases carried to completion, multi-gigabyte phone extractions, tens of thousands
+of curated financial transactions, full document corpora. That is capability
+demonstrated rather than output measured, and it is the same evidence the customer-value
+slide prices.
+
+**Have the velocity answer ready but do not lead with it.** If asked how two engineers
+built this, the honest and impressive answer is the in-house AI engineering pipeline —
+and the moment to give it is when the question is asked, ideally once CI exists so the
+answer is "AI writes, gates verify."
 
 ---
 
