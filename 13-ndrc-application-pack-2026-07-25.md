@@ -599,12 +599,22 @@ reason the pilot in slide 10 is the thing being funded.
 > years across data engineering, AI systems and full-stack development.
 > **Full-time on close.**
 >
-> **Conor Bowles — CTO.** Data infrastructure, security and scalable systems. Core
-> engineering, database architecture, deployment operations. **Full-time on close.**
+> **Conor Bowles — CTO. Architect of the case model.** The approach the whole platform
+> rests on is his: extract entities and events from evidence with an LLM at ingestion,
+> resolve them into a graph, and query that concrete structure afterwards — so an
+> answer is a traversal over modelled evidence rather than a retrieval over text. He
+> wrote the first commit — LLM client, graph client and ingestion pipeline — and 240+
+> since: case-level isolation enforced in the database, entity resolution, the split
+> between verified facts and AI inference, and the performance work that keeps very
+> large cases traversable. **Full-time on close.**
 >
 > **Alexandra Solórzano — CPO.** 10+ years as a licensed private investigator on
-> federal criminal defence and financial fraud casework. US-based. **The domain
-> authority — and the customer the product was built for.**
+> federal criminal defence and financial fraud casework — **and the product's
+> direction, daily.** Multiple calls a week; the backlog is generated from live matters
+> as she works them, which is why development has never run on a roadmap invented in
+> advance. A grounded visionary: every feature traces to a real case, and she has run
+> federal cases to completion inside the platform. US-based. **The domain authority —
+> and the customer the product was built for.**
 >
 > **Why this team:** we didn't research this market, we worked in it — **from both
 > sides.** Seven years building investigative intelligence software for enterprise
@@ -621,21 +631,29 @@ complexity and none of the implementation budget; this is that argument in the f
 person, from the person who used to be the implementation budget. It also answers the
 Siren question (blocker 5d) as a compliment rather than a comparison.
 
-**Holding item — the Udemy line.** Neil is currently a sales solutions engineer at
-Udemy across large-enterprise and strategic accounts, which extends the same discipline
-to a larger commercial scale and is worth one clause:
+**The Udemy line is in.** Earlier drafting held it back until blocker #1 (the
+current-employer IP review) closed. That was over-cautious. The IP question exists
+whether or not the deck names the employer, LinkedIn is a required field on the form so
+they will see it regardless, and a bio that lists a former employer while omitting the
+current one reads as evasive if anyone notices. Better framed by you than discovered by
+them. **Blocker #1 still has to be closed before submission** — that is unchanged and it
+is first on the list by risk — but it is a legal task, not a reason to edit the bio.
 
-> **Currently a sales solutions engineer at Udemy across large-enterprise and strategic
-> accounts** — the same discipline at enterprise scale: technical discovery, and
-> building what a large customer actually needs.
+What it adds is the commercial half of founder-market fit, which the slide otherwise
+lacks: Siren gives the domain, Udemy gives enterprise and strategic account scale, and
+together they say the same discipline twice at two sizes.
 
-**Do not add it until blocker #1 (current-employer IP review) is closed.** Naming the
-current employer on the team slide walks a reader straight to "was this built on their
-time?", and ~55% of commits were made while employed there. Once the waiver is in hand
-it is a non-issue and the clause should go in — LinkedIn is a required form field, so
-they will see Udemy regardless, and it is better framed by you than discovered by them.
-Put it immediately before "Full-time on close" so the fact and its resolution land
-together.
+**Evidence for Conor's bio, if it is ever questioned.** The repository's initial commit
+is his — 8 December 2025, 9,202 insertions across 45 files, containing `llm_client.py`,
+`neo4j_client.py` and the ingestion pipeline. That is the architecture, present from the
+first commit: LLM extraction into a graph, queried afterwards as concrete structure.
+244 commits since, concentrated in `neo4j_service.py`, the graph and evidence routers,
+and the Postgres models. Specific milestones worth knowing: case_id made mandatory
+across every Neo4j query so a query that fails to filter by case returns nothing (the
+isolation guarantee slide 10's security gate depends on); separation of verified facts
+from AI insights with manual verification, which is the provenance model; role-based
+access with case-specific permissions; and LOD rendering with a lightweight graph
+endpoint to keep large cases interactive.
 
 Speaker note: **lead with Siren.** It is the strongest founder-market-fit signal you
 have and it was missing from every earlier version of this material. NDRC will know

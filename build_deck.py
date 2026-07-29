@@ -693,34 +693,47 @@ def slide7(prs):
          "financial-crime teams. **Solutions engineer: managed customer accounts "
          "and built the customisations each client needed to make the platform "
          "fit their process.** Spoke with hundreds of analysts across conference "
-         "talks and deployments. 10+ years in data engineering, AI systems and "
-         "full-stack development.",
+         "talks and deployments. Now a sales solutions engineer at Udemy across "
+         "large-enterprise and strategic accounts — the same discipline at "
+         "enterprise scale. 10+ years in data engineering and AI systems.",
          "Full-time on close."),
         ("Conor Bowles", "CTO",
-         "Data infrastructure, security and scalable systems. Core engineering, "
-         "database architecture, deployment operations.",
+         "**Architect of the case model.** The approach the platform rests on is "
+         "his: extract entities and events from evidence with an LLM at "
+         "ingestion, resolve them into a graph, and query that concrete "
+         "structure afterwards — so an answer is a traversal over modelled "
+         "evidence, not a retrieval over text. He wrote the first commit — LLM "
+         "client, graph client and ingestion pipeline — and 240+ since: "
+         "case-level isolation enforced in the database, entity resolution, the "
+         "split between verified facts and AI inference, and the performance "
+         "work that keeps very large cases traversable.",
          "Full-time on close."),
         ("Alexandra Solórzano", "CPO",
          "10+ years as a licensed private investigator on federal criminal "
-         "defence and financial fraud casework. US-based.",
+         "defence and financial fraud casework — and the product's direction, "
+         "daily. **Multiple calls a week; the backlog is generated from live "
+         "matters as she works them**, which is why development has never run "
+         "on a roadmap invented in advance. A grounded visionary: every feature "
+         "traces to a real case, and she has run federal cases to completion "
+         "inside the platform. US-based.",
          "The domain authority — and the customer the product was built for."),
     ]
 
     for i, (name, role, bio, flag) in enumerate(people):
         left = MARGIN_L + i * Inches(4.05)
-        tf = textbox(s, left, Inches(2.5), Inches(3.6), Inches(3.6))
+        tf = textbox(s, left, Inches(2.42), Inches(3.6), Inches(4.3))
         para(tf, name, size=19, colour=PAPER, bold=True, first=True,
              space_before=0, font=FONT_H)
         para(tf, role, size=12, colour=ACCENT, bold=True, space_before=3)
-        para(tf, bio, size=12, colour=MUTED, space_before=10)
-        para(tf, flag, size=12, colour=ACCENT, bold=True, space_before=10)
+        para(tf, bio, size=11, colour=MUTED, space_before=9)
+        para(tf, flag, size=11, colour=ACCENT, bold=True, space_before=9)
 
-    tf = textbox(s, MARGIN_L, Inches(6.5), BODY_W, Inches(0.9))
+    tf = textbox(s, MARGIN_L, Inches(6.72), BODY_W, Inches(0.72))
     para(tf, "Seven years building investigative intelligence software for "
              "enterprise buyers, and a decade running federal casework as the "
              "kind of investigator who has to live with the result. "
              "**Our CPO has run federal cases to completion inside this platform.**",
-         size=15, colour=PAPER, first=True, space_before=0)
+         size=13.5, colour=PAPER, first=True, space_before=0)
 
     notes(s, """LEAD WITH SIREN. It is the strongest founder-market-fit signal you
 have. NDRC will know Siren — Irish, Enterprise Ireland-backed, same category. It
