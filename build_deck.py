@@ -582,7 +582,7 @@ def slide5b(prs):
     rule(s, Inches(2.05), width=Inches(1.1))
 
     tf = textbox(s, MARGIN_L, Inches(2.22), BODY_W, Inches(0.5))
-    para(tf, "We assessed the category on thirty axes before we built. It splits into "
+    para(tf, "We assessed the category across thirty capability axes. It splits into "
              "two halves that never meet — and the buyer sits in the gap between them.",
          size=14, colour=PAPER, first=True, space_before=0)
 

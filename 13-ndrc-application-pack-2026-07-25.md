@@ -504,7 +504,7 @@ live open item, not a solved one.)
 
 > **Forty-seven platforms. The intersection is empty.**
 >
-> We assessed the category on thirty axes before we built. It splits into two halves
+> We assessed the category across thirty capability axes. It splits into two halves
 > that never meet — and the buyer sits in the gap between them.
 >
 > | **They model the evidence — and won't sell it to you** | **They'll sell to you — and treat a phone as an attachment** | **Same buyer as us — and no case model** |
