@@ -600,7 +600,7 @@ def slide5b(prs):
          "messages, multi-device extractions are unsupported."),
         ("Same buyer as us — and no case model",
          "TrialKit · Matey · JusticeText · Longeye",
-         "Four funded companies selling AI to criminal defence, $2.5–7.5M seed each, "
+         "Four funded companies selling AI to criminal defence, $2.5M–$7.5M seed each, "
          "with the bar associations and the certifications. **None of them has a "
          "graph.** All four answer by retrieval — which returns what looked relevant "
          "and cannot tell you what it missed. **On a defence matter the thing you "
@@ -746,7 +746,7 @@ def slide6c(prs):
     """Customer value — the same case costed today and with Loupe."""
     s = blank(prs); bg(s)
     kicker(s, "Customer value")
-    heading(s, "Today a serious case costs $38–139k.\nWith Loupe, $16–20k.", size=30)
+    heading(s, "Today a serious case costs $38k–$139k.\nWith Loupe, $16k–$20k.", size=30)
     rule(s, Inches(2.35), width=Inches(1.1))
 
     tf = textbox(s, MARGIN_L, Inches(2.52), BODY_W, Inches(0.5))
@@ -755,10 +755,10 @@ def slide6c(prs):
          size=13, colour=MUTED, first=True, space_before=0)
 
     rows = [
-        ("Forensic extraction — devices still go to a vendor", "$3,650 – 8,450", "$3,650 – 8,450"),
-        ("Processing, hosting and examiner analysis", "$34,200 – 130,575", "—"),
+        ("Forensic extraction — devices still go to a vendor", "$3,650 – $8,450", "$3,650 – $8,450"),
+        ("Processing, hosting and examiner analysis", "$34,200 – $130,575", "—"),
         ("Loupe, per matter", "—", "$12,000"),
-        ("Cash per case", "$37,850 – 139,025", "$15,650 – 20,450"),
+        ("Cash per case", "$37,850 – $139,025", "$15,650 – $20,450"),
         ("Investigator and paralegal hours on evidence handling", "58 – 100 hrs", "29 – 50 hrs"),
     ]
     tbl_shape = s.shapes.add_table(len(rows) + 1, 3, MARGIN_L, Inches(3.1),
@@ -791,9 +791,9 @@ def slide6c(prs):
                  bold=total, first=True, space_before=0)
 
     tf2 = textbox(s, MARGIN_L, Inches(5.78), BODY_W, Inches(1.3))
-    para(tf2, "**Saved: $22,000–119,000 and 29–50 hours per case.** Across a practice "
+    para(tf2, "**Saved: $22,000–$119,000 and 29–50 hours per case.** Across a practice "
               "running fifteen to thirty serious matters a year, that is "
-              "**$0.6–1.4M and 550–1,150 hours returned.**",
+              "**$0.6M–$1.4M and 550–1,150 hours returned.**",
          size=16, colour=PAPER, first=True, space_before=0)
     para(tf2, "The extraction bill is unchanged — we analyse what was produced, we do "
               "not acquire it. Everything downstream of it is what we replace.",
