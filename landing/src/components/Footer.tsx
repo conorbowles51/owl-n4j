@@ -10,22 +10,21 @@ export function Footer({ onContact }: FooterProps) {
       <div className="container footer-inner">
         <div className="footer-brand">
           <BrandLogo />
-          <p>Find the signal in everything. Keep the proof with the case.</p>
+          <p>An investigation platform for fraud and criminal casework.</p>
         </div>
         <div className="footer-links">
           <div>
-            <span>The argument</span>
-            <a href="#origin">Why Loupe exists</a>
-            <a href="#field">The field</a>
-            <a href="#economics">What it replaces</a>
-            <a href="#audience">Who it’s for</a>
-          </div>
-          <div>
-            <span>The product</span>
+            <span>Platform</span>
             <a href="#platform">The case model</a>
             <a href="#workspace">Perspectives</a>
-            <a href="#workflow">Loupes</a>
-            <a href="#proof">How it’s built</a>
+            <a href="#findings">Findings</a>
+            <a href="#capability">Capability</a>
+          </div>
+          <div>
+            <span>Detail</span>
+            <a href="#economics">What it replaces</a>
+            <a href="#audience">Who it’s for</a>
+            <a href="#trust">Deployment</a>
           </div>
           <div>
             <span>Contact</span>

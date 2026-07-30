@@ -67,25 +67,14 @@ export function ProductExplorer() {
   }
 
   return (
-    <section className="story-section workspace-story" id="workspace">
-      <div className="story-grid" aria-hidden="true" />
+    <section className="sec sec-paper" id="workspace">
       <div className="container">
-        <Reveal className="story-heading story-heading-split">
-          <div>
-            <p className="section-index">
-              <b>05</b>
-              One model, many perspectives
-            </p>
-            <h2>
-              Work the same case
-              <br />
-              from every angle.
-            </h2>
-          </div>
-          <p>
-            Graph, timeline, evidence, financial and agent are not five features. They are five
-            perspectives on one structure — which is why a finding in one is the same object in
-            another.
+        <Reveal className="sec-head">
+          <p className="eyebrow">Perspectives</p>
+          <h2>One case, worked from every angle.</h2>
+          <p className="sec-lede">
+            Graph, timeline, evidence and agent are not separate tools. They are perspectives on one
+            structure, which is why a finding in one is the same object in another.
           </p>
         </Reveal>
 

@@ -4,12 +4,12 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0B0C0F" />
+    <meta name="theme-color" content="#07080A" />
     <meta
       name="description"
-      content="Everyone can cite a document. Nobody can query a case. Loupe resolves phone extractions, documents, financial records and recorded media into one connected case model — so a question can be put to the whole matter at once, and every answer carries its source."
+      content="Loupe resolves phone extractions, documents, financial records and audio into one connected model of the case — so a question reaches all of it at once, and every answer carries the file, page and passage behind it."
     />
-    <meta property="og:title" content="Loupe — Everyone can cite a document. Nobody can query a case." />
+    <meta property="og:title" content="Loupe — Query the whole case" />
     <meta
       property="og:description"
       content="An investigation platform for fraud and criminal casework. Phone, document and financial evidence in one connected model, every claim traceable to its source."
@@ -17,7 +17,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:image" content="/loupe-red-dark.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <title>Loupe — Query the case, not just the documents</title>
+    <title>Loupe — Query the whole case</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -30,9 +30,9 @@
     <script>
       try {
         const savedTheme = window.localStorage.getItem("loupe-theme")
-        document.documentElement.dataset.theme = savedTheme === "light" ? "light" : "dark"
+        document.documentElement.dataset.theme = savedTheme === "dark" ? "dark" : "light"
       } catch {
-        document.documentElement.dataset.theme = "dark"
+        document.documentElement.dataset.theme = "light"
       }
     </script>
     <script type="module" src="/src/main.tsx"></script>
