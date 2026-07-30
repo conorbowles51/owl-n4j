@@ -8,7 +8,6 @@ import {
   CapabilitySection,
   CaseModelStory,
   DifferenceSection,
-  EconomicsSection,
   LoupeWorkflowSection,
   ProblemSection,
   ProofSection,
@@ -29,13 +28,12 @@ export function App() {
         <Hero onContact={() => setContactOpen(true)} />
         <ProblemSection />
         <CaseModelStory />
+        <ProofSection />
         <ProductExplorer />
         <LoupeWorkflowSection />
         <DifferenceSection />
         <CapabilitySection />
-        <EconomicsSection />
         <AudienceSection />
-        <ProofSection />
         <FinalCta onContact={() => setContactOpen(true)} />
       </main>
       <Footer onContact={() => setContactOpen(true)} />

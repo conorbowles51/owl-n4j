@@ -7,10 +7,12 @@ interface HeroProps {
 export function Hero({ onContact }: HeroProps) {
   return (
     <section className="hero" id="top">
+      <div className="hero-grid" aria-hidden="true" />
+
       <div className="container hero-layout">
         <div className="hero-copy">
           <p className="eyebrow hero-enter hero-enter-1">
-            Investigation platform · Fraud and criminal casework
+            Investigation platform for complex investigations
           </p>
           <h1 className="hero-enter hero-enter-2">Query the whole case.</h1>
           <p className="hero-lede hero-enter hero-enter-3">
@@ -27,12 +29,14 @@ export function Hero({ onContact }: HeroProps) {
             </a>
           </div>
           <p className="hero-proof hero-enter hero-enter-5">
-            In production on federal fraud and criminal matters — multi-gigabyte phone extractions,
-            tens of thousands of curated transactions, full document corpora.
+            Every source, connected. Every finding, traceable.
           </p>
         </div>
 
         <div className="hero-identity hero-enter hero-enter-3" aria-hidden="true">
+          <span className="hero-lens-halo" />
+          <span className="identity-orbit identity-orbit-outer" />
+          <span className="identity-orbit identity-orbit-inner" />
           <HeroScene />
         </div>
       </div>

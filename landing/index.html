@@ -1,20 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#07080A" />
+    <meta name="theme-color" content="#f7f7f8" />
     <meta
       name="description"
       content="Loupe resolves phone extractions, documents, financial records and audio into one connected model of the case — so a question reaches all of it at once, and every answer carries the file, page and passage behind it."
     />
+    <link rel="canonical" href="https://loupe.ie/" />
+    <meta name="robots" content="index, follow" />
     <meta property="og:title" content="Loupe — Query the whole case" />
     <meta
       property="og:description"
       content="An investigation platform for fraud and criminal casework. Phone, document and financial evidence in one connected model, every claim traceable to its source."
     />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://loupe.ie/" />
     <meta property="og:image" content="/loupe-red-dark.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <title>Loupe — Query the whole case</title>
@@ -27,14 +30,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      try {
-        const savedTheme = window.localStorage.getItem("loupe-theme")
-        document.documentElement.dataset.theme = savedTheme === "dark" ? "dark" : "light"
-      } catch {
-        document.documentElement.dataset.theme = "light"
-      }
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

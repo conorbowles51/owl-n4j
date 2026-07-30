@@ -21,32 +21,80 @@ function SectionHead({
   )
 }
 
-function Source({ children }: { children: ReactNode }) {
-  return <p className="src">{children}</p>
-}
-
 /* ------------------------------------------------------------------ evidence */
 
-const evidence = [
+type EvidenceEntity = "communication" | "document" | "financial" | "event"
+
+function EvidenceIcon({ entity }: { entity: EvidenceEntity }) {
+  let paths: ReactNode
+
+  switch (entity) {
+    case "communication":
+      paths = (
+        <>
+          <rect x="7" y="3" width="10" height="18" rx="2.25" />
+          <path d="M10 6h4M11 18h2" />
+        </>
+      )
+      break
+    case "document":
+      paths = (
+        <>
+          <path d="M6.5 3.5h7l4 4v13h-11z" />
+          <path d="M13.5 3.5v4h4M9.5 12h5M9.5 15.5h5" />
+        </>
+      )
+      break
+    case "financial":
+      paths = (
+        <>
+          <rect x="3.5" y="5" width="17" height="14" rx="1.8" />
+          <path d="M3.5 9h17M9 5v14M14.5 9v10M9 14h11" />
+        </>
+      )
+      break
+    case "event":
+      paths = <path d="M4 13v-2M8 16V8M12 19V5M16 16V8M20 13v-2" />
+      break
+  }
+
+  return (
+    <span className="evidence-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        {paths}
+      </svg>
+    </span>
+  )
+}
+
+const evidence: Array<{
+  entity: EvidenceEntity
+  title: string
+  detail: string
+}> = [
   {
     entity: "communication",
-    title: "Device extractions",
-    detail: "Up to ten phones in one matter — calls, messages, contacts, locations and app records.",
+    title: "Device evidence",
+    detail:
+      "Explore calls, messages, contacts, locations and app activity across every device in the matter.",
   },
   {
     entity: "document",
     title: "Documents",
-    detail: "Two hundred thousand pages of statements, returns, filings, reports and disclosure.",
+    detail:
+      "Search statements, reports, filings and disclosure at scale, with every result linked back to its source.",
   },
   {
     entity: "financial",
     title: "Financial records",
-    detail: "Tens of thousands of transactions across accounts, entities and institutions.",
+    detail:
+      "Follow transactions across accounts, entities and institutions to uncover patterns and relationships.",
   },
   {
     entity: "event",
     title: "Recorded media",
-    detail: "Five hundred hours of calls and interviews, transcribed and attributed by speaker.",
+    detail:
+      "Turn calls and interviews into searchable, speaker-attributed transcripts connected to the wider case.",
   },
 ]
 
@@ -56,15 +104,17 @@ export function ProblemSection() {
       <div className="container">
         <SectionHead
           eyebrow="The evidence"
-          heading="A serious matter arrives as more evidence than a team can read."
-          lede="Four hundred and thirty-five gigabytes, in four formats that nothing on the market holds together."
+          heading="Bring every source into one connected investigation."
+          lede="Loupe brings device data, documents, financial records and recorded media together in a single, searchable case model."
         />
 
         <div className="evidence-rows">
           {evidence.map((item, i) => (
             <Reveal as="article" key={item.title} delay={i * 0.04}>
-              <span className="dot" data-entity={item.entity} aria-hidden="true" />
-              <h3>{item.title}</h3>
+              <div className="evidence-title">
+                <EvidenceIcon entity={item.entity} />
+                <h3>{item.title}</h3>
+              </div>
               <p>{item.detail}</p>
             </Reveal>
           ))}
@@ -72,20 +122,19 @@ export function ProblemSection() {
 
         <Reveal className="split-note">
           <div>
-            <h3>The tools built to hold it are viewers.</h3>
+            <h3>Move beyond reviewing files.</h3>
             <p>
-              Platforms that take the document set discard most of the rest. Call logs arrive as
-              spreadsheet rows rather than records. Conversations are cut into thousand-message
-              blocks or twenty-four-hour slices. Multi-device extractions often go unsupported.
+              Traditional review tools treat each source as a separate collection. Loupe preserves
+              the structure of device data, documents, transactions and conversations, then connects
+              them around the people, organisations, places and events that matter.
             </p>
           </div>
           <div>
             <p>
-              It is not an engineering failure. A review platform exists to make a pile smaller, and
-              an investigation is the opposite job: every artifact processed should make the account
-              of what happened richer, not shorter.
+              Investigators can move from a person to their communications, transactions and
+              supporting documents in one workflow. Every conclusion remains traceable to the
+              original file, page, record or timestamp.
             </p>
-            <Source>Published vendor processing documentation, 2026</Source>
           </div>
         </Reveal>
       </div>
@@ -161,13 +210,6 @@ export function CaseModelStory() {
               </li>
             </ul>
           </div>
-        </Reveal>
-
-        <Reveal className="claim">
-          <p>
-            No other platform holds device data, financial records and documents in a single model.
-          </p>
-          <Source>Assessment of 47 investigation, forensics and eDiscovery platforms, 2026</Source>
         </Reveal>
 
         <Reveal className="split-note">
@@ -387,97 +429,6 @@ export function DifferenceSection() {
   )
 }
 
-/* ------------------------------------------------------------------ economics */
-
-const matters = [
-  { label: "Fraud matter", spec: "2 phones · 300,000 documents · 120GB" },
-  { label: "Federal matter", spec: "10 phones · 200,000 documents · 435GB" },
-]
-
-const costLines: [string, string, string, string?][] = [
-  ["Forensic extraction", "$3,650", "$8,450", "unchanged"],
-  ["Processing", "$600", "$2,175"],
-  ["Hosting, for the life of the matter", "$21,600", "$104,400"],
-  ["Examiner analysis", "$12,000", "$24,000"],
-]
-
-export function EconomicsSection() {
-  return (
-    <section className="sec sec-paper" id="economics">
-      <div className="container">
-        <SectionHead
-          eyebrow="What it replaces"
-          heading="The budget already exists."
-          lede="The choice is not between Loupe and another platform. It is between Loupe and what a serious matter costs today: a vendor per device, a hosting bill per gigabyte per month, an examiner by the hour, and a team stitching the pieces together by hand."
-        />
-
-        <Reveal className="econ-table">
-          <div className="econ-head">
-            <span>Two real matters, costed</span>
-            {matters.map((m) => (
-              <span key={m.label}>
-                <b>{m.label}</b>
-                <i>{m.spec}</i>
-              </span>
-            ))}
-          </div>
-
-          {costLines.map(([label, a, b, note]) => (
-            <div className="econ-row" key={label}>
-              <strong>
-                {label}
-                {note ? <em>{note}</em> : null}
-              </strong>
-              <span className="fig">{a}</span>
-              <span className="fig">{b}</span>
-            </div>
-          ))}
-
-          <div className="econ-row econ-total">
-            <strong>Spent before anyone has answered a question</strong>
-            <span className="fig">$37,850</span>
-            <span className="fig">$139,025</span>
-          </div>
-
-          <div className="econ-row">
-            <strong>Investigator and paralegal hours on evidence handling</strong>
-            <span className="fig">58 hrs</span>
-            <span className="fig">100 hrs</span>
-          </div>
-
-          <Source>
-            Published 2026 eDiscovery processing and hosting rates · forensic vendor rate cards ·
-            RAND National Public Defense Workload Study
-          </Source>
-        </Reveal>
-
-        <div className="econ-foot">
-          <Reveal className="figure">
-            <b>$4,350</b>
-            <p>
-              a month to keep the 435GB matter hosted — more than $100,000 across two years, three
-              quarters of everything in the column. What it buys is a spreadsheet.
-            </p>
-          </Reveal>
-          <Reveal delay={0.06}>
-            <p>
-              Extraction is untouched: devices still go to a vendor, and that line is the same
-              either way. What changes is everything downstream of it —{" "}
-              <strong>$34,200 on the fraud matter and $130,575 on the federal one</strong>, plus
-              about half the evidence-handling hours.
-            </p>
-            <p>
-              The largest line is hosting, charged per gigabyte per month, so it grows with exactly
-              the material that makes the case. A practice running fifteen to thirty serious matters
-              a year is carrying this several times over.
-            </p>
-          </Reveal>
-        </div>
-      </div>
-    </section>
-  )
-}
-
 /* ------------------------------------------------------------------ audience */
 
 export function AudienceSection() {
@@ -491,8 +442,8 @@ export function AudienceSection() {
         />
 
         <div className="aud">
-          <Reveal as="article" className="aud-lead">
-            <p className="eyebrow">Primary</p>
+          <Reveal as="article">
+            <p className="aud-index">01</p>
             <h3>Defence-side investigations and criminal defence</h3>
             <p>
               Boutique forensic and criminal-defence practices of ten to fifty people running
@@ -502,6 +453,7 @@ export function AudienceSection() {
             </p>
           </Reveal>
           <Reveal as="article" delay={0.05}>
+            <p className="aud-index">02</p>
             <h3>Corporate investigations and compliance</h3>
             <p>
               The same product on larger matters, where document and financial evidence carries the
@@ -509,6 +461,7 @@ export function AudienceSection() {
             </p>
           </Reveal>
           <Reveal as="article" delay={0.1}>
+            <p className="aud-index">03</p>
             <h3>Insurance SIU and fraud</h3>
             <p>
               Financial and document analysis at volume, in the fastest-growing category in the
@@ -525,41 +478,57 @@ export function AudienceSection() {
 
 export function ProofSection() {
   return (
-    <section className="sec sec-paper sec-last" id="trust">
+    <section className="sec sec-paper" id="trust">
       <div className="container">
-        <SectionHead
-          eyebrow="Deployment and integrity"
-          heading="Single-tenant, source-linked, auditable."
-          lede="Loupe has carried federal matters to completion inside a working private-investigations practice — multi-gigabyte extractions, tens of thousands of curated transactions and full document corpora."
-        />
+        <Reveal className="trust-feature">
+          <div className="trust-feature-copy">
+            <p className="eyebrow">Deployment and data isolation</p>
+            <h2>
+              <span>Your evidence.</span>
+              <span>Your environment.</span>
+              <span>Fully isolated.</span>
+            </h2>
+            <p>
+              Loupe runs as a dedicated, single-tenant instance for each customer. Your data is
+              never mixed with another organisation&apos;s and can be hosted in the region — or
+              on-premises environment — your matter requires.
+            </p>
+          </div>
+
+          <div className="trust-summary" aria-hidden="true" />
+        </Reveal>
 
         <div className="deploy-grid">
           <Reveal as="article">
-            <h3>One isolated stack per customer</h3>
+            <p className="deploy-index">01</p>
+            <h3>Complete tenant isolation</h3>
             <p>
-              Evidence never enters a shared service, and the instance can sit in the jurisdiction
-              the matter requires, including on-premises.
+              Each customer receives a dedicated Loupe instance. Your evidence and case data stay
+              separate from every other organisation.
             </p>
           </Reveal>
           <Reveal as="article" delay={0.05}>
-            <h3>Provenance by construction</h3>
+            <p className="deploy-index">02</p>
+            <h3>Deploy where you need it</h3>
             <p>
-              Every object in the case model carries the file, page and passage it came from, so a
-              finding can always be walked back to the evidence under it.
+              Host Loupe in the region your legal, regulatory and operational requirements demand,
+              including on-premises.
             </p>
           </Reveal>
           <Reveal as="article" delay={0.1}>
+            <p className="deploy-index">03</p>
             <h3>Access enforced per case</h3>
             <p>
-              Every route verifies case membership, so no user reaches a matter they are not on.
-              Investigator edits are recorded against the person who made them.
+              Membership is verified on every route, and investigator actions are recorded against
+              the person who made them.
             </p>
           </Reveal>
           <Reveal as="article" delay={0.15}>
-            <h3>Staged onboarding</h3>
+            <p className="deploy-index">04</p>
+            <h3>Source-linked and auditable</h3>
             <p>
-              External evidence enters behind a security-gated release process covering isolation,
-              backup and legal review.
+              Every object carries the file, page, record or timestamp it came from, so findings can
+              always be traced back to the evidence.
             </p>
           </Reveal>
         </div>

@@ -10,7 +10,10 @@ export function Footer({ onContact }: FooterProps) {
       <div className="container footer-inner">
         <div className="footer-brand">
           <BrandLogo />
-          <p>An investigation platform for fraud and criminal casework.</p>
+          <p>
+            Built in Dublin by a team spanning investigative intelligence, secure infrastructure,
+            and frontline casework.
+          </p>
         </div>
         <div className="footer-links">
           <div>
@@ -22,7 +25,6 @@ export function Footer({ onContact }: FooterProps) {
           </div>
           <div>
             <span>Detail</span>
-            <a href="#economics">What it replaces</a>
             <a href="#audience">Who it’s for</a>
             <a href="#trust">Deployment</a>
           </div>
