@@ -389,12 +389,16 @@ export function DifferenceSection() {
 
 /* ------------------------------------------------------------------ economics */
 
-const costLines = [
-  ["Forensic extraction, per device", "$1,575 – $2,975", "Unchanged"],
-  ["Processing", "$3 – $10 per gigabyte", "Replaced"],
-  ["Hosting", "$5 – $15 per gigabyte, per month", "Replaced"],
-  ["Examiner analysis", "$300 – $500 per hour", "Replaced"],
-  ["Investigator and paralegal hours", "58 – 100 hours", "About half returned"],
+const matters = [
+  { label: "Fraud matter", spec: "2 phones · 300,000 documents · 120GB" },
+  { label: "Federal matter", spec: "10 phones · 200,000 documents · 435GB" },
+]
+
+const costLines: [string, string, string, string?][] = [
+  ["Forensic extraction", "$3,650", "$8,450", "unchanged"],
+  ["Processing", "$600", "$2,175"],
+  ["Hosting, for the life of the matter", "$21,600", "$104,400"],
+  ["Examiner analysis", "$12,000", "$24,000"],
 ]
 
 export function EconomicsSection() {
@@ -407,42 +411,65 @@ export function EconomicsSection() {
           lede="The choice is not between Loupe and another platform. It is between Loupe and what a serious matter costs today: a vendor per device, a hosting bill per gigabyte per month, an examiner by the hour, and a team stitching the pieces together by hand."
         />
 
-        <div className="econ">
-          <Reveal className="econ-table">
-            <div className="econ-head" aria-hidden="true">
-              <span>Per serious matter</span>
-              <span>Today</span>
-              <span>With Loupe</span>
-            </div>
-            {costLines.map(([label, cost, fate]) => (
-              <div className="econ-row" key={label}>
-                <strong>{label}</strong>
-                <span className="fig">{cost}</span>
-                <span className="fate">{fate}</span>
-              </div>
+        <Reveal className="econ-table">
+          <div className="econ-head">
+            <span>Two real matters, costed</span>
+            {matters.map((m) => (
+              <span key={m.label}>
+                <b>{m.label}</b>
+                <i>{m.spec}</i>
+              </span>
             ))}
-            <Source>
-              Published 2026 eDiscovery processing and hosting rates · forensic vendor rate cards ·
-              RAND National Public Defense Workload Study
-            </Source>
-          </Reveal>
+          </div>
 
-          <Reveal className="econ-side" delay={0.06}>
-            <div className="figure">
-              <b>$4,350</b>
-              <p>
-                a month to keep a 435-gigabyte matter hosted — more than $100,000 across two years.
-                What that buys is a spreadsheet.
-              </p>
+          {costLines.map(([label, a, b, note]) => (
+            <div className="econ-row" key={label}>
+              <strong>
+                {label}
+                {note ? <em>{note}</em> : null}
+              </strong>
+              <span className="fig">{a}</span>
+              <span className="fig">{b}</span>
             </div>
+          ))}
+
+          <div className="econ-row econ-total">
+            <strong>Spent before anyone has answered a question</strong>
+            <span className="fig">$37,850</span>
+            <span className="fig">$139,025</span>
+          </div>
+
+          <div className="econ-row">
+            <strong>Investigator and paralegal hours on evidence handling</strong>
+            <span className="fig">58 hrs</span>
+            <span className="fig">100 hrs</span>
+          </div>
+
+          <Source>
+            Published 2026 eDiscovery processing and hosting rates · forensic vendor rate cards ·
+            RAND National Public Defense Workload Study
+          </Source>
+        </Reveal>
+
+        <div className="econ-foot">
+          <Reveal className="figure">
+            <b>$4,350</b>
             <p>
-              Sixty to a hundred hours go into handling evidence on a serious matter before anyone
-              has answered a question about it. The largest line, hosting, is charged per gigabyte
-              per month, so it grows with exactly the material that makes the case.
+              a month to keep the 435GB matter hosted — more than $100,000 across two years, three
+              quarters of everything in the column. What it buys is a spreadsheet.
+            </p>
+          </Reveal>
+          <Reveal delay={0.06}>
+            <p>
+              Extraction is untouched: devices still go to a vendor, and that line is the same
+              either way. What changes is everything downstream of it —{" "}
+              <strong>$34,200 on the fraud matter and $130,575 on the federal one</strong>, plus
+              about half the evidence-handling hours.
             </p>
             <p>
-              Extraction is untouched — devices still go to a vendor. Everything downstream of it is
-              what changes.
+              The largest line is hosting, charged per gigabyte per month, so it grows with exactly
+              the material that makes the case. A practice running fifteen to thirty serious matters
+              a year is carrying this several times over.
             </p>
           </Reveal>
         </div>
