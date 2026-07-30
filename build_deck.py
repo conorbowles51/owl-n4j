@@ -190,8 +190,11 @@ def slide1(prs):
     # exists. The descriptor comes first so the argument has something to land on.
     para(tf, "An investigation platform for evidence-heavy casework.",
          size=27, colour=PAPER, bold=True, space_before=18, font=FONT_H)
+    # Regular weight, same size: the pair stays a pair, and weight alone
+    # carries the reading order. Do not also drop the size or the colour —
+    # this is the deck's strongest line, not support copy.
     para(tf, "Everyone can cite a document. Nobody can query a case.",
-         size=27, colour=PAPER, bold=True, space_before=8, font=FONT_H)
+         size=27, colour=PAPER, bold=False, space_before=10, font=FONT_H)
     para(tf, "In production use on real federal matters.",
          size=17, colour=MUTED, space_before=20)
     para(tf, "Dublin, Ireland.", size=17, colour=MUTED, space_before=4)
