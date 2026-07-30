@@ -390,10 +390,10 @@ export function DifferenceSection() {
 /* ------------------------------------------------------------------ economics */
 
 const costLines = [
-  ["Forensic extraction, per device", "$1,575 – 2,975", "Unchanged"],
-  ["Processing", "$3 – 10 per gigabyte", "Replaced"],
-  ["Hosting", "$5 – 15 per gigabyte, per month", "Replaced"],
-  ["Examiner analysis", "$300 – 500 per hour", "Replaced"],
+  ["Forensic extraction, per device", "$1,575 – $2,975", "Unchanged"],
+  ["Processing", "$3 – $10 per gigabyte", "Replaced"],
+  ["Hosting", "$5 – $15 per gigabyte, per month", "Replaced"],
+  ["Examiner analysis", "$300 – $500 per hour", "Replaced"],
   ["Investigator and paralegal hours", "58 – 100 hours", "About half returned"],
 ]
 
