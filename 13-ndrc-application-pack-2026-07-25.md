@@ -63,29 +63,38 @@ than answering it.
 ### Slide 1 — Title
 
 > **[Loupe wordmark]**
+> Find the signal in everything.
 >
-> **An investigation platform for fraud and criminal casework.**
-> Everyone can cite a document. Nobody can query a case.
+> **An investigation platform for evidence-heavy casework.**
+> **Everyone can cite a document. Nobody can query a case.**
 >
 > In production use on real federal matters.
 > Dublin, Ireland.
->
-> *Find the signal in everything.* — footer
 
 **The old note here read "one line only, do not open with the product." That is advice
 for a deck you present. This one is not presented.** The form has no essay questions and
 no interview before submission — the PDF is read cold, so the cover is the
 highest-attention moment in the entire application and it has to earn the next page.
 
-**The descriptor opens.** A cold reader learns what Loupe *is* in the first line, before
-any argument is made on top of it. The **thesis** — *everyone can cite a document,
-nobody can query a case* — sits directly under it as the subheader; it is the one
-sentence that frames every slide that follows, and it is the same line the competitive
-analysis is built on. **"In production use on real federal matters"** is on the cover
-deliberately: a cold reader deciding whether to keep going is helped more by knowing
-this is not a concept than by anything else that could sit there. The **tagline** closes
-the cover rather than opening it, so it reads as a sign-off and does not compete with
-the descriptor for the first line.
+The **tagline** stays where a tagline belongs, under the wordmark.
+
+Under it, **one statement in two parts**, and the order carries the work. The first part
+says what Loupe *is*, so a reader who arrives knowing nothing has something to hold. The
+second is the **thesis** — *everyone can cite a document, nobody can query a case* — the
+one sentence that frames every slide that follows, and the line the competitive analysis
+is built on. Read the other way round, the argument lands before the reader knows what
+they are looking at.
+
+**"Evidence-heavy casework" is deliberate, and it is not a hedge.** Naming the case
+types — *fraud and criminal* — placed the company but also capped it, and it read as a
+list of two verticals rather than a description of the work. *Evidence* does the
+placement instead: it is a legal and forensic word, nobody in another trade claims it,
+and it is the noun the entire platform runs on. It also matches the unit slide 8 costs,
+so the cover and the economics describe the same thing. The specificity that used to sit
+in the category now sits one line lower, in **"in production use on real federal
+matters"** — which is stronger, because it is a fact rather than a claim to a market.
+That line is on the cover deliberately: a cold reader deciding whether to keep going is
+helped more by knowing this is not a concept than by anything else that could sit there.
 
 If you ever present this live, drop back to the tagline alone and say the rest.
 

@@ -183,35 +183,35 @@ def slide1(prs):
     if os.path.exists(LOGO_KNOCKOUT):
         s.shapes.add_picture(LOGO_KNOCKOUT, MARGIN_L, Inches(1.85),
                              width=Inches(4.3))
-    tf = textbox(s, MARGIN_L, Inches(3.42), BODY_W, Inches(3.2))
-    # The descriptor leads; the argument sits under it as the subheader.
-    # Broken by hand so the second line carries weight instead of one orphan word.
-    para(tf, "An investigation platform for\nfraud and criminal casework.",
-         size=30, colour=PAPER, bold=True, space_before=0, first=True,
-         font=FONT_H)
+    tf = textbox(s, MARGIN_L, Inches(3.3), BODY_W, Inches(3.2))
+    para(tf, "Find the signal in everything.", size=25, colour=ACCENT,
+         space_before=0, first=True)
+    # Two parts of one statement, set as peers: what Loupe is, then why it
+    # exists. The descriptor comes first so the argument has something to land on.
+    para(tf, "An investigation platform for evidence-heavy casework.",
+         size=27, colour=PAPER, bold=True, space_before=18, font=FONT_H)
     para(tf, "Everyone can cite a document. Nobody can query a case.",
-         size=20, colour=INK_SOFT, space_before=16)
+         size=27, colour=PAPER, bold=True, space_before=8, font=FONT_H)
     para(tf, "In production use on real federal matters.",
          size=17, colour=MUTED, space_before=20)
     para(tf, "Dublin, Ireland.", size=17, colour=MUTED, space_before=4)
     rule(s, Inches(6.6))
-    # Tagline signs off the cover rather than opening it.
-    tff = textbox(s, MARGIN_L, Inches(6.78), BODY_W, Inches(0.45))
-    para(tff, "Find the signal in everything.", size=15, colour=ACCENT,
-         space_before=0, first=True)
     notes(s, """This deck is submitted as a PDF and read without anyone in the room —
 the form has no essay questions, so the cover is the highest-attention moment in the
 whole application and it has to earn the next page.
 
-The descriptor opens: a cold reader learns what Loupe IS in the first line, before any
-argument is made. "Everyone can cite a document. Nobody can query a case." is the
-argument, and it frames every slide that follows — it sits underneath as the subheader.
+"Find the signal in everything" is the tagline and it sits under the wordmark, where a
+tagline belongs.
+
+The two display lines are one statement in two parts, and the order matters. The first
+says what Loupe IS, so a reader who knows nothing has something to hold. The second is
+the argument, and it frames every slide that follows — it is also the line the whole
+competitive analysis is built on. Read the other way round, the argument arrives before
+the reader knows what they are looking at.
 
 "In production use on real federal matters" is on the cover deliberately. A cold reader
 deciding whether to keep going is helped more by knowing this is not a concept than by
 anything else we could put there.
-
-"Find the signal in everything" is the tagline and closes the cover.
 
 If you ever present this live, drop to the tagline alone and say the rest.""")
     return s
