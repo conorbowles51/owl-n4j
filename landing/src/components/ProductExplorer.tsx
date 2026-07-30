@@ -9,7 +9,7 @@ const productViews = [
     image: "/product/loupe-graph-demo.png",
     alt: "Loupe graph view connecting people, organisations, transactions, communications, and source evidence",
     title: "Follow the relationships.",
-    body: "See how people, organisations, accounts, events, and communications connect across every source in the case. Select any object to inspect the facts and files behind it.",
+    body: "People, organisations, accounts, events and communications, connected across every source in the case. Select any object to see the facts behind it and the files those facts came from.",
   },
   {
     id: "timeline",
@@ -18,7 +18,7 @@ const productViews = [
     image: "/product/loupe-timeline-demo.png",
     alt: "Loupe timeline showing transactions and communications from the same connected case",
     title: "Test the chronology.",
-    body: "Put transactions, messages, calls, documents, and other events on one timeline. Filter to the people or entities that matter without rebuilding the sequence by hand.",
+    body: "Transactions, messages, calls and documents on one timeline, in the timezone the matter needs. Filter to the people who matter without rebuilding the sequence by hand.",
   },
   {
     id: "evidence",
@@ -27,7 +27,7 @@ const productViews = [
     image: "/product/loupe-evidence-demo.png",
     alt: "Loupe evidence workspace listing processed case files with source details and summaries",
     title: "Keep the source in reach.",
-    body: "Work from the original material and its extracted facts together. Every useful claim keeps its route back to the file, page, passage, record, or timestamp it came from.",
+    body: "The original material and the facts extracted from it, side by side. Every claim keeps its route back to the file, page, passage, record or timestamp it came from.",
   },
   {
     id: "agent",
@@ -36,7 +36,7 @@ const productViews = [
     image: "/product/loupe-agent-demo.png",
     alt: "Loupe agent creating a structured table from case evidence",
     title: "Ask for work, not just prose.",
-    body: "Query the full case or a focused Loupe, then turn the result into tables, timelines, charts, and reviewable artifacts that remain part of the investigation.",
+    body: "Question-answering tells you about your evidence. An agent with tools across the case model produces the work — grouped transactions, tables, timelines and charts that stay part of the investigation.",
   },
 ]
 
@@ -72,12 +72,20 @@ export function ProductExplorer() {
       <div className="container">
         <Reveal className="story-heading story-heading-split">
           <div>
-            <p className="section-index">One model, many perspectives</p>
-            <h2>Work the same case from every angle.</h2>
+            <p className="section-index">
+              <b>05</b>
+              One model, many perspectives
+            </p>
+            <h2>
+              Work the same case
+              <br />
+              from every angle.
+            </h2>
           </div>
           <p>
-            The graph, timeline, evidence library, financial views, and agent all read from the
-            same underlying case. Changing the view never changes the facts beneath it.
+            Graph, timeline, evidence, financial and agent are not five features. They are five
+            perspectives on one structure — which is why a finding in one is the same object in
+            another.
           </p>
         </Reveal>
 

@@ -1780,3 +1780,813 @@ html[data-theme="light"] .difference-matrix-row p:last-child {
     animation: none;
   }
 }
+
+/* =====================================================================
+   Evidence-document layer
+   Section numbering, cited claims, decisive statements, and the
+   commercial sections added for the accelerator narrative.
+   ===================================================================== */
+
+/* Numbered section headers ------------------------------------------ */
+
+.section-index {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 13px;
+}
+
+.section-index b {
+  position: relative;
+  padding-right: 15px;
+  color: var(--brand-soft);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-index b::after {
+  position: absolute;
+  top: 0.42em;
+  right: 0;
+  width: 8px;
+  height: 1px;
+  content: "";
+  background: var(--line-strong);
+}
+
+/* Cited claim ------------------------------------------------------- */
+
+.source-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 58ch;
+  margin-top: 26px;
+  color: var(--muted-strong);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.09em;
+  line-height: 1.85;
+  text-transform: uppercase;
+}
+
+.source-note i {
+  flex: none;
+  width: 14px;
+  height: 1px;
+  margin-top: 8px;
+  background: var(--brand-soft);
+}
+
+/* Decisive statement — negative space, then density ------------------ */
+
+.statement {
+  max-width: 1040px;
+  margin: clamp(84px, 10vw, 132px) auto 0;
+  padding-top: 40px;
+  border-top: 1px solid var(--brand-soft);
+  text-align: left;
+}
+
+.statement > p:first-of-type {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(32px, 4vw, 56px);
+  font-weight: 560;
+  letter-spacing: -0.052em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+.statement-sub {
+  max-width: 68ch;
+  margin-top: 26px;
+  color: var(--ink-muted);
+  font-size: 16px;
+  line-height: 1.72;
+}
+
+.statement .source-note {
+  margin-top: 32px;
+}
+
+/* 01 · Origin -------------------------------------------------------- */
+
+.origin-story {
+  background:
+    radial-gradient(circle at 14% 12%, rgba(180, 22, 36, 0.1), transparent 30rem),
+    var(--bg);
+}
+
+.origin-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.22fr) minmax(300px, 0.78fr);
+  gap: clamp(56px, 8vw, 118px);
+  align-items: start;
+  margin-top: clamp(64px, 8vw, 96px);
+}
+
+.origin-prose p {
+  max-width: 60ch;
+  margin-bottom: 24px;
+  color: var(--ink-soft);
+  font-size: clamp(16px, 1.25vw, 18px);
+  line-height: 1.76;
+}
+
+.origin-prose .origin-turn {
+  margin: 38px 0 0;
+  padding-top: 30px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(26px, 2.8vw, 38px);
+  font-weight: 560;
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+}
+
+.origin-aside {
+  padding: clamp(28px, 3vw, 40px);
+  border: 1px solid var(--line-strong);
+  background: rgba(17, 18, 22, 0.55);
+}
+
+.origin-aside blockquote {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(21px, 2vw, 26px);
+  font-weight: 550;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+}
+
+.origin-facts {
+  margin-top: 34px;
+  border-top: 1px solid var(--line);
+}
+
+.origin-facts > div {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.origin-facts > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.origin-facts b {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--brand-soft);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.origin-facts span {
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* 02 · Problem — entity-coded evidence load, structural note --------- */
+
+.evidence-load article > span {
+  position: relative;
+  padding-left: 15px;
+}
+
+.evidence-load article > span::before {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  content: "";
+  border-radius: 50%;
+  background: var(--entity, var(--brand-soft));
+}
+
+.evidence-load article > span[data-entity="communication"] {
+  --entity: var(--node-communication);
+}
+.evidence-load article > span[data-entity="document"] {
+  --entity: var(--node-document);
+}
+.evidence-load article > span[data-entity="financial"] {
+  --entity: var(--node-financial);
+}
+.evidence-load article > span[data-entity="event"] {
+  --entity: var(--node-event);
+}
+
+.problem-structural {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.42fr);
+  gap: clamp(40px, 6vw, 90px);
+  align-items: end;
+  margin-top: clamp(72px, 8vw, 104px);
+  padding-top: 40px;
+  border-top: 1px solid var(--line-strong);
+}
+
+.problem-structural h3 {
+  max-width: 20ch;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(26px, 3vw, 40px);
+  font-weight: 560;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.problem-structural p {
+  max-width: 66ch;
+  margin-top: 22px;
+  color: var(--ink-muted);
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+.problem-structural .source-note {
+  margin: 0 0 4px;
+}
+
+/* 03 · The field ----------------------------------------------------- */
+
+.field-story {
+  background:
+    radial-gradient(circle at 88% 8%, rgba(180, 22, 36, 0.09), transparent 30rem),
+    var(--bg-deep);
+}
+
+.field-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin-top: clamp(70px, 9vw, 108px);
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.field-columns article {
+  padding: 38px 34px 44px;
+  border-right: 1px solid var(--line);
+}
+
+.field-columns article:last-child {
+  border-right: 0;
+}
+
+.field-columns article.is-emphasis {
+  background: linear-gradient(180deg, rgba(180, 22, 36, 0.1), rgba(180, 22, 36, 0.012));
+}
+
+.field-columns article > span {
+  display: block;
+  margin-bottom: 26px;
+  color: var(--brand-soft);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+}
+
+.field-columns h3 {
+  min-height: 3.3em;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(19px, 1.7vw, 23px);
+  font-weight: 570;
+  letter-spacing: -0.033em;
+  line-height: 1.14;
+}
+
+.field-columns p {
+  margin-top: 20px;
+  color: var(--ink-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* 04 · Case model — entity-coded sources, traversal note ------------- */
+
+.model-sources > div[data-entity="communication"] > i {
+  background: var(--node-communication);
+}
+.model-sources > div[data-entity="document"] > i {
+  background: var(--node-document);
+}
+.model-sources > div[data-entity="financial"] > i {
+  background: var(--node-financial);
+}
+.model-sources > div[data-entity="event"] > i {
+  background: var(--node-event);
+}
+
+.traversal-note {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(44px, 7vw, 108px);
+  margin-top: clamp(70px, 8vw, 100px);
+  padding-top: 42px;
+  border-top: 1px solid var(--line-strong);
+}
+
+.traversal-note h3 {
+  max-width: 16ch;
+  margin-top: 22px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(27px, 3vw, 40px);
+  font-weight: 560;
+  letter-spacing: -0.048em;
+  line-height: 1.06;
+}
+
+.traversal-note p {
+  max-width: 64ch;
+  color: var(--ink-soft);
+  font-size: clamp(15px, 1.2vw, 17px);
+  line-height: 1.75;
+}
+
+.traversal-note p + p {
+  margin-top: 20px;
+}
+
+.traversal-note em {
+  color: var(--ink);
+  font-style: italic;
+}
+
+/* 07 · Difference — closing block ------------------------------------ */
+
+.difference-close-block {
+  max-width: 1040px;
+  margin: clamp(70px, 8vw, 104px) auto 0;
+  padding-top: 38px;
+  border-top: 1px solid var(--line-strong);
+}
+
+.difference-close-block > p:first-child {
+  max-width: 74ch;
+  color: var(--ink-muted);
+  font-size: 15px;
+  line-height: 1.74;
+}
+
+.difference-close-block .difference-close {
+  margin-top: 34px;
+}
+
+/* 08 · Economics ------------------------------------------------------ */
+
+.economics-story {
+  background:
+    radial-gradient(circle at 8% 84%, rgba(180, 22, 36, 0.09), transparent 30rem),
+    var(--bg);
+}
+
+.economics-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  gap: clamp(48px, 7vw, 104px);
+  align-items: start;
+  margin-top: clamp(70px, 9vw, 106px);
+}
+
+.cost-table {
+  border-top: 1px solid var(--line-strong);
+}
+
+.cost-table-head,
+.cost-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(120px, 0.75fr) minmax(120px, 0.9fr);
+  gap: 20px;
+  align-items: baseline;
+}
+
+.cost-table-head {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.cost-table-head span {
+  color: var(--muted-strong);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.cost-table-head span:last-child,
+.cost-row .cost-fate {
+  color: var(--brand-soft);
+}
+
+.cost-row {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.cost-row strong {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 560;
+  line-height: 1.4;
+}
+
+.cost-figure {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.cost-fate {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  line-height: 1.7;
+  text-transform: uppercase;
+}
+
+.economics-callout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 22px;
+  align-items: center;
+  margin-bottom: 34px;
+  padding: 28px 30px;
+  border: 1px solid var(--line-strong);
+  border-left: 2px solid var(--brand-soft);
+  background: rgba(17, 18, 22, 0.6);
+}
+
+.economics-callout b {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(34px, 3.6vw, 46px);
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.economics-callout p {
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.62;
+}
+
+.economics-argument > p {
+  max-width: 58ch;
+  margin-bottom: 20px;
+  color: var(--ink-muted);
+  font-size: 15px;
+  line-height: 1.74;
+}
+
+.economics-argument .economics-turn {
+  margin: 30px 0 0;
+  padding-top: 26px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+/* 09 · Audience -------------------------------------------------------- */
+
+.audience-story {
+  background:
+    radial-gradient(circle at 86% 60%, rgba(180, 22, 36, 0.1), transparent 32rem),
+    var(--bg-deep);
+}
+
+.audience-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
+  gap: clamp(44px, 6vw, 92px);
+  align-items: start;
+  margin-top: clamp(70px, 9vw, 106px);
+}
+
+.audience-primary {
+  padding: clamp(32px, 4vw, 46px);
+  border: 1px solid var(--line-strong);
+  border-top: 2px solid var(--brand-soft);
+  background: rgba(17, 18, 22, 0.62);
+}
+
+.audience-primary > span {
+  color: var(--brand-soft);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.audience-primary h3 {
+  margin-top: 26px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3.2vw, 42px);
+  font-weight: 570;
+  letter-spacing: -0.05em;
+  line-height: 1.04;
+}
+
+.audience-primary p {
+  margin-top: 24px;
+  color: var(--ink-muted);
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+.audience-secondary {
+  border-top: 1px solid var(--line-strong);
+}
+
+.audience-secondary article {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 16px;
+  padding: 26px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.audience-secondary article > span {
+  padding-top: 4px;
+  color: var(--brand-soft);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+}
+
+.audience-secondary strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 560;
+  letter-spacing: -0.032em;
+}
+
+.audience-secondary p {
+  margin-top: 11px;
+  color: var(--ink-muted);
+  font-size: 14px;
+  line-height: 1.68;
+}
+
+.audience-later {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: clamp(48px, 6vw, 72px);
+  padding: 30px 34px;
+  border: 1px dashed var(--line-strong);
+}
+
+.audience-later span {
+  display: block;
+  margin-bottom: 14px;
+  color: var(--muted-strong);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.audience-later p {
+  max-width: 88ch;
+  color: var(--ink-muted);
+  font-size: 15px;
+  line-height: 1.74;
+}
+
+/* 10 · Proof — architecture rail --------------------------------------- */
+
+.architecture-rail {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 24px;
+  align-items: baseline;
+  margin-top: clamp(64px, 8vw, 96px);
+  padding-top: 30px;
+  border-top: 1px solid var(--line-strong);
+}
+
+.architecture-rail > span {
+  color: var(--brand-soft);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.architecture-rail p {
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 2;
+}
+
+/* Light theme ---------------------------------------------------------- */
+
+html[data-theme="light"] .origin-story,
+html[data-theme="light"] .economics-story {
+  background:
+    radial-gradient(circle at 12% 24%, rgba(180, 22, 36, 0.05), transparent 29rem),
+    var(--bg);
+}
+
+html[data-theme="light"] .field-story,
+html[data-theme="light"] .audience-story {
+  background:
+    radial-gradient(circle at 86% 16%, rgba(180, 22, 36, 0.06), transparent 31rem),
+    var(--bg-deep);
+}
+
+html[data-theme="light"] .origin-aside,
+html[data-theme="light"] .economics-callout,
+html[data-theme="light"] .audience-primary {
+  background: rgba(255, 255, 255, 0.78);
+}
+
+html[data-theme="light"] .field-columns article.is-emphasis {
+  background: linear-gradient(180deg, rgba(180, 22, 36, 0.07), rgba(180, 22, 36, 0.008));
+}
+
+/* Responsive ----------------------------------------------------------- */
+
+@media (max-width: 1080px) {
+  .origin-layout,
+  .economics-layout,
+  .audience-layout,
+  .traversal-note,
+  .problem-structural {
+    grid-template-columns: 1fr;
+  }
+
+  .problem-structural {
+    gap: 34px;
+  }
+
+  .field-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .field-columns article {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .field-columns article:last-child {
+    border-bottom: 0;
+  }
+
+  .field-columns h3 {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 850px) {
+  .cost-table-head,
+  .cost-row {
+    grid-template-columns: minmax(0, 1fr) minmax(110px, auto);
+    gap: 10px 18px;
+  }
+
+  .cost-table-head span:last-child {
+    display: none;
+  }
+
+  .cost-row .cost-fate {
+    grid-column: 1 / -1;
+  }
+
+  .architecture-rail {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 620px) {
+  .statement,
+  .difference-close-block {
+    margin-top: 66px;
+    padding-top: 30px;
+  }
+
+  .origin-layout,
+  .economics-layout,
+  .audience-layout,
+  .field-columns {
+    margin-top: 56px;
+  }
+
+  .origin-aside,
+  .audience-primary {
+    padding: 26px 22px;
+  }
+
+  .field-columns article {
+    padding: 30px 0 34px;
+  }
+
+  .economics-callout {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 24px 22px;
+  }
+
+  .audience-later {
+    padding: 24px 20px;
+  }
+}
+
+/* Hero — four-line thesis, undecorated lens ---------------------------- */
+
+.hero-title {
+  font-size: clamp(50px, 5.5vw, 84px);
+  letter-spacing: -0.062em;
+}
+
+/* Desktop only — the narrow-screen widths set in the core stylesheet
+   (78vw / 86vw / 94vw) must keep winning below 900px. */
+@media (min-width: 901px) {
+  .hero-identity {
+    width: min(38vw, 470px);
+  }
+}
+
+@media (max-width: 620px) {
+  .hero-title {
+    font-size: clamp(31px, 8.6vw, 52px);
+  }
+}
+
+/* Corrections to inherited layout ------------------------------------- */
+
+/* Footer now carries three link columns, not two. */
+.footer-links {
+  grid-template-columns: repeat(3, 1fr);
+  column-gap: 44px;
+}
+
+/* The closing call to action carries a longer line than the one it replaced. */
+.final-cta h2 {
+  font-size: clamp(46px, 6.4vw, 88px);
+  line-height: 0.92;
+}
+
+/* Emphasis inside a decisive statement stays in the display face. */
+.statement em {
+  color: var(--brand-soft);
+  font-style: normal;
+}
+
+/* The hero lens sits on a composed static frame, which also covers the
+   case where WebGL is unavailable and the canvas never paints. */
+.hero-identity::before,
+.hero-identity::after {
+  position: absolute;
+  z-index: 1;
+  content: "";
+  border: 1px solid rgba(243, 93, 109, 0.13);
+  border-radius: 50%;
+}
+
+.hero-identity::before {
+  inset: 4%;
+}
+
+.hero-identity::after {
+  inset: 24%;
+  border-color: rgba(243, 93, 109, 0.09);
+}
+
+@media (max-width: 850px) {
+  .footer-links {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .footer-links {
+    grid-template-columns: 1fr;
+  }
+}

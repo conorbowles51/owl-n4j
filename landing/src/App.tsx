@@ -4,10 +4,13 @@ import { FinalCta } from "./components/FinalCta"
 import { Footer } from "./components/Footer"
 import { Hero } from "./components/Hero"
 import {
+  AudienceSection,
   CaseModelStory,
   DifferenceSection,
-  ImpactSection,
+  EconomicsSection,
+  FieldSection,
   LoupeWorkflowSection,
+  OriginSection,
   ProblemSection,
   ProofSection,
 } from "./components/NarrativeSections"
@@ -42,13 +45,16 @@ export function App() {
       <Navigation onContact={() => setContactOpen(true)} />
       <main id="main-content">
         <Hero onContact={() => setContactOpen(true)} />
+        <OriginSection />
         <ProblemSection />
+        <FieldSection />
         <CaseModelStory />
         <ProductExplorer />
         <LoupeWorkflowSection />
         <DifferenceSection />
+        <EconomicsSection />
+        <AudienceSection />
         <ProofSection />
-        <ImpactSection />
         <FinalCta onContact={() => setContactOpen(true)} />
       </main>
       <Footer onContact={() => setContactOpen(true)} />

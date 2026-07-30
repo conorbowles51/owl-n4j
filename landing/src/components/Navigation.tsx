@@ -7,9 +7,10 @@ interface NavigationProps {
 }
 
 const links = [
+  { href: "#field", label: "The field" },
   { href: "#platform", label: "Platform" },
-  { href: "#workflow", label: "How it works" },
-  { href: "#proof", label: "Trust" },
+  { href: "#economics", label: "What it replaces" },
+  { href: "#proof", label: "How it’s built" },
 ]
 
 export function Navigation({ onContact }: NavigationProps) {
