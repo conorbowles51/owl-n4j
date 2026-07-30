@@ -1,3 +1,5 @@
+import { HeroScene } from "./HeroScene"
+
 interface HeroProps {
   onContact: () => void
 }
@@ -5,7 +7,7 @@ interface HeroProps {
 export function Hero({ onContact }: HeroProps) {
   return (
     <section className="hero" id="top">
-      <div className="container">
+      <div className="container hero-layout">
         <div className="hero-copy">
           <p className="eyebrow hero-enter hero-enter-1">
             Investigation platform · Fraud and criminal casework
@@ -24,21 +26,15 @@ export function Hero({ onContact }: HeroProps) {
               See the platform
             </a>
           </div>
+          <p className="hero-proof hero-enter hero-enter-5">
+            In production on federal fraud and criminal matters — multi-gigabyte phone extractions,
+            tens of thousands of curated transactions, full document corpora.
+          </p>
         </div>
 
-        <figure className="hero-shot hero-enter hero-enter-5">
-          <img
-            src="/product/loupe-graph-demo.png"
-            alt="A Loupe case graph connecting people, organisations, transactions and communications, with an entity panel open beside it"
-            decoding="async"
-            fetchPriority="high"
-          />
-        </figure>
-
-        <p className="hero-proof hero-enter hero-enter-5">
-          In production on federal fraud and criminal matters — multi-gigabyte phone extractions,
-          tens of thousands of curated transactions, full document corpora.
-        </p>
+        <div className="hero-identity hero-enter hero-enter-3" aria-hidden="true">
+          <HeroScene />
+        </div>
       </div>
     </section>
   )
