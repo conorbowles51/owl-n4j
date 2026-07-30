@@ -181,28 +181,37 @@ def slide1(prs):
     # Supplied artwork, knockout colourway for a dark ground. Never a recoloured
     # or retyped wordmark; clear space is baked into the file.
     if os.path.exists(LOGO_KNOCKOUT):
-        s.shapes.add_picture(LOGO_KNOCKOUT, MARGIN_L, Inches(2.35),
+        s.shapes.add_picture(LOGO_KNOCKOUT, MARGIN_L, Inches(1.85),
                              width=Inches(4.3))
-    tf = textbox(s, MARGIN_L, Inches(3.55), BODY_W, Inches(2.9))
-    para(tf, "Find the signal in everything.", size=25, colour=ACCENT,
-         space_before=0, first=True)
+    tf = textbox(s, MARGIN_L, Inches(3.42), BODY_W, Inches(3.2))
+    # The descriptor leads; the argument sits under it as the subheader.
+    # Broken by hand so the second line carries weight instead of one orphan word.
+    para(tf, "An investigation platform for\nfraud and criminal casework.",
+         size=30, colour=PAPER, bold=True, space_before=0, first=True,
+         font=FONT_H)
     para(tf, "Everyone can cite a document. Nobody can query a case.",
-         size=30, colour=PAPER, bold=True, space_before=20, font=FONT_H)
-    para(tf, "An investigation platform for fraud and criminal casework — "
-             "in production use on real federal matters.",
+         size=20, colour=INK_SOFT, space_before=16)
+    para(tf, "In production use on real federal matters.",
          size=17, colour=MUTED, space_before=20)
     para(tf, "Dublin, Ireland.", size=17, colour=MUTED, space_before=4)
     rule(s, Inches(6.6))
+    # Tagline signs off the cover rather than opening it.
+    tff = textbox(s, MARGIN_L, Inches(6.78), BODY_W, Inches(0.45))
+    para(tff, "Find the signal in everything.", size=15, colour=ACCENT,
+         space_before=0, first=True)
     notes(s, """This deck is submitted as a PDF and read without anyone in the room —
 the form has no essay questions, so the cover is the highest-attention moment in the
 whole application and it has to earn the next page.
 
-"Find the signal in everything" is the tagline. The line under it is the argument, and
-it is the one sentence that frames every slide that follows.
+The descriptor opens: a cold reader learns what Loupe IS in the first line, before any
+argument is made. "Everyone can cite a document. Nobody can query a case." is the
+argument, and it frames every slide that follows — it sits underneath as the subheader.
 
 "In production use on real federal matters" is on the cover deliberately. A cold reader
 deciding whether to keep going is helped more by knowing this is not a concept than by
 anything else we could put there.
+
+"Find the signal in everything" is the tagline and closes the cover.
 
 If you ever present this live, drop to the tagline alone and say the rest.""")
     return s
@@ -746,12 +755,14 @@ def slide6c(prs):
     """Customer value — the same case costed today and with Loupe."""
     s = blank(prs); bg(s)
     kicker(s, "Customer value")
-    heading(s, "Today a serious case costs $38k–$139k.\nWith Loupe, $16k–$20k.", size=30)
+    # The tier is named by evidence volume, never by gravity of the offence — a
+    # small case is not a trivial one, and the cost scales with what was produced.
+    heading(s, "Today an evidence-heavy case costs $38k–$139k.\nWith Loupe, $16k–$20k.", size=30)
     rule(s, Inches(2.35), width=Inches(1.1))
 
     tf = textbox(s, MARGIN_L, Inches(2.52), BODY_W, Inches(0.5))
     para(tf, "Same case, same evidence, both columns. Ranges run from a two-phone "
-             "fraud matter to a ten-phone federal case.",
+             "fraud matter to a ten-device federal case with a document production.",
          size=13, colour=MUTED, first=True, space_before=0)
 
     rows = [
@@ -768,7 +779,7 @@ def slide6c(prs):
     tbl.columns[1].width = Inches(2.65)
     tbl.columns[2].width = Inches(2.68)
 
-    for c, text in enumerate(["Per serious case", "Today", "With Loupe"]):
+    for c, text in enumerate(["Per evidence-heavy case", "Today", "With Loupe"]):
         cell = tbl.cell(0, c)
         cell.fill.solid(); cell.fill.fore_color.rgb = INK
         cell.margin_left = Inches(0.12); cell.margin_top = Inches(0.04)
@@ -792,7 +803,7 @@ def slide6c(prs):
 
     tf2 = textbox(s, MARGIN_L, Inches(5.78), BODY_W, Inches(1.3))
     para(tf2, "**Saved: $22,000–$119,000 and 29–50 hours per case.** Across a practice "
-              "running fifteen to thirty serious matters a year, that is "
+              "running fifteen to thirty evidence-heavy matters a year, that is "
               "**$0.6M–$1.4M and 550–1,150 hours returned.**",
          size=16, colour=PAPER, first=True, space_before=0)
     para(tf2, "The extraction bill is unchanged — we analyse what was produced, we do "
@@ -895,7 +906,7 @@ def slide6b(prs):
 def slide7(prs):
     s = blank(prs); bg(s)
     kicker(s, "Team")
-    heading(s, "We didn't research this market.\nWe worked in it — from both sides.",
+    heading(s, "We didn't just research this market.\nWe worked in it — from both sides.",
             size=30)
     rule(s, Inches(2.15), width=Inches(1.1))
 
@@ -1063,35 +1074,40 @@ def slide9(prs):
              "privileged evidence enter the system — and the pilot itself.",
          size=14, first=True, space_before=0)
 
-    tfa = textbox(s, MARGIN_L, Inches(3.62), Inches(6.35), Inches(3.0))
-    para(tfa, "Use of funds", size=12, colour=ACCENT, bold=True, first=True,
+    # Both columns are set to fill the frame; the slide no longer carries a
+    # closing line under them, so the bullets take the space instead.
+    tfa = textbox(s, MARGIN_L, Inches(3.68), Inches(6.35), Inches(3.5))
+    para(tfa, "Use of funds", size=13, colour=ACCENT, bold=True, first=True,
          space_before=0)
     bullets(tfa, [
         "- **Two founders full-time** — clearing the security gate and running the agreed pilot to a signed contract. The pilot candidate is already secured.",
         "- **The security evidence a firm's counsel asks for** — Cyber Essentials, an independent penetration test and a written security package, plus starting the SOC 2 observation window. Cheap and fast; full certification is bought when a deal requires it.",
         "- **Single-tenant infrastructure** for the first external customers — one instance each, so it scales with customers rather than ahead of them.",
         "- **Processing and inference** across pilot matters — the cost model the pilot establishes.",
-    ], size=12, colour=PAPER, gap=6, first_flag=True)
+    ], size=13, colour=PAPER, gap=8, first_flag=True)
 
-    tf2 = textbox(s, Inches(7.65), Inches(2.42), Inches(4.85), Inches(4.2))
+    tf2 = textbox(s, Inches(7.65), Inches(2.42), Inches(4.85), Inches(4.7))
     para(tf2, "What we want from NDRC beyond capital",
-         size=12, colour=ACCENT, bold=True, first=True, space_before=0)
+         size=13, colour=ACCENT, bold=True, first=True, space_before=0)
     bullets(tf2, [
         "- **Go-to-market guidance.** The channel is identified — bar associations and professional bodies — and pricing is per-matter rather than per-seat. Both need pressure-testing by people who have built a repeatable motion.",
         "- Dublin base at Dogpatch Labs",
         "- EIR time on pricing structure and enterprise sales motion",
         "- Introductions into Irish and UK professional-services buyers — ACFE Ireland, Chartered Accountants Ireland forensic group, Law Society criminal law committee",
-    ], size=12, colour=PAPER, gap=7, first_flag=True)
-
-    tf3 = textbox(s, MARGIN_L, Inches(6.72), BODY_W, Inches(0.72))
-    para(tf3, "We are not asking anyone to fund the invention of a product. We "
-              "are asking them to fund the distance between **works** and "
-              "**sold.**",
-         size=17, colour=ACCENT, bold=True, first=True, space_before=0)
+    ], size=13, colour=PAPER, gap=12, first_flag=True)
 
     notes(s, """DO NOT put an hours figure on this slide, and do not pre-empt an
 arithmetic problem you don't have. This is a COMMERCIALISATION raise, not a
 build raise — the easier of the two to underwrite, and it happens to be true.
+
+THE SPOKEN CLOSE — for a live presentation, not for the PDF.
+The slide used to end on "we are not asking anyone to fund the invention of a
+product; we are asking them to fund the distance between works and sold." It
+was cut: it opens on a negative, and the metaphor needs a beat of explanation
+that a cold reader will not give it. The headline already states the ask
+positively. Say it aloud instead, if the room is right for it:
+
+  What we're asking you to fund is the distance between works and sold.
 
 If the roadmap comes up: it is the path from serving one practice to serving
 many, deliberately ambitious because the category rewards depth. Present it as

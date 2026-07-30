@@ -63,24 +63,29 @@ than answering it.
 ### Slide 1 — Title
 
 > **[Loupe wordmark]**
-> Find the signal in everything.
 >
-> **Everyone can cite a document. Nobody can query a case.**
+> **An investigation platform for fraud and criminal casework.**
+> Everyone can cite a document. Nobody can query a case.
 >
-> An investigation platform for fraud and criminal casework — in production use on
-> real federal matters.
+> In production use on real federal matters.
 > Dublin, Ireland.
+>
+> *Find the signal in everything.* — footer
 
 **The old note here read "one line only, do not open with the product." That is advice
 for a deck you present. This one is not presented.** The form has no essay questions and
 no interview before submission — the PDF is read cold, so the cover is the
 highest-attention moment in the entire application and it has to earn the next page.
 
-Three things now do that. The **tagline** stays. The **thesis** underneath it is the one
+**The descriptor opens.** A cold reader learns what Loupe *is* in the first line, before
+any argument is made on top of it. The **thesis** — *everyone can cite a document,
+nobody can query a case* — sits directly under it as the subheader; it is the one
 sentence that frames every slide that follows, and it is the same line the competitive
-analysis is built on. And **"in production use on real federal matters"** is on the
-cover deliberately: a cold reader deciding whether to keep going is helped more by
-knowing this is not a concept than by anything else that could sit there.
+analysis is built on. **"In production use on real federal matters"** is on the cover
+deliberately: a cold reader deciding whether to keep going is helped more by knowing
+this is not a concept than by anything else that could sit there. The **tagline** closes
+the cover rather than opening it, so it reads as a sign-off and does not compete with
+the descriptor for the first line.
 
 If you ever present this live, drop back to the tagline alone and say the rest.
 
@@ -685,20 +690,20 @@ Global forensic accounting ~$18–20B, US ~$10.5B, highly fragmented.
 
 > **We don't ask for new budget. We displace one that already exists.**
 >
-> Before anyone has answered a question about the evidence, a serious matter has
+> Before anyone has answered a question about the evidence, an evidence-heavy matter has
 > already paid a forensic vendor, a processing bill, and hosting charged **per gigabyte
 > per month for the life of the case** — to have phone data come out as spreadsheets.
 >
 > | **$34–131k** | **58–100 hrs** | **$0.9–1.9M** | **$4,350 / mo** |
 > |---|---|---|---|
-> | of spend displaced per serious case — processing, hosting and examiner analysis | of investigator and paralegal time returned on the same case | of displaceable value carried by one practice every year | what hosting a single 435GB federal case costs today, for as long as it runs |
+> | of spend displaced per evidence-heavy case — processing, hosting and examiner analysis | of investigator and paralegal time returned on the same case | of displaceable value carried by one practice every year | what hosting a single 435GB federal case costs today, for as long as it runs |
 >
 > **Priced at $12,000 a matter**, against $34,000–$131,000 it removes and the hours it
 > hands back. The extraction bill stays — devices still go to a vendor. Everything
 > downstream of it does not.
 >
 > Displaceable value moves twenty-four times between the smallest and largest matters,
-> so price scales with device count, data volume and duration — the same drivers as the
+> so price scales with device count, document volume and duration — the same drivers as the
 > bill it replaces. **Setting that scaling is what the pilot is for.**
 
 **Why this slide exists.** The market slide sizes the opportunity; it says nothing
@@ -801,7 +806,7 @@ preconditions, and preconditions are what a panel can actually interrogate.
 > federal cases to completion inside the platform. US-based. **The domain authority —
 > and the customer the product was built for.**
 >
-> **Why this team:** we didn't research this market, we worked in it — **from both
+> **Why this team:** we didn't just research this market, we worked in it — **from both
 > sides.** Seven years building investigative intelligence software for enterprise
 > buyers, and a decade running federal casework as the kind of investigator who has to
 > live with the result. Our CPO has run federal cases to completion inside this
@@ -1077,9 +1082,16 @@ invites a problem nobody in the room had. Cut it.
 > first external pilot to a signed contract.
 
 That is a **commercialisation** raise, not a build raise. It is the easier of the two
-to underwrite, and it happens to be true. You are not asking anyone to fund the
-invention of a product; you are asking them to fund the distance between *works* and
-*sold*.
+to underwrite, and it happens to be true.
+
+**The closing line is spoken, not printed.** The slide used to end on *"we are not
+asking anyone to fund the invention of a product; we are asking them to fund the
+distance between works and sold."* It is off the slide: it opens on a negative, and the
+*works / sold* metaphor needs a beat of explanation that a cold PDF reader will not give
+it. The headline already states the ask positively, and the deck should not repeat it in
+figurative language. Keep it for a live room, where the beat exists — *what we're asking
+you to fund is the distance between works and sold* — and it is in slide 12's speaker
+notes for exactly that.
 
 **If the roadmap comes up — and it should, briefly:** it is the path from serving one
 practice to serving many, and it is deliberately ambitious because the category
