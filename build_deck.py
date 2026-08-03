@@ -660,7 +660,22 @@ minimums, no evidence model. Not our fight and not our buyer.
 
 Do not name Siren here. If it comes up, it is a compliment: built for enterprise LE
 and intelligence buyers who come with solutions engineering attached, and good at
-that. A fifteen-person practice cannot buy the engineer — that tier is what we serve.""")
+that. A fifteen-person practice cannot buy the engineer — that tier is what we serve.
+
+If asked about OSINT / link-analysis tools — Maltego is the name most likely to come
+up, and the answer is complement, not competitor. Same register as Siren.
+The engagement has a front (scope, source, collect) and a back (corroborate,
+analyse, report). On our own scoring: they are 56/70 at the front and 29/120 at the
+back. We are 20/70 and 103/120. Near-perfect mirror images of each other.
+They do not ingest a discovery corpus or a phone extraction at all — "evidence" in
+that product means public web material captured and preserved.
+The number to have ready: the three platforms that LEAD open-source reach place
+13th, 24th and 38th of 47 for this buyer. Owning that axis at maximum score does
+not win the market — which is why it is a gap we fill, not a position we attack.
+Then land the roadmap point: closing it is an integration, not a data business. We
+do not need to replicate the corporate-registry vendors, we need to pull from them,
+and the target score is 8 of 10 — past that it buys nothing.
+Do NOT say we beat them as a tool. We do not, and anyone who has used both knows it.""")
     return s
 
 

@@ -1803,3 +1803,362 @@ vendor name-drops currently carrying slides 3 and 5.
 commercial disputes now carrying third-party funding**. A funder is a cost-disciplined buyer with a
 direct interest in reducing the hours a matter consumes — the most receptive audience a
 labour-substitution argument can have.
+
+---
+
+## Part 8 — Loupe against the OSINT category, scored
+
+Corporate intelligence is the named second market, and its one structural weakness is that the
+market's front-of-process runs on open-source reach, where Loupe scores 0 of 10. The obvious
+question is therefore whether the platform that *owns* that axis is a competitor for this buyer.
+It is scored here on the same instrument, against the same corporate-intelligence profile, as a
+head-to-head — because the answer determines whether OSINT is a threat to defend against or a gap
+to fill.
+
+**The verdict in one line: the category leader in open-source reach places thirty-eighth of
+forty-seven for this buyer, and it is buyable at the same price point Loupe is. Open-source reach
+does not win corporate intelligence. It is the cheapest missing piece of a position Loupe already
+holds, not a rival position.**
+
+The comparator is Maltego — link analysis and OSINT pivoting over a curated data marketplace,
+120+ integrated providers, credit-metered. It is the right comparator on three grounds: it is the
+only platform in the study that both scores 10 on OSINT reach and clears this buyer's commercial
+gates; it is the most widely recognised name in investigations software, so it is the one a panel
+or an investor is most likely to raise unprompted; and it is backed to consolidate — Charlesbank
+committed over $100M on acquiring it in April 2023, and it has made three acquisitions since.
+Capability facts below are as documented publicly to 26 July 2026.
+
+### The result
+
+| | Loupe | Maltego |
+|---|---|---|
+| Corporate-intelligence fit | **80.9%** | 59.8% |
+| Rank of 47 | **6th** | 38th |
+| Rank among the 11 platforms this tier can buy | **3rd** | 8th |
+| Core requirements met (of 19) | **12** | 7 |
+| Commercial + deployment gates | clears | clears |
+| Total, 30 axes | **168 / 300** | 123 / 300 |
+
+Maltego clears the gates, so its position is not an accessibility artefact — this buyer can and
+does buy it, at €3k–€7.5k a year on a card, with a free tier to trial. It simply does not answer
+what the engagement needs. **Nineteen requirements define this buyer; owning the single highest-weighted
+one of them, at maximum score, moves a platform to thirty-eighth.**
+
+That generalises across the OSINT leaders, and the generalisation is the finding:
+
+| Platform | OSINT | CI fit | Rank | Gates |
+|---|---|---|---|---|
+| Babel Street | 10 | 75.4% | 13 | fails commercial accessibility |
+| Neotas | 10 | 69.7% | 24 | fails deployment control |
+| Maltego | 10 | 59.8% | 38 | clears |
+| Blackdot Videris | 9 | 72.2% | 19 | fails commercial accessibility |
+| Altia | 9 | 72.0% | 21 | fails commercial accessibility |
+| ShadowDragon | 9 | 54.0% | 43 | fails commercial accessibility |
+| **Loupe** | **0** | **80.9%** | **6** | **clears** |
+
+**Every platform that leads open-source reach scores below Loupe with this buyer, and the one that
+leads it most cheaply scores lowest of all.** Loupe's zero on the axis this market's literature
+talks about most is worth less than the twelve axes it holds that the literature assumes an analyst
+supplies by hand.
+
+### The two are near-perfect mirror images
+
+Split the thirty axes along the engagement process — source and collect at the front, corroborate,
+analyse and report at the back:
+
+| Stage group | Axes | Loupe | Maltego | Field median |
+|---|---|---|---|---|
+| **Front — stages 1–3** (reach, integrations, collection, pivoting, scale, vendor, buyability) | 7 | 20 / 70 | **56 / 70** | 36 |
+| **Back — stages 4–6** (unification, provenance, query, chronology, financial, judgment objects, cited answers, agentic work, disconfirmation) | 12 | **103 / 120** | 29 / 120 | 49 |
+
+Both are outliers, in opposite directions, on the same process. Loupe is the strongest
+back-of-process score in the study and near the bottom at the front; Maltego is the reverse. By
+group: evidence modelling 55 to 9, the AI layer 24 to 5, readiness 33 to 58.
+
+Axis by axis, Loupe leads 15, Maltego leads 9, 6 are tied — and neither set of wins is scattered:
+
+- **Maltego's margins are reach and readiness.** OSINT +10, ecosystem integrations +9, evidence
+  acquisition +7, certifications +5, proven scale +4, vendor viability +4, link analysis +2.
+- **Loupe's margins are the evidence model and the AI layer.** Device data +9, cross-source
+  unification +9, whole-corpus query +8, multimodal entities +8, disconfirmation detection +8,
+  per-claim provenance +7, cited Q&A +6, auto-built graph +5, financial analysis +5, durable
+  judgment objects +5, agentic execution +5.
+- **They tie on the four things neither does:** case workflow, review at scale, production
+  mechanics, collaboration — which is a useful check on the instrument, because those are the same
+  four items that already sit on Loupe's own roadmap.
+
+### What separates a tool from a platform here
+
+Maltego's own product line explains the shape. "Maltego Evidence" captures and preserves **public
+social-media data** — profiles, posts, open-platform chat — with automated screenshots and
+chain-of-custody logging; the 2025 Hunchly acquisition adds analyst-driven web-page capture.
+Neither ingests a discovery corpus or a phone extraction, and no Cellebrite UFED or GrayKey import
+path exists in the public documentation. Its AI Assistant reads, analyses and reports on the graph;
+the documentation does not establish that it cites sources at all.
+
+So "evidence" in that product means *material collected from the open web and preserved*. In
+corporate-intelligence terms it is an excellent stage-3 instrument: it collects, it pivots, it
+preserves what it found. The client's own documents, bank records and devices — the material that
+arrives by the box and defines stages 4 to 6 — have no route in.
+
+**One honest caveat on the ranking, and it matters for how the number gets used.** Maltego places
+between 35th and 40th in *all seventeen* buyer profiles, never higher. That consistency is a
+statement about scope, not quality: this instrument scores completeness as an evidence platform,
+and Maltego is deliberately not one. It is a sub-€10k adjunct bought alongside whatever platform a
+firm runs, and it is very good at what it sells. Read "38th of 47" as evidence that **OSINT alone
+does not carry this buyer** — never as a claim that Loupe is a better tool than Maltego. The second
+reading is unsupportable and will be corrected by anyone who has used both.
+
+### Which direction the gap closes from
+
+Both gaps are quantified on the same instrument, and they are not the same size.
+
+**Loupe closing OSINT:**
+
+| Loupe's OSINT score | CI fit | Rank / 47 | Rank of 11 buyable |
+|---|---|---|---|
+| 0 (today) | 80.9% | 6 | 3 |
+| 5 | 83.3% | 5 | 3 |
+| **7** | **84.3%** | **3** | **2** |
+| 8 | 84.7% | 3 | 2 |
+| 10 | 84.7% | 3 | 2 |
+
+**The requirement is 8, so the return stops at 8 — building past it buys nothing in this market.**
+That is a useful scoping constraint: the target is a competent enrichment capability, not a data
+business. It is also, as Part 7 establishes, the largest single-axis movement available in any of
+the seventeen markets.
+
+**Maltego closing the reverse gap** needs twelve axis upgrades totalling 37 points before it reaches
+Loupe's 80.9%, in this order of leverage: per-claim provenance +5, whole-corpus relational query +5,
+cross-source unification +5, cited document Q&A +4, processing breadth +4, financial analysis +4,
+then six smaller items. That list is not a roadmap. Provenance, unification and whole-corpus query
+are the architecture — they are what the system *is*, decided at the data model, not features added
+to a pivot graph. **A tool built to reach outward does not acquire an evidence model by extending
+transforms.**
+
+**The real risk is purchase, not build.** Charlesbank's mandate explicitly covers follow-on
+acquisitions, and three have landed in two years: PublicSonar and Social Network Harvester in
+March 2024, Hunchly in May 2025. An ingestion or forensics capability could be bought. Two things
+temper it: every acquisition so far has extended *collection* — web capture, social monitoring —
+which is movement deeper into the front of the process and away from Loupe; and buying an ingestion
+engine still leaves unification, provenance and whole-corpus query to be built across two acquired
+data models, which is the hardest version of that work, not the easiest.
+
+### The integration reading, and its limits
+
+The complementarity is strong enough that the interesting question is not competition but
+connection. Maltego's on-premises Transform Distribution Server and the `maltego-trx` Python
+library exist precisely so a customer can expose proprietary data as transforms — the mechanism for
+a case's entities to become pivotable, or for open-source findings to arrive as evidence with their
+capture record intact.
+
+**State this as a direction, not a plan, and only if asked.** Loupe scores 0 on ecosystem
+integrations and has no integration framework at all; no Maltego export path has been verified for
+this purpose; and the commercial relationship would need to exist first. What *is* supportable is
+the architectural point from Part 7: closing OSINT is an integration problem rather than a
+data-acquisition problem, and the existence of a documented, on-premises, customer-extensible
+transform layer at the category leader is direct evidence for that. It is cheaper to pull from the
+market's data layer than to become it.
+
+### What this changes
+
+1. **Nothing on a slide.** Maltego is not named in the deck, consistent with the standing rule.
+   The finding is a Q&A asset and a roadmap-scoping input, and slide 6 already carries corporate
+   intelligence as the second market with the stage-by-stage argument intact.
+2. **One line is usable unnamed, and it is a strong one:** *the platforms that lead open-source
+   reach place 13th, 24th and 38th of 47 with this buyer; the capability the market's own
+   literature emphasises most is not the capability that wins it.* Category and a number, no
+   name-drop, and it survives a panel checking it.
+3. **The OSINT build target is 8, not 10, and it is an integration.** This is now scoped, not
+   aspirational — and it takes corporate intelligence to 84.3%, third of forty-seven, second among
+   platforms the buyer can purchase.
+4. **The competitive answer for the meeting is "complement," delivered as a compliment** — the same
+   register that works for Siren, for the same reason. The mirror-image numbers make it true rather
+   than diplomatic: 20/70 against 56/70 at the front of the engagement, 103/120 against 29/120 at
+   the back.
+5. **Do not claim** that Loupe beats Maltego, that an integration exists, or that Maltego's 200k
+   users validate anything about Loupe's market. Each is checkable and each fails.
+
+**Reproduce with** `scripts/fitlens/` — `newprofiles.py` holds the corporate-intelligence profile
+and the same fit formula used throughout Part 7. The instrument's known limitation stands: it does
+not reproduce the *published lens's* per-market ranks, so the ranks above are internally consistent
+across all seventeen profiles and must not be quoted against the live artifact until that is
+resolved.
+
+---
+
+## Part 8A — Where the 81% and the 75% come from
+
+Both figures are one arithmetic operation over the published 30-axis matrix. Nothing is weighted by
+importance, nothing is hand-adjusted, and the same formula produces all seventeen market fits for
+all forty-seven platforms.
+
+### The formula
+
+For a platform *P* and a buyer profile *M*:
+
+```
+fit(P, M) = 100 × mean over applicable axes a of  min( score(P, a) / requirement(M, a) , 1.0 )
+```
+
+Three definitions carry all the meaning:
+
+- **requirement(M, a)** — the score this buyer needs on that axis. Where the profile names a *core*
+  requirement, that number is used. Where it does not, a **floor of 5** applies: the axis still
+  counts, at a middling bar. Nothing is free.
+- **applicable axes** — axes the profile marks *not applicable* are dropped from both the numerator
+  and the denominator, so they neither help nor hurt.
+- **min(…, 1.0)** — **credit caps at meeting the requirement.** Exceeding it earns nothing. This is
+  a requirement-*satisfaction* measure, not a capability measure, and the cap is the single most
+  important property of it. Loupe's 10 on cross-source unification scores exactly what a 6 would
+  against a requirement of 6.
+
+That cap is why the two numbers behave the way they do. Loupe's raw total, 168 of 300, ranks **10th**
+of 47 — but its corporate-intelligence *fit* ranks **6th**, because fit stops rewarding depth at the
+point the buyer stops needing it and starts penalising every gap in full. **The fit metric
+understates Loupe's differentiation and overstates its competitors' — deliberately.** It answers
+"can this buyer get their job done" rather than "which is the better platform."
+
+### 81% — corporate intelligence, term by term
+
+Profile: 19 core requirements, 4 axes not applicable, 2 gates (commercial accessibility ≥5,
+deployment control ≥5 — both cleared). **26 applicable axes.**
+
+| # | Axis | Req | Loupe | Credit | |
+|---|---|---|---|---|---|
+| 1 | Auto-built case graph | 6 | 9 | **1.000** | core ✓ |
+| 2 | Device data as structured evidence | 5 | 9 | **1.000** | non-core, capped |
+| 3 | Cross-source unification | 6 | 10 | **1.000** | core ✓ |
+| 4 | Whole-corpus relational query | 6 | 9 | **1.000** | core ✓ |
+| 5 | Multimodal entities into the model | 5 | 9 | **1.000** | non-core, capped |
+| 6 | Per-claim provenance | 7 | 9 | **1.000** | core ✓ |
+| 7 | Link / network analysis | 7 | 7 | **1.000** | core ✓ exactly met |
+| 8 | Timeline & chronology | 5 | 8 | **1.000** | core ✓ |
+| 9 | Geospatial analysis | 5 | 7 | **1.000** | non-core, capped |
+| 10 | Financial / transaction analysis | 7 | 8 | **1.000** | core ✓ |
+| 11 | **OSINT & external enrichment** | **8** | **0** | **0.000** | **core ✗ — the whole loss** |
+| 12 | Processing & format breadth | 6 | 5 | 0.833 | core ✗ |
+| 13 | Case & investigation workflow | 6 | 4 | 0.667 | core ✗ |
+| 14 | Review workflow at scale | 5 | 1 | 0.200 | non-core |
+| 15 | Disclosure & production mechanics | 5 | 2 | 0.400 | non-core |
+| 16 | Analytics / TAR | — | 0 | *excluded* | n/a |
+| 17 | Collaboration & permissions | 6 | 5 | 0.833 | core ✗ |
+| 18 | Durable judgment objects | 6 | 9 | **1.000** | core ✓ |
+| 19 | Cited document Q&A | 6 | 8 | **1.000** | core ✓ |
+| 20 | Agentic task execution | 5 | 8 | **1.000** | core ✓ |
+| 21 | Disconfirmation detection | 5 | 8 | **1.000** | non-core, capped |
+| 22 | Certifications & compliance | — | 1 | *excluded* | n/a |
+| 23 | Proven scale | 5 | 3 | 0.600 | core ✗ |
+| 24 | Ecosystem integrations | 4 | 0 | 0.000 | core ✗ |
+| 25 | Evidence acquisition | — | 0 | *excluded* | n/a |
+| 26 | Acquisition & parsing validation | — | 2 | *excluded* | n/a |
+| 27 | Defensibility of AI output | 5 | 8 | **1.000** | non-core, capped |
+| 28 | Vendor viability & support | 6 | 3 | 0.500 | core ✗ |
+| 29 | Commercial accessibility | 5 | 7 | **1.000** | core ✓ gate |
+| 30 | Deployment control | 5 | 9 | **1.000** | core ✓ gate |
+
+**Sum of credits = 21.0333 over 26 applicable axes → 80.90%, reported as 81%.**
+Core requirements met: **12 of 19.** Both gates clear.
+
+Read structurally: **16 of 26 axes score full credit, 8 score partial, and 2 score zero** — OSINT and
+ecosystem integrations. Those two zeros cost 7.7 points between them, and they are the same item
+viewed twice, since reaching outside the case *is* an integration. Everything else costs 11.4 points
+of partial credit spread across six axes, none individually large.
+
+### 75% — litigation support, investigative tier
+
+Profile: 20 core requirements, 3 axes not applicable (certifications, evidence acquisition,
+geospatial), 2 gates (commercial accessibility ≥5, deployment control ≥4 — both cleared).
+**27 applicable axes.**
+
+Full credit on 14 axes: auto-built graph, device data, cross-source unification, whole-corpus query,
+multimodal entities, per-claim provenance, link analysis, timeline, financial analysis, durable
+judgment objects, cited Q&A, agentic execution, disconfirmation, defensibility of AI output, plus
+both gate axes. Against that:
+
+| # | Axis | Req | Loupe | Credit |
+|---|---|---|---|---|
+| 11 | OSINT & external enrichment | 5 | 0 | **0.000** |
+| 16 | Analytics / TAR | 5 | 0 | **0.000** |
+| 24 | Ecosystem integrations | 5 | 0 | **0.000** |
+| 14 | Review workflow at scale | 5 | 1 | 0.200 |
+| 15 | Disclosure & production mechanics | 5 | 2 | 0.400 |
+| 26 | Acquisition & parsing validation | 5 | 2 | 0.400 |
+| 23 | Proven scale | 6 | 3 | 0.500 |
+| 28 | Vendor viability & support | 6 | 3 | 0.500 |
+| 12 | Processing & format breadth | 7 | 5 | 0.714 |
+| 13 | Case & investigation workflow | 5 | 4 | 0.800 |
+| 17 | Collaboration & permissions | 6 | 5 | 0.833 |
+
+**Sum of credits = 20.3476 over 27 applicable axes → 75.36%, reported as 75%.**
+Core requirements met: **12 of 20.** Both gates clear.
+
+**Why it lands six points below corporate intelligence, despite this buyer needing less
+open-source reach.** Three reasons, and none of them is OSINT:
+
+1. **Three zeros instead of two.** Analytics/TAR is excluded as not applicable in corporate
+   intelligence — a consultancy does not run technology-assisted review — but it *is* applicable
+   here, and Loupe scores 0. That single reclassification costs 3.0 points.
+2. **Higher bars on the process axes.** Processing breadth is required at 7 rather than 6, proven
+   scale at 6 rather than 5, and review, production and parsing validation all become core rather
+   than non-core. This buyer's work product faces cross-examination, so the requirements are set
+   where the industry sets them.
+3. **Fewer exclusions to absorb the weak axes** — three rather than four.
+
+The failures are legible and concentrated in one group: **the process and readiness axes, which are
+the same items already on the security-gate roadmap.** That is the honest reading of 75% — not a bad
+fit, a fit gated on company maturity rather than product architecture.
+
+### What the numbers are sensitive to
+
+Stated plainly, because these are the levers anyone auditing the figure will reach for first.
+
+| Change | CI fit | Litigation fit |
+|---|---|---|
+| **As published** | **80.90%** | **75.36%** |
+| Non-core floor 5 → 3 (softer) | 82.44% | 76.10% |
+| Non-core floor 5 → 7 (harder) | 80.24% | 74.51% |
+| Re-include *certifications* (Loupe 1) | 78.64% | 73.38% |
+| Re-include *evidence acquisition* (Loupe 0) | 77.90% | 72.67% |
+| Re-include *Analytics/TAR* (Loupe 0) | 77.90% | — already included |
+| **No exclusions at all — all 30 axes** | **72.11%** | **71.83%** |
+
+Three conclusions follow:
+
+- **The not-applicable set is the largest single lever, worth 8.8 points in corporate intelligence.**
+  Three of the four excluded axes are ones where Loupe scores 0–2. The exclusions are defensible on
+  the work — a corporate-intelligence firm does not image devices, does not run TAR, and does not
+  commission NIST parsing validation — but the figure moves materially if a reviewer disagrees, and
+  the derivation should be offered alongside the number rather than after being asked for it.
+- **Certifications is excluded here because it is excluded everywhere, by a documented, symmetric,
+  study-wide decision** — not by a choice made for these two profiles. §2 of the published lens:
+  SOC 2, ISO 27001, CJIS and FedRAMP are "procurement timing rather than capability… gating on them
+  measures how old a company is rather than how well its product fits. The axis stays scored and
+  visible; it contributes to no gate and no fit percentage." The published note also states the
+  consequence of the alternative: counted as a weighted requirement, fits move one to four points
+  and one ordering changes — criminal defence, where Loupe would sit second rather than first.
+  Re-including it in corporate intelligence gives **78.6%**. The decision is defensible and applies
+  to all 47 platforms identically; the point to be ready with is that it is *published as a
+  decision*, which is why it reads as method rather than convenience.
+
+  **One editorial defect to fix in the artifact, because a reviewer will find it.** Four profile
+  descriptions still contain prose asserting a certifications gate that the scoring no longer
+  applies — criminal defence reads "gated on certifications, purchasability and single-tenant
+  deployment", corporate reads "certifications gate hard", prosecution "certifications sit at CJIS
+  and FedRAMP class", ethics "certifications gate at 7". In each case the machine-readable gate line
+  below it lists only accessibility and/or deployment. The prose is a leftover from the superseded
+  draft, where certifications gated every market and Loupe failed 13 of 15. Delete those clauses.
+- **Individual requirement levels barely matter.** Moving any single core requirement by ±2 moves
+  the fit by under 1.6 points in either market. Notably, **the OSINT requirement level is
+  irrelevant while Loupe scores 0** — the ratio is zero against a bar of 6 or 10 alike. What the
+  requirement level of 8 does affect is the sensitivity curve in Part 8: it is why the return on
+  building OSINT stops at 8.
+
+### The one caveat that must travel with any rank
+
+The fit percentages reproduce the published lens to within 1.7 points on average, and reproduce
+every core-requirement count exactly. **The ranks do not reproduce** — they move by up to nine
+places, because the published per-market ranks appear to have been derived market by market rather
+than from one formula. Every rank in Parts 7, 8 and 8A is internally consistent across all
+seventeen profiles and **differs from the live artifact.** Quote the fit percentages freely; do not
+quote a rank externally until the artifact is reconciled.
