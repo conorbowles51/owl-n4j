@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Render a Loupe markdown document to a branded PDF with alternating light/dark sections.
+"""Render a Loupe markdown document to a branded PDF.
 
 Usage:
-    make_loupe_pdf.py <input.md> <output.pdf> ["Cover title"]
+    make_loupe_pdf.py <input.md> <output.pdf> ["Cover title"] [--alternate]
 
-Top-level `## ` headings become sections, and sections alternate light / dark
-ground — the first is light. Anything before the first `## ` renders on the
-cover page with the title. The `# ` H1, if present, is dropped in favour of the
-cover title (which defaults to the H1 text).
+Light ground throughout by default — these are portrait documents meant to be
+read and printed, and dark pages cost legibility and toner for no reading
+benefit. Pass `--alternate` to alternate light / dark ground per top-level
+section (first section light), which suits a screen-read deck-style document.
+
+Top-level `## ` headings become sections. Anything before the first `## `
+renders on the cover page with the title. The `# ` H1, if present, is dropped in
+favour of the cover title (which defaults to the H1 text).
 
 Each section is rendered independently, then composited over a background page
 drawn with reportlab. This is deliberate: xhtml2pdf's named `@page` templates
@@ -122,13 +126,15 @@ def split_sections(md_text):
 
 
 def main():
-    if len(sys.argv) < 3:
+    argv = [a for a in sys.argv[1:] if a != "--alternate"]
+    alternate = "--alternate" in sys.argv
+    if len(argv) < 2:
         sys.exit(__doc__)
-    src, out = sys.argv[1], sys.argv[2]
+    src, out = argv[0], argv[1]
     md_text = open(src, encoding="utf-8").read()
 
     h1 = re.match(r"^# (.*?)\n", md_text)
-    title = sys.argv[3] if len(sys.argv) > 3 else (h1.group(1) if h1 else "Loupe")
+    title = argv[2] if len(argv) > 2 else (h1.group(1) if h1 else "Loupe")
     md_text = re.sub(r"^# .*?\n", "", md_text, count=1)
 
     preamble, sections = split_sections(md_text)
@@ -143,7 +149,7 @@ def main():
     # First pass: render each section, note its theme and page count.
     rendered = []
     for i, (heading, body) in enumerate(sections):
-        theme = "light" if i % 2 == 0 else "dark"
+        theme = "dark" if (alternate and i % 2) else "light"
         html = markdown.markdown(heading + "\n" + body, extensions=md_ext)
         buf = render(html, theme, cover_html=cover if i == 0 else "")
         reader = PdfReader(buf)

@@ -142,20 +142,123 @@ ingests at all. Law firms and defence practices are not among its named customer
 
 ---
 
+## Loupe and Kaseware in detail
+
+These two look more alike than they are, and the resemblance is worth taking seriously rather than
+waving away. Both hold a case as a real object. Both draw link charts, build timelines and plot
+locations on a map. Both do entity recognition. Both are sold as investigation platforms. Anyone
+comparing feature lists will conclude they are competitors.
+
+### The one difference that produces all the others
+
+**Kaseware organises the investigation. Loupe interprets the evidence.**
+
+Kaseware knows the file exists, who touched it, whose task it is and what stage the case is at.
+Loupe knows what is inside the file and what it means.
+
+That is why the apparent overlap is thinner than it looks. The link chart, the timeline and the map
+are *presentation* — and both platforms can draw all three. The difference is what fills them. In
+Kaseware, an analyst fills them in by hand, from material they have already read and understood. In
+Loupe, ingestion fills them: the extraction, the documents and the bank records become the entities
+and the events, and the chart is a view of the model rather than a drawing an analyst maintains.
+
+So the comparison is not chart against chart. It is *who does the reading*.
+
+### What Loupe does that Kaseware does not
+
+- **Turns a phone extraction into records.** Individual calls, messages, contacts and locations, each
+  queryable and attributed to a person. Kaseware has no documented ingestion path for a forensic
+  extraction; its evidence module stores and tracks items.
+- **Turns documents into facts.** Kaseware's document management stores, tags, permissions and
+  searches a file. Loupe reads the contents and lifts out the entities and assertions inside it. The
+  difference is a filing cabinet with good search, against a model of what the documents say.
+- **Resolves one identity across different kinds of evidence.** The same person is the same object
+  whether they appear in the phone, a contract or a bank statement. Kaseware's entity recognition
+  operates inside its own records; nothing indicates it unifies an identity across an extraction, a
+  statement and a PDF.
+- **Treats financial records as analysable data** — categorising transactions, resolving who a
+  counterparty actually is, and tracing flows between parties. For asset tracing this is not a
+  feature, it is the job. Kaseware has essentially nothing here.
+- **Attaches a source to every individual claim** — verbatim quote, page and file, stored with the
+  fact. Kaseware maintains chain of custody on *items* of evidence. Under cross-examination those are
+  different things: one proves the exhibit is what it says it is, the other proves the sentence in
+  your report is supported.
+- **Answers relationship questions across everything ingested,** with a definite result, rather than
+  searching records and returning what matched.
+- **Brings audio, video and images into the same model** — names and places spoken or shown become
+  the same objects as those in documents.
+- **Gives cited answers and auditable AI output.** Kaseware publishes "AI Services" with no
+  documented detail and nothing establishing that its answers cite sources.
+- **Hunts for what contradicts a theory.** Kaseware has nothing of the kind.
+- **Holds investigator judgment as first-class objects** — curated collections, approved facts, built
+  narratives — rather than case notes and generated reports.
+
+### What Kaseware does that Loupe does not
+
+This list is longer, and most of it is real rather than cosmetic.
+
+- **Runs a unit's caseload.** Case intake, incident management, assignment to named investigators,
+  tasks with due dates, status and lifecycle, supervisor oversight, dispatch. Loupe's equivalent is
+  thin.
+- **Records management** as a system in its own right, not only case files.
+- **A public portal** for intake from outside the organisation. Loupe has nothing comparable.
+- **Compartmentalised access across a large organisation** — need-to-know segregation and user
+  auditing at a level an agency or a corporate security function requires. Loupe's permissions are
+  basic.
+- **Management reporting and dashboards** on the caseload itself: volumes, status, workload. This is
+  reporting about the work rather than about the evidence, and it is what a supervisor buys.
+- **A mobile app** for field use.
+- **APIs and integrations** into surrounding systems. Loupe has none at all.
+- **SOC 2, CJIS and TX-RAMP.** Loupe holds none of these, and for an agency or a corporate security
+  team they are frequently the first question rather than a later one.
+- **Some open-source research tooling.** Modest, but not nothing, which is what Loupe has.
+- **Physical and item-level evidence custody** — tracking evidence as property. Loupe models the
+  contents of digital evidence; it is not a property-room system.
+- **Institutional credibility.** Founded by the former FBI agents who built Sentinel, and sold across
+  law enforcement, fusion centres, intelligence agencies, corporate security, finance, aviation,
+  energy and pharmaceutical customers. Loupe is pre-revenue.
+
+### Where both are equally weak
+
+Neither does document review and production in the eDiscovery sense: no batching work out to a
+review team, no coding panels, no reviewer quality control, no redaction, no privilege logs, no
+numbered exhibits or load files. In any matter where the deliverable is a production to another
+party, neither platform is the answer.
+
+### The commercial risk this creates
+
+Both products get described as investigation platforms, and in corporate intelligence they can end up
+on the same shortlist and the same budget line. **In a comparison framed as investigation
+management, Kaseware wins nearly everything procurement scores** — credentials, integrations,
+permissions, reporting, mobile, vendor track record — **and loses nearly everything the analyst
+needs.** That framing is unfavourable and avoidable. The comparison to invite is what happens to the
+evidence after it arrives; the comparison to decline is which product manages a caseload better,
+because Kaseware manages a caseload better.
+
+The genuinely useful reading is that a firm can run Kaseware and still have every problem Loupe
+solves, because organising a case and understanding its contents are different jobs. That is the
+sentence to lead with when the two come up together.
+
+---
+
 ## Who fits where
 
 ### The structural picture
 
-The three platforms are strong at three different things, and the pattern is clean enough to be
-worth stating on its own:
+The three platforms answer three different questions about the same investigation:
 
-- **Kaseware runs the unit** — workflow, permissions, certifications, institutional maturity.
-- **Maltego reaches outward** — external data, pivoting, capture of what it finds.
-- **Loupe understands the material** — one model, provenance, chronology, contradiction.
+- **Kaseware — is the work being run properly?** Who is assigned it, what stage is it at, who is
+  allowed to see it, what does the supervisor need to know.
+- **Maltego — what exists outside the case?** Registries, sanctions lists, adverse media, social
+  material, and how it connects to a name you already have.
+- **Loupe — what does the material actually say?** One model across every kind of evidence, each
+  claim traceable to its source, a chronology that holds, and the facts that contradict the theory.
 
-Neither of the other two does what Loupe does, and **Loupe's two weakest areas are precisely what
-they are respectively good at.** That is the honest shape of the field, and it is more useful than a
-ranking, because it says what to build, what to integrate, and what to leave alone.
+All three questions are legitimate and a serious engagement asks all three. What matters commercially
+is that **neither of the other two answers Loupe's question, and Loupe's two weakest areas are
+exactly what they are respectively good at** — running the work is Kaseware, reaching outward is
+Maltego. That is the honest shape of the field, and it is more useful than a ranking because it says
+what to build, what to integrate and what to leave alone.
 
 ### Criminal defence
 
@@ -174,6 +277,9 @@ different parts of it.** Maltego owns the sourcing and collecting. Kaseware owns
 engagement — genuinely useful here, because this market does need case workflow, need-to-know
 collaboration and enterprise-grade credentials, and it is stronger on all three than Loupe is.
 Loupe owns the corroborating, analysing and reporting.
+
+This is also the market where Kaseware is most likely to be mistaken for a competitor, and where the
+framing of the comparison decides the outcome. See the detailed section above.
 
 The halves are worth different amounts. The front is spend that already goes to licensed data
 vendors and is not really available to compete for — winning it means becoming a data business. The

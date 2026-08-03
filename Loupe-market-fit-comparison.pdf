@@ -8,8 +8,8 @@ endobj
 2 0 obj
 <<
 /Type /Pages
-/Count 8
-/Kids [ 4 0 R 10 0 R 13 0 R 19 0 R 22 0 R 28 0 R 31 0 R 37 0 R ]
+/Count 11
+/Kids [ 4 0 R 10 0 R 13 0 R 19 0 R 22 0 R 28 0 R 31 0 R 34 0 R 40 0 R 43 0 R 49 0 R ]
 >>
 endobj
 3 0 obj
@@ -41,7 +41,7 @@ endobj
 endobj
 5 0 obj
 <<
-/Length 6380
+/Length 6381
 >>
 stream
 q
@@ -55,7 +55,7 @@ BT /F1 7.2 Tf 8.64 TL ET
 .486275 .498039 .529412 rg
 BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
 .705882 .086275 .141176 rg
-BT 1 0 0 1 530.2644 30 Tm (1 / 8) Tj T* ET
+BT 1 0 0 1 526.2612 30 Tm (1 / 11) Tj T* ET
  
 
 Q
@@ -482,7 +482,7 @@ endobj
 endobj
 11 0 obj
 <<
-/Length 2695
+/Length 2696
 >>
 stream
 q
@@ -496,7 +496,7 @@ BT /F1 7.2 Tf 8.64 TL ET
 .486275 .498039 .529412 rg
 BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
 .705882 .086275 .141176 rg
-BT 1 0 0 1 530.2644 30 Tm (2 / 8) Tj T* ET
+BT 1 0 0 1 526.2612 30 Tm (2 / 11) Tj T* ET
  
 
 Q
@@ -652,21 +652,21 @@ endobj
 endobj
 14 0 obj
 <<
-/Length 7126
+/Length 7245
 >>
 stream
 q
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
-.043137 .047059 .058824 rg
+1 1 1 rg
 n 0 0 595.2756 841.8898 re f*
-.2 .207843 .235294 RG
+.831373 .835294 .854902 RG
 .5 w
 n 51 40 m 544.2756 40 l S
 BT /F1 7.2 Tf 8.64 TL ET
-.541176 .552941 .584314 rg
+.486275 .498039 .529412 rg
 BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
-.890196 .231373 .298039 rg
-BT 1 0 0 1 530.2644 30 Tm (3 / 8) Tj T* ET
+.705882 .086275 .141176 rg
+BT 1 0 0 1 526.2612 30 Tm (3 / 11) Tj T* ET
  
 
 Q
@@ -691,14 +691,14 @@ BT
 1 0 0 1 0 17.73 Tm
 22.8 TL
 /F2 15 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (The three platforms) Tj
 T*
 ET
 Q
 Q
 q
-0.2 0.207843 0.235294 RG
+0.831373 0.835294 0.854902 RG
 0.7 w
 n
 0 0 m
@@ -716,7 +716,7 @@ BT
 1 0 0 1 0 10.9824 Tm
 17.024 TL
 /F2 11.2 Tf
-0.890196 0.231373 0.298039 rg
+0.705882 0.086275 0.141176 rg
 (Loupe) Tj
 T*
 ET
@@ -736,10 +736,10 @@ BT
 1 0 0 1 0 24.2912 Tm
 14.592 TL
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (What it does\056) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 ( It takes everything that arrives in a matter \227 phone extractions\054 documents\054 bank statements\054 audio\054) Tj
 T*
 (video\054 images \227 and resolves it into a single model where the same person is the same object across all of it\056) Tj
@@ -768,7 +768,7 @@ BT
 1 0 0 1 0 126.4352 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Underneath that\072 a phone extraction becomes first\055class structured records\054 so individual calls\054 messages\054 contacts) Tj
 T*
 (and locations are each queryable\056 Every extracted fact carries its verbatim quote\054 page and file\054 stored with the fact\056) Tj
@@ -807,10 +807,10 @@ BT
 1 0 0 1 0 68.0672 Tm
 14.592 TL
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (What it cannot do\056) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 ( Reach outside the matter at all \227 no registries\054 no sanctions lists\054 no adverse media\054 no court) Tj
 T*
 (records\056 Connect to anything else \227 no document management\054 no practice management\054 no legal research\054 no) Tj
@@ -837,7 +837,7 @@ BT
 1 0 0 1 0 10.9824 Tm
 17.024 TL
 /F2 11.2 Tf
-0.890196 0.231373 0.298039 rg
+0.705882 0.086275 0.141176 rg
 (Maltego) Tj
 T*
 ET
@@ -862,10 +862,10 @@ BT
 1 0 0 1 0 97.2512 Tm
 14.592 TL
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (What it does\056) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 ( Reach\054 and it is the best in the field at it\056 Around 120 integrated data providers\054 metered by credits\056) Tj
 T*
 (Start from a name\054 email\054 domain\054 phone number or crypto wallet and pivot outward to whatever relates to it\056) Tj
@@ -902,10 +902,10 @@ BT
 1 0 0 1 0 97.2512 Tm
 14.592 TL
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (What it cannot do\056) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 ( Ingest the matter\056 Import is CSV and Excel \227 you map columns to entities\056 A discovery PDF) Tj
 T*
 (has to be processed into a table outside the product first\054 and for a phone extraction there is no path at all\056 Its graph) Tj
@@ -936,7 +936,7 @@ BT
 1 0 0 1 0 10.9824 Tm
 17.024 TL
 /F2 11.2 Tf
-0.890196 0.231373 0.298039 rg
+0.705882 0.086275 0.141176 rg
 (Kaseware) Tj
 T*
 ET
@@ -959,10 +959,10 @@ BT
 1 0 0 1 0 68.0672 Tm
 14.592 TL
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (What it does\056) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 ( It runs the investigation\056 Built by former FBI Special Agents who built Sentinel\054 the FBI\047s own case) Tj
 T*
 (management system\054 and it shows\072 intake\054 incident management\054 records\054 document and evidence management\054) Tj
@@ -990,7 +990,7 @@ BT
 1 0 0 1 0 24.2912 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Around that sits real analytical tooling rather than workflow alone \227 link analysis\054 timelines\054 entity recognition and ) Tj
 T*
 (geospatial analysis\056 Collaboration and permissions are a strength\072 compartmentalised access\054 need\055to\055know) Tj
@@ -1064,21 +1064,21 @@ endobj
 endobj
 20 0 obj
 <<
-/Length 2170
+/Length 2179
 >>
 stream
 q
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
-.043137 .047059 .058824 rg
+1 1 1 rg
 n 0 0 595.2756 841.8898 re f*
-.2 .207843 .235294 RG
+.831373 .835294 .854902 RG
 .5 w
 n 51 40 m 544.2756 40 l S
 BT /F1 7.2 Tf 8.64 TL ET
-.541176 .552941 .584314 rg
+.486275 .498039 .529412 rg
 BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
-.890196 .231373 .298039 rg
-BT 1 0 0 1 530.2644 30 Tm (4 / 8) Tj T* ET
+.705882 .086275 .141176 rg
+BT 1 0 0 1 526.2612 30 Tm (4 / 11) Tj T* ET
  
 
 Q
@@ -1105,7 +1105,7 @@ BT
 1 0 0 1 0 38.8832 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (segregation and user auditing\056 There is a mobile app\054 and APIs and integrations\056 It is SOC 2\054 CJIS and TX\055RAMP) Tj
 T*
 (certified\054 and sold to law enforcement\054 fusion centres\054 intelligence agencies\054 corporate security\054 finance\054 aviation\054) Tj
@@ -1134,10 +1134,10 @@ BT
 1 0 0 1 0 97.2512 Tm
 14.592 TL
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (What it cannot do\056) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 ( Build the evidence model\056 Documents and evidence are ) Tj
 /F3 9.6 Tf
 (managed) Tj
@@ -1210,7 +1210,7 @@ endobj
 endobj
 23 0 obj
 <<
-/Length 7604
+/Length 8600
 >>
 stream
 q
@@ -1224,7 +1224,7 @@ BT /F1 7.2 Tf 8.64 TL ET
 .486275 .498039 .529412 rg
 BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
 .705882 .086275 .141176 rg
-BT 1 0 0 1 530.2644 30 Tm (5 / 8) Tj T* ET
+BT 1 0 0 1 526.2612 30 Tm (5 / 11) Tj T* ET
  
 
 Q
@@ -1250,7 +1250,7 @@ BT
 22.8 TL
 /F2 15 Tf
 0.043137 0.047059 0.058824 rg
-(Who fits where) Tj
+(Loupe and Kaseware in detail) Tj
 T*
 ET
 Q
@@ -1265,7 +1265,35 @@ S
 Q
 Q
 q
-1 0 0 1 51.02362 722.6729 cm
+1 0 0 1 51.02362 687.3289 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 53.4752 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(These two look more alike than they are\054 and the resemblance is worth taking seriously rather than waving away\056) Tj
+T*
+(Both hold a case as a real object\056 Both draw link charts\054 build timelines and plot locations on a map\056 Both do entity) Tj
+T*
+(recognition\056 Both are sold as investigation platforms\056 Anyone comparing feature lists will conclude they are) Tj
+T*
+(competitors\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 653.3049 cm
 q
 1 0 0 1 1 -1 cm
 q
@@ -1275,7 +1303,7 @@ BT
 17.024 TL
 /F2 11.2 Tf
 0.705882 0.086275 0.141176 rg
-(The structural picture) Tj
+(The one difference that produces all the others) Tj
 T*
 ET
 Q
@@ -1284,7 +1312,26 @@ q
 Q
 Q
 q
-1 0 0 1 51.02362 686.4889 cm
+1 0 0 1 51.02362 631.7129 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+BT
+1 0 0 1 0 9.6992 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Kaseware organises the investigation\056 Loupe interprets the evidence\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 593.5289 cm
 q
 1 0 0 1 1 -1 cm
 q
@@ -1295,9 +1342,9 @@ BT
 14.592 TL
 /F1-0 9.6 Tf
 0.086275 0.090196 0.109804 rg
-(The three platforms are strong at three different things\054 and the pattern is clean enough to be worth stating on its) Tj
+(Kaseware knows the file exists\054 who touched it\054 whose task it is and what stage the case is at\056 Loupe knows what is) Tj
 T*
-(own\072) Tj
+(inside the file and what it means\056) Tj
 T*
 ET
 Q
@@ -1306,30 +1353,55 @@ q
 Q
 Q
 q
-1 0 0 1 51.02362 662.8969 cm
+1 0 0 1 51.02362 511.5689 cm
 q
 1 0 0 1 1 -1 cm
 q
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 68.0672 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(That is why the apparent overlap is thinner than it looks\056 The link chart\054 the timeline and the map are ) Tj
+/F3 9.6 Tf
+(presentation) Tj
+/F1-0 9.6 Tf
+T*
+(\227 and both platforms can draw all three\056 The difference is what fills them\056 In Kaseware\054 an analyst fills them in by) Tj
+T*
+(hand\054 from material they have already read and understood\056 In Loupe\054 ingestion fills them\072 the extraction\054 the) Tj
+T*
+(documents and the bank records become the entities and the events\054 and the chart is a view of the model rather) Tj
+T*
+(than a drawing an analyst maintains\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 487.9769 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
 BT
 1 0 0 1 0 9.6992 Tm
-/F1-0 9.6 Tf
-11.52 TL
-0.086275 0.090196 0.109804 rg
-/F1-0 9.6 Tf
-11.52 TL
-0.086275 0.090196 0.109804 rg
-<7f> Tj
-ET
-0.9 w
-BT
-1 0 0 1 13 9.6992 Tm
 14.592 TL
-/F2 9.6 Tf
-0.043137 0.047059 0.058824 rg
-(Kaseware runs the unit) Tj
 /F1-0 9.6 Tf
 0.086275 0.090196 0.109804 rg
-( \227 workflow\054 permissions\054 certifications\054 institutional maturity\056) Tj
+(So the comparison is not chart against chart\056 It is ) Tj
+/F3 9.6 Tf
+(who does the reading) Tj
+/F1-0 9.6 Tf
+(\056) Tj
 T*
 ET
 Q
@@ -1338,30 +1410,17 @@ q
 Q
 Q
 q
-1 0 0 1 51.02362 641.8049 cm
+1 0 0 1 51.02362 453.9529 cm
 q
 1 0 0 1 1 -1 cm
 q
+1.05 w
 BT
-1 0 0 1 0 9.6992 Tm
-/F1-0 9.6 Tf
-11.52 TL
-0.086275 0.090196 0.109804 rg
-/F1-0 9.6 Tf
-11.52 TL
-0.086275 0.090196 0.109804 rg
-<7f> Tj
-ET
-0.9 w
-BT
-1 0 0 1 13 9.6992 Tm
-14.592 TL
-/F2 9.6 Tf
-0.043137 0.047059 0.058824 rg
-(Maltego reaches outward) Tj
-/F1-0 9.6 Tf
-0.086275 0.090196 0.109804 rg
-( \227 external data\054 pivoting\054 capture of what it finds\056) Tj
+1 0 0 1 0 10.9824 Tm
+17.024 TL
+/F2 11.2 Tf
+0.705882 0.086275 0.141176 rg
+(What Loupe does that Kaseware does not) Tj
 T*
 ET
 Q
@@ -1370,108 +1429,36 @@ q
 Q
 Q
 q
-1 0 0 1 51.02362 620.7129 cm
+1 0 0 1 51.02362 403.1769 cm
 q
 1 0 0 1 1 -1 cm
 q
-BT
-1 0 0 1 0 9.6992 Tm
-/F1-0 9.6 Tf
-11.52 TL
-0.086275 0.090196 0.109804 rg
-/F1-0 9.6 Tf
-11.52 TL
-0.086275 0.090196 0.109804 rg
-<7f> Tj
-ET
-0.9 w
-BT
-1 0 0 1 13 9.6992 Tm
-14.592 TL
-/F2 9.6 Tf
-0.043137 0.047059 0.058824 rg
-(Loupe understands the material) Tj
-/F1-0 9.6 Tf
-0.086275 0.090196 0.109804 rg
-( \227 one model\054 provenance\054 chronology\054 contradiction\056) Tj
-T*
-ET
-Q
-Q
-q
-Q
-Q
-q
-1 0 0 1 51.02362 608.2129 cm
-Q
-q
-1 0 0 1 51.02362 562.4369 cm
-q
-1 0 0 1 1 -1 cm
-q
-0.9 w
-0.9 w
-0.9 w
 BT
 1 0 0 1 0 38.8832 Tm
-14.592 TL
 /F1-0 9.6 Tf
+11.52 TL
 0.086275 0.090196 0.109804 rg
-(Neither of the other two does what Loupe does\054 and ) Tj
-/F2 9.6 Tf
-0.043137 0.047059 0.058824 rg
-(Loupe\047s two weakest areas are precisely what they are) Tj
-T*
-(respectively good at\056) Tj
 /F1-0 9.6 Tf
+11.52 TL
 0.086275 0.090196 0.109804 rg
-( That is the honest shape of the field\054 and it is more useful than a ranking\054 because it says) Tj
-T*
-(what to build\054 what to integrate\054 and what to leave alone\056) Tj
-T*
+<7f> Tj
 ET
-Q
-Q
-q
-Q
-Q
-q
-1 0 0 1 51.02362 528.4129 cm
-q
-1 0 0 1 1 -1 cm
-q
-1.05 w
-BT
-1 0 0 1 0 10.9824 Tm
-17.024 TL
-/F2 11.2 Tf
-0.705882 0.086275 0.141176 rg
-(Criminal defence) Tj
-T*
-ET
-Q
-Q
-q
-Q
-Q
-q
-1 0 0 1 51.02362 492.2289 cm
-q
-1 0 0 1 1 -1 cm
-q
+0.9 w
 0.9 w
 0.9 w
 BT
-1 0 0 1 0 24.2912 Tm
+1 0 0 1 13 38.8832 Tm
 14.592 TL
 /F2 9.6 Tf
 0.043137 0.047059 0.058824 rg
-(Loupe fits\054 and the other two are not in this market\056) Tj
+(Turns a phone extraction into records\056) Tj
 /F1-0 9.6 Tf
 0.086275 0.090196 0.109804 rg
-( What the buyer needs and what Loupe does are the same) Tj
+( Individual calls\054 messages\054 contacts and locations\054 each queryable) Tj
 T*
-(list \227 it satisfies every one of the twelve requirements this buyer has\056) Tj
+(and attributed to a person\056 Kaseware has no documented ingestion path for a forensic extraction\073 its evidence) Tj
+T*
+(module stores and tracks items\056) Tj
 T*
 ET
 Q
@@ -1480,73 +1467,36 @@ q
 Q
 Q
 q
-1 0 0 1 51.02362 439.4529 cm
+1 0 0 1 51.02362 352.9009 cm
 q
 1 0 0 1 1 -1 cm
 q
-0.9 w
-0.9 w
-0.9 w
 BT
 1 0 0 1 0 38.8832 Tm
-14.592 TL
 /F1-0 9.6 Tf
+11.52 TL
 0.086275 0.090196 0.109804 rg
-(Maltego satisfies none of them\056 The evidence arrives from the prosecution and there is no way to get it into the) Tj
-T*
-(product\056 Kaseware satisfies two\054 and is a case\055management system for an investigating agency rather than an) Tj
-T*
-(evidence platform for the receiving side \227 it is sold primarily to the other side of the table\056) Tj
-T*
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
 ET
-Q
-Q
-q
-Q
-Q
-q
-1 0 0 1 51.02362 405.4289 cm
-q
-1 0 0 1 1 -1 cm
-q
-1.05 w
-BT
-1 0 0 1 0 10.9824 Tm
-17.024 TL
-/F2 11.2 Tf
-0.705882 0.086275 0.141176 rg
-(Corporate intelligence) Tj
-T*
-ET
-Q
-Q
-q
-Q
-Q
-q
-1 0 0 1 51.02362 340.0609 cm
-q
-1 0 0 1 1 -1 cm
-q
-0.9 w
 0.9 w
 0.9 w
 0.9 w
 BT
-1 0 0 1 0 53.4752 Tm
+1 0 0 1 13 38.8832 Tm
 14.592 TL
 /F2 9.6 Tf
 0.043137 0.047059 0.058824 rg
-(This market splits cleanly down the middle of the engagement\054 and all three platforms sit in different parts) Tj
-T*
-(of it\056) Tj
+(Turns documents into facts\056) Tj
 /F1-0 9.6 Tf
 0.086275 0.090196 0.109804 rg
-( Maltego owns the sourcing and collecting\056 Kaseware owns running the engagement \227 genuinely useful here\054) Tj
+( Kaseware\047s document management stores\054 tags\054 permissions and searches a) Tj
 T*
-(because this market does need case workflow\054 need\055to\055know collaboration and enterprise\055grade credentials\054 and it) Tj
+(file\056 Loupe reads the contents and lifts out the entities and assertions inside it\056 The difference is a filing cabinet) Tj
 T*
-(is stronger on all three than Loupe is\056 Loupe owns the corroborating\054 analysing and reporting\056) Tj
+(with good search\054 against a model of what the documents say\056) Tj
 T*
 ET
 Q
@@ -1555,26 +1505,36 @@ q
 Q
 Q
 q
-1 0 0 1 51.02362 272.6929 cm
+1 0 0 1 51.02362 302.6249 cm
 q
 1 0 0 1 1 -1 cm
 q
-0.9 w
+BT
+1 0 0 1 0 38.8832 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
 0.9 w
 0.9 w
 0.9 w
 BT
-1 0 0 1 0 53.4752 Tm
+1 0 0 1 13 38.8832 Tm
 14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Resolves one identity across different kinds of evidence\056) Tj
 /F1-0 9.6 Tf
 0.086275 0.090196 0.109804 rg
-(The halves are worth different amounts\056 The front is spend that already goes to licensed data vendors and is not) Tj
+( The same person is the same object whether they) Tj
 T*
-(really available to compete for \227 winning it means becoming a data business\056 The back is billable hours sitting in) Tj
+(appear in the phone\054 a contract or a bank statement\056 Kaseware\047s entity recognition operates inside its own) Tj
 T*
-(spreadsheets\056 Loupe\047s missing piece is reach\054 which can be integrated\056 Maltego\047s missing piece is the evidence) Tj
-T*
-(model\054 which is architecture\056 Kaseware\047s missing piece is also the evidence model\056) Tj
+(records\073 nothing indicates it unifies an identity across an extraction\054 a statement and a PDF\056) Tj
 T*
 ET
 Q
@@ -1583,70 +1543,113 @@ q
 Q
 Q
 q
-1 0 0 1 51.02362 234.5089 cm
+1 0 0 1 51.02362 252.3489 cm
 q
 1 0 0 1 1 -1 cm
 q
+BT
+1 0 0 1 0 38.8832 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
 0.9 w
 0.9 w
+0.9 w
+BT
+1 0 0 1 13 38.8832 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Treats financial records as analysable data) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( \227 categorising transactions\054 resolving who a counterparty) Tj
+T*
+(actually is\054 and tracing flows between parties\056 For asset tracing this is not a feature\054 it is the job\056 Kaseware has) Tj
+T*
+(essentially nothing here\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 202.0729 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 38.8832 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 38.8832 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Attaches a source to every individual claim) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( \227 verbatim quote\054 page and file\054 stored with the fact\056 Kaseware) Tj
+T*
+(maintains chain of custody on ) Tj
+/F3 9.6 Tf
+(items) Tj
+/F1-0 9.6 Tf
+( of evidence\056 Under cross\055examination those are different things\072 one proves) Tj
+T*
+(the exhibit is what it says it is\054 the other proves the sentence in your report is supported\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 166.3889 cm
+q
+1 0 0 1 1 -1 cm
+q
 BT
 1 0 0 1 0 24.2912 Tm
-14.592 TL
 /F1-0 9.6 Tf
+11.52 TL
 0.086275 0.090196 0.109804 rg
-(Of the nineteen things this buyer needs\054 Loupe meets twelve\054 Kaseware nine and Maltego seven \227 and the ones) Tj
-T*
-(Loupe misses are reach\054 integrations\054 workflow and company maturity\054 not analysis\056) Tj
-T*
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
 ET
-Q
-Q
-q
-Q
-Q
-q
-1 0 0 1 51.02362 200.4849 cm
-q
-1 0 0 1 1 -1 cm
-q
-1.05 w
-BT
-1 0 0 1 0 10.9824 Tm
-17.024 TL
-/F2 11.2 Tf
-0.705882 0.086275 0.141176 rg
-(Litigation support and disputes) Tj
-T*
-ET
-Q
-Q
-q
-Q
-Q
-q
-1 0 0 1 51.02362 135.1169 cm
-q
-1 0 0 1 1 -1 cm
-q
-0.9 w
-0.9 w
 0.9 w
 0.9 w
 BT
-1 0 0 1 0 53.4752 Tm
+1 0 0 1 13 24.2912 Tm
 14.592 TL
 /F2 9.6 Tf
 0.043137 0.047059 0.058824 rg
-(The industry as it defines itself is not addressable\054 and should not be claimed\056) Tj
+(Answers relationship questions across everything ingested\054) Tj
 /F1-0 9.6 Tf
 0.086275 0.090196 0.109804 rg
-( Neither is eDiscovery and) Tj
+( with a definite result\054 rather than searching) Tj
 T*
-(managed review\072 it is the fastest\055growing thing in the vicinity and precisely the capability set Loupe is weakest at \227) Tj
-T*
-(no batching\054 no coding panels\054 no reviewer QC\054 no redaction\054 no privilege logs\054 no production formats\056 The) Tj
-T*
-(incumbents own it outright\056) Tj
+(records and returning what matched\056) Tj
 T*
 ET
 Q
@@ -1655,26 +1658,100 @@ q
 Q
 Q
 q
-1 0 0 1 51.02362 67.74885 cm
+1 0 0 1 51.02362 130.7049 cm
 q
 1 0 0 1 1 -1 cm
 q
-0.9 w
-0.9 w
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
 0.9 w
 0.9 w
 BT
-1 0 0 1 0 53.4752 Tm
+1 0 0 1 13 24.2912 Tm
 14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Brings audio\054 video and images into the same model) Tj
 /F1-0 9.6 Tf
 0.086275 0.090196 0.109804 rg
-(The disputes\055investigation tier is real\054 and it is the weakest of the three markets for all three platforms\056 Loupe brings ) Tj
+( \227 names and places spoken or shown become the) Tj
 T*
-(the analysis and the provenance the expert report is built on\054 and is missing production mechanics\054 review ) Tj
+(same objects as those in documents\056) Tj
 T*
-(machinery and track record \227 maturity items rather than architectural ones\054 and most already on the roadmap\056 ) Tj
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 95.02085 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Gives cited answers and auditable AI output\056) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( Kaseware publishes \042AI Services\042 with no documented detail) Tj
 T*
-(Kaseware and Maltego are both further off\054 for the same reason in each case\072 neither can ingest the matter\054 and) Tj
+(and nothing establishing that its answers cite sources\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 73.92885 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 9.6992 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+BT
+1 0 0 1 13 9.6992 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Hunts for what contradicts a theory\056) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( Kaseware has nothing of the kind\056) Tj
 T*
 ET
 Q
@@ -1745,7 +1822,7 @@ endobj
 endobj
 29 0 obj
 <<
-/Length 1137
+/Length 9389
 >>
 stream
 q
@@ -1759,7 +1836,7 @@ BT /F1 7.2 Tf 8.64 TL ET
 .486275 .498039 .529412 rg
 BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
 .705882 .086275 .141176 rg
-BT 1 0 0 1 530.2644 30 Tm (6 / 8) Tj T* ET
+BT 1 0 0 1 526.2612 30 Tm (6 / 11) Tj T* ET
  
 
 Q
@@ -1775,15 +1852,1312 @@ ET
 q
 Q
 q
-1 0 0 1 51.02362 768.6049 cm
+1 0 0 1 51.02362 754.0129 cm
 q
 1 0 0 1 1 -1 cm
 q
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
 0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Holds investigator judgment as first\055class objects) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( \227 curated collections\054 approved facts\054 built narratives \227) Tj
+T*
+(rather than case notes and generated reports\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 741.5129 cm
+Q
+q
+1 0 0 1 51.02362 707.4889 cm
+q
+1 0 0 1 1 -1 cm
+q
+1.05 w
+BT
+1 0 0 1 0 10.9824 Tm
+17.024 TL
+/F2 11.2 Tf
+0.705882 0.086275 0.141176 rg
+(What Kaseware does that Loupe does not) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 685.8969 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+BT
+1 0 0 1 0 9.6992 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(This list is longer\054 and most of it is real rather than cosmetic\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 647.7129 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Runs a unit\047s caseload\056) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( Case intake\054 incident management\054 assignment to named investigators\054 tasks with due) Tj
+T*
+(dates\054 status and lifecycle\054 supervisor oversight\054 dispatch\056 Loupe\047s equivalent is thin\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 626.6209 cm
+q
+1 0 0 1 1 -1 cm
+q
 BT
 1 0 0 1 0 9.6992 Tm
 /F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+BT
+1 0 0 1 13 9.6992 Tm
 14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Records management) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( as a system in its own right\054 not only case files\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 605.5289 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 9.6992 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+BT
+1 0 0 1 13 9.6992 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(A public portal) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( for intake from outside the organisation\056 Loupe has nothing comparable\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 569.8449 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Compartmentalised access across a large organisation) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( \227 need\055to\055know segregation and user auditing at a) Tj
+T*
+(level an agency or a corporate security function requires\056 Loupe\047s permissions are basic\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 534.1609 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Management reporting and dashboards) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( on the caseload itself\072 volumes\054 status\054 workload\056 This is reporting) Tj
+T*
+(about the work rather than about the evidence\054 and it is what a supervisor buys\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 513.0689 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 9.6992 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+BT
+1 0 0 1 13 9.6992 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(A mobile app) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( for field use\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 491.9769 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 9.6992 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+BT
+1 0 0 1 13 9.6992 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(APIs and integrations) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( into surrounding systems\056 Loupe has none at all\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 456.2929 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(SOC 2\054 CJIS and TX\055RAMP\056) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( Loupe holds none of these\054 and for an agency or a corporate security team they) Tj
+T*
+(are frequently the first question rather than a later one\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 435.2009 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 9.6992 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+BT
+1 0 0 1 13 9.6992 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Some open\055source research tooling\056) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( Modest\054 but not nothing\054 which is what Loupe has\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 399.5169 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Physical and item\055level evidence custody) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( \227 tracking evidence as property\056 Loupe models the contents of) Tj
+T*
+(digital evidence\073 it is not a property\055room system\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 349.2409 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 38.8832 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 38.8832 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Institutional credibility\056) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( Founded by the former FBI agents who built Sentinel\054 and sold across law) Tj
+T*
+(enforcement\054 fusion centres\054 intelligence agencies\054 corporate security\054 finance\054 aviation\054 energy and) Tj
+T*
+(pharmaceutical customers\056 Loupe is pre\055revenue\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 336.7409 cm
+Q
+q
+1 0 0 1 51.02362 302.7169 cm
+q
+1 0 0 1 1 -1 cm
+q
+1.05 w
+BT
+1 0 0 1 0 10.9824 Tm
+17.024 TL
+/F2 11.2 Tf
+0.705882 0.086275 0.141176 rg
+(Where both are equally weak) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 251.9409 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 38.8832 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(Neither does document review and production in the eDiscovery sense\072 no batching work out to a review team\054 no) Tj
+T*
+(coding panels\054 no reviewer quality control\054 no redaction\054 no privilege logs\054 no numbered exhibits or load files\056 In any) Tj
+T*
+(matter where the deliverable is a production to another party\054 neither platform is the answer\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 217.9169 cm
+q
+1 0 0 1 1 -1 cm
+q
+1.05 w
+BT
+1 0 0 1 0 10.9824 Tm
+17.024 TL
+/F2 11.2 Tf
+0.705882 0.086275 0.141176 rg
+(The commercial risk this creates) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 123.3649 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 82.6592 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(Both products get described as investigation platforms\054 and in corporate intelligence they can end up on the same) Tj
+T*
+(shortlist and the same budget line\056 ) Tj
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(In a comparison framed as investigation management\054 Kaseware wins) Tj
+T*
+(nearly everything procurement scores) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( \227 credentials\054 integrations\054 permissions\054 reporting\054 mobile\054 vendor track) Tj
+T*
+(record \227 ) Tj
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(and loses nearly everything the analyst needs\056) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( That framing is unfavourable and avoidable\056 The) Tj
+T*
+(comparison to invite is what happens to the evidence after it arrives\073 the comparison to decline is which product) Tj
+T*
+(manages a caseload better\054 because Kaseware manages a caseload better\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 70.58885 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 38.8832 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(The genuinely useful reading is that a firm can run Kaseware and still have every problem Loupe solves\054 because) Tj
+T*
+(organising a case and understanding its contents are different jobs\056 That is the sentence to lead with when the two) Tj
+T*
+(come up together\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+Q
+
+endstream
+endobj
+30 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+31 0 obj
+<<
+/Contents 32 0 R
+/MediaBox [ 0 0 595.2756 841.8898 ]
+/Resources <<
+/Font <<
+/F1 33 0 R
+/F1-0 25 0 R
+/F2 26 0 R
+/F3 27 0 R
+>>
+/ProcSet [ /ImageB /ImageC /ImageI /PDF /Text ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+/Annots [ ]
+/Parent 2 0 R
+>>
+endobj
+32 0 obj
+<<
+/Length 521
+>>
+stream
+q
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+1 1 1 rg
+n 0 0 595.2756 841.8898 re f*
+.831373 .835294 .854902 RG
+.5 w
+n 51 40 m 544.2756 40 l S
+BT /F1 7.2 Tf 8.64 TL ET
+.486275 .498039 .529412 rg
+BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
+.705882 .086275 .141176 rg
+BT 1 0 0 1 526.2612 30 Tm (7 / 11) Tj T* ET
+ 
+
+Q
+q
+0.0 0.0 595.2756 841.8898 re
+W
+n
+1 0 0 1 0 0 cm
+BT
+/F1-0 12 Tf
+14.4 TL
+ET
+q
+Q
+q
+1 0 0 1 51.02362 784.1969 cm
+q
+1 w
+1 J
+0 0 0 RG
+n
+0 0 m
+493.2283 0 l
+S
+Q
+Q
+Q
+
+endstream
+endobj
+33 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+34 0 obj
+<<
+/Contents 35 0 R
+/MediaBox [ 0 0 595.2756 841.8898 ]
+/Resources <<
+/Font <<
+/F1 36 0 R
+/F1-0 37 0 R
+/F2 38 0 R
+/F3 39 0 R
+>>
+/ProcSet [ /ImageB /ImageC /ImageI /PDF /Text ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+/Annots [ ]
+/Parent 2 0 R
+>>
+endobj
+35 0 obj
+<<
+/Length 7540
+>>
+stream
+q
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+1 1 1 rg
+n 0 0 595.2756 841.8898 re f*
+.831373 .835294 .854902 RG
+.5 w
+n 51 40 m 544.2756 40 l S
+BT /F1 7.2 Tf 8.64 TL ET
+.486275 .498039 .529412 rg
+BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
+.705882 .086275 .141176 rg
+BT 1 0 0 1 526.2612 30 Tm (8 / 11) Tj T* ET
+ 
+
+Q
+q
+0.0 0.0 595.2756 841.8898 re
+W
+n
+1 0 0 1 0 0 cm
+BT
+/F1-0 12 Tf
+14.4 TL
+ET
+q
+Q
+q
+1 0 0 1 51.02362 756.6969 cm
+q
+1 0 0 1 1 -1 cm
+q
+1.40625 w
+BT
+1 0 0 1 0 17.73 Tm
+22.8 TL
+/F2 15 Tf
+0.043137 0.047059 0.058824 rg
+(Who fits where) Tj
+T*
+ET
+Q
+Q
+q
+0.831373 0.835294 0.854902 RG
+0.7 w
+n
+0 0 m
+493.2283 0 l
+S
+Q
+Q
+q
+1 0 0 1 51.02362 722.6729 cm
+q
+1 0 0 1 1 -1 cm
+q
+1.05 w
+BT
+1 0 0 1 0 10.9824 Tm
+17.024 TL
+/F2 11.2 Tf
+0.705882 0.086275 0.141176 rg
+(The structural picture) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 701.0809 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+BT
+1 0 0 1 0 9.6992 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(The three platforms answer three different questions about the same investigation\072) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 662.8969 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Kaseware \227 is the work being run properly\077) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( Who is assigned it\054 what stage is it at\054 who is allowed to see it\054) Tj
+T*
+(what does the supervisor need to know\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 627.2129 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Maltego \227 what exists outside the case\077) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( Registries\054 sanctions lists\054 adverse media\054 social material\054 and how) Tj
+T*
+(it connects to a name you already have\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 591.5289 cm
+q
+1 0 0 1 1 -1 cm
+q
+BT
+1 0 0 1 0 24.2912 Tm
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+/F1-0 9.6 Tf
+11.52 TL
+0.086275 0.090196 0.109804 rg
+<7f> Tj
+ET
+0.9 w
+0.9 w
+BT
+1 0 0 1 13 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Loupe \227 what does the material actually say\077) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( One model across every kind of evidence\054 each claim) Tj
+T*
+(traceable to its source\054 a chronology that holds\054 and the facts that contradict the theory\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 579.0289 cm
+Q
+q
+1 0 0 1 51.02362 504.0689 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 68.0672 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(All three questions are legitimate and a serious engagement asks all three\056 What matters commercially is that) Tj
+T*
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(neither of the other two answers Loupe\047s question\054 and Loupe\047s two weakest areas are exactly what they) Tj
+T*
+(are respectively good at) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( \227 running the work is Kaseware\054 reaching outward is Maltego\056 That is the honest shape) Tj
+T*
+(of the field\054 and it is more useful than a ranking because it says what to build\054 what to integrate and what to leave) Tj
+T*
+(alone\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 470.0449 cm
+q
+1 0 0 1 1 -1 cm
+q
+1.05 w
+BT
+1 0 0 1 0 10.9824 Tm
+17.024 TL
+/F2 11.2 Tf
+0.705882 0.086275 0.141176 rg
+(Criminal defence) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 433.8609 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(Loupe fits\054 and the other two are not in this market\056) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( What the buyer needs and what Loupe does are the same) Tj
+T*
+(list \227 it satisfies every one of the twelve requirements this buyer has\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 381.0849 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 38.8832 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(Maltego satisfies none of them\056 The evidence arrives from the prosecution and there is no way to get it into the) Tj
+T*
+(product\056 Kaseware satisfies two\054 and is a case\055management system for an investigating agency rather than an) Tj
+T*
+(evidence platform for the receiving side \227 it is sold primarily to the other side of the table\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 347.0609 cm
+q
+1 0 0 1 1 -1 cm
+q
+1.05 w
+BT
+1 0 0 1 0 10.9824 Tm
+17.024 TL
+/F2 11.2 Tf
+0.705882 0.086275 0.141176 rg
+(Corporate intelligence) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 281.6929 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 53.4752 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(This market splits cleanly down the middle of the engagement\054 and all three platforms sit in different parts) Tj
+T*
+(of it\056) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( Maltego owns the sourcing and collecting\056 Kaseware owns running the engagement \227 genuinely useful here\054) Tj
+T*
+(because this market does need case workflow\054 need\055to\055know collaboration and enterprise\055grade credentials\054 and it) Tj
+T*
+(is stronger on all three than Loupe is\056 Loupe owns the corroborating\054 analysing and reporting\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 243.5089 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 24.2912 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(This is also the market where Kaseware is most likely to be mistaken for a competitor\054 and where the framing of the) Tj
+T*
+(comparison decides the outcome\056 See the detailed section above\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 176.1409 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 53.4752 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(The halves are worth different amounts\056 The front is spend that already goes to licensed data vendors and is not) Tj
+T*
+(really available to compete for \227 winning it means becoming a data business\056 The back is billable hours sitting in) Tj
+T*
+(spreadsheets\056 Loupe\047s missing piece is reach\054 which can be integrated\056 Maltego\047s missing piece is the evidence) Tj
+T*
+(model\054 which is architecture\056 Kaseware\047s missing piece is also the evidence model\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 137.9569 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 24.2912 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(Of the nineteen things this buyer needs\054 Loupe meets twelve\054 Kaseware nine and Maltego seven \227 and the ones) Tj
+T*
+(Loupe misses are reach\054 integrations\054 workflow and company maturity\054 not analysis\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 103.9329 cm
+q
+1 0 0 1 1 -1 cm
+q
+1.05 w
+BT
+1 0 0 1 0 10.9824 Tm
+17.024 TL
+/F2 11.2 Tf
+0.705882 0.086275 0.141176 rg
+(Litigation support and disputes) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 67.74885 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 24.2912 Tm
+14.592 TL
+/F2 9.6 Tf
+0.043137 0.047059 0.058824 rg
+(The industry as it defines itself is not addressable\054 and should not be claimed\056) Tj
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+( Neither is eDiscovery and ) Tj
+T*
+(managed review\072 it is the fastest\055growing thing in the vicinity and precisely the capability set Loupe is weakest at \227) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+Q
+
+endstream
+endobj
+36 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+37 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+38 0 obj
+<<
+/BaseFont /Helvetica-Bold
+/Encoding /WinAnsiEncoding
+/Name /F2
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+39 0 obj
+<<
+/BaseFont /Helvetica-Oblique
+/Encoding /WinAnsiEncoding
+/Name /F3
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+40 0 obj
+<<
+/Contents 41 0 R
+/MediaBox [ 0 0 595.2756 841.8898 ]
+/Resources <<
+/Font <<
+/F1 42 0 R
+/F1-0 37 0 R
+/F2 38 0 R
+/F3 39 0 R
+>>
+/ProcSet [ /ImageB /ImageC /ImageI /PDF /Text ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+/Annots [ ]
+/Parent 2 0 R
+>>
+endobj
+41 0 obj
+<<
+/Length 2009
+>>
+stream
+q
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+1 1 1 rg
+n 0 0 595.2756 841.8898 re f*
+.831373 .835294 .854902 RG
+.5 w
+n 51 40 m 544.2756 40 l S
+BT /F1 7.2 Tf 8.64 TL ET
+.486275 .498039 .529412 rg
+BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
+.705882 .086275 .141176 rg
+BT 1 0 0 1 526.2612 30 Tm (9 / 11) Tj T* ET
+ 
+
+Q
+q
+0.0 0.0 595.2756 841.8898 re
+W
+n
+1 0 0 1 0 0 cm
+BT
+/F1-0 12 Tf
+14.4 TL
+ET
+q
+Q
+q
+1 0 0 1 51.02362 754.0129 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 24.2912 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(no batching\054 no coding panels\054 no reviewer QC\054 no redaction\054 no privilege logs\054 no production formats\056 The) Tj
+T*
+(incumbents own it outright\056) Tj
+T*
+ET
+Q
+Q
+q
+Q
+Q
+q
+1 0 0 1 51.02362 672.0529 cm
+q
+1 0 0 1 1 -1 cm
+q
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+0.9 w
+BT
+1 0 0 1 0 68.0672 Tm
+14.592 TL
+/F1-0 9.6 Tf
+0.086275 0.090196 0.109804 rg
+(The disputes\055investigation tier is real\054 and it is the weakest of the three markets for all three platforms\056 Loupe brings) Tj
+T*
+(the analysis and the provenance the expert report is built on\054 and is missing production mechanics\054 review) Tj
+T*
+(machinery and track record \227 maturity items rather than architectural ones\054 and most already on the roadmap\056) Tj
+T*
+(Kaseware and Maltego are both further off\054 for the same reason in each case\072 neither can ingest the matter\054 and) Tj
+T*
 (neither handles the financial records that disputes work actually runs on\056) Tj
 T*
 ET
@@ -1793,7 +3167,7 @@ q
 Q
 Q
 q
-1 0 0 1 51.02362 730.4209 cm
+1 0 0 1 51.02362 633.8689 cm
 q
 1 0 0 1 1 -1 cm
 q
@@ -1819,7 +3193,7 @@ q
 Q
 Q
 q
-1 0 0 1 51.02362 714.4209 cm
+1 0 0 1 51.02362 617.8689 cm
 q
 1 w
 1 J
@@ -1834,7 +3208,7 @@ Q
 
 endstream
 endobj
-30 0 obj
+42 0 obj
 <<
 /BaseFont /Helvetica
 /Encoding /WinAnsiEncoding
@@ -1843,16 +3217,16 @@ endobj
 /Type /Font
 >>
 endobj
-31 0 obj
+43 0 obj
 <<
-/Contents 32 0 R
+/Contents 44 0 R
 /MediaBox [ 0 0 595.2756 841.8898 ]
 /Resources <<
 /Font <<
-/F1 33 0 R
-/F1-0 34 0 R
-/F2 35 0 R
-/F3 36 0 R
+/F1 45 0 R
+/F1-0 46 0 R
+/F2 47 0 R
+/F3 48 0 R
 >>
 /ProcSet [ /ImageB /ImageC /ImageI /PDF /Text ]
 >>
@@ -1864,23 +3238,23 @@ endobj
 /Parent 2 0 R
 >>
 endobj
-32 0 obj
+44 0 obj
 <<
-/Length 7078
+/Length 7155
 >>
 stream
 q
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
-.043137 .047059 .058824 rg
+1 1 1 rg
 n 0 0 595.2756 841.8898 re f*
-.2 .207843 .235294 RG
+.831373 .835294 .854902 RG
 .5 w
 n 51 40 m 544.2756 40 l S
 BT /F1 7.2 Tf 8.64 TL ET
-.541176 .552941 .584314 rg
+.486275 .498039 .529412 rg
 BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
-.890196 .231373 .298039 rg
-BT 1 0 0 1 530.2644 30 Tm (7 / 8) Tj T* ET
+.705882 .086275 .141176 rg
+BT 1 0 0 1 522.258 30 Tm (10 / 11) Tj T* ET
  
 
 Q
@@ -1905,14 +3279,14 @@ BT
 1 0 0 1 0 17.73 Tm
 22.8 TL
 /F2 15 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (What is safe to say) Tj
 T*
 ET
 Q
 Q
 q
-0.2 0.207843 0.235294 RG
+0.831373 0.835294 0.854902 RG
 0.7 w
 n
 0 0 m
@@ -1930,7 +3304,7 @@ BT
 1 0 0 1 0 10.9824 Tm
 17.024 TL
 /F2 11.2 Tf
-0.890196 0.231373 0.298039 rg
+0.705882 0.086275 0.141176 rg
 (The claim that carries all three markets) Tj
 T*
 ET
@@ -1955,15 +3329,15 @@ BT
 1 0 0 1 0 97.2512 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (One finding does more work than everything else\054 and it is the one that survives being checked\072 ) Tj
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (of the platforms) Tj
 T*
 (examined\054 not one holds device data\054 financial records and documents in a single model\056) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 ( That is not an) Tj
 T*
 (artefact of how the comparison was drawn \227 it is structural\056 The companies that can model evidence sell their) Tj
@@ -1994,7 +3368,7 @@ BT
 1 0 0 1 0 38.8832 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Underneath it sits the thing no competitor can contest\072 this was built because real casework needed it and nothing) Tj
 T*
 (trialled was fit for purpose\056 Say \042a number of platforms\042 and name none of them \227 naming one invites a) Tj
@@ -2017,7 +3391,7 @@ BT
 1 0 0 1 0 10.9824 Tm
 17.024 TL
 /F2 11.2 Tf
-0.890196 0.231373 0.298039 rg
+0.705882 0.086275 0.141176 rg
 (Criminal defence \227 claim it fully) Tj
 T*
 ET
@@ -2037,7 +3411,7 @@ BT
 1 0 0 1 0 24.2912 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (The only market where the product is complete as it stands\054 with no roadmap gap between what the buyer needs) Tj
 T*
 (and what exists\056) Tj
@@ -2060,7 +3434,7 @@ BT
 1 0 0 1 0 38.8832 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Safe without hedging\072 every feature came from a working investigator on live federal casework\073 cases have been) Tj
 T*
 (worked to completion in the platform\073 three attorneys on those cases have access\056 This buyer receives evidence\054) Tj
@@ -2085,7 +3459,7 @@ BT
 1 0 0 1 0 38.8832 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Not safe\072 that anything is signed\054 that it is proven at volume\054 or that it holds audited security credentials\056 The honest) Tj
 T*
 (framing of the security gap is that it blocks the first external customer rather than making the product a bad fit \227) Tj
@@ -2108,7 +3482,7 @@ BT
 1 0 0 1 0 10.9824 Tm
 17.024 TL
 /F2 11.2 Tf
-0.890196 0.231373 0.298039 rg
+0.705882 0.086275 0.141176 rg
 (Corporate intelligence \227 claim half of it) Tj
 T*
 ET
@@ -2128,7 +3502,7 @@ BT
 1 0 0 1 0 24.2912 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Safe\072 the corroborate\226analyse\226report half\054 which is where the billable hours sit\054 at \044300\226\044500 an hour\054 currently) Tj
 T*
 (going into Excel and Word\056 It is the same product as the beachhead\054 so pursuing it costs no roadmap\056) Tj
@@ -2151,7 +3525,7 @@ BT
 1 0 0 1 0 38.8832 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Not safe\072 any open\055source or external\055data capability\054 because there is none\056 That means due diligence and KYC) Tj
 T*
 (are not addressable \227 that half runs on licensed data the firms already buy\054 and competing there means becoming) Tj
@@ -2178,25 +3552,25 @@ BT
 1 0 0 1 0 68.0672 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Two precision points\056 ) Tj
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (\042Corporate intelligence\042 means the investigative services firm) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 ( \227 the boutique or) Tj
 T*
 (major\055practice team doing fraud\054 corruption and asset tracing \227 not the in\055house corporate investigations function\054) Tj
 T*
 (which is a workflow\055and\055procurement buyer and a materially worse fit\056 And ) Tj
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (do not cite the EU due diligence) Tj
 T*
 (directive as a tailwind) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (\072 vendor market reports do\054 and it has been pushed to 2028 transposition and 2029) Tj
 T*
 (application with narrowed scope\056 It fails the first check anyone runs\056) Tj
@@ -2217,7 +3591,7 @@ BT
 1 0 0 1 0 10.9824 Tm
 17.024 TL
 /F2 11.2 Tf
-0.890196 0.231373 0.298039 rg
+0.705882 0.086275 0.141176 rg
 (Litigation support \227 sell through it\054 not to it) Tj
 T*
 ET
@@ -2237,7 +3611,7 @@ BT
 1 0 0 1 0 24.2912 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Claim the disputes\055investigation tier and the channel\056 Do not claim the litigation support industry\054 and do not claim) Tj
 T*
 (eDiscovery or managed review\056) Tj
@@ -2260,7 +3634,7 @@ BT
 1 0 0 1 0 38.8832 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (The demand driver worth citing is litigation funding\072 \04429\0562 billion in 2026\054 with 42\045 of commercial disputes now) Tj
 T*
 (carrying third\055party funding\056 A funder is a cost\055disciplined buyer with a direct interest in reducing the hours a matter) Tj
@@ -2277,7 +3651,7 @@ Q
 
 endstream
 endobj
-33 0 obj
+45 0 obj
 <<
 /BaseFont /Helvetica
 /Encoding /WinAnsiEncoding
@@ -2286,7 +3660,7 @@ endobj
 /Type /Font
 >>
 endobj
-34 0 obj
+46 0 obj
 <<
 /BaseFont /Helvetica
 /Encoding /WinAnsiEncoding
@@ -2295,7 +3669,7 @@ endobj
 /Type /Font
 >>
 endobj
-35 0 obj
+47 0 obj
 <<
 /BaseFont /Helvetica-Bold
 /Encoding /WinAnsiEncoding
@@ -2304,7 +3678,7 @@ endobj
 /Type /Font
 >>
 endobj
-36 0 obj
+48 0 obj
 <<
 /BaseFont /Helvetica-Oblique
 /Encoding /WinAnsiEncoding
@@ -2313,16 +3687,16 @@ endobj
 /Type /Font
 >>
 endobj
-37 0 obj
+49 0 obj
 <<
-/Contents 38 0 R
+/Contents 50 0 R
 /MediaBox [ 0 0 595.2756 841.8898 ]
 /Resources <<
 /Font <<
-/F1 39 0 R
-/F1-0 34 0 R
-/F2 35 0 R
-/F3 36 0 R
+/F1 51 0 R
+/F1-0 46 0 R
+/F2 47 0 R
+/F3 48 0 R
 >>
 /ProcSet [ /ImageB /ImageC /ImageI /PDF /Text ]
 >>
@@ -2334,23 +3708,23 @@ endobj
 /Parent 2 0 R
 >>
 endobj
-38 0 obj
+50 0 obj
 <<
-/Length 4282
+/Length 4312
 >>
 stream
 q
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
-.043137 .047059 .058824 rg
+1 1 1 rg
 n 0 0 595.2756 841.8898 re f*
-.2 .207843 .235294 RG
+.831373 .835294 .854902 RG
 .5 w
 n 51 40 m 544.2756 40 l S
 BT /F1 7.2 Tf 8.64 TL ET
-.541176 .552941 .584314 rg
+.486275 .498039 .529412 rg
 BT 1 0 0 1 51 30 Tm (Loupe \227 What three markets need, and what three platforms do) Tj T* ET
-.890196 .231373 .298039 rg
-BT 1 0 0 1 530.2644 30 Tm (8 / 8) Tj T* ET
+.705882 .086275 .141176 rg
+BT 1 0 0 1 522.258 30 Tm (11 / 11) Tj T* ET
  
 
 Q
@@ -2375,7 +3749,7 @@ BT
 1 0 0 1 0 10.9824 Tm
 17.024 TL
 /F2 11.2 Tf
-0.890196 0.231373 0.298039 rg
+0.705882 0.086275 0.141176 rg
 (On competitors\054 in any market) Tj
 T*
 ET
@@ -2396,7 +3770,7 @@ BT
 1 0 0 1 0 38.8832 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Answer with the category and that vendor\047s own published limit\054 not the name\056 An audience that has not heard of a) Tj
 T*
 (vendor learns nothing from the name and everything from the limit\056 Where a competitor is genuinely strong\054 say so) Tj
@@ -2419,7 +3793,7 @@ BT
 1 0 0 1 0 10.9824 Tm
 17.024 TL
 /F2 11.2 Tf
-0.890196 0.231373 0.298039 rg
+0.705882 0.086275 0.141176 rg
 (Two regulatory facts worth more than any market\055size number) Tj
 T*
 ET
@@ -2439,7 +3813,7 @@ BT
 1 0 0 1 0 24.2912 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Both are published by institutions rather than vendors\054 both are dateable\054 and neither requires the audience to have) Tj
 T*
 (heard of a single competitor\056) Tj
@@ -2463,10 +3837,10 @@ BT
 1 0 0 1 0 53.4752 Tm
 14.592 TL
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (Proposed Federal Rule of Evidence 707\056) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 ( The Judicial Conference has recommended subjecting) Tj
 T*
 (machine\055generated evidence to the same reliability standard as expert testimony \227 the proponent must show the) Tj
@@ -2497,7 +3871,7 @@ BT
 1 0 0 1 0 97.2512 Tm
 14.592 TL
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 (Two limits\054 and they must be stated before this is used anywhere\056 The rule is not law\072 it has cleared comment\054 not) Tj
 T*
 (the Standing Committee\054 Judicial Conference\054 Supreme Court and Congress\056 And it bites only where machine) Tj
@@ -2536,10 +3910,10 @@ BT
 1 0 0 1 0 68.0672 Tm
 14.592 TL
 /F2 9.6 Tf
-1 1 1 rg
+0.043137 0.047059 0.058824 rg
 (Practice Direction 57AD\056) Tj
 /F1-0 9.6 Tf
-0.776471 0.784314 0.807843 rg
+0.086275 0.090196 0.109804 rg
 ( Permanent in the Business and Property Courts of England and Wales since 1 October) Tj
 T*
 (2022\056 Extended Disclosure runs on models \227 known adverse documents only\054 key documents relied on plus) Tj
@@ -2560,7 +3934,7 @@ Q
 
 endstream
 endobj
-39 0 obj
+51 0 obj
 <<
 /BaseFont /Helvetica
 /Encoding /WinAnsiEncoding
@@ -2570,53 +3944,65 @@ endobj
 >>
 endobj
 xref
-0 40
+0 52
 0000000000 65535 f 
 0000000015 00000 n 
 0000000054 00000 n 
-0000000162 00000 n 
-0000000211 00000 n 
-0000000464 00000 n 
-0000006896 00000 n 
-0000007003 00000 n 
-0000007110 00000 n 
-0000007222 00000 n 
-0000007337 00000 n 
-0000007593 00000 n 
-0000010341 00000 n 
-0000010449 00000 n 
-0000010708 00000 n 
-0000017887 00000 n 
-0000017995 00000 n 
-0000018103 00000 n 
-0000018216 00000 n 
-0000018332 00000 n 
-0000018591 00000 n 
-0000020814 00000 n 
-0000020922 00000 n 
-0000021181 00000 n 
-0000028838 00000 n 
-0000028946 00000 n 
-0000029054 00000 n 
-0000029167 00000 n 
-0000029283 00000 n 
-0000029542 00000 n 
-0000030732 00000 n 
-0000030840 00000 n 
-0000031099 00000 n 
-0000038230 00000 n 
-0000038338 00000 n 
-0000038446 00000 n 
-0000038559 00000 n 
-0000038675 00000 n 
-0000038934 00000 n 
-0000043269 00000 n 
+0000000184 00000 n 
+0000000233 00000 n 
+0000000486 00000 n 
+0000006919 00000 n 
+0000007026 00000 n 
+0000007133 00000 n 
+0000007245 00000 n 
+0000007360 00000 n 
+0000007616 00000 n 
+0000010365 00000 n 
+0000010473 00000 n 
+0000010732 00000 n 
+0000018030 00000 n 
+0000018138 00000 n 
+0000018246 00000 n 
+0000018359 00000 n 
+0000018475 00000 n 
+0000018734 00000 n 
+0000020966 00000 n 
+0000021074 00000 n 
+0000021333 00000 n 
+0000029986 00000 n 
+0000030094 00000 n 
+0000030202 00000 n 
+0000030315 00000 n 
+0000030431 00000 n 
+0000030690 00000 n 
+0000040132 00000 n 
+0000040240 00000 n 
+0000040499 00000 n 
+0000041072 00000 n 
+0000041180 00000 n 
+0000041439 00000 n 
+0000049032 00000 n 
+0000049140 00000 n 
+0000049248 00000 n 
+0000049361 00000 n 
+0000049477 00000 n 
+0000049736 00000 n 
+0000051798 00000 n 
+0000051906 00000 n 
+0000052165 00000 n 
+0000059373 00000 n 
+0000059481 00000 n 
+0000059589 00000 n 
+0000059702 00000 n 
+0000059818 00000 n 
+0000060077 00000 n 
+0000064442 00000 n 
 trailer
 <<
-/Size 40
+/Size 52
 /Root 3 0 R
 /Info 1 0 R
 >>
 startxref
-43377
+64550
 %%EOF
