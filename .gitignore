@@ -138,3 +138,6 @@ deploy/logs/
 # Local agent + backup state (large, machine-specific)
 .docket/
 backups/
+
+# Playwright CLI snapshot artifacts
+.playwright-cli/
