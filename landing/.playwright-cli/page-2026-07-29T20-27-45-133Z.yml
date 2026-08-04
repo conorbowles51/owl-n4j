@@ -1,0 +1,99 @@
+- generic [ref=e3]:
+  - link "Skip to content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=e5]:
+    - navigation "Primary navigation" [ref=e6]:
+      - link "Loupe home" [ref=e7] [cursor=pointer]:
+        - /url: "#top"
+        - img "Loupe" [ref=e9]
+      - generic [ref=e14]:
+        - button "Switch to light theme" [active] [ref=e123] [cursor=pointer]:
+          - generic [ref=e22]: Dark theme active
+        - button "Toggle navigation" [ref=e120] [cursor=pointer]
+  - main [ref=e25]:
+    - generic [ref=e28]:
+      - generic [ref=e29]: Evidence infrastructure for complex investigations
+      - heading "Bring structure to complex investigations." [level=1] [ref=e31]:
+        - generic [ref=e32]: Bring
+        - generic [ref=e33]: structure to
+        - generic [ref=e34]: complex
+        - generic [ref=e35]: investigations.
+      - paragraph [ref=e36]: Loupe compiles documents, phone extractions, financial records, photographs, audio, video, and other investigative material into one permanent case model—where every fact links back to the page, passage, and file it came from.
+      - generic [ref=e37]:
+        - link "See the platform" [ref=e38] [cursor=pointer]:
+          - /url: "#platform"
+          - text: See the platform
+          - generic [ref=e39]: ↓
+        - button "Request a walkthrough" [ref=e40] [cursor=pointer]:
+          - text: Request a walkthrough
+          - generic [ref=e41]: ↗
+      - generic "Platform principles" [ref=e42]:
+        - generic [ref=e43]: Whole-case, not prompt-sized
+        - generic [ref=e44]: Every answer source-linked
+    - generic [ref=e52]:
+      - generic [ref=e53]:
+        - heading "Turn mixed evidence into one connected case." [level=2] [ref=e54]
+        - paragraph [ref=e55]: Loupe is an investigation workspace for teams working across documents, phone extractions, financial records, photographs, audio, and video. Instead of searching each source in isolation, investigators work from one case model.
+      - generic [ref=e56]:
+        - complementary [ref=e57]:
+          - text: What changes
+          - paragraph [ref=e58]: The evidence stops behaving like a collection of files and starts behaving like a case.
+        - generic [ref=e59]:
+          - paragraph [ref=e60]:
+            - strong [ref=e61]: Open a case and add the available evidence.
+            - text: Loupe uses AI to process the material and identify the people, organisations, accounts, locations, events, and transactions within it. Each fact remains attached to the source it came from.
+          - paragraph [ref=e62]:
+            - strong [ref=e63]: Work through the case in the form that suits the question.
+            - text: The graph, timeline, map, table, and financial views all read from the same underlying model, so moving between them does not fragment the evidence or repeat the work.
+          - paragraph [ref=e64]:
+            - strong [ref=e65]: Narrow the field when the volume becomes unmanageable.
+            - text: Investigators can mark significant evidence and save focused groups—Loupes—around a person, event, theory, or line of enquiry while retaining the surrounding case context.
+    - generic [ref=e67]:
+      - generic [ref=e68]:
+        - heading "Analyse the case and produce source-linked findings." [level=2] [ref=e69]
+        - paragraph [ref=e70]: Loupe’s AI works against the complete case model or a focused Loupe. It can examine relationships across evidence types and turn the result into reviewable work rather than leaving it in a conversation.
+      - generic [ref=e71]:
+        - complementary [ref=e72]:
+          - text: Why we built it
+          - paragraph [ref=e73]: Loupe was shaped inside live federal casework, where documents, device data, financial records, and communications had to be understood together.
+          - paragraph [ref=e74]: It exists to reduce the repetitive work of reconstructing those facts across separate files and tools.
+        - generic [ref=e75]:
+          - article [ref=e76]:
+            - heading "Investigate across sources" [level=3] [ref=e77]
+            - paragraph [ref=e78]: Run analysis against the complete case or a focused Loupe. Follow relationships, test chronology, trace money, and cross-reference evidence without working file by file.
+          - article [ref=e79]:
+            - heading "Save the reasoning" [level=3] [ref=e80]
+            - paragraph [ref=e81]: Turn the connections that matter into findings the team can revisit. The page, passage, record, or timestamp behind each claim remains available for review.
+          - article [ref=e82]:
+            - heading "Finish with work product" [level=3] [ref=e83]
+            - paragraph [ref=e84]: Create tables, timelines, charts, and reports that stay with the case, ready to refine, export, explain, and defend.
+      - paragraph [ref=e85]: "The output stays with the case: findings, tables, timelines, and reports that can be reviewed, refined, exported, and defended."
+    - generic [ref=e92]:
+      - paragraph [ref=e93]: Find the signal in everything
+      - heading "Bring the case. Keep the receipt." [level=2] [ref=e94]: Bring the case.Keep the receipt.
+      - paragraph [ref=e95]: See how Loupe turns complex evidence into connected, source-linked intelligence your team can explore, explain and defend.
+      - button "Request a private walkthrough" [ref=e96] [cursor=pointer]:
+        - text: Request a private walkthrough
+        - generic [ref=e97]: ↗
+  - contentinfo [ref=e98]:
+    - generic [ref=e99]:
+      - generic [ref=e100]:
+        - img "Loupe" [ref=e102]
+        - paragraph [ref=e103]: Connected intelligence. Every claim with its receipt.
+      - generic [ref=e104]:
+        - generic [ref=e105]:
+          - generic [ref=e106]: Explore
+          - link "Product" [ref=e107] [cursor=pointer]:
+            - /url: "#platform"
+          - link "How it works" [ref=e108] [cursor=pointer]:
+            - /url: "#workflow"
+          - link "Why Loupe" [ref=e109] [cursor=pointer]:
+            - /url: "#analysis"
+        - generic [ref=e110]:
+          - generic [ref=e111]: Connect
+          - button "Request a walkthrough" [ref=e112] [cursor=pointer]
+          - link "Built for complex investigations" [ref=e113] [cursor=pointer]:
+            - /url: "#contact"
+      - generic [ref=e114]:
+        - generic [ref=e115]: © 2026 Loupe
+        - generic [ref=e116]: The evidence layer for complex investigations.

@@ -34,6 +34,9 @@ interface Node {
   ty: number
 }
 
+/** Edges are what make the field read as a graph rather than as confetti. */
+type Edge = [number, number]
+
 function buildField(): Node[] {
   const rand = mulberry32(0x10a9e)
   const palette = Object.values(entityColours)
@@ -71,6 +74,31 @@ function buildField(): Node[] {
 
 const FIELD = buildField()
 
+/** Nearest-neighbour edges, so the swarm has visible structure to lose. */
+const EDGES: Edge[] = (() => {
+  const rand = mulberry32(0x5eed)
+  const out: Edge[] = []
+  for (let i = 0; i < FIELD.length; i++) {
+    const links = 1 + Math.floor(rand() * 2)
+    for (let l = 0; l < links; l++) {
+      // Pick the closest of a few random candidates — cheap proximity linking.
+      let best = -1
+      let bestD = Infinity
+      for (let c = 0; c < 6; c++) {
+        const j = Math.floor(rand() * FIELD.length)
+        if (j === i) continue
+        const d = (FIELD[i].x - FIELD[j].x) ** 2 + (FIELD[i].y - FIELD[j].y) ** 2
+        if (d < bestD) {
+          bestD = d
+          best = j
+        }
+      }
+      if (best >= 0 && bestD < 0.02) out.push([i, best])
+    }
+  }
+  return out
+})()
+
 function Field({ progress }: { progress: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -90,14 +118,38 @@ function Field({ progress }: { progress: number }) {
     const fade = segment(progress, 0.32, 0.62)
     const settle = segment(progress, 0.34, 0.7)
 
+    const place = (n: (typeof FIELD)[number]) => {
+      const drift = n.keep ? settle : -fade * 0.12
+      return {
+        x: (n.keep ? n.x + (n.tx - n.x) * settle : n.x + (n.x - 0.5) * -drift) * width,
+        y: (n.keep ? n.y + (n.ty - n.y) * settle : n.y + (n.y - 0.5) * -drift) * height,
+      }
+    }
+
+    // Edges first, so nodes sit on top of them.
+    ctx.lineWidth = 0.5
+    for (const [a, b] of EDGES) {
+      const na = FIELD[a]
+      const nb = FIELD[b]
+      const both = na.keep && nb.keep
+      const alpha = both ? 0.4 : 0.16 - fade * 0.16
+      if (alpha <= 0.01) continue
+      const pa = place(na)
+      const pb = place(nb)
+      ctx.globalAlpha = alpha
+      ctx.strokeStyle = both ? "#8b8f99" : "#6f727b"
+      ctx.beginPath()
+      ctx.moveTo(pa.x, pa.y)
+      ctx.lineTo(pb.x, pb.y)
+      ctx.stroke()
+    }
+
     for (const n of FIELD) {
-      const alpha = n.keep ? 1 : 0.5 - fade * 0.46
+      const alpha = n.keep ? 1 : 0.55 - fade * 0.51
       if (alpha <= 0.02) continue
 
       // Survivors ease toward their resting ring; the rest drift outward as they fade.
-      const drift = n.keep ? settle : -fade * 0.12
-      const x = (n.keep ? n.x + (n.tx - n.x) * settle : n.x + (n.x - 0.5) * -drift) * width
-      const y = (n.keep ? n.y + (n.ty - n.y) * settle : n.y + (n.y - 0.5) * -drift) * height
+      const { x, y } = place(n)
 
       ctx.globalAlpha = alpha
       ctx.fillStyle = n.colour

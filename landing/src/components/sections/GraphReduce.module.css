@@ -28,9 +28,10 @@
   position: absolute;
   inset: -12% -8%;
   background: radial-gradient(
-    ellipse 55% 60% at 30% 45%,
-    color-mix(in srgb, var(--obsidian) 88%, transparent) 30%,
-    transparent 72%
+    ellipse 52% 62% at 26% 48%,
+    var(--obsidian) 18%,
+    color-mix(in srgb, var(--obsidian) 86%, transparent) 46%,
+    transparent 78%
   );
   z-index: -1;
 }

@@ -1,0 +1,13 @@
+- generic [ref=f4e3]:
+  - generic [ref=f4e4]: "[plugin:vite:import-analysis] Failed to resolve import \"./styles/narrative.css\" from \"src/main.tsx\". Does the file exist?"
+  - generic [ref=f4e5]: C:/Users/35386/Documents/Projects/investigations/owl-n4j/landing/src/main.tsx:5:7
+  - generic [ref=f4e6]: "3 | import { App } from \"./App\"; 4 | import \"./styles/global.css\"; 5 | import \"./styles/narrative.css\"; | ^ 6 | var _jsxFileName = \"C:/Users/35386/Documents/Projects/investigations/owl-n4j/landing/src/main.tsx\"; 7 | import { jsxDEV as _jsxDEV } from \"react/jsx-dev-runtime\";"
+  - generic [ref=f4e7]: at TransformPluginContext._formatLog (file:///C:/Users/35386/Documents/Projects/investigations/owl-n4j/landing/node_modules/vite/dist/node/chunks/node.js:30366:39) at TransformPluginContext.error (file:///C:/Users/35386/Documents/Projects/investigations/owl-n4j/landing/node_modules/vite/dist/node/chunks/node.js:30363:14) at normalizeUrl (file:///C:/Users/35386/Documents/Projects/investigations/owl-n4j/landing/node_modules/vite/dist/node/chunks/node.js:27393:18) at async file:///C:/Users/35386/Documents/Projects/investigations/owl-n4j/landing/node_modules/vite/dist/node/chunks/node.js:27456:30 at async Promise.all (index 4) at async TransformPluginContext.transform (file:///C:/Users/35386/Documents/Projects/investigations/owl-n4j/landing/node_modules/vite/dist/node/chunks/node.js:27424:4) at async EnvironmentPluginContainer.transform (file:///C:/Users/35386/Documents/Projects/investigations/owl-n4j/landing/node_modules/vite/dist/node/chunks/node.js:30151:14) at async loadAndTransform (file:///C:/Users/35386/Documents/Projects/investigations/owl-n4j/landing/node_modules/vite/dist/node/chunks/node.js:20098:26) at async viteTransformMiddleware (file:///C:/Users/35386/Documents/Projects/investigations/owl-n4j/landing/node_modules/vite/dist/node/chunks/node.js:24559:20)
+  - generic [ref=f4e8]:
+    - text: Click outside, press Esc key, or fix the code to dismiss.You can also disable this overlay by setting
+    - code [ref=f4e9]: server.hmr.overlay
+    - text: to
+    - code [ref=f4e10]: "false"
+    - text: in
+    - code [ref=f4e11]: vite.config.ts
+    - text: .

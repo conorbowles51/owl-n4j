@@ -1,0 +1,332 @@
+- generic [ref=f4e3]:
+  - link "Skip to content" [ref=f4e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=f4e5]:
+    - navigation "Primary navigation" [ref=f4e6]:
+      - link "Loupe home" [ref=f4e7] [cursor=pointer]:
+        - /url: "#top"
+        - img "Loupe" [ref=f4e9]
+      - button "Toggle navigation" [ref=f4e11] [cursor=pointer]
+  - main [ref=f4e14]:
+    - generic [ref=f4e15]:
+      - generic [ref=f4e17]:
+        - generic [ref=f4e18]: Evidence infrastructure for complex investigations
+        - heading "Bring structure to complex investigations." [level=1] [ref=f4e20]:
+          - generic [ref=f4e21]: Bring
+          - generic [ref=f4e22]: structure to
+          - generic [ref=f4e23]: complex
+          - generic [ref=f4e24]: investigations.
+        - paragraph [ref=f4e25]: Loupe compiles documents, phone extractions, financial records and media into one permanent case model—where every fact links back to the page, quote and file it came from.
+        - generic [ref=f4e26]:
+          - link "See the platform" [ref=f4e27] [cursor=pointer]:
+            - /url: "#platform"
+            - text: See the platform
+            - generic [ref=f4e28]: ↓
+          - button "Request a walkthrough" [ref=f4e29] [cursor=pointer]:
+            - text: Request a walkthrough
+            - generic [ref=f4e30]: ↗
+        - generic "Platform principles" [ref=f4e31]:
+          - generic [ref=f4e32]: Whole-case, not prompt-sized
+          - generic [ref=f4e33]: Every answer source-linked
+      - generic "Information Loupe can connect" [ref=f4e57]:
+        - generic [ref=f4e58]:
+          - generic [ref=f4e59]: Evidence
+          - generic [ref=f4e61]: Entities
+          - generic [ref=f4e63]: Relationships
+          - generic [ref=f4e65]: Timeline
+          - generic [ref=f4e67]: Map
+          - generic [ref=f4e69]: Financial
+          - generic [ref=f4e71]: AI analysis
+          - generic [ref=f4e73]: Evidence
+          - generic [ref=f4e75]: Entities
+          - generic [ref=f4e77]: Relationships
+          - generic [ref=f4e79]: Timeline
+          - generic [ref=f4e81]: Map
+          - generic [ref=f4e83]: Financial
+          - generic [ref=f4e85]: AI analysis
+    - generic [ref=f4e88]:
+      - generic [ref=f4e89]:
+        - paragraph [ref=f4e90]: 01 / Product
+        - heading "One case. Every investigative view." [level=2] [ref=f4e91]: One case.Every investigative view.
+        - paragraph [ref=f4e92]: Loupe keeps one case model beneath every workspace. Change the lens without fragmenting the evidence, repeating the work or losing the path back to source.
+      - generic [ref=f4e93]:
+        - generic [ref=f4e94]:
+          - button "01 Ingest every form of evidence Evidence workspace" [ref=f4e95] [cursor=pointer]:
+            - generic [ref=f4e96]: "01"
+            - generic [ref=f4e97]:
+              - strong [ref=f4e98]: Ingest every form of evidence
+              - generic [ref=f4e99]: Evidence workspace
+          - button "02 Compile the case, do not prompt it Graph view" [pressed] [ref=f4e100] [cursor=pointer]:
+            - generic [ref=f4e101]: "02"
+            - generic [ref=f4e102]:
+              - strong [ref=f4e103]: Compile the case, do not prompt it
+              - generic [ref=f4e104]: Graph view
+          - button "03 Rebuild what happened Timeline view" [ref=f4e106] [cursor=pointer]:
+            - generic [ref=f4e107]: "03"
+            - generic [ref=f4e108]:
+              - strong [ref=f4e109]: Rebuild what happened
+              - generic [ref=f4e110]: Timeline view
+          - button "04 Build work, not just answers Agent workspace" [ref=f4e111] [cursor=pointer]:
+            - generic [ref=f4e112]: "04"
+            - generic [ref=f4e113]:
+              - strong [ref=f4e114]: Build work, not just answers
+              - generic [ref=f4e115]: Agent workspace
+        - generic [ref=f4e116]:
+          - generic [ref=f4e117]:
+            - generic [ref=f4e118]:
+              - generic [ref=f4e119]: Actual product view
+              - strong [ref=f4e121]: Graph view
+            - img "Loupe graph view showing connected people, organisations, transactions and locations with Victoria Blackwood's details open." [ref=f4e123]
+          - generic [ref=f4e124]:
+            - generic [ref=f4e125]: Current product UI
+            - paragraph [ref=f4e126]: Resolve people, organisations, locations, events and records into a persistent knowledge graph.
+            - link "View full capture" [ref=f4e127] [cursor=pointer]:
+              - /url: /product/loupe-graph-demo.png
+              - text: View full capture ↗
+    - generic [ref=f4e129]:
+      - generic [ref=f4e130]:
+        - paragraph [ref=f4e131]: 02 / The architectural difference
+        - heading "The whole case. Not the part that fits in a prompt." [level=2] [ref=f4e132]: The whole case.Not the part that fits in a prompt.
+        - paragraph [ref=f4e133]: A chatbot reads a selection and produces prose. Loupe compiles the complete case into a permanent, provenance-carrying structure, then lets AI operate on that structure under guardrails.
+      - generic [ref=f4e134]:
+        - generic [ref=f4e135]:
+          - text: The honest answer
+          - blockquote [ref=f4e136]:
+            - text: The model is a component.
+            - strong [ref=f4e137]: The evidence layer is the product.
+          - paragraph [ref=f4e138]: Documents, phone extractions, financial records and media resolve into one model of the people, events, money, places and sources inside the case.
+        - table "Straight LLM and Loupe comparison" [ref=f4e140]:
+          - row [ref=f4e141]:
+            - cell "Where the case lives" [ref=f4e142]
+            - cell "A temporary context window" [ref=f4e143]
+            - cell "A permanent, queryable case model" [ref=f4e144]
+          - row [ref=f4e146]:
+            - cell "What fits" [ref=f4e147]
+            - cell "The files and pages in the prompt" [ref=f4e148]
+            - cell "The complete evidence corpus" [ref=f4e149]
+          - row [ref=f4e151]:
+            - cell "What answers contain" [ref=f4e152]
+            - cell "Fluent prose" [ref=f4e153]
+            - cell "Claims linked to the exact source" [ref=f4e154]
+          - row [ref=f4e156]:
+            - cell "Where judgment lives" [ref=f4e157]
+            - cell "Outside the conversation" [ref=f4e158]
+            - cell "Inside highlights, Significant and Loupes" [ref=f4e159]
+          - row [ref=f4e161]:
+            - cell "What survives" [ref=f4e162]
+            - cell "A chat transcript" [ref=f4e163]
+            - cell "Graphs, tables, timelines, maps and reports" [ref=f4e164]
+      - generic [ref=f4e166]:
+        - article [ref=f4e167]:
+          - generic [ref=f4e168]: "01"
+          - heading "Compile, do not prompt" [level=3] [ref=f4e169]
+          - paragraph [ref=f4e170]: The case becomes durable structure held beyond any conversation.
+        - article [ref=f4e171]:
+          - generic [ref=f4e172]: "02"
+          - heading "Cite, do not hope" [level=3] [ref=f4e173]
+          - paragraph [ref=f4e174]: Every fact carries its quote, source location, confidence and review state.
+        - article [ref=f4e175]:
+          - generic [ref=f4e176]: "03"
+          - heading "Keep, do not repeat" [level=3] [ref=f4e177]
+          - paragraph [ref=f4e178]: Investigator judgment and AI outputs persist as work the team can revisit.
+      - generic [ref=f4e179]:
+        - generic [ref=f4e180]:
+          - generic [ref=f4e181]: Designed for case scale
+          - paragraph [ref=f4e182]: Built for the volume serious investigations actually produce.
+        - generic [ref=f4e183]:
+          - strong [ref=f4e184]: 35 GB
+          - generic [ref=f4e185]: single phone report
+        - generic [ref=f4e186]:
+          - strong [ref=f4e187]: 50k
+          - generic [ref=f4e188]: transactions per case
+        - generic [ref=f4e189]:
+          - strong [ref=f4e190]: 10k+
+          - generic [ref=f4e191]: entities per case
+    - generic [ref=f4e193]:
+      - generic [ref=f4e194]:
+        - paragraph [ref=f4e195]: 03 / Provenance, end to end
+        - heading "Every claim carries its receipt." [level=2] [ref=f4e196]: Every claimcarries its receipt.
+        - paragraph [ref=f4e197]: "Provenance is not a citation added after the answer. It is part of the case model: attached to facts, preserved through entity resolution and visible wherever the investigation moves."
+      - generic [ref=f4e198]:
+        - generic [ref=f4e199]:
+          - generic [ref=f4e200]:
+            - generic [ref=f4e201]: Actual product view
+            - strong [ref=f4e203]: Timeline details
+          - img "Loupe timeline with a selected communication, source-backed verified fact and exact source page visible in the details panel." [ref=f4e205]
+          - generic [ref=f4e206]:
+            - generic [ref=f4e207]: Source-linked by design
+            - paragraph [ref=f4e208]: Select an event, inspect the verified fact and move directly to the source document and page that supports it.
+            - link "View full capture" [ref=f4e209] [cursor=pointer]:
+              - /url: /product/loupe-timeline-demo.png
+              - text: View full capture ↗
+        - list [ref=f4e210]:
+          - listitem [ref=f4e211]:
+            - generic [ref=f4e212]: "01"
+            - generic [ref=f4e213]:
+              - heading "Ingest" [level=3] [ref=f4e214]
+              - paragraph [ref=f4e215]: Documents, devices, ledgers and media enter one controlled workspace.
+          - listitem [ref=f4e216]:
+            - generic [ref=f4e217]: "02"
+            - generic [ref=f4e218]:
+              - heading "Ground" [level=3] [ref=f4e219]
+              - paragraph [ref=f4e220]: Facts retain the verbatim quote, source location, confidence and review state.
+          - listitem [ref=f4e221]:
+            - generic [ref=f4e222]: "03"
+            - generic [ref=f4e223]:
+              - heading "Connect" [level=3] [ref=f4e224]
+              - paragraph [ref=f4e225]: People, events, money and places resolve without losing what they came from.
+          - listitem [ref=f4e226]:
+            - generic [ref=f4e227]: "04"
+            - generic [ref=f4e228]:
+              - heading "Explore" [level=3] [ref=f4e229]
+              - paragraph [ref=f4e230]: Graph, timeline, map, table and ledger stay on the same underlying case.
+          - listitem [ref=f4e231]:
+            - generic [ref=f4e232]: "05"
+            - generic [ref=f4e233]:
+              - heading "Prove" [level=3] [ref=f4e234]
+              - paragraph [ref=f4e235]: Open the evidence behind a finding at the right page, passage or record.
+    - generic [ref=f4e237]:
+      - generic [ref=f4e238]:
+        - paragraph [ref=f4e239]: 04 / The namesake object
+        - heading "Gather the evidence. Examine it through a Loupe." [level=2] [ref=f4e240]: Gather the evidence.Examine it through a Loupe.
+        - paragraph [ref=f4e241]: Automated extraction is the floor, not the ceiling. Investigators decide what matters, then preserve that judgment as durable, source-linked structure the whole system understands.
+      - generic [ref=f4e242]:
+        - generic [ref=f4e243]:
+          - text: Loupe / noun
+          - blockquote [ref=f4e244]:
+            - text: A bonded collection of evidence, assembled to explain
+            - strong [ref=f4e245]: an event, a sequence or a thing.
+          - paragraph [ref=f4e246]: Bind highlighted passages, documents, entities and events into a fully evidenced narrative. Each element stays traceable to its source; the collection carries the meaning above its parts.
+        - generic [ref=f4e247]:
+          - generic [ref=f4e248]:
+            - generic [ref=f4e249]: Actual product view
+            - strong [ref=f4e251]: Significant layer
+          - img "Loupe graph showing the current product's All data and Significant layer controls alongside a selected case entity." [ref=f4e253]
+          - generic [ref=f4e254]:
+            - generic [ref=f4e255]: Investigator judgment, made durable
+            - paragraph [ref=f4e256]: Project any case view down to the Significant layer, then build Loupes from the evidence that matters.
+            - link "View full capture" [ref=f4e257] [cursor=pointer]:
+              - /url: /product/loupe-graph-demo.png
+              - text: View full capture ↗
+      - generic [ref=f4e258]:
+        - article [ref=f4e259]:
+          - text: "01"
+          - heading "Highlight what matters" [level=3] [ref=f4e260]
+          - paragraph [ref=f4e261]: Promote the exact passage, entity or event that deserves investigative attention. Its source comes with it.
+        - article [ref=f4e262]:
+          - text: "02"
+          - heading "Bind evidence into meaning" [level=3] [ref=f4e263]
+          - paragraph [ref=f4e264]: "A Loupe gives a collection its own identity and explanation: what this evidence shows and why it belongs together."
+        - article [ref=f4e265]:
+          - text: "03"
+          - heading "Change the view, keep the object" [level=3] [ref=f4e266]
+          - paragraph [ref=f4e267]: Read the same Loupe as a timeline, graph or evidence set without rebuilding the work or losing provenance.
+      - generic [ref=f4e268]:
+        - generic [ref=f4e269]: The investigation starts with a theory
+        - paragraph [ref=f4e270]: Loupe helps assemble what supports it, hunt what breaks it and expose what should exist in the case—but does not.
+    - generic [ref=f4e272]:
+      - generic [ref=f4e273]:
+        - paragraph [ref=f4e274]: 05 / Agentic investigation
+        - heading "An agent that does. Not a chatbot that answers." [level=2] [ref=f4e275]: An agent that does.Not a chatbot that answers.
+        - paragraph [ref=f4e276]: Ask a simple question and get a cited answer. Describe a theory and the agent can search, cross-reference, query and build the durable work product needed to test it.
+      - generic [ref=f4e277]:
+        - generic [ref=f4e278]:
+          - generic [ref=f4e279]:
+            - generic [ref=f4e280]: Actual product view
+            - strong [ref=f4e282]: Agent artifacts
+          - img "Loupe Agent showing a cited investigation response and a persistent transaction table artifact generated from case evidence." [ref=f4e284]
+          - generic [ref=f4e285]:
+            - generic [ref=f4e286]: Work product, not chat residue
+            - paragraph [ref=f4e287]: The agent builds a focused transaction table beside its reasoning so the result can be reviewed, exported and reused.
+            - link "View full capture" [ref=f4e288] [cursor=pointer]:
+              - /url: /product/loupe-agent-demo.png
+              - text: View full capture ↗
+        - generic [ref=f4e289]:
+          - article [ref=f4e290]:
+            - generic [ref=f4e291]: "01"
+            - heading "Investigates visibly" [level=3] [ref=f4e292]
+            - paragraph [ref=f4e293]: "Every run exposes its investigation trail: the tools used, the results returned and the evidence consulted."
+          - article [ref=f4e294]:
+            - generic [ref=f4e295]: "02"
+            - heading "Builds work you keep" [level=3] [ref=f4e296]
+            - paragraph [ref=f4e297]: Graphs, tables, charts, maps, reports and Loupes persist as case artifacts instead of disappearing into chat history.
+          - article [ref=f4e298]:
+            - generic [ref=f4e299]: "03"
+            - heading "Tests both directions" [level=3] [ref=f4e300]
+            - paragraph [ref=f4e301]: Ask for what supports a hypothesis—and what contradicts it—before the team decides what survives scrutiny.
+          - article [ref=f4e302]:
+            - generic [ref=f4e303]: "04"
+            - heading "Respects the frame" [level=3] [ref=f4e304]
+            - paragraph [ref=f4e305]: Case-scoped, read-only tools, bounded runs, visible citations and cost attribution keep the investigator in control.
+      - generic [ref=f4e306]:
+        - generic [ref=f4e307]: Question-answering AI tells you about the evidence.
+        - strong [ref=f4e308]: An agent with tools produces the work.
+    - generic [ref=f4e310]:
+      - generic [ref=f4e311]:
+        - paragraph [ref=f4e312]: 06 / Evidence infrastructure
+        - heading "Built for the moment the answer is challenged." [level=2] [ref=f4e313]: Built for the momentthe answer is challenged.
+        - paragraph [ref=f4e314]: Investigation teams cannot send evidence to an opaque shared cloud and hope for the best. Loupe is designed around isolation, provenance and control from the first file to the final report.
+      - generic [ref=f4e315]:
+        - article [ref=f4e316]:
+          - generic [ref=f4e317]:
+            - generic [ref=f4e318]: "01"
+            - generic [ref=f4e319]: Single tenant
+          - heading "One customer. One isolated stack." [level=3] [ref=f4e321]
+          - paragraph [ref=f4e322]: Each customer gets a dedicated instance with private operating boundaries. Evidence never trains anyone else's model.
+        - article [ref=f4e323]:
+          - generic [ref=f4e324]:
+            - generic [ref=f4e325]: "02"
+            - generic [ref=f4e326]: Evidence integrity
+          - heading "Provenance survives the case" [level=3] [ref=f4e328]
+          - paragraph [ref=f4e329]: Quotes, source locations, confidence and review state accumulate through merges and re-ingestion rather than being overwritten.
+        - article [ref=f4e330]:
+          - generic [ref=f4e331]:
+            - generic [ref=f4e332]: "03"
+            - generic [ref=f4e333]: Governed AI
+          - heading "AI stays inside the boundary" [level=3] [ref=f4e335]
+          - paragraph [ref=f4e336]: Read-only case tools, prompt-injection defenses, run caps and investigator-approved changes constrain what automation may do.
+        - article [ref=f4e337]:
+          - generic [ref=f4e338]:
+            - generic [ref=f4e339]: "04"
+            - generic [ref=f4e340]: Operational control
+          - heading "Every operation can be accounted for" [level=3] [ref=f4e342]
+          - paragraph [ref=f4e343]: Audit history, user attribution and a per-operation AI cost ledger make activity explainable to operators and reviewers.
+      - generic [ref=f4e344]:
+        - generic [ref=f4e345]: The defensible chain
+        - paragraph [ref=f4e346]: Source to claim. Claim to finding. Finding to report. Every step stays visible, bounded and ready to be examined.
+    - generic [ref=f4e354]:
+      - paragraph [ref=f4e355]: Find the signal in everything
+      - heading "Bring the case. Keep the receipt." [level=2] [ref=f4e356]: Bring the case.Keep the receipt.
+      - paragraph [ref=f4e357]: See how Loupe turns complex evidence into connected, source-linked intelligence your team can explore, explain and defend.
+      - generic "Teams Loupe supports" [ref=f4e358]:
+        - generic [ref=f4e359]: Fraud teams
+        - generic [ref=f4e360]: Law enforcement
+        - generic [ref=f4e361]: Legal disputes
+        - generic [ref=f4e362]: Corporate investigations
+      - button "Request a private walkthrough" [ref=f4e363] [cursor=pointer]:
+        - text: Request a private walkthrough
+        - generic [ref=f4e364]: ↗
+  - contentinfo [ref=f4e365]:
+    - generic [ref=f4e366]:
+      - generic [ref=f4e367]:
+        - img "Loupe" [ref=f4e369]
+        - paragraph [ref=f4e370]: Connected intelligence. Every claim with its receipt.
+      - generic [ref=f4e371]:
+        - generic [ref=f4e372]:
+          - generic [ref=f4e373]: Explore
+          - link "Product" [ref=f4e374] [cursor=pointer]:
+            - /url: "#platform"
+          - link "Why Loupe" [ref=f4e375] [cursor=pointer]:
+            - /url: "#capabilities"
+          - link "Loupes" [ref=f4e376] [cursor=pointer]:
+            - /url: "#curation"
+          - link "Agent" [ref=f4e377] [cursor=pointer]:
+            - /url: "#agent"
+        - generic [ref=f4e378]:
+          - generic [ref=f4e379]: Connect
+          - button "Request a walkthrough" [ref=f4e380] [cursor=pointer]
+          - link "Security & provenance" [ref=f4e381] [cursor=pointer]:
+            - /url: "#control"
+      - generic [ref=f4e382]:
+        - generic [ref=f4e383]: © 2026 Loupe
+        - generic [ref=f4e384]: The evidence layer for complex investigations.

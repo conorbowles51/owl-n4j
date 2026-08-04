@@ -1,0 +1,74 @@
+.section {
+  background: var(--paper);
+  color: var(--text);
+  padding-block: var(--sec-pad-md) var(--sec-pad-sm);
+  overflow: clip;
+}
+
+.head {
+  width: var(--page);
+  margin-inline: auto;
+  max-width: 46rem;
+  margin-bottom: clamp(2.5rem, 5vw, 4rem);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.head h2 {
+  margin: 0.625rem 0 0;
+  max-width: 18ch;
+}
+
+.lede {
+  margin: 1rem 0 0;
+  max-width: 52ch;
+  font-size: clamp(1rem, 1.4vw, 1.125rem);
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- list */
+
+.list {
+  display: grid;
+  gap: clamp(3.5rem, 8vw, 7rem);
+}
+
+.lens {
+  width: var(--page);
+  margin-inline: auto;
+}
+
+.copy {
+  max-width: 46rem;
+  margin-bottom: clamp(1.25rem, 2.5vw, 2rem);
+}
+
+.copy h3 {
+  margin: 0;
+  font-size: clamp(1.375rem, 2.6vw, 2rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  max-width: 22ch;
+}
+
+.copy p {
+  margin: 0.75rem 0 0;
+  max-width: 56ch;
+  font-size: clamp(0.9375rem, 1.3vw, 1.0625rem);
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+/* The rebuilt comms surface is narrower than a screenshot — it is a panel,
+   not a full application window, so it should not pretend to be one. */
+.commsHolder {
+  max-width: 40rem;
+}

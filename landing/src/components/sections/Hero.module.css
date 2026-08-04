@@ -1,0 +1,207 @@
+.hero {
+  position: relative;
+  min-height: 100svh;
+  background: var(--obsidian);
+  color: var(--ink-on-dark);
+  display: grid;
+  align-content: center;
+  padding-block: clamp(6rem, 12vh, 9rem) 0;
+  overflow: clip;
+  isolation: isolate;
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--ink-on-dark) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ink-on-dark) 5%, transparent) 1px, transparent 1px);
+  background-size: 4rem 4rem;
+  mask-image: radial-gradient(ellipse 70% 60% at 30% 45%, black 10%, transparent 75%);
+  z-index: -2;
+}
+
+.copy {
+  position: relative;
+  width: var(--page);
+  margin-inline: auto;
+  max-width: 46rem;
+  z-index: 2;
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-bright);
+}
+
+.copy h1 {
+  margin: 1rem 0 0;
+  max-width: 12ch;
+  font-size: clamp(2.75rem, 6.5vw, 5rem);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  color: var(--ink-on-dark);
+}
+
+.lede {
+  margin: 1.375rem 0 0;
+  max-width: 46ch;
+  font-size: clamp(1rem, 1.5vw, 1.1875rem);
+  line-height: 1.6;
+  color: var(--ink-on-dark-2);
+}
+
+/* ---------------------------------------------------------------- actions */
+
+.actions {
+  margin-top: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.primary,
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.875rem;
+  padding-inline: 1.25rem;
+  border-radius: var(--loupe-radius-control);
+  font-family: var(--loupe-font-body);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s var(--loupe-ease);
+}
+
+.primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.primary:hover {
+  background: var(--accent-bright);
+  border-color: var(--accent-bright);
+}
+
+.ghost {
+  border: 1px solid var(--rule-dark-strong);
+  background: transparent;
+  color: var(--ink-on-dark);
+}
+
+.ghost:hover {
+  border-color: var(--ink-on-dark-3);
+}
+
+.primary:focus-visible,
+.ghost:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------- stat */
+
+.stat {
+  margin: 2.25rem 0 0;
+  padding-left: 0.875rem;
+  border-left: 2px solid var(--accent);
+  max-width: 44ch;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--ink-on-dark-2);
+}
+
+/* ---------------------------------------------------------------- shot */
+
+.shot {
+  position: absolute;
+  left: 46%;
+  top: 26%;
+  width: 78vw;
+  z-index: -1;
+  border-top: 1px solid var(--rule-dark-strong);
+  border-left: 1px solid var(--rule-dark-strong);
+  border-radius: var(--loupe-radius-panel) 0 0 0;
+  overflow: hidden;
+  box-shadow: -30px 30px 90px -30px rgb(0 0 0 / 0.75);
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Fades the screenshot into the ground so it reads as depth, not as a pasted rectangle. */
+.shot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    var(--obsidian) 0%,
+    color-mix(in srgb, var(--obsidian) 62%, transparent) 16%,
+    transparent 38%
+  );
+}
+
+/* The capture is a dark UI on a dark ground; without this it reads as murk
+   rather than as a screenshot. */
+.shot img {
+  filter: brightness(1.28) saturate(1.12);
+}
+
+.shotCaption {
+  position: absolute;
+  right: clamp(1.5rem, 4vw, 3rem);
+  bottom: 1.25rem;
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-on-dark-3);
+  z-index: 2;
+}
+
+@media (max-width: 1100px) {
+  .shot {
+    left: 55%;
+    top: auto;
+    bottom: -8%;
+    width: 92vw;
+  }
+}
+
+@media (max-width: 767px) {
+  .hero {
+    min-height: auto;
+    padding-block: clamp(5rem, 14vh, 7rem) 0;
+  }
+  .shot {
+    position: relative;
+    left: auto;
+    bottom: auto;
+    width: 100%;
+    margin-top: 2.5rem;
+    border-radius: 0;
+    border-left: 0;
+  }
+  .shot::after {
+    background: linear-gradient(180deg, transparent 55%, var(--obsidian) 100%);
+  }
+  .shotCaption {
+    position: static;
+    width: var(--page);
+    margin: 0.75rem auto 2rem;
+  }
+}

@@ -1,0 +1,412 @@
+- generic [ref=f8e3]:
+  - link "Skip to content" [ref=f8e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=f8e5]:
+    - navigation "Primary navigation" [ref=f8e6]:
+      - link "Loupe home" [ref=f8e7] [cursor=pointer]:
+        - /url: "#top"
+        - img "Loupe" [ref=f8e9]
+      - generic [ref=f8e10]:
+        - link "Platform" [ref=f8e11] [cursor=pointer]:
+          - /url: "#platform"
+        - link "How it works" [ref=f8e12] [cursor=pointer]:
+          - /url: "#workflow"
+        - link "Proof" [ref=f8e13] [cursor=pointer]:
+          - /url: "#proof"
+        - link "Company" [ref=f8e14] [cursor=pointer]:
+          - /url: "#company"
+      - generic [ref=f8e15]:
+        - button "Switch to light theme" [ref=f8e16] [cursor=pointer]:
+          - generic [ref=f8e23]: Dark theme active
+        - button "Book a walkthrough" [ref=f8e24] [cursor=pointer]:
+          - text: Book a walkthrough
+          - generic [ref=f8e25]: ↗
+  - main [ref=f8e26]:
+    - generic [ref=f8e27]:
+      - generic [ref=f8e29]:
+        - generic [ref=f8e30]: In production on real federal casework
+        - heading "Query the case. Not just the documents." [level=1] [ref=f8e32]:
+          - generic [ref=f8e33]: Query the case.
+          - generic [ref=f8e34]: Not just the
+          - generic [ref=f8e35]: documents.
+        - paragraph [ref=f8e36]: Loupe turns phone extractions, documents, financial records, audio, video, and images into one permanent case model—so investigators can work the whole matter at once and trace every claim back to its source.
+        - generic [ref=f8e37]:
+          - link "Explore the case model" [ref=f8e38] [cursor=pointer]:
+            - /url: "#platform"
+            - text: Explore the case model
+            - generic [ref=f8e39]: ↓
+          - button "Request a private walkthrough" [ref=f8e40] [cursor=pointer]:
+            - text: Request a private walkthrough
+            - generic [ref=f8e41]: ↗
+        - generic "Platform principles" [ref=f8e42]:
+          - generic [ref=f8e43]: Whole-case, not prompt-sized
+          - generic [ref=f8e44]: Every claim source-linked
+          - generic [ref=f8e45]: Single-tenant by design
+      - link "Scroll to platform overview" [ref=f8e49] [cursor=pointer]:
+        - /url: "#platform"
+        - generic [ref=f8e50]: Follow the evidence
+    - generic [ref=f8e53]:
+      - generic [ref=f8e54]:
+        - generic [ref=f8e55]:
+          - paragraph [ref=f8e56]: The evidence is connected
+          - heading "The tools are not." [level=2] [ref=f8e57]
+        - paragraph [ref=f8e58]: Serious casework arrives as a mix of files, devices, transactions, media, and communications. Most investigation tools still make teams open them one at a time.
+      - generic [ref=f8e59]:
+        - article [ref=f8e60]:
+          - paragraph [ref=f8e61]:
+            - text: One phone. One PDF. One spreadsheet.
+            - strong [ref=f8e62]: Every connection left in someone’s head.
+          - paragraph [ref=f8e63]: Those connections do not scale, survive staff turnover, or travel cleanly into a report. Loupe began with a case the available tools could not work as one whole.
+          - generic [ref=f8e64]:
+            - generic [ref=f8e65]: Origin
+            - paragraph [ref=f8e66]: We tried to buy this. Building it was the second choice.
+        - generic "Evidence a complex case can contain" [ref=f8e67]:
+          - article [ref=f8e68]:
+            - generic [ref=f8e69]: "01"
+            - generic [ref=f8e70]:
+              - heading "Phone extractions" [level=3] [ref=f8e71]
+              - paragraph [ref=f8e72]: Multi-gigabyte devices and hundreds of thousands of events
+          - article [ref=f8e73]:
+            - generic [ref=f8e74]: "02"
+            - generic [ref=f8e75]:
+              - heading "Documents" [level=3] [ref=f8e76]
+              - paragraph [ref=f8e77]: Statements, returns, reports, filings, and correspondence
+          - article [ref=f8e78]:
+            - generic [ref=f8e79]: "03"
+            - generic [ref=f8e80]:
+              - heading "Financial records" [level=3] [ref=f8e81]
+              - paragraph [ref=f8e82]: Tens of thousands of transactions across accounts and entities
+          - article [ref=f8e83]:
+            - generic [ref=f8e84]: "04"
+            - generic [ref=f8e85]:
+              - heading "Recorded media" [level=3] [ref=f8e86]
+              - paragraph [ref=f8e87]: Hours of audio, video, images, and their timestamps
+    - generic [ref=f8e89]:
+      - generic [ref=f8e90]:
+        - generic [ref=f8e91]:
+          - paragraph [ref=f8e92]: The layer beneath the answer
+          - heading "Evidence in. One connected model out." [level=2] [ref=f8e93]
+        - paragraph [ref=f8e94]: Loupe resolves people, organisations, accounts, locations, events, and transactions as evidence enters the case. Every object remains attached to its origin.
+      - generic [ref=f8e95]:
+        - generic [ref=f8e96]:
+          - generic [ref=f8e97]: Case model / live structure
+          - generic [ref=f8e98]: Source index healthy
+        - generic [ref=f8e100]:
+          - generic [ref=f8e101]:
+            - paragraph [ref=f8e102]: Mixed evidence
+            - generic [ref=f8e103]:
+              - generic [ref=f8e104]: "01"
+              - paragraph [ref=f8e105]:
+                - strong [ref=f8e106]: Device data
+                - generic [ref=f8e107]: Calls · messages · apps
+            - generic [ref=f8e109]:
+              - generic [ref=f8e110]: "02"
+              - paragraph [ref=f8e111]:
+                - strong [ref=f8e112]: Documents
+                - generic [ref=f8e113]: Pages · passages · records
+            - generic [ref=f8e115]:
+              - generic [ref=f8e116]: "03"
+              - paragraph [ref=f8e117]:
+                - strong [ref=f8e118]: Financial
+                - generic [ref=f8e119]: Accounts · transfers · transactions
+            - generic [ref=f8e121]:
+              - generic [ref=f8e122]: "04"
+              - paragraph [ref=f8e123]:
+                - strong [ref=f8e124]: Media
+                - generic [ref=f8e125]: Audio · video · photographs
+          - generic "Persistent Loupe case model" [ref=f8e127]:
+            - generic [ref=f8e139]:
+              - generic [ref=f8e140]: Persistent
+              - strong [ref=f8e141]: Case model
+              - generic [ref=f8e142]: Entities · events · sources
+          - generic [ref=f8e143]:
+            - paragraph [ref=f8e144]: Investigation views
+            - generic [ref=f8e145]:
+              - generic [ref=f8e146]: "01"
+              - text: Graph
+            - generic [ref=f8e147]:
+              - generic [ref=f8e148]: "02"
+              - text: Timeline
+            - generic [ref=f8e149]:
+              - generic [ref=f8e150]: "03"
+              - text: Map
+            - generic [ref=f8e151]:
+              - generic [ref=f8e152]: "04"
+              - text: Table
+            - generic [ref=f8e153]:
+              - generic [ref=f8e154]: "05"
+              - text: Financial
+            - generic [ref=f8e155]:
+              - generic [ref=f8e156]: "06"
+              - text: Agent
+        - generic [ref=f8e157]:
+          - paragraph [ref=f8e158]:
+            - generic [ref=f8e159]: One fact
+            - strong [ref=f8e160]: One identity across every source
+          - paragraph [ref=f8e161]:
+            - generic [ref=f8e162]: One provenance path
+            - strong [ref=f8e163]: File → page → passage → claim
+          - paragraph [ref=f8e164]:
+            - generic [ref=f8e165]: One durable workspace
+            - strong [ref=f8e166]: Built to outlive the conversation
+    - generic [ref=f8e168]:
+      - generic [ref=f8e169]:
+        - generic [ref=f8e170]:
+          - paragraph [ref=f8e171]: One model, many perspectives
+          - heading "Work the same case from every angle." [level=2] [ref=f8e172]
+        - paragraph [ref=f8e173]: The graph, timeline, evidence library, financial views, and agent all read from the same underlying case. Changing the view never changes the facts beneath it.
+      - generic [ref=f8e174]:
+        - tablist "Loupe product views" [ref=f8e175]:
+          - tab "01Graph" [ref=f8e176] [cursor=pointer]
+          - tab "02Timeline" [ref=f8e177] [cursor=pointer]
+          - tab "03Evidence" [selected] [ref=f8e178] [cursor=pointer]
+          - tab "04Agent" [ref=f8e179] [cursor=pointer]
+        - tabpanel "03Evidence" [ref=f8e437]:
+          - generic [ref=f8e181]:
+            - generic [ref=f8e186]: loupe / active case / evidence
+            - emphasis [ref=f8e187]: Source-linked
+          - img "Loupe evidence workspace listing processed case files with source details and summaries" [ref=f8e438]
+          - generic [ref=f8e190]:
+            - generic [ref=f8e191]: "03"
+            - generic [ref=f8e192]:
+              - heading "Keep the source in reach." [level=3] [ref=f8e439]
+              - paragraph [ref=f8e194]: Work from the original material and its extracted facts together. Every useful claim keeps its route back to the file, page, passage, record, or timestamp it came from.
+            - generic [ref=f8e195]: Interface shown with illustrative case data
+    - generic [ref=f8e197]:
+      - generic [ref=f8e198]:
+        - generic [ref=f8e199]:
+          - paragraph [ref=f8e200]: Human judgment, made durable
+          - heading "Find what matters. Bind it. Keep the reasoning." [level=2] [ref=f8e201]
+        - paragraph [ref=f8e202]: A Loupe is a focused, bonded collection of evidence around one finding, person, event, theory, or line of enquiry. It carries the conclusion and the proof together.
+      - generic "How investigators build durable findings" [ref=f8e203]:
+        - article [ref=f8e204]:
+          - generic [ref=f8e205]:
+            - generic [ref=f8e206]: "01"
+            - paragraph [ref=f8e207]: Mark the signal
+          - generic [ref=f8e208]:
+            - generic [ref=f8e209]:
+              - generic [ref=f8e210]: Source passage
+              - generic [ref=f8e211]: Significant
+            - blockquote [ref=f8e212]: “The transfer was approved after the call and before the account changed.”
+            - paragraph [ref=f8e213]:
+              - text: Interview transcript
+              - strong [ref=f8e214]: p. 18
+          - paragraph [ref=f8e215]: Investigators highlight a passage, event, transaction, relationship, or other fact without detaching it from its source.
+        - article [ref=f8e216]:
+          - generic [ref=f8e217]:
+            - generic [ref=f8e218]: "02"
+            - paragraph [ref=f8e219]: Build the Loupe
+          - generic [ref=f8e220]:
+            - text: Focused enquiry
+            - heading "Approval and movement of funds" [level=3] [ref=f8e225]
+            - generic [ref=f8e226]:
+              - paragraph [ref=f8e227]:
+                - strong [ref=f8e228]: "14"
+                - text: facts
+              - paragraph [ref=f8e229]:
+                - strong [ref=f8e230]: "6"
+                - text: sources
+              - paragraph [ref=f8e231]:
+                - strong [ref=f8e232]: "4"
+                - text: people
+          - paragraph [ref=f8e233]: Related evidence from several source types becomes a reusable object in the case, not a temporary list in someone’s notes.
+        - article [ref=f8e234]:
+          - generic [ref=f8e235]:
+            - generic [ref=f8e236]: "03"
+            - paragraph [ref=f8e237]: Produce the finding
+          - generic [ref=f8e238]:
+            - generic [ref=f8e239]:
+              - generic [ref=f8e240]: Finding 03
+              - generic [ref=f8e241]: Ready for review
+            - heading "The sequence is supported across communications and financial records." [level=3] [ref=f8e242]
+            - list [ref=f8e243]:
+              - listitem [ref=f8e244]: Conclusion written
+              - listitem [ref=f8e245]: Evidence path retained
+              - listitem [ref=f8e246]: Timeline and table attached
+          - paragraph [ref=f8e247]: Findings, tables, timelines, charts, and reports stay with the case so another investigator, lawyer, or reviewer can test them.
+    - generic [ref=f8e249]:
+      - generic [ref=f8e250]:
+        - generic [ref=f8e251]:
+          - paragraph [ref=f8e252]: Why Loupe
+          - heading "This is not chat with an upload button." [level=2] [ref=f8e253]
+        - paragraph [ref=f8e254]: A general AI assistant writes about the evidence it can retrieve. Loupe gives the AI a permanent structure for the entire case, then preserves the work that follows.
+      - generic [ref=f8e255]:
+        - generic [ref=f8e256]:
+          - generic [ref=f8e257]: What changes
+          - generic [ref=f8e258]: Document chat
+          - generic [ref=f8e259]: Loupe
+        - generic [ref=f8e260]:
+          - strong [ref=f8e261]: Case memory
+          - paragraph [ref=f8e262]: The work lives in a conversation and fades with the session.
+          - paragraph [ref=f8e263]: A persistent case graph survives every query, handover, and review.
+        - generic [ref=f8e265]:
+          - strong [ref=f8e266]: Coverage
+          - paragraph [ref=f8e267]: Retrieval selects a plausible sample, so you cannot see what it left out.
+          - paragraph [ref=f8e268]: Queries traverse the model of the case and return the complete matching set.
+        - generic [ref=f8e270]:
+          - strong [ref=f8e271]: Citations
+          - paragraph [ref=f8e272]: An answer may point at a document.
+          - paragraph [ref=f8e273]: Each claim keeps the file, page, passage, record, or timestamp that supports it.
+        - generic [ref=f8e275]:
+          - strong [ref=f8e276]: Human judgment
+          - paragraph [ref=f8e277]: Highlights and reasoning live outside the tool.
+          - paragraph [ref=f8e278]: Significance, Loupes, and findings become durable objects in the case.
+        - generic [ref=f8e280]:
+          - strong [ref=f8e281]: Confidentiality
+          - paragraph [ref=f8e282]: Evidence enters a shared multi-tenant service.
+          - paragraph [ref=f8e283]: Each customer runs in an isolated, single-tenant instance.
+        - generic [ref=f8e285]:
+          - strong [ref=f8e286]: Model dependence
+          - paragraph [ref=f8e287]: The language model is the product.
+          - paragraph [ref=f8e288]: Models are interchangeable components. The evidence layer is permanent.
+      - paragraph [ref=f8e290]: The language model can change. The case does not.
+    - generic [ref=f8e292]:
+      - generic [ref=f8e293]:
+        - generic [ref=f8e294]:
+          - paragraph [ref=f8e295]: Status and traction
+          - heading "Built in live casework. Proven there first." [level=2] [ref=f8e296]
+        - paragraph [ref=f8e297]: Loupe was developed inside Owl Consultancy, a working US private-investigations practice. The product backlog came from real matters from the first commit.
+      - generic [ref=f8e298]:
+        - generic [ref=f8e299]:
+          - text: Not a prototype seeking a first user
+          - paragraph [ref=f8e300]: Investigators have carried federal matters to completion in Loupe across phone extractions, large financial datasets, and full document corpora.
+          - generic [ref=f8e301]: Production use / real stakes
+        - generic [ref=f8e303]:
+          - article [ref=f8e304]:
+            - generic [ref=f8e305]: "01"
+            - generic [ref=f8e306]:
+              - strong [ref=f8e307]: Federal cases completed
+              - paragraph [ref=f8e308]: The platform has been used through the full life of real federal casework.
+          - article [ref=f8e309]:
+            - generic [ref=f8e310]: "02"
+            - generic [ref=f8e311]:
+              - strong [ref=f8e312]: Three attorneys given access
+              - paragraph [ref=f8e313]: Case teams reviewed the same connected evidence inside the platform.
+          - article [ref=f8e314]:
+            - generic [ref=f8e315]: "03"
+            - generic [ref=f8e316]:
+              - strong [ref=f8e317]: First external pilot in motion
+              - paragraph [ref=f8e318]: A US investigations firm has agreed to put its next large-document matter through Loupe as a paid trial at cost.
+      - generic [ref=f8e319]:
+        - generic [ref=f8e320]:
+          - text: Deployment
+          - strong [ref=f8e321]: Single tenant
+          - paragraph [ref=f8e322]: One isolated stack per customer. Privileged evidence stays in that instance.
+        - generic [ref=f8e323]:
+          - text: Provenance
+          - strong [ref=f8e324]: Every claim has a receipt
+          - paragraph [ref=f8e325]: Audit history and source paths remain available for review and challenge.
+        - generic [ref=f8e326]:
+          - text: AI policy
+          - strong [ref=f8e327]: Models are swappable
+          - paragraph [ref=f8e328]: Three providers sit behind one routing policy; the evidence layer remains.
+        - generic [ref=f8e329]:
+          - text: External onboarding
+          - strong [ref=f8e330]: Security-gated
+          - paragraph [ref=f8e331]: A 12-stage release plan gates isolation, backup, security, and legal readiness.
+    - generic [ref=f8e333]:
+      - generic [ref=f8e334]:
+        - generic [ref=f8e335]:
+          - paragraph [ref=f8e336]: Customer value
+          - heading "Change the economics of serious casework." [level=2] [ref=f8e337]
+        - paragraph [ref=f8e338]: Loupe replaces the fragmented processing, hosting, and examiner-analysis layer after forensic extraction. The extraction vendor and acquisition process stay unchanged.
+      - generic [ref=f8e339]:
+        - generic [ref=f8e340]:
+          - generic [ref=f8e341]:
+            - text: Today
+            - strong [ref=f8e342]: $37,850–139,025
+            - paragraph [ref=f8e343]: Cash cost per serious matter
+          - generic [ref=f8e345]:
+            - text: With Loupe
+            - strong [ref=f8e346]: $15,650–20,450
+            - paragraph [ref=f8e347]: Same evidence, connected in one case workspace
+        - generic [ref=f8e349]:
+          - text: Per serious matter
+          - paragraph [ref=f8e350]:
+            - strong [ref=f8e351]: $22k–119k
+            - text: downstream cost returned
+          - paragraph [ref=f8e352]:
+            - strong [ref=f8e353]: 29–50 hrs
+            - text: investigator and paralegal time returned
+      - generic [ref=f8e354]:
+        - generic [ref=f8e355]:
+          - text: Built first for
+          - heading "Boutique forensic and criminal-defence practices." [level=3] [ref=f8e356]
+          - paragraph [ref=f8e357]: Teams of 10–50 people carrying Big-Four-class evidence volumes without Big-Four tooling or implementation budgets.
+        - generic [ref=f8e358]:
+          - text: Designed to expand into
+          - list [ref=f8e359]:
+            - listitem [ref=f8e360]: Financial-crime and fraud units
+            - listitem [ref=f8e361]: Law enforcement and prosecutors
+            - listitem [ref=f8e362]: Law firms and disputes teams
+            - listitem [ref=f8e363]: Corporate investigations and compliance
+      - paragraph [ref=f8e364]: Illustrative internal model across two-to-ten-phone matters. Ranges exclude forensic extraction, which remains with the customer’s chosen vendor.
+    - generic [ref=f8e366]:
+      - generic [ref=f8e367]:
+        - generic [ref=f8e368]:
+          - paragraph [ref=f8e369]: The company
+          - heading "Built from both sides of the investigation." [level=2] [ref=f8e370]
+        - paragraph [ref=f8e371]: The founding team combines enterprise investigative-intelligence experience, the architecture behind the case model, and a decade of federal casework in the field.
+      - generic [ref=f8e372]:
+        - article [ref=f8e373]:
+          - generic [ref=f8e374]:
+            - generic [ref=f8e375]: NB
+            - paragraph [ref=f8e376]:
+              - strong [ref=f8e377]: Neil Byrne
+              - generic [ref=f8e378]: CEO
+          - paragraph [ref=f8e379]: Seven years at Siren, selling and shaping investigative-intelligence systems for law enforcement, intelligence, and financial-crime teams. More than a decade across data engineering, AI systems, and enterprise solutions.
+          - generic [ref=f8e380]: Market, customer, and enterprise go-to-market
+        - article [ref=f8e382]:
+          - generic [ref=f8e383]:
+            - generic [ref=f8e384]: CB
+            - paragraph [ref=f8e385]:
+              - strong [ref=f8e386]: Conor Bowles
+              - generic [ref=f8e387]: CTO
+          - paragraph [ref=f8e388]: Architect of Loupe’s case model. He designed the ingestion approach that extracts entities and events, resolves them into a graph, and makes the resulting structure queryable after the model has finished reading.
+          - generic [ref=f8e389]: Case model, platform, and engineering
+        - article [ref=f8e391]:
+          - generic [ref=f8e392]:
+            - generic [ref=f8e393]: AS
+            - paragraph [ref=f8e394]:
+              - strong [ref=f8e395]: Alexandra Solórzano
+              - generic [ref=f8e396]: CPO
+          - paragraph [ref=f8e397]: A licensed US private investigator with more than ten years in federal criminal defence and financial-fraud casework. She runs live matters in Loupe and turns the realities of those cases into product direction.
+          - generic [ref=f8e398]: Domain authority and daily design partner
+      - generic [ref=f8e400]:
+        - generic [ref=f8e401]: Dublin, Ireland · US casework
+        - paragraph [ref=f8e402]: Seven years building investigative intelligence for enterprise buyers, and more than a decade working the kind of cases Loupe was made to hold.
+    - generic [ref=f8e409]:
+      - paragraph [ref=f8e410]: The platform already works
+      - heading "Bring the case. Keep the receipt." [level=2] [ref=f8e411]: Bring the case.Keep the receipt.
+      - paragraph [ref=f8e412]: See how Loupe turns fragmented evidence into a connected case your team can explore, explain, hand over, and defend.
+      - button "Request a private walkthrough" [ref=f8e413] [cursor=pointer]:
+        - text: Request a private walkthrough
+        - generic [ref=f8e414]: ↗
+      - link "sales@loupe.ie" [ref=f8e415] [cursor=pointer]:
+        - /url: mailto:sales@loupe.ie
+  - contentinfo [ref=f8e416]:
+    - generic [ref=f8e417]:
+      - generic [ref=f8e418]:
+        - img "Loupe" [ref=f8e420]
+        - paragraph [ref=f8e421]: Find the signal in everything. Keep the proof with the case.
+      - generic [ref=f8e422]:
+        - generic [ref=f8e423]:
+          - generic [ref=f8e424]: Explore
+          - link "Platform" [ref=f8e425] [cursor=pointer]:
+            - /url: "#platform"
+          - link "How it works" [ref=f8e426] [cursor=pointer]:
+            - /url: "#workflow"
+          - link "Why Loupe" [ref=f8e427] [cursor=pointer]:
+            - /url: "#why-loupe"
+          - link "Proof" [ref=f8e428] [cursor=pointer]:
+            - /url: "#proof"
+        - generic [ref=f8e429]:
+          - generic [ref=f8e430]: Company
+          - link "Founding team" [ref=f8e431] [cursor=pointer]:
+            - /url: "#company"
+          - button "Request a walkthrough" [ref=f8e432] [cursor=pointer]
+          - link "sales@loupe.ie" [ref=f8e433] [cursor=pointer]:
+            - /url: mailto:sales@loupe.ie
+      - generic [ref=f8e434]:
+        - generic [ref=f8e435]: © 2026 Loupe
+        - generic [ref=f8e436]: Dublin, Ireland · Built for complex investigations.

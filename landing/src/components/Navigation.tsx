@@ -6,9 +6,10 @@ interface NavigationProps {
 }
 
 const links = [
-  { href: "#platform", label: "Platform" },
+  { href: "#intake", label: "How it works" },
+  { href: "#lenses", label: "The product" },
+  { href: "#finding", label: "A finding" },
   { href: "#trust", label: "Deployment" },
-  { href: "#capability", label: "Capability" },
 ]
 
 export function Navigation({ onContact }: NavigationProps) {
