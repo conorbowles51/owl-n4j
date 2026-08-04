@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest"
 import {
   chartMonths,
   chartTotal,
+  commsThread,
   conflicts,
   entityColours,
   evidenceFiles,
   graphCounts,
   invoiceDescriptions,
   passThrough,
+  recording,
   recitedAmounts,
   sourcedEntities,
   transcript,
@@ -55,6 +57,31 @@ describe("convergence", () => {
     expect(passThrough.onward).toBeLessThan(passThrough.inbound)
     const ratio = passThrough.onward / passThrough.inbound
     expect(Number((ratio * 100).toFixed(1))).toBe(96.6)
+  })
+})
+
+describe("comms thread", () => {
+  it("the logged call is the recording we hold", () => {
+    const call = commsThread.entries.find((e) => e.kind === "call")
+    expect(call).toBeDefined()
+    expect(call?.day).toBe("19 Dec 2023")
+    expect(call?.duration).toBe(recording.duration)
+    // call_20231219_... — the log entry and the audio file are the same event.
+    expect(recording.file).toContain("20231219")
+  })
+
+  it("nothing material is said before the move off-channel", () => {
+    const entries = commsThread.entries
+    const moveOff = entries.findIndex((e) => e.text === "Ring me. Not the office line")
+    expect(moveOff).toBeGreaterThan(-1)
+    const before = entries.slice(0, moveOff).map((e) => e.text ?? "").join(" ")
+    for (const amount of ["275", "125", "180", "invoice", "payment", "transfer"]) {
+      expect(before.toLowerCase()).not.toContain(amount)
+    }
+  })
+
+  it("preserves extraction metadata rather than flattening it", () => {
+    expect(commsThread.entries.some((e) => e.status === "Deleted — recovered")).toBe(true)
   })
 })
 

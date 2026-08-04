@@ -251,6 +251,55 @@ export const sourcedEntities: SourcedEntity[] = [
   { name: "FCIB-7729384756", type: "Account", quote: "Nexus Trading Ltd is the account name and holder for account FCIB-7729384756", file: "03_bank_statement_nexus.pdf", page: 1 },
 ]
 
+/* ------------------------------------------------------------------ comms */
+
+/**
+ * Fictional message thread for the rebuilt Comms Center (spec §2). No demo UFDR
+ * exists and real extractions are live federal matters, so this surface is
+ * reconstructed from the app's own components with invented content.
+ *
+ * Written to read like extracted phone evidence rather than dialogue: fragments,
+ * no sign-off, a move off-channel before anything material is said, a call log
+ * entry interleaved with the messages, and one deleted message the extraction
+ * recovered. The call at 19:03 on 19 December is the recording held as
+ * `call_20231219_chen_blackwood.mp3`.
+ */
+export interface CommsEntry {
+  kind: "message" | "call"
+  at: string
+  day: string
+  from: "Marcus Chen" | "Victoria Blackwood"
+  direction: "outgoing" | "incoming"
+  text?: string
+  /** Call duration, `kind: "call"` only. */
+  duration?: string
+  /** Extraction metadata preserved from the UFDR rather than flattened away. */
+  status?: "Deleted — recovered" | "Read" | "Delivered"
+}
+
+export const commsThread = {
+  device: "Apple iPhone 13 Pro — GlobalTech issued",
+  handle: "+44 7700 900XXX",
+  counterparty: "V. Blackwood",
+  app: "SMS",
+  entries: [
+    { kind: "message", day: "18 Dec 2023", at: "17:42", from: "Marcus Chen", direction: "outgoing", text: "Are you around later", status: "Read" },
+    { kind: "message", day: "18 Dec 2023", at: "17:44", from: "Victoria Blackwood", direction: "incoming", text: "After 6. Not on email." },
+    { kind: "message", day: "18 Dec 2023", at: "17:44", from: "Marcus Chen", direction: "outgoing", text: "ok", status: "Read" },
+    { kind: "message", day: "19 Dec 2023", at: "09:12", from: "Victoria Blackwood", direction: "incoming", text: "Did Jennifer come back on the July deliverables" },
+    { kind: "message", day: "19 Dec 2023", at: "09:20", from: "Marcus Chen", direction: "outgoing", text: "She's gone quiet. I'll handle it", status: "Read" },
+    { kind: "message", day: "19 Dec 2023", at: "09:21", from: "Victoria Blackwood", direction: "incoming", text: "You said that in October" },
+    { kind: "message", day: "19 Dec 2023", at: "18:58", from: "Marcus Chen", direction: "outgoing", text: "Ring me. Not the office line", status: "Read" },
+    { kind: "call", day: "19 Dec 2023", at: "19:03", from: "Victoria Blackwood", direction: "incoming", duration: "4:29" },
+    { kind: "message", day: "19 Dec 2023", at: "19:41", from: "Victoria Blackwood", direction: "incoming", text: "Think about what I said" },
+    { kind: "message", day: "19 Dec 2023", at: "19:52", from: "Marcus Chen", direction: "outgoing", text: "its year end. nobody looks at december", status: "Read" },
+    { kind: "message", day: "20 Dec 2023", at: "08:15", from: "Marcus Chen", direction: "outgoing", text: "Going in this morning", status: "Read" },
+    { kind: "message", day: "20 Dec 2023", at: "11:30", from: "Victoria Blackwood", direction: "incoming", text: "?" },
+    { kind: "message", day: "20 Dec 2023", at: "11:31", from: "Marcus Chen", direction: "outgoing", text: "Done", status: "Read" },
+    { kind: "message", day: "20 Dec 2023", at: "11:33", from: "Victoria Blackwood", direction: "incoming", text: "Delete this thread", status: "Deleted — recovered" },
+  ] satisfies CommsEntry[],
+} as const
+
 /** The seven ingestion stages, in order. Beat 4. */
 export const pipelineStages = [
   "Text extraction",
