@@ -87,10 +87,10 @@ be removed, not softened:
 - "five hundred hours of audio" (same row)
 - "Ten phones" → becomes five
 
-**Demo-case numbers** (114 nodes, 207 edges, 12 entity types) may appear **only** as pixels inside
+**Demo-case numbers** (121 nodes, 212 edges, 12 entity types) may appear **only** as pixels inside
 a screenshot, where the existing "Interface shown with illustrative case data" caption carries them.
-They must never be promoted to headline or stat-strip copy — 104 reads as a toy and caps the
-reader's sense of the product two orders of magnitude below where it operates.
+They must never be promoted to headline or stat-strip copy — a three-figure entity count reads as a
+toy and caps the reader's sense of the product two orders of magnitude below where it operates.
 
 ---
 
@@ -137,7 +137,7 @@ per-case membership enforced per API route.
 
 ### 4.1 The finding the demonstration builds to
 
-The demo case contains a genuine four-source convergence. This is the payoff the entire
+The demo case contains a genuine six-source convergence. This is the payoff the entire
 demonstration act is structured to reach, and it replaces abstract capability claims with a single
 piece of investigative reasoning the reader can follow.
 
@@ -160,9 +160,32 @@ shows a line going up. Blackwood's objection is visible in the bar heights.
 something in it for me — a promotion, a bonus."* The call's own summary records David being
 promised *"a bonus and an increase in the January cycle."*
 
-Four independent sources — a recorded call, a bank statement, and two interview transcripts —
-resolved into the same objects and agreeing on one arrangement. No single source establishes it;
-the model does.
+**The pass-through.** From the agent's report artifact: the six wires total €1,035,000 in; six
+matching transfers total €1,000,000 out to Sapphire Investments, two to five days after each
+credit — 96.6%. The FCIB suspicious activity report, filed independently, characterises the same
+pattern as 97% rapid pass-through with one income source and one outgoing destination.
+
+**The phrase.** The December invoice description is *"Year-End Advisory Services"*, dated
+20 December. On the call recorded **19 December**, Marcus Chen says at 00:21 — *"Year end
+advisory."* — and at 00:23, *"It goes in tomorrow."* The words spoken on the phone are the invoice
+description filed the next day. This is the tightest corroboration in the case and the one the
+page should land last.
+
+Six independent sources — a recorded call, a bank statement, two interview transcripts, a
+regulator's own filing, and an invoice description — resolved into the same objects and agreeing on
+one arrangement. No single source establishes it; the model does.
+
+### 4.2 The limit the product states about itself
+
+The report artifact says, unprompted, that the materials *"do not prove that the entire €2.45
+million purchase price derived solely from GlobalTech's €1.035 million"*, and carries a section
+headed **"Evidentiary caveats and open questions."**
+
+An AI declaring the boundary of its own answer is the most valuable trust asset in the product, and
+it is the GTM position — *source-backed outputs, not AI certainty* — demonstrated rather than
+claimed. Every competitor demo shows confident answers; showing a limit is the stronger move to a
+buyer who gets cross-examined. This belongs in Act III alongside the deployment content, not buried
+in the agent beat.
 
 **Presentation constraint.** This is fictional demo data and must carry the standing "illustrative
 case data" caption wherever it appears. The capability it demonstrates — cross-source corroboration
@@ -306,12 +329,14 @@ These address the "it looks alright but it's mid" problem directly.
 
 ## 7. Screenshot capture
 
+Captured 2026-08-05. Full detail in `docs/superpowers/plans/capture-manifest.md`.
+
 Fixed 2560×1440 viewport, consistent across every shot, driven via Playwright against the live
 stack. Frontend on `:5174`, backend on `:8002`.
 
 **Case state — confirmed present:**
 
-- Nexus Trading demo case processed: 114 nodes, 207 edges, 12 entity types
+- Nexus Trading demo case processed: 121 nodes, 212 edges, 12 entity types
 - 12 entities marked Significant, reducing to 12 nodes / 24 edges / 6 types
 - `call_20231219_chen_blackwood.mp3` processed — 4:29, 133 turns, 3 speakers
 - Evidence folders created (Bank Records, Disclosure — tranche 1, Interviews, Phone Calls)
