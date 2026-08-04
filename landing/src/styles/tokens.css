@@ -1,0 +1,76 @@
+/* ============================================================================
+   Loupe brand tokens.
+
+   Values mirror loupe-brand/brand/loupe-brand.css. The entity palette is the
+   same one the application uses, so a Person dot on this site is the same blue
+   as a Person node in the product.
+   ========================================================================== */
+
+:root {
+  /* ---------------------------------------------------------------- brand */
+  --loupe-obsidian: #0b0c0f;
+  --loupe-red: #b41624;
+  --loupe-signal: #e33b4c;
+  --loupe-signal-soft: #f35d6d;
+  --loupe-signal-pale: #ffe4e8;
+  --loupe-wash: rgba(180, 22, 36, 0.12);
+  --loupe-white: #f7f7f8;
+
+  /* ---------------------------------------------------------------- ground */
+  --obsidian: #0b0c0f;
+  --obsidian-2: #07080a;
+  --paper: #f7f7f8;
+  --paper-2: #ffffff;
+  --paper-3: #eeeef0;
+
+  /* ---------------------------------------------------------------- ink */
+  --text: #15161a;
+  --text-2: #4b4e56;
+  --text-3: #74777f;
+  --ink-on-dark: #f7f7f8;
+  --ink-on-dark-2: #bfc1c8;
+  --ink-on-dark-3: #9a9da5;
+
+  /* ---------------------------------------------------------------- rules */
+  --rule: #dcdde1;
+  --rule-strong: #c3c5cc;
+  --rule-dark: #23252b;
+  --rule-dark-strong: #3b3d44;
+
+  /* ---------------------------------------------------------------- accent */
+  --accent: #b41624;
+  --accent-bright: #e33b4c;
+
+  /* ------------------------------------------------------- entity palette */
+  --entity-person: #5571c8;
+  --entity-organisation: #8060a9;
+  --entity-location: #238a88;
+  --entity-financial: #b37a2e;
+  --entity-document: #72757e;
+  --entity-event: #c25778;
+  --entity-communication: #2c8197;
+
+  /* ---------------------------------------------------------------- type */
+  --loupe-font-display: "Space Grotesk", "Segoe UI", sans-serif;
+  --loupe-font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --loupe-font-evidence: "IBM Plex Mono", Consolas, monospace;
+
+  /* ---------------------------------------------------------------- shape */
+  --loupe-radius-control: 5px;
+  --loupe-radius-panel: 8px;
+  --loupe-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ---------------------------------------------------------------- layout */
+  --measure: 66ch;
+  --measure-page: 620px;
+  --page: min(1240px, calc(100vw - 96px));
+
+  /* --------------------------------------------------------------- rhythm
+     Section padding is chosen per section by weight. Nothing inherits a
+     default — the old stylesheet applied one constant everywhere, which is
+     where the ~500px voids came from. */
+  --sec-pad-xs: clamp(3rem, 5vw, 4.5rem);
+  --sec-pad-sm: clamp(4.5rem, 7vw, 7rem);
+  --sec-pad-md: clamp(6rem, 10vw, 10rem);
+  --sec-pad-lg: clamp(8rem, 14vw, 14rem);
+}

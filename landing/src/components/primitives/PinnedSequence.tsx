@@ -12,6 +12,8 @@ interface PinnedSequenceProps {
   id?: string
   /** Render the completed state immediately, skipping scroll choreography. */
   forceComplete?: boolean
+  /** Dark is the case and the machine; paper is the argument. */
+  ground?: "paper" | "obsidian"
   children: (progress: number) => ReactNode
 }
 
@@ -20,6 +22,7 @@ export function PinnedSequence({
   label,
   id,
   forceComplete = false,
+  ground = "paper",
   children,
 }: PinnedSequenceProps) {
   const { ref, progress } = useScrollProgress<HTMLElement>()
@@ -31,7 +34,7 @@ export function PinnedSequence({
       ref={ref}
       id={id}
       aria-label={label}
-      className={styles.track}
+      className={`${styles.track} ${ground === "obsidian" ? styles.obsidian : styles.paper}`}
       style={{ minHeight: complete ? "auto" : `${(steps + 1) * 100}svh` }}
     >
       <div className={complete ? `${styles.pin} ${styles.static}` : styles.pin}>

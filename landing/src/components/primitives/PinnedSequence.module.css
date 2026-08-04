@@ -2,6 +2,16 @@
   position: relative;
 }
 
+.paper {
+  background: var(--paper);
+  color: var(--text);
+}
+
+.obsidian {
+  background: var(--obsidian);
+  color: var(--ink-on-dark);
+}
+
 .pin {
   position: sticky;
   top: 0;
