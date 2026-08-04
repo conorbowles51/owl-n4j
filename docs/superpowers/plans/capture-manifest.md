@@ -4,7 +4,7 @@
 **Source:** live stack — frontend `:5174`, backend `:8002`
 **Case:** `Demo Case - Nexus Trading` — `c9cec5f5-5f2a-4624-a130-9a1548d1896d`
 **Viewport:** 2560×1440, fixed across every shot
-**Raw output:** `landing/public/product/raw/` — PNG, pending WebP conversion (plan Task 3, step 3)
+**Raw output:** `landing/captures/` — source PNGs, not served. Converted to WebP at 2560 and 1280 in `landing/public/product/`
 
 Every shot exists in both `-light` and `-dark`. Theme is driven by the `owl-theme` localStorage key.
 
