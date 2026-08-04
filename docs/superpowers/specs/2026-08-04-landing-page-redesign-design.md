@@ -21,12 +21,17 @@ The consequence is that every claim on the page is an assertion the reader canno
 "Bring every source into one connected investigation" is true — the code does exactly that —
 but with nothing on screen to attach it to, it reads as the same noise every AI company emits.
 
-Three things the product does are invisible on the current site, and all three are
-transformations *over time* that a static screenshot cannot express:
+Four things the product does are invisible on the current site. Three are transformations *over
+time* that a static screenshot cannot express; the fourth is the reason the product exists at all:
 
 1. Mixed, hostile-format evidence becoming a queryable model.
 2. An overwhelming graph being reduced to the things that matter.
 3. An agent that asks a clarifying question and returns work product rather than prose.
+4. **Cross-source corroboration** — a fact no single document establishes, held up by several
+   independent sources that the model resolved into the same objects. See §4.1.
+
+A fifth capability, speaker-separated audio transcription, is claimed in a bullet on the current
+site and illustrated nowhere, despite being one of the best-evidenced things in the product.
 
 ### What survives
 
@@ -49,6 +54,7 @@ transformations *over time* that a static screenshot cannot express:
 | Scope | **Aggressive reshape** — keep brand tokens and the best copy, rebuild section architecture and module vocabulary |
 | Reduction beat naming | **Show the mechanic, name it loosely.** Language must survive Significant → groups/Loupes |
 | Workspace | **Omitted entirely.** Revisit when it ships |
+| Cellebrite / UFDR | **Rebuilt from the real components, not screenshotted.** No demo extraction exists and real ones are live federal matters |
 | Ingest duration | **Stated plainly.** "Runs unattended overnight" |
 
 ### Honesty constraint on rebuilt components
@@ -81,7 +87,7 @@ be removed, not softened:
 - "five hundred hours of audio" (same row)
 - "Ten phones" → becomes five
 
-**Demo-case numbers** (104 nodes, 135 edges, 13 entity types) may appear **only** as pixels inside
+**Demo-case numbers** (114 nodes, 207 edges, 12 entity types) may appear **only** as pixels inside
 a screenshot, where the existing "Interface shown with illustrative case data" caption carries them.
 They must never be promoted to headline or stat-strip copy — 104 reads as a toy and caps the
 reader's sense of the product two orders of magnitude below where it operates.
@@ -121,8 +127,47 @@ a durable curation manifest over canonical Neo4j data. Successor design in `docs
 which pauses and asks the user a question with 2–4 options when a request is ambiguous, rather
 than guessing. Produces graph, table, chart, map and report **artifacts**.
 
+**Audio**: `AudioTranscriptViewer` renders a speaker-attributed, timestamped, in-place-searchable
+transcript with a two-lane conversation map showing speaker turns across the recording, playback
+speed control, and turn-level seeking. The demo case holds `call_20231219_chen_blackwood.mp3` —
+4:29, 133 turns, 3 speakers.
+
 **Deployment**: single-tenant, one isolated stack per customer, in-jurisdiction or on-premises,
 per-case membership enforced per API route.
+
+### 4.1 The finding the demonstration builds to
+
+The demo case contains a genuine four-source convergence. This is the payoff the entire
+demonstration act is structured to reach, and it replaces abstract capability claims with a single
+piece of investigative reasoning the reader can follow.
+
+**The call.** In `call_20231219_chen_blackwood.mp3` at 00:35, Victoria Blackwood says:
+
+> "We said we'd vary the amounts — one twenty five, one eighty, ninety five, two ten, one fifty."
+
+At 00:18–00:28 the two speakers argue about a sixth payment of "two seventy five", with Marcus Chen
+arguing it is safe because *"it's year end; everyone's clearing budget in December; it's the least
+strange month of the whole year to move a number like that."* Blackwood objects: *"that is a line
+going up. A first year analyst draws that on a napkin."*
+
+**The ledger.** Independently extracted from `03_bank_statement_nexus.pdf`, the monthly payment
+totals to Nexus Trading across 2023 are €125,000 · €180,000 · €95,000 · €210,000 · €150,000 —
+the same five figures in the same order — followed by €275,000 in December. The chart artifact
+shows a line going up. Blackwood's objection is visible in the bar heights.
+
+**The interviews.** Marcus Chen says on the call that *"David releases it Wednesday."* In
+`07_interview_david_okonkwo.pdf`, Okonkwo says Chen told him *"if I helped, there would be
+something in it for me — a promotion, a bonus."* The call's own summary records David being
+promised *"a bonus and an increase in the January cycle."*
+
+Four independent sources — a recorded call, a bank statement, and two interview transcripts —
+resolved into the same objects and agreeing on one arrangement. No single source establishes it;
+the model does.
+
+**Presentation constraint.** This is fictional demo data and must carry the standing "illustrative
+case data" caption wherever it appears. The capability it demonstrates — cross-source corroboration
+between audio, financial records and documents, with every element citing its origin — is real, and
+that is what the copy claims. The copy must never imply this is a real matter.
 
 ---
 
@@ -160,11 +205,14 @@ individual calls and messages; scanned PDFs OCR'd page by page; audio transcribe
 speaker-separated. Includes the ingest-window line: *runs unattended overnight*.
 
 **4. It becomes a model.** *Rebuilt.* Seven stages tick through one file. Entity chips emerge as
-they do — `Victoria Blackwood · Person`, `Nexus Trading Ltd · Organization`, `$41,000 · Transaction` —
+they do — `Victoria Blackwood · Person`, `Nexus Trading Ltd · Organization`, `€125,000 · Transaction` —
 each carrying its source quote. The point that must land: a fact exists here only if it has a
 verbatim quote, a page and a file. Unsupported paraphrase is rejected, not published.
 
-**5. Now reduce it.** *Rebuilt. The centre of the page.* A field dense enough to read as
+Amounts and names must come from the current case (EUR, Nexus/Sapphire/Azure Horizon), not the
+earlier ingest. Do not reuse `$41,000` or other figures from superseded screenshots.
+
+**5. Now reduce it.** *Rebuilt. The hinge of the act.* A field dense enough to read as
 *thousands* of nodes — an unreadable swarm, which is honest, because the graph being enormous is
 the problem and not the pitch. Then the reduction: the swarm collapses to the few dozen things
 that matter, and the same reduction propagates in step across timeline, map and table.
@@ -176,30 +224,60 @@ the case, not a filter rebuilt every session.
 This beat is the reason rebuild beat screenshot. A twelve-file demo case cannot depict the swarm.
 
 **6. Work it from every angle.** *Screenshots, full-bleed, annotated.* Not a tab strip. A sequence
-where graph, timeline, map, table, financial and Cellebrite Comms Center each get real size, with
-callouts pointing at the specific thing that matters — a claim quoting `02_company_registry_nexus.pdf`,
-a speaker-attributed transcript, resolved counterparties.
+where each surface gets real size, with callouts pointing at the specific thing that matters:
 
-**7. Ask it, and get work back.** *Rebuilt.* The agent exchange plays: a question types in; the
-agent **asks a clarifying question with options** rather than guessing; the user picks; a table
-artifact materialises with real rows. Caption: eighteen tools over the case model, returning
-tables, charts, subgraphs, maps and reports that stay part of the investigation.
+- **Graph with the entity detail panel open.** The highest-value single screenshot in the set —
+  every sentence of the Nexus Trading summary terminating in a source link. The callout does no
+  more than point at them.
+- **The audio transcript viewer.** Speaker attribution, the two-lane conversation map, timestamps,
+  in-transcript search. Previously unillustrated and now among the strongest assets.
+- **Timeline, map, table, financial.** Subject to what the live data supports; verify before
+  committing page space.
+- **Cellebrite Comms Center.** Rebuilt from `CommsTab.tsx` / `CommsThreadList.tsx` /
+  `CommsThreadView.tsx` with fictional thread content, per §2.
 
-**8. The work product.** Short. Report, export, notebook.
+**7. The convergence.** *Hybrid, and the payoff of the whole act.* Three panels resolving in
+sequence against the material in §4.1: the transcript turn where Blackwood recites the five
+amounts; the chart artifact showing the same five amounts extracted independently from the bank
+statement; the interview quote corroborating the promise made to the payment processor. Then the
+line the entire page has been earning:
+
+> No single source establishes this. Each one is unremarkable alone. The model is what makes them
+> the same arrangement.
+
+This beat is the answer to "what does your product actually *do*", and it is the reason the page
+follows one case rather than listing features.
+
+**8. Ask it, and get work back.** *Rebuilt, with real artifact screenshots.* The investigator's
+loop closes: having seen the convergence, they ask the agent to formalise it. A question types in;
+the agent **asks a clarifying question with options** rather than guessing; the user picks; an
+artifact materialises. Two artifacts carry this beat:
+
+- The **contradiction table** — four material conflicts between the Chen and Okonkwo interviews,
+  each with quote and source. Capture from the artifact panel, not the chat column, where the
+  column widths are cramped.
+- The agent's **own statement of scope** — its note that it excluded Okonkwo's unopposed claims
+  because they are not conflicting accounts. An AI declaring the boundary of its own answer is
+  unusual and directly evidences "proposes while the investigator disposes." Worth its own callout.
+
+Caption: eighteen tools over the case model, returning tables, charts, subgraphs, maps and reports
+that stay part of the investigation.
+
+**9. The work product.** Short. Report, export, notebook.
 
 ### Act III — Argument (~3 screens)
 
-**9. Why this isn't a chatbot.** The existing comparison table, moved to *after* the
+**10. Why this isn't a chatbot.** The existing comparison table, moved to *after* the
 demonstration where it has teeth. Scale row rewritten per §3.
 
-**10. Capability.** Retained content, restyled as a dense datasheet — mono, tight, technical.
+**11. Capability.** Retained content, restyled as a dense datasheet — mono, tight, technical.
 This is the "prove you do X" section and should read as a spec sheet, not airy cards.
 
-**11. Deployment and isolation.** Retained, tightened.
+**12. Deployment and isolation.** Retained, tightened.
 
-**12. Who it's for.** Retained, tightened to three.
+**13. Who it's for.** Retained, tightened to three.
 
-**13. CTA and footer.** Retained.
+**14. CTA and footer.** Retained.
 
 ---
 
@@ -229,16 +307,35 @@ These address the "it looks alright but it's mid" problem directly.
 ## 7. Screenshot capture
 
 Fixed 2560×1440 viewport, consistent across every shot, driven via Playwright against the live
-stack. Required case state:
+stack. Frontend on `:5174`, backend on `:8002`.
 
-- Nexus Trading demo case fully processed (the twelve PDFs in `evidence-data/`)
-- Six to ten entities marked Significant — required for the reduction reference
-- A Cellebrite extraction loaded, for Comms Center — currently no imagery of this exists anywhere
-- Financial transactions categorised; map locations geocoded
-- One agent thread with a table artifact, one with a chart artifact
-- One report built
+**Case state — confirmed present:**
 
-Any state that cannot be produced becomes a rebuilt component instead.
+- Nexus Trading demo case processed: 114 nodes, 207 edges, 12 entity types
+- 12 entities marked Significant, reducing to 12 nodes / 24 edges / 6 types
+- `call_20231219_chen_blackwood.mp3` processed — 4:29, 133 turns, 3 speakers
+- Evidence folders created (Bank Records, Disclosure — tranche 1, Interviews, Phone Calls)
+- Agent threads: key players (with clarification), contradiction table, paths graph, payments
+  chart, report
+
+**Still to verify before committing page space to them:** map geocoding, timeline density,
+financial view content, report rendering. Anything thin gets rebuilt rather than shot.
+
+**Graph capture requires two passes at different force settings**, because the two shots make
+opposite arguments:
+
+| Shot | Link distance | Repulsion | Purpose |
+|---|---|---|---|
+| The swarm | ~80–100 | ~-200 | Dense, hairball, deliberately overwhelming — the problem |
+| The structure | 160 | ~-550 to -600 | Separated and legible — the resolution |
+
+At the default -440 the top cluster labels collide (`CNB-449827156`, `2020-03-20 transfe…`,
+`Approximate €1,000…`, `FCIB-7729384756`). Zoom-to-fit after settling so nothing clips at the
+bottom edge. In the Significant view, `Marcus Wei Chen` and `David Okonkwo meet…` overlap and need
+a manual nudge.
+
+**Capture the contradiction table from the artifact panel, not the chat column** — chat-column
+rendering wraps mid-word (`deliverabl es existed`, `procedure s applied`).
 
 ---
 
