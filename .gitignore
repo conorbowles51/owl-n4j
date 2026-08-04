@@ -81,6 +81,9 @@ neo4j/plugins/
 
 # Data and temporary files
 data/
+# `data/` above matches any directory of that name at any depth, which catches
+# source directories too. The landing site's case data is source, not a volume.
+!landing/src/data/
 evidence-data/
 db-dumps/
 test-report-assets/

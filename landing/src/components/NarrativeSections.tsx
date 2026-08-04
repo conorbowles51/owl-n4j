@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { scaleComparison } from "../data/claims"
 import { Reveal } from "../lib/Reveal"
 
 /* ------------------------------------------------------------------ shared */
@@ -371,11 +372,7 @@ const differences = [
     "A context window, gone when the session ends.",
     "A persistent case model that outlives every conversation, handover and review.",
   ],
-  [
-    "Scale",
-    "Hundreds of pages at best.",
-    "Ten phones, two hundred thousand documents, five hundred hours of audio — all of it modelled.",
-  ],
+  ["Scale", "Hundreds of pages at best.", scaleComparison],
   [
     "What the AI does",
     "Retrieves a sample of what fits and reasons over it. What it missed is unknowable.",
