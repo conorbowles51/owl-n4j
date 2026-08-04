@@ -1,0 +1,42 @@
+.track {
+  position: relative;
+}
+
+.pin {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* Reduced motion, or a caller forcing the finished frame. */
+.static {
+  position: static;
+  height: auto;
+  padding-block: var(--sec-pad-md);
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pin {
+    position: static;
+    height: auto;
+    padding-block: var(--sec-pad-md);
+    overflow: visible;
+  }
+}
+
+/* Below the tablet breakpoint the choreography collapses to a readable stack. */
+@media (max-width: 767px) {
+  .track {
+    min-height: 0 !important;
+  }
+  .pin {
+    position: static;
+    height: auto;
+    padding-block: var(--sec-pad-sm);
+    overflow: visible;
+  }
+}
