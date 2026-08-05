@@ -1860,3 +1860,39 @@ git commit -m "Lazy-load the heavy beats and re-audit every number on the page"
 - Workspace (witnesses, theories, findings, tasks, witness matrix)
 - Contact form backend — the existing mailto flow in `ContactModal` is retained
 - Renaming or rebranding
+
+---
+
+## Execution log — 2026-08-05
+
+Executed inline. Two deliberate deviations from the plan as written:
+
+**Order.** Components were built before the CSS split, not after. The plan's
+sequence left the page visually broken across nine tasks; building first meant the
+switchover happened in one step and each new section could be checked as it landed.
+
+**base.css.** The plan called for hand-porting the live rules out of `global.css`.
+Instead the file was pruned mechanically — keep any rule whose selector references a
+class still present in the source, drop the rest. 7,754 lines to 1,208, and no
+judgement calls about what was still needed.
+
+### Beyond the plan
+
+- **Three.js removed.** The hero lens was decorative and said nothing about the
+  product. The brand mark is a PNG and was never dependent on it. Bundle: ~600KB → 244KB.
+- **Mobile breakpoint bug.** Below 768px the CSS unpinned each sequence while the JS
+  kept driving progress from a section that was no longer tall, freezing every beat at
+  its opening frame. JS and CSS now share one breakpoint.
+- **`CommsCenter` render mutation.** Day boundaries were tracked by reassigning a
+  variable during `map`. Computed up front now.
+- **Root `.gitignore`.** A bare `data/` rule matched `landing/src/data/` and would have
+  silently excluded the case data module from the repo.
+
+### Final state
+
+47 tests, typecheck clean, lint clean. No horizontal overflow at 390px. Reduced motion
+and narrow viewports render every beat's completed frame.
+
+Deferred, and worth a look: Task 19's Lighthouse pass was not run; the pinned sections
+are vertically centred but read top-heavy; and Table and Reports remain cut from the
+page for the reasons in the capture manifest.
