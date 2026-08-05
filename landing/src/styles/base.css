@@ -1207,3 +1207,26 @@ html[data-theme="light"] .final-cta h2 span {
   -webkit-background-clip: border-box;
   -webkit-text-fill-color: currentColor;
 }
+/* ============================================================================
+   The red receipt — the page's signature typographic object. A source
+   reference set in evidence mono, coloured like the product's citation links.
+   Spec: docs/superpowers/specs/2026-08-05-landing-rebuild-2.md §2, §6.
+   ========================================================================== */
+
+.receipt {
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  white-space: nowrap;
+}
+
+.receiptOnDark,
+.receipt-on-dark {
+  color: var(--accent-bright);
+  text-decoration-color: color-mix(in srgb, var(--accent-bright) 55%, transparent);
+}

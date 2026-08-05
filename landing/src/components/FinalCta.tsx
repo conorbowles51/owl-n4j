@@ -1,4 +1,4 @@
-import { Reveal } from "../lib/Reveal"
+import { Reveal } from "./primitives/Reveal"
 
 interface FinalCtaProps {
   onContact: () => void

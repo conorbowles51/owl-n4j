@@ -18,8 +18,8 @@
     linear-gradient(90deg, color-mix(in srgb, var(--ink-on-dark) 5%, transparent) 1px, transparent 1px);
   background-size: 4rem 4rem;
   mask-image: radial-gradient(ellipse 70% 60% at 30% 45%, black 10%, transparent 75%);
-  /* Above the shot, not behind it: the graph field is opaque, so a grid layered
-     underneath would never be seen at all. */
+  /* Above the field: the field fades to solid obsidian under the copy, so the
+     grid is the only texture that survives there. */
   z-index: -1;
 }
 
@@ -122,62 +122,206 @@
   color: var(--ink-on-dark-2);
 }
 
-/* ---------------------------------------------------------------- shot */
+/* ---------------------------------------------------------------- field */
 
-/* The graph is the hero's ground, not an object placed in it. Full bleed, and
-   cropped to the canvas alone — no sidebar, toolbar, detail panel or legend —
-   so there is no chrome edge to clip and nothing that reads as a screenshot
-   pasted onto the page. */
-/* Slightly larger than the hero so the sparse outer rows of the capture fall
-   outside the frame; .hero clips. */
-.shot {
+/* The constellation is the hero's ground, not an object placed in it. It spans
+   the section; the ::after mask hands the left half back to the copy. */
+.field {
   position: absolute;
-  inset: -3% -2% -10%;
+  inset: 0;
   z-index: -2;
-  overflow: hidden;
+  pointer-events: none;
 }
 
-.shot img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  /* Anchored right: the dense transaction cluster lives at the right edge of the
-     capture, and that is the half of the field the copy does not cover. */
-  object-position: 100% 46%;
-  /* A dark UI on a dark ground reads as murk without this. */
-  filter: brightness(1.06) saturate(1.06);
+/* Separate from .field so the band layouts below can widen and right-anchor
+   the composition without touching the mask, which stays on .field. */
+.fieldInner {
+  position: absolute;
+  inset: 0;
 }
 
-/* Clears the copy column. The horizontal stops are calc(50% + Nrem) rather than
-   plain percentages so they track the centred column instead of drifting with
-   the viewport — at 2560 a percentage stop lands a screen-width away from the
-   text it is supposed to be protecting. */
-.shot::after {
+/* Clears the copy column. Stops are calc(50% + Nrem) rather than percentages
+   so they track the centred column instead of drifting with the viewport — at
+   2560 a percentage stop lands a screen-width from the text it protects. The
+   fade is shorter than the bitmap version needed: a composed field is mostly
+   empty obsidian, so the mask only has edge-protection to do. */
+.field::after {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 1;
   background:
     linear-gradient(
       to right,
       var(--obsidian) 0,
-      var(--obsidian) calc(50% + 11rem),
-      color-mix(in srgb, var(--obsidian) 62%, transparent) calc(50% + 20rem),
-      color-mix(in srgb, var(--obsidian) 20%, transparent) calc(50% + 29rem),
-      transparent calc(50% + 36rem)
+      var(--obsidian) calc(50% + 8rem),
+      color-mix(in srgb, var(--obsidian) 60%, transparent) calc(50% + 10.5rem),
+      color-mix(in srgb, var(--obsidian) 22%, transparent) calc(50% + 13rem),
+      transparent calc(50% + 15.5rem)
     ),
-    linear-gradient(to bottom, var(--obsidian) 0, transparent 20%),
-    linear-gradient(
-      to top,
-      var(--obsidian) 0,
-      var(--obsidian) 8%,
-      color-mix(in srgb, var(--obsidian) 40%, transparent) 20%,
-      transparent 38%
-    );
+    linear-gradient(to bottom, var(--obsidian) 0, transparent 13%),
+    linear-gradient(to top, var(--obsidian) 0, transparent 12%);
 }
 
-/* Sits under the stat line, in the copy column — out of the graph entirely. */
-.shotCaption {
+/* ---------------------------------------------------------------- edges */
+
+.edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: edges-in 900ms var(--loupe-ease) 500ms backwards;
+}
+
+/* Non-scaling stroke keeps the lines hairline whatever the viewBox stretch or
+   devicePixelRatio does — the crispness the bitmap could never hold. */
+.edges line {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1;
+}
+
+.edge {
+  stroke: var(--ink-on-dark-3);
+  opacity: 0.15;
+}
+
+.edgeMoney {
+  stroke: var(--entity-financial);
+  opacity: 0.55;
+}
+
+@keyframes edges-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- nodes */
+
+/* Base styles are the settled state, and every animation runs `backwards` from
+   an entrance keyframe — so removing the animations (reduced motion, below)
+   leaves the field complete rather than mid-flight. Centering lives on the
+   static transform; the settle animates the independent `scale` property and
+   the drift animates `translate` on the inner wrapper, so nothing fights. */
+.node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  animation: settle 600ms var(--loupe-ease) var(--settle-delay, 0ms) backwards;
+}
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+
+.orbit {
+  position: absolute;
+  inset: 0;
+  animation: drift-a var(--drift-dur, 12s) ease-in-out var(--drift-delay, 0s) infinite alternate;
+}
+
+.node[data-drift="1"] .orbit {
+  animation-name: drift-b;
+}
+
+.node[data-drift="2"] .orbit {
+  animation-name: drift-c;
+}
+
+/* ±3px, transform-only: ambient, and incapable of layout shift. Negative
+   per-node delays start each dot mid-cycle so the field never moves in sync. */
+@keyframes drift-a {
+  from {
+    translate: -2px 2px;
+  }
+  to {
+    translate: 3px -2px;
+  }
+}
+
+@keyframes drift-b {
+  from {
+    translate: 2px -3px;
+  }
+  to {
+    translate: -2px 2px;
+  }
+}
+
+@keyframes drift-c {
+  from {
+    translate: 2px 2px;
+  }
+  to {
+    translate: -3px -1px;
+  }
+}
+
+.dot {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 14px color-mix(in srgb, currentColor 30%, transparent);
+}
+
+.dim {
+  opacity: 0.38;
+}
+
+.dim .dot {
+  box-shadow: none;
+}
+
+/* The product's selection state: obsidian gap, then the accent ring. */
+.selected .dot {
+  box-shadow:
+    0 0 0 3px var(--obsidian),
+    0 0 0 4.5px var(--accent-bright),
+    0 0 26px color-mix(in srgb, currentColor 45%, transparent);
+}
+
+.selected .label {
+  color: var(--ink-on-dark);
+}
+
+.label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 0.4375rem;
+  font-family: var(--loupe-font-evidence);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  /* Obsidian halo so hairline edges can pass beneath text and stay lines, not
+     strikethroughs. */
+  text-shadow:
+    0 0 5px var(--obsidian),
+    0 1px 3px var(--obsidian);
+}
+
+.label[data-tier="lg"] {
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-on-dark);
+}
+
+.label[data-tier="md"] {
+  font-size: 0.625rem;
+  color: var(--ink-on-dark-2);
+}
+
+.label[data-tier="sm"] {
+  font-size: 0.5625rem;
+  color: var(--ink-on-dark-3);
+}
+
+/* Sits under the stat line, in the copy column — out of the field entirely. */
+.caption {
   position: relative;
   width: var(--page);
   max-width: 46rem;
@@ -190,38 +334,45 @@
   z-index: 2;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .node,
+  .orbit,
+  .edges {
+    animation: none;
+  }
+}
+
 /* Below roughly 1280 the 46rem copy column plus its clearance leaves under
-   200px for the graph — too thin to read as anything. So the composition turns:
-   copy to the top, graph as a band beneath it. */
+   300px for the field — too thin to read as anything. So the composition
+   turns: copy to the top, field as a band beneath it. */
 @media (max-width: 1279px) {
   .hero {
     align-content: start;
     padding-block: clamp(6rem, 13vh, 9rem) 0;
   }
-  .shot {
+  .field {
     inset: auto 0 0 0;
     height: min(48%, 22rem);
   }
-  /* Fitting the whole 1600px capture into a 390px band shrinks the nodes to
-     dust. Pinning the image to a floor width instead holds one legible
-     presentation scale across the whole range and lets the band do the
-     cropping. */
-  .shot img {
-    position: absolute;
-    inset: auto -2rem -5rem auto;
-    width: max(1100px, calc(100% + 4rem));
-    height: auto;
-    max-width: none;
+  /* Squeezing all 100 columns into a 390px band shrinks the cluster to dust.
+     A floor width, right-anchored, keeps one presentation scale across the
+     whole range and lets the band crop the sparse left tail instead — the
+     dense right half is exactly what survives. The 12% top inset pulls the
+     composition down out of the copy-to-band fade. */
+  .fieldInner {
+    inset: 12% 0 0 auto;
+    width: max(1100px, 100%);
   }
-  .shot::after {
+  .field::after {
     background:
       linear-gradient(
         to bottom,
         var(--obsidian) 0,
-        color-mix(in srgb, var(--obsidian) 46%, transparent) 30%,
-        transparent 68%
+        color-mix(in srgb, var(--obsidian) 45%, transparent) 10%,
+        transparent 30%
       ),
-      linear-gradient(to top, var(--obsidian) 0, transparent 26%);
+      linear-gradient(to top, var(--obsidian) 0, transparent 20%),
+      linear-gradient(to right, var(--obsidian) 0, transparent 12%);
   }
 }
 
@@ -230,21 +381,28 @@
     min-height: auto;
     padding-block: clamp(5rem, 14vh, 7rem) 0;
   }
-  .shot {
+  .field {
     position: relative;
     inset: auto;
     width: 100%;
-    height: 14rem;
+    height: 15rem;
     margin-top: 2.5rem;
   }
-  /* The copy already sits above the band here, so it needs far less clearance
-     than the pinned-bottom layout above 768. */
-  .shot::after {
-    background:
-      linear-gradient(to bottom, var(--obsidian) 0, transparent 32%),
-      linear-gradient(to top, var(--obsidian) 0, transparent 24%);
+  .fieldInner {
+    inset: 8% 0 0 auto;
   }
-  .shotCaption {
+  /* At 390 the band shows the right third of the composition; the sm tier
+     cannot fit legibly there, so only the principals keep their names. */
+  .label[data-tier="sm"] {
+    display: none;
+  }
+  .field::after {
+    background:
+      linear-gradient(to bottom, var(--obsidian) 0, transparent 24%),
+      linear-gradient(to top, var(--obsidian) 0, transparent 20%),
+      linear-gradient(to right, var(--obsidian) 0, transparent 10%);
+  }
+  .caption {
     margin: 0.75rem auto 2rem;
   }
 }

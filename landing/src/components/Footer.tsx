@@ -26,7 +26,7 @@ export function Footer({ onContact }: FooterProps) {
           <div>
             <span>Detail</span>
             <a href="#audience">Who it’s for</a>
-            <a href="#trust">Deployment</a>
+            <a href="#deployment">Deployment</a>
           </div>
           <div>
             <span>Contact</span>

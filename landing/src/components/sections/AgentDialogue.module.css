@@ -1,0 +1,376 @@
+.section {
+  background: var(--paper);
+  color: var(--text);
+  /* sm, not md: the composition is dense and the section must clear ~120svh. */
+  padding-block: var(--sec-pad-sm);
+}
+
+.wrap {
+  width: var(--page);
+  margin-inline: auto;
+}
+
+/* ---------------------------------------------------------------- head */
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.head h2 {
+  margin: 1rem 0 0;
+  max-width: 22ch;
+  font-size: clamp(2rem, 3.8vw, 3.25rem);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.lede {
+  margin: 1.25rem 0 0;
+  max-width: 52ch;
+  font-size: clamp(1rem, 1.3vw, 1.125rem);
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- layout */
+
+.layout {
+  margin-top: clamp(2.5rem, 5vw, 4rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  column-gap: clamp(3rem, 6vw, 5.5rem);
+  align-items: start;
+}
+
+/* ---------------------------------------------------------------- thread */
+
+.thread {
+  max-width: 40rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.turn {
+  min-width: 0;
+  display: grid;
+  gap: 0.375rem;
+  justify-items: start;
+}
+
+.turn[data-speaker="analyst"] {
+  justify-items: end;
+}
+
+.speaker {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.bubble {
+  margin: 0;
+  max-width: 100%;
+  padding: 0.875rem 1.125rem;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--paper-2);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* Analyst and agent read apart by alignment and ground, not by chat-app
+   dress-up: the analyst borrows the product's person tint. */
+.turn[data-speaker="analyst"] .bubble {
+  max-width: 85%;
+  background: color-mix(in srgb, var(--entity-person) 9%, var(--paper-2));
+  border-color: color-mix(in srgb, var(--entity-person) 28%, transparent);
+}
+
+/* ------------------------------------------------------------- clarify */
+
+/* The differentiator gets the ink: the one accent-ruled card on this ground. */
+.clarify {
+  width: 100%;
+  padding: 1rem 1.25rem 1.125rem;
+  border-left: 2px solid var(--accent);
+  border-radius: 4px 12px 12px 4px;
+  box-shadow: 0 14px 30px -24px rgba(21, 22, 26, 0.4);
+}
+
+.tool {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.ask {
+  margin: 0.5rem 0 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.options {
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.options li {
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  font-size: 0.9375rem;
+  color: var(--text-2);
+}
+
+.options li[data-chosen] {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.clarifyNote {
+  margin: 0.25rem 0 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.75rem;
+  color: var(--text-3);
+}
+
+/* -------------------------------------------------------------- answer */
+
+.answer {
+  width: 100%;
+  padding: 1.25rem 1.375rem 1.125rem;
+}
+
+.total {
+  margin: 0;
+  font-family: var(--loupe-font-display);
+  font-size: clamp(1.75rem, 2.6vw, 2.375rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--text);
+}
+
+.totalNote {
+  margin: 0.5rem 0 0;
+  font-size: 0.9375rem;
+  color: var(--text-2);
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 1.125rem;
+}
+
+.chartBar {
+  fill: var(--entity-financial);
+}
+
+.chartZero {
+  fill: var(--rule-strong);
+}
+
+.chartBaseline {
+  stroke: var(--rule-strong);
+}
+
+.chartValue {
+  font-family: var(--loupe-font-evidence);
+  fill: var(--text-2);
+}
+
+.chartMonth {
+  font-family: var(--loupe-font-evidence);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  fill: var(--text-3);
+}
+
+.answerMeta {
+  margin: 0.875rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.trail {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+/* -------------------------------------------------------------- caveat */
+
+.caveat {
+  margin: 0.375rem 0 0;
+  padding: 0 0 0 1rem;
+  border-left: 1px solid var(--rule-strong);
+}
+
+.caveat p {
+  margin: 0;
+  max-width: 56ch;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.caveat cite {
+  display: block;
+  margin-top: 0.375rem;
+  font-family: var(--loupe-font-evidence);
+  font-style: normal;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.caption {
+  margin: 0.25rem 0 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ------------------------------------------------------------- product */
+
+/* Sits a beat below the head so the export reads as the thread's ending. */
+.product {
+  padding-top: 2.75rem;
+}
+
+.productKicker {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.productLine {
+  margin: 0.625rem 0 0;
+  max-width: 44ch;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.reportFrame {
+  margin: 1.25rem 0 0;
+  /* Native plate width — downscale freely, never upscale. */
+  max-width: min(100%, 1000px);
+  border: 1px solid var(--rule);
+  border-radius: var(--loupe-radius-panel);
+  background: var(--paper-2);
+  box-shadow: 0 24px 48px -32px rgba(21, 22, 26, 0.35);
+  overflow: hidden;
+}
+
+/* Crop rather than scale if the plate outgrows the viewport (spec §2). */
+.reportCrop {
+  max-height: calc(78vh - 2.75rem);
+  overflow: hidden;
+}
+
+.reportCrop img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.reportFrame figcaption {
+  padding: 0.625rem 1rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ---------------------------------------------------------- responsive */
+
+@media (max-width: 1279px) {
+  .layout {
+    grid-template-columns: 1fr;
+    row-gap: 3rem;
+  }
+
+  .product {
+    padding-top: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .head h2 {
+    font-size: clamp(1.75rem, 7.5vw, 2.25rem);
+  }
+
+  .layout {
+    margin-top: 2rem;
+    row-gap: 2.5rem;
+  }
+
+  .thread {
+    gap: 1rem;
+  }
+
+  .turn[data-speaker="analyst"] .bubble {
+    max-width: 100%;
+  }
+
+  .bubble {
+    padding: 0.75rem 0.875rem;
+  }
+
+  .clarify {
+    padding: 0.875rem 1rem 1rem;
+  }
+
+  .answer {
+    padding: 1rem;
+  }
+
+  .total {
+    font-size: 1.625rem;
+  }
+
+  .options {
+    gap: 0.375rem;
+  }
+
+  .options li {
+    padding: 0.3125rem 0.625rem;
+  }
+}

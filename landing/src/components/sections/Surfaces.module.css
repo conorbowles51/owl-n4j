@@ -1,0 +1,175 @@
+/* ============================================================================
+   Surfaces — the same case from every angle. Paper ground. Four exhibits
+   alternate copy/exhibit sides at desktop for rhythm; below 1280 they stack
+   and the captions carry the meaning. Spec §4.8.
+   ========================================================================== */
+
+.section {
+  background: var(--paper);
+  color: var(--text);
+  padding-block: var(--sec-pad-md) var(--sec-pad-sm);
+  overflow: clip;
+}
+
+.head {
+  width: var(--page);
+  margin-inline: auto;
+  margin-bottom: clamp(3rem, 6vw, 5rem);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.head h2 {
+  margin: 0.75rem 0 0;
+  max-width: 18ch;
+  font-size: clamp(2.125rem, 4.4vw, 3.5rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+}
+
+.lede {
+  margin: 1.125rem 0 0;
+  max-width: 54ch;
+  font-size: clamp(1rem, 1.3vw, 1.1875rem);
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- exhibits */
+
+.list {
+  width: var(--page);
+  margin-inline: auto;
+  display: grid;
+  gap: clamp(3.5rem, 7vw, 6.5rem);
+}
+
+.exhibit {
+  display: grid;
+  gap: clamp(1.25rem, 2.5vw, 2rem);
+  align-items: center;
+}
+
+.copy h3 {
+  margin: 0;
+  max-width: 24ch;
+  font-size: clamp(1.375rem, 2.4vw, 1.9375rem);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.copy > p {
+  margin: 0.75rem 0 0;
+  max-width: 46ch;
+  font-size: clamp(0.9375rem, 1.25vw, 1.0625rem);
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+/* The recording named as evidence, not as a feature: red mono = receipt. */
+.copy .fileLine {
+  margin-top: 1rem;
+  max-width: none;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.75rem;
+  line-height: 1.8;
+  color: var(--text-3);
+}
+
+/* ------------------------------------------------------------------ frames */
+
+.frame {
+  margin: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--loupe-radius-panel);
+  background: var(--paper-2);
+  overflow: hidden;
+  box-shadow: 0 24px 44px -28px color-mix(in srgb, var(--text) 38%, transparent);
+}
+
+/* Tall plates lose their bottom edge, never their sharpness (spec §2). */
+.plate {
+  max-height: 78vh;
+  overflow: hidden;
+}
+
+.plate img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.caption {
+  padding: 0.625rem 1rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* CommsCenter frames and captions itself; the holder only sizes it and adds
+   the exhibit shadow so it sits on the page the way the plates do. It stays
+   panel-width because it is a panel, not an application window. */
+.comms {
+  max-width: 40rem;
+  border-radius: var(--loupe-radius-panel);
+  box-shadow: 0 24px 44px -28px color-mix(in srgb, var(--text) 38%, transparent);
+}
+
+/* ------------------------------------------------------------- wide layout */
+
+@media (min-width: 1280px) {
+  .exhibit {
+    grid-template-columns: minmax(16rem, 0.52fr) minmax(0, 1.48fr);
+    column-gap: clamp(2.75rem, 4.5vw, 4.25rem);
+  }
+
+  .exhibit[data-flip] {
+    grid-template-columns: minmax(0, 1.48fr) minmax(16rem, 0.52fr);
+  }
+
+  /* order moves the copy across; the wide track stays with the exhibit. */
+  .exhibit[data-flip] .copy {
+    order: 2;
+  }
+
+  .comms {
+    justify-self: center;
+  }
+}
+
+/* ----------------------------------------------------------------- mobile */
+
+@media (max-width: 767px) {
+  .section {
+    padding-block: var(--sec-pad-sm);
+  }
+
+  .head {
+    margin-bottom: 2.5rem;
+  }
+
+  .head h2 {
+    font-size: clamp(1.75rem, 8vw, 2.125rem);
+  }
+
+  .list {
+    gap: 3rem;
+  }
+
+  .comms {
+    max-width: 100%;
+  }
+}

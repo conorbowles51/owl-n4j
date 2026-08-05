@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
 import { ContactModal } from "./components/ContactModal"
 import { FinalCta } from "./components/FinalCta"
 import { Footer } from "./components/Footer"
@@ -9,15 +9,27 @@ import {
   DifferenceSection,
   ProofSection,
 } from "./components/NarrativeSections"
-import { AgentExchange } from "./components/sections/AgentExchange"
-import { Convergence } from "./components/sections/Convergence"
-import { GraphReduce } from "./components/sections/GraphReduce"
 import { Hero } from "./components/sections/Hero"
-import { IntakeStream } from "./components/sections/IntakeStream"
-import { Lenses } from "./components/sections/Lenses"
-import { ModelResolve } from "./components/sections/ModelResolve"
-import { ProblemScene } from "./components/sections/ProblemScene"
-import { WorkProduct } from "./components/sections/WorkProduct"
+import { Ingest } from "./components/sections/Ingest"
+import { TheCase } from "./components/sections/TheCase"
+
+// Below-fold sections with heavy compositions load on demand; the reader is
+// several screens away when these chunks resolve.
+const GraphReduce = lazy(() =>
+  import("./components/sections/GraphReduce").then((m) => ({ default: m.GraphReduce }))
+)
+const AgentDialogue = lazy(() =>
+  import("./components/sections/AgentDialogue").then((m) => ({ default: m.AgentDialogue }))
+)
+const Finding = lazy(() =>
+  import("./components/sections/Finding").then((m) => ({ default: m.Finding }))
+)
+const Sourced = lazy(() =>
+  import("./components/sections/Sourced").then((m) => ({ default: m.Sourced }))
+)
+const Surfaces = lazy(() =>
+  import("./components/sections/Surfaces").then((m) => ({ default: m.Surfaces }))
+)
 
 export function App() {
   const [contactOpen, setContactOpen] = useState(false)
@@ -30,20 +42,22 @@ export function App() {
       <Navigation onContact={() => setContactOpen(true)} />
 
       <main id="main-content">
-        {/* ---- Act I — setup */}
+        {/* ---- Act I — what this is */}
         <Hero onContact={() => setContactOpen(true)} />
-        <ProblemScene />
 
-        {/* ---- Act II — demonstration, one case from intake to finding */}
-        <IntakeStream />
-        <ModelResolve />
-        <GraphReduce />
-        <Lenses />
-        <Convergence />
-        <AgentExchange />
-        <WorkProduct />
+        {/* ---- Act II — one case, from files to finding.
+            Spec: docs/superpowers/specs/2026-08-05-landing-rebuild-2.md §3 */}
+        <TheCase />
+        <Ingest />
+        <Suspense fallback={null}>
+          <GraphReduce />
+          <AgentDialogue />
+          <Finding />
+          <Sourced />
+          <Surfaces />
+        </Suspense>
 
-        {/* ---- Act III — argument */}
+        {/* ---- Act III — the argument */}
         <DifferenceSection />
         <CapabilitySection />
         <ProofSection />

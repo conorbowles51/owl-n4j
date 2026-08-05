@@ -1,0 +1,410 @@
+/* Finding — the page's climax. A ledger: the five recited amounts as a spine
+   set in display type, each traced rightward to the call, the bank statement
+   and the invoice schedule; then the two moments the spine cannot carry alone.
+   Spec §4.6. */
+
+.section {
+  padding-block: var(--sec-pad-md);
+  background: var(--obsidian);
+  color: var(--ink-on-dark);
+}
+
+.inner {
+  width: var(--page);
+  margin-inline: auto;
+  display: grid;
+  gap: clamp(2rem, 4vw, 3rem);
+}
+
+/* ------------------------------------------------------------------- head */
+
+.head {
+  max-width: var(--measure);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-bright);
+}
+
+.title {
+  margin: 0.625rem 0 0;
+  font-size: clamp(1.875rem, 4.2vw, 3.125rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: var(--ink-on-dark);
+}
+
+.lede {
+  margin: 1.125rem 0 0;
+  font-size: clamp(1rem, 1.4vw, 1.1875rem);
+  line-height: 1.6;
+  color: var(--ink-on-dark-2);
+}
+
+/* ------------------------------------------------------------------ spine */
+
+.spine {
+  display: grid;
+}
+
+.spineNote {
+  margin: 0 0 0.875rem;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-on-dark-3);
+}
+
+.band {
+  display: grid;
+  grid-template-columns: clamp(10rem, 16vw, 13.5rem) minmax(0, 1fr);
+}
+
+.amountCell {
+  align-self: center;
+  padding: 0.875rem clamp(1.25rem, 2.5vw, 2rem) 0.875rem 0;
+  text-align: right;
+}
+
+.index {
+  display: block;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  color: var(--accent-bright);
+}
+
+.amount {
+  margin: 0.125rem 0 0;
+  font-family: var(--loupe-font-display);
+  font-size: clamp(1.75rem, 3vw, 2.625rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  /* Stacked figures align digit-for-digit, so the ledger reads as one column. */
+  font-feature-settings: "tnum";
+  color: var(--ink-on-dark);
+}
+
+/* The literal spine: one continuous rule the amounts hang off. */
+.rows {
+  margin: 0;
+  padding: 0.4375rem 0 0.4375rem clamp(1.25rem, 2.5vw, 2rem);
+  list-style: none;
+  border-left: 1px solid var(--rule-dark);
+}
+
+/* Band boundaries get the full-strength rule; rows inside stay faint. */
+.spine > * + * .rows {
+  border-top: 1px solid var(--rule-dark);
+}
+
+.spine > :last-child .rows {
+  border-bottom: 1px solid var(--rule-dark);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr) auto;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+  padding-block: 0.375rem;
+}
+
+.row + .row {
+  border-top: 1px solid color-mix(in srgb, var(--rule-dark) 70%, transparent);
+}
+
+/* Receipts collect on the right edge — a rail of red down the whole spine. */
+.row :global(.receipt) {
+  justify-self: end;
+}
+
+.tag {
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-on-dark-3);
+}
+
+.fact {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ink-on-dark-2);
+}
+
+.fact strong {
+  font-weight: 600;
+  color: var(--ink-on-dark);
+}
+
+/* ---------------------------------------------------------------- moments */
+
+.proof {
+  display: grid;
+  gap: 1rem;
+}
+
+.moments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.moment {
+  height: 100%;
+  padding: clamp(1.25rem, 2.4vw, 1.75rem);
+  border: 1px solid var(--rule-dark);
+  border-radius: var(--loupe-radius-panel);
+  background: color-mix(in srgb, var(--ink-on-dark) 3.5%, transparent);
+}
+
+.kicker {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-bright);
+}
+
+.momentTitle {
+  margin: 0.375rem 0 0;
+  font-size: clamp(1.1875rem, 1.8vw, 1.4375rem);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--ink-on-dark);
+}
+
+.momentLede {
+  max-width: 58ch;
+  margin: 0.625rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--ink-on-dark-2);
+}
+
+/* ------------------------------------------------------- the phrase match */
+
+.phrase {
+  display: grid;
+  gap: 0.375rem;
+  justify-items: start;
+  margin-top: 1rem;
+}
+
+.phraseMeta {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  color: var(--ink-on-dark-3);
+}
+
+.phraseText {
+  margin: 0;
+  font-family: var(--loupe-font-display);
+  font-size: clamp(1.25rem, 2vw, 1.5rem);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink-on-dark);
+}
+
+/* The two phrases share one highlight treatment — the match is the point. */
+.phraseText mark {
+  padding: 0.0625rem 0.3125rem;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--ink-on-dark);
+}
+
+.phraseJoin {
+  margin: 0.75rem 0 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.875rem;
+  color: var(--ink-on-dark-3);
+}
+
+/* --------------------------------------------------- the pass-through echo */
+
+.echoFigures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.125rem;
+}
+
+.echoCol + .echoCol {
+  border-left: 1px solid var(--rule-dark);
+  padding-left: 1.25rem;
+}
+
+.echoValue {
+  margin: 0;
+  font-family: var(--loupe-font-display);
+  font-size: clamp(2rem, 3.2vw, 2.75rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink-on-dark);
+}
+
+.echoLabel {
+  margin: 0.5rem 0 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  line-height: 1.55;
+  color: var(--ink-on-dark-3);
+}
+
+.echoQuote {
+  margin: 1.125rem 0 0.375rem;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--ink-on-dark-2);
+}
+
+/* ------------------------------------------------------- the corroboration */
+
+.momentWide .quotes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(1rem, 2vw, 1.75rem);
+  margin-top: 1.125rem;
+}
+
+.quoteBlock {
+  display: grid;
+  gap: 0.4375rem;
+  align-content: start;
+  justify-items: start;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--rule-dark) 70%, transparent);
+}
+
+.quoteMeta {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  color: var(--ink-on-dark-3);
+}
+
+.quoteText {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--ink-on-dark-2);
+}
+
+/* ---------------------------------------------------------------- closing */
+
+.close {
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+}
+
+.closing {
+  max-width: 22ch;
+  margin: 0;
+  font-family: var(--loupe-font-display);
+  font-size: clamp(1.75rem, 3.4vw, 2.625rem);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink-on-dark);
+}
+
+.caption {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-on-dark-3);
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 1279px) {
+  .band {
+    grid-template-columns: clamp(8.5rem, 20vw, 11rem) minmax(0, 1fr);
+  }
+
+  /* Receipts drop below their fact — the row keeps reading left-to-right,
+     top-to-bottom without squeezing the fact column. */
+  .row {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+  }
+
+  .row :global(.receipt) {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 767px) {
+  .band {
+    grid-template-columns: 1fr;
+  }
+
+  .amountCell {
+    padding: 0.875rem 0 0.375rem;
+    text-align: left;
+  }
+
+  .rows {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  /* Stacked bands separate above the amount, not between amount and rows. */
+  .spine > * + * .rows {
+    border-top: 0;
+  }
+
+  .spine > :last-child .rows {
+    border-bottom: 0;
+  }
+
+  .spine > * + * .band {
+    border-top: 1px solid var(--rule-dark);
+  }
+
+  .row {
+    grid-template-columns: 1fr;
+    gap: 0.125rem;
+  }
+
+  .row :global(.receipt) {
+    grid-column: 1;
+  }
+
+  .moments {
+    grid-template-columns: 1fr;
+  }
+
+  .momentWide .quotes {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Below ~480px the longest receipt (the call file plus timestamp) outgrows
+   the column; let it wrap rather than force horizontal scroll. The shared
+   .receipt look is otherwise untouched. */
+@media (max-width: 479px) {
+  .section :global(.receipt) {
+    white-space: normal;
+  }
+}

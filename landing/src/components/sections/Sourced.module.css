@@ -1,0 +1,142 @@
+/* Continuous with the Finding above: same obsidian ground, no dividing rule,
+   a shorter top pad so the two sections read as one dark act. */
+.section {
+  background: var(--obsidian);
+  color: var(--ink-on-dark);
+  padding-block: var(--sec-pad-xs) var(--sec-pad-sm);
+}
+
+.wrap {
+  width: var(--page);
+  margin-inline: auto;
+  display: grid;
+  /* Exhibit gets the wider track; at 1024–1279 the plate downscales below its
+     698px native width rather than starving the copy column. */
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+  gap: clamp(2.5rem, 5vw, 4.5rem);
+  align-items: center;
+}
+
+/* ------------------------------------------------------------------ copy */
+
+.copy {
+  max-width: 34rem;
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-bright);
+}
+
+.heading {
+  margin: 0.625rem 0 0;
+  max-width: 18ch;
+  font-size: clamp(1.875rem, 3.4vw, 2.875rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: var(--ink-on-dark);
+}
+
+.body {
+  margin: 1rem 0 0;
+  max-width: 44ch;
+  font-size: clamp(1rem, 1.4vw, 1.125rem);
+  line-height: 1.6;
+  color: var(--ink-on-dark-2);
+}
+
+/* A working example of the rule the copy states: verbatim quote, then the
+   receipt. Same left-rule treatment the page uses for the agent's caveat. */
+.fact {
+  margin: 1.75rem 0 0;
+  padding-left: 1.125rem;
+  border-left: 2px solid var(--accent);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.factLabel {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-on-dark-3);
+}
+
+.factQuote {
+  margin: 0;
+}
+
+.factQuote p {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--ink-on-dark-2);
+}
+
+.factCaption {
+  margin: 1rem 0 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-on-dark-3);
+}
+
+/* --------------------------------------------------------------- exhibit */
+
+.exhibit {
+  margin: 0;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* width/height auto + both max constraints keeps the aspect ratio while
+   honouring the native-width and 78vh frame caps — no letterboxing. */
+.plate {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(100%, 698px);
+  max-height: 78vh;
+  border: 1px solid var(--rule-dark);
+  border-radius: var(--loupe-radius-panel);
+  background: var(--paper-2);
+  box-shadow: 0 28px 70px -36px rgba(0, 0, 0, 0.85);
+}
+
+.caption {
+  margin-top: 0.75rem;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-on-dark-3);
+}
+
+/* ------------------------------------------------------------ responsive */
+
+@media (max-width: 1023px) {
+  /* Below 1024 the columns starve each other; stack copy over exhibit. */
+  .wrap {
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(2rem, 6vw, 3rem);
+  }
+}
+
+@media (max-width: 767px) {
+  .section {
+    padding-block: var(--sec-pad-xs);
+  }
+
+  .heading {
+    font-size: clamp(1.625rem, 7.4vw, 2rem);
+  }
+}

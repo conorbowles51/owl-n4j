@@ -16,12 +16,24 @@ function mulberry32(seed: number) {
 }
 
 /**
- * The swarm is representative of a real matter's density, not of the demo case.
- * A 121-node field does not read as a problem; thirty thousand does, and that is
- * the scale the product actually runs at. Captioned as illustrative.
+ * The swarm dramatises a real matter's density, not the demo case. A 121-node
+ * field does not read as a problem; thirty thousand does, and that is the scale
+ * the product actually runs at. The layer labels tell the truth about the demo
+ * case (`graphCounts`), and the caption declares the density representative.
  */
 const SWARM = 1400
 const SURVIVORS = 40
+
+/** The two layer states, in product vocabulary, with the demo case's real counts. */
+const LAYERS = [
+  { key: "all", name: "All data", nodes: graphCounts.all.nodes, edges: graphCounts.all.edges },
+  {
+    key: "significant",
+    name: "Significant",
+    nodes: graphCounts.significant.nodes,
+    edges: graphCounts.significant.edges,
+  },
+] as const
 
 interface Node {
   x: number
@@ -108,64 +120,73 @@ function Field({ progress }: { progress: number }) {
 
     // Environments without a 2D context (jsdom, canvas disabled) fall through to
     // the copy, which carries the argument on its own.
-    let ctx: CanvasRenderingContext2D | null
+    let maybeCtx: CanvasRenderingContext2D | null
     try {
-      ctx = canvas.getContext("2d")
+      maybeCtx = canvas.getContext("2d")
     } catch {
       return
     }
-    if (!ctx) return
+    if (!maybeCtx) return
+    const ctx = maybeCtx
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
-    const { width, height } = canvas.getBoundingClientRect()
-    canvas.width = width * dpr
-    canvas.height = height * dpr
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, width, height)
+    const draw = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      const { width, height } = canvas.getBoundingClientRect()
+      canvas.width = width * dpr
+      canvas.height = height * dpr
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, width, height)
 
-    const fade = segment(progress, 0.32, 0.62)
-    const settle = segment(progress, 0.34, 0.7)
+      const fade = segment(progress, 0.32, 0.62)
+      const settle = segment(progress, 0.34, 0.7)
 
-    const place = (n: (typeof FIELD)[number]) => {
-      const drift = n.keep ? settle : -fade * 0.12
-      return {
-        x: (n.keep ? n.x + (n.tx - n.x) * settle : n.x + (n.x - 0.5) * -drift) * width,
-        y: (n.keep ? n.y + (n.ty - n.y) * settle : n.y + (n.y - 0.5) * -drift) * height,
+      const place = (n: (typeof FIELD)[number]) => {
+        const drift = n.keep ? settle : -fade * 0.12
+        return {
+          x: (n.keep ? n.x + (n.tx - n.x) * settle : n.x + (n.x - 0.5) * -drift) * width,
+          y: (n.keep ? n.y + (n.ty - n.y) * settle : n.y + (n.y - 0.5) * -drift) * height,
+        }
       }
+
+      // Edges first, so nodes sit on top of them.
+      ctx.lineWidth = 0.5
+      for (const [a, b] of EDGES) {
+        const na = FIELD[a]
+        const nb = FIELD[b]
+        const both = na.keep && nb.keep
+        const alpha = both ? 0.4 : 0.16 - fade * 0.16
+        if (alpha <= 0.01) continue
+        const pa = place(na)
+        const pb = place(nb)
+        ctx.globalAlpha = alpha
+        ctx.strokeStyle = both ? "#8b8f99" : "#6f727b"
+        ctx.beginPath()
+        ctx.moveTo(pa.x, pa.y)
+        ctx.lineTo(pb.x, pb.y)
+        ctx.stroke()
+      }
+
+      for (const n of FIELD) {
+        const alpha = n.keep ? 1 : 0.55 - fade * 0.51
+        if (alpha <= 0.02) continue
+
+        // Survivors ease toward their resting ring; the rest drift outward as they fade.
+        const { x, y } = place(n)
+
+        ctx.globalAlpha = alpha
+        ctx.fillStyle = n.colour
+        ctx.beginPath()
+        ctx.arc(x, y, n.r * (n.keep ? 1 + settle * 0.5 : 1), 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.globalAlpha = 1
     }
 
-    // Edges first, so nodes sit on top of them.
-    ctx.lineWidth = 0.5
-    for (const [a, b] of EDGES) {
-      const na = FIELD[a]
-      const nb = FIELD[b]
-      const both = na.keep && nb.keep
-      const alpha = both ? 0.4 : 0.16 - fade * 0.16
-      if (alpha <= 0.01) continue
-      const pa = place(na)
-      const pb = place(nb)
-      ctx.globalAlpha = alpha
-      ctx.strokeStyle = both ? "#8b8f99" : "#6f727b"
-      ctx.beginPath()
-      ctx.moveTo(pa.x, pa.y)
-      ctx.lineTo(pb.x, pb.y)
-      ctx.stroke()
-    }
-
-    for (const n of FIELD) {
-      const alpha = n.keep ? 1 : 0.55 - fade * 0.51
-      if (alpha <= 0.02) continue
-
-      // Survivors ease toward their resting ring; the rest drift outward as they fade.
-      const { x, y } = place(n)
-
-      ctx.globalAlpha = alpha
-      ctx.fillStyle = n.colour
-      ctx.beginPath()
-      ctx.arc(x, y, n.r * (n.keep ? 1 + settle * 0.5 : 1), 0, Math.PI * 2)
-      ctx.fill()
-    }
-    ctx.globalAlpha = 1
+    draw()
+    // The completed state (mobile, reduced motion) never re-renders from
+    // scroll, so a resize redraw is what keeps the static canvas unstretched.
+    window.addEventListener("resize", draw)
+    return () => window.removeEventListener("resize", draw)
   }, [progress])
 
   return <canvas ref={canvasRef} className={styles.canvas} aria-hidden="true" />
@@ -173,17 +194,13 @@ function Field({ progress }: { progress: number }) {
 
 export function GraphReduce() {
   return (
-    <PinnedSequence steps={3} label="Reducing the case" ground="obsidian" id="reduce">
+    <PinnedSequence steps={2} label="Reducing the case" ground="obsidian" id="graph">
       {(progress) => {
         const opening = segment(progress, 0, 0.28)
         const reducing = segment(progress, 0.34, 0.66)
         const propagating = segment(progress, 0.7, 1)
-
-        const nodeCount = Math.round(SWARM - reducing * (SWARM - SURVIVORS))
-        const typeCount = Math.round(
-          graphCounts.all.types.length -
-            reducing * (graphCounts.all.types.length - graphCounts.significant.types.length)
-        )
+        const reduced = reducing > 0.5
+        const activeLayer = reduced ? "significant" : "all"
 
         return (
           <div className={styles.wrap}>
@@ -192,37 +209,38 @@ export function GraphReduce() {
             <div className={styles.overlay}>
               <header className={styles.head}>
                 <p className={styles.eyebrow}>Reduction</p>
-                <h2 data-state={reducing > 0.5 ? "after" : "before"}>
-                  {reducing > 0.5 ? "Then you mark what matters." : "Every fact in the matter."}
-                </h2>
+                <h2>{reduced ? "Then you mark what matters." : "Every fact in the matter."}</h2>
                 <p className={styles.lede} data-shown={opening > 0.2 || undefined}>
-                  {reducing > 0.5
+                  {reduced
                     ? "The case narrows with you, and it stays narrowed — across the graph, the timeline, the map and the table."
                     : "All of it true. All of it sourced. None of it a case."}
                 </p>
               </header>
 
-              <dl className={styles.counters}>
-                <div>
-                  <dt>Entities</dt>
-                  <dd>{nodeCount.toLocaleString()}</dd>
-                </div>
-                <div>
-                  <dt>Types</dt>
-                  <dd>{typeCount}</dd>
-                </div>
-              </dl>
+              <div className={styles.foot}>
+                <ol className={styles.layers} aria-label="Graph layers">
+                  {LAYERS.map((layer) => (
+                    <li key={layer.key} data-active={activeLayer === layer.key || undefined}>
+                      <span className={styles.layerName}>{layer.name}</span>
+                      <span className={styles.layerCounts}>
+                        {layer.nodes} nodes · {layer.edges} edges
+                      </span>
+                    </li>
+                  ))}
+                </ol>
 
-              <ul className={styles.lenses} data-shown={propagating > 0.15 || undefined}>
-                {["Graph", "Timeline", "Map", "Table"].map((lens) => (
-                  <li key={lens}>
-                    <span>{lens}</span>
-                    <em>narrowed</em>
-                  </li>
-                ))}
-              </ul>
-
-              <p className={styles.caption}>Representative density — illustrative case data</p>
+                <div className={styles.side}>
+                  <ul className={styles.lenses} data-shown={propagating > 0.15 || undefined}>
+                    {["Graph", "Timeline", "Map", "Table"].map((lens) => (
+                      <li key={lens}>
+                        <span>{lens}</span>
+                        <em>narrowed</em>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className={styles.caption}>Representative density — illustrative case data</p>
+                </div>
+              </div>
             </div>
           </div>
         )

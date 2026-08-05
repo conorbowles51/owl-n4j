@@ -1,0 +1,278 @@
+/* ============================================================================
+   TheCase — the demonstration dossier. Paper ground, hairline rules, mono
+   annotations. Composed desktop-first; the layout turns at 1279px and 767px.
+   ========================================================================== */
+
+.section {
+  background: var(--paper);
+  color: var(--text);
+  padding-block: var(--sec-pad-sm);
+  scroll-margin-top: 5.125rem;
+}
+
+.inner {
+  width: var(--page);
+  margin-inline: auto;
+  display: grid;
+  row-gap: clamp(2rem, 3.5vw, 3rem);
+}
+
+/* ------------------------------------------------------------------ head */
+
+.head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 34rem);
+  column-gap: clamp(3rem, 6vw, 6rem);
+  align-items: end;
+}
+
+.eyebrow {
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.head h2 {
+  margin-top: 0.75rem;
+  font-family: var(--loupe-font-display);
+  font-size: clamp(2.375rem, 4.6vw, 3.625rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: var(--text);
+}
+
+.lede {
+  max-width: var(--measure);
+  margin-bottom: 0.375rem;
+  font-family: var(--loupe-font-body);
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+/* ----------------------------------------------------------------- blocks
+   Each dossier part opens the same way: a strong hairline and a mono label.
+   The repetition is the register — ruled paper, not cards. */
+
+.block {
+  display: grid;
+  gap: 1.25rem;
+  border-top: 1px solid var(--rule-strong);
+  padding-top: 1.125rem;
+}
+
+.blockLabel {
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ------------------------------------------------------------------ cast */
+
+.cast {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(1.25rem, 2.5vw, 2.25rem);
+}
+
+.castCard {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+  border-top: 1px solid var(--rule);
+  padding-top: 0.875rem;
+}
+
+.castName {
+  display: flex;
+  align-items: center;
+  gap: 0.5625rem;
+  font-family: var(--loupe-font-display);
+  font-size: 1.1875rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+/* The same dot the product draws next to a node of this type. */
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.castCard[data-entity="person"] .dot {
+  background: var(--entity-person);
+}
+
+.castCard[data-entity="organisation"] .dot {
+  background: var(--entity-organisation);
+}
+
+.castRole {
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.castDetail {
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.castSource {
+  margin-top: 0.125rem;
+}
+
+/* ----------------------------------------------------------------- files */
+
+.filesHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+}
+
+.mix {
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+
+.filesGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
+}
+
+.folderMain {
+  padding-right: clamp(2rem, 4vw, 3.5rem);
+}
+
+.folderSide {
+  display: grid;
+  gap: 1.5rem;
+  align-content: start;
+  border-left: 1px solid var(--rule);
+  padding-left: clamp(2rem, 4vw, 3.5rem);
+}
+
+.folderName {
+  margin-bottom: 0.375rem;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.fileList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fileList li {
+  border-top: 1px solid var(--rule);
+  padding: 0.4375rem 0;
+}
+
+/* No size column, no type column — what the files are, not their bytes. */
+.fileName {
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.75rem;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+/* The one non-PDF, named in words so the mix reads as deliberate. */
+.callNote {
+  display: block;
+  margin-top: 0.1875rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* -------------------------------------------------------------- question */
+
+.questionText {
+  max-width: 22ch;
+  font-family: var(--loupe-font-display);
+  font-size: clamp(1.875rem, 4.2vw, 3.375rem);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-wrap: balance;
+}
+
+.questionMeta {
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+
+/* --------------------------------------------------------------- caption */
+
+.caption {
+  border-top: 1px solid var(--rule);
+  padding-top: 0.75rem;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ------------------------------------------------------------ turn points */
+
+@media (max-width: 1279px) {
+  .head {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 1.5rem;
+    align-items: start;
+  }
+
+  .lede {
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .cast {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filesGrid {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 1.5rem;
+  }
+
+  .folderMain {
+    padding-right: 0;
+  }
+
+  .folderSide {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .lede {
+    font-size: 1.0625rem;
+  }
+}

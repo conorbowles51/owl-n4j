@@ -85,14 +85,14 @@ html[data-theme="dark"] body {
 /* ---------------------------------------------------------------- sections */
 
 .sec {
-  padding: clamp(84px, 9vw, 132px) 0;
+  padding: var(--sec-pad-md) 0;
   border-top: 1px solid var(--rule);
   background: var(--paper);
   color: var(--text);
 }
 
 .sec-tight {
-  padding: clamp(72px, 7vw, 104px) 0;
+  padding: var(--sec-pad-sm) 0;
 }
 
 .sec-last {
@@ -802,7 +802,7 @@ html[data-theme="dark"] body {
 
 .cap-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   margin-top: clamp(48px, 5vw, 66px);
   border-top: 1px solid var(--rule);
@@ -860,7 +860,11 @@ html[data-theme="dark"] body {
     var(--paper);
 }
 
-#why-loupe .sec-head {
+/* Act III heads share one split composition: headline left, lede right.
+   They turn to a single column below 1280. */
+#why-loupe .sec-head,
+#audience .sec-head,
+#deployment .sec-head {
   max-width: none;
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(340px, 0.78fr);
@@ -868,16 +872,27 @@ html[data-theme="dark"] body {
   align-items: end;
 }
 
-#why-loupe .sec-head .eyebrow {
+#why-loupe .sec-head .eyebrow,
+#audience .sec-head .eyebrow,
+#deployment .sec-head .eyebrow {
   grid-column: 1 / -1;
 }
 
-#why-loupe .sec-head h2 {
+#why-loupe .sec-head h2,
+#audience .sec-head h2,
+#deployment .sec-head h2 {
   grid-column: 1;
   max-width: 15ch;
 }
 
-#why-loupe .sec-lede {
+/* "Your environment." must not break mid-phrase. */
+#deployment .sec-head h2 {
+  max-width: 17ch;
+}
+
+#why-loupe .sec-lede,
+#audience .sec-lede,
+#deployment .sec-lede {
   grid-column: 2;
   max-width: 43ch;
   margin: 0 0 4px;
@@ -982,6 +997,12 @@ html[data-theme="dark"] body {
     );
 }
 
+/* One demonstrative receipt in the Loupe column — the symbol Act II taught. */
+.cmp-row p .receipt {
+  display: inline-block;
+  margin-top: 10px;
+}
+
 /* ---------------------------------------------------------------- audience */
 
 #audience {
@@ -992,29 +1013,6 @@ html[data-theme="dark"] body {
       transparent 72%
     ),
     var(--paper);
-}
-
-#audience .sec-head {
-  max-width: none;
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(340px, 0.78fr);
-  column-gap: clamp(56px, 9vw, 136px);
-  align-items: end;
-}
-
-#audience .sec-head .eyebrow {
-  grid-column: 1 / -1;
-}
-
-#audience .sec-head h2 {
-  grid-column: 1;
-  max-width: 15ch;
-}
-
-#audience .sec-lede {
-  grid-column: 2;
-  max-width: 43ch;
-  margin: 0 0 4px;
 }
 
 .aud {
@@ -1088,11 +1086,9 @@ html[data-theme="dark"] body {
   text-wrap: pretty;
 }
 
-/* ---------------------------------------------------------------- trust */
+/* ---------------------------------------------------------------- deployment */
 
-#trust {
-  position: relative;
-  overflow: hidden;
+#deployment {
   background:
     radial-gradient(
       ellipse 44% 34% at 94% 10%,
@@ -1102,86 +1098,16 @@ html[data-theme="dark"] body {
     var(--paper);
 }
 
-#trust::before {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  content: "";
-  opacity: 0.44;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--rule) 58%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--rule) 58%, transparent) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: linear-gradient(90deg, transparent 0%, transparent 56%, #000 100%);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, transparent 56%, #000 100%);
-}
-
-#trust .container {
-  position: relative;
-}
-
-.trust-feature {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
-  overflow: hidden;
-  border: 1px solid var(--rule);
-  border-radius: 16px;
-  background: var(--paper-2);
-  box-shadow: 0 34px 92px -62px rgba(23, 20, 24, 0.62);
-}
-
-.trust-feature-copy {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: clamp(44px, 5.2vw, 72px);
-}
-
-.trust-feature-copy h2 {
-  max-width: none;
-  margin: 22px 0 0;
-  color: var(--text);
-  font-family: var(--font-display);
-  font-size: clamp(38px, 4.4vw, 60px);
-  font-weight: 600;
-  letter-spacing: -0.042em;
-  line-height: 1.02;
-  text-wrap: balance;
-}
-
-.trust-feature-copy h2 span {
-  display: block;
-  white-space: nowrap;
-}
-
-.trust-feature-copy > p:last-child {
-  max-width: 48ch;
-  margin: 26px 0 0;
-  color: var(--text-2);
-  font-size: 17px;
-  line-height: 1.72;
-  text-wrap: pretty;
-}
-
-.trust-summary {
-  border-left: 1px solid var(--rule);
-  background:
-    linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--paper-3) 66%, var(--paper-2)),
-      color-mix(in srgb, var(--accent) 2.5%, var(--paper-2))
-    );
-}
-
 .deploy-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
   overflow: hidden;
-  margin-top: 18px;
+  margin-top: clamp(48px, 5vw, 70px);
   border: 1px solid var(--rule);
   border-radius: 12px;
   background: var(--paper-2);
+  box-shadow: 0 28px 76px -58px rgba(22, 24, 30, 0.5);
 }
 
 .deploy-grid article {
@@ -1236,7 +1162,7 @@ html[data-theme="dark"] body {
 /* ---------------------------------------------------------------- close */
 
 .final-cta {
-  padding: clamp(84px, 9vw, 128px) 0;
+  padding: var(--sec-pad-md) 0;
   border: 0;
   background: var(--obsidian-2);
   color: #f2f2f4;
@@ -1568,10 +1494,6 @@ html[data-theme="dark"] body {
     border-bottom: 0;
   }
 
-  .cap-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .flow,
   .steps {
     grid-template-columns: 1fr;
@@ -1594,12 +1516,6 @@ html[data-theme="dark"] body {
     border-right: 0;
   }
 
-  #audience .aud article {
-    grid-template-columns: minmax(64px, 0.2fr) minmax(220px, 0.8fr) minmax(0, 1.15fr);
-    gap: clamp(24px, 3.5vw, 42px);
-    padding: 30px clamp(26px, 4vw, 40px) 34px;
-  }
-
   .flow-col:last-child,
   .steps article:last-child {
     border-bottom: 0;
@@ -1611,24 +1527,6 @@ html[data-theme="dark"] body {
   .product-explorer-caption {
     grid-template-columns: 1fr;
     gap: 20px;
-  }
-
-  .trust-feature {
-    grid-template-columns: 1fr;
-  }
-
-  .trust-feature-copy {
-    padding: 44px clamp(30px, 7vw, 56px) 48px;
-  }
-
-  .trust-feature-copy h2 {
-    max-width: none;
-  }
-
-  .trust-summary {
-    min-height: 120px;
-    border-top: 1px solid var(--rule);
-    border-left: 0;
   }
 
   #problem .sec-head {
@@ -1657,45 +1555,6 @@ html[data-theme="dark"] body {
   #findings .sec-lede {
     max-width: var(--measure);
     margin: 22px 0 0;
-  }
-
-  #why-loupe .sec-head {
-    grid-template-columns: 1fr;
-  }
-
-  #why-loupe .sec-head h2,
-  #why-loupe .sec-lede {
-    grid-column: 1;
-  }
-
-  #why-loupe .sec-lede {
-    max-width: var(--measure);
-    margin: 22px 0 0;
-  }
-
-  #audience .sec-head {
-    grid-template-columns: 1fr;
-  }
-
-  #audience .sec-head h2,
-  #audience .sec-lede {
-    grid-column: 1;
-  }
-
-  #audience .sec-lede {
-    max-width: var(--measure);
-    margin: 22px 0 0;
-  }
-
-  #audience .aud article {
-    grid-template-columns: 60px minmax(0, 1fr);
-    gap: 18px 24px;
-    padding: 28px 30px 32px;
-  }
-
-  #audience .aud h3,
-  #audience .aud article > p:last-child {
-    grid-column: 2;
   }
 
   #problem .split-note {
@@ -1731,49 +1590,9 @@ html[data-theme="dark"] body {
     border-bottom: 1px solid var(--rule);
   }
 
-  .cmp-head {
-    display: none;
-  }
-
-  .cmp-row {
-    grid-template-columns: 1fr;
-    gap: 0;
-    padding: 0;
-  }
-
-  .cmp-row strong {
-    padding: 22px 24px 18px;
-  }
-
-  .cmp-row p {
-    padding: 18px 24px 21px;
-    border-top: 1px solid var(--rule);
-    border-left: 0;
-  }
-
-  .cmp-row p::before {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-    color: var(--text-3);
-    content: attr(data-label);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-  }
-
-  .cmp-row p.is-loupe::before {
-    color: var(--accent);
-  }
 }
 
 @media (max-width: 620px) {
-  .sec {
-    padding: 66px 0;
-  }
-
   #findings .steps {
     margin-top: 40px;
     border-radius: 8px;
@@ -1783,37 +1602,7 @@ html[data-theme="dark"] body {
     padding: 28px 22px 32px;
   }
 
-  #audience .aud {
-    margin-top: 40px;
-    border-radius: 9px;
-  }
-
-  #audience .aud article {
-    grid-template-columns: 1fr;
-    gap: 16px;
-    padding: 26px 22px 30px;
-  }
-
-  #audience .aud h3,
-  #audience .aud article > p:last-child {
-    grid-column: 1;
-  }
-
-  .cmp {
-    margin-top: 40px;
-    border-radius: 9px;
-  }
-
-  .cmp-row strong {
-    padding: 20px 20px 16px;
-  }
-
-  .cmp-row p {
-    padding: 17px 20px 20px;
-  }
-
   .evidence-rows,
-  .cap-grid,
   .trust-grid {
     grid-template-columns: 1fr;
   }
@@ -1825,49 +1614,6 @@ html[data-theme="dark"] body {
   .evidence-rows article {
     border-right: 0;
     padding-right: 0;
-  }
-
-  .trust-feature {
-    border-radius: 11px;
-  }
-
-  .trust-feature-copy {
-    padding: 34px 24px 38px;
-  }
-
-  .trust-feature-copy h2 {
-    margin-top: 18px;
-    font-size: clamp(34px, 9.7vw, 42px);
-  }
-
-  .trust-feature-copy > p:last-child {
-    margin-top: 22px;
-    font-size: 16px;
-  }
-
-  .trust-summary {
-    min-height: 96px;
-  }
-
-  .deploy-grid {
-    grid-template-columns: 1fr;
-    border-radius: 9px;
-  }
-
-  .deploy-grid article {
-    grid-template-columns: 42px minmax(0, 1fr);
-    gap: 0 16px;
-    padding: 24px 22px 28px;
-    border-right: 0;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  .deploy-grid article:nth-child(n + 3) {
-    border-bottom: 1px solid var(--rule);
-  }
-
-  .deploy-grid article:last-child {
-    border-bottom: 0;
   }
 
   #problem .evidence-rows article {
@@ -1889,16 +1635,117 @@ html[data-theme="dark"] body {
     border-bottom: 0;
   }
 
-  .cap-grid article {
-    padding: 22px 20px 26px;
-  }
-
   .footer-links {
     grid-template-columns: 1fr;
   }
 
   .footer-inner {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------- act III turns
+   Two breakpoints only: the split heads and four-across capability grid turn
+   at 1279, everything collapses to a single column at 767. */
+
+@media (max-width: 1279px) {
+  #why-loupe .sec-head,
+  #audience .sec-head,
+  #deployment .sec-head {
+    display: block;
+  }
+
+  #why-loupe .sec-lede,
+  #audience .sec-lede,
+  #deployment .sec-lede {
+    max-width: var(--measure);
+    margin: 22px 0 0;
+  }
+
+  .cap-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .cap-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cap-grid article {
+    padding: 22px 20px 26px;
+  }
+
+  .cmp {
+    margin-top: 40px;
+    border-radius: 9px;
+  }
+
+  .cmp-head {
+    display: none;
+  }
+
+  .cmp-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .cmp-row strong {
+    padding: 20px 20px 16px;
+  }
+
+  .cmp-row p {
+    padding: 17px 20px 20px;
+    border-top: 1px solid var(--rule);
+    border-left: 0;
+  }
+
+  .cmp-row p::before {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--text-3);
+    content: attr(data-label);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .cmp-row p.is-loupe::before {
+    color: var(--accent);
+  }
+
+  .aud {
+    margin-top: 40px;
+    border-radius: 9px;
+  }
+
+  .aud article {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 26px 22px 30px;
+  }
+
+  .deploy-grid {
+    grid-template-columns: 1fr;
+    border-radius: 9px;
+  }
+
+  .deploy-grid article {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 0 16px;
+    padding: 24px 22px 28px;
+    border-right: 0;
+  }
+
+  .deploy-grid article:nth-child(n) {
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .deploy-grid article:last-child {
+    border-bottom: 0;
   }
 }
 
@@ -1977,7 +1824,7 @@ html[data-theme="dark"] .hero-proof {
 
 html[data-theme="light"] .final-cta,
 html[data-theme="dark"] .final-cta {
-  padding: clamp(84px, 9vw, 128px) 0;
+  padding: var(--sec-pad-md) 0;
   border: 0;
   background: var(--obsidian-2);
   color: #f2f2f4;

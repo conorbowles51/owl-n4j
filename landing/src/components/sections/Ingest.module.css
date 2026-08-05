@@ -1,0 +1,246 @@
+/* Ingest — folder in, model out, overnight. Spec §4.3: compact, obsidian,
+   one designed visual, no bitmap, no pinning. */
+
+.ingest {
+  background: var(--obsidian);
+  color: var(--ink-on-dark);
+  padding-block: var(--sec-pad-sm);
+}
+
+.inner {
+  width: var(--page);
+  margin-inline: auto;
+  display: grid;
+  gap: clamp(2.5rem, 4vw, 3.5rem);
+}
+
+/* ---------------------------------------------------------------- copy */
+
+.top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  column-gap: clamp(2.5rem, 5vw, 5.5rem);
+  align-items: center;
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-bright);
+}
+
+.title {
+  margin: 0.875rem 0 0;
+  max-width: 18ch;
+  font-size: clamp(2rem, 3.4vw, 3.125rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: var(--ink-on-dark);
+}
+
+.lede {
+  margin: 1.25rem 0 0;
+  max-width: var(--measure);
+  font-size: clamp(1rem, 1.2vw, 1.125rem);
+  line-height: 1.6;
+  color: var(--ink-on-dark-2);
+}
+
+/* ---------------------------------------------------------------- flow
+   Chips → hairlines → one ringed node. The connector SVG stretches to the
+   row height (preserveAspectRatio: none); non-scaling strokes keep the
+   lines hairline at every width and DPI. */
+
+.flow {
+  height: clamp(12rem, 20vw, 15rem);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-auto-rows: 1fr;
+  align-items: center;
+}
+
+.chip {
+  padding: 0.4375rem 1.125rem;
+  border: 1px solid var(--rule-dark-strong);
+  border-radius: var(--loupe-radius-control);
+  background: color-mix(in srgb, var(--ink-on-dark) 4%, var(--obsidian-2));
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+  color: var(--ink-on-dark-2);
+}
+
+.paths {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.paths path {
+  fill: none;
+  stroke: var(--rule-dark-strong);
+  stroke-width: 1;
+}
+
+.model {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  row-gap: 0.875rem;
+}
+
+/* Ringed like a selected node in the product's graph. */
+.orb {
+  width: clamp(4.25rem, 5.5vw, 5.25rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 70%),
+    var(--obsidian-2);
+  box-shadow:
+    0 0 0 7px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 0 46px color-mix(in srgb, var(--accent-bright) 16%, transparent);
+  display: grid;
+  place-items: center;
+}
+
+.orb::after {
+  content: "";
+  width: 0.5rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--accent-bright);
+}
+
+.modelLabel {
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-on-dark-2);
+}
+
+/* ---------------------------------------------------------------- tally */
+
+.tally {
+  border-top: 1px solid var(--rule-dark);
+  padding-top: clamp(1.75rem, 3vw, 2.5rem);
+  display: grid;
+  gap: clamp(1.5rem, 2.5vw, 2rem);
+}
+
+.stats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: clamp(1.25rem, 3vw, 2.75rem);
+}
+
+.stat {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.figure {
+  font-family: var(--loupe-font-display);
+  font-size: clamp(2.25rem, 4vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink-on-dark);
+}
+
+.label {
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-on-dark-3);
+}
+
+.arrow {
+  display: inline-block;
+  font-family: var(--loupe-font-evidence);
+  font-size: clamp(1.25rem, 1.8vw, 1.625rem);
+  color: var(--ink-on-dark-3);
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem 2rem;
+}
+
+.window {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.8125rem;
+  color: var(--ink-on-dark-2);
+}
+
+.caption {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-on-dark-3);
+}
+
+/* ---------------------------------------------------------------- turns */
+
+@media (max-width: 1279px) {
+  .top {
+    grid-template-columns: 1fr;
+    row-gap: 2.5rem;
+  }
+
+  .flow {
+    max-width: 34rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .flow {
+    height: 11.5rem;
+    max-width: 100%;
+  }
+
+  .chip {
+    padding-inline: 0.875rem;
+  }
+
+  .stats {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.875rem;
+  }
+
+  /* The strip turns vertical; the same glyph now points down the column. */
+  .arrow {
+    transform: rotate(90deg);
+    margin-left: 0.375rem;
+  }
+
+  .foot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
