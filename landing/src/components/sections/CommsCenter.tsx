@@ -7,7 +7,11 @@ import styles from "./CommsCenter.module.css"
  * the thread content is invented. Structure follows CommsThreadView.
  */
 export function CommsCenter() {
-  let lastDay = ""
+  // Day boundaries computed up front rather than tracked while mapping —
+  // mutating during render is a correctness hazard under concurrent rendering.
+  const startsDay = commsThread.entries.map(
+    (entry, i) => i === 0 || entry.day !== commsThread.entries[i - 1].day
+  )
 
   return (
     <figure className={styles.frame}>
@@ -23,12 +27,9 @@ export function CommsCenter() {
 
       <ol className={styles.thread}>
         {commsThread.entries.map((entry, i) => {
-          const newDay = entry.day !== lastDay
-          lastDay = entry.day
-
           return (
             <li key={`${entry.day}-${entry.at}-${i}`}>
-              {newDay ? <p className={styles.day}>{entry.day}</p> : null}
+              {startsDay[i] ? <p className={styles.day}>{entry.day}</p> : null}
 
               {entry.kind === "call" ? (
                 <p className={styles.call}>

@@ -37,8 +37,8 @@ const capability = [
   {
     group: "Documents and media",
     items: [
-      "Automatic text recognition for scanned documents",
-      "Speaker-separated audio transcription with speaker labelling and merging",
+      "Automatic text recognition for scanned documents, page by page",
+      "Speaker-separated transcription with timestamped, searchable transcripts",
       "Entity and event extraction directed per matter at ingestion",
       "Case-wide full-text search across every document",
     ],

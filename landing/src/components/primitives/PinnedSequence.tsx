@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { usePrefersReducedMotion } from "../../lib/usePrefersReducedMotion"
+import { useIsNarrow, usePrefersReducedMotion } from "../../lib/useMediaQuery"
 import { useScrollProgress } from "../../lib/useScrollProgress"
 import styles from "./PinnedSequence.module.css"
 
@@ -27,7 +27,8 @@ export function PinnedSequence({
 }: PinnedSequenceProps) {
   const { ref, progress } = useScrollProgress<HTMLElement>()
   const reduced = usePrefersReducedMotion()
-  const complete = forceComplete || reduced
+  const narrow = useIsNarrow()
+  const complete = forceComplete || reduced || narrow
 
   return (
     <section

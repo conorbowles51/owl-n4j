@@ -105,7 +105,15 @@ function Field({ progress }: { progress: number }) {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext("2d")
+
+    // Environments without a 2D context (jsdom, canvas disabled) fall through to
+    // the copy, which carries the argument on its own.
+    let ctx: CanvasRenderingContext2D | null
+    try {
+      ctx = canvas.getContext("2d")
+    } catch {
+      return
+    }
     if (!ctx) return
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
