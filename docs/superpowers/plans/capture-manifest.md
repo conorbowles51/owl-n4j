@@ -63,6 +63,26 @@ cluster, so fitting shrinks the readable part to nothing. The working recipe:
 The Force Controls button index shifts with panel state — probe indices 9–17 for the one that
 reveals "Link Distance" rather than hard-coding it.
 
+### Derived plate: `hero-graph-dark`
+
+The hero uses its own asset, cut from the `graph-detail` capture rather than shot separately:
+
+```
+ffmpeg -i captures/graph-detail-dark.png -vf "crop=1600:940:250:46" \
+  -c:v libwebp -quality 84 public/product/hero-graph-dark.webp
+```
+
+That window is the graph canvas alone — left of the details panel (x < 1862), above the legend
+(y < 1051), right of the sidebar and below the toolbar. It is deliberately chrome-free. The hero
+bleeds this image to all four edges, and any UI edge inside the frame gets clipped by the viewport,
+which reads as a screenshot pasted onto the page rather than as the page's ground. With no chrome in
+the crop there is no edge to cut, so the field can be positioned freely at any width. What keeps it
+from reading as generic network art is that the labels are real: Nexus Trading Ltd, Cayman Islands,
+Sapphire Investments, the dated GlobalTech transactions.
+
+`@1000` is the same crop downscaled for the `srcset`. Light theme is not needed — the hero is always
+the obsidian ground regardless of the page theme.
+
 ---
 
 ## Not captured, and why

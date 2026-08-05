@@ -18,7 +18,9 @@
     linear-gradient(90deg, color-mix(in srgb, var(--ink-on-dark) 5%, transparent) 1px, transparent 1px);
   background-size: 4rem 4rem;
   mask-image: radial-gradient(ellipse 70% 60% at 30% 45%, black 10%, transparent 75%);
-  z-index: -2;
+  /* Above the shot, not behind it: the graph field is opaque, so a grid layered
+     underneath would never be seen at all. */
+  z-index: -1;
 }
 
 .copy {
@@ -122,14 +124,16 @@
 
 /* ---------------------------------------------------------------- shot */
 
-/* Fills the right half and bleeds off the right and bottom edges. No border or
-   radius: a visible rectangle edge reads as a pasted screenshot, and the whole
-   point is that the interface continues past the frame. */
+/* The graph is the hero's ground, not an object placed in it. Full bleed, and
+   cropped to the canvas alone — no sidebar, toolbar, detail panel or legend —
+   so there is no chrome edge to clip and nothing that reads as a screenshot
+   pasted onto the page. */
+/* Slightly larger than the hero so the sparse outer rows of the capture fall
+   outside the frame; .hero clips. */
 .shot {
   position: absolute;
-  inset-block: 14% -6%;
-  inset-inline: 42% -4%;
-  z-index: -1;
+  inset: -3% -2% -10%;
+  z-index: -2;
   overflow: hidden;
 }
 
@@ -137,43 +141,39 @@
   display: block;
   width: 100%;
   height: 100%;
-  /* Keeps the selected node and its detail panel in frame at any width. */
   object-fit: cover;
-  object-position: 34% 42%;
+  /* Anchored right: the dense transaction cluster lives at the right edge of the
+     capture, and that is the half of the field the copy does not cover. */
+  object-position: 100% 46%;
+  /* A dark UI on a dark ground reads as murk without this. */
+  filter: brightness(1.06) saturate(1.06);
 }
 
-/* Fades the screenshot into the ground so it reads as depth, not as a pasted rectangle. */
-/* Dissolves the shot into the ground on every edge that meets the page, so it
-   reads as depth rather than as a rectangle laid on top. */
+/* Clears the copy column. The horizontal stops are calc(50% + Nrem) rather than
+   plain percentages so they track the centred column instead of drifting with
+   the viewport — at 2560 a percentage stop lands a screen-width away from the
+   text it is supposed to be protecting. */
 .shot::after {
   content: "";
   position: absolute;
   inset: 0;
   background:
     linear-gradient(
-      95deg,
-      var(--obsidian) 0%,
-      color-mix(in srgb, var(--obsidian) 78%, transparent) 12%,
-      color-mix(in srgb, var(--obsidian) 24%, transparent) 30%,
-      transparent 46%
+      to right,
+      var(--obsidian) 0,
+      var(--obsidian) calc(50% + 11rem),
+      color-mix(in srgb, var(--obsidian) 62%, transparent) calc(50% + 20rem),
+      color-mix(in srgb, var(--obsidian) 20%, transparent) calc(50% + 29rem),
+      transparent calc(50% + 36rem)
     ),
+    linear-gradient(to bottom, var(--obsidian) 0, transparent 20%),
     linear-gradient(
       to top,
-      var(--obsidian) 0%,
-      color-mix(in srgb, var(--obsidian) 40%, transparent) 12%,
-      transparent 28%
-    ),
-    linear-gradient(
-      to bottom,
-      var(--obsidian) 0%,
-      transparent 14%
+      var(--obsidian) 0,
+      var(--obsidian) 8%,
+      color-mix(in srgb, var(--obsidian) 40%, transparent) 20%,
+      transparent 38%
     );
-}
-
-/* The capture is a dark UI on a dark ground; without this it reads as murk
-   rather than as a screenshot. */
-.shot img {
-  filter: brightness(1.28) saturate(1.12);
 }
 
 /* Sits under the stat line, in the copy column — out of the graph entirely. */
@@ -190,13 +190,38 @@
   z-index: 2;
 }
 
-/* Narrower than this the copy needs the full width, so the shot drops below it
-   as a band rather than sitting alongside. */
-@media (max-width: 1100px) {
+/* Below roughly 1280 the 46rem copy column plus its clearance leaves under
+   200px for the graph — too thin to read as anything. So the composition turns:
+   copy to the top, graph as a band beneath it. */
+@media (max-width: 1279px) {
+  .hero {
+    align-content: start;
+    padding-block: clamp(6rem, 13vh, 9rem) 0;
+  }
   .shot {
-    inset-block: auto -4%;
-    inset-inline: 30% -6%;
-    height: 46%;
+    inset: auto 0 0 0;
+    height: min(48%, 22rem);
+  }
+  /* Fitting the whole 1600px capture into a 390px band shrinks the nodes to
+     dust. Pinning the image to a floor width instead holds one legible
+     presentation scale across the whole range and lets the band do the
+     cropping. */
+  .shot img {
+    position: absolute;
+    inset: auto -2rem -5rem auto;
+    width: max(1100px, calc(100% + 4rem));
+    height: auto;
+    max-width: none;
+  }
+  .shot::after {
+    background:
+      linear-gradient(
+        to bottom,
+        var(--obsidian) 0,
+        color-mix(in srgb, var(--obsidian) 46%, transparent) 30%,
+        transparent 68%
+      ),
+      linear-gradient(to top, var(--obsidian) 0, transparent 26%);
   }
 }
 
@@ -209,14 +234,15 @@
     position: relative;
     inset: auto;
     width: 100%;
-    height: 15rem;
+    height: 14rem;
     margin-top: 2.5rem;
   }
-  .shot img {
-    object-position: 30% 40%;
-  }
+  /* The copy already sits above the band here, so it needs far less clearance
+     than the pinned-bottom layout above 768. */
   .shot::after {
-    background: linear-gradient(180deg, transparent 50%, var(--obsidian) 100%);
+    background:
+      linear-gradient(to bottom, var(--obsidian) 0, transparent 32%),
+      linear-gradient(to top, var(--obsidian) 0, transparent 24%);
   }
   .shotCaption {
     margin: 0.75rem auto 2rem;

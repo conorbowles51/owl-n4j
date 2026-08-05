@@ -31,16 +31,17 @@ export function Hero({ onContact }: HeroProps) {
         <p className={styles.stat}>{scaleLine}</p>
       </div>
 
-      {/* True scale, bleeding off two edges — the point is interface density,
-          which a contained thumbnail cannot show. */}
+      {/* The real graph at true scale, cropped to the canvas alone. The point is
+          entity density and real case names, which a contained thumbnail cannot
+          show and a stock network illustration cannot earn. */}
       <div className={styles.shot} aria-hidden="true">
         <img
-          src="/product/graph-detail-dark.webp"
-          srcSet="/product/graph-detail-dark@1280.webp 1280w, /product/graph-detail-dark.webp 2560w"
-          sizes="80vw"
+          src="/product/hero-graph-dark.webp"
+          srcSet="/product/hero-graph-dark@1000.webp 1000w, /product/hero-graph-dark.webp 1600w"
+          sizes="100vw"
           alt=""
-          width={2560}
-          height={1440}
+          width={1600}
+          height={940}
           fetchPriority="high"
           decoding="async"
         />
