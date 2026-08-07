@@ -113,7 +113,10 @@ describe("AISettingsPage", () => {
     expect(screen.getByTestId("provider-logo-openai")).toBeInTheDocument()
     expect(screen.getByTestId("provider-logo-anthropic")).toBeInTheDocument()
     expect(screen.getByTestId("provider-logo-gemini")).toBeInTheDocument()
-    expect(screen.getByTestId("provider-logo-deepseek")).toBeInTheDocument()
+    expect(screen.getByTestId("provider-logo-deepseek")).toHaveAttribute(
+      "src",
+      expect.stringMatching(/^data:image\/svg\+xml/)
+    )
     expect(screen.queryByText(/ollama/i)).not.toBeInTheDocument()
   })
 
