@@ -33,11 +33,51 @@ entity_categories:
       Only named individuals or those with a clear identifier.
       Not generic references like 'the suspect' or 'a witness' unless they can be resolved to a specific person.
 
+  Company:
+    description: "A for-profit corporate entity — private, public, shell company, or special-purpose vehicle"
+    properties:
+      aliases:                    { type: list,   description: "Alternative names, abbreviations, and trade names" }
+      registration_number:        { type: string, description: "Corporate registration or filing number" }
+      incorporation_jurisdiction: { type: string, description: "Country or state of incorporation" }
+      industry:                   { type: string, description: "Industry or sector" }
+      status:                     { type: string, enum: [active, dissolved, struck_off, in_bankruptcy, unknown], description: "Operating status" }
+      ticker:                     { type: string, description: "Stock ticker if publicly traded" }
+      location_raw:               { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:                    { type: string, description: "Street address directly supported by the source text" }
+      city:                       { type: string, description: "City or town directly supported by the source text" }
+      region:                     { type: string, description: "State, province, or region directly supported by the source text" }
+      country:                    { type: string, description: "Country directly supported by the source text" }
+      location_specificity:       { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
+      description:                { type: string, description: "Brief description and relevance" }
+    extraction_notes: >
+      Use for for-profit corporate entities, including shell companies and special-purpose vehicles.
+      For banks and regulated financial institutions use Bank. For government agencies, NGOs,
+      law firms, universities, religious bodies, and other non-commercial formal entities use Organization.
+
+  Bank:
+    description: "A bank, credit union, or other regulated financial institution"
+    properties:
+      aliases:              { type: list,   description: "Alternative names and abbreviations" }
+      swift_bic:            { type: string, description: "SWIFT or BIC code" }
+      regulator:            { type: string, description: "Primary regulator" }
+      jurisdiction:         { type: string, description: "Country or jurisdiction of registration" }
+      location_raw:         { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:              { type: string, description: "Street address directly supported by the source text" }
+      city:                 { type: string, description: "City or town directly supported by the source text" }
+      region:               { type: string, description: "State, province, or region directly supported by the source text" }
+      country:              { type: string, description: "Country directly supported by the source text" }
+      location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
+      description:          { type: string, description: "Brief description and relevance" }
+    extraction_notes: >
+      Use for banks, credit unions, and regulated financial institutions.
+      Keep the institution string on Account for compatibility, and also link identified institutions
+      with HELD_AT when the evidence supports the relationship.
+
   Organization:
-    description: "A formal legal entity — company, government agency, NGO, institution, bank"
+    description: "A formal non-commercial entity — government agency, NGO, law firm, university, religious body, or institution"
     properties:
       aliases:        { type: list,   description: "Alternative names, abbreviations, trade names" }
-      org_type:       { type: string, description: "Type of organization (company, government_agency, bank, ngo, law_firm, etc.)" }
+      org_type:       { type: string, description: "Type of organization (government_agency, ngo, law_firm, university, religious, institution, etc.)" }
       jurisdiction:   { type: string, description: "Country or jurisdiction of registration" }
       location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
       address:        { type: string, description: "Street address directly supported by the source text" }
@@ -47,7 +87,9 @@ entity_categories:
       location_specificity: { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       description:    { type: string, description: "Brief description and relevance" }
     extraction_notes: >
-      Formal, legally constituted entities only.
+      Formal, legally constituted non-commercial entities only.
+      Existing Organization records for companies and banks remain valid for backwards compatibility.
+      For new extractions, use Company for for-profit corporate entities and Bank for regulated financial institutions.
       For informal groups (gangs, cells, networks), use Group instead.
 
   Group:
@@ -65,7 +107,7 @@ entity_categories:
       description:    { type: string, description: "Brief description and relevance" }
     extraction_notes: >
       Informal associations without formal legal standing.
-      For companies, agencies, or registered entities, use Organization instead.
+      For companies use Company, for banks use Bank, and for other formal entities use Organization instead.
 
   # ---------------------------------------------------------------------------
   # Places & Events
@@ -90,6 +132,7 @@ entity_categories:
   Event:
     description: "A meaningful discrete occurrence — a meeting, incident, shipment, attack, arrest scene"
     properties:
+      event_category: { type: string, enum: [incident, meeting, transaction_event, corporate_event, regulatory_event, cyber_incident, public_event, personal_event, other], description: "Broad event category" }
       date:           { type: string, description: "Date or date range (ISO format if possible)" }
       time:           { type: string, description: "Start time in HH:mm format when the source provides a specific time" }
       end_time:       { type: string, description: "End time in HH:mm format when the source provides a time range" }
@@ -324,8 +367,47 @@ entity_categories:
   # Digital
   # ---------------------------------------------------------------------------
 
+  DigitalAccount:
+    description: "A digital identity with a holder — email, social media account, messaging account, or crypto wallet"
+    properties:
+      account_type:    { type: string, enum: [email, social_media, messaging, crypto_wallet, other], description: "Type of digital account" }
+      platform:        { type: string, description: "Platform or service (Gmail, WhatsApp, X, Telegram, etc.)" }
+      handle:          { type: string, description: "The identifier value, such as an email address, username, or wallet address" }
+      associated_name: { type: string, description: "Real name associated with this account if known" }
+      description:     { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      Use for account-style digital identities that have a holder.
+      For telephone numbers use PhoneNumber. For IP addresses, MAC addresses, domains,
+      subdomains, and hostnames use NetworkIdentifier.
+
+  PhoneNumber:
+    description: "A telephone number — mobile, landline, VoIP, or suspected burner"
+    properties:
+      number_e164: { type: string, description: "Number in E.164 format if possible" }
+      country_code: { type: string, description: "Country dialing code" }
+      carrier:      { type: string, description: "Carrier if known" }
+      line_type:    { type: string, enum: [mobile, landline, voip, burner_suspected, unknown], description: "Line type" }
+      imsi:         { type: string, description: "IMSI if known" }
+      description:  { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      Treat phone numbers as first-class entities for call-detail records, intercepts, and device extractions.
+      Link a registered subscriber with REGISTERED_TO and a related physical device with ASSOCIATED_WITH.
+
+  NetworkIdentifier:
+    description: "A network or infrastructure identifier — IP address, MAC address, domain, subdomain, or hostname"
+    properties:
+      identifier_type: { type: string, enum: [ip_address, mac_address, domain, subdomain, hostname, other], description: "Type of network identifier" }
+      value:           { type: string, description: "The identifier value" }
+      asn:             { type: string, description: "Autonomous System Number if known" }
+      registrar:       { type: string, description: "Registrar for a domain if known" }
+      first_seen:      { type: string, description: "First observation date" }
+      last_seen:       { type: string, description: "Last observation date" }
+      description:     { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      Use for network and infrastructure identifiers rather than holder-based accounts.
+
   CyberIdentity:
-    description: "A digital identifier — email address, phone number, username, IP address, domain, social media account, crypto wallet"
+    description: "Legacy catch-all digital identifier retained for backwards compatibility"
     properties:
       identity_type:   { type: string, enum: [email, phone_number, username, ip_address, domain, social_media_account, crypto_wallet, mac_address, other], description: "Type of digital identity" }
       platform:        { type: string, description: "Platform or service (Gmail, WhatsApp, Twitter, Telegram, etc.)" }
@@ -333,7 +415,8 @@ entity_categories:
       associated_name: { type: string, description: "Real name associated with this identity if known" }
       description:     { type: string, description: "Description and relevance" }
     extraction_notes: >
-      Digital identifiers that can link to real-world persons or activities.
+      Existing CyberIdentity records remain valid and require no migration.
+      For new extractions, prefer DigitalAccount, PhoneNumber, or NetworkIdentifier as appropriate.
       For the physical device itself (a phone, a laptop), use Device instead.
       Extract both if the text mentions a physical device AND its digital identifiers.
 
@@ -344,13 +427,16 @@ entity_categories:
   LegalAction:
     description: "A formal legal proceeding — arrest, charge, warrant, conviction, sentence, court order, indictment"
     properties:
-      action_type:    { type: string, enum: [arrest, charge, warrant, conviction, sentence, court_order, indictment, filing, bail_hearing, extradition, other], description: "Type of legal action" }
+      action_type:    { type: string, enum: [arrest, charge, warrant, conviction, sentence, court_order, indictment, filing, bail_hearing, extradition, plea, acquittal, appeal, motion, civil_complaint, civil_judgment, settlement, consent_decree, subpoena, injunction, bankruptcy_filing, other], description: "Type of legal action" }
+      motion_type:    { type: string, description: "Kind of motion when action_type is motion" }
       case_number:    { type: string, description: "Case or docket number" }
       jurisdiction:   { type: string, description: "Court or jurisdiction" }
+      court_name:     { type: string, description: "Name of the court" }
       date:           { type: string, description: "Date of the legal action" }
       time:           { type: string, description: "Time of the legal action in HH:mm format when available" }
       date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       outcome:        { type: string, description: "Outcome or result if known" }
+      statute_cited:  { type: string, description: "Statute or statutes cited" }
       location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
       address:        { type: string, description: "Street address directly supported by the source text" }
       city:           { type: string, description: "City or town directly supported by the source text" }
@@ -372,11 +458,13 @@ entity_categories:
       country:                  { type: string, description: "Country directly supported by the source text" }
       location_specificity:    { type: string, enum: [unknown, continent, country, region, city, district, street, exact_address], description: "Granularity of the location reference used for geocoding" }
       intel_type:               { type: string, enum: [tip, informant_report, surveillance_observation, intercept, open_source_intel, forensic_analysis, other], description: "Type of intelligence" }
+      source_type:              { type: string, enum: [osint, informant, surveillance, intercept, commercial_database, public_record, forensic_analysis, other], description: "Origin of the intelligence" }
       date:                     { type: string, description: "Date of the intelligence" }
       time:                     { type: string, description: "Time of the intelligence in HH:mm format when available" }
       date_precision:           { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       source_reliability:       { type: string, enum: [A, B, C, D, E, F], description: "NATO reliability scale — A (completely reliable) to F (reliability cannot be judged)" }
       information_credibility:  { type: string, enum: ["1", "2", "3", "4", "5", "6"], description: "NATO credibility scale — 1 (confirmed) to 6 (truth cannot be judged)" }
+      raw_excerpt:              { type: string, description: "Verbatim source lines preserved separately from analyst interpretation" }
       description:              { type: string, description: "Description of the intelligence and its significance" }
     extraction_notes: >
       Intelligence products and reports.
@@ -390,6 +478,7 @@ entity_categories:
     description: "An entity that does not fit any of the categories above"
     properties:
       other_type:  { type: string, description: "What kind of entity this is" }
+      proposed_category: { type: string, description: "Potential future ontology category for this entity" }
       description: { type: string, description: "Description and justification for why no other category fits" }
     extraction_notes: >
       Use ONLY when no other category fits. You must justify why.
@@ -421,11 +510,28 @@ relationship_types:
   WORKS_FOR:
     description: "Employment or formal organizational membership"
     typical_source: [Person]
-    typical_target: [Organization]
+    typical_target: [Company, Bank, Organization]
     properties:
       role:      { type: string, description: "Role or position" }
       date_from: { type: string, description: "Start date" }
       date_to:   { type: string, description: "End date" }
+
+  DIRECTOR_OF:
+    description: "Person serves as a director or officer of a company or bank"
+    typical_source: [Person]
+    typical_target: [Company, Bank]
+    properties:
+      title:     { type: string }
+      date_from: { type: string }
+      date_to:   { type: string }
+
+  SHAREHOLDER_OF:
+    description: "Person or entity holds shares in a company or bank"
+    typical_source: [Person, Company, Organization]
+    typical_target: [Company, Bank]
+    properties:
+      percentage: { type: string, description: "Ownership percentage if known" }
+      as_of_date: { type: string }
 
   SUPERVISED_BY:
     description: "Management or command hierarchy — one person supervises another"
@@ -439,7 +545,7 @@ relationship_types:
   MEMBER_OF:
     description: "Membership in an organization or informal group"
     typical_source: [Person]
-    typical_target: [Organization, Group]
+    typical_target: [Company, Bank, Organization, Group]
     properties:
       role:      { type: string, description: "Role within the group" }
       date_from: { type: string }
@@ -447,22 +553,22 @@ relationship_types:
 
   AFFILIATED_WITH:
     description: "Inter-organizational or inter-group affiliation"
-    typical_source: [Organization, Group]
-    typical_target: [Organization, Group]
+    typical_source: [Company, Bank, Organization, Group]
+    typical_target: [Company, Bank, Organization, Group]
     properties:
       nature: { type: string, description: "Nature of affiliation" }
 
   CONTROLLED_BY:
     description: "Beneficial or operational control"
-    typical_source: [Organization, Group]
-    typical_target: [Person, Organization]
+    typical_source: [Company, Bank, Organization, Group]
+    typical_target: [Person, Company, Bank, Organization]
     properties:
       mechanism: { type: string, description: "How control is exercised" }
 
   SUBSIDIARY_OF:
     description: "Corporate parent-subsidiary relationship"
-    typical_source: [Organization]
-    typical_target: [Organization]
+    typical_source: [Company, Bank, Organization]
+    typical_target: [Company, Bank, Organization]
     properties: {}
 
   KNOWN_ASSOCIATE_OF:
@@ -484,7 +590,7 @@ relationship_types:
   # Location & Movement
   LOCATED_AT:
     description: "Entity is at, based in, or operates from a location"
-    typical_source: [Person, Organization, Group, Device, Event]
+    typical_source: [Person, Company, Bank, Organization, Group, Device, Event]
     typical_target: [Location]
     properties: {}
 
@@ -499,7 +605,7 @@ relationship_types:
 
   PHONE_ACTIVITY_OBSERVED_AT:
     description: "Telecommunications records associate a person's or device's phone activity with a location; this does not itself prove travel or presence"
-    typical_source: [Person, Device, Communication]
+    typical_source: [Person, PhoneNumber, Device, Communication]
     typical_target: [Location]
     properties:
       observation_basis: { type: string, description: "Cell site, tower, handset, IMEI, IMSI, or other telecommunications basis" }
@@ -514,7 +620,7 @@ relationship_types:
 
   OPERATED_FROM:
     description: "Base of operations for a person, organization, or group"
-    typical_source: [Person, Organization, Group]
+    typical_source: [Person, Company, Bank, Organization, Group]
     typical_target: [Location]
     properties:
       date_from: { type: string }
@@ -523,13 +629,13 @@ relationship_types:
   # Financial
   SENT_PAYMENT:
     description: "Sender of a financial transaction"
-    typical_source: [Person, Organization, Account]
+    typical_source: [Person, Company, Bank, Organization, Account]
     typical_target: [Transaction]
     properties: {}
 
   RECEIVED_PAYMENT:
     description: "Receiver of a financial transaction"
-    typical_source: [Person, Organization, Account]
+    typical_source: [Person, Company, Bank, Organization, Account]
     typical_target: [Transaction]
     properties: {}
 
@@ -542,13 +648,25 @@ relationship_types:
   HELD_BY:
     description: "Account or financial instrument owned or held by a person/organization"
     typical_source: [Account, FinancialInstrument]
-    typical_target: [Person, Organization]
+    typical_target: [Person, Company, Organization]
+    properties: {}
+
+  HELD_AT:
+    description: "Account is held at a bank or other institution"
+    typical_source: [Account]
+    typical_target: [Bank, Company, Organization]
+    properties: {}
+
+  SIGNATORY_ON:
+    description: "Person has signing authority on an account"
+    typical_source: [Person]
+    typical_target: [Account]
     properties: {}
 
   FINANCED_BY:
     description: "Entity funded or financed by another"
-    typical_source: [Person, Organization, Group, Event]
-    typical_target: [Person, Organization, Account]
+    typical_source: [Person, Company, Bank, Organization, Group, Event]
+    typical_target: [Person, Company, Bank, Organization, Account]
     properties:
       amount:   { type: string }
       currency: { type: string }
@@ -557,7 +675,7 @@ relationship_types:
   BENEFICIAL_OWNER_OF:
     description: "Beneficial ownership (may differ from legal holder)"
     typical_source: [Person]
-    typical_target: [Account, Organization, FinancialInstrument]
+    typical_target: [Account, Company, Bank, Organization, FinancialInstrument]
     properties:
       share_percentage: { type: string, description: "Ownership percentage if known" }
 
@@ -573,13 +691,13 @@ relationship_types:
   # Communication & Identity
   COMMUNICATED_WITH:
     description: "Communication between parties"
-    typical_source: [Person, CyberIdentity]
-    typical_target: [Person, CyberIdentity]
+    typical_source: [Person, DigitalAccount, PhoneNumber, CyberIdentity]
+    typical_target: [Person, DigitalAccount, PhoneNumber, CyberIdentity]
     properties: {}
 
   ALIAS_OF:
     description: "Digital identity belongs to or is used by a person"
-    typical_source: [CyberIdentity]
+    typical_source: [DigitalAccount, CyberIdentity]
     typical_target: [Person]
     properties:
       confirmed: { type: string, description: "Whether the link is confirmed or suspected" }
@@ -608,6 +726,12 @@ relationship_types:
       date:     { type: string }
       sentence: { type: string, description: "Sentence imposed" }
 
+  RESULTED_IN:
+    description: "An event resulted in a legal action, such as a raid resulting in arrests or charges"
+    typical_source: [Event]
+    typical_target: [LegalAction]
+    properties: {}
+
   SUSPECT_IN:
     description: "Person is a suspect in an event or incident"
     typical_source: [Person]
@@ -630,7 +754,7 @@ relationship_types:
   # Evidence & Ownership
   OWNS:
     description: "Ownership of property, assets, vehicles, or evidence"
-    typical_source: [Person, Organization]
+    typical_source: [Person, Company, Organization]
     typical_target: [Vehicle, Device, PhysicalEvidence, FinancialInstrument]
     properties: {}
 
@@ -651,23 +775,23 @@ relationship_types:
 
   REGISTERED_TO:
     description: "Vehicle, device, or identity officially registered to a person/organization"
-    typical_source: [Vehicle, Device, CyberIdentity, FinancialInstrument]
-    typical_target: [Person, Organization]
+    typical_source: [Vehicle, Device, DigitalAccount, PhoneNumber, CyberIdentity, FinancialInstrument]
+    typical_target: [Person, Company, Organization]
     properties:
       date: { type: string, description: "Registration date" }
 
   # Document & Reference
   MENTIONED_IN:
     description: "Entity referenced or mentioned in a document"
-    typical_source: [Person, Organization, Event, Location]
+    typical_source: [Person, Company, Bank, Organization, Event, Location]
     typical_target: [Document, Media, Intelligence]
     properties: {}
 
   # Digital
   ACCESSED_FROM:
     description: "Digital account or identity accessed from a location or device"
-    typical_source: [CyberIdentity, Account]
-    typical_target: [Location, Device]
+    typical_source: [DigitalAccount, CyberIdentity, Account]
+    typical_target: [NetworkIdentifier, Location, Device]
     properties:
       date:       { type: string }
       ip_address: { type: string }
@@ -675,8 +799,8 @@ relationship_types:
   # Event participation
   PARTICIPATED_IN:
     description: "Entity participated in or was involved in an event"
-    typical_source: [Person, Organization, Group, Vehicle]
-    typical_target: [Event]
+    typical_source: [Person, Company, Bank, Organization, Group, Vehicle]
+    typical_target: [Event, Communication]
     properties: {}
 
 
@@ -687,20 +811,31 @@ relationship_types:
 # =============================================================================
 
 disambiguation:
-  - categories: [Device, CyberIdentity]
+  - categories: [Company, Bank, Organization]
+    rule: >
+      Company = a for-profit corporate entity.
+      Bank = a bank, credit union, or regulated financial institution.
+      Organization = a formal non-commercial entity such as a government agency, NGO, law firm,
+      university, religious body, or institution. Existing Organization records remain valid.
+
+  - categories: [Device, DigitalAccount, PhoneNumber, NetworkIdentifier, CyberIdentity]
     rule: >
       Device = the physical object (a Samsung Galaxy phone, a Dell laptop).
-      CyberIdentity = the digital identity (phone number +353..., email john@..., IP 192.168.1.1).
+      DigitalAccount = a holder-based identity such as an email, social account, messaging account, or crypto wallet.
+      PhoneNumber = a telephone number. NetworkIdentifier = an IP address, MAC address, domain, or hostname.
+      CyberIdentity is a backwards-compatible legacy category; prefer the three specific digital categories for new extraction.
       Extract BOTH if the text mentions a physical device AND a digital identifier associated with it.
 
-  - categories: [Account, FinancialInstrument]
+  - categories: [Account, FinancialInstrument, DigitalAccount]
     rule: >
       Account = an account held at an institution (bank account, brokerage account).
-      FinancialInstrument = a specific bearer instrument or financial tool (credit card, check, crypto wallet address).
+      FinancialInstrument = a specific bearer instrument or financial tool (credit card, check, money order).
+      DigitalAccount = a holder-based digital identity, including a crypto wallet.
+      Existing FinancialInstrument records for crypto wallets remain valid.
 
-  - categories: [Organization, Group]
+  - categories: [Company, Bank, Organization, Group]
     rule: >
-      Organization = a formal legal entity (company, government agency, NGO, registered charity).
+      Company, Bank, and Organization are formal entities.
       Group = an informal association (gang, terror cell, drug crew, family network, militia).
 
   - categories: [Document, Media]
@@ -733,7 +868,7 @@ views:
 
   map:
     description: "Entities with geographic coordinates on a map"
-    categories: [Location, Event, Communication, LegalAction, Intelligence, Transaction, Person, Organization, Group, Account, FinancialInstrument, Vehicle, Device, PhysicalEvidence, Media]
+    categories: [Location, Event, Communication, LegalAction, Intelligence, Transaction, Person, Company, Bank, Organization, Group, Account, FinancialInstrument, Vehicle, Device, PhysicalEvidence, Media]
     requires: [latitude, longitude]
 
   financial:
