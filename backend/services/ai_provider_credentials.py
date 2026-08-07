@@ -14,13 +14,14 @@ from sqlalchemy.orm import Session
 from config import (
     AI_CREDENTIAL_ENCRYPTION_KEY,
     ANTHROPIC_API_KEY,
+    DEEPSEEK_API_KEY,
     GEMINI_API_KEY,
     OPENAI_API_KEY,
 )
 from postgres.models.runtime_state import AIProviderCredential
 
 
-SUPPORTED_PROVIDERS = ("openai", "anthropic", "gemini")
+SUPPORTED_PROVIDERS = ("openai", "anthropic", "gemini", "deepseek")
 
 
 class CredentialRevisionConflict(RuntimeError):
@@ -232,6 +233,7 @@ credential_store = AIProviderCredentialStore(
         "openai": OPENAI_API_KEY,
         "anthropic": ANTHROPIC_API_KEY,
         "gemini": GEMINI_API_KEY,
+        "deepseek": DEEPSEEK_API_KEY,
     },
 )
 

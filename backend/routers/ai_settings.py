@@ -46,6 +46,10 @@ PROVIDER_METADATA = {
         "display_name": "Google Gemini",
         "description": "Gemini models for chat, structured extraction, and analysis.",
     },
+    "deepseek": {
+        "display_name": "DeepSeek",
+        "description": "DeepSeek models for chat, investigation agents, and evidence analysis.",
+    },
 }
 
 
@@ -227,6 +231,12 @@ def validate_provider_credential(provider: str, api_key: str) -> dict[str, Any]:
             response = requests.get(
                 "https://generativelanguage.googleapis.com/v1beta/models",
                 headers={"x-goog-api-key": api_key},
+                timeout=(10, 30),
+            )
+        elif provider == "deepseek":
+            response = requests.get(
+                "https://api.deepseek.com/models",
+                headers={"Authorization": f"Bearer {api_key}"},
                 timeout=(10, 30),
             )
         else:

@@ -287,7 +287,7 @@ async def chat(
             )
 
         cost_record = None
-        if llm.provider == "openai" and llm.last_usage:
+        if llm.last_usage:
             cost_record = record_cost(
                 db=db,
                 job_type=CostJobType.AI_ASSISTANT,

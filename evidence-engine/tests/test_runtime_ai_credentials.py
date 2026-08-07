@@ -66,3 +66,19 @@ async def test_job_runtime_loads_database_credential_snapshot(monkeypatch) -> No
 
     assert ai_model_policy.resolve_provider_api_key("anthropic") == "database-key"
     assert ai_model_policy.get_ai_runtime_snapshot()["credentials"]["anthropic"]["revision"] == 7
+
+
+def test_deepseek_is_an_allowed_ingestion_provider() -> None:
+    normalized = ai_model_policy._normalize(
+        {
+            "ingestion_extraction": {
+                "provider": "deepseek",
+                "model_id": "deepseek-v4-flash",
+            }
+        }
+    )
+
+    assert normalized["ingestion_extraction"] == {
+        "provider": "deepseek",
+        "model_id": "deepseek-v4-flash",
+    }

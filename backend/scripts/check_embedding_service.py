@@ -14,16 +14,13 @@ try:
     from services.embedding_service import embedding_service
     from config import EMBEDDING_PROVIDER, EMBEDDING_MODEL, OPENAI_API_KEY
     
-    from config import LLM_PROVIDER
-    
     print("=" * 60)
     print("Embedding Service Diagnostic")
     print("=" * 60)
     
     print("\nConfiguration:")
-    print(f"  LLM_PROVIDER: {LLM_PROVIDER}")
-    print(f"  EMBEDDING_PROVIDER: {EMBEDDING_PROVIDER} (auto-matched to LLM if not set)")
-    print(f"  EMBEDDING_MODEL: {EMBEDDING_MODEL}")
+    print(f"  EMBEDDING_PROVIDER: {EMBEDDING_PROVIDER} (platform invariant)")
+    print(f"  EMBEDDING_MODEL: {EMBEDDING_MODEL} (platform invariant)")
     
     if embedding_service is None:
         print("\n❌ ERROR: Embedding service is not initialized")
@@ -33,10 +30,8 @@ try:
             else:
                 print("  OPENAI_API_KEY: ❌ NOT SET")
         print("\nPossible issues:")
-        print("  1. Missing OPENAI_API_KEY (if using OpenAI)")
-        print("  2. Invalid EMBEDDING_PROVIDER (must be 'openai' or 'ollama')")
-        print("  3. Embedding service failed to initialize (check logs)")
-        print("  4. Ollama not running (if using Ollama)")
+        print("  1. Missing OpenAI credential")
+        print("  2. Embedding service failed to initialize (check logs)")
         sys.exit(1)
     else:
         print("✅ Embedding service is initialized")

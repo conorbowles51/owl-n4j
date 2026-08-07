@@ -10,6 +10,7 @@ class LLMProvider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    DEEPSEEK = "deepseek"
 
 
 class LLMModel:
@@ -137,6 +138,20 @@ AVAILABLE_MODELS = [
         LLMProvider.GEMINI,
         "Google's economical model for document extraction and structured JSON.",
     ),
+    _model(
+        "deepseek-v4-flash",
+        "DeepSeek V4 Flash",
+        LLMProvider.DEEPSEEK,
+        "DeepSeek's fast, economical model for chat, agents, and structured analysis.",
+        context_window=1_000_000,
+    ),
+    _model(
+        "deepseek-v4-pro",
+        "DeepSeek V4 Pro",
+        LLMProvider.DEEPSEEK,
+        "DeepSeek's higher-capability model for complex investigation and synthesis.",
+        context_window=1_000_000,
+    ),
 ]
 
 
@@ -153,5 +168,6 @@ def get_default_model(provider: LLMProvider) -> LLMModel:
         LLMProvider.OPENAI: "gpt-5.6-terra",
         LLMProvider.ANTHROPIC: "claude-sonnet-5",
         LLMProvider.GEMINI: "gemini-3.6-flash",
+        LLMProvider.DEEPSEEK: "deepseek-v4-flash",
     }
     return get_model_by_id(defaults[provider]) or get_models_by_provider(provider)[0]

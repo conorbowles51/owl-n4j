@@ -51,10 +51,22 @@ const settings = {
       revision: 0,
       in_use_by: [],
     },
+    {
+      id: "deepseek",
+      display_name: "DeepSeek",
+      description: "DeepSeek models.",
+      configured: false,
+      status: "disconnected",
+      source: null,
+      key_last_four: null,
+      revision: 0,
+      in_use_by: [],
+    },
   ],
   models: [
     { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", provider: "openai", provider_configured: true },
     { id: "claude-sonnet-5", name: "Claude Sonnet 5", provider: "anthropic", provider_configured: false },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", provider: "deepseek", provider_configured: false },
   ],
   workloads: {
     chat: { label: "AI chat", description: "Chat surfaces", group: "Interactive" },
@@ -64,6 +76,7 @@ const settings = {
     openai: { chat: { provider: "openai", model_id: "gpt-5.6-terra" } },
     anthropic: { chat: { provider: "anthropic", model_id: "claude-sonnet-5" } },
     gemini: { chat: { provider: "gemini", model_id: "gemini-3.6-flash" } },
+    deepseek: { chat: { provider: "deepseek", model_id: "deepseek-v4-flash" } },
   },
   supporting_services: [
     { id: "embeddings", label: "Search embeddings", provider: "openai", status: "ready", description: "Semantic search" },
@@ -89,16 +102,18 @@ describe("AISettingsPage", () => {
     })
   })
 
-  it("shows only Loupe's three supported cloud providers", async () => {
+  it("shows Loupe's four supported cloud providers", async () => {
     render(<MemoryRouter><AISettingsPage /></MemoryRouter>)
 
     expect(await screen.findByText("Provider connections")).toBeInTheDocument()
     expect(screen.getAllByText("OpenAI").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Anthropic").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Google Gemini").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("DeepSeek").length).toBeGreaterThan(0)
     expect(screen.getByTestId("provider-logo-openai")).toBeInTheDocument()
     expect(screen.getByTestId("provider-logo-anthropic")).toBeInTheDocument()
     expect(screen.getByTestId("provider-logo-gemini")).toBeInTheDocument()
+    expect(screen.getByTestId("provider-logo-deepseek")).toBeInTheDocument()
     expect(screen.queryByText(/ollama/i)).not.toBeInTheDocument()
   })
 

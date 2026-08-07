@@ -30,33 +30,39 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:7b"
 
 # Legacy startup fallback. Deployment-wide generative routing is managed in Loupe.
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
-if LLM_PROVIDER not in {"openai", "anthropic", "gemini"}:
+if LLM_PROVIDER not in {"openai", "anthropic", "gemini", "deepseek"}:
     LLM_PROVIDER = "openai"
 LLM_MODEL = os.getenv("LLM_MODEL")  # If not set, uses default for provider
 
-# Embedding Configuration
-# Automatically match embedding provider to LLM provider if not explicitly set
-_EMBEDDING_PROVIDER_ENV = os.getenv("EMBEDDING_PROVIDER")
-if _EMBEDDING_PROVIDER_ENV:
-    EMBEDDING_PROVIDER = _EMBEDDING_PROVIDER_ENV.lower()
-else:
-    # Default to same provider as LLM
-    EMBEDDING_PROVIDER = LLM_PROVIDER
+# Embeddings are a platform-owned invariant. They must never follow the
+# selectable generative provider: mixing embedding vector spaces can silently
+# invalidate semantic search even when two models happen to share a dimension.
+EMBEDDING_PROVIDER = "openai"
+EMBEDDING_MODEL = "text-embedding-3-small"
 
-# Set default embedding model based on provider
-_EMBEDDING_MODEL_ENV = os.getenv("EMBEDDING_MODEL")
-if _EMBEDDING_MODEL_ENV:
-    EMBEDDING_MODEL = _EMBEDDING_MODEL_ENV
-else:
-    # Default models based on provider
-    if EMBEDDING_PROVIDER == "openai":
-        EMBEDDING_MODEL = "text-embedding-3-small"
-    else:  # ollama
-        EMBEDDING_MODEL = "qwen3-embedding:4b"  # Common Ollama embedding model
+# Accept the old variables only when they restate the invariant, so existing
+# deployments keep starting while an attempted override fails loudly.
+_requested_embedding_provider = os.getenv("EMBEDDING_PROVIDER")
+if (
+    _requested_embedding_provider
+    and _requested_embedding_provider.strip().lower() != EMBEDDING_PROVIDER
+):
+    raise RuntimeError(
+        f"EMBEDDING_PROVIDER is fixed to {EMBEDDING_PROVIDER!r}; "
+        "embedding providers are not configurable"
+    )
+
+_requested_embedding_model = os.getenv("EMBEDDING_MODEL")
+if _requested_embedding_model and _requested_embedding_model.strip() != EMBEDDING_MODEL:
+    raise RuntimeError(
+        f"EMBEDDING_MODEL is fixed to {EMBEDDING_MODEL!r}; "
+        "embedding models are not configurable"
+    )
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Required if using OpenAI
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 # Vector DB Configuration
 CHROMADB_HOST = os.getenv("CHROMADB_HOST", "localhost")

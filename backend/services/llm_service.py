@@ -12,6 +12,7 @@ from openai import OpenAI
 
 from config import (
     ANTHROPIC_API_KEY,
+    DEEPSEEK_API_KEY,
     GEMINI_API_KEY,
     LLM_MODEL,
     LLM_PROVIDER,
@@ -69,6 +70,8 @@ class LLMExecutionContext:
             result = self._call_anthropic(prompt, temperature, json_mode, timeout)
         elif self.provider == "gemini":
             result = self._call_gemini(prompt, temperature, json_mode, timeout)
+        elif self.provider == "deepseek":
+            result = self._call_deepseek(prompt, temperature, json_mode, timeout)
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
 
@@ -223,6 +226,55 @@ class LLMExecutionContext:
             "prompt_tokens": usage.get("promptTokenCount"),
             "completion_tokens": usage.get("candidatesTokenCount"),
             "total_tokens": usage.get("totalTokenCount"),
+        }
+        return content
+
+    def _call_deepseek(
+        self,
+        prompt: str,
+        temperature: float,
+        json_mode: bool,
+        timeout: int,
+    ) -> str:
+        api_key = self.api_key or DEEPSEEK_API_KEY
+        if not api_key:
+            raise ValueError("DEEPSEEK_API_KEY is not set")
+        user_prompt = prompt
+        if json_mode:
+            user_prompt += "\n\nReturn only one valid JSON object with no markdown fence."
+        payload: Dict[str, Any] = {
+            "model": self.model_id,
+            "messages": [
+                {"role": "system", "content": self.system_context},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": temperature,
+            # Non-thinking mode is deliberately used for predictable JSON and
+            # OpenAI-compatible multi-turn behavior across Loupe workloads.
+            "thinking": {"type": "disabled"},
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        response = requests.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=(10, timeout),
+        )
+        response.raise_for_status()
+        data = response.json()
+        choices = data.get("choices") or []
+        content = str(((choices[0].get("message") or {}).get("content") or "")).strip() if choices else ""
+        if not content:
+            raise ValueError("DeepSeek returned an empty response")
+        usage = data.get("usage") or {}
+        self.last_usage = {
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "total_tokens": usage.get("total_tokens"),
         }
         return content
 

@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable
 import httpx
 from openai import APIConnectionError, APITimeoutError, AsyncOpenAI
 
-from app.config import settings
+from app.config import EMBEDDING_MODEL, settings
 from app.services.ai_model_policy import resolve_ai_model, resolve_provider_api_key
 from app.services.cost_tracking import CostOperationKind, record_ai_cost, record_openai_cost
 
@@ -117,6 +117,14 @@ async def chat_completion(
             )
         elif resolved_provider == "gemini":
             content, usage = await _gemini_chat_completion(
+                messages,
+                model=resolved_model,
+                response_format=response_format,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+            )
+        elif resolved_provider == "deepseek":
+            content, usage = await _deepseek_chat_completion(
                 messages,
                 model=resolved_model,
                 response_format=response_format,
@@ -314,6 +322,54 @@ async def _gemini_chat_completion(
     }
 
 
+async def _deepseek_chat_completion(
+    messages: list[dict[str, Any]],
+    *,
+    model: str,
+    response_format: Any,
+    temperature: float | None,
+    max_output_tokens: int | None = None,
+) -> tuple[str, dict[str, Any]]:
+    api_key = resolve_provider_api_key("deepseek")
+    if not api_key:
+        raise ValueError("DeepSeek is not connected. Add its API key in Settings → AI settings.")
+    normalized_messages = [dict(message) for message in messages]
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": normalized_messages,
+        "thinking": {"type": "disabled"},
+    }
+    if temperature is not None:
+        payload["temperature"] = temperature
+    if max_output_tokens is not None:
+        payload["max_tokens"] = max_output_tokens
+    if _json_schema_from_response_format(response_format):
+        payload["response_format"] = {"type": "json_object"}
+        payload["messages"] = [
+            {
+                "role": "system",
+                "content": "Return only valid JSON matching the requested structure.",
+            },
+            *normalized_messages,
+        ]
+    async with httpx.AsyncClient(timeout=_OPENAI_TIMEOUT) as client:
+        response = await client.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "content-type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+    choices = data.get("choices") or []
+    content = str(((choices[0].get("message") or {}).get("content") or "")).strip() if choices else ""
+    if not content:
+        raise ValueError("DeepSeek returned an empty response")
+    return content, data.get("usage") or {}
+
+
 def _embedding_batch_limits() -> tuple[int, int]:
     max_items = max(1, settings.openai_embedding_batch_size)
     max_chars = max(1, settings.openai_embedding_max_batch_chars)
@@ -436,12 +492,9 @@ async def _request_embedding_batch(
     return [item.embedding for item in resp.data]
 
 
-async def embed_texts(
-    texts: list[str], model: str | None = None
-) -> list[list[float]]:
+async def embed_texts(texts: list[str]) -> list[list[float]]:
     client = get_openai_client()
     results: list[list[float]] = []
-    resolved_model = model or settings.openai_embedding_model
     max_items, max_chars = _embedding_batch_limits()
 
     for batch in _iter_embedding_batches(
@@ -452,7 +505,7 @@ async def embed_texts(
         results.extend(
             await _request_embedding_batch(
                 client,
-                model=resolved_model,
+                model=EMBEDDING_MODEL,
                 batch=batch,
                 max_chars=max_chars,
             )

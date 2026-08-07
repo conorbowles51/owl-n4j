@@ -46,7 +46,7 @@ def _normalize(configuration: Any) -> dict[str, dict[str, str]]:
             continue
         provider = str(entry.get("provider") or "").strip().lower()
         model_id = str(entry.get("model_id") or "").strip()
-        if provider in {"openai", "anthropic", "gemini"} and model_id:
+        if provider in {"openai", "anthropic", "gemini", "deepseek"} and model_id:
             policy[workload] = {"provider": provider, "model_id": model_id}
     return policy
 
@@ -108,6 +108,7 @@ async def load_ai_model_policy(db: AsyncSession) -> dict[str, dict[str, str]]:
         "openai": settings.openai_api_key,
         "anthropic": settings.anthropic_api_key,
         "gemini": settings.gemini_api_key,
+        "deepseek": settings.deepseek_api_key,
     }.items():
         if provider not in credentials and api_key:
             credentials[provider] = {
@@ -129,6 +130,7 @@ def resolve_provider_api_key(provider: str) -> str | None:
         "openai": settings.openai_api_key,
         "anthropic": settings.anthropic_api_key,
         "gemini": settings.gemini_api_key,
+        "deepseek": settings.deepseek_api_key,
     }.get(normalized) or None
 
 
