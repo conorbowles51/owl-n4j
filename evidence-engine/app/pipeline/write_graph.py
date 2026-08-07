@@ -51,6 +51,21 @@ async def _ensure_indexes() -> None:
     await neo4j_client.execute_write(
         "CREATE INDEX IF NOT EXISTS FOR (n:CyberIdentity) ON (n.identity_type, n.handle)"
     )
+    await neo4j_client.execute_write(
+        "CREATE INDEX IF NOT EXISTS FOR (n:Company) ON (n.registration_number)"
+    )
+    await neo4j_client.execute_write(
+        "CREATE INDEX IF NOT EXISTS FOR (n:Bank) ON (n.swift_bic)"
+    )
+    await neo4j_client.execute_write(
+        "CREATE INDEX IF NOT EXISTS FOR (n:DigitalAccount) ON (n.account_type, n.handle)"
+    )
+    await neo4j_client.execute_write(
+        "CREATE INDEX IF NOT EXISTS FOR (n:PhoneNumber) ON (n.number_e164)"
+    )
+    await neo4j_client.execute_write(
+        "CREATE INDEX IF NOT EXISTS FOR (n:NetworkIdentifier) ON (n.identifier_type, n.value)"
+    )
 
     # Fulltext index across all entity labels
     try:
