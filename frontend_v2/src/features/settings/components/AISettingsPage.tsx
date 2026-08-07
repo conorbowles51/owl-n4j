@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import deepseekLogoUrl from "@/assets/deepseek-logo.svg"
 import {
   AlertTriangle,
   BrainCircuit,
@@ -114,17 +115,13 @@ function ProviderLogo({ provider }: { provider: string }) {
 
   if (provider === "deepseek") {
     return (
-      <svg
+      <img
+        alt=""
         aria-hidden="true"
         className="size-5"
         data-testid="provider-logo-deepseek"
-        fill="none"
-        focusable="false"
-        viewBox="0 0 24 24"
-      >
-        <path d="M4 7.5h8.2a4.5 4.5 0 0 1 0 9H4v-9Z" stroke="currentColor" strokeWidth="2" />
-        <path d="M8 4v16M15.5 7.5 20 4M15.5 16.5 20 20" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-      </svg>
+        src={deepseekLogoUrl}
+      />
     )
   }
 
