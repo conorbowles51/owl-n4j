@@ -1,4 +1,26 @@
+import os
+
 from pydantic_settings import BaseSettings
+
+
+EMBEDDING_PROVIDER = "openai"
+EMBEDDING_MODEL = "text-embedding-3-small"
+
+for _env_name in ("EMBEDDING_PROVIDER",):
+    _requested = os.getenv(_env_name)
+    if _requested and _requested.strip().lower() != EMBEDDING_PROVIDER:
+        raise RuntimeError(
+            f"{_env_name} is fixed to {EMBEDDING_PROVIDER!r}; "
+            "embedding providers are not configurable"
+        )
+
+for _env_name in ("EMBEDDING_MODEL", "OPENAI_EMBEDDING_MODEL"):
+    _requested = os.getenv(_env_name)
+    if _requested and _requested.strip() != EMBEDDING_MODEL:
+        raise RuntimeError(
+            f"{_env_name} is fixed to {EMBEDDING_MODEL!r}; "
+            "embedding models are not configurable"
+        )
 
 
 class Settings(BaseSettings):
@@ -22,6 +44,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
+    deepseek_api_key: str = ""
     ai_credential_encryption_key: str = "loupe-development-ai-credentials-change-me"
     openai_model: str = "gpt-5.6-terra"
     openai_extraction_model: str = "gpt-5.6-terra"
@@ -29,7 +52,6 @@ class Settings(BaseSettings):
     openai_summary_model: str = "gpt-5.6-terra"
     openai_document_summary_model: str = "gpt-5.6-sol"
     openai_quality_model: str = "gpt-5.6-terra"
-    openai_embedding_model: str = "text-embedding-3-small"
     openai_embedding_batch_size: int = 16
     openai_embedding_max_batch_chars: int = 80000
     extraction_max_concurrency: int = 6

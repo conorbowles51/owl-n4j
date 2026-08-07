@@ -35,8 +35,10 @@ def _fake_client(create):
 @pytest.mark.asyncio
 async def test_embed_texts_batches_by_total_chars(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
+    models: list[str] = []
 
     async def create(*, model: str, input: list[str]):
+        models.append(model)
         calls.append(input)
         return FakeEmbeddingResponse([[float(len(calls)), float(i)] for i, _ in enumerate(input)])
 
@@ -46,11 +48,11 @@ async def test_embed_texts_batches_by_total_chars(monkeypatch: pytest.MonkeyPatc
 
     await openai_client.embed_texts(
         ["a" * 3000, "b" * 3000, "c" * 3000, "d" * 100],
-        model="embedding-test",
     )
 
     assert [len(batch) for batch in calls] == [2, 2]
     assert [sum(len(text) for text in batch) for batch in calls] == [6000, 3100]
+    assert all(call_model == "text-embedding-3-small" for call_model in models)
 
 
 @pytest.mark.asyncio
@@ -104,4 +106,4 @@ async def test_embed_texts_raises_clear_error_when_single_text_is_too_large(
     monkeypatch.setattr(openai_client, "get_openai_client", lambda: _fake_client(create))
 
     with pytest.raises(RuntimeError, match="too large for a single text item"):
-        await openai_client.embed_texts(["a" * 100], model="embedding-test")
+        await openai_client.embed_texts(["a" * 100])

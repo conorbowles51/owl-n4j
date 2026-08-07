@@ -196,6 +196,39 @@ class LLMExecutionContextTests(unittest.TestCase):
             {"prompt_tokens": 9, "completion_tokens": 3, "total_tokens": 12},
         )
 
+    def test_deepseek_adapter_uses_current_endpoint_and_json_mode(self):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [{"message": {"content": '{"ok":true}'}}],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 2,
+                "total_tokens": 12,
+            },
+        }
+        context = LLMExecutionContext(
+            provider="deepseek",
+            model_id="deepseek-v4-flash",
+        )
+
+        with (
+            patch("services.llm_service.DEEPSEEK_API_KEY", "test-key"),
+            patch("services.llm_service.requests.post", return_value=response) as post,
+        ):
+            answer = context.call("Return JSON", json_mode=True, temperature=0.2)
+
+        self.assertEqual(answer, '{"ok":true}')
+        self.assertEqual(post.call_args.args[0], "https://api.deepseek.com/chat/completions")
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["model"], "deepseek-v4-flash")
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
+        self.assertEqual(
+            context.last_usage,
+            {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

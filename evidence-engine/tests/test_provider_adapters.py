@@ -165,3 +165,43 @@ async def test_gemini_adapter_translates_structured_output_and_usage(monkeypatch
     assert payload["generationConfig"]["responseJsonSchema"] == SCHEMA_FORMAT["json_schema"]["schema"]
     assert payload["generationConfig"]["maxOutputTokens"] == 1234
     assert "temperature" not in payload["generationConfig"]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_adapter_uses_json_output_and_normalizes_usage(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(openai_client.settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        openai_client.httpx,
+        "AsyncClient",
+        _fake_async_client(
+            {
+                "choices": [{"message": {"content": '{"ok":true}'}}],
+                "usage": {
+                    "prompt_tokens": 11,
+                    "completion_tokens": 2,
+                    "total_tokens": 13,
+                },
+            },
+            captured,
+        ),
+    )
+
+    content, usage = await openai_client._deepseek_chat_completion(
+        [{"role": "user", "content": "Check."}],
+        model="deepseek-v4-flash",
+        response_format=SCHEMA_FORMAT,
+        temperature=0.2,
+        max_output_tokens=1234,
+    )
+
+    assert content == '{"ok":true}'
+    assert usage == {"prompt_tokens": 11, "completion_tokens": 2, "total_tokens": 13}
+    assert captured["url"] == "https://api.deepseek.com/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer test-key"
+    payload = captured["json"]
+    assert payload["model"] == "deepseek-v4-flash"
+    assert payload["response_format"] == {"type": "json_object"}
+    assert payload["thinking"] == {"type": "disabled"}
+    assert payload["max_tokens"] == 1234
+    assert "valid JSON" in payload["messages"][0]["content"]

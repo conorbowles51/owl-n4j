@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import deepseekLogoUrl from "@/assets/deepseek-logo.svg"
 import {
   AlertTriangle,
   BrainCircuit,
@@ -112,6 +113,18 @@ function ProviderLogo({ provider }: { provider: string }) {
     )
   }
 
+  if (provider === "deepseek") {
+    return (
+      <img
+        alt=""
+        aria-hidden="true"
+        className="size-5"
+        data-testid="provider-logo-deepseek"
+        src={deepseekLogoUrl}
+      />
+    )
+  }
+
   return <BrainCircuit aria-hidden="true" className="size-5" />
 }
 
@@ -125,6 +138,7 @@ function statusLabel(provider: AIProviderConnection) {
 function providerDisplay(provider: string) {
   if (provider === "openai") return "OpenAI"
   if (provider === "gemini") return "Google Gemini"
+  if (provider === "deepseek") return "DeepSeek"
   if (provider === "tesseract") return "Local Tesseract"
   if (provider === "local") return "Local service"
   return provider.charAt(0).toUpperCase() + provider.slice(1)
@@ -280,7 +294,7 @@ export function AISettingsPage() {
                   <div className="rounded-lg bg-brand-500 p-2 text-white"><KeyRound className="size-4" /></div>
                   <div>
                     <p className="text-xs font-semibold">Connect your first AI provider</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Start with OpenAI for the broadest ingestion support, or connect Anthropic or Gemini for generative analysis.</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Start with OpenAI for supporting services, or connect Anthropic, Gemini, or DeepSeek for generative analysis.</p>
                   </div>
                 </div>
                 <Button size="sm" onClick={() => setCredentialProvider(settings.providers[0])} disabled={!settings.permissions.can_manage_credentials}>Connect OpenAI</Button>
@@ -290,7 +304,7 @@ export function AISettingsPage() {
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Connections</p>
-                <p className="mt-2 font-display text-2xl font-semibold tabular-nums">{connectedCount}<span className="text-sm text-muted-foreground"> / 3</span></p>
+                <p className="mt-2 font-display text-2xl font-semibold tabular-nums">{connectedCount}<span className="text-sm text-muted-foreground"> / 4</span></p>
                 <p className="mt-1 text-[11px] text-muted-foreground">Cloud providers ready</p>
               </div>
               <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm">
@@ -310,7 +324,7 @@ export function AISettingsPage() {
                 <h2 id="provider-connections-heading" className="font-display text-sm font-semibold">Provider connections</h2>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">Credentials are shared by this Loupe deployment.</p>
               </div>
-              <div className="grid gap-3 lg:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {settings.providers.map((provider) => (
                   <Card key={provider.id} className={cn("overflow-hidden", provider.configured && "border-brand-400/35")}>
                     <div className={cn("h-1", provider.configured ? "bg-brand-500" : "bg-muted")} />

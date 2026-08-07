@@ -710,7 +710,7 @@ class AgentService:
         thread_id,
         run_id,
     ):
-        if provider != "openai" or not usage:
+        if not usage:
             return None
         if not any(usage.get(key) for key in ("prompt_tokens", "completion_tokens", "total_tokens")):
             return None

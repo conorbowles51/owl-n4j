@@ -1,7 +1,7 @@
 import type { AIWorkloadModelConfig, LLMModel } from "@/types/evidence.types"
 
 export interface AIProviderConnection {
-  id: "openai" | "anthropic" | "gemini"
+  id: "openai" | "anthropic" | "gemini" | "deepseek"
   display_name: string
   description: string
   configured: boolean

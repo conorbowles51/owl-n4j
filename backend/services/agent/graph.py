@@ -13,7 +13,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph, add_messages
 
-from config import ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
+from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
 from services.agent.tools import AgentToolContext, make_agent_tools
 
@@ -393,6 +393,18 @@ class AgentGraphRunner:
                 google_api_key=resolved_api_key,
                 timeout=180,
                 max_retries=2,
+            )
+        elif provider == "deepseek":
+            resolved_api_key = api_key or DEEPSEEK_API_KEY
+            if not resolved_api_key:
+                raise ValueError("DEEPSEEK_API_KEY is required for Agent mode")
+            self.base_model = ChatOpenAI(
+                model=model_id,
+                api_key=resolved_api_key,
+                base_url="https://api.deepseek.com",
+                timeout=180,
+                max_retries=2,
+                extra_body={"thinking": {"type": "disabled"}},
             )
         else:
             raise ValueError(f"Agent mode does not support provider: {provider}")
