@@ -325,13 +325,15 @@ The ontology defines what the Evidence Engine can "see" in documents. It lives i
 
 ### Entity Categories
 
-The ontology defines **24 entity categories**, each becoming a Neo4j node label:
+The ontology defines **25 entity categories**, each becoming a Neo4j node label:
 
 #### People & Organizations
 | Category | Description | Key Properties |
 |---|---|---|
 | **Person** | A named individual | aliases, role, nationality, date_of_birth, description |
-| **Organization** | A formal legal entity (company, agency, bank, NGO) | aliases, org_type, jurisdiction, description |
+| **Company** | A for-profit corporate entity | aliases, registration_number, incorporation_jurisdiction, industry, status, ticker |
+| **Bank** | A bank or regulated financial institution | aliases, swift_bic, regulator, jurisdiction |
+| **Organization** | A formal non-commercial entity (agency, NGO, law firm, university) | aliases, org_type, jurisdiction, description |
 | **Group** | An informal association (gang, cell, network, syndicate) | aliases, group_type (enum), estimated_size, description |
 
 #### Places & Events
@@ -366,7 +368,10 @@ The ontology defines **24 entity categories**, each becoming a Neo4j node label:
 #### Digital
 | Category | Description | Key Properties |
 |---|---|---|
-| **CyberIdentity** | Digital identifiers (email, phone, username, IP, wallet) | identity_type (enum), platform, handle, associated_name |
+| **DigitalAccount** | Holder-based digital identity (email, social, messaging, crypto wallet) | account_type (enum), platform, handle, associated_name |
+| **PhoneNumber** | First-class telephone number | number_e164, country_code, carrier, line_type, IMSI |
+| **NetworkIdentifier** | Network or infrastructure identifier | identifier_type (enum), value, ASN, registrar, first_seen, last_seen |
+| **CyberIdentity** | Legacy digital identifier retained for compatibility | identity_type (enum), platform, handle, associated_name |
 
 #### Legal & Intelligence
 | Category | Description | Key Properties |
@@ -385,15 +390,15 @@ The ontology defines **40+ relationship types** organized by domain. The LLM pre
 
 **General:** `ASSOCIATED_WITH`, `RELATED_TO` (familial/personal)
 
-**Employment & Membership:** `WORKS_FOR`, `SUPERVISED_BY`, `MEMBER_OF`, `AFFILIATED_WITH`, `CONTROLLED_BY`, `SUBSIDIARY_OF`, `KNOWN_ASSOCIATE_OF`
+**Employment & Membership:** `WORKS_FOR`, `DIRECTOR_OF`, `SHAREHOLDER_OF`, `SUPERVISED_BY`, `MEMBER_OF`, `AFFILIATED_WITH`, `CONTROLLED_BY`, `SUBSIDIARY_OF`, `KNOWN_ASSOCIATE_OF`, `ALLEGED_ASSOCIATE_OF`
 
-**Location & Movement:** `LOCATED_AT`, `TRAVELED_TO`, `RESIDED_AT`, `OPERATED_FROM`
+**Location & Movement:** `LOCATED_AT`, `TRAVELED_TO`, `PHONE_ACTIVITY_OBSERVED_AT`, `RESIDED_AT`, `OPERATED_FROM`
 
-**Financial:** `SENT_PAYMENT`, `RECEIVED_PAYMENT`, `VIA_ACCOUNT`, `HELD_BY`, `FINANCED_BY`, `BENEFICIAL_OWNER_OF`, `TRANSFERRED_TO`
+**Financial:** `SENT_PAYMENT`, `RECEIVED_PAYMENT`, `VIA_ACCOUNT`, `HELD_BY`, `HELD_AT`, `SIGNATORY_ON`, `FINANCED_BY`, `BENEFICIAL_OWNER_OF`, `TRANSFERRED_TO`
 
 **Communication & Identity:** `COMMUNICATED_WITH`, `ALIAS_OF`
 
-**Legal:** `ARRESTED_FOR`, `CHARGED_WITH`, `CONVICTED_OF`, `SUSPECT_IN`, `VICTIM_OF`, `WITNESS_TO`
+**Legal:** `ARRESTED_FOR`, `CHARGED_WITH`, `CONVICTED_OF`, `RESULTED_IN`, `SUSPECT_IN`, `VICTIM_OF`, `WITNESS_TO`
 
 **Evidence & Ownership:** `OWNS`, `SEIZED_FROM`, `FOUND_AT`, `REGISTERED_TO`
 
@@ -409,9 +414,10 @@ Each relationship type specifies typical source/target categories and available 
 
 The ontology includes explicit disambiguation rules injected into extraction prompts:
 
-- **Device vs CyberIdentity:** Device = the physical object (a phone). CyberIdentity = the digital identifier (the phone number). Extract both when the text mentions a device and its identifiers.
-- **Account vs FinancialInstrument:** Account = held at an institution. FinancialInstrument = bearer instrument (credit card, check).
-- **Organization vs Group:** Organization = formal legal entity. Group = informal association.
+- **Company vs Bank vs Organization:** Company = for-profit corporate entity. Bank = regulated financial institution. Organization = other formal non-commercial entity.
+- **Device vs digital identifiers:** Device = physical object. DigitalAccount = holder-based account. PhoneNumber = telephone number. NetworkIdentifier = network infrastructure identifier. CyberIdentity remains a legacy compatibility category.
+- **Account vs FinancialInstrument vs DigitalAccount:** Account = held at an institution. FinancialInstrument = bearer instrument. DigitalAccount = holder-based digital identity, including crypto wallets.
+- **Formal entity vs Group:** Company, Bank, and Organization are formal entities. Group = informal association.
 - **Document vs Media:** Document = text-based. Media = audio/visual.
 - **Event vs LegalAction:** Event = real-world occurrence. LegalAction = formal legal proceeding.
 - **PhysicalEvidence:** Always prefer the specific category (Vehicle, Weapon, Drug, Device) if applicable.

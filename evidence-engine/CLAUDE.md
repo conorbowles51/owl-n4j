@@ -63,7 +63,7 @@ The pipeline runs **sequentially** per file, orchestrated by `pipeline/orchestra
 
 ## Key Design Decisions
 
-- **Guided open ontology**: 10 fixed categories (Person, Organization, Location, Event, Transaction, Communication, Account, Document, PhysicalEvidence, Other) + AI-chosen `specific_type`. Dual-labeled in Neo4j
+- **Guided open ontology**: 25 fixed categories, including dedicated Company, Bank, DigitalAccount, PhoneNumber, and NetworkIdentifier categories, plus AI-chosen `specific_type`. Dual-labeled in Neo4j
 - **Task queue**: arq (async-native, Redis-based) — not Celery
 - **Chunking**: Custom recursive splitter (~6000 chars, 800 overlap) — no langchain dependency
 - **Extraction model**: GPT-4o-mini via `response_format={"type": "json_object"}`
