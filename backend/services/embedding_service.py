@@ -1,11 +1,6 @@
-"""
-Embedding generation service.
+"""Platform-owned OpenAI embedding generation service."""
 
-Supports both OpenAI and local (Ollama) models for generating text embeddings.
-"""
-
-from typing import List, Optional
-import os
+from typing import List
 
 # Try to import OpenAI (optional)
 try:
@@ -14,14 +9,7 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
-# Try to import Ollama (optional)
-try:
-    import ollama
-    OLLAMA_AVAILABLE = True
-except ImportError:
-    OLLAMA_AVAILABLE = False
-
-from config import EMBEDDING_PROVIDER, EMBEDDING_MODEL, OPENAI_API_KEY, LLM_PROVIDER
+from config import EMBEDDING_PROVIDER, EMBEDDING_MODEL, OPENAI_API_KEY
 from services.ai_costs_service import CostOperationKind, get_current_ai_cost_context
 from services.cost_tracking_service import record_cost
 
@@ -29,48 +17,15 @@ from services.cost_tracking_service import record_cost
 class EmbeddingService:
     """Service for generating text embeddings."""
     
-    def __init__(self, provider: Optional[str] = None, model: Optional[str] = None):
-        """
-        Initialize the embedding service.
-        
-        Args:
-            provider: Embedding provider ("openai" or "ollama"). If None, uses config.
-            model: Embedding model ID. If None, uses config or defaults.
-        """
-        # Use provided provider, or embedding provider from config, or fall back to LLM provider
-        if provider:
-            self.provider = provider.lower()
-        else:
-            self.provider = (EMBEDDING_PROVIDER or LLM_PROVIDER or "ollama").lower()
-        
-        # Use provided model, or embedding model from config
-        if model:
-            self.model = model
-        else:
-            self.model = EMBEDDING_MODEL
-        
-        # If no explicit embedding model set, use defaults based on provider
-        if not self.model:
-            if self.provider == "ollama":
-                self.model = "nomic-embed-text"  # Common Ollama embedding model
-            elif self.provider == "openai":
-                self.model = "text-embedding-3-small"
-        
-        if self.provider == "openai":
-            if not OPENAI_AVAILABLE:
-                raise ImportError("OpenAI package not installed. Install with: pip install openai")
-            self.client = None
-            self._client_key = None
-            self._validate_openai_model()
-        
-        elif self.provider == "ollama":
-            if not OLLAMA_AVAILABLE:
-                raise ImportError("Ollama package not installed. Install with: pip install ollama")
-            self.client = ollama
-            self._validate_ollama_model()
-        
-        else:
-            raise ValueError(f"Unsupported embedding provider: {self.provider}. Use 'openai' or 'ollama'")
+    def __init__(self):
+        """Initialize the one supported embedding implementation."""
+        self.provider = EMBEDDING_PROVIDER
+        self.model = EMBEDDING_MODEL
+        if not OPENAI_AVAILABLE:
+            raise ImportError("OpenAI package not installed. Install with: pip install openai")
+        self.client = None
+        self._client_key = None
+        self._validate_openai_model()
     
     def _validate_openai_model(self) -> None:
         """Validate that the OpenAI model is available."""
@@ -96,20 +51,6 @@ class EmbeddingService:
             self._client_key = api_key
         return self.client
     
-    def _validate_ollama_model(self) -> None:
-        """Validate that the Ollama model is available."""
-        try:
-            # Try to pull the model if it doesn't exist
-            models = self.client.list()
-            model_names = [m["name"] for m in models.get("models", [])]
-            
-            if self.model not in model_names:
-                print(f"[Embedding] Model {self.model} not found. Attempting to pull...")
-                self.client.pull(self.model)
-                print(f"[Embedding] Model {self.model} pulled successfully")
-        except Exception as e:
-            print(f"[Embedding] Warning: Could not validate Ollama model {self.model}: {e}")
-    
     def generate_embedding(self, text: str) -> List[float]:
         """
         Generate embedding for a single text.
@@ -124,64 +65,43 @@ class EmbeddingService:
             raise ValueError("Text cannot be empty")
         
         try:
-            if self.provider == "openai":
-                response = self._get_openai_client().embeddings.create(
-                    model=self.model,
-                    input=text
-                )
-                context = get_current_ai_cost_context()
-                if context:
-                    usage = getattr(response, "usage", None)
-                    prompt_tokens = None
-                    total_tokens = None
-                    if usage is not None:
-                        prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
-                        total_tokens = getattr(usage, "total_tokens", None)
-                    try:
-                        from postgres.session import get_background_session
+            response = self._get_openai_client().embeddings.create(
+                model=self.model,
+                input=text
+            )
+            context = get_current_ai_cost_context()
+            if context:
+                usage = getattr(response, "usage", None)
+                prompt_tokens = None
+                total_tokens = None
+                if usage is not None:
+                    prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
+                    total_tokens = getattr(usage, "total_tokens", None)
+                try:
+                    from postgres.session import get_background_session
 
-                        with get_background_session() as db:
-                            record_cost(
-                                db=db,
-                                job_type=context.job_type,
-                                provider="openai",
-                                model_id=self.model,
-                                operation_kind=CostOperationKind.EMBEDDING,
-                                prompt_tokens=prompt_tokens,
-                                completion_tokens=0,
-                                total_tokens=total_tokens or prompt_tokens,
-                                case_id=context.case_id,
-                                user_id=context.user_id,
-                                engine_job_id=context.engine_job_id,
-                                evidence_file_id=context.evidence_file_id,
-                                description=context.description or "Embedding generation",
-                                extra_metadata=context.extra_metadata,
-                            )
-                    except Exception as tracking_error:
-                        print(f"[Embedding] Warning: failed to record cost: {tracking_error}")
-                return response.data[0].embedding
-            
-            elif self.provider == "ollama":
-                response = self.client.embeddings(
-                    model=self.model,
-                    prompt=text
-                )
-                return response["embedding"]
-            
-            else:
-                raise ValueError(f"Unsupported provider: {self.provider}")
+                    with get_background_session() as db:
+                        record_cost(
+                            db=db,
+                            job_type=context.job_type,
+                            provider="openai",
+                            model_id=self.model,
+                            operation_kind=CostOperationKind.EMBEDDING,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=0,
+                            total_tokens=total_tokens or prompt_tokens,
+                            case_id=context.case_id,
+                            user_id=context.user_id,
+                            engine_job_id=context.engine_job_id,
+                            evidence_file_id=context.evidence_file_id,
+                            description=context.description or "Embedding generation",
+                            extra_metadata=context.extra_metadata,
+                        )
+                except Exception as tracking_error:
+                    print(f"[Embedding] Warning: failed to record cost: {tracking_error}")
+            return response.data[0].embedding
         
         except Exception as e:
-            error_msg = str(e)
-            # Provide more helpful error messages
-            if "Failed to connect" in error_msg or "Connection refused" in error_msg or "ollama" in error_msg.lower():
-                if self.provider == "ollama":
-                    raise ConnectionError(
-                        f"Failed to connect to Ollama. Please check that Ollama is running and accessible at the configured URL. "
-                        f"Error: {error_msg}. "
-                        f"To fix: 1) Start Ollama (docker run -d -p 11434:11434 ollama/ollama or 'ollama serve'), "
-                        f"2) Or switch to OpenAI embeddings by setting EMBEDDING_PROVIDER=openai and OPENAI_API_KEY in your .env file"
-                    )
             print(f"[Embedding] Error generating embedding: {e}")
             raise
     
@@ -214,51 +134,44 @@ class EmbeddingService:
             batch = valid_texts[i:i + batch_size]
             
             try:
-                if self.provider == "openai":
-                    # OpenAI supports batch requests (up to 2048 texts)
-                    response = self._get_openai_client().embeddings.create(
-                        model=self.model,
-                        input=batch
-                    )
-                    context = get_current_ai_cost_context()
-                    if context:
-                        usage = getattr(response, "usage", None)
-                        prompt_tokens = None
-                        total_tokens = None
-                        if usage is not None:
-                            prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
-                            total_tokens = getattr(usage, "total_tokens", None)
-                        try:
-                            from postgres.session import get_background_session
+                response = self._get_openai_client().embeddings.create(
+                    model=self.model,
+                    input=batch
+                )
+                context = get_current_ai_cost_context()
+                if context:
+                    usage = getattr(response, "usage", None)
+                    prompt_tokens = None
+                    total_tokens = None
+                    if usage is not None:
+                        prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
+                        total_tokens = getattr(usage, "total_tokens", None)
+                    try:
+                        from postgres.session import get_background_session
 
-                            with get_background_session() as db:
-                                record_cost(
-                                    db=db,
-                                    job_type=context.job_type,
-                                    provider="openai",
-                                    model_id=self.model,
-                                    operation_kind=CostOperationKind.EMBEDDING,
-                                    prompt_tokens=prompt_tokens,
-                                    completion_tokens=0,
-                                    total_tokens=total_tokens or prompt_tokens,
-                                    case_id=context.case_id,
-                                    user_id=context.user_id,
-                                    engine_job_id=context.engine_job_id,
-                                    evidence_file_id=context.evidence_file_id,
-                                    description=context.description or "Embedding generation",
-                                    extra_metadata={
-                                        **(context.extra_metadata or {}),
-                                        "batch_size": len(batch),
-                                    },
-                                )
-                        except Exception as tracking_error:
-                            print(f"[Embedding] Warning: failed to record batch cost: {tracking_error}")
-                    batch_embeddings = [item.embedding for item in response.data]
-                else:
-                    # Ollama: process one by one (no batch support)
-                    batch_embeddings = [
-                        self.generate_embedding(text) for text in batch
-                    ]
+                        with get_background_session() as db:
+                            record_cost(
+                                db=db,
+                                job_type=context.job_type,
+                                provider="openai",
+                                model_id=self.model,
+                                operation_kind=CostOperationKind.EMBEDDING,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=0,
+                                total_tokens=total_tokens or prompt_tokens,
+                                case_id=context.case_id,
+                                user_id=context.user_id,
+                                engine_job_id=context.engine_job_id,
+                                evidence_file_id=context.evidence_file_id,
+                                description=context.description or "Embedding generation",
+                                extra_metadata={
+                                    **(context.extra_metadata or {}),
+                                    "batch_size": len(batch),
+                                },
+                            )
+                    except Exception as tracking_error:
+                        print(f"[Embedding] Warning: failed to record batch cost: {tracking_error}")
+                batch_embeddings = [item.embedding for item in response.data]
                 
                 embeddings.extend(batch_embeddings)
             
@@ -276,34 +189,10 @@ class EmbeddingService:
         Returns:
             Dimension size (e.g., 1536 for text-embedding-3-small)
         """
-        # Common dimensions
-        if self.provider == "openai":
-            if "text-embedding-3-small" in self.model:
-                return 1536
-            elif "text-embedding-3-large" in self.model:
-                return 3072
-            elif "text-embedding-ada-002" in self.model:
-                return 1536
-            else:
-                # Default for unknown OpenAI models
-                return 1536
-        elif self.provider == "ollama":
-            # Ollama embedding dimensions vary by model
-            if "qwen3-embedding:4b" in self.model or "qwen3-embedding" in self.model:
-                return 2560
-            elif "nomic-embed-text" in self.model:
-                return 768
-            elif "mxbai-embed-large" in self.model:
-                return 1024
-            else:
-                # Default for unknown Ollama models
-                return 768
-        else:
-            return 1536  # Safe default
+        return 1536
 
 
-# Singleton instance (will be created on first import)
-# Note: This will raise an error if provider is misconfigured
+# Singleton instance (will be created on first import).
 try:
     embedding_service = EmbeddingService()
 except Exception as e:

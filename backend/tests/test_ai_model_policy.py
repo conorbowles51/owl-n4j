@@ -18,6 +18,14 @@ class AIModelPolicyTests(unittest.TestCase):
         )
         self.assertEqual(DEFAULT_POLICY["chat"]["model_id"], "gpt-5.6-terra")
 
+    def test_current_deepseek_models_are_available(self):
+        self.assertIsNotNone(get_model_by_id("deepseek-v4-flash"))
+        self.assertIsNotNone(get_model_by_id("deepseek-v4-pro"))
+        self.assertEqual(
+            get_default_model(LLMProvider.DEEPSEEK).id,
+            "deepseek-v4-flash",
+        )
+
     def test_policy_rejects_provider_model_mismatch(self):
         configuration = {key: dict(value) for key, value in DEFAULT_POLICY.items()}
         configuration["chat"] = {
@@ -32,7 +40,10 @@ class AIModelPolicyTests(unittest.TestCase):
         self.assertNotIn("ollama", {model.provider.value for model in AVAILABLE_MODELS})
 
     def test_each_cloud_provider_has_a_complete_recommended_profile(self):
-        self.assertEqual(set(PROVIDER_DEFAULTS), {"openai", "anthropic", "gemini"})
+        self.assertEqual(
+            set(PROVIDER_DEFAULTS),
+            {"openai", "anthropic", "gemini", "deepseek"},
+        )
         for configuration in PROVIDER_DEFAULTS.values():
             self.assertEqual(set(configuration), set(DEFAULT_POLICY))
             validate_policy(configuration, require_configured_provider=False)

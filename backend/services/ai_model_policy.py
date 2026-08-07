@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from config import ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
+from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
 from models.llm_models import LLMProvider, get_model_by_id
 from postgres.models.runtime_state import AIModelPolicy
 
@@ -83,6 +83,15 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "ingestion_document_summary": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
         "ingestion_quality": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
     },
+    "deepseek": {
+        "chat": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
+        "agent": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
+        "ingestion_extraction": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
+        "ingestion_resolution": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
+        "ingestion_entity_summary": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
+        "ingestion_document_summary": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
+        "ingestion_quality": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
+    },
 }
 
 
@@ -98,6 +107,7 @@ def provider_is_configured(provider: str, db: Session | None = None) -> bool:
         "openai": bool(OPENAI_API_KEY),
         "anthropic": bool(ANTHROPIC_API_KEY),
         "gemini": bool(GEMINI_API_KEY),
+        "deepseek": bool(DEEPSEEK_API_KEY),
     }.get(provider.lower(), False)
 
 

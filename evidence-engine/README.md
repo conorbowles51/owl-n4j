@@ -613,6 +613,7 @@ SERVICE_API_KEY=replace-with-a-long-random-service-secret
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=...                       # Optional; enables Anthropic in centralized AI settings
 GEMINI_API_KEY=...                          # Optional; enables Google Gemini in centralized AI settings
+DEEPSEEK_API_KEY=...                        # Optional; enables DeepSeek in centralized AI settings
 AI_CREDENTIAL_ENCRYPTION_KEY=...            # Stable deployment secret used to encrypt provider keys
 OPENAI_MODEL=gpt-5.6-terra
 OPENAI_EXTRACTION_MODEL=gpt-5.6-terra
@@ -620,7 +621,7 @@ OPENAI_RESOLUTION_MODEL=gpt-5.6-terra
 OPENAI_SUMMARY_MODEL=gpt-5.6-terra
 OPENAI_DOCUMENT_SUMMARY_MODEL=gpt-5.6-sol
 OPENAI_QUALITY_MODEL=gpt-5.6-terra              # Claim entailment verification
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+# Embeddings are platform-owned and fixed to OpenAI text-embedding-3-small.
 OPENAI_EMBEDDING_BATCH_SIZE=16              # Max texts per embedding request
 OPENAI_EMBEDDING_MAX_BATCH_CHARS=80000      # Max text chars per embedding request
 EXTRACTION_MAX_CONCURRENCY=6                # Concurrent chunk extraction calls per file

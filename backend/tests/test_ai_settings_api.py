@@ -11,7 +11,7 @@ from postgres.models.enums import GlobalRole
 from postgres.models.runtime_state import AIModelPolicy, AIProviderCredential, SystemLog
 from postgres.models.user import User
 from postgres.session import get_db
-from routers.ai_settings import router
+from routers.ai_settings import router, validate_provider_credential
 from routers.users import get_current_db_user, require_super_admin
 
 
@@ -48,9 +48,32 @@ class AISettingsAPITests(unittest.TestCase):
         response = self.client.get("/api/ai-settings")
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual([item["id"] for item in payload["providers"]], ["openai", "anthropic", "gemini"])
+        self.assertEqual(
+            [item["id"] for item in payload["providers"]],
+            ["openai", "anthropic", "gemini", "deepseek"],
+        )
         self.assertNotIn("ollama", response.text.lower())
         self.assertNotIn("api_key", response.text)
+
+    @patch("routers.ai_settings.requests.get")
+    def test_deepseek_key_validation_uses_official_model_catalog(self, get):
+        response = get.return_value
+        response.status_code = 200
+        response.json.return_value = {
+            "data": [{"id": "deepseek-v4-flash"}, {"id": "deepseek-v4-pro"}]
+        }
+
+        result = validate_provider_credential("deepseek", "sk-test")
+
+        self.assertEqual(
+            result["models"],
+            ["deepseek-v4-flash", "deepseek-v4-pro"],
+        )
+        self.assertEqual(get.call_args.args[0], "https://api.deepseek.com/models")
+        self.assertEqual(
+            get.call_args.kwargs["headers"]["Authorization"],
+            "Bearer sk-test",
+        )
 
     @patch("routers.ai_settings.validate_provider_credential")
     def test_super_admin_can_save_a_validated_masked_key(self, validate):
