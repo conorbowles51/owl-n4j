@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react"
+import { useEffect, useState } from "react"
 import { BrandLogo } from "./BrandLogo"
 
 interface NavigationProps {
@@ -6,11 +6,12 @@ interface NavigationProps {
 }
 
 const links = [
-  { href: "#case", label: "The case" },
-  { href: "#ingest", label: "How it works" },
-  { href: "#finding", label: "The finding" },
-  { href: "#surfaces", label: "The product" },
+  { href: "#film", label: "Product film" },
+  { href: "#evidence", label: "Evidence" },
+  { href: "#views", label: "Case views" },
+  { href: "#ai", label: "AI workspace" },
   { href: "#deployment", label: "Deployment" },
+  { href: "#providers", label: "Providers" },
 ]
 
 export function Navigation({ onContact }: NavigationProps) {
@@ -52,7 +53,7 @@ export function Navigation({ onContact }: NavigationProps) {
           ))}
         </div>
         <div className="nav-actions">
-          <button className="button button-quiet nav-contact" type="button" onClick={onContact}>
+          <button className="button button-primary nav-contact" type="button" onClick={onContact}>
             Request a walkthrough
             <span aria-hidden="true">↗</span>
           </button>
@@ -71,12 +72,7 @@ export function Navigation({ onContact }: NavigationProps) {
       </nav>
       <div id="mobile-navigation" className={`mobile-navigation ${menuOpen ? "is-open" : ""}`}>
         {links.map((link, index) => (
-          <a
-            href={link.href}
-            key={link.href}
-            style={{ "--menu-index": index } as CSSProperties}
-            onClick={() => setMenuOpen(false)}
-          >
+          <a href={link.href} key={link.href} onClick={() => setMenuOpen(false)}>
             <span>0{index + 1}</span>
             {link.label}
           </a>

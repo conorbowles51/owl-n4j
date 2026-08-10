@@ -38,6 +38,8 @@ interface DifferenceRow {
   loupe: string
   /** Optional red receipt under the Loupe cell — the symbol the page has taught. */
   receipt?: string
+  /** Lead-in that anchors the receipt to a fact the page proved above. */
+  receiptLead?: string
 }
 
 // Six rows in v1, four now. Human judgment lives in the capability grid,
@@ -61,6 +63,7 @@ const differences: DifferenceRow[] = [
     generic: "A retrieved sample of whatever fits. What it missed is unknowable.",
     loupe:
       "A traversal of the whole model — the complete matching set, every claim carrying its source.",
+    receiptLead: "The €1,035,000 above traces to",
     receipt: "03_bank_statement_nexus.pdf, p.1",
   },
   {
@@ -77,7 +80,7 @@ export function DifferenceSection() {
         <SectionHead
           eyebrow="Compared with a general assistant"
           heading="It will not claim what it cannot cite."
-          lede="Any capable model can produce a confident paragraph about a case. Loupe is built to stay inside the evidence: claims it cannot ground are quarantined, the agent asks before guessing, and no answer exceeds its sources. The rest of the difference follows from that."
+          lede="Any capable model can produce a confident paragraph about a case. Loupe is built to stay inside the evidence; the difference follows from that."
         />
 
         <Reveal delay={80}>
@@ -96,7 +99,10 @@ export function DifferenceSection() {
                   {row.receipt ? (
                     <>
                       <br />
-                      <span className="receipt">{row.receipt}</span>
+                      <span className="cmp-receipt-line">
+                        {row.receiptLead ? <>{row.receiptLead} </> : null}
+                        <span className="receipt">{row.receipt}</span>
+                      </span>
                     </>
                   ) : null}
                 </p>
@@ -137,7 +143,7 @@ const capability = [
     group: "Judgment and output",
     items: [
       "Significance marking that persists across graph, timeline and table",
-      "Loupes — bonded, evidenced collections",
+      "Loupes — saved collections of marked evidence, each item still carrying its source",
       "Investigator-authored entities, relationships and case notes",
       "Tables, charts and exports that stay attached to the case",
     ],
@@ -235,7 +241,7 @@ export function ProofSection() {
 const audiences = [
   {
     title: "Defence-side investigations and criminal defence",
-    body: "Boutique practices running federal and serious state matters — Big-Four-class casework without Big-Four tooling budgets, and no implementation resource to spare. Loupe is designed to be usable out of the box.",
+    body: "Boutique practices running federal and serious state matters — Big-Four-class casework without Big-Four tooling budgets, and no implementation resource to spare. Loupe works out of the box.",
   },
   {
     title: "Corporate investigations and compliance",
@@ -243,7 +249,7 @@ const audiences = [
   },
   {
     title: "Insurance SIU and fraud",
-    body: "Financial and document analysis at volume, in the fastest-growing category in the field.",
+    body: "Financial and document analysis at volume, where the evidence is almost entirely paper and transactions.",
   },
 ]
 
@@ -253,8 +259,13 @@ export function AudienceSection() {
       <div className="container">
         <SectionHead
           eyebrow="Who it's for"
-          heading="Built for the practice that receives the evidence."
-          lede="Not size or sector — the defining characteristic is that this buyer receives evidence rather than collecting it, in formats built by the other side, with no proper way to analyse it."
+          heading={
+            <>
+              Built for the practice <br className="aud-head-break" />
+              that receives the&nbsp;evidence.
+            </>
+          }
+          lede="Not size or sector — the defining characteristic is that you receive evidence rather than collect it, in formats built by the other side, with no proper way to analyse it."
         />
 
         <Reveal delay={80}>

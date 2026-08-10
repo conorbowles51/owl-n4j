@@ -141,8 +141,8 @@ export function Hero({ onContact }: HeroProps) {
           <button className={styles.primary} type="button" onClick={onContact}>
             Request a walkthrough
           </button>
-          <a className={styles.ghost} href="#case">
-            See it work a case
+          <a className={styles.ghost} href="#film">
+            Watch the product film
           </a>
         </div>
 

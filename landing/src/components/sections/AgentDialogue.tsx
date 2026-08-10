@@ -10,7 +10,7 @@ import { useIsNarrow } from "../../lib/useMediaQuery"
 import { Reveal } from "../primitives/Reveal"
 import styles from "./AgentDialogue.module.css"
 
-const QUESTION = "Show me every payment from GlobalTech to Nexus Trading in 2023."
+const PAYMENTS_QUESTION = "Show me every payment from GlobalTech to Nexus Trading in 2023."
 
 const payments = chartMonths.filter((m) => m.amount > 0)
 const maxAmount = Math.max(...chartMonths.map((m) => m.amount))
@@ -97,9 +97,11 @@ function PaymentsChart() {
 }
 
 /**
- * The four-beat exchange: question, the agent asking back, the answer with
- * receipts, the exported report. Component-built — designed landing-page UI,
- * not a screenshot imitation — so the type stays legible at any width.
+ * Two exchanges from the same session, each complete in itself: the first is
+ * the clarifying-question beat, the second the receipted answer. Then the
+ * honesty beat, then the exported work product at full width. Component-built —
+ * designed landing-page UI, not a screenshot imitation — so the type stays
+ * legible at any width.
  */
 export function AgentDialogue() {
   return (
@@ -114,13 +116,15 @@ export function AgentDialogue() {
           </p>
         </header>
 
-        <div className={styles.layout}>
-          {/* ------------------------------------------------- conversation */}
+        <div className={styles.exchanges}>
+          {/* ------------------------------------------- exchange 1: it asks */}
           <div className={styles.thread}>
+            <p className={styles.exchangeLabel}>Exchange 01</p>
+
             <Reveal>
               <div className={styles.turn} data-speaker="analyst">
                 <p className={styles.speaker}>Analyst</p>
-                <p className={styles.bubble}>{QUESTION}</p>
+                <p className={styles.bubble}>{clarification.question}</p>
               </div>
             </Reveal>
 
@@ -128,7 +132,7 @@ export function AgentDialogue() {
               <div className={styles.turn} data-speaker="agent">
                 <p className={styles.speaker}>Agent</p>
                 <div className={`${styles.bubble} ${styles.clarify}`}>
-                  <p className={styles.tool}>request_clarification</p>
+                  <p className={styles.clarifyLabel}>Clarifying question</p>
                   <p className={styles.ask}>{clarification.ask}</p>
                   <ul className={styles.options}>
                     {clarification.options.map((option) => (
@@ -145,6 +149,18 @@ export function AgentDialogue() {
             <Reveal delay={150}>
               <div className={styles.turn} data-speaker="analyst">
                 <p className={styles.bubble}>{clarification.chosen}.</p>
+              </div>
+            </Reveal>
+          </div>
+
+          {/* --------------------------------------- exchange 2: the receipt */}
+          <div className={styles.thread}>
+            <p className={styles.exchangeLabel}>Exchange 02</p>
+
+            <Reveal delay={120}>
+              <div className={styles.turn} data-speaker="analyst">
+                <p className={styles.speaker}>Analyst</p>
+                <p className={styles.bubble}>{PAYMENTS_QUESTION}</p>
               </div>
             </Reveal>
 
@@ -167,40 +183,50 @@ export function AgentDialogue() {
                 </div>
               </div>
             </Reveal>
-
-            <Reveal delay={260}>
-              {/* Honesty is part of the pitch: the agent's own limit, verbatim. */}
-              <blockquote className={styles.caveat}>
-                <p>{agentCaveat}</p>
-                <cite>The agent, stating the limit of its own answer</cite>
-              </blockquote>
-            </Reveal>
-
-            <p className={styles.caption}>Illustrative case data</p>
           </div>
+        </div>
 
-          {/* ------------------------------------------------- work product */}
-          <div className={styles.product}>
-            <Reveal delay={140}>
-              <p className={styles.productKicker}>The work product</p>
-              <p className={styles.productLine}>
-                Answers become exportable artifacts. Here, the real thing: the agent asked where two
-                interviews disagree — every row quotes the passage it stands on.
-              </p>
-              <figure className={styles.reportFrame}>
-                <div className={styles.reportCrop}>
+        <Reveal delay={260}>
+          {/* Honesty is part of the pitch: the agent's own limit, verbatim. */}
+          <div className={styles.caveatBeat}>
+            <p className={styles.caveatLead}>
+              Asked later whether those payments bought the €2.45 million Monaco property —{" "}
+              <span className="receipt">05_property_records_monaco.pdf, p.1</span> — the agent
+              answered:
+            </p>
+            <blockquote className={styles.caveat}>
+              <p>{agentCaveat}</p>
+              <cite>The agent, stating the limit of its own answer</cite>
+            </blockquote>
+          </div>
+        </Reveal>
+
+        <p className={styles.caption}>Illustrative case data</p>
+
+        {/* ------------------------------------------------- work product */}
+        <div className={styles.product}>
+          <Reveal delay={140}>
+            <p className={styles.productKicker}>The work product</p>
+            <p className={styles.productLine}>
+              Answers become exportable artifacts. Another exchange from the same case — asked where
+              the two interviews disagree, the agent returned this table, and every row quotes the
+              passage it stands on.
+            </p>
+            <figure className={styles.reportFrame}>
+              <div className={styles.reportCrop}>
+                <picture>
+                  <source media="(max-width: 767px)" srcSet="/product/plates/agent-table-m.webp" />
                   <img
                     src="/product/plates/agent-table.webp"
-                    width={1000}
                     alt="A Loupe table artifact titled 'Conflicts in Chen and Okonkwo Interviews', each conflict row carrying a verbatim quote and its source citation, with CSV and table export controls."
                     loading="lazy"
                     decoding="async"
                   />
-                </div>
-                <figcaption>Illustrative case data</figcaption>
-              </figure>
-            </Reveal>
-          </div>
+                </picture>
+              </div>
+              <figcaption>Illustrative case data</figcaption>
+            </figure>
+          </Reveal>
         </div>
       </div>
     </section>

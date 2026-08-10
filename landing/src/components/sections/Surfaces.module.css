@@ -1,7 +1,10 @@
 /* ============================================================================
-   Surfaces — the same case from every angle. Paper ground. Four exhibits
-   alternate copy/exhibit sides at desktop for rhythm; below 1280 they stack
-   and the captions carry the meaning. Spec §4.8.
+   Surfaces — the same case from every angle. Paper ground. The plates are
+   recut near display size, so each exhibit stacks its copy above a frame
+   that shows the plate at 1:1: the frame caps at the plate's native width
+   (--plate-w, set inline) and crops the right edge where the container is
+   narrower, rather than downscaling the pixels. The comms exhibit keeps a
+   copy-beside layout at desktop because the panel is narrow. Spec §4.8.
    ========================================================================== */
 
 .section {
@@ -53,10 +56,13 @@
   gap: clamp(3.5rem, 7vw, 6.5rem);
 }
 
+/* Copy above, plate below: the wide track gets the whole container so the
+   plate sits at (or within a sliver of) native size. Spec §4.8 allows
+   stacked exhibits; legibility of the plate wins over the side-by-side. */
 .exhibit {
   display: grid;
-  gap: clamp(1.25rem, 2.5vw, 2rem);
-  align-items: center;
+  gap: clamp(1.25rem, 2.5vw, 1.75rem);
+  justify-items: start;
 }
 
 .copy h3 {
@@ -86,10 +92,18 @@
   color: var(--text-3);
 }
 
+/* Each "· value" pair breaks as a unit, so no line opens mid-phrase. */
+.metaSeg {
+  white-space: nowrap;
+}
+
 /* ------------------------------------------------------------------ frames */
 
 .frame {
   margin: 0;
+  /* Native width is the hard cap — downscaling never happens; a narrower
+     container crops instead (see .plate img). Spec §2, finding 1. */
+  max-width: min(100%, var(--plate-w, 100%));
   border: 1px solid var(--rule);
   border-radius: var(--loupe-radius-panel);
   background: var(--paper-2);
@@ -103,9 +117,13 @@
   overflow: hidden;
 }
 
+/* The plate renders at exactly native width. When the container is narrower
+   than the plate, the frame's overflow crops the right edge cleanly instead
+   of softening every pixel with a downscale. */
 .plate img {
   display: block;
-  width: 100%;
+  width: var(--plate-w, 100%);
+  max-width: none;
   height: auto;
 }
 
@@ -123,6 +141,7 @@
    the exhibit shadow so it sits on the page the way the plates do. It stays
    panel-width because it is a panel, not an application window. */
 .comms {
+  width: 100%;
   max-width: 40rem;
   border-radius: var(--loupe-radius-panel);
   box-shadow: 0 24px 44px -28px color-mix(in srgb, var(--text) 38%, transparent);
@@ -131,17 +150,22 @@
 /* ------------------------------------------------------------- wide layout */
 
 @media (min-width: 1280px) {
-  .exhibit {
-    grid-template-columns: minmax(16rem, 0.52fr) minmax(0, 1.48fr);
-    column-gap: clamp(2.75rem, 4.5vw, 4.25rem);
+  /* Alternation without columns: flipped exhibits carry their copy and
+     frame to the right edge, so the page keeps its left-right rhythm while
+     every plate stays at full size. */
+  .exhibit[data-flip] .copy,
+  .exhibit[data-flip] .frame {
+    justify-self: end;
   }
 
-  .exhibit[data-flip] {
+  /* The comms panel is narrow enough to keep a true side-by-side. */
+  .commsExhibit {
     grid-template-columns: minmax(0, 1.48fr) minmax(16rem, 0.52fr);
+    column-gap: clamp(2.75rem, 4.5vw, 4.25rem);
+    align-items: center;
   }
 
-  /* order moves the copy across; the wide track stays with the exhibit. */
-  .exhibit[data-flip] .copy {
+  .commsExhibit .copy {
     order: 2;
   }
 
@@ -167,6 +191,16 @@
 
   .list {
     gap: 3rem;
+  }
+
+  /* The <picture> serves the -m plate here (640–720 native). It fills the
+     frame, capped at the low end of that range so it never upscales. */
+  .frame {
+    max-width: min(100%, 640px);
+  }
+
+  .plate img {
+    width: 100%;
   }
 
   .comms {

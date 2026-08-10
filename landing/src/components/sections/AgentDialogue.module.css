@@ -1,7 +1,7 @@
 .section {
   background: var(--paper);
   color: var(--text);
-  /* sm, not md: the composition is dense and the section must clear ~120svh. */
+  /* sm, not md: the composition is dense and the section must stay near ~120svh. */
   padding-block: var(--sec-pad-sm);
 }
 
@@ -38,22 +38,35 @@
   color: var(--text-2);
 }
 
-/* ---------------------------------------------------------------- layout */
+/* ------------------------------------------------------------- exchanges */
 
-.layout {
+/* Two self-contained exchanges side by side on wide grounds; each one parses
+   alone — the clarify beat belongs to the first question, the receipted total
+   to the second. */
+.exchanges {
   margin-top: clamp(2.5rem, 5vw, 4rem);
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  column-gap: clamp(3rem, 6vw, 5.5rem);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: clamp(3rem, 6vw, 5rem);
   align-items: start;
 }
 
-/* ---------------------------------------------------------------- thread */
-
 .thread {
+  min-width: 0;
   max-width: 40rem;
   display: grid;
   gap: 1.25rem;
+}
+
+.exchangeLabel {
+  margin: 0 0 0.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 
 .turn {
@@ -107,11 +120,12 @@
   box-shadow: 0 14px 30px -24px rgba(21, 22, 26, 0.4);
 }
 
-.tool {
+.clarifyLabel {
   margin: 0;
   font-family: var(--loupe-font-evidence);
   font-size: 0.6875rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--accent);
 }
 
@@ -224,13 +238,27 @@
   font-family: var(--loupe-font-evidence);
   font-size: 0.6875rem;
   letter-spacing: 0.04em;
+  white-space: nowrap;
   color: var(--text-3);
 }
 
 /* -------------------------------------------------------------- caveat */
 
+.caveatBeat {
+  margin-top: clamp(2rem, 4vw, 3rem);
+}
+
+/* Supplies the antecedent the agent's own sentence leans on. */
+.caveatLead {
+  margin: 0;
+  max-width: 56ch;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
 .caveat {
-  margin: 0.375rem 0 0;
+  margin: 0.875rem 0 0;
   padding: 0 0 0 1rem;
   border-left: 1px solid var(--rule-strong);
 }
@@ -254,7 +282,7 @@
 }
 
 .caption {
-  margin: 0.25rem 0 0;
+  margin: 1rem 0 0;
   font-family: var(--loupe-font-evidence);
   font-size: 0.6875rem;
   letter-spacing: 0.08em;
@@ -264,9 +292,10 @@
 
 /* ------------------------------------------------------------- product */
 
-/* Sits a beat below the head so the export reads as the thread's ending. */
+/* The artifact leaves the conversation column: full-width below the thread so
+   the table displays at native scale and stays legible. */
 .product {
-  padding-top: 2.75rem;
+  margin-top: clamp(2.75rem, 5vw, 4rem);
 }
 
 .productKicker {
@@ -280,7 +309,7 @@
 
 .productLine {
   margin: 0.625rem 0 0;
-  max-width: 44ch;
+  max-width: 62ch;
   font-size: 0.9375rem;
   line-height: 1.6;
   color: var(--text-2);
@@ -289,7 +318,7 @@
 .reportFrame {
   margin: 1.25rem 0 0;
   /* Native plate width — downscale freely, never upscale. */
-  max-width: min(100%, 1000px);
+  max-width: min(100%, 1280px);
   border: 1px solid var(--rule);
   border-radius: var(--loupe-radius-panel);
   background: var(--paper-2);
@@ -299,7 +328,7 @@
 
 /* Crop rather than scale if the plate outgrows the viewport (spec §2). */
 .reportCrop {
-  max-height: calc(78vh - 2.75rem);
+  max-height: 78vh;
   overflow: hidden;
 }
 
@@ -322,13 +351,9 @@
 /* ---------------------------------------------------------- responsive */
 
 @media (max-width: 1279px) {
-  .layout {
+  .exchanges {
     grid-template-columns: 1fr;
-    row-gap: 3rem;
-  }
-
-  .product {
-    padding-top: 0;
+    row-gap: 2.75rem;
   }
 }
 
@@ -337,7 +362,7 @@
     font-size: clamp(1.75rem, 7.5vw, 2.25rem);
   }
 
-  .layout {
+  .exchanges {
     margin-top: 2rem;
     row-gap: 2.5rem;
   }

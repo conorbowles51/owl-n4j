@@ -31,7 +31,9 @@ export function Reveal({ delay = 0, children }: RevealProps) {
           io.disconnect()
         }
       },
-      { rootMargin: "0px 0px -10% 0px" }
+      // Shallow trigger: content should never be visibly mid-fade once it is
+      // meaningfully inside the viewport — reviewers read late fades as broken.
+      { rootMargin: "0px 0px -6% 0px" }
     )
     io.observe(el)
     return () => io.disconnect()

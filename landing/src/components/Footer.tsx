@@ -10,23 +10,15 @@ export function Footer({ onContact }: FooterProps) {
       <div className="container footer-inner">
         <div className="footer-brand">
           <BrandLogo />
-          <p>
-            Built in Dublin by a team spanning investigative intelligence, secure infrastructure,
-            and frontline casework.
-          </p>
+          <p>Connected evidence. Cited answers. Defensible findings.</p>
         </div>
-        <div className="footer-links">
+        <nav className="footer-links" aria-label="Footer navigation">
           <div>
             <span>Platform</span>
-            <a href="#platform">The case model</a>
-            <a href="#workspace">Perspectives</a>
-            <a href="#findings">Findings</a>
-            <a href="#capability">Capability</a>
-          </div>
-          <div>
-            <span>Detail</span>
-            <a href="#audience">Who it’s for</a>
-            <a href="#deployment">Deployment</a>
+            <a href="#film">Product film</a>
+            <a href="#evidence">Evidence</a>
+            <a href="#views">Case views</a>
+            <a href="#ai">AI workspace</a>
           </div>
           <div>
             <span>Contact</span>
@@ -35,10 +27,10 @@ export function Footer({ onContact }: FooterProps) {
             </button>
             <a href="mailto:sales@loupe.ie">sales@loupe.ie</a>
           </div>
-        </div>
+        </nav>
         <div className="footer-bottom">
           <span>© {new Date().getFullYear()} Loupe</span>
-          <span>Dublin, Ireland · An investigation platform for fraud and criminal casework.</span>
+          <span>Dublin, Ireland · Investigation software for serious casework.</span>
         </div>
       </div>
     </footer>

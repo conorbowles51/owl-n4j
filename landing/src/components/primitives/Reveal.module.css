@@ -1,9 +1,9 @@
 .reveal {
   opacity: 0;
-  transform: translateY(14px);
+  transform: translateY(12px);
   transition:
-    opacity 450ms var(--loupe-ease),
-    transform 450ms var(--loupe-ease);
+    opacity 340ms var(--loupe-ease),
+    transform 340ms var(--loupe-ease);
 }
 
 .shown {

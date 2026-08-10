@@ -9,10 +9,12 @@ const formats = ["PDF", "MP3", "UFDR", "XLSX"] as const
 /** Chip centres on the connector's 0–100 grid: four equal rows. */
 const pathStarts = [12.5, 37.5, 62.5, 87.5]
 
-/** Folder in → model out, every figure from the demonstration case. */
+/** Folder in → model out, every figure from the demonstration case.
+    The middle figure is raw mentions before resolution — labelled as such so it
+    doesn't read as an echo of the 212 relationships beside it. */
 const stats = [
   { figure: String(evidenceFiles.length), label: "files" },
-  { figure: String(evidenceTotalEntities), label: "sourced facts" },
+  { figure: String(evidenceTotalEntities), label: "extracted mentions" },
   {
     figure: `${graphCounts.all.nodes} · ${graphCounts.all.edges}`,
     label: "entities · relationships",
@@ -82,6 +84,12 @@ export function Ingest() {
                 </Fragment>
               ))}
             </ul>
+
+            {/* Why 212 appears twice: mentions in, relationships out. */}
+            <p className={styles.note}>
+              {evidenceTotalEntities} mentions resolve to {graphCounts.all.nodes} entities
+              — the model works out which names are the same thing.
+            </p>
 
             <div className={styles.foot}>
               {/* Verbatim from spec §4.3; the figure is claims.ts `ingestWindowHours`. */}

@@ -10,9 +10,9 @@
   width: var(--page);
   margin-inline: auto;
   display: grid;
-  /* Exhibit gets the wider track; at 1024–1279 the plate downscales below its
-     698px native width rather than starving the copy column. */
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+  /* The exhibit track is sized by the plate itself so the crop always renders
+     at its full 698px native width on desktop; the copy column flexes. */
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: clamp(2.5rem, 5vw, 4.5rem);
   align-items: center;
 }
@@ -123,8 +123,10 @@
 
 /* ------------------------------------------------------------ responsive */
 
-@media (max-width: 1023px) {
-  /* Below 1024 the columns starve each other; stack copy over exhibit. */
+@media (max-width: 1279px) {
+  /* Below 1280 a side-by-side layout would starve the copy column (or shrink
+     the plate below native). Stack instead: the container stays wider than
+     698px down to ~800px, so the crop keeps its native width at >=1024. */
   .wrap {
     grid-template-columns: minmax(0, 1fr);
     gap: clamp(2rem, 6vw, 3rem);

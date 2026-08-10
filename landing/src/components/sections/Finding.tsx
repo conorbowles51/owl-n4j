@@ -49,6 +49,25 @@ const promise = conflicts[3]
 const sarRate = passThrough.sarFinding.match(/^\d+%/)![0]
 
 /**
+ * One receipt, wrap-safe. The filename and the ", p.N" / ", 00:35" reference
+ * are each held in a nowrap span; the <wbr> between them is the only break
+ * opportunity, switched on only below 480px where receipts are allowed to
+ * wrap at all (Finding.module.css). A wrapped receipt therefore breaks
+ * between file and reference — never inside the reference.
+ */
+function Receipt({ source }: { source: string }) {
+  const split = source.lastIndexOf(", ")
+  if (split < 0) return <span className="receipt receipt-on-dark">{source}</span>
+  return (
+    <span className="receipt receipt-on-dark">
+      <span className={styles.receiptPart}>{source.slice(0, split)}</span>
+      <wbr className={styles.receiptBreak} />
+      <span className={styles.receiptPart}>{source.slice(split)}</span>
+    </span>
+  )
+}
+
+/**
  * The climax. The five recited amounts as a ledger spine, each traced to the
  * call, the bank statement and the invoice schedule; then the two moments the
  * spine cannot carry alone. In-flow — the reader scrolls a ledger, not a
@@ -91,23 +110,21 @@ export function Finding() {
                     <p className={styles.fact}>
                       “<strong>{t.spoken}</strong>”
                     </p>
-                    <span className="receipt receipt-on-dark">
-                      {recording.file}, 00:35
-                    </span>
+                    <Receipt source={`${recording.file}, 00:35`} />
                   </li>
                   <li className={styles.row}>
                     <span className={styles.tag}>Banked</span>
                     <p className={styles.fact}>
                       Incoming payment to Nexus Trading · {t.banked.month} 2023
                     </p>
-                    <span className="receipt receipt-on-dark">{chartSource}</span>
+                    <Receipt source={chartSource} />
                   </li>
                   <li className={styles.row}>
                     <span className={styles.tag}>Invoiced</span>
                     <p className={styles.fact}>
                       “{t.invoiced.description}” · filed {t.invoiced.date}
                     </p>
-                    <span className="receipt receipt-on-dark">{INVOICE_SOURCE}</span>
+                    <Receipt source={INVOICE_SOURCE} />
                   </li>
                 </ul>
               </article>
@@ -131,9 +148,7 @@ export function Finding() {
                   <p className={styles.phraseText}>
                     <mark>“{yearEndSpoken.text}”</mark>
                   </p>
-                  <span className="receipt receipt-on-dark">
-                    {recording.file}, 00:21
-                  </span>
+                  <Receipt source={`${recording.file}, 00:21`} />
                 </div>
                 <p className={styles.phraseJoin} aria-hidden="true">
                   ↓
@@ -146,7 +161,7 @@ export function Finding() {
                   <p className={styles.phraseText}>
                     <mark>“{yearEndInvoice.description}”</mark>
                   </p>
-                  <span className="receipt receipt-on-dark">{INVOICE_SOURCE}</span>
+                  <Receipt source={INVOICE_SOURCE} />
                 </div>
               </article>
             </Reveal>
@@ -173,9 +188,7 @@ export function Finding() {
                   </div>
                 </div>
                 <p className={styles.echoQuote}>“{passThrough.sarFinding}”</p>
-                <span className="receipt receipt-on-dark">
-                  {passThrough.sarSource}
-                </span>
+                <Receipt source={passThrough.sarSource} />
               </article>
             </Reveal>
           </div>
@@ -193,23 +206,21 @@ export function Finding() {
                 <div className={styles.quoteBlock}>
                   <p className={styles.quoteMeta}>Marcus Chen · on the call, 00:23</p>
                   <p className={styles.quoteText}>“{releaseTurn.text}”</p>
-                  <span className="receipt receipt-on-dark">
-                    {recording.file}, 00:23
-                  </span>
+                  <Receipt source={`${recording.file}, 00:23`} />
                 </div>
                 <div className={styles.quoteBlock}>
                   <p className={styles.quoteMeta}>David Okonkwo · interviewed</p>
                   <p className={styles.quoteText}>“{promise.okonkwo.quote}”</p>
-                  <span className="receipt receipt-on-dark">
-                    {promise.okonkwo.file}, p.{promise.okonkwo.page}
-                  </span>
+                  <Receipt
+                    source={`${promise.okonkwo.file}, p.${promise.okonkwo.page}`}
+                  />
                 </div>
                 <div className={styles.quoteBlock}>
                   <p className={styles.quoteMeta}>Marcus Chen · interviewed</p>
                   <p className={styles.quoteText}>“{promise.chen.quote}”</p>
-                  <span className="receipt receipt-on-dark">
-                    {promise.chen.file}, p.{promise.chen.page}
-                  </span>
+                  <Receipt
+                    source={`${promise.chen.file}, p.${promise.chen.page}`}
+                  />
                 </div>
               </div>
             </article>

@@ -11,7 +11,7 @@
   width: var(--page);
   margin-inline: auto;
   display: grid;
-  gap: clamp(2.5rem, 4vw, 3.5rem);
+  gap: clamp(2rem, 3vw, 2.75rem);
 }
 
 /* ---------------------------------------------------------------- copy */
@@ -90,7 +90,8 @@
 
 .paths path {
   fill: none;
-  stroke: var(--rule-dark-strong);
+  /* A step above --rule-dark-strong: the connectors are the diagram, not furniture. */
+  stroke: color-mix(in srgb, var(--ink-on-dark) 30%, transparent);
   stroke-width: 1;
 }
 
@@ -127,7 +128,7 @@
 
 .modelLabel {
   font-family: var(--loupe-font-evidence);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-on-dark-2);
@@ -137,11 +138,13 @@
 
 .tally {
   border-top: 1px solid var(--rule-dark);
-  padding-top: clamp(1.75rem, 3vw, 2.5rem);
+  padding-top: clamp(1.5rem, 2.5vw, 2rem);
   display: grid;
-  gap: clamp(1.5rem, 2.5vw, 2rem);
+  gap: clamp(1.125rem, 2vw, 1.5rem);
 }
 
+/* The strip spans the container the way the chips→model flow does above it:
+   space-between, so the arrows read as the journey across the section. */
 .stats {
   margin: 0;
   padding: 0;
@@ -149,6 +152,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: clamp(1.25rem, 3vw, 2.75rem);
 }
 
@@ -181,12 +185,18 @@
   color: var(--ink-on-dark-3);
 }
 
+.note {
+  margin: 0;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--ink-on-dark-3);
+}
+
 .foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem 2rem;
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
 }
 
 .window {
@@ -196,11 +206,13 @@
   color: var(--ink-on-dark-2);
 }
 
+/* Page-wide caption convention: mono, uppercase, tracked, its own line. */
 .caption {
   margin: 0;
   font-family: var(--loupe-font-evidence);
   font-size: 0.6875rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--ink-on-dark-3);
 }
 
@@ -209,18 +221,19 @@
 @media (max-width: 1279px) {
   .top {
     grid-template-columns: 1fr;
-    row-gap: 2.5rem;
+    row-gap: 2rem;
   }
 
+  /* Single column: the flow takes the full container width — chips at the left
+     edge, model at the right — instead of dying mid-viewport. */
   .flow {
-    max-width: 34rem;
+    height: clamp(11rem, 22vw, 14rem);
   }
 }
 
 @media (max-width: 767px) {
   .flow {
     height: 11.5rem;
-    max-width: 100%;
   }
 
   .chip {
@@ -237,10 +250,5 @@
   .arrow {
     transform: rotate(90deg);
     margin-left: 0.375rem;
-  }
-
-  .foot {
-    flex-direction: column;
-    align-items: flex-start;
   }
 }

@@ -35,18 +35,33 @@
   font-family: var(--loupe-font-evidence);
   font-size: 0.75rem;
   color: var(--text-2);
+  /* A name is one token; the device block wraps instead at narrow widths. */
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------- thread */
 
+/* No max-height: the tail prop bounds the thread, so it always ends on a
+   whole bubble instead of being sliced by an overflow crop. */
 .thread {
   margin: 0;
-  padding: 1rem;
+  padding: 0.625rem 1rem 1rem;
   list-style: none;
   display: grid;
   gap: 0.4375rem;
-  max-height: 460px;
-  overflow: hidden;
+}
+
+/* Stand-in for the entries above the window — deliberately faded. */
+.earlier {
+  margin: 0;
+  padding: 0.875rem 1rem 0;
+  text-align: center;
+  font-family: var(--loupe-font-evidence);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  opacity: 0.6;
 }
 
 .day {

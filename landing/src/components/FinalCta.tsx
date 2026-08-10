@@ -12,8 +12,8 @@ export function FinalCta({ onContact }: FinalCtaProps) {
           <p className="eyebrow">Bring a matter</p>
           <h2>See it work a real case.</h2>
           <p>
-            Load an extraction and a disclosure bundle, then ask a question that spans both. It
-            takes about ten minutes.
+            We load an extraction and a disclosure bundle ahead of time; you ask a question that
+            spans both. The walkthrough takes about ten minutes.
           </p>
           <button className="button button-primary button-large" type="button" onClick={onContact}>
             Request a walkthrough

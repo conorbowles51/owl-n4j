@@ -59,7 +59,7 @@
   font-size: 0.6875rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ink-on-dark-3);
+  color: var(--ink-on-dark-2);
 }
 
 .band {
@@ -402,9 +402,23 @@
 
 /* Below ~480px the longest receipt (the call file plus timestamp) outgrows
    the column; let it wrap rather than force horizontal scroll. The shared
-   .receipt look is otherwise untouched. */
+   .receipt look is otherwise untouched. Each half of a receipt — filename,
+   ", p.N" reference — stays whole (Receipt in Finding.tsx); the <wbr>
+   between them is the only break point, live only where wrapping is. */
+.receiptPart {
+  white-space: nowrap;
+}
+
+.receiptBreak {
+  display: none;
+}
+
 @media (max-width: 479px) {
   .section :global(.receipt) {
     white-space: normal;
+  }
+
+  .receiptBreak {
+    display: inline;
   }
 }
