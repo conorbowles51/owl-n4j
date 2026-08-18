@@ -29,6 +29,8 @@ _OVERSIZED_REQUEST_MARKERS = (
     "request too large",
     "too large",
 )
+_DEEPSEEK_STRUCTURED_MAX_ATTEMPTS = 3
+_DEEPSEEK_MAX_OUTPUT_TOKENS = 384_000
 
 
 @dataclass(frozen=True)
@@ -173,6 +175,120 @@ def _plain_text_content(content: Any) -> str:
             if isinstance(item, dict) and item.get("type") == "text"
         )
     return str(content or "")
+
+
+def _json_shape_example(schema: dict[str, Any]) -> Any:
+    """Build a minimal example that communicates shape, not response content."""
+    if "anyOf" in schema:
+        options = schema.get("anyOf") or []
+        preferred = next(
+            (option for option in options if option.get("type") != "null"),
+            options[0] if options else {},
+        )
+        return _json_shape_example(preferred)
+
+    schema_type = schema.get("type")
+    if schema_type == "object":
+        properties = schema.get("properties") or {}
+        return {
+            key: _json_shape_example(properties.get(key) or {})
+            for key in schema.get("required") or properties.keys()
+        }
+    if schema_type == "array":
+        return []
+    if schema_type == "string":
+        values = schema.get("enum") or []
+        return values[0] if values else ""
+    if schema_type in {"integer", "number"}:
+        return 0
+    if schema_type == "boolean":
+        return False
+    return None
+
+
+def _json_schema_error(value: Any, schema: dict[str, Any], path: str = "$") -> str | None:
+    """Validate the JSON-schema features used by ingestion without a new dependency."""
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list):
+        if any(_json_schema_error(value, option, path) is None for option in any_of):
+            return None
+        return f"{path} does not match any allowed schema"
+
+    schema_type = schema.get("type")
+    if schema_type == "null":
+        return None if value is None else f"{path} must be null"
+    if schema_type == "object":
+        if not isinstance(value, dict):
+            return f"{path} must be an object"
+        for key in schema.get("required") or []:
+            if key not in value:
+                return f"{path} is missing required property {key!r}"
+        properties = schema.get("properties") or {}
+        for key, item in value.items():
+            item_schema = properties.get(key)
+            if item_schema is not None:
+                error = _json_schema_error(item, item_schema, f"{path}.{key}")
+                if error:
+                    return error
+            elif schema.get("additionalProperties") is False:
+                return f"{path} contains unexpected property {key!r}"
+    elif schema_type == "array":
+        if not isinstance(value, list):
+            return f"{path} must be an array"
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(value):
+                error = _json_schema_error(item, item_schema, f"{path}[{index}]")
+                if error:
+                    return error
+        max_items = schema.get("maxItems")
+        if isinstance(max_items, int) and len(value) > max_items:
+            return f"{path} must contain at most {max_items} items"
+    elif schema_type == "string" and not isinstance(value, str):
+        return f"{path} must be a string"
+    elif schema_type == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
+        return f"{path} must be an integer"
+    elif schema_type == "number" and (
+        not isinstance(value, (int, float)) or isinstance(value, bool)
+    ):
+        return f"{path} must be a number"
+    elif schema_type == "boolean" and not isinstance(value, bool):
+        return f"{path} must be a boolean"
+
+    allowed = schema.get("enum")
+    if isinstance(allowed, list) and value not in allowed:
+        return f"{path} must be one of {allowed!r}"
+    return None
+
+
+def _normalize_deepseek_structured_content(
+    content: str,
+    schema: dict[str, Any],
+) -> str:
+    parsed = json.loads(content)
+
+    # DeepSeek sometimes follows the visible array task instead of the required
+    # single-property object wrapper. This transformation is unambiguous for
+    # schemas such as {"entities": [...]} and {"decisions": [...]}.
+    properties = schema.get("properties") or {}
+    if isinstance(parsed, list) and schema.get("type") == "object" and len(properties) == 1:
+        key, property_schema = next(iter(properties.items()))
+        if property_schema.get("type") == "array":
+            parsed = {key: parsed}
+
+    error = _json_schema_error(parsed, schema)
+    if error:
+        raise ValueError(error)
+    return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+
+def _add_token_usage(total: dict[str, Any], usage: Any) -> None:
+    if not isinstance(usage, dict):
+        return
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        value = usage.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            total[key] = total.get(key, 0) + value
 
 
 async def _openai_chat_completion(
@@ -334,40 +450,94 @@ async def _deepseek_chat_completion(
     if not api_key:
         raise ValueError("DeepSeek is not connected. Add its API key in Settings → AI settings.")
     normalized_messages = [dict(message) for message in messages]
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": normalized_messages,
-        "thinking": {"type": "disabled"},
-    }
-    if temperature is not None:
-        payload["temperature"] = temperature
-    if max_output_tokens is not None:
-        payload["max_tokens"] = max_output_tokens
-    if _json_schema_from_response_format(response_format):
-        payload["response_format"] = {"type": "json_object"}
-        payload["messages"] = [
-            {
-                "role": "system",
-                "content": "Return only valid JSON matching the requested structure.",
-            },
-            *normalized_messages,
-        ]
+    schema = _json_schema_from_response_format(response_format)
+    attempts = _DEEPSEEK_STRUCTURED_MAX_ATTEMPTS if schema else 1
+    total_usage: dict[str, Any] = {}
+    last_error = "DeepSeek returned an invalid response"
+    retry_max_output_tokens: int | None = None
+
     async with httpx.AsyncClient(timeout=_OPENAI_TIMEOUT) as client:
-        response = await client.post(
-            "https://api.deepseek.com/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "content-type": "application/json",
-            },
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
-    choices = data.get("choices") or []
-    content = str(((choices[0].get("message") or {}).get("content") or "")).strip() if choices else ""
-    if not content:
-        raise ValueError("DeepSeek returned an empty response")
-    return content, data.get("usage") or {}
+        for attempt in range(attempts):
+            payload: dict[str, Any] = {
+                "model": model,
+                "messages": normalized_messages,
+                "thinking": {"type": "disabled"},
+            }
+            if temperature is not None:
+                payload["temperature"] = temperature
+            # Match the OpenAI path: only impose an output limit when the caller
+            # explicitly requested one. If DeepSeek later reports truncation,
+            # retry at the model's full supported output capacity.
+            if max_output_tokens is not None:
+                payload["max_tokens"] = max_output_tokens
+            elif retry_max_output_tokens is not None:
+                payload["max_tokens"] = retry_max_output_tokens
+            if schema:
+                retry_note = (
+                    f"\nThe previous attempt was invalid: {last_error}. Correct it on this attempt."
+                    if attempt
+                    else ""
+                )
+                payload["response_format"] = {"type": "json_object"}
+                payload["messages"] = [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Return only compact, valid JSON. The JSON must match the schema below exactly; "
+                            "do not use a bare top-level array, markdown, commentary, or extra properties. "
+                            "The example communicates shape only; populate it from the user's source data.\n"
+                            f"JSON SCHEMA:\n{json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}\n"
+                            "JSON SHAPE EXAMPLE:\n"
+                            f"{json.dumps(_json_shape_example(schema), ensure_ascii=False, separators=(',', ':'))}"
+                            f"{retry_note}"
+                        ),
+                    },
+                    *normalized_messages,
+                ]
+
+            response = await client.post(
+                "https://api.deepseek.com/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "content-type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+            _add_token_usage(total_usage, data.get("usage"))
+            choices = data.get("choices") or []
+            choice = choices[0] if choices else {}
+            finish_reason = choice.get("finish_reason")
+            content = str(((choice.get("message") or {}).get("content") or "")).strip()
+
+            if finish_reason == "length":
+                last_error = "output was truncated (finish_reason=length)"
+                if max_output_tokens is None:
+                    retry_max_output_tokens = _DEEPSEEK_MAX_OUTPUT_TOKENS
+            elif finish_reason in {"content_filter", "insufficient_system_resource"}:
+                last_error = f"generation stopped with finish_reason={finish_reason}"
+            elif not content:
+                last_error = "response content was empty"
+            elif schema:
+                try:
+                    return _normalize_deepseek_structured_content(content, schema), total_usage
+                except (json.JSONDecodeError, ValueError) as exc:
+                    last_error = str(exc)
+            else:
+                return content, total_usage
+
+            if attempt + 1 < attempts:
+                logger.warning(
+                    "DeepSeek structured response invalid; retrying (%d/%d): %s",
+                    attempt + 1,
+                    attempts,
+                    last_error,
+                )
+
+    raise ValueError(
+        f"DeepSeek failed to return valid structured JSON after {attempts} attempts: {last_error}"
+    )
 
 
 def _embedding_batch_limits() -> tuple[int, int]:

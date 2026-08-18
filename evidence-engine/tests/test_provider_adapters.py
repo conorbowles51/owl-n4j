@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -40,6 +41,27 @@ def _fake_async_client(
     return FakeAsyncClient
 
 
+def _sequence_async_client(
+    response_payloads: list[dict[str, Any]],
+    captured: list[dict[str, Any]],
+) -> type:
+    class FakeAsyncClient:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            self._responses = iter(response_payloads)
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *_args: Any) -> None:
+            return None
+
+        async def post(self, url: str, **kwargs: Any) -> _FakeResponse:
+            captured.append({"url": url, **kwargs})
+            return _FakeResponse(next(self._responses))
+
+    return FakeAsyncClient
+
+
 SCHEMA_FORMAT = {
     "type": "json_schema",
     "json_schema": {
@@ -49,6 +71,30 @@ SCHEMA_FORMAT = {
             "type": "object",
             "properties": {"ok": {"type": "boolean"}},
             "required": ["ok"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+ARRAY_SCHEMA_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "items",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["items"],
             "additionalProperties": False,
         },
     },
@@ -205,3 +251,130 @@ async def test_deepseek_adapter_uses_json_output_and_normalizes_usage(monkeypatc
     assert payload["thinking"] == {"type": "disabled"}
     assert payload["max_tokens"] == 1234
     assert "valid JSON" in payload["messages"][0]["content"]
+    assert "JSON SCHEMA" in payload["messages"][0]["content"]
+    assert '"required":["ok"]' in payload["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_adapter_does_not_invent_an_output_token_limit(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(openai_client.settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        openai_client.httpx,
+        "AsyncClient",
+        _fake_async_client(
+            {"choices": [{"finish_reason": "stop", "message": {"content": '{"ok":true}'}}]},
+            captured,
+        ),
+    )
+
+    await openai_client._deepseek_chat_completion(
+        [{"role": "user", "content": "Check."}],
+        model="deepseek-v4-flash",
+        response_format=SCHEMA_FORMAT,
+        temperature=None,
+    )
+
+    assert "max_tokens" not in captured["json"]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_adapter_wraps_an_unambiguous_top_level_array(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(openai_client.settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        openai_client.httpx,
+        "AsyncClient",
+        _fake_async_client(
+            {
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": '[{"name":"alpha"}]'}}
+                ]
+            },
+            captured,
+        ),
+    )
+
+    content, _usage = await openai_client._deepseek_chat_completion(
+        [{"role": "user", "content": "Extract."}],
+        model="deepseek-v4-flash",
+        response_format=ARRAY_SCHEMA_FORMAT,
+        temperature=None,
+    )
+
+    assert json.loads(content) == {"items": [{"name": "alpha"}]}
+
+
+@pytest.mark.asyncio
+async def test_deepseek_adapter_retries_truncated_and_malformed_json(monkeypatch) -> None:
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(openai_client.settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        openai_client.httpx,
+        "AsyncClient",
+        _sequence_async_client(
+            [
+                {
+                    "choices": [
+                        {"finish_reason": "length", "message": {"content": '{"ok":'}}
+                    ],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+                },
+                {
+                    "choices": [
+                        {"finish_reason": "stop", "message": {"content": '{"ok":'}}
+                    ],
+                    "usage": {"prompt_tokens": 11, "completion_tokens": 21, "total_tokens": 32},
+                },
+                {
+                    "choices": [
+                        {"finish_reason": "stop", "message": {"content": '{"ok":true}'}}
+                    ],
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 2, "total_tokens": 14},
+                },
+            ],
+            captured,
+        ),
+    )
+
+    content, usage = await openai_client._deepseek_chat_completion(
+        [{"role": "user", "content": "Check."}],
+        model="deepseek-v4-flash",
+        response_format=SCHEMA_FORMAT,
+        temperature=None,
+    )
+
+    assert json.loads(content) == {"ok": True}
+    assert usage == {"prompt_tokens": 33, "completion_tokens": 43, "total_tokens": 76}
+    assert len(captured) == 3
+    assert "max_tokens" not in captured[0]["json"]
+    assert captured[1]["json"]["max_tokens"] == 384_000
+    assert captured[2]["json"]["max_tokens"] == 384_000
+    assert "previous attempt was invalid" in captured[1]["json"]["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_adapter_rejects_schema_wrong_json_after_retries(monkeypatch) -> None:
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(openai_client.settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        openai_client.httpx,
+        "AsyncClient",
+        _sequence_async_client(
+            [
+                {"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]}
+                for _ in range(3)
+            ],
+            captured,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="missing required property 'ok'"):
+        await openai_client._deepseek_chat_completion(
+            [{"role": "user", "content": "Check."}],
+            model="deepseek-v4-flash",
+            response_format=SCHEMA_FORMAT,
+            temperature=None,
+        )
+
+    assert len(captured) == 3
