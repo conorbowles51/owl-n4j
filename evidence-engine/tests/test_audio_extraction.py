@@ -16,6 +16,19 @@ class InputTooLargeError(Exception):
     code = "input_too_large"
 
 
+class AudioDurationTooLongError(Exception):
+    code = "invalid_value"
+    body = {
+        "message": (
+            "audio duration 1511.141875 seconds is longer than 1400 seconds "
+            "which is the maximum for this model"
+        ),
+        "type": "invalid_request_error",
+        "param": None,
+        "code": "invalid_value",
+    }
+
+
 @pytest.fixture(autouse=True)
 def audio_transcription_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
@@ -161,45 +174,75 @@ async def test_audio_extraction_forwards_live_transcription_progress(
 
 
 @pytest.mark.asyncio
-async def test_diarization_keeps_long_recording_in_one_request_when_under_size_limit(
+async def test_diarization_splits_long_recording_by_duration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     audio_file = tmp_path / "long-interview.mp3"
     audio_file.write_bytes(b"small audio")
-    monkeypatch.setattr(extract_text_module, "_probe_media_duration_seconds", lambda _: 1800.0)
     monkeypatch.setattr(
         extract_text_module.settings,
         "openai_transcription_model",
         "gpt-4o-transcribe-diarize",
     )
+    split_calls: list[int] = []
+    transcription_calls: list[str] = []
 
-    def fail_split(*_args: object, **_kwargs: object):
-        pytest.fail("server-side diarization chunking should keep this file intact")
+    def fake_probe(file_path: str) -> float:
+        return 1800.0 if Path(file_path) == audio_file else 240.0
 
-    async def fake_transcribe(*_args: object, **_kwargs: object) -> AudioTranscriptionResult:
+    def fake_split(_file_path: str, output_dir: str, segment_seconds: int) -> list[Path]:
+        split_calls.append(segment_seconds)
+        segments = [
+            Path(output_dir) / "segment_000.mp3",
+            Path(output_dir) / "segment_001.mp3",
+        ]
+        for segment in segments:
+            segment.write_bytes(b"chunk")
+        return segments
+
+    async def fake_transcribe(file_path: str, **kwargs: object) -> AudioTranscriptionResult:
+        transcription_calls.append(Path(file_path).name)
+        offset = float(kwargs["time_offset_seconds"])
         return AudioTranscriptionResult(
-            text="Long interview",
+            text=f"Chunk at {offset}",
             segments=[
                 {
-                    "id": "seg_1",
-                    "start": 0.0,
-                    "end": 2.0,
+                    "id": f"seg_{offset}",
+                    "start": offset,
+                    "end": offset + 2.0,
                     "speaker": "A",
-                    "text": "Long interview",
+                    "text": f"Chunk at {offset}",
                 }
             ],
-            duration_seconds=1800.0,
+            duration_seconds=240.0,
             model="gpt-4o-transcribe-diarize",
         )
 
-    monkeypatch.setattr(extract_text_module, "_split_audio_segments", fail_split)
+    monkeypatch.setattr(extract_text_module, "_probe_media_duration_seconds", fake_probe)
+    monkeypatch.setattr(extract_text_module, "_split_audio_segments", fake_split)
+    monkeypatch.setattr(
+        extract_text_module,
+        "_build_speaker_reference_data_urls",
+        lambda *_args, **_kwargs: {},
+    )
     monkeypatch.setattr(extract_text_module, "transcribe_audio", fake_transcribe)
 
     doc = await extract_text_module._extract_audio(str(audio_file))
 
-    assert doc.metadata["segment_count"] == 1
-    assert doc.metadata["transcription_segments"][0]["speaker"] == "A"
+    assert split_calls == [240]
+    assert transcription_calls == ["segment_000.mp3", "segment_001.mp3"]
+    assert doc.metadata["segment_count"] == 2
+    assert [segment["start"] for segment in doc.metadata["transcription_segments"]] == [
+        0.0,
+        240.0,
+    ]
+
+
+def test_openai_audio_duration_limit_error_is_recognized() -> None:
+    error = AudioDurationTooLongError("Error code: 400")
+
+    assert extract_text_module._is_input_too_large_error(error)
 
 
 @pytest.mark.asyncio
@@ -358,7 +401,7 @@ async def test_diarization_timeout_before_first_event_falls_back_to_local_chunks
     audio_file = tmp_path / "slow-call.mp3"
     audio_file.write_bytes(b"audio")
     calls: list[str] = []
-    monkeypatch.setattr(extract_text_module, "_probe_media_duration_seconds", lambda _: 480.0)
+    monkeypatch.setattr(extract_text_module, "_probe_media_duration_seconds", lambda _: 120.0)
     monkeypatch.setattr(
         extract_text_module.settings,
         "openai_transcription_model",

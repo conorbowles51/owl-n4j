@@ -439,7 +439,15 @@ def _is_input_too_large_error(exc: Exception) -> bool:
         candidates.append(str(body))
     candidates.append(str(exc))
     text = " ".join(candidates).lower()
-    return "input_too_large" in text or "too large for this model" in text
+    return (
+        "input_too_large" in text
+        or "too large for this model" in text
+        or (
+            "audio duration" in text
+            and "longer than" in text
+            and "maximum for this model" in text
+        )
+    )
 
 
 def _build_transcription_prompt(previous_transcript: str | None) -> str | None:
@@ -654,17 +662,11 @@ async def _extract_audio(
     if duration_seconds is not None:
         metadata["duration_seconds"] = duration_seconds
 
-    # The diarization model can apply server-side VAD chunking while retaining
-    # speaker identity across the whole request. Keep a recording intact when
-    # it fits the upload limit; older transcription models still use the local
-    # duration cap.
-    supports_server_chunking = (
-        settings.openai_transcription_model == "gpt-4o-transcribe-diarize"
-    )
+    # Server-side VAD chooses conversational boundaries inside a transcription
+    # request, but the request itself is still subject to the model's duration
+    # limit. Apply the local duration cap to every transcription model.
     should_segment = file_size > MAX_WHISPER_SIZE or (
-        not supports_server_chunking
-        and duration_seconds is not None
-        and duration_seconds > max_single_seconds
+        duration_seconds is not None and duration_seconds > max_single_seconds
     )
     if not should_segment:
         try:
