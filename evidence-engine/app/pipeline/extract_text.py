@@ -48,6 +48,9 @@ PLAIN_TEXT_EXTENSIONS = {
 MAX_WHISPER_SIZE = 25 * 1024 * 1024  # 25 MB
 MIN_AUDIO_TRANSCRIPTION_SEGMENT_SECONDS = 60
 TRANSCRIPTION_PROMPT_CONTEXT_CHARS = 1200
+MIN_SPEAKER_REFERENCE_SECONDS = 2.0
+MAX_SPEAKER_REFERENCE_SECONDS = 9.5
+SPEAKER_REFERENCE_API_MAX_SECONDS = 10.0
 
 
 @dataclass
@@ -450,6 +453,22 @@ def _is_input_too_large_error(exc: Exception) -> bool:
     )
 
 
+def _is_invalid_speaker_reference_error(exc: Exception) -> bool:
+    candidates: list[str] = []
+    for attr in ("code", "message", "param"):
+        value = getattr(exc, attr, None)
+        if value:
+            candidates.append(str(value))
+    body = getattr(exc, "body", None)
+    if body:
+        candidates.append(str(body))
+    candidates.append(str(exc))
+    text = " ".join(candidates).lower()
+    return "known_speaker_references" in text and (
+        "invalid_value" in text or "must be between" in text
+    )
+
+
 def _build_transcription_prompt(previous_transcript: str | None) -> str | None:
     if not previous_transcript:
         return None
@@ -480,7 +499,7 @@ def _build_speaker_reference_data_urls(
     time_offset_seconds: float,
     existing_speakers: set[str],
 ) -> dict[str, str]:
-    """Extract one 2-10 second voice sample for each newly observed speaker."""
+    """Extract a validated voice sample for each newly observed speaker."""
     best_segments: dict[str, tuple[float, float]] = {}
     for segment in transcript_segments:
         speaker = str(segment.get("speaker") or "").strip()
@@ -492,7 +511,7 @@ def _build_speaker_reference_data_urls(
         except (TypeError, ValueError):
             continue
         duration = end - start
-        if duration < 2.0:
+        if duration < MIN_SPEAKER_REFERENCE_SECONDS:
             continue
         previous = best_segments.get(speaker)
         if previous is None or duration > previous[1]:
@@ -501,40 +520,53 @@ def _build_speaker_reference_data_urls(
     references: dict[str, str] = {}
     remaining_slots = max(0, 4 - len(existing_speakers))
     for speaker, (start, duration) in list(best_segments.items())[:remaining_slots]:
-        result = subprocess.run(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-ss",
-                str(round(start, 3)),
-                "-t",
-                str(round(min(10.0, duration), 3)),
-                "-i",
-                audio_path,
-                "-map",
-                "0:a:0",
-                "-vn",
-                "-ac",
-                "1",
-                "-ar",
-                "16000",
-                "-c:a",
-                "libmp3lame",
-                "-b:a",
-                "64k",
-                "-f",
-                "mp3",
-                "pipe:1",
-            ],
-            capture_output=True,
-            timeout=60,
-        )
-        if result.returncode != 0 or not result.stdout:
-            logger.warning("Unable to build voice reference for speaker %s", speaker)
-            continue
-        encoded = base64.b64encode(result.stdout).decode("ascii")
+        with tempfile.TemporaryDirectory() as reference_dir:
+            reference_path = Path(reference_dir) / "reference.mp3"
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-ss",
+                    str(round(start, 3)),
+                    "-t",
+                    str(round(min(MAX_SPEAKER_REFERENCE_SECONDS, duration), 3)),
+                    "-i",
+                    audio_path,
+                    "-map",
+                    "0:a:0",
+                    "-vn",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "16000",
+                    "-c:a",
+                    "libmp3lame",
+                    "-b:a",
+                    "64k",
+                    str(reference_path),
+                ],
+                capture_output=True,
+                timeout=60,
+            )
+            if result.returncode != 0 or not reference_path.is_file():
+                logger.warning("Unable to build voice reference for speaker %s", speaker)
+                continue
+            encoded_duration = _probe_media_duration_seconds(str(reference_path))
+            if encoded_duration is None or not (
+                MIN_SPEAKER_REFERENCE_SECONDS
+                <= encoded_duration
+                <= SPEAKER_REFERENCE_API_MAX_SECONDS
+            ):
+                logger.warning(
+                    "Discarding voice reference for speaker %s with invalid duration %s",
+                    speaker,
+                    encoded_duration,
+                )
+                continue
+            encoded = base64.b64encode(reference_path.read_bytes()).decode("ascii")
         references[speaker] = f"data:audio/mpeg;base64,{encoded}"
     return references
 
@@ -585,7 +617,43 @@ async def _transcribe_audio_segments(
             )
             stats["segment_count"] = stats.get("segment_count", 0) + 1
         except Exception as exc:
-            if (
+            reference_retry_succeeded = False
+            if stable_speaker_references and _is_invalid_speaker_reference_error(exc):
+                logger.warning(
+                    "Speaker references were rejected on audio segment %s/%s; "
+                    "retrying without references",
+                    index,
+                    total_segments,
+                )
+                stable_speaker_references.clear()
+                stats["speaker_reference_count"] = 0
+                stats["speaker_references_disabled"] = 1
+                speaker_id_prefix = (
+                    f"chunk_{round(current_offset * 1000)}:"
+                    if current_offset > 0
+                    else ""
+                )
+                try:
+                    result = await transcribe_audio(
+                        str(segment),
+                        prompt=prompt,
+                        time_offset_seconds=current_offset,
+                        segment_id_prefix=f"chunk_{round(current_offset * 1000)}_",
+                        speaker_id_prefix=speaker_id_prefix,
+                        duration_seconds=segment_duration,
+                        progress_total_seconds=progress_total_seconds,
+                        progress_callback=progress_callback,
+                        known_speaker_references=None,
+                    )
+                except Exception as reference_retry_exc:
+                    exc = reference_retry_exc
+                else:
+                    stats["segment_count"] = stats.get("segment_count", 0) + 1
+                    reference_retry_succeeded = True
+
+            if reference_retry_succeeded:
+                pass
+            elif (
                 _is_input_too_large_error(exc)
                 and segment_seconds > MIN_AUDIO_TRANSCRIPTION_SEGMENT_SECONDS
             ):
@@ -625,16 +693,20 @@ async def _transcribe_audio_segments(
                         ) from retry_exc
                 current_offset += segment_duration
                 continue
-
-            raise AudioTranscriptionError(
-                f"Audio transcription failed on segment {index}/{total_segments}: {exc}"
-            ) from exc
+            else:
+                raise AudioTranscriptionError(
+                    f"Audio transcription failed on segment {index}/{total_segments}: {exc}"
+                ) from exc
 
         transcript, timed_segments, _ = _normalize_transcription_result(result)
         if transcript:
             transcripts.append(transcript)
         transcript_segments.extend(timed_segments)
-        if diarization_enabled and isinstance(result, AudioTranscriptionResult):
+        if (
+            diarization_enabled
+            and isinstance(result, AudioTranscriptionResult)
+            and not stats.get("speaker_references_disabled")
+        ):
             stable_speaker_references.update(
                 _build_speaker_reference_data_urls(
                     str(segment),

@@ -245,6 +245,73 @@ def test_openai_audio_duration_limit_error_is_recognized() -> None:
     assert extract_text_module._is_input_too_large_error(error)
 
 
+def test_speaker_reference_leaves_headroom_for_mp3_padding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audio_file = tmp_path / "interview.mp3"
+    audio_file.write_bytes(b"audio")
+    captured_args: list[str] = []
+
+    def fake_ffmpeg(args, **_kwargs):
+        captured_args.extend(args)
+        Path(args[-1]).write_bytes(b"validated-reference")
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(extract_text_module.subprocess, "run", fake_ffmpeg)
+    monkeypatch.setattr(
+        extract_text_module,
+        "_probe_media_duration_seconds",
+        lambda _path: 9.576,
+    )
+
+    references = extract_text_module._build_speaker_reference_data_urls(
+        str(audio_file),
+        [
+            {
+                "speaker": "A",
+                "start": 0.0,
+                "end": 20.0,
+                "text": "A long speaker turn",
+            }
+        ],
+        time_offset_seconds=0.0,
+        existing_speakers=set(),
+    )
+
+    duration_arg = captured_args[captured_args.index("-t") + 1]
+    assert duration_arg == "9.5"
+    assert references["A"].startswith("data:audio/mpeg;base64,")
+
+
+def test_speaker_reference_discards_invalid_encoded_duration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audio_file = tmp_path / "interview.mp3"
+    audio_file.write_bytes(b"audio")
+
+    def fake_ffmpeg(args, **_kwargs):
+        Path(args[-1]).write_bytes(b"overlong-reference")
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(extract_text_module.subprocess, "run", fake_ffmpeg)
+    monkeypatch.setattr(
+        extract_text_module,
+        "_probe_media_duration_seconds",
+        lambda _path: 10.08,
+    )
+
+    references = extract_text_module._build_speaker_reference_data_urls(
+        str(audio_file),
+        [{"speaker": "A", "start": 0.0, "end": 20.0, "text": "Speaker turn"}],
+        time_offset_seconds=0.0,
+        existing_speakers=set(),
+    )
+
+    assert references == {}
+
+
 @pytest.mark.asyncio
 async def test_long_audio_is_split_by_duration_and_context_is_prompted(
     tmp_path: Path,
@@ -344,7 +411,11 @@ async def test_chunked_diarization_reuses_voice_references_for_stable_speakers(
     )
 
     def fake_probe(file_path: str) -> float:
-        return 480.0 if Path(file_path) == audio_file else 240.0
+        if Path(file_path) == audio_file:
+            return 480.0
+        if Path(file_path).name == "reference.mp3":
+            return 3.0
+        return 240.0
 
     def fake_split(_file_path: str, output_dir: str, _seconds: int) -> list[Path]:
         segments = [
@@ -357,7 +428,8 @@ async def test_chunked_diarization_reuses_voice_references_for_stable_speakers(
 
     def fake_ffmpeg(args, **_kwargs):
         assert args[0] == "ffmpeg"
-        return SimpleNamespace(returncode=0, stdout=b"voice-reference", stderr=b"")
+        Path(args[-1]).write_bytes(b"voice-reference")
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
 
     async def fake_transcribe(file_path: str, **kwargs: object) -> AudioTranscriptionResult:
         captured_calls.append({"path": file_path, **kwargs})
@@ -391,6 +463,87 @@ async def test_chunked_diarization_reuses_voice_references_for_stable_speakers(
     assert {segment["speaker"] for segment in doc.metadata["transcription_segments"]} == {
         "A"
     }
+
+
+@pytest.mark.asyncio
+async def test_rejected_speaker_reference_retries_chunk_without_references(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audio_file = tmp_path / "interview.mp3"
+    audio_file.write_bytes(b"audio")
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        extract_text_module.settings,
+        "openai_transcription_model",
+        "gpt-4o-transcribe-diarize",
+    )
+
+    def fake_probe(file_path: str) -> float:
+        return 480.0 if Path(file_path) == audio_file else 240.0
+
+    def fake_split(_file_path: str, output_dir: str, _seconds: int) -> list[Path]:
+        segments = [
+            Path(output_dir) / "segment_000.mp3",
+            Path(output_dir) / "segment_001.mp3",
+        ]
+        for segment in segments:
+            segment.write_bytes(b"chunk")
+        return segments
+
+    async def fake_transcribe(file_path: str, **kwargs: object) -> AudioTranscriptionResult:
+        call = {"path": Path(file_path).name, **kwargs}
+        if isinstance(call["known_speaker_references"], dict):
+            call["known_speaker_references"] = dict(call["known_speaker_references"])
+        calls.append(call)
+        if call["path"] == "segment_001.mp3" and call["known_speaker_references"]:
+            raise openai_client_module.AudioTranscriptionRequestError(
+                "Error code: 400 - {'error': {'message': 'Known speaker references "
+                "has duration {duration_s} seconds, but must be between 1.2 and "
+                "10.0 seconds', 'type': 'invalid_request_error', "
+                "'param': 'known_speaker_references', 'code': 'invalid_value'}}",
+                retryable=False,
+                stream_started=False,
+            )
+        offset = float(kwargs["time_offset_seconds"])
+        return AudioTranscriptionResult(
+            text=f"Chunk at {offset}",
+            segments=[
+                {
+                    "id": f"segment-{offset}",
+                    "start": offset,
+                    "end": offset + 3.0,
+                    "speaker": f"{kwargs['speaker_id_prefix']}A",
+                    "text": f"Chunk at {offset}",
+                }
+            ],
+            duration_seconds=240.0,
+            model="gpt-4o-transcribe-diarize",
+        )
+
+    monkeypatch.setattr(extract_text_module, "_probe_media_duration_seconds", fake_probe)
+    monkeypatch.setattr(extract_text_module, "_split_audio_segments", fake_split)
+    monkeypatch.setattr(
+        extract_text_module,
+        "_build_speaker_reference_data_urls",
+        lambda *_args, **_kwargs: {"A": "data:audio/mpeg;base64,cmVm"},
+    )
+    monkeypatch.setattr(extract_text_module, "transcribe_audio", fake_transcribe)
+
+    doc = await extract_text_module._extract_audio(str(audio_file))
+
+    assert [call["path"] for call in calls] == [
+        "segment_000.mp3",
+        "segment_001.mp3",
+        "segment_001.mp3",
+    ]
+    assert calls[1]["known_speaker_references"] == {
+        "A": "data:audio/mpeg;base64,cmVm"
+    }
+    assert calls[2]["known_speaker_references"] is None
+    assert calls[2]["speaker_id_prefix"] == "chunk_240000:"
+    assert doc.metadata["segment_count"] == 2
+    assert doc.metadata["speaker_reconciliation"] == "chunk_scoped"
 
 
 @pytest.mark.asyncio
