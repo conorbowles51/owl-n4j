@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { InstructionListEditor } from "@/components/ui/instruction-list-editor"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { FolderOpen, Plus, Sparkles, X } from "lucide-react"
 import { toast } from "sonner"
@@ -274,7 +273,7 @@ export function FolderContextDialog({
             <LoadingSpinner />
           </div>
         ) : (
-          <ScrollArea className="flex-1 -mx-6 px-6">
+          <div className="-mx-6 min-h-0 flex-1 overflow-y-auto overscroll-contain px-6">
             <div className="space-y-5 py-1">
               <div className="space-y-1.5">
                 <Label htmlFor="folder-context-textarea">Folder Context</Label>
@@ -439,7 +438,7 @@ export function FolderContextDialog({
                 </div>
               ) : null}
             </div>
-          </ScrollArea>
+          </div>
         )}
 
         <DialogFooter>
