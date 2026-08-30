@@ -1,12 +1,16 @@
 """add the financial ledger: runs, documents, accounts, periods, transactions, adjudications
 
 Revision ID: 20260830_financial_ledger
-Revises: 20260725_speaker_merges
+Revises: 20260807_deepseek
 Create Date: 2026-08-30
 
 Creates the relational system of record for financial evidence.  Monetary
 values are BigInteger counts of minor units beside an ISO 4217 code; there is
 no float column anywhere in this migration, and there must never be one.
+
+The parent named above is on origin and not on this branch, so until the two
+are merged `alembic upgrade head` cannot resolve it.  That is deliberate and is
+explained at ``down_revision`` below.
 
 """
 from typing import Sequence, Union
@@ -23,6 +27,13 @@ revision: str = "20260830_financial_ledger"
 # branch met origin, and `alembic upgrade head` refuses to run with two.  The
 # ledger depends on nothing either of those revisions touches; this edge
 # exists to keep the graph linear.
+#
+# The cost of that choice is that on this branch alone the parent is missing,
+# and alembic raises KeyError: '20260807_deepseek' rather than reporting two
+# heads.  It resolves on merge and needs no action here: with origin's
+# 20260803_loupes and 20260807_deepseek present the graph walks base to head as
+# a single line of 50 revisions with exactly one head, so no merge migration is
+# wanted.  Adding one would invent a branch point where there is none.
 down_revision: Union[str, None] = "20260807_deepseek"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
