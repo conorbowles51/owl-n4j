@@ -36,6 +36,17 @@ from services.financial.periods import (
     read_opening,
     record_statement_period,
 )
+from services.financial.reconcile import (
+    IdentityOutcome,
+    LedgerOverflowError,
+    MixedCurrencyError,
+    ReconciliationError,
+    TransactionTotals,
+    empty_totals,
+    evaluate_identity,
+    reconcile_period,
+    total_transactions,
+)
 from services.financial.runs import (
     IngestionRunHandle,
     RunAborted,
@@ -80,6 +91,16 @@ __all__ = [
     "read_closing",
     "read_opening",
     "record_statement_period",
+    # The balance identity
+    "IdentityOutcome",
+    "LedgerOverflowError",
+    "MixedCurrencyError",
+    "ReconciliationError",
+    "TransactionTotals",
+    "empty_totals",
+    "evaluate_identity",
+    "reconcile_period",
+    "total_transactions",
     # Run identity
     "IngestionRunHandle",
     "RunAborted",

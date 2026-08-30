@@ -38,6 +38,7 @@ from postgres.models.enums import (
     GlobalRole,
     IngestionRunStatus,
     LedgerStatus,
+    PeriodBoundsSource,
     ProofClass,
     ReconciliationStatus,
     TransactionDirection,
@@ -87,6 +88,8 @@ VOCABULARY_CONSTRAINTS = {
     "ck_financial_statement_periods_reconciliation_status": ReconciliationStatus,
     "ck_financial_statement_periods_opening_source": BalanceSource,
     "ck_financial_statement_periods_closing_source": BalanceSource,
+    "ck_financial_statement_periods_start_source": PeriodBoundsSource,
+    "ck_financial_statement_periods_end_source": PeriodBoundsSource,
     "ck_financial_transactions_direction": TransactionDirection,
     "ck_financial_transactions_proof_class": ProofClass,
     "ck_financial_transactions_ledger_status": LedgerStatus,
@@ -96,6 +99,13 @@ VOCABULARY_CONSTRAINTS = {
 
 _IN_LIST = re.compile(r"\bIN\s*\(([^)]*)\)", re.IGNORECASE)
 _QUOTED = re.compile(r"'([^']*)'")
+
+
+def _bound_source(value) -> str:
+    """The bounds source a fixture date implies, so the two cannot disagree."""
+    if value is None:
+        return PeriodBoundsSource.absent.value
+    return PeriodBoundsSource.printed.value
 
 
 def _in_list_values(sqltext: str) -> set[str] | None:
@@ -340,14 +350,28 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
         return account
 
     def make_period(self, **overrides):
+        period_start = overrides.pop("period_start", date(2026, 3, 1))
+        period_end = overrides.pop("period_end", date(2026, 3, 31))
+        # The source columns are derived from the dates rather than defaulted,
+        # because the coherence constraints require the two to agree: a bound
+        # is 'absent' exactly when the date is null.  Hard-coding 'printed'
+        # here would break every test that asks for an open-ended period, and
+        # leaving the column to its 'absent' default breaks every test that
+        # supplies dates, which is what happened.
         period = FinancialStatementPeriod(
             id=overrides.pop("id", uuid4()),
             case_id=overrides.pop("case_id", self.case.id),
             source_document_id=overrides.pop("source_document_id", self.document.id),
             account_id=overrides.pop("account_id", self.account.id),
             ingestion_run_id=overrides.pop("ingestion_run_id", self.run.id),
-            period_start=overrides.pop("period_start", date(2026, 3, 1)),
-            period_end=overrides.pop("period_end", date(2026, 3, 31)),
+            period_start=period_start,
+            period_end=period_end,
+            period_start_source=overrides.pop(
+                "period_start_source", _bound_source(period_start)
+            ),
+            period_end_source=overrides.pop(
+                "period_end_source", _bound_source(period_end)
+            ),
             currency=overrides.pop("currency", "GBP"),
             **overrides,
         )
