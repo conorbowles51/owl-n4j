@@ -315,25 +315,99 @@ def _is_financial_candidate(
     )
 
 
+# Runs of the characters filenames use to join words. Relaxing these lets a
+# multi-word keyword match `bank_statement.pdf`; see `_identity_probe`.
+_FILENAME_SEPARATORS = re.compile(r"[\s_\-/.]+")
+
+
+def _identity_probe(file_name: str, file_type: str | None) -> tuple[str, str]:
+    """The artifact's identity, raw and with filename separators relaxed.
+
+    Both forms are searched, because neither alone is sufficient:
+
+      * The relaxed form is what lets a multi-word keyword match a filename
+        that joins its words. `bank_statement.pdf` contains no "bank
+        statement", so it used to fall through to the interview keyword
+        "statement" and a bank statement was classified as a witness
+        interview — an affirmative mislabel, not a near miss.
+      * The raw form is what keeps the two literal probes working. "inv-" is
+        written as a prefix and relaxing the hyphen turns `INV-4471.pdf` into
+        "inv 4471", which no longer matches anything.
+    """
+    raw = _normalized_text(file_name, file_type)
+    return raw, _FILENAME_SEPARATORS.sub(" ", raw)
+
+
 def _infer_evidence_source_type(
     *,
     file_name: str,
     file_type: str | None,
-    specific_type: str,
-    name: str,
-    source_quote: str,
     is_table: bool,
 ) -> str:
-    """Classify the kind of source this came from, using the source alone.
+    """Classify the kind of source this came from, from the artifact alone.
+
+    What a document *is* cannot be read off what it *says*. This function used
+    to search `specific_type`, `name` and `source_quote` alongside the
+    filename, which meant a witness statement quoting "he sent a wire to
+    Petrov" classified as `wire` — a documentary source — and hearsay was
+    promoted to an exhibit. Requiring the keyword to appear as a word narrowed
+    that defect but did not remove it: it only stopped the past tense, so the
+    witness had to say "wired" rather than "a wire" for the system to stay
+    honest.
+
+    Those three fields are therefore not parameters any more, rather than
+    being passed and ignored, so no later edit can reach for them without
+    changing this signature and reading this docstring.
+
+    The deeper defect was that `evidence_source_type` describes the source
+    document but was computed per extracted entity, so a document could
+    disagree with itself. Measured over 35,192 rows in 357 extraction files,
+    51 of 306 documents were assigned two or more source types by their own
+    rows and 18 were graded both documentary and narrative. Classifying from
+    the artifact makes every row of a document agree by construction and takes
+    both counts to zero. 5,025 rows (14.3%) change class.
+
+    1,457 rows move from narrative to documentary, which is the dangerous
+    direction, so each was checked. In 17 of the 18 affected documents the
+    promoted rows sit beside rows that were already documentary, so the
+    document does not change character; they were being demoted by an "@" in a
+    Cash App handle ("CASH APP*@BECKISH"), a Zelle payee's email address, or a
+    price written "620 gallons @ $2.75".
+
+    Exactly one extraction file flips in its entirety: all 391 rows of
+    `USA-ET-026407.pdf`. It is an Ameris Bank monthly statement — it carries an
+    account holder, account number, statement period and header totals, and
+    every row is a card purchase, preauthorised debit or Zelle transfer. It was
+    classified `interview` because its section header reads "Ameris monthly
+    statement" and `statement` is an interview keyword, while neither "bank
+    statement" nor "account statement" appears adjacent. A genuine bank
+    statement was labelled hearsay in full. The flip corrects that.
+
+    Note for anyone extending the keyword map: on a Bates-stamped corpus the
+    filenames carry no words at all, so almost every document reaches the
+    `pdf and is_table -> official_report` fallback below. That yields the right
+    grade but an imprecise class, and it is what the corpus now leans on.
 
     The extracting model is asked for its own `evidence_source_type` and that
-    answer is recorded, but it is deliberately not an input here: a claim the
-    model makes about its own output cannot be checked, so it must not be able
-    to decide the outcome. See `_build_financial_provenance`.
+    answer is recorded, but it is deliberately not an input here either: a
+    claim the model makes about its own output cannot be checked, so it must
+    not be able to decide the outcome. See `_build_financial_provenance`.
     """
-    probe = _normalized_text(file_name, file_type, specific_type, name, source_quote)
+    # Before the keywords, not after. A mail container is an email whatever its
+    # filename claims, and the claim is the sender's. `wire_confirmation.eml`
+    # is someone writing about a wire, so letting the "wire" keyword win would
+    # promote a narrative artifact to a documentary one on the strength of a
+    # name its own author chose. Content used to supply this via the "@" in a
+    # header; with content gone the file type has to carry it.
+    if file_type in {"eml", "msg"}:
+        return "email"
+
+    raw, relaxed = _identity_probe(file_name, file_type)
     for source_type, keywords in _SOURCE_TYPE_PATTERNS:
-        if any(_mentions(probe, keyword, pattern) for keyword, pattern in keywords):
+        if any(
+            _mentions(raw, keyword, pattern) or _mentions(relaxed, keyword, pattern)
+            for keyword, pattern in keywords
+        ):
             return source_type
 
     if file_type in {"xlsx", "xls", "csv"}:
@@ -466,12 +540,11 @@ def _build_financial_provenance(
     if not _is_financial_candidate(category, specific_type, name, source_quote, properties):
         return None
 
+    # Deliberately not given `specific_type`, `name` or `source_quote`: what a
+    # document is cannot be read off what it says. See the docstring.
     evidence_source_type = _infer_evidence_source_type(
         file_name=file_name,
         file_type=file_type,
-        specific_type=specific_type,
-        name=name,
-        source_quote=source_quote,
         is_table=is_table,
     )
     evidence_strength = _infer_evidence_strength(
