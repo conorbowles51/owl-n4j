@@ -87,6 +87,15 @@ from services.financial.duplicates import (
     restore_document,
     store_fingerprint,
 )
+from services.financial.locators import (
+    MILLIPOINTS_PER_POINT,
+    Locator,
+    LocatorCoherenceError,
+    LocatorError,
+    RectangleError,
+    SourceRectangle,
+    capture,
+)
 from services.financial.money import (
     AmbiguousAmountError,
     Currency,
@@ -188,6 +197,13 @@ from services.financial.statement_totals import (
     is_figure,
     read_header_totals,
 )
+from services.financial.table_geometry import (
+    CELL_OVERFLOW_TOLERANCE_MILLIPOINTS,
+    LocatedCell,
+    LocatedTable,
+    TableGeometryError,
+    locate_table,
+)
 from services.financial.version import (
     PIPELINE_VERSION,
     code_fingerprint_detail,
@@ -269,6 +285,14 @@ __all__ = [
     "resolve_duplicates",
     "restore_document",
     "store_fingerprint",
+    # Where on a page a value was read from, in one declared coordinate space
+    "MILLIPOINTS_PER_POINT",
+    "Locator",
+    "LocatorCoherenceError",
+    "LocatorError",
+    "RectangleError",
+    "SourceRectangle",
+    "capture",
     # Money
     "AmbiguousAmountError",
     "Currency",
@@ -363,6 +387,12 @@ __all__ = [
     "infer_convention",
     "is_figure",
     "read_header_totals",
+    # Pairing each value in an extracted table with the rectangle it came from
+    "CELL_OVERFLOW_TOLERANCE_MILLIPOINTS",
+    "LocatedCell",
+    "LocatedTable",
+    "TableGeometryError",
+    "locate_table",
     # Code and ruleset identity
     "PIPELINE_VERSION",
     "code_fingerprint_detail",
