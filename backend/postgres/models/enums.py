@@ -293,3 +293,70 @@ class DuplicateMatchRung(int, Enum):
     # Same account over the same dates, with content that differs.  A candidate
     # and nothing more.
     same_account_period = 2
+
+
+class CoordinateSpace(str, Enum):
+    """Which coordinate space a rectangle's numbers were measured in.
+
+    This exists because two PyMuPDF calls on the *same page* return geometry in
+    two different spaces, and nothing in the numbers says which.  Measured on
+    1.28.2 against a synthetic page carrying one ruled table and one text run,
+    at each of the four legal rotations:
+
+    * ``page.get_text("words")`` returns the **unrotated** rectangle.  The
+      numbers do not change at all as the page is rotated.
+    * ``page.find_tables()`` returns the **displayed** rectangle, already
+      rotated, and it does change.
+
+    So the same rectangle, in the same file, means two different places on the
+    paper depending only on which function produced it.  Applying the rotation
+    matrix to the table box at 90 degrees pushes it off the page entirely
+    (y1=692 against a 612-high page), and *failing* to apply it to the word box
+    leaves it silently in the wrong quarter.
+
+    A containment check cannot recover the space, which is the reason this is a
+    recorded fact rather than something inferred later.  At 180 degrees both
+    readings of the table box land inside the page — ``(212, 632, 532, 692)``
+    as-is and ``(80, 100, 400, 160)`` rotated — and both look entirely
+    reasonable.  Only one is where the ink is.
+
+    At rotation 0 the two spaces coincide exactly, so any test that exercises
+    only an unrotated page passes under either convention while proving
+    nothing.  The tests for this module use rotated pages for that reason.
+    """
+
+    #: Origin top-left of the crop box, before page rotation is applied.
+    #: What ``get_text`` reports.  Must be multiplied by ``rotation_matrix``
+    #: before it can be drawn.
+    pdf_unrotated = "pdf_unrotated"
+    #: Origin top-left of the page as displayed, rotation already applied.
+    #: What ``find_tables`` reports, and the only space this module stores.
+    pdf_displayed = "pdf_displayed"
+
+
+class LocatorKind(str, Enum):
+    """How well a stored value can be pointed back at its source.
+
+    The distinction the vocabulary exists to preserve is between *no rectangle
+    because none is possible* and *no rectangle because we lost it*.  Modelling
+    the box as an optional field collapses those, and then a viewer showing
+    "source unavailable" cannot say whether that is an honest property of a CSV
+    feed or a defect in the PDF reader — which is exactly the question asked
+    when the exhibit is challenged.
+
+    ``page_only`` is the honest description of every row extracted before this
+    module existed: the corpus JSON carries ``source_page`` and no geometry, so
+    those rows can be pointed at a page and no further.  Back-filling them to
+    ``page_rectangle`` would claim a precision that was never captured.
+    """
+
+    #: Page and rectangle both known.  Click-through resolves to a highlight.
+    page_rectangle = "page_rectangle"
+    #: Page known, rectangle never captured.  Click-through opens the page.
+    page_only = "page_only"
+    #: The source format has no pages: a CSV row, a camt.053 entry, an API
+    #: feed.  There is nothing to point at and that is not a shortcoming.
+    not_positional = "not_positional"
+    #: The source is paginated, capture was attempted, and it failed.  Distinct
+    #: from ``page_only`` because this one is a defect and should be counted.
+    unlocated = "unlocated"
