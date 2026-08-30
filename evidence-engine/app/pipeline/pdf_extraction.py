@@ -4,9 +4,11 @@ import asyncio
 import logging
 import math
 import re
+import sys
 import time
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable
+from pathlib import Path
+from typing import Any, Awaitable, Callable
 
 import fitz
 import pytesseract
@@ -144,7 +146,56 @@ def _ocr_detection_reason(page: fitz.Page, native_text: str) -> str | None:
     return None
 
 
-def _extract_native_tables(page: fitz.Page, page_number: int) -> list[str]:
+_table_reader: Any = None
+_table_reader_attempted = False
+_table_reader_failure: str | None = None
+
+
+def _load_table_reader() -> Any:
+    """``services.financial.pdf_tables``, or ``None`` if it cannot be reached.
+
+    Imported here rather than at module scope for the reason
+    ``cellebrite_ingestion`` does the same: the backend is a sibling package on
+    disk, not an installed dependency, so its location is only known once the
+    process is running.  Cached because the answer cannot change within a
+    process and a failed import per page would be a per-page cost.
+
+    A failure is remembered rather than retried, and surfaces in the extraction
+    metadata, because the alternative -- geometry quietly absent, indistinguish-
+    able from a document that simply had no tables -- is the shape a deployment
+    fault takes when nobody notices it for a month.
+    """
+    global _table_reader, _table_reader_attempted, _table_reader_failure
+    if _table_reader_attempted:
+        return _table_reader
+    _table_reader_attempted = True
+
+    repo_root = Path(__file__).resolve().parents[3]
+    candidates = [repo_root / "backend", Path("/backend")]
+    for candidate in reversed(candidates):
+        if candidate.exists() and str(candidate) not in sys.path:
+            sys.path.insert(0, str(candidate))
+
+    try:
+        from services.financial import pdf_tables
+
+        _table_reader = pdf_tables
+    except Exception as exc:  # noqa: BLE001 - any import failure means no geometry
+        _table_reader_failure = f"{type(exc).__name__}: {exc}"
+        logger.warning(
+            "Table geometry unavailable; falling back to text-only table extraction: %s",
+            _table_reader_failure,
+        )
+    return _table_reader
+
+
+def _extract_native_tables_unaided(page: fitz.Page, page_number: int) -> list[str]:
+    """Table text exactly as it was produced before geometry existed.
+
+    Kept verbatim rather than reimplemented in terms of the backend, so that a
+    deployment which cannot reach the backend produces the text it produced
+    yesterday, character for character, instead of something merely similar.
+    """
     table_chunks: list[str] = []
     try:
         tables = page.find_tables()
@@ -160,6 +211,70 @@ def _extract_native_tables(page: fitz.Page, page_number: int) -> list[str]:
     except Exception:
         logger.debug("Native table extraction failed for PDF page %s", page_number, exc_info=True)
     return table_chunks
+
+
+def _extract_native_tables(
+    page: fitz.Page, page_number: int
+) -> tuple[list[str], list[Any]]:
+    """The page's tables as text, and their geometry when it can be had.
+
+    The text is the contract.  ``result.tables`` is already chunked, embedded
+    and shown to readers, so it must come out of here byte-identical to what it
+    was before geometry existed; the geometry is additive and may be absent.
+
+    Every judgement about how to read geometry -- which coordinate space, what
+    to do when a reader offers rows but no cell rectangles, when a table should
+    be dropped rather than mispaired -- lives in the backend module, where it is
+    tested.  What is left here is the part that cannot be moved: reaching that
+    module, and carrying on without it.
+    """
+    reader = _load_table_reader()
+    if reader is None:
+        return _extract_native_tables_unaided(page, page_number), []
+
+    try:
+        tables = reader.read_tables(page, page_number)
+    except Exception:
+        # The same failure the unaided path swallows, swallowed the same way:
+        # a page whose tables cannot be read costs its tables, never the
+        # document.
+        logger.debug(
+            "Native table extraction failed for PDF page %s", page_number, exc_info=True
+        )
+        return [], []
+    return reader.chunks_of(tables), list(tables)
+
+
+def _table_geometry_metadata(chunk_count: int, extracted_tables: list[Any]) -> dict:
+    """What was recovered, said plainly enough to be acted on.
+
+    ``available`` is reported separately from the counts because zero located
+    values means two different things -- a build that cannot see the backend at
+    all, and one that read every table and found no rectangles in any of them --
+    and a reader who cannot tell them apart will investigate the wrong thing.
+
+    On size, measured rather than guessed: ``per_table`` carries a rectangle per
+    located value and costs about 221 bytes each, so a forty-page statement with
+    a thirty-by-six table on every page produces 1.52 MB of metadata, 99.7% of
+    it this one key.  That is affordable only because this dict is transient --
+    it is passed to ``build_extraction_quality_report``, which reads named keys,
+    and is never written to a column.  Anything that later persists document
+    metadata wholesale must bound or drop ``per_table`` first; the summary above
+    it is complete without it, and is the part worth keeping.
+    """
+    reader = _load_table_reader()
+    if reader is None:
+        return {
+            "available": False,
+            "reason": _table_reader_failure or "table geometry reader not loaded",
+            "text_only_tables": chunk_count,
+        }
+    return {
+        "available": True,
+        "coordinate_space": reader.TABLE_COORDINATE_SPACE.value,
+        **reader.geometry_summary(extracted_tables),
+        "per_table": [table.to_json() for table in extracted_tables],
+    }
 
 
 def _progress_checkpoints(page_count: int) -> set[int]:
@@ -454,6 +569,10 @@ def _extract_pdf_sync(
 ) -> PdfExtractionResult:
     started = time.perf_counter()
     table_chunks: list[str] = []
+    # Positionally aligned with table_chunks: the reader returns both from one
+    # pass precisely so that alignment is a property of the data rather than
+    # something these two lists have to be trusted to maintain.
+    extracted_tables: list[Any] = []
 
     try:
         document = fitz.open(file_path)
@@ -477,7 +596,9 @@ def _extract_pdf_sync(
             detection_reason = _ocr_detection_reason(page, native_text)
             if detection_reason is None:
                 page_result = _PageResult(page_number=page_number, text=native_text)
-                table_chunks.extend(_extract_native_tables(page, page_number))
+                page_chunks, page_tables = _extract_native_tables(page, page_number)
+                table_chunks.extend(page_chunks)
+                extracted_tables.extend(page_tables)
             else:
                 page_result = _PageResult(
                     page_number=page_number,
@@ -580,6 +701,9 @@ def _extract_pdf_sync(
             "native_page_count": len(pages) - ocr_count,
             "low_confidence_page_count": low_confidence_count,
             "page_spans": page_spans,
+            "table_geometry": _table_geometry_metadata(
+                len(table_chunks), extracted_tables
+            ),
         }
         if ocr_count:
             metadata.update(
