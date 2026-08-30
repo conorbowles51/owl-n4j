@@ -157,6 +157,35 @@ DOCUMENTARY_SOURCE_TYPES = {
     "official_report",
 }
 NARRATIVE_SOURCE_TYPES = {"email", "interview"}
+
+# The classes `_infer_evidence_source_type` can return, in the order it tries
+# them: the first class with a keyword present in the source wins.
+#
+# The order is load-bearing, not incidental. "bank statement" and "account
+# statement" both contain "statement", which is also an interview keyword, so
+# the specific phrase has to be consulted before the general one or every bank
+# statement is classified as an interview. Do not sort this.
+#
+# These keywords are matched as words (see `_word_pattern`). That is stricter
+# than the admission lists in `_is_financial_candidate` and
+# `_looks_like_transaction_event`, deliberately, because a mistake here costs
+# something different: this function decides `evidence_source_type`, which
+# decides `evidence_strength`, which is one of the three conditions for
+# `is_evidence_backed_transaction`. Matching "wire" inside "wired" or "IBAN"
+# inside "CITIBANK" does not merely add noise; it labels the source documentary
+# and puts hearsay in front of a jury as an exhibit.
+_SOURCE_TYPE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("bank_statement", ("bank statement", "account statement", "bank account statement")),
+    ("card_statement", ("card statement", "credit card", "debit card")),
+    ("wire", ("wire", "swift", "iban", "bic", "transfer confirmation")),
+    ("invoice", ("invoice", "inv-", "bill to", "purchase order")),
+    ("receipt", ("receipt", "paid receipt", "proof of payment")),
+    ("ledger", ("ledger", "general ledger", "journal entry", "trial balance")),
+    ("official_report", ("report", "warrant", "official report", "filing")),
+    ("email", ("email", "e-mail", "@")),
+    ("interview", ("interview", "statement", "witness", "transcript")),
+)
+
 FINANCIAL_CANDIDATE_KEYS = {
     "amount",
     "currency",
@@ -176,6 +205,46 @@ PROVENANCE_POLICY = "deterministic_inference_v1"
 
 def _normalized_text(*parts: Any) -> str:
     return " ".join(str(part or "").strip().lower() for part in parts if part).strip()
+
+
+# A letter in any alphabet, for text that has already been lowercased. Written
+# out rather than using `\b` or `[a-z]`: `\b` treats a digit as a word character
+# and would keep "21PURCHASE" from matching, and `[a-z]` would let an accented
+# letter next to a keyword slip a false match through.
+_LETTER = r"[^\W\d_]"
+
+
+def _word_pattern(keyword: str) -> re.Pattern[str] | None:
+    """Compile `keyword` to match as a word, or return None to match literally.
+
+    The boundary is a letter, not a word character, because financial exports
+    run words hard against digits and punctuation and those are real matches:
+    "21PURCHASE", "wire_confirmation.pdf", "INV-4471", "ACH DEBIT/0518". A
+    trailing "s" or "es" is allowed so plurals still count, since statement
+    headers are written "Deposits", "Withdrawals", "Purchases".
+
+    A keyword that does not both begin and end with a letter is matched
+    literally instead. A symbol cannot be buried inside a longer word, so the
+    rule this exists to enforce has nothing to do; applying it anyway would
+    break the two probes that are partial on purpose — "@" is always preceded
+    by a letter in an address, and "inv-" is written as a prefix.
+    """
+    if not (keyword[:1].isalpha() and keyword[-1:].isalpha()):
+        return None
+    return re.compile(rf"(?<!{_LETTER}){re.escape(keyword)}(?:e?s)?(?!{_LETTER})")
+
+
+def _mentions(probe: str, keyword: str, pattern: re.Pattern[str] | None) -> bool:
+    """True if `probe` mentions `keyword`, as a word where that is meaningful."""
+    return keyword in probe if pattern is None else bool(pattern.search(probe))
+
+
+_SOURCE_TYPE_PATTERNS: tuple[
+    tuple[str, tuple[tuple[str, re.Pattern[str] | None], ...]], ...
+] = tuple(
+    (source_type, tuple((keyword, _word_pattern(keyword)) for keyword in keywords))
+    for source_type, keywords in _SOURCE_TYPE_KEYWORDS
+)
 
 
 def _declared_provenance_value(
@@ -211,6 +280,14 @@ def _is_financial_candidate(
     if any(properties.get(key) not in ("", None) for key in FINANCIAL_CANDIDATE_KEYS):
         return True
     probe = _normalized_text(category, specific_type, name, source_quote)
+    # Substring matching, on purpose. This admits a candidate for later checks
+    # rather than deciding anything about it, so the two errors are not equal:
+    # a false positive costs one extra candidate that downstream checks discard,
+    # while a false negative drops a real transaction silently and forever.
+    # Bank exports run words together — "ACHDEBIT", "ASI-DEPOSITORY",
+    # "DEPOSITTRANSFER", "PurchaseR eturn" — and on the corpus the word-boundary
+    # rule used for classification would reject 912 of these correct matches.
+    # Do not tighten this to match `_infer_evidence_source_type`.
     return any(
         keyword in probe
         for keyword in (
@@ -255,19 +332,8 @@ def _infer_evidence_source_type(
     to decide the outcome. See `_build_financial_provenance`.
     """
     probe = _normalized_text(file_name, file_type, specific_type, name, source_quote)
-    keyword_map = (
-        ("bank_statement", ("bank statement", "account statement", "bank account statement")),
-        ("card_statement", ("card statement", "credit card", "debit card")),
-        ("wire", ("wire", "swift", "iban", "bic", "transfer confirmation")),
-        ("invoice", ("invoice", "inv-", "bill to", "purchase order")),
-        ("receipt", ("receipt", "paid receipt", "proof of payment")),
-        ("ledger", ("ledger", "general ledger", "journal entry", "trial balance")),
-        ("official_report", ("report", "warrant", "official report", "filing")),
-        ("email", ("email", "e-mail", "@")),
-        ("interview", ("interview", "statement", "witness", "transcript")),
-    )
-    for source_type, keywords in keyword_map:
-        if any(keyword in probe for keyword in keywords):
+    for source_type, keywords in _SOURCE_TYPE_PATTERNS:
+        if any(_mentions(probe, keyword, pattern) for keyword, pattern in keywords):
             return source_type
 
     if file_type in {"xlsx", "xls", "csv"}:
@@ -361,6 +427,8 @@ def _looks_like_transaction_event(
     ):
         return True
     probe = _normalized_text(category, specific_type, name, source_quote)
+    # Substring matching, on purpose — see `_is_financial_candidate`. This
+    # admits rather than classifies, so recall is worth more than precision.
     return any(
         keyword in probe
         for keyword in (
