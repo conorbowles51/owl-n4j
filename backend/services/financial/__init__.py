@@ -124,6 +124,14 @@ from services.financial.periods import (
     read_opening,
     record_statement_period,
 )
+from services.financial.pdf_tables import (
+    TABLE_COORDINATE_SPACE,
+    ExtractedTable,
+    GeometrySource,
+    chunks_of,
+    geometry_summary,
+    read_tables,
+)
 from services.financial.proof_class import (
     AUTO_ADMITTED_CLASSES,
     DEFAULT_TOTAL_CLASSES,
@@ -202,6 +210,7 @@ from services.financial.table_geometry import (
     LocatedCell,
     LocatedTable,
     TableGeometryError,
+    cell_value,
     locate_table,
 )
 from services.financial.version import (
@@ -319,6 +328,13 @@ __all__ = [
     "read_closing",
     "read_opening",
     "record_statement_period",
+    # Reading a page's tables once, so text and geometry cannot disagree
+    "TABLE_COORDINATE_SPACE",
+    "ExtractedTable",
+    "GeometrySource",
+    "chunks_of",
+    "geometry_summary",
+    "read_tables",
     # The proof class a source earns, and what each class licenses
     "AUTO_ADMITTED_CLASSES",
     "DEFAULT_TOTAL_CLASSES",
@@ -392,6 +408,7 @@ __all__ = [
     "LocatedCell",
     "LocatedTable",
     "TableGeometryError",
+    "cell_value",
     "locate_table",
     # Code and ruleset identity
     "PIPELINE_VERSION",

@@ -117,13 +117,18 @@ class LocatedTable:
         }
 
 
-def _text_of(cell: Any) -> str:
+def cell_value(cell: Any) -> str:
     """The value in a cell, or the empty string if there is none.
 
     Mirrors what the extraction path already does to build the text chunk.  If
     the two ever disagreed about which cells hold values, the geometry would
     describe a different set of cells than the text does, so this is written
     once and shared rather than being restated at the call site.
+
+    Public because the extraction path needs precisely this rule to decide
+    which rows become text, and that decision has to be the same one made here
+    or the two lists desynchronise.  Named for the value rather than the text
+    so it does not shadow the ``cell_text`` grid parameter below.
     """
     if cell is None:
         return ""
@@ -235,7 +240,7 @@ def locate_table(
     for row_index, texts in enumerate(cell_text):
         rects = cell_rects[row_index] if cell_rects is not None else None
         for column_index, raw in enumerate(texts):
-            text = _text_of(raw)
+            text = cell_value(raw)
             if not text:
                 # No value here, so nothing to locate.  A merged cell's
                 # subsumed positions arrive this way, with neither text nor
