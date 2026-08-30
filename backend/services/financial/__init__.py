@@ -8,6 +8,15 @@ that fails to close can detect an absence.
 Nothing in this package may represent a monetary value as a float.
 """
 
+from services.financial.adjudication import (
+    Adjudication,
+    AdjudicationError,
+    BalanceFailure,
+    Corroboration,
+    MalformedVerdictError,
+    UnpaidObligationError,
+    restatement_delta,
+)
 from services.financial.duplicates import (
     CrossCaseError,
     CrossMatterSighting,
@@ -100,6 +109,14 @@ from services.financial.version import (
 )
 
 __all__ = [
+    # Adjudication of failing balance identities
+    "Adjudication",
+    "AdjudicationError",
+    "BalanceFailure",
+    "Corroboration",
+    "MalformedVerdictError",
+    "UnpaidObligationError",
+    "restatement_delta",
     # Duplicate documents
     "CrossCaseError",
     "CrossMatterSighting",
