@@ -50,6 +50,19 @@ from services.financial.continuity import (
     order_links,
     read_account_continuity,
 )
+from services.financial.dates import (
+    CoverageFinding,
+    DateCoherenceError,
+    DateError,
+    DateFinding,
+    DatePlausibility,
+    DateSurvey,
+    RowDate,
+    UngroundedDateQuarantineError,
+    check_row_date,
+    read_row_date,
+    survey_row_dates,
+)
 from services.financial.duplicates import (
     CrossCaseError,
     CrossMatterSighting,
@@ -200,6 +213,18 @@ __all__ = [
     "build_run",
     "order_links",
     "read_account_continuity",
+    # Whether a row's date can be believed, and what a disagreement proves
+    "CoverageFinding",
+    "DateCoherenceError",
+    "DateError",
+    "DateFinding",
+    "DatePlausibility",
+    "DateSurvey",
+    "RowDate",
+    "UngroundedDateQuarantineError",
+    "check_row_date",
+    "read_row_date",
+    "survey_row_dates",
     # Duplicate documents
     "CrossCaseError",
     "CrossMatterSighting",
