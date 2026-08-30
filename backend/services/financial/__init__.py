@@ -23,8 +23,25 @@ from services.financial.money import (
     parse_money,
     sum_money,
 )
+from services.financial.runs import (
+    IngestionRunHandle,
+    RunAborted,
+    RunCounts,
+    RunError,
+    RunScopeError,
+    ingestion_run,
+    open_ingestion_run,
+    reap_stale_runs,
+)
+from services.financial.version import (
+    PIPELINE_VERSION,
+    code_fingerprint_detail,
+    code_version,
+    ruleset_version,
+)
 
 __all__ = [
+    # Money
     "AmbiguousAmountError",
     "Currency",
     "CurrencyMismatchError",
@@ -38,4 +55,18 @@ __all__ = [
     "parse_amount",
     "parse_money",
     "sum_money",
+    # Run identity
+    "IngestionRunHandle",
+    "RunAborted",
+    "RunCounts",
+    "RunError",
+    "RunScopeError",
+    "ingestion_run",
+    "open_ingestion_run",
+    "reap_stale_runs",
+    # Code and ruleset identity
+    "PIPELINE_VERSION",
+    "code_fingerprint_detail",
+    "code_version",
+    "ruleset_version",
 ]
