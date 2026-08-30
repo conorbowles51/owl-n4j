@@ -107,6 +107,20 @@ from services.financial.periods import (
     read_opening,
     record_statement_period,
 )
+from services.financial.proof_class import (
+    AUTO_ADMITTED_CLASSES,
+    DEFAULT_TOTAL_CLASSES,
+    LEDGER_CLASSES,
+    ProofClassError,
+    SourceShape,
+    UnclassifiableSourceError,
+    admits_automatically,
+    assign_proof_class,
+    counts_toward_totals,
+    from_legacy_strength,
+    may_produce_ledger_rows,
+    requires_adjudication,
+)
 from services.financial.quarantine import (
     BalanceBreak,
     Candidate,
@@ -266,6 +280,19 @@ __all__ = [
     "read_closing",
     "read_opening",
     "record_statement_period",
+    # The proof class a source earns, and what each class licenses
+    "AUTO_ADMITTED_CLASSES",
+    "DEFAULT_TOTAL_CLASSES",
+    "LEDGER_CLASSES",
+    "ProofClassError",
+    "SourceShape",
+    "UnclassifiableSourceError",
+    "admits_automatically",
+    "assign_proof_class",
+    "counts_toward_totals",
+    "from_legacy_strength",
+    "may_produce_ledger_rows",
+    "requires_adjudication",
     # Where a failing identity broke, and on what grounds a row is set aside
     "BalanceBreak",
     "Candidate",
