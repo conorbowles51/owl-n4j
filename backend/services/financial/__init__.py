@@ -176,6 +176,21 @@ from services.financial.reconcile import (
     reconcile_period,
     total_transactions,
 )
+from services.financial.references import (
+    REFERENCE_LENGTH,
+    REFERENCE_PREFIX,
+    MalformedReadingError,
+    MalformedReferenceError,
+    RowReading,
+    RowReferenceError,
+    canonical_form,
+    content_hash,
+    document_content_hashes,
+    document_ref_ids,
+    is_reference,
+    normalise,
+    ref_id,
+)
 from services.financial.runs import (
     IngestionRunHandle,
     RunAborted,
@@ -376,6 +391,20 @@ __all__ = [
     "evaluate_identity",
     "reconcile_period",
     "total_transactions",
+    # What a row's reading is, and the reference a reader cites it by
+    "MalformedReadingError",
+    "MalformedReferenceError",
+    "REFERENCE_LENGTH",
+    "REFERENCE_PREFIX",
+    "RowReading",
+    "RowReferenceError",
+    "canonical_form",
+    "content_hash",
+    "document_content_hashes",
+    "document_ref_ids",
+    "is_reference",
+    "normalise",
+    "ref_id",
     # Run identity
     "IngestionRunHandle",
     "RunAborted",
