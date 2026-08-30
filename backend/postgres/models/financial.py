@@ -82,6 +82,10 @@ _PERIOD_BOUNDS_SOURCES = "('printed', 'derived', 'absent')"
 _ADJUDICATION_SUBJECTS = (
     "('transaction', 'statement_period', 'source_document', 'account')"
 )
+_QUARANTINE_REASONS = (
+    "('balance_break', 'unreadable_row', 'currency_mismatch', "
+    "'unexplained_delta', 'adjudicated')"
+)
 
 # A reason must contain something that is not whitespace.
 #
@@ -195,6 +199,19 @@ class FinancialSourceDocument(Base, TimestampMixin):
         CheckConstraint(
             f"status IN {_DOCUMENT_STATUSES}",
             name="ck_financial_source_documents_status",
+        ),
+        CheckConstraint(
+            f"quarantine_reason IS NULL OR quarantine_reason IN "
+            f"{_QUARANTINE_REASONS}",
+            name="ck_financial_source_documents_quarantine_reason",
+        ),
+        # A reason and a status that disagree make the column evidence of
+        # nothing: a document set aside with no recorded basis cannot be
+        # reviewed, and a reason left behind after a release describes a
+        # decision that has been reversed.
+        CheckConstraint(
+            "(quarantine_reason IS NOT NULL) = (status = 'quarantined')",
+            name="ck_financial_source_documents_quarantine_coherent",
         ),
         CheckConstraint(
             "extraction_layer BETWEEN 0 AND 3",
@@ -644,6 +661,19 @@ class FinancialTransaction(Base, TimestampMixin):
         CheckConstraint(
             f"ledger_status IN {_LEDGER_STATUSES}",
             name="ck_financial_transactions_ledger_status",
+        ),
+        CheckConstraint(
+            f"quarantine_reason IS NULL OR quarantine_reason IN "
+            f"{_QUARANTINE_REASONS}",
+            name="ck_financial_transactions_quarantine_reason",
+        ),
+        # Quarantine removes a row from every total.  Doing that without a
+        # recorded basis is the failure mode the closed vocabulary exists to
+        # prevent, so the two columns are held to agree in the database and
+        # not only in services.financial.quarantine.
+        CheckConstraint(
+            "(quarantine_reason IS NOT NULL) = (ledger_status = 'quarantined')",
+            name="ck_financial_transactions_quarantine_coherent",
         ),
         CheckConstraint(
             f"ordering_date_source IN {_DATE_SOURCES}",

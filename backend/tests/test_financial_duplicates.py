@@ -47,6 +47,7 @@ from postgres.models.enums import (
     LedgerStatus,
     PeriodBoundsSource,
     ProofClass,
+    QuarantineReason,
     TransactionDirection,
 )
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
@@ -315,8 +316,14 @@ class DuplicateTestCase(unittest.TestCase):
         content_hash: str | None = None,
         account=None,
         status: LedgerStatus = LedgerStatus.admitted,
+        quarantine_reason: QuarantineReason | None = None,
         run=None,
     ):
+        # A quarantined row has to say on what grounds, and the database now
+        # holds it to that.  Tests here care that a row is set aside, not why,
+        # so supply a reason rather than making every call site repeat one.
+        if status is LedgerStatus.quarantined and quarantine_reason is None:
+            quarantine_reason = QuarantineReason.unreadable_row
         self._row_index += 1
         row = FinancialTransaction(
             id=uuid.uuid4(),
@@ -335,6 +342,9 @@ class DuplicateTestCase(unittest.TestCase):
             proof_class=ProofClass.p2.value,
             extraction_layer=ExtractionLayer.structural.value,
             ledger_status=status.value,
+            quarantine_reason=(
+                quarantine_reason.value if quarantine_reason is not None else None
+            ),
             content_hash=content_hash or f"{self._row_index:064d}",
         )
         self.db.add((run or self.run).stamp(row))

@@ -48,6 +48,43 @@ class LedgerStatus(str, Enum):
     rejected = "rejected"
 
 
+class QuarantineReason(str, Enum):
+    """Why a row or document was set aside.  A closed vocabulary, deliberately.
+
+    Quarantine removes evidence from every total that follows it, so the
+    grounds have to be reportable in aggregate: "how many rows did we set
+    aside, and on what basis" is a question opposing counsel is entitled to
+    ask, and a free-text column cannot answer it.
+
+    The list is short because each entry has to name something the code can
+    actually prove or a person can actually decide.  Two absences are
+    deliberate.  A statement that printed no opening or closing balance is not
+    quarantined — it is ``unavailable``, which is a fact about the document
+    rather than a fault in it, and setting aside every statement that declined
+    to print a control total would discard most of a typical disclosure.  And
+    there is no reason meaning "a row whose amount happens to equal the
+    residual", because that is a coincidence rather than a finding; see
+    ``services.financial.quarantine`` for why admitting one would let the
+    system manufacture a balance.
+    """
+
+    # The printed running-balance chain does not admit this row.  Proof-grade:
+    # the statement's own arithmetic contradicts it.
+    balance_break = "balance_break"
+    # The amount, direction or date could not be read exactly, so the row
+    # cannot be summed without inventing the part that was missing.
+    unreadable_row = "unreadable_row"
+    # Denominated differently from the period holding it.  Summing across
+    # currencies produces a number that means nothing.
+    currency_mismatch = "currency_mismatch"
+    # Document-level: the balance identity failed and no cause was localised.
+    # The rows may all be right; what is not established is that they are all
+    # of them.
+    unexplained_delta = "unexplained_delta"
+    # A person decided, and the adjudication record carries the reasoning.
+    adjudicated = "adjudicated"
+
+
 class TransactionDirection(str, Enum):
     """Sign discipline: magnitude lives in the amount, sign lives here."""
 

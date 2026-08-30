@@ -40,6 +40,7 @@ from postgres.models.enums import (
     LedgerStatus,
     PeriodBoundsSource,
     ProofClass,
+    QuarantineReason,
     ReconciliationStatus,
     TransactionDirection,
 )
@@ -85,6 +86,7 @@ VOCABULARY_CONSTRAINTS = {
     "ck_financial_ingestion_runs_status": IngestionRunStatus,
     "ck_financial_source_documents_proof_class": ProofClass,
     "ck_financial_source_documents_status": DocumentStatus,
+    "ck_financial_source_documents_quarantine_reason": QuarantineReason,
     "ck_financial_statement_periods_reconciliation_status": ReconciliationStatus,
     "ck_financial_statement_periods_opening_source": BalanceSource,
     "ck_financial_statement_periods_closing_source": BalanceSource,
@@ -93,6 +95,7 @@ VOCABULARY_CONSTRAINTS = {
     "ck_financial_transactions_direction": TransactionDirection,
     "ck_financial_transactions_proof_class": ProofClass,
     "ck_financial_transactions_ledger_status": LedgerStatus,
+    "ck_financial_transactions_quarantine_reason": QuarantineReason,
     "ck_financial_transactions_ordering_date_source": DateSource,
     "ck_financial_adjudications_subject_type": AdjudicationSubject,
 }
@@ -430,6 +433,24 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
             self.db.commit()
         self.db.rollback()
 
+    def assertRejectedBy(self, constraint_name, build):
+        """Assert the refusal came from a named constraint and not by accident.
+
+        ``assertRejected`` passes for any integrity error, so a fixture that
+        happens to collide on a unique key looks exactly like a rule being
+        enforced.  Where the point of the test is a particular constraint,
+        name it.
+        """
+        build()
+        with self.assertRaises(IntegrityError) as caught:
+            self.db.commit()
+        self.db.rollback()
+        self.assertIn(
+            constraint_name,
+            str(caught.exception),
+            f"rejected, but not by {constraint_name}",
+        )
+
     # ---- the happy path ---------------------------------------------------
 
     def test_a_full_chain_persists(self):
@@ -546,6 +567,105 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
 
     def test_unknown_ledger_status_is_rejected(self):
         self.assertRejected(lambda: self.make_transaction(ledger_status="maybe"))
+
+    def test_a_row_may_not_be_set_aside_without_recorded_grounds(self):
+        """Quarantine removes a row from every total.
+
+        A row excluded on grounds nobody wrote down cannot be reviewed, and
+        "how many rows did you exclude, and why" is a question that has to
+        have an answer.  The database refuses the row rather than trusting
+        every future writer to remember.
+        """
+        self.assertRejectedBy(
+            "ck_financial_transactions_quarantine_coherent",
+            lambda: self.make_transaction(
+                ledger_status=LedgerStatus.quarantined.value,
+                quarantine_reason=None,
+            ),
+        )
+
+    def test_a_reason_may_not_outlive_the_quarantine(self):
+        """Releasing a row clears the reason, and the database checks it did.
+
+        A reason left behind on an admitted row describes a decision that has
+        been reversed, and a reader cannot tell that from one still standing.
+        """
+        for status in (
+            LedgerStatus.admitted,
+            LedgerStatus.superseded,
+            LedgerStatus.rejected,
+        ):
+            with self.subTest(status=status.value):
+                self.assertRejectedBy(
+                    "ck_financial_transactions_quarantine_coherent",
+                    lambda status=status: self.make_transaction(
+                        ledger_status=status.value,
+                        quarantine_reason=QuarantineReason.balance_break.value,
+                    ),
+                )
+
+    def test_a_quarantine_reason_outside_the_vocabulary_is_rejected(self):
+        self.assertRejectedBy(
+            "ck_financial_transactions_quarantine_reason",
+            lambda: self.make_transaction(
+                ledger_status=LedgerStatus.quarantined.value,
+                quarantine_reason="looked wrong",
+            ),
+        )
+
+    def test_a_grounded_quarantine_persists(self):
+        row = self.make_transaction(
+            ledger_status=LedgerStatus.quarantined.value,
+            quarantine_reason=QuarantineReason.balance_break.value,
+        )
+        self.db.commit()
+        self.assertEqual(row.ledger_status, LedgerStatus.quarantined.value)
+        self.assertEqual(
+            row.quarantine_reason, QuarantineReason.balance_break.value
+        )
+
+    def test_a_document_is_held_to_the_same_rule_as_a_row(self):
+        """Setting a whole document aside is the larger decision, not the looser one.
+
+        Every case here files against its own run.  A document sharing this
+        one's run and evidence file collides with the one ``setUp`` already
+        filed, and a collision is an integrity error that looks exactly like
+        the rule being enforced — which would leave these assertions passing
+        whether or not the constraints exist.
+        """
+        self.assertRejectedBy(
+            "ck_financial_source_documents_quarantine_coherent",
+            lambda: self.make_document(
+                ingestion_run_id=self.make_run().id,
+                status=DocumentStatus.quarantined.value,
+                quarantine_reason=None,
+            ),
+        )
+        self.assertRejectedBy(
+            "ck_financial_source_documents_quarantine_coherent",
+            lambda: self.make_document(
+                ingestion_run_id=self.make_run().id,
+                status=DocumentStatus.admitted.value,
+                quarantine_reason=QuarantineReason.adjudicated.value,
+            ),
+        )
+        self.assertRejectedBy(
+            "ck_financial_source_documents_quarantine_reason",
+            lambda: self.make_document(
+                ingestion_run_id=self.make_run().id,
+                status=DocumentStatus.quarantined.value,
+                quarantine_reason="seemed duplicated",
+            ),
+        )
+        document = self.make_document(
+            ingestion_run_id=self.make_run().id,
+            status=DocumentStatus.quarantined.value,
+            quarantine_reason=QuarantineReason.unreadable_row.value,
+        )
+        self.db.commit()
+        self.assertEqual(
+            document.quarantine_reason, QuarantineReason.unreadable_row.value
+        )
 
     def test_unknown_reconciliation_status_is_rejected(self):
         self.assertRejected(

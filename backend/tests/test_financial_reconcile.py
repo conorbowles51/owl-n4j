@@ -40,6 +40,7 @@ from postgres.models.enums import (
     GlobalRole,
     LedgerStatus,
     ProofClass,
+    QuarantineReason,
     ReconciliationStatus,
     TransactionDirection,
 )
@@ -575,7 +576,13 @@ class ReconcilePersistenceTestCase(unittest.TestCase):
         direction: TransactionDirection,
         status: LedgerStatus = LedgerStatus.admitted,
         currency: str = GBP,
+        quarantine_reason: QuarantineReason | None = None,
     ):
+        # The database holds a quarantined row to naming its grounds.  What
+        # these tests care about is that the row is excluded from the totals,
+        # not why, so supply a reason rather than repeat one at every call.
+        if status is LedgerStatus.quarantined and quarantine_reason is None:
+            quarantine_reason = QuarantineReason.unreadable_row
         self._row_index += 1
         row = FinancialTransaction(
             id=uuid.uuid4(),
@@ -594,6 +601,9 @@ class ReconcilePersistenceTestCase(unittest.TestCase):
             proof_class=ProofClass.p2.value,
             extraction_layer=ExtractionLayer.structural.value,
             ledger_status=status.value,
+            quarantine_reason=(
+                quarantine_reason.value if quarantine_reason is not None else None
+            ),
             content_hash=f"{self._row_index:064d}",
         )
         self.db.add(self.run.stamp(row))
