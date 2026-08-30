@@ -30,6 +30,14 @@ from postgres.models.case_profile import (
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 from postgres.models.significant import SignificantEntity
 from postgres.models.loupe import Loupe, LoupeLink, LoupeMember, LoupeRevision
+from postgres.models.financial import (
+    FinancialAccount,
+    FinancialAdjudication,
+    FinancialIngestionRun,
+    FinancialSourceDocument,
+    FinancialStatementPeriod,
+    FinancialTransaction,
+)
 from postgres.models.runtime_state import (
     AIModelPolicy,
     AIProviderCredential,
@@ -66,6 +74,8 @@ __all__ = [
     "LoupeMember",
     "LoupeLink",
     "LoupeRevision",
+    "FinancialAccount", "FinancialAdjudication", "FinancialIngestionRun",
+    "FinancialSourceDocument", "FinancialStatementPeriod", "FinancialTransaction",
     "CaseProfile", "CaseProfileAttribute", "CaseProfileEvidenceLink",
     "CaseProfileFindingLink", "CaseProfileGraphNodeLink", "CaseProfileNoteLink",
     "AIModelPolicy", "AIProviderCredential", "BackgroundTask", "PresenceSession", "WiretapProcessedFolder",

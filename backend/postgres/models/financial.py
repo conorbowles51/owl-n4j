@@ -1,0 +1,717 @@
+"""The financial ledger: the relational system of record for money evidence.
+
+Six tables, in dependency order: ingestion runs, source documents, accounts,
+statement periods, transactions, and adjudications.
+
+Three rules govern the whole schema and explain most of its shape.
+
+*Nothing here is a float.*  Every monetary value is a ``BigInteger`` count of
+minor units alongside an ISO 4217 code.  The service layer is what pairs the
+two back into ``services.financial.money.Money``; persistence does not import
+services, so the column names carry the ``_minor`` suffix as the reminder.  A
+float would make the balance identity approximate, and an approximate identity
+detects nothing.
+
+*Magnitude and sign are separate.*  ``amount_minor`` is a non-negative
+magnitude and ``direction`` carries credit or debit.  A sign error is then a
+wrong value in a two-valued column rather than a silently negated number, so
+it fails a check constraint instead of quietly halving a total.
+
+*Rows are corrected by supersession, not by mutation.*  A fact that turns out
+to be wrong keeps its row, gains ``superseded_by_id``, and moves to the
+``superseded`` status while its replacement is inserted.  The database cannot
+enforce this on its own — the cascades below exist so that deleting a case
+still works — so it is enforced in the service layer, and the adjudication
+table is what makes a breach visible: any change to an admitted fact that has
+no adjudication row explaining it is a defect.
+
+Deletion semantics are deliberately blunt: every table cascades from the case,
+and each internal parent link cascades too, because a case deletion that half
+succeeds would leave orphaned money.  Immutability is a service-layer promise
+recorded in adjudications; it is not a storage-layer one, and this docstring
+says so rather than letting the schema imply a guarantee it does not give.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date, datetime
+
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from postgres.base import Base
+from postgres.models.mixins import TimestampMixin
+
+
+def _jsonb_column():
+    return JSONB().with_variant(JSON(), "sqlite")
+
+
+# Vocabularies are enforced as check constraints rather than native Postgres
+# enum types, matching evidence_files and cases.  The Python enums in
+# postgres.models.enums remain the single source of truth for the values; these
+# strings exist so a migration can spell the constraint out.
+_PROOF_CLASSES = "('p0', 'p1', 'p2', 'p3', 'p4')"
+_LEDGER_STATUSES = "('admitted', 'quarantined', 'superseded', 'rejected')"
+_DOCUMENT_STATUSES = _LEDGER_STATUSES
+_RUN_STATUSES = "('pending', 'running', 'completed', 'failed', 'aborted')"
+_RECONCILIATION_STATUSES = (
+    "('not_attempted', 'balanced', 'unbalanced', 'unavailable')"
+)
+_DIRECTIONS = "('credit', 'debit')"
+_DATE_SOURCES = "('transaction', 'posted', 'value', 'effective')"
+_BALANCE_SOURCES = "('printed', 'carried_forward', 'absent')"
+_ADJUDICATION_SUBJECTS = (
+    "('transaction', 'statement_period', 'source_document', 'account')"
+)
+
+# A reason must contain something that is not whitespace.
+#
+# ``trim()`` alone is not enough: in both Postgres and SQLite it strips spaces
+# only, so a reason consisting of a tab and a newline passes a naive
+# ``length(trim(reason)) > 0`` and an unexplained edit gets recorded as an
+# explained one.  Postgres spells the multi-character form ``btrim(x, chars)``
+# and SQLite spells it ``trim(x, chars)``, so neither is portable; nested
+# ``replace()`` behaves identically in both.
+#
+# The literals below hold real tab, carriage return and newline characters.
+# They are written as Python escapes so the source stays readable, and they
+# must reach the SQL as the characters themselves: Postgres runs with
+# standard_conforming_strings on, where a backslash in a string literal is a
+# backslash, so an escaped form would silently check for the wrong thing.
+_REASON_NOT_BLANK = (
+    "length(trim(replace(replace(replace("
+    "reason, '\t', ' '), '\r', ' '), '\n', ' '))) > 0"
+)
+
+
+class FinancialIngestionRun(Base, TimestampMixin):
+    """One execution of the financial ingestion pipeline.
+
+    Every fact in the ledger names the run that produced it, so that a later
+    question — which build of the parser read this statement, under what
+    configuration — has an answer that does not depend on anyone's memory.
+    The recorded counts are the outcome as it stood when the run finished;
+    they are not recomputed, because recomputing them against a ledger that
+    has since been adjudicated would answer a different question.
+    """
+
+    __tablename__ = "financial_ingestion_runs"
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN {_RUN_STATUSES}",
+            name="ck_financial_ingestion_runs_status",
+        ),
+        Index("ix_financial_ingestion_runs_case", "case_id", "started_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+
+    # Identity of the code and rules that ran.  Without these a result is not
+    # reproducible, and an expert cannot say what produced it.
+    code_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ruleset_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    config: Mapped[dict] = mapped_column(
+        _jsonb_column(), nullable=False, default=dict, server_default="{}"
+    )
+
+    started_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Captured at the time so the trail survives the user record being removed.
+    started_by_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    documents_seen: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    transactions_admitted: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    transactions_quarantined: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    case = relationship("Case", foreign_keys=[case_id])
+    started_by = relationship("User", foreign_keys=[started_by_user_id])
+
+
+class FinancialSourceDocument(Base, TimestampMixin):
+    """A document admitted to the financial pipeline, and how it was read.
+
+    This does not duplicate ``evidence_files``; it points at one and records
+    what the financial reader made of it.  The exception is ``sha256_at_ingestion``,
+    which is deliberately a second copy: if the evidence file's hash ever
+    diverges from the hash the ledger was built on, the ledger's provenance is
+    broken, and only holding both makes that detectable.
+    """
+
+    __tablename__ = "financial_source_documents"
+    __table_args__ = (
+        CheckConstraint(
+            f"proof_class IN {_PROOF_CLASSES}",
+            name="ck_financial_source_documents_proof_class",
+        ),
+        CheckConstraint(
+            f"status IN {_DOCUMENT_STATUSES}",
+            name="ck_financial_source_documents_status",
+        ),
+        CheckConstraint(
+            "extraction_layer BETWEEN 0 AND 3",
+            name="ck_financial_source_documents_extraction_layer",
+        ),
+        UniqueConstraint(
+            "ingestion_run_id",
+            "evidence_file_id",
+            name="uq_financial_source_documents_run_file",
+        ),
+        Index("ix_financial_source_documents_case", "case_id"),
+        Index("ix_financial_source_documents_evidence_file", "evidence_file_id"),
+        Index(
+            "ix_financial_source_documents_case_status", "case_id", "status"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evidence_files.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ingestion_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_ingestion_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    sha256_at_ingestion: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    document_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    proof_class: Mapped[str] = mapped_column(String(2), nullable=False)
+
+    # 0 native structured parse, 1 template match, 2 structural OCR plus model
+    # interpretation, 3 model with retrieval grounding.  Decreasing determinism;
+    # layer 3 is a marked fallback, not a normal path.
+    extraction_layer: Mapped[int] = mapped_column(Integer, nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    institution_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="admitted", server_default="admitted"
+    )
+    quarantine_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    superseded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_source_documents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    metadata_: Mapped[dict] = mapped_column(
+        "metadata", _jsonb_column(), nullable=False, default=dict, server_default="{}"
+    )
+
+    case = relationship("Case", foreign_keys=[case_id])
+    evidence_file = relationship("EvidenceFile", foreign_keys=[evidence_file_id])
+    ingestion_run = relationship(
+        "FinancialIngestionRun", foreign_keys=[ingestion_run_id]
+    )
+    superseded_by = relationship(
+        "FinancialSourceDocument", remote_side=[id], foreign_keys=[superseded_by_id]
+    )
+
+
+class FinancialAccount(Base, TimestampMixin):
+    """An account as it appears across the case's financial documents.
+
+    ``identity_key`` is a deterministic fingerprint computed by the service
+    layer from whichever identifiers a document actually carried.  It exists
+    because uniqueness over nullable columns is not uniqueness in Postgres,
+    and because deciding that two differently-printed accounts are the same
+    account is a judgement that must be made once, in code that can be tested,
+    rather than implicitly in every query that joins on a masked number.
+
+    Full identifiers are stored as printed.  Masking is a presentation
+    concern, not a storage one: an investigation that cannot see the number it
+    was given cannot check it.
+    """
+
+    __tablename__ = "financial_accounts"
+    __table_args__ = (
+        UniqueConstraint(
+            "case_id", "identity_key", name="uq_financial_accounts_case_identity"
+        ),
+        Index("ix_financial_accounts_case", "case_id"),
+        Index("ix_financial_accounts_normalised", "case_id", "identifier_normalised"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    identity_key: Mapped[str] = mapped_column(String(512), nullable=False)
+
+    institution_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    identifier_as_printed: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Digits only, for joining across documents that print the same account
+    # with different punctuation or masking.
+    identifier_normalised: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    account_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    holder_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+
+    # Structured identifiers, kept separate so their check digits can be
+    # verified as fields rather than parsed back out of free text.
+    iban: Mapped[str | None] = mapped_column(String(34), nullable=True)
+    bic: Mapped[str | None] = mapped_column(String(11), nullable=True)
+    routing_number: Mapped[str | None] = mapped_column(String(9), nullable=True)
+
+    first_seen_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_ingestion_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    metadata_: Mapped[dict] = mapped_column(
+        "metadata", _jsonb_column(), nullable=False, default=dict, server_default="{}"
+    )
+
+    case = relationship("Case", foreign_keys=[case_id])
+    first_seen_run = relationship(
+        "FinancialIngestionRun", foreign_keys=[first_seen_run_id]
+    )
+
+
+class FinancialStatementPeriod(Base, TimestampMixin):
+    """One account's coverage by one document, and the arithmetic over it.
+
+    The balance identity is
+    ``opening + sum(credits) - sum(debits) == closing``
+    evaluated entirely in minor units.  Its result lives here rather than
+    being recomputed on read, because the answer is evidence: it was true of a
+    particular set of rows at a particular time, and a later recomputation
+    over an adjudicated ledger is a different assertion.
+
+    ``delta_minor`` is signed — computed closing minus printed closing — and is
+    the input to delta localisation, which asks whether the gap equals one
+    row's amount, twice a row's amount, or a round number.
+    """
+
+    __tablename__ = "financial_statement_periods"
+    __table_args__ = (
+        CheckConstraint(
+            f"reconciliation_status IN {_RECONCILIATION_STATUSES}",
+            name="ck_financial_statement_periods_reconciliation_status",
+        ),
+        CheckConstraint(
+            f"opening_balance_source IN {_BALANCE_SOURCES}",
+            name="ck_financial_statement_periods_opening_source",
+        ),
+        CheckConstraint(
+            f"closing_balance_source IN {_BALANCE_SOURCES}",
+            name="ck_financial_statement_periods_closing_source",
+        ),
+        CheckConstraint(
+            "period_start IS NULL OR period_end IS NULL OR period_start <= period_end",
+            name="ck_financial_statement_periods_ordered",
+        ),
+        UniqueConstraint(
+            "source_document_id",
+            "account_id",
+            "period_start",
+            "period_end",
+            name="uq_financial_statement_periods_document_account_period",
+        ),
+        Index("ix_financial_statement_periods_case", "case_id"),
+        Index(
+            "ix_financial_statement_periods_account_span",
+            "account_id",
+            "period_start",
+            "period_end",
+        ),
+        Index(
+            "ix_financial_statement_periods_status",
+            "case_id",
+            "reconciliation_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_source_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ingestion_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_ingestion_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+
+    opening_balance_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    closing_balance_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    opening_balance_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="absent", server_default="absent"
+    )
+    closing_balance_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="absent", server_default="absent"
+    )
+
+    reconciliation_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="not_attempted",
+        server_default="not_attempted",
+    )
+    computed_closing_minor: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    delta_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    credit_total_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    debit_total_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    transaction_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reconciled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Output of delta localisation: the candidate explanations, each naming the
+    # rows that would account for the gap.  Never a conclusion on its own.
+    delta_explanation: Mapped[dict | None] = mapped_column(
+        _jsonb_column(), nullable=True
+    )
+
+    case = relationship("Case", foreign_keys=[case_id])
+    source_document = relationship(
+        "FinancialSourceDocument", foreign_keys=[source_document_id]
+    )
+    account = relationship("FinancialAccount", foreign_keys=[account_id])
+    ingestion_run = relationship(
+        "FinancialIngestionRun", foreign_keys=[ingestion_run_id]
+    )
+
+
+class FinancialTransaction(Base, TimestampMixin):
+    """A single ledger row: the atom the whole feature exists to get right.
+
+    Four date columns are kept because statements genuinely carry up to four
+    different dates for one movement and collapsing them loses the difference
+    that matters — a transaction dated the 30th and posted the 2nd sits in
+    whichever month the question is about.  All four are nullable because no
+    single one is always printed, and a check constraint requires at least one.
+    ``ordering_date`` is the date chosen for sequencing and
+    ``ordering_date_source`` records which of the four it came from, so the
+    choice is visible rather than buried in a query.
+
+    ``content_hash`` fingerprints the normalised field set so that re-reading
+    the same document twice produces the same row rather than a duplicate.
+    """
+
+    __tablename__ = "financial_transactions"
+    __table_args__ = (
+        CheckConstraint(
+            "amount_minor >= 0", name="ck_financial_transactions_amount_non_negative"
+        ),
+        CheckConstraint(
+            f"direction IN {_DIRECTIONS}",
+            name="ck_financial_transactions_direction",
+        ),
+        CheckConstraint(
+            f"proof_class IN {_PROOF_CLASSES}",
+            name="ck_financial_transactions_proof_class",
+        ),
+        # p4 is corroboration only.  It never reaches this table; the
+        # constraint is what makes that a guarantee rather than an intention.
+        CheckConstraint(
+            "proof_class <> 'p4'", name="ck_financial_transactions_no_p4"
+        ),
+        CheckConstraint(
+            f"ledger_status IN {_LEDGER_STATUSES}",
+            name="ck_financial_transactions_ledger_status",
+        ),
+        CheckConstraint(
+            f"ordering_date_source IN {_DATE_SOURCES}",
+            name="ck_financial_transactions_ordering_date_source",
+        ),
+        CheckConstraint(
+            "transaction_date IS NOT NULL OR posted_date IS NOT NULL "
+            "OR value_date IS NOT NULL OR effective_date IS NOT NULL",
+            name="ck_financial_transactions_has_a_date",
+        ),
+        CheckConstraint(
+            "extraction_layer BETWEEN 0 AND 3",
+            name="ck_financial_transactions_extraction_layer",
+        ),
+        UniqueConstraint(
+            "case_id", "ref_id", name="uq_financial_transactions_case_ref"
+        ),
+        UniqueConstraint(
+            "source_document_id",
+            "content_hash",
+            name="uq_financial_transactions_document_content",
+        ),
+        Index(
+            "ix_financial_transactions_period_order",
+            "statement_period_id",
+            "ordering_date",
+            "row_index",
+        ),
+        Index(
+            "ix_financial_transactions_account_date",
+            "account_id",
+            "ordering_date",
+        ),
+        Index(
+            "ix_financial_transactions_case_status",
+            "case_id",
+            "ledger_status",
+        ),
+        Index("ix_financial_transactions_run", "ingestion_run_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_source_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ingestion_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_ingestion_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Null for sources that carry no statement period at all, such as a raw
+    # payment file.  Such rows cannot participate in a balance identity, and
+    # that absence is exactly what the null records.
+    statement_period_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_statement_periods.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    # Stable exhibit reference, cited in reports and regenerated identically.
+    ref_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Position within the source document, so ordering is total and stable
+    # even where several rows share a date.
+    row_index: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    direction: Mapped[str] = mapped_column(String(6), nullable=False)
+    # The balance printed beside the row, where one is printed.  A second,
+    # independent check on the arithmetic.
+    running_balance_minor: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+
+    transaction_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    posted_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    value_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ordering_date: Mapped[date] = mapped_column(Date, nullable=False)
+    ordering_date_source: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    counterparty_raw: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    transaction_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bank_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    proof_class: Mapped[str] = mapped_column(String(2), nullable=False)
+    extraction_layer: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    ledger_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="admitted", server_default="admitted"
+    )
+    quarantine_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    superseded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_transactions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    # Where on the page this came from: page number, normalised bounding box,
+    # and the raw text the value was read from.  Formalised alongside the
+    # click-through-to-source work; held as a document here so that the shape
+    # can settle without a migration per field.
+    provenance: Mapped[dict] = mapped_column(
+        _jsonb_column(), nullable=False, default=dict, server_default="{}"
+    )
+    metadata_: Mapped[dict] = mapped_column(
+        "metadata", _jsonb_column(), nullable=False, default=dict, server_default="{}"
+    )
+
+    case = relationship("Case", foreign_keys=[case_id])
+    account = relationship("FinancialAccount", foreign_keys=[account_id])
+    source_document = relationship(
+        "FinancialSourceDocument", foreign_keys=[source_document_id]
+    )
+    statement_period = relationship(
+        "FinancialStatementPeriod", foreign_keys=[statement_period_id]
+    )
+    ingestion_run = relationship(
+        "FinancialIngestionRun", foreign_keys=[ingestion_run_id]
+    )
+    superseded_by = relationship(
+        "FinancialTransaction", remote_side=[id], foreign_keys=[superseded_by_id]
+    )
+
+
+class FinancialAdjudication(Base):
+    """A human decision about financial evidence, recorded as an event.
+
+    Rows are appended and never updated, which is why this model does not take
+    ``TimestampMixin``: an ``updated_at`` column would invite exactly the
+    mutation the table exists to rule out.
+
+    ``subject_id`` carries no foreign key because the subject may be any of
+    four tables.  The trade is deliberate: a decision must outlive the row it
+    was about, and a cascade that deleted the record of a decision would
+    destroy the audit trail at precisely the moment it was needed.  Referential
+    integrity is checked in the service layer instead.
+
+    Actor name and email are copied in at the time of the decision for the same
+    reason the run table copies them: a deleted user must not erase who
+    decided what.
+    """
+
+    __tablename__ = "financial_adjudications"
+    __table_args__ = (
+        CheckConstraint(
+            f"subject_type IN {_ADJUDICATION_SUBJECTS}",
+            name="ck_financial_adjudications_subject_type",
+        ),
+        CheckConstraint(
+            _REASON_NOT_BLANK,
+            name="ck_financial_adjudications_reason_not_blank",
+        ),
+        Index(
+            "ix_financial_adjudications_subject", "subject_type", "subject_id"
+        ),
+        Index("ix_financial_adjudications_case", "case_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    subject_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+
+    decision: Mapped[str] = mapped_column(String(48), nullable=False)
+    # Free text and mandatory.  An adjudication without a stated reason is not
+    # an adjudication; it is an unexplained edit.
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+    before: Mapped[dict | None] = mapped_column(_jsonb_column(), nullable=True)
+    after: Mapped[dict | None] = mapped_column(_jsonb_column(), nullable=True)
+
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    actor_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    ingestion_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_ingestion_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    case = relationship("Case", foreign_keys=[case_id])
+    actor = relationship("User", foreign_keys=[actor_user_id])
+    ingestion_run = relationship(
+        "FinancialIngestionRun", foreign_keys=[ingestion_run_id]
+    )
