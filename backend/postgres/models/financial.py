@@ -39,6 +39,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -204,10 +205,37 @@ class FinancialSourceDocument(Base, TimestampMixin):
             "evidence_file_id",
             name="uq_financial_source_documents_run_file",
         ),
+        CheckConstraint(
+            "duplicate_match_rung IS NULL OR duplicate_match_rung BETWEEN 0 AND 2",
+            name="ck_financial_source_documents_duplicate_rung",
+        ),
+        # A rung is a statement about how a document matched its group, so it
+        # is meaningless without one.  Allowing a rung to stand alone would
+        # let a document claim it had been shown to duplicate something
+        # without recording what.
+        CheckConstraint(
+            "duplicate_match_rung IS NULL OR duplicate_group_key IS NOT NULL",
+            name="ck_financial_source_documents_rung_needs_group",
+        ),
         Index("ix_financial_source_documents_case", "case_id"),
         Index("ix_financial_source_documents_evidence_file", "evidence_file_id"),
         Index(
             "ix_financial_source_documents_case_status", "case_id", "status"
+        ),
+        # Duplicate resolution runs within one case and only within one case,
+        # so this is the index that supports it.
+        Index(
+            "ix_financial_source_documents_case_duplicate_group",
+            "case_id",
+            "duplicate_group_key",
+        ),
+        # The same key without the case, which is a different question with a
+        # different answer: has this statement been seen in another matter?
+        # That is worth being able to ask and must never drive an exclusion,
+        # so it gets an index of its own rather than sharing the one above.
+        Index(
+            "ix_financial_source_documents_duplicate_group",
+            "duplicate_group_key",
         ),
     )
 
@@ -254,6 +282,30 @@ class FinancialSourceDocument(Base, TimestampMixin):
         UUID(as_uuid=True),
         ForeignKey("financial_source_documents.id", ondelete="SET NULL"),
         nullable=True,
+    )
+
+    # Duplicate detection.  Both fingerprints are computed from what the
+    # document was read to say, never from the case it happens to sit in, so
+    # the same statement filed in two matters produces the same key in both.
+    # That is deliberate: seeing it is useful, and acting on it is not
+    # permitted.  Every query that changes a status filters on case_id;
+    # nothing outside the case is ever superseded.
+    #
+    # content_fingerprint covers the reading — accounts, period bounds and the
+    # transaction rows.  duplicate_group_key covers only the accounts and
+    # bounds, so it is the coarser of the two and is what groups candidates
+    # together; documents agreeing on the finer fingerprint necessarily agree
+    # on the coarser one, which is what makes a single group key sufficient.
+    content_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    duplicate_group_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    duplicate_match_rung: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Set when a person needs to look, which is not the same as being excluded.
+    # A weak match is flagged and left admitted; a strong one is excluded and
+    # still flagged, because an automatic exclusion nobody reviews is just a
+    # quiet deletion.
+    duplicate_review_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
 
     metadata_: Mapped[dict] = mapped_column(

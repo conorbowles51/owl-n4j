@@ -153,3 +153,33 @@ class ExtractionLayer(int, Enum):
     template = 1          # Version-controlled template match on a known layout.
     structural = 2        # Structural OCR plus model interpretation.
     grounded_model = 3    # Model with retrieval grounding.  Fallback only.
+
+
+class DuplicateMatchRung(int, Enum):
+    """How strongly one document was shown to duplicate another.
+
+    The rungs are nested: identical bytes imply an identical reading, and an
+    identical reading implies the same account and period.  So a match at any
+    rung is also a match at every weaker rung, and recording the strongest one
+    that held says everything about the claim.
+
+    The distinction is not pedantry, because the rungs do not license the same
+    action.  ``identical_bytes`` and ``identical_reading`` establish that two
+    documents say the same thing, and a second copy of the same thing is not
+    additional evidence of anything.  ``same_account_period`` establishes only
+    that two documents cover the same account over the same dates, which is
+    also true of an interim statement and the final one that replaces it, of a
+    statement and its own corrected reissue, and of the first and second halves
+    of a month printed separately.  Excluding on that alone would discard real
+    evidence, so it is raised for a person to look at rather than acted on.
+    """
+
+    # Same sha256 over the file itself.  A re-upload of one file.
+    identical_bytes = 0
+    # Different bytes, identical extracted content: the same statement
+    # re-scanned, re-exported, or saved by a different tool.  This is the rung
+    # that matters, because it is the one byte-identity misses.
+    identical_reading = 1
+    # Same account over the same dates, with content that differs.  A candidate
+    # and nothing more.
+    same_account_period = 2

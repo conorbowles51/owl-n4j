@@ -8,6 +8,22 @@ that fails to close can detect an absence.
 Nothing in this package may represent a monetary value as a float.
 """
 
+from services.financial.duplicates import (
+    CrossCaseError,
+    CrossMatterSighting,
+    DocumentFingerprint,
+    DuplicateError,
+    DuplicateGroup,
+    GroupMember,
+    cross_matter_sightings,
+    find_groups,
+    fingerprint_document,
+    nominate_primary,
+    purge_document,
+    resolve_duplicates,
+    restore_document,
+    store_fingerprint,
+)
 from services.financial.money import (
     AmbiguousAmountError,
     Currency,
@@ -65,6 +81,21 @@ from services.financial.version import (
 )
 
 __all__ = [
+    # Duplicate documents
+    "CrossCaseError",
+    "CrossMatterSighting",
+    "DocumentFingerprint",
+    "DuplicateError",
+    "DuplicateGroup",
+    "GroupMember",
+    "cross_matter_sightings",
+    "find_groups",
+    "fingerprint_document",
+    "nominate_primary",
+    "purge_document",
+    "resolve_duplicates",
+    "restore_document",
+    "store_fingerprint",
     # Money
     "AmbiguousAmountError",
     "Currency",
