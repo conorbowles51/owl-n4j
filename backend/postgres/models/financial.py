@@ -82,6 +82,16 @@ _PERIOD_BOUNDS_SOURCES = "('printed', 'derived', 'absent')"
 _ADJUDICATION_SUBJECTS = (
     "('transaction', 'statement_period', 'source_document', 'account')"
 )
+# Closed for the reason the quarantine reasons are closed: "how many rows did
+# you set aside, and how many did you put back" is answered by a GROUP BY, and
+# free text answers it wrongly as many times as there are spellings.  Every
+# disposition here has its reversal in the same vocabulary, because the ledger
+# appends: undoing a supersession writes the undo, it does not retract the
+# original.  See postgres.models.enums.AdjudicationDecision.
+_ADJUDICATION_DECISIONS = (
+    "('supersede_duplicate', 'restore_document', 'purge_duplicate', "
+    "'quarantine_row', 'release_row', 'explain_balance_failure')"
+)
 _QUARANTINE_REASONS = (
     "('balance_break', 'unreadable_row', 'currency_mismatch', "
     "'unexplained_delta', 'adjudicated')"
@@ -832,6 +842,22 @@ class FinancialAdjudication(Base):
     Actor name and email are copied in at the time of the decision for the same
     reason the run table copies them: a deleted user must not erase who
     decided what.
+
+    ``subject_sequence`` orders the decisions about one subject, and exists
+    because ``created_at`` cannot.  Postgres ``now()`` is transaction-start
+    time, so every row written in one transaction shares it; SQLite's
+    ``CURRENT_TIMESTAMP`` is granular to the second.  Ordering by timestamp and
+    breaking ties on ``id`` would give a stable answer, but ``id`` is a random
+    uuid4, so the answer would be arbitrary — which is worse than no order at
+    all, because it looks like one.  A quarantine and the release that undid it
+    are the exact pair a reader must be able to tell apart, and they are the
+    pair most likely to be written together.
+
+    The counter is assigned in the service layer rather than by a sequence, so
+    that it is per subject and portable to the SQLite the tests build.  The
+    unique constraint is what makes it worth having: a gap or a repeat in a
+    subject's history is then a fact the database will show you, rather than an
+    absence you would have to already suspect to look for.
     """
 
     __tablename__ = "financial_adjudications"
@@ -841,8 +867,22 @@ class FinancialAdjudication(Base):
             name="ck_financial_adjudications_subject_type",
         ),
         CheckConstraint(
+            f"decision IN {_ADJUDICATION_DECISIONS}",
+            name="ck_financial_adjudications_decision",
+        ),
+        CheckConstraint(
             _REASON_NOT_BLANK,
             name="ck_financial_adjudications_reason_not_blank",
+        ),
+        CheckConstraint(
+            "subject_sequence >= 1",
+            name="ck_financial_adjudications_sequence_positive",
+        ),
+        UniqueConstraint(
+            "subject_type",
+            "subject_id",
+            "subject_sequence",
+            name="uq_financial_adjudications_subject_sequence",
         ),
         Index(
             "ix_financial_adjudications_subject", "subject_type", "subject_id"
@@ -861,6 +901,10 @@ class FinancialAdjudication(Base):
 
     subject_type: Mapped[str] = mapped_column(String(24), nullable=False)
     subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # 1 for the first decision about a subject, and one more for each after.
+    # Assigned in services.financial.decisions.record; see the class docstring
+    # on why this is not a timestamp and not a sequence.
+    subject_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
 
     decision: Mapped[str] = mapped_column(String(48), nullable=False)
     # Free text and mandatory.  An adjudication without a stated reason is not

@@ -66,15 +66,20 @@ from enum import Enum
 from typing import TYPE_CHECKING, Iterable, Optional, Sequence
 
 from postgres.models.enums import (
+    AdjudicationDecision,
+    AdjudicationSubject,
     LedgerStatus,
     QuarantineReason,
     ReconciliationStatus,
     TransactionDirection,
 )
+from services.financial.decisions import Actor, record
 from services.financial.money import Money
 from services.financial.reconcile import IdentityOutcome
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from sqlalchemy.orm import Session
+
     from postgres.models.financial import FinancialTransaction
 
 
@@ -622,14 +627,26 @@ def would_rescue(
 
 
 def quarantine_transaction(
+    session: "Session",
     transaction: "FinancialTransaction",
     basis: QuarantineBasis,
+    *,
+    case_id: uuid.UUID,
+    actor: Actor,
+    ingestion_run_id: Optional[uuid.UUID] = None,
 ) -> "FinancialTransaction":
-    """Set one row aside, recording the grounds on the row itself.
+    """Set one row aside: append the decision, then change the row.
 
     Idempotent for a row already quarantined on the same grounds, and a
     refusal for one quarantined on different grounds: overwriting the first
     reason would erase the earlier decision, and this ledger appends.
+
+    ``basis.detail`` becomes the adjudication's reason.  It used to be
+    discarded — only ``basis.reason.value`` reached the row — so the row said
+    ``balance_break`` and the sentence naming the row and the two figures that
+    disagreed went nowhere.  The closed vocabulary is what a GROUP BY counts;
+    the detail is what a reader needs.  Both are now kept, in the two places
+    that can hold them.
     """
     if not isinstance(basis, QuarantineBasis):
         raise UngroundedQuarantineError(
@@ -644,38 +661,101 @@ def quarantine_transaction(
                 f"{transaction.quarantine_reason!r}; re-quarantining it as "
                 f"{basis.reason.value!r} would erase the earlier decision"
             )
+        # Nothing changes, so nothing is appended.  An event claiming a change
+        # that did not happen dilutes the log; `decisions._check_diff` refuses
+        # an identical before/after for the same reason, so the two rules here
+        # agree rather than one of them merely tolerating the other.
         return transaction
     if current != LedgerStatus.admitted.value:
         raise UngroundedQuarantineError(
             f"row is {current!r}, not admitted; quarantining it would "
             "overwrite a status that already excludes it from every total"
         )
+
+    record(
+        session,
+        case_id=case_id,
+        subject=transaction,
+        subject_type=AdjudicationSubject.transaction,
+        decision=AdjudicationDecision.quarantine_row,
+        reason=basis.detail,
+        actor=actor,
+        before={
+            "ledger_status": current,
+            "quarantine_reason": transaction.quarantine_reason,
+        },
+        after={
+            "ledger_status": LedgerStatus.quarantined.value,
+            "quarantine_reason": basis.reason.value,
+        },
+        ingestion_run_id=ingestion_run_id,
+    )
+
     transaction.ledger_status = LedgerStatus.quarantined.value
     transaction.quarantine_reason = basis.reason.value
     return transaction
 
 
 def release_transaction(
+    session: "Session",
     transaction: "FinancialTransaction",
     *,
-    actor: str,
+    case_id: uuid.UUID,
+    actor: Actor,
     reason: str,
+    ingestion_run_id: Optional[uuid.UUID] = None,
 ) -> "FinancialTransaction":
-    """Return a quarantined row to the admitted set.
+    """Return a quarantined row to the admitted set, recording the reversal.
 
-    Requires an actor and a reason for the same purpose the quarantine did:
-    admitting evidence back into every downstream total is a decision, and a
-    decision with nobody's name on it cannot be reviewed.
+    This function used to validate an actor and a reason and then discard
+    both.  That was not carelessness about the arguments; it was that there
+    was nowhere to put them.  ``ck_financial_transactions_quarantine_coherent``
+    requires ``(quarantine_reason IS NOT NULL) = (ledger_status =
+    'quarantined')``, so a released row *must* have its reason nulled — the
+    migration that added the constraint says a row carrying a reason while
+    admitted "describes a decision that was reversed, and a reader cannot tell
+    that from a decision that was taken."  The row is therefore the wrong
+    place, deliberately.  The right place is the adjudication log, and until
+    now nothing wrote there, so a readmitted row was byte-identical to one
+    that had never been set aside.
+
+    The grounds it was quarantined on are captured in ``before`` before they
+    are nulled, so the reversal records what it reversed.
     """
     if transaction.ledger_status != LedgerStatus.quarantined.value:
         raise UngroundedQuarantineError(
             f"row is {transaction.ledger_status!r}, not quarantined; there is "
             "nothing to release"
         )
-    if not actor or not actor.strip() or not reason or not reason.strip():
+    if not isinstance(actor, Actor):
+        raise UngroundedQuarantineError(
+            f"releasing a row needs an Actor, got {type(actor).__name__}; a "
+            "bare name cannot be joined to a user or written to for questions"
+        )
+    if not reason or not reason.strip():
         raise UngroundedQuarantineError(
             "releasing a row has to record who did it and why"
         )
+
+    record(
+        session,
+        case_id=case_id,
+        subject=transaction,
+        subject_type=AdjudicationSubject.transaction,
+        decision=AdjudicationDecision.release_row,
+        reason=reason,
+        actor=actor,
+        before={
+            "ledger_status": transaction.ledger_status,
+            "quarantine_reason": transaction.quarantine_reason,
+        },
+        after={
+            "ledger_status": LedgerStatus.admitted.value,
+            "quarantine_reason": None,
+        },
+        ingestion_run_id=ingestion_run_id,
+    )
+
     transaction.ledger_status = LedgerStatus.admitted.value
     transaction.quarantine_reason = None
     return transaction

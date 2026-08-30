@@ -86,6 +86,7 @@ from typing import TYPE_CHECKING, Callable, Iterable, Mapping, Optional, Sequenc
 from sqlalchemy import select, update
 
 from postgres.models.enums import (
+    AdjudicationDecision,
     AdjudicationSubject,
     DocumentStatus,
     DuplicateMatchRung,
@@ -99,6 +100,7 @@ from postgres.models.financial import (
     FinancialStatementPeriod,
     FinancialTransaction,
 )
+from services.financial.decisions import Actor, record
 from services.financial.reconcile import reconcile_period
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -466,13 +468,28 @@ def find_groups(session: "Session", case_id: uuid.UUID) -> tuple[DuplicateGroup,
 
 
 def resolve_duplicates(
-    session: "Session", case_id: uuid.UUID
+    session: "Session",
+    case_id: uuid.UUID,
+    *,
+    actor: Actor,
+    ingestion_run_id: Optional[uuid.UUID] = None,
 ) -> tuple[DuplicateGroup, ...]:
     """Apply the default policy: auto-exclude the strong matches, flag them all.
 
     Returns the groups it acted on, so a caller can report what happened
     without recomputing it.
+
+    ``actor`` is required even though the exclusions are automatic, and that is
+    the point.  "The system did it" is not an answer to who took a document out
+    of every total; some person ran this, under this policy, and that is who
+    the log should name.  ``ingestion_run_id`` records which execution, so the
+    pair together say who and when without either standing in for the other.
     """
+    if not isinstance(actor, Actor):
+        raise DuplicateError(
+            f"resolve_duplicates needs an Actor, got {type(actor).__name__}; "
+            "an automatic exclusion is still somebody's decision"
+        )
     groups = find_groups(session, case_id)
     for group in groups:
         for member in group.members:
@@ -487,9 +504,22 @@ def resolve_duplicates(
             document.duplicate_review_required = member.review_required
             if member.is_primary:
                 continue
-            document.duplicate_match_rung = int(member.rung)
             if member.excluded:
-                _supersede(session, document, group.primary_id)
+                # The rung is set inside `_supersede`, after the event is
+                # written.  Setting it here first would make the `before`
+                # snapshot record the new rung as the old one -- a diff that
+                # says a field did not change while changing it.
+                _supersede(
+                    session,
+                    document,
+                    group.primary_id,
+                    case_id=case_id,
+                    rung=member.rung,
+                    actor=actor,
+                    ingestion_run_id=ingestion_run_id,
+                )
+            else:
+                document.duplicate_match_rung = int(member.rung)
     session.flush()
     return groups
 
@@ -498,10 +528,66 @@ def _supersede(
     session: "Session",
     document: FinancialSourceDocument,
     primary_id: uuid.UUID,
+    *,
+    case_id: uuid.UUID,
+    rung: DuplicateMatchRung,
+    actor: Actor,
+    ingestion_run_id: Optional[uuid.UUID] = None,
 ) -> None:
-    """Hide a document and take its rows out of every total."""
+    """Append the decision, then hide the document and its rows.
+
+    The row-level trace of a supersession survives it — ``superseded_by_id``
+    keeps pointing at the primary — so unlike a quarantine this disposition is
+    not erased by its own columns.  It is recorded anyway, because the reversal
+    is: ``restore_document`` nulls ``superseded_by_id`` and
+    ``duplicate_match_rung``, and without an event the restored document is
+    indistinguishable from one that was never superseded at all.  Recording
+    only one side of a pair gives a log that is worse than none, because the
+    absences read as facts.
+
+    ``resolve_duplicates`` is re-runnable, so this function is reached routinely
+    for documents that are already superseded by this primary at this rung.
+    That is not a decision — nothing changes — and appending an event for it
+    would make the log answer "how many times was this excluded" with the
+    number of times the resolver happened to be run.  So the event is written
+    only when the two snapshots differ.  The row-level update below is not
+    skipped with it: a row ingested against this document after the supersession
+    would still be admitted, and hiding it is reconciling state rather than
+    taking a decision.
+    """
+    before = {
+        "status": document.status,
+        "superseded_by_id": str(document.superseded_by_id)
+        if document.superseded_by_id
+        else None,
+        "duplicate_match_rung": document.duplicate_match_rung,
+    }
+    after = {
+        "status": DocumentStatus.superseded.value,
+        "superseded_by_id": str(primary_id),
+        "duplicate_match_rung": int(rung),
+    }
+
+    if before != after:
+        record(
+            session,
+            case_id=case_id,
+            subject=document,
+            subject_type=AdjudicationSubject.source_document,
+            decision=AdjudicationDecision.supersede_duplicate,
+            reason=(
+                f"duplicate of {primary_id} at rung {int(rung)} "
+                f"({rung.name}); excluded from every total in favour of the primary"
+            ),
+            actor=actor,
+            before=before,
+            after=after,
+            ingestion_run_id=ingestion_run_id,
+        )
+
     document.status = DocumentStatus.superseded.value
     document.superseded_by_id = primary_id
+    document.duplicate_match_rung = int(rung)
     session.execute(
         update(FinancialTransaction)
         .where(FinancialTransaction.source_document_id == document.id)
@@ -511,7 +597,13 @@ def _supersede(
 
 
 def restore_document(
-    session: "Session", document: FinancialSourceDocument
+    session: "Session",
+    document: FinancialSourceDocument,
+    *,
+    case_id: uuid.UUID,
+    actor: Actor,
+    reason: str,
+    ingestion_run_id: Optional[uuid.UUID] = None,
 ) -> None:
     """Undo a supersession, for when the nomination was wrong.
 
@@ -519,7 +611,55 @@ def restore_document(
     rejected for its own reasons keeps that status, because restoring a
     document is a statement about the document and not a licence to overturn
     every other decision made about its contents.
+
+    An actor and a reason are now required, and were not before.  This function
+    put a document back into every total and left nothing behind saying who
+    decided that or why — it nulls ``superseded_by_id`` and
+    ``duplicate_match_rung``, which are the only two columns that recorded the
+    exclusion, so afterwards the document read as one that had never been a
+    duplicate.  A wrong nomination and a nomination reversed under pressure
+    looked the same in the ledger.
     """
+    if not isinstance(actor, Actor):
+        raise DuplicateError(
+            f"restore_document needs an Actor, got {type(actor).__name__}"
+        )
+    if not reason or not reason.strip():
+        raise DuplicateError(
+            "a restore without a stated reason is not an adjudication, it is "
+            "an unexplained readmission"
+        )
+    if document.case_id != case_id:
+        raise CrossCaseError(
+            f"document {document.id} belongs to case {document.case_id}, "
+            f"not {case_id}; refusing to restore it"
+        )
+
+    record(
+        session,
+        case_id=case_id,
+        subject=document,
+        subject_type=AdjudicationSubject.source_document,
+        decision=AdjudicationDecision.restore_document,
+        reason=reason,
+        actor=actor,
+        before={
+            "status": document.status,
+            "superseded_by_id": str(document.superseded_by_id)
+            if document.superseded_by_id
+            else None,
+            "duplicate_match_rung": document.duplicate_match_rung,
+            "duplicate_review_required": document.duplicate_review_required,
+        },
+        after={
+            "status": DocumentStatus.admitted.value,
+            "superseded_by_id": None,
+            "duplicate_match_rung": None,
+            "duplicate_review_required": False,
+        },
+        ingestion_run_id=ingestion_run_id,
+    )
+
     document.status = DocumentStatus.admitted.value
     document.superseded_by_id = None
     document.duplicate_match_rung = None
@@ -588,9 +728,7 @@ def purge_document(
     *,
     case_id: uuid.UUID,
     reason: str,
-    actor_name: str,
-    actor_email: str,
-    actor_user_id: Optional[uuid.UUID] = None,
+    actor: Actor,
     ingestion_run_id: Optional[uuid.UUID] = None,
 ) -> FinancialAdjudication:
     """Delete a duplicate for good.  Separate from hiding, and on purpose.
@@ -637,12 +775,14 @@ def purge_document(
             "re-resolve the group first"
         )
 
-    adjudication = FinancialAdjudication(
+    adjudication = record(
+        session,
         case_id=case_id,
-        subject_type=AdjudicationSubject.source_document.value,
-        subject_id=document.id,
-        decision="purge_duplicate",
+        subject=document,
+        subject_type=AdjudicationSubject.source_document,
+        decision=AdjudicationDecision.purge_duplicate,
         reason=reason,
+        actor=actor,
         before={
             "status": document.status,
             "duplicate_group_key": document.duplicate_group_key,
@@ -653,14 +793,13 @@ def purge_document(
             else None,
             "sha256_at_ingestion": document.sha256_at_ingestion,
         },
+        # `after=None` is the honest snapshot here and the only place in this
+        # module it is right: the subject will not exist.  It is also why
+        # `_check_diff` tolerates a one-sided pair rather than demanding
+        # matching keys unconditionally.
         after=None,
-        actor_user_id=actor_user_id,
-        actor_name=actor_name,
-        actor_email=actor_email,
         ingestion_run_id=ingestion_run_id,
     )
-    session.add(adjudication)
-    session.flush()
 
     session.delete(document)
     session.flush()

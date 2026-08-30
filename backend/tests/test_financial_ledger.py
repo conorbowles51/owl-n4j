@@ -30,6 +30,7 @@ from sqlalchemy.orm import sessionmaker
 from postgres.base import Base
 from postgres.models.case import Case
 from postgres.models.enums import (
+    AdjudicationDecision,
     AdjudicationSubject,
     BalanceSource,
     DateSource,
@@ -98,6 +99,7 @@ VOCABULARY_CONSTRAINTS = {
     "ck_financial_transactions_quarantine_reason": QuarantineReason,
     "ck_financial_transactions_ordering_date_source": DateSource,
     "ck_financial_adjudications_subject_type": AdjudicationSubject,
+    "ck_financial_adjudications_decision": AdjudicationDecision,
 }
 
 _IN_LIST = re.compile(r"\bIN\s*\(([^)]*)\)", re.IGNORECASE)
@@ -409,6 +411,14 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
         return transaction
 
     def make_adjudication(self, **overrides):
+        """A valid adjudication row, written past the service layer.
+
+        ``subject_sequence`` defaults to 1 rather than being counted, because
+        the default ``subject_id`` is fresh on every call and these tests reach
+        the table directly; :mod:`services.financial.decisions` is what numbers
+        a real one.  Any test writing a second decision about the *same*
+        subject has to say which position it takes.
+        """
         adjudication = FinancialAdjudication(
             id=overrides.pop("id", uuid4()),
             case_id=overrides.pop("case_id", self.case.id),
@@ -416,7 +426,10 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
                 "subject_type", AdjudicationSubject.transaction.value
             ),
             subject_id=overrides.pop("subject_id", uuid4()),
-            decision=overrides.pop("decision", "admit"),
+            subject_sequence=overrides.pop("subject_sequence", 1),
+            decision=overrides.pop(
+                "decision", AdjudicationDecision.quarantine_row.value
+            ),
             reason=overrides.pop("reason", "Verified against the printed page."),
             actor_user_id=overrides.pop("actor_user_id", self.user.id),
             actor_name=overrides.pop("actor_name", self.user.name),
@@ -691,13 +704,38 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
 
         Whitespace is checked as well as emptiness, because an unexplained edit
         with a space in the reason field is still an unexplained edit.
+
+        Named rather than merely rejected: these three were passing on a
+        ``NOT NULL`` violation from an unrelated column for as long as the
+        fixture omitted ``subject_sequence``, which is precisely the accident
+        ``assertRejectedBy`` exists to catch.
         """
-        self.assertRejected(lambda: self.make_adjudication(reason=""))
-        self.assertRejected(lambda: self.make_adjudication(reason="   "))
-        self.assertRejected(lambda: self.make_adjudication(reason="\t\n "))
+        for reason in ("", "   ", "\t\n "):
+            with self.subTest(reason=repr(reason)):
+                self.assertRejectedBy(
+                    "ck_financial_adjudications_reason_not_blank",
+                    lambda: self.make_adjudication(reason=reason),
+                )
 
     def test_unknown_adjudication_subject_is_rejected(self):
-        self.assertRejected(lambda: self.make_adjudication(subject_type="hunch"))
+        self.assertRejectedBy(
+            "ck_financial_adjudications_subject_type",
+            lambda: self.make_adjudication(subject_type="hunch"),
+        )
+
+    def test_unknown_adjudication_decision_is_rejected(self):
+        """The vocabulary that was free text until the decision log was built.
+
+        ``supersede``, ``quarantine`` and ``admit`` were all written by this
+        very file before the constraint existed, which is the drift the closed
+        vocabulary is for.
+        """
+        for decision in ("admit", "supersede", "quarantine", "released"):
+            with self.subTest(decision=decision):
+                self.assertRejectedBy(
+                    "ck_financial_adjudications_decision",
+                    lambda: self.make_adjudication(decision=decision),
+                )
 
     # ---- idempotency and identity ----------------------------------------
 
@@ -819,7 +857,7 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
         self.make_adjudication(
             subject_type=AdjudicationSubject.transaction.value,
             subject_id=wrong.id,
-            decision="supersede",
+            decision=AdjudicationDecision.supersede_duplicate.value,
             reason="Transposed digits; the page reads 152.00.",
             before={"amount_minor": 125_00},
             after={"amount_minor": 152_00},
@@ -856,7 +894,7 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
 
         self.make_adjudication(
             subject_id=subject_id,
-            decision="quarantine",
+            decision=AdjudicationDecision.quarantine_row.value,
             reason="Amount unreadable in the scan.",
         )
         self.db.commit()

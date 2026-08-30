@@ -63,6 +63,14 @@ from services.financial.dates import (
     read_row_date,
     survey_row_dates,
 )
+from services.financial.decisions import (
+    Actor,
+    DecisionError,
+    MalformedSnapshotError,
+    SubjectMismatchError,
+    history,
+    record,
+)
 from services.financial.duplicates import (
     CrossCaseError,
     CrossMatterSighting,
@@ -239,6 +247,13 @@ __all__ = [
     "check_row_date",
     "read_row_date",
     "survey_row_dates",
+    # Decisions, appended before the state they describe changes
+    "Actor",
+    "DecisionError",
+    "MalformedSnapshotError",
+    "SubjectMismatchError",
+    "history",
+    "record",
     # Duplicate documents
     "CrossCaseError",
     "CrossMatterSighting",

@@ -40,6 +40,8 @@ from sqlalchemy.orm import sessionmaker
 from postgres.base import Base
 from postgres.models.case import Case
 from postgres.models.enums import (
+    AdjudicationDecision,
+    AdjudicationSubject,
     DocumentStatus,
     DuplicateMatchRung,
     ExtractionLayer,
@@ -60,6 +62,7 @@ from postgres.models.financial import (
     FinancialTransaction,
 )
 from postgres.models.user import User
+from services.financial.decisions import Actor, history
 from services.financial.duplicates import (
     CrossCaseError,
     DuplicateError,
@@ -196,6 +199,36 @@ class DuplicateTestCase(unittest.TestCase):
 
         self._file_index = 0
         self._row_index = 0
+        self.actor = Actor(
+            name=self.user.name, email=self.user.email, user_id=self.user.id
+        )
+
+    def resolve(self, case_id=None, **kwargs):
+        """``resolve_duplicates`` with the actor these fixtures decide as.
+
+        The actor is required by the service even though every exclusion here
+        is automatic, so this helper exists to keep that requirement from
+        being restated twelve times rather than to make it optional.
+        """
+        return resolve_duplicates(
+            self.db,
+            self.case.id if case_id is None else case_id,
+            actor=self.actor,
+            **kwargs,
+        )
+
+    def restore(self, document, **kwargs):
+        """``restore_document`` with the who and the why it now requires."""
+        kwargs.setdefault(
+            "reason", "Nomination reviewed; the exclusion was wrong."
+        )
+        return restore_document(
+            self.db,
+            document,
+            case_id=kwargs.pop("case_id", self.case.id),
+            actor=kwargs.pop("actor", self.actor),
+            **kwargs,
+        )
 
     def tearDown(self):
         self.db.close()
@@ -677,7 +710,7 @@ class RungTests(DuplicateTestCase):
         self.make_copy(rows=((400_00, "aa"),), sha256="1" * 64)
         self.make_copy(rows=((400_00, "aa"), (99_00, "cc")), sha256="2" * 64)
 
-        groups = resolve_duplicates(self.db, self.case.id)
+        groups = self.resolve()
         self.db.commit()
 
         self.assertEqual(groups[0].excluded_ids, ())
@@ -697,7 +730,7 @@ class RungTests(DuplicateTestCase):
         self.make_copy(sha256="1" * 64)
         self.make_copy(sha256="2" * 64)
 
-        groups = resolve_duplicates(self.db, self.case.id)
+        groups = self.resolve()
         self.db.commit()
 
         self.assertEqual(len(groups[0].excluded_ids), 1)
@@ -854,7 +887,7 @@ class ResolutionTests(DuplicateTestCase):
         self.make_copy(sha256="1" * 64)
         self.make_copy(sha256="2" * 64)
 
-        groups = resolve_duplicates(self.db, self.case.id)
+        groups = self.resolve()
         self.db.commit()
 
         excluded_id = groups[0].excluded_ids[0]
@@ -871,7 +904,7 @@ class ResolutionTests(DuplicateTestCase):
         self.make_copy(sha256="1" * 64)
         self.make_copy(sha256="2" * 64)
 
-        groups = resolve_duplicates(self.db, self.case.id)
+        groups = self.resolve()
         self.db.commit()
 
         period = self.db.scalars(
@@ -901,7 +934,7 @@ class ResolutionTests(DuplicateTestCase):
         self.make_copy(sha256="1" * 64)
         self.make_copy(sha256="2" * 64)
 
-        groups = resolve_duplicates(self.db, self.case.id)
+        groups = self.resolve()
         self.db.commit()
 
         primary = self.db.get(FinancialSourceDocument, groups[0].primary_id)
@@ -913,7 +946,7 @@ class ResolutionTests(DuplicateTestCase):
         self.make_copy(sha256="1" * 64)
         self.make_copy(sha256="2" * 64)
 
-        groups = resolve_duplicates(self.db, self.case.id)
+        groups = self.resolve()
         self.db.commit()
 
         excluded = self.db.get(
@@ -928,9 +961,9 @@ class ResolutionTests(DuplicateTestCase):
         self.make_copy(sha256="1" * 64)
         self.make_copy(sha256="2" * 64)
 
-        first = resolve_duplicates(self.db, self.case.id)
+        first = self.resolve()
         self.db.commit()
-        second = resolve_duplicates(self.db, self.case.id)
+        second = self.resolve()
         self.db.commit()
 
         self.assertEqual(first[0].primary_id, second[0].primary_id)
@@ -947,7 +980,7 @@ class ResolutionTests(DuplicateTestCase):
             sha256="1" * 64,
         )
 
-        resolve_duplicates(self.db, self.case.id)
+        self.resolve()
         self.db.commit()
 
         untouched = self.reload(theirs)
@@ -976,13 +1009,13 @@ class RestoreTests(DuplicateTestCase):
     def test_a_restored_document_counts_again(self):
         self.make_copy(sha256="1" * 64)
         self.make_copy(sha256="2" * 64)
-        groups = resolve_duplicates(self.db, self.case.id)
+        groups = self.resolve()
         self.db.commit()
 
         excluded = self.db.get(
             FinancialSourceDocument, groups[0].excluded_ids[0]
         )
-        restore_document(self.db, excluded)
+        self.restore(excluded)
         self.db.commit()
 
         reloaded = self.reload(excluded)
@@ -1042,13 +1075,13 @@ class RestoreTests(DuplicateTestCase):
 
         self.assertEqual(document.content_fingerprint, twin.content_fingerprint)
 
-        groups = resolve_duplicates(self.db, self.case.id)
+        groups = self.resolve()
         self.db.commit()
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0].primary_id, twin.id)
         self.assertEqual(groups[0].excluded_ids, (document.id,))
 
-        restore_document(self.db, self.db.get(FinancialSourceDocument, document.id))
+        self.restore(self.db.get(FinancialSourceDocument, document.id))
         self.db.commit()
 
         rows = {
@@ -1131,17 +1164,22 @@ class CrossMatterTests(DuplicateTestCase):
 
 class PurgeTests(DuplicateTestCase):
     def _actor(self) -> dict:
+        """The three loose actor arguments are now one ``Actor``.
+
+        They were three because the row has three columns, which is the
+        wrong reason: a name that can be passed without an address is a name
+        that will be.  The dataclass validates both at construction, so a
+        decision recorded here is one somebody can be asked about.
+        """
         return {
             "reason": "Confirmed duplicate disclosure; retaining the primary.",
-            "actor_name": self.user.name,
-            "actor_email": self.user.email,
-            "actor_user_id": self.user.id,
+            "actor": self.actor,
         }
 
     def test_purging_writes_its_adjudication_and_deletes_the_document(self):
         self.make_copy(sha256="1" * 64)
         self.make_copy(sha256="2" * 64)
-        groups = resolve_duplicates(self.db, self.case.id)
+        groups = self.resolve()
         self.db.commit()
 
         excluded = self.db.get(
@@ -1199,7 +1237,7 @@ class PurgeTests(DuplicateTestCase):
         """
         self.make_copy(sha256="1" * 64)
         self.make_copy(sha256="2" * 64)
-        groups = resolve_duplicates(self.db, self.case.id)
+        groups = self.resolve()
         self.db.commit()
 
         primary = self.db.get(FinancialSourceDocument, groups[0].primary_id)
@@ -1243,6 +1281,205 @@ class PurgeTests(DuplicateTestCase):
         self.assertIsNotNone(stored)
         self.assertEqual(stored.subject_id, document_id)
         self.assertIsNone(self.db.get(FinancialSourceDocument, document_id))
+
+
+class TheDecisionLog(DuplicateTestCase):
+    """What the document's own columns cannot say, and the log now does.
+
+    Supersession is better off than quarantine here: ``superseded_by_id`` keeps
+    pointing at the primary, so the disposition survives in the row.  The
+    reversal is the problem.  ``restore_document`` nulls both columns that
+    recorded the exclusion, so a restored document and one that was never a
+    duplicate are byte-identical afterwards — which is the same defect the
+    quarantine tests state, reached by a different route.  These tests assert
+    the log carries the difference.
+    """
+
+    def make_pair(self):
+        """Two readings of one statement, resolved.  Returns (primary, excluded)."""
+        self.make_copy(sha256="1" * 64)
+        self.make_copy(sha256="2" * 64)
+        groups = self.resolve()
+        self.db.commit()
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(len(groups[0].excluded_ids), 1)
+        return (
+            self.db.get(FinancialSourceDocument, groups[0].primary_id),
+            self.db.get(FinancialSourceDocument, groups[0].excluded_ids[0]),
+        )
+
+    def told(self, document):
+        return history(self.db, document, AdjudicationSubject.source_document)
+
+    def test_an_exclusion_is_recorded_against_the_document_it_hid(self):
+        primary, excluded = self.make_pair()
+
+        self.assertEqual(self.told(primary), ())
+        told = self.told(excluded)
+        self.assertEqual(len(told), 1)
+        self.assertEqual(
+            told[0].decision, AdjudicationDecision.supersede_duplicate.value
+        )
+        self.assertEqual(told[0].subject_sequence, 1)
+        self.assertIn(str(primary.id), told[0].reason)
+
+    def test_a_restored_document_is_not_indistinguishable_from_an_untouched_one(
+        self,
+    ):
+        """The defect, stated as a test.
+
+        Both documents below end admitted with both duplicate columns null,
+        and that is correct: a restored document is not a duplicate, so it must
+        not carry a rung or a supersession pointer.  The columns are identical
+        by design and the difference has to live somewhere else.
+        """
+        primary, excluded = self.make_pair()
+        self.restore(excluded)
+        self.db.commit()
+        self.db.expire_all()
+
+        columns = [
+            (
+                document.status,
+                document.superseded_by_id,
+                document.duplicate_match_rung,
+                document.duplicate_review_required,
+            )
+            for document in (
+                self.db.get(FinancialSourceDocument, primary.id),
+                self.db.get(FinancialSourceDocument, excluded.id),
+            )
+        ]
+        self.assertEqual(columns[0], columns[1])
+
+        self.assertEqual(self.told(primary), ())
+        self.assertEqual(
+            [event.decision for event in self.told(excluded)],
+            [
+                AdjudicationDecision.supersede_duplicate.value,
+                AdjudicationDecision.restore_document.value,
+            ],
+        )
+
+    def test_the_pair_is_ordered_even_written_in_one_transaction(self):
+        """``created_at`` cannot separate these two; ``subject_sequence`` can.
+
+        Both writes happen without an intervening commit, so under Postgres
+        they share a transaction timestamp and under SQLite they are very
+        likely to share a second.  Ordering on ``created_at`` then ``id`` would
+        put the restore first half the time, and would look authoritative
+        while doing it.
+        """
+        _, excluded = self.make_pair()
+        self.restore(excluded)
+        self.db.commit()
+
+        told = self.told(excluded)
+        self.assertEqual([event.subject_sequence for event in told], [1, 2])
+
+    def test_the_exclusion_survives_the_restore_that_nulls_it(self):
+        """The rung and the pointer are gone from the row; they are in ``before``."""
+        primary, excluded = self.make_pair()
+        rung = excluded.duplicate_match_rung
+        self.assertIsNotNone(rung)
+
+        self.restore(excluded)
+        self.db.commit()
+
+        restore = self.told(excluded)[1]
+        self.assertEqual(restore.before["superseded_by_id"], str(primary.id))
+        self.assertEqual(restore.before["duplicate_match_rung"], rung)
+        self.assertEqual(restore.before["status"], DocumentStatus.superseded.value)
+        self.assertIsNone(restore.after["superseded_by_id"])
+        self.assertIsNone(restore.after["duplicate_match_rung"])
+        self.assertEqual(restore.after["status"], DocumentStatus.admitted.value)
+
+    def test_the_stated_reason_reaches_the_log(self):
+        _, excluded = self.make_pair()
+        reason = "Nomination reversed: the excluded copy carries the bank's stamp."
+        self.restore(excluded, reason=reason)
+        self.db.commit()
+
+        self.assertEqual(self.told(excluded)[1].reason, reason)
+
+    def test_rerunning_the_resolver_appends_nothing(self):
+        """Re-running is not re-deciding.
+
+        ``resolve_duplicates`` is re-runnable and is reached routinely for
+        documents already superseded by the same primary at the same rung.
+        Appending an event for that would make the log answer "how many times
+        was this excluded" with the number of times the resolver was run.
+        """
+        _, excluded = self.make_pair()
+        self.resolve()
+        self.resolve()
+        self.db.commit()
+
+        self.assertEqual(len(self.told(excluded)), 1)
+
+    def test_the_decision_names_who_and_which_run(self):
+        """Who and when, without either standing in for the other.
+
+        The run id is passed explicitly here rather than through ``resolve``,
+        because the argument is optional and a helper that always supplied it
+        would leave the ``None`` case untested while looking like it covered
+        both.
+        """
+        self.make_copy(sha256="1" * 64)
+        self.make_copy(sha256="2" * 64)
+        groups = self.resolve(ingestion_run_id=self.run.run_id)
+        self.db.commit()
+        excluded = self.db.get(FinancialSourceDocument, groups[0].excluded_ids[0])
+
+        told = self.told(excluded)[0]
+        self.assertEqual(told.ingestion_run_id, self.run.run_id)
+        self.assertEqual(told.actor_name, self.user.name)
+        self.assertEqual(told.actor_email, self.user.email)
+        self.assertEqual(told.actor_user_id, self.user.id)
+        self.assertEqual(told.case_id, self.case.id)
+
+    def test_a_restore_cannot_be_filed_in_another_matter(self):
+        _, excluded = self.make_pair()
+
+        with self.assertRaises(CrossCaseError):
+            self.restore(excluded, case_id=self.other_case.id)
+
+    def test_an_automatic_exclusion_still_needs_an_actor(self):
+        """"The system did it" is not an answer to who took this out of the totals."""
+        self.make_copy(sha256="1" * 64)
+        self.make_copy(sha256="2" * 64)
+        self.db.commit()
+
+        with self.assertRaises(DuplicateError) as caught:
+            resolve_duplicates(self.db, self.case.id, actor="n.byrne")
+        self.assertIn("Actor", str(caught.exception))
+
+    def test_a_purge_records_that_nothing_is_left(self):
+        """``after=None`` is the honest snapshot, and the log outlives the row."""
+        _, excluded = self.make_pair()
+        excluded_id = excluded.id
+
+        adjudication = purge_document(
+            self.db,
+            excluded,
+            case_id=self.case.id,
+            reason="Retention schedule; the primary is kept.",
+            actor=self.actor,
+        )
+        self.db.commit()
+        self.db.expire_all()
+
+        self.assertIsNone(self.db.get(FinancialSourceDocument, excluded_id))
+        stored = self.db.get(FinancialAdjudication, adjudication.id)
+        self.assertEqual(
+            stored.decision, AdjudicationDecision.purge_duplicate.value
+        )
+        self.assertIsNone(stored.after)
+        self.assertIsNotNone(stored.before)
+        self.assertEqual(stored.subject_id, excluded_id)
+        # Sequence 2: the supersession that hid it is still sequence 1, and
+        # survives the row it was about.
+        self.assertEqual(stored.subject_sequence, 2)
 
 
 if __name__ == "__main__":

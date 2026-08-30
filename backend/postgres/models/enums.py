@@ -116,6 +116,42 @@ class AdjudicationSubject(str, Enum):
     account = "account"
 
 
+class AdjudicationDecision(str, Enum):
+    """What was decided.  Closed for the reason the quarantine reasons are.
+
+    ``subject_type`` was constrained from the start and ``decision`` was left
+    as free text, which is the wrong way round: the subject is a table name
+    that only this codebase writes, while the decision is the answer to "what
+    did you do to this evidence, and how many times did you do it" — a
+    question put in a deposition and answered by a GROUP BY.  Free text
+    cannot answer it, because 'release', 'released' and 'release_row' are
+    three answers to one question and the count is wrong three ways.
+
+    The pairs matter more than the members.  Every disposition here has its
+    reversal in the same vocabulary, because the ledger appends: undoing a
+    supersession or a quarantine writes the *undo*, it does not retract the
+    original.  The row-level columns cannot carry that history — a released
+    row must have a null ``quarantine_reason`` to satisfy
+    ``ck_financial_transactions_quarantine_coherent`` — so if the reversal is
+    not appended here it is not recorded anywhere at all.
+
+    ``explain_balance_failure`` is the odd one and is deliberately not a
+    disposition.  It records a verdict from
+    :mod:`services.financial.adjudication` about *why* an identity does not
+    close.  It changes no status and never can: see that module on why a
+    well-corroborated explanation of a p3 document leaves it p3.
+    """
+
+    supersede_duplicate = "supersede_duplicate"
+    restore_document = "restore_document"
+    purge_duplicate = "purge_duplicate"
+
+    quarantine_row = "quarantine_row"
+    release_row = "release_row"
+
+    explain_balance_failure = "explain_balance_failure"
+
+
 class IngestionRunStatus(str, Enum):
     """Lifecycle of one execution of the financial ingestion pipeline.
 

@@ -26,11 +26,14 @@ from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import create_engine, event, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from postgres.base import Base
 from postgres.models.case import Case
 from postgres.models.enums import (
+    AdjudicationDecision,
+    AdjudicationSubject,
     ExtractionLayer,
     GlobalRole,
     LedgerStatus,
@@ -42,6 +45,7 @@ from postgres.models.enums import (
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.financial import (
     FinancialAccount,
+    FinancialAdjudication,
     FinancialIngestionRun,
     FinancialSourceDocument,
     FinancialStatementPeriod,
@@ -55,6 +59,8 @@ from services.financial.periods import (
     StatementPeriodDraft,
     record_statement_period,
 )
+from services.financial.decisions import Actor, history
+from services.financial.duplicates import CrossCaseError
 from services.financial.quarantine import (
     BalanceBreak,
     Candidate,
@@ -90,6 +96,7 @@ TABLES = [
     FinancialAccount.__table__,
     FinancialStatementPeriod.__table__,
     FinancialTransaction.__table__,
+    FinancialAdjudication.__table__,
 ]
 
 USD = "USD"
@@ -484,28 +491,48 @@ class ADocumentLevelDeltaIsGroundsOnlyWhenItFails(unittest.TestCase):
             )
 
 
-class QuarantiningARow(unittest.TestCase):
+class QuarantiningARowIsRefused(unittest.TestCase):
+    """The four refusals, which happen before anything is written.
+
+    There is no stub test here for the happy path, and the absence is the
+    design.  Setting a row aside is now two writes that are one operation —
+    the event is appended and then the row changes — so a stub that holds
+    only the two columns can no longer stand in for the row.  Splitting them
+    far enough apart to be testable against a stub would be reintroducing
+    exactly the defect this module was changed to fix.  The happy path is
+    tested against the database, in ``QuarantineSurvivesTheDatabase``.
+
+    Every refusal below is reached before ``record`` is called, which is why
+    ``session=None`` works.  That is not a convenience: passing ``None``
+    asserts that these paths write nothing, because a path that tried to
+    append would raise ``AttributeError`` on the ``None`` instead.
+    """
+
     def setUp(self):
         self.basis = QuarantineBasis.unreadable_row("amount column was cut off")
+        self.actor = Actor(name="A. Reviewer", email="reviewer@example.test")
+        self.case_id = uuid.uuid4()
 
-    def test_a_row_is_set_aside_with_its_grounds_recorded(self):
-        txn = FakeTransaction()
-        quarantine_transaction(txn, self.basis)
-        self.assertEqual(txn.ledger_status, LedgerStatus.quarantined.value)
-        self.assertEqual(
-            txn.quarantine_reason, QuarantineReason.unreadable_row.value
+    def _quarantine(self, txn, basis=None):
+        return quarantine_transaction(
+            None,
+            txn,
+            self.basis if basis is None else basis,
+            case_id=self.case_id,
+            actor=self.actor,
         )
 
     def test_a_bare_string_is_not_grounds(self):
         with self.assertRaises(UngroundedQuarantineError) as caught:
-            quarantine_transaction(FakeTransaction(), "it looked wrong")
+            self._quarantine(FakeTransaction(), "it looked wrong")
         self.assertIn("not grounds", str(caught.exception))
 
     def test_requarantining_on_the_same_grounds_is_idempotent(self):
+        """And appends nothing, which the ``None`` session proves."""
         txn = FakeTransaction(
             LedgerStatus.quarantined, QuarantineReason.unreadable_row.value
         )
-        quarantine_transaction(txn, self.basis)
+        self._quarantine(txn)
         self.assertEqual(
             txn.quarantine_reason, QuarantineReason.unreadable_row.value
         )
@@ -516,13 +543,13 @@ class QuarantiningARow(unittest.TestCase):
             LedgerStatus.quarantined, QuarantineReason.adjudicated.value
         )
         with self.assertRaises(UngroundedQuarantineError) as caught:
-            quarantine_transaction(txn, self.basis)
+            self._quarantine(txn)
         self.assertIn("erase the earlier decision", str(caught.exception))
 
     def test_a_superseded_row_is_not_quarantined_over(self):
         txn = FakeTransaction(LedgerStatus.superseded)
         with self.assertRaises(UngroundedQuarantineError):
-            quarantine_transaction(txn, self.basis)
+            self._quarantine(txn)
 
     def test_a_currency_mismatch_states_both_currencies(self):
         basis = QuarantineBasis.currency_mismatch(
@@ -532,23 +559,51 @@ class QuarantiningARow(unittest.TestCase):
         self.assertIn("USD", basis.detail)
 
 
-class ReleasingARow(unittest.TestCase):
-    def test_a_release_clears_the_status_and_the_reason(self):
-        txn = FakeTransaction(
-            LedgerStatus.quarantined, QuarantineReason.unreadable_row.value
-        )
-        release_transaction(txn, actor="n.byrne", reason="rescanned at 600dpi")
-        self.assertEqual(txn.ledger_status, LedgerStatus.admitted.value)
-        self.assertIsNone(txn.quarantine_reason)
+class ReleasingARowIsRefused(unittest.TestCase):
+    """As above: the refusals precede the append, so no session is needed."""
+
+    def setUp(self):
+        self.actor = Actor(name="A. Reviewer", email="reviewer@example.test")
+        self.case_id = uuid.uuid4()
 
     def test_releasing_an_admitted_row_is_refused(self):
         with self.assertRaises(UngroundedQuarantineError):
-            release_transaction(FakeTransaction(), actor="n", reason="r")
+            release_transaction(
+                None,
+                FakeTransaction(),
+                case_id=self.case_id,
+                actor=self.actor,
+                reason="r",
+            )
 
-    def test_a_release_has_to_name_who_and_why(self):
+    def test_a_release_has_to_say_why(self):
         txn = FakeTransaction(LedgerStatus.quarantined, "unreadable_row")
         with self.assertRaises(UngroundedQuarantineError):
-            release_transaction(txn, actor="n.byrne", reason="  ")
+            release_transaction(
+                None,
+                txn,
+                case_id=self.case_id,
+                actor=self.actor,
+                reason="  ",
+            )
+
+    def test_a_bare_name_is_not_an_actor(self):
+        """It was, and that was the defect: a string had nowhere to go.
+
+        ``actor`` used to be a string, validated for non-blankness and then
+        discarded.  An ``Actor`` carries an address and an optional user id,
+        which is what makes the decision answerable to somebody afterwards.
+        """
+        txn = FakeTransaction(LedgerStatus.quarantined, "unreadable_row")
+        with self.assertRaises(UngroundedQuarantineError) as caught:
+            release_transaction(
+                None,
+                txn,
+                case_id=self.case_id,
+                actor="n.byrne",
+                reason="rescanned at 600dpi",
+            )
+        self.assertIn("Actor", str(caught.exception))
 
 
 class ARescueIsVisible(unittest.TestCase):
@@ -780,6 +835,9 @@ class QuarantineSurvivesTheDatabase(unittest.TestCase):
         )
         self.db.commit()
         self._row_index = 0
+        self.actor = Actor(
+            name=self.user.name, email=self.user.email, user_id=self.user.id
+        )
 
     def tearDown(self):
         self.db.close()
@@ -811,9 +869,19 @@ class QuarantineSurvivesTheDatabase(unittest.TestCase):
         self.db.commit()
         return stored
 
+    def quarantine(self, stored, basis, **kwargs):
+        return quarantine_transaction(
+            self.db,
+            stored,
+            basis,
+            case_id=self.case.id,
+            actor=self.actor,
+            **kwargs,
+        )
+
     def test_a_quarantine_written_by_the_service_commits(self):
         stored = self.add_row("50.00")
-        quarantine_transaction(
+        self.quarantine(
             stored, QuarantineBasis.unreadable_row("amount column was truncated")
         )
         self.db.commit()
@@ -828,13 +896,17 @@ class QuarantineSurvivesTheDatabase(unittest.TestCase):
     def test_a_release_written_by_the_service_commits(self):
         """The reason has to be cleared in the same statement as the status."""
         stored = self.add_row("50.00")
-        quarantine_transaction(
+        self.quarantine(
             stored, QuarantineBasis.unreadable_row("amount column was truncated")
         )
         self.db.commit()
 
         release_transaction(
-            stored, actor="A. Reviewer", reason="second read produced the amount"
+            self.db,
+            stored,
+            case_id=self.case.id,
+            actor=self.actor,
+            reason="second read produced the amount",
         )
         self.db.commit()
 
@@ -842,6 +914,196 @@ class QuarantineSurvivesTheDatabase(unittest.TestCase):
         reloaded = self.db.get(FinancialTransaction, stored.id)
         self.assertEqual(reloaded.ledger_status, LedgerStatus.admitted.value)
         self.assertIsNone(reloaded.quarantine_reason)
+
+    # -- what the row cannot say, and the log now does --------------------
+
+    def test_a_released_row_is_no_longer_indistinguishable_from_an_untouched_one(
+        self,
+    ):
+        """The defect this whole change exists to fix, stated as a test.
+
+        Both rows below end admitted with a null ``quarantine_reason``, and
+        the check constraint requires that: a row carrying grounds while
+        admitted describes a decision that was reversed, and a reader cannot
+        tell that from a decision that was taken.  So the columns are
+        identical by design, and the difference has to live somewhere else.
+        """
+        untouched = self.add_row("40.00")
+        setaside = self.add_row("50.00")
+        self.quarantine(
+            setaside, QuarantineBasis.unreadable_row("amount column truncated")
+        )
+        release_transaction(
+            self.db,
+            setaside,
+            case_id=self.case.id,
+            actor=self.actor,
+            reason="rescanned at 600dpi; the amount read cleanly",
+        )
+        self.db.commit()
+        self.db.expire_all()
+
+        columns = []
+        for row in (untouched, setaside):
+            reloaded = self.db.get(FinancialTransaction, row.id)
+            columns.append(
+                (reloaded.ledger_status, reloaded.quarantine_reason)
+            )
+        self.assertEqual(columns[0], columns[1])
+
+        # The log is what tells them apart.
+        self.assertEqual(
+            history(self.db, untouched, AdjudicationSubject.transaction), ()
+        )
+        told = history(self.db, setaside, AdjudicationSubject.transaction)
+        self.assertEqual(
+            [event.decision for event in told],
+            [
+                AdjudicationDecision.quarantine_row.value,
+                AdjudicationDecision.release_row.value,
+            ],
+        )
+
+    def test_the_pair_is_ordered_even_written_in_one_transaction(self):
+        """``created_at`` cannot separate these two; ``subject_sequence`` can.
+
+        Both events are written without an intervening commit, so under
+        Postgres ``now()`` they would carry the same ``created_at``, and the
+        obvious tiebreak — ``id`` — is a random uuid4.  Ordering by that pair
+        would be arbitrary and look authoritative.
+        """
+        stored = self.add_row("50.00")
+        self.quarantine(
+            stored, QuarantineBasis.unreadable_row("amount column truncated")
+        )
+        release_transaction(
+            self.db,
+            stored,
+            case_id=self.case.id,
+            actor=self.actor,
+            reason="rescanned at 600dpi",
+        )
+        self.db.commit()
+
+        told = history(self.db, stored, AdjudicationSubject.transaction)
+        self.assertEqual([event.subject_sequence for event in told], [1, 2])
+
+    def test_the_grounds_survive_the_release_that_nulls_them(self):
+        """``before`` captures the reason the row is about to lose."""
+        stored = self.add_row("50.00")
+        self.quarantine(
+            stored, QuarantineBasis.unreadable_row("amount column truncated")
+        )
+        release_transaction(
+            self.db,
+            stored,
+            case_id=self.case.id,
+            actor=self.actor,
+            reason="rescanned at 600dpi",
+        )
+        self.db.commit()
+
+        release = history(self.db, stored, AdjudicationSubject.transaction)[1]
+        self.assertEqual(
+            release.before,
+            {
+                "ledger_status": LedgerStatus.quarantined.value,
+                "quarantine_reason": QuarantineReason.unreadable_row.value,
+            },
+        )
+        self.assertEqual(
+            release.after,
+            {
+                "ledger_status": LedgerStatus.admitted.value,
+                "quarantine_reason": None,
+            },
+        )
+
+    def test_the_detail_reaches_the_log_and_not_only_the_vocabulary(self):
+        """It used to be discarded, and it is the half a reader needs.
+
+        The row can hold ``balance_break`` and nothing more, because the
+        column is a closed vocabulary and a GROUP BY counts it.  The sentence
+        naming the row and the two figures that disagreed had nowhere to go.
+        """
+        stored = self.add_row("50.00")
+        detail = "row 4 credits 50.00 where the printed running balance moves 40.00"
+        self.quarantine(stored, QuarantineBasis(
+            reason=QuarantineReason.balance_break, detail=detail
+        ))
+        self.db.commit()
+
+        told = history(self.db, stored, AdjudicationSubject.transaction)
+        self.assertEqual(told[0].reason, detail)
+        self.assertEqual(
+            self.db.get(FinancialTransaction, stored.id).quarantine_reason,
+            QuarantineReason.balance_break.value,
+        )
+
+    def test_an_idempotent_requarantine_appends_nothing(self):
+        """A second event claiming an unchanged change would dilute the log."""
+        stored = self.add_row("50.00")
+        basis = QuarantineBasis.unreadable_row("amount column truncated")
+        self.quarantine(stored, basis)
+        self.db.commit()
+        self.quarantine(stored, basis)
+        self.db.commit()
+
+        self.assertEqual(
+            len(history(self.db, stored, AdjudicationSubject.transaction)), 1
+        )
+
+    def test_the_decision_names_who_and_which_run(self):
+        stored = self.add_row("50.00")
+        self.quarantine(
+            stored,
+            QuarantineBasis.unreadable_row("amount column truncated"),
+            ingestion_run_id=self.run.run_id,
+        )
+        self.db.commit()
+
+        event = history(self.db, stored, AdjudicationSubject.transaction)[0]
+        self.assertEqual(event.actor_name, self.actor.name)
+        self.assertEqual(event.actor_email, self.actor.email)
+        self.assertEqual(event.actor_user_id, self.user.id)
+        self.assertEqual(event.ingestion_run_id, self.run.run_id)
+        self.assertEqual(event.case_id, self.case.id)
+
+    def test_a_decision_cannot_be_filed_in_another_matter(self):
+        stored = self.add_row("50.00")
+        with self.assertRaises(CrossCaseError):
+            quarantine_transaction(
+                self.db,
+                stored,
+                QuarantineBasis.unreadable_row("amount column truncated"),
+                case_id=uuid.uuid4(),
+                actor=self.actor,
+            )
+
+    def test_two_decisions_cannot_claim_one_position(self):
+        """The unique constraint is what makes a gap or a repeat a fact."""
+        stored = self.add_row("50.00")
+        self.quarantine(
+            stored, QuarantineBasis.unreadable_row("amount column truncated")
+        )
+        self.db.commit()
+
+        self.db.add(
+            FinancialAdjudication(
+                id=uuid.uuid4(),
+                case_id=self.case.id,
+                subject_type=AdjudicationSubject.transaction.value,
+                subject_id=stored.id,
+                subject_sequence=1,
+                decision=AdjudicationDecision.release_row.value,
+                reason="a second decision claiming the first position",
+                actor_name=self.actor.name,
+                actor_email=self.actor.email,
+            )
+        )
+        with self.assertRaises(IntegrityError):
+            self.db.commit()
+        self.db.rollback()
 
     def test_every_reason_the_service_can_produce_is_one_the_ledger_accepts(self):
         """The enum and the check constraint are two lists that could drift.
@@ -853,7 +1115,7 @@ class QuarantineSurvivesTheDatabase(unittest.TestCase):
         for reason in QuarantineReason:
             with self.subTest(reason=reason.value):
                 stored = self.add_row("10.00")
-                quarantine_transaction(
+                self.quarantine(
                     stored,
                     QuarantineBasis(reason=reason, detail="grounds under test"),
                 )
@@ -882,7 +1144,7 @@ class QuarantineSurvivesTheDatabase(unittest.TestCase):
         self.assertEqual(before.delta, usd("100.00"))
         self.assertEqual(before.totals.counted, 2)
 
-        quarantine_transaction(
+        self.quarantine(
             spurious,
             QuarantineBasis.from_adjudication(
                 actor="A. Reviewer", reason="row belongs to the following period"
@@ -905,7 +1167,7 @@ class QuarantineSurvivesTheDatabase(unittest.TestCase):
     def test_quarantined_row_ids_reads_the_stored_rows(self):
         kept = self.add_row("300.00")
         setaside = self.add_row("100.00")
-        quarantine_transaction(
+        self.quarantine(
             setaside, QuarantineBasis.unreadable_row("date column overlapped")
         )
         self.db.commit()
