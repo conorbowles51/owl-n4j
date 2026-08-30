@@ -111,6 +111,7 @@ from postgres.models.enums import (
     ReconciliationStatus,
     TransactionDirection,
 )
+from services.financial.check_digits import aba_check_digit
 from services.financial.locators import Locator
 from services.financial.money import Money, MoneyError
 from services.financial.proof_class import ProofClass, SourceShape, assign_proof_class
@@ -291,17 +292,6 @@ NACHA_SEC_INTERNATIONAL = "IAT"
 #: addenda count and a receiving company name, so the two fields are recorded
 #: under their positional names and not under a meaning they do not carry here.
 NACHA_SEC_CORPORATE_TRADE_EXCHANGE = "CTX"
-
-#: Weights of the ABA routing number check digit, applied to the leading eight
-#: digits in order.  The ninth digit is whatever makes the weighted sum a
-#: multiple of ten.
-#:
-#: Implemented here rather than imported because the field-level check digit
-#: module (`14`, and the todo that follows this one) does not exist yet.  When
-#: it lands this should delegate to it rather than keep a second copy of the
-#: algorithm; the note is here so that the duplication is found and removed
-#: rather than discovered.
-_ABA_WEIGHTS: tuple[int, ...] = (3, 7, 1, 3, 7, 1, 3, 7)
 
 #: A NACHA numeric field is digits and nothing else.  Applied before ``int``
 #: sees the text, because ``int`` accepts a leading sign, surrounding
@@ -495,19 +485,16 @@ def _direction_for_transaction_code(code: str) -> Optional[TransactionDirection]
     return NACHA_TRANSACTION_CODE_DIRECTIONS.get(code)
 
 
-def _aba_check_digit(routing_prefix: str) -> Optional[int]:
-    """The check digit the leading eight digits of a routing number imply.
-
-    ``None`` where the prefix is not eight digits, since there is then nothing
-    to compute from.  See :data:`_ABA_WEIGHTS` for why this lives here and
-    where it should move to.
-    """
-    if len(routing_prefix) != 8 or not _DIGITS_RE.match(routing_prefix):
-        return None
-    total = sum(
-        int(digit) * weight for digit, weight in zip(routing_prefix, _ABA_WEIGHTS)
-    )
-    return (10 - total % 10) % 10
+#: The check digit the leading eight digits of a routing number imply, and
+#: ``None`` where the prefix is not eight digits.
+#:
+#: This module held the only copy of the ABA algorithm until
+#: :mod:`services.financial.check_digits` existed, and the note that stood here
+#: asked for the duplication to be removed rather than discovered.  It has
+#: been: the weights and the arithmetic now live there alone and this is an
+#: alias, kept under the private name because that is what this module and its
+#: tests call it and renaming it would be churn for nothing.
+_aba_check_digit = aba_check_digit
 
 
 def _truncate_hash(total: int) -> int:

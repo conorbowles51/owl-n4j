@@ -360,3 +360,69 @@ class LocatorKind(str, Enum):
     #: The source is paginated, capture was attempted, and it failed.  Distinct
     #: from ``page_only`` because this one is a defect and should be counted.
     unlocated = "unlocated"
+
+
+class IdentifierKind(str, Enum):
+    """What a stored identifier is, said by the caller rather than inferred.
+
+    The vocabulary is deliberately not a detector.  ``021000021`` is a valid
+    ABA routing number and a syntactically unremarkable US social security
+    number, and ``4111111111111111`` is a card number and also sixteen digits
+    of nothing in particular.  A module that guessed would be right most of the
+    time and confidently wrong the rest, and the wrong answers would arrive
+    dressed as verifications.  The caller read the value out of a named field
+    and therefore already knows; it is asked to say so.
+
+    Kinds with no check digit are members here rather than absent, so that a
+    caller handling a BIC or an EIN gets an explicit "there is nothing to
+    verify" instead of a lookup failure it might quietly treat as a pass.
+    """
+
+    #: ISO 13616 international bank account number.  ISO 7064 MOD-97-10.
+    iban = "iban"
+    #: US ABA routing transit number.  Nine digits, weighted mod 10.
+    aba_routing = "aba_routing"
+    #: A payment card primary account number.  ISO/IEC 7812-1, Luhn.
+    payment_card = "payment_card"
+    #: ISO 17442 legal entity identifier.  Twenty characters, MOD-97-10.
+    lei = "lei"
+    #: ISO 9362 business identifier code.  Structure only; no check digit
+    #: exists, which `12` §6.4 records and this member makes unmissable.
+    bic = "bic"
+    #: US social security number.  Randomised since June 2011; only the
+    #: never-issued ranges survive as a check, and they are not a check digit.
+    us_ssn = "us_ssn"
+    #: US employer identification number.  Nine digits and no check digit.
+    us_ein = "us_ein"
+
+
+class CheckDigitOutcome(str, Enum):
+    """The verdict of a field-level check, in four values rather than two.
+
+    A boolean would collapse the two failures that call for opposite responses.
+    *Malformed* says the value never had the shape the check needs — nine
+    characters where eight and a letter were required — and points at the
+    extractor or at the field mapping.  *Failed* says the value had exactly the
+    right shape, the arithmetic ran, and the number disagrees with itself; that
+    points at the document, and under `13` §5.4 it is a finding to be flagged
+    rather than a row to be dropped.  Reporting both as ``False`` would send an
+    analyst to re-read a bank statement over what was a column misalignment,
+    and to re-run an extractor over what was a genuine transcription error in
+    the source.
+
+    ``no_check_digit`` is the fourth because silence is the dangerous answer.
+    A BIC that comes back with no verdict at all looks, at a glance and in a
+    log line, exactly like one that passed.
+    """
+
+    #: The arithmetic ran and the value agrees with itself.
+    passed = "passed"
+    #: The arithmetic ran and the value disagrees with itself.  A finding
+    #: about the document, not about the reader.
+    failed = "failed"
+    #: The value is the wrong shape for the check to run at all.  A finding
+    #: about the extraction, not about the document.
+    malformed = "malformed"
+    #: The identifier is well-formed and the standard gives it no check digit.
+    #: Structure is all that was verified and the result says so.
+    no_check_digit = "no_check_digit"

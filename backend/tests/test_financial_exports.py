@@ -110,6 +110,42 @@ class PackageSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(seen, [])
 
+    def test_no_name_is_imported_twice(self):
+        """The shadowing the test above describes but cannot actually see.
+
+        ``__all__`` is a list of strings written by hand; the binding happens
+        in the import blocks.  Two modules can each bind ``normalise`` while
+        ``__all__`` names it exactly once, and then the failure is precisely
+        the one described above -- the later import wins silently -- with
+        nothing to signal it.  ``check_digits`` and ``references`` both define
+        a ``normalise`` and are both imported here, which is what prompted
+        this; ``check_digits`` is aliased so that the two stay distinguishable.
+
+        Read from the source rather than from the imported module, because by
+        the time the package object exists the shadowing has already happened
+        and left one name bound to one function.
+
+        Parsed rather than matched with a regular expression.  The first
+        version of this test used one and was silently vacuous: it recognised
+        names inside a parenthesised import block and names introduced with
+        ``as``, and the plain one-line ``from x import y`` -- which is the
+        form a collision is most likely to arrive in -- matched neither.
+        """
+        tree = ast.parse(pathlib.Path(package.__file__).read_text())
+        bound: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
+                "services.financial."
+            ):
+                bound.extend(alias.asname or alias.name for alias in node.names)
+        collisions = sorted({name for name in bound if bound.count(name) > 1})
+        self.assertEqual(
+            collisions,
+            [],
+            "these names are bound by more than one module import; the last "
+            "import wins and the others are unreachable from the package",
+        )
+
     def test_no_module_declares_its_own_all(self):
         """One declaration of the public surface, not two.
 

@@ -82,6 +82,41 @@ from services.financial.camt053 import (
     NotACamt053Error,
     parse_camt053,
 )
+from services.financial.check_digits import (
+    ABA_WEIGHTS,
+    CARD_MAX_DIGITS,
+    CARD_MIN_DIGITS,
+    CHECK_ABA_WEIGHTED_MOD10,
+    CHECK_IBAN_COUNTRY_LENGTH,
+    CHECK_ISO7064_MOD97_10,
+    CHECK_LUHN_MOD10,
+    CHECK_SSN_ISSUED_RANGES,
+    CHECK_STRUCTURE,
+    IBAN_COUNTRY_LENGTHS,
+    IBAN_MAX_LENGTH,
+    IBAN_MIN_LENGTH,
+    CheckDigitError,
+    CheckDigitResult,
+    aba_check_digit,
+    iso7064_mod97_10_residue,
+    luhn_residue,
+)
+
+# Both of these are aliased, and for different reasons.
+#
+# ``normalise`` would collide outright: ``references`` exports a function of
+# that name which folds Crockford's decodable confusions (I and L to 1, O to
+# 0), and this one strips spaces and hyphens and upper-cases.  Imported under
+# one name the later import would win silently and callers would get reference
+# folding applied to an IBAN, or the reverse.
+#
+# ``verify`` collides with nothing today, but this package's namespace is flat
+# and several hundred names wide, and a bare ``verify`` in it says nothing
+# about what is being verified.  Both keep their short names inside
+# :mod:`services.financial.check_digits`, where the module name supplies the
+# context the package cannot.
+from services.financial.check_digits import normalise as normalise_identifier
+from services.financial.check_digits import verify as verify_check_digit
 from services.financial.corpus import (
     HEADER_TOTALS_FIELD,
     INSTITUTION_FIELD,
@@ -483,6 +518,26 @@ __all__ = [
     "Camt053TransactionsSummary",
     "NotACamt053Error",
     "parse_camt053",
+    # Field-level check digits: does a number agree with itself
+    "ABA_WEIGHTS",
+    "CARD_MAX_DIGITS",
+    "CARD_MIN_DIGITS",
+    "CHECK_ABA_WEIGHTED_MOD10",
+    "CHECK_IBAN_COUNTRY_LENGTH",
+    "CHECK_ISO7064_MOD97_10",
+    "CHECK_LUHN_MOD10",
+    "CHECK_SSN_ISSUED_RANGES",
+    "CHECK_STRUCTURE",
+    "IBAN_COUNTRY_LENGTHS",
+    "IBAN_MAX_LENGTH",
+    "IBAN_MIN_LENGTH",
+    "CheckDigitError",
+    "CheckDigitResult",
+    "aba_check_digit",
+    "iso7064_mod97_10_residue",
+    "luhn_residue",
+    "normalise_identifier",
+    "verify_check_digit",
     # Measuring the reader against the corpus it is supposed to read
     "HEADER_TOTALS_FIELD",
     "INSTITUTION_FIELD",
