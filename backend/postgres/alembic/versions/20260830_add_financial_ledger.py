@@ -17,7 +17,13 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = "20260830_financial_ledger"
-down_revision: Union[str, None] = "20260725_speaker_merges"
+# Chained onto 20260807_deepseek rather than 20260725_speaker_merges.  Origin
+# had already branched 20260803_loupes off speaker_merges, so hanging the
+# ledger off the same parent would leave two alembic heads the moment this
+# branch met origin, and `alembic upgrade head` refuses to run with two.  The
+# ledger depends on nothing either of those revisions touches; this edge
+# exists to keep the graph linear.
+down_revision: Union[str, None] = "20260807_deepseek"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

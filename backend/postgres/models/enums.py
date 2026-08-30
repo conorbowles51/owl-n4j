@@ -108,6 +108,25 @@ class BalanceSource(str, Enum):
     absent = "absent"
 
 
+class PeriodBoundsSource(str, Enum):
+    """Where a statement period's start or end date came from.
+
+    The distinction matters because of what the dates are later used for.  A
+    gap between one period's end and the next period's start is the only
+    evidence that a whole statement is missing, and that argument holds only
+    where both dates were printed on their statements.  A bound derived from
+    the first or last transaction on the page is a restatement of the rows
+    already held: it shrinks to fit whatever was extracted, so it invents a gap
+    where a quiet fortnight ended the month and closes a real one where the
+    final rows were dropped.  Start and end are recorded separately because
+    statements exist that print only a closing date.
+    """
+
+    printed = "printed"
+    derived = "derived"
+    absent = "absent"
+
+
 class DateSource(str, Enum):
     """Which of a transaction's dates was chosen for ordering.
 

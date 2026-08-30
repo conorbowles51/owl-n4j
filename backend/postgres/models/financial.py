@@ -50,6 +50,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -76,6 +77,7 @@ _RECONCILIATION_STATUSES = (
 _DIRECTIONS = "('credit', 'debit')"
 _DATE_SOURCES = "('transaction', 'posted', 'value', 'effective')"
 _BALANCE_SOURCES = "('printed', 'carried_forward', 'absent')"
+_PERIOD_BOUNDS_SOURCES = "('printed', 'derived', 'absent')"
 _ADJUDICATION_SUBJECTS = (
     "('transaction', 'statement_period', 'source_document', 'account')"
 )
@@ -348,6 +350,25 @@ class FinancialStatementPeriod(Base, TimestampMixin):
     ``delta_minor`` is signed — computed closing minus printed closing — and is
     the input to delta localisation, which asks whether the gap equals one
     row's amount, twice a row's amount, or a round number.
+
+    Four values here are each paired with a column saying where they came
+    from, because in every case an absence and a measurement would otherwise
+    be indistinguishable.  A missing balance is not a zero balance.  A period
+    end derived from the last transaction on the page is not a period end
+    printed on the statement, and only the printed one can support the claim
+    that a neighbouring statement is missing.  An opening balance carried
+    forward from the previous period names the period it came from, because
+    the balance identity is then no longer an independent check of these rows
+    — it is partly a restatement of the ones next door, and a reader is
+    entitled to see that.
+
+    The ``carried_from`` links carry no matching check constraint tying them
+    to their source column.  One would be correct at write time and could then
+    be falsified by a legitimate cascade: deleting the referenced period sets
+    the link null, which would leave a surviving row failing a constraint and
+    a case deletion unable to complete.  A constraint that blocks a delete is
+    worse than one enforced where it can actually be maintained, so the rule
+    lives in ``services.financial.periods`` and this docstring says so.
     """
 
     __tablename__ = "financial_statement_periods"
@@ -365,8 +386,38 @@ class FinancialStatementPeriod(Base, TimestampMixin):
             name="ck_financial_statement_periods_closing_source",
         ),
         CheckConstraint(
+            f"period_start_source IN {_PERIOD_BOUNDS_SOURCES}",
+            name="ck_financial_statement_periods_start_source",
+        ),
+        CheckConstraint(
+            f"period_end_source IN {_PERIOD_BOUNDS_SOURCES}",
+            name="ck_financial_statement_periods_end_source",
+        ),
+        CheckConstraint(
             "period_start IS NULL OR period_end IS NULL OR period_start <= period_end",
             name="ck_financial_statement_periods_ordered",
+        ),
+        # A value and its source must agree about whether the value exists.
+        # Without these a row may say a balance is absent while carrying one,
+        # or say it was printed while carrying nothing, and either way the
+        # source column stops being evidence of anything.  Comparing the two
+        # booleans is portable and, unlike a truthiness test, admits a zero
+        # balance as the real balance it is.
+        CheckConstraint(
+            "(opening_balance_source = 'absent') = (opening_balance_minor IS NULL)",
+            name="ck_financial_statement_periods_opening_coherent",
+        ),
+        CheckConstraint(
+            "(closing_balance_source = 'absent') = (closing_balance_minor IS NULL)",
+            name="ck_financial_statement_periods_closing_coherent",
+        ),
+        CheckConstraint(
+            "(period_start_source = 'absent') = (period_start IS NULL)",
+            name="ck_financial_statement_periods_start_coherent",
+        ),
+        CheckConstraint(
+            "(period_end_source = 'absent') = (period_end IS NULL)",
+            name="ck_financial_statement_periods_end_coherent",
         ),
         UniqueConstraint(
             "source_document_id",
@@ -374,6 +425,23 @@ class FinancialStatementPeriod(Base, TimestampMixin):
             "period_start",
             "period_end",
             name="uq_financial_statement_periods_document_account_period",
+        ),
+        # The constraint above does not cover the case it most needs to.  Both
+        # Postgres and SQLite treat nulls as distinct inside a unique
+        # constraint, so a statement whose dates could not be read admits
+        # unlimited duplicate periods for the same account on the same
+        # document — precisely the document that is hardest to check by eye.
+        # One document covers one account once, whether or not anyone could
+        # read the dates, so the undated case gets an index of its own.
+        Index(
+            "uq_financial_statement_periods_document_account_undated",
+            "source_document_id",
+            "account_id",
+            unique=True,
+            postgresql_where=text(
+                "period_start IS NULL AND period_end IS NULL"
+            ),
+            sqlite_where=text("period_start IS NULL AND period_end IS NULL"),
         ),
         Index("ix_financial_statement_periods_case", "case_id"),
         Index(
@@ -415,6 +483,12 @@ class FinancialStatementPeriod(Base, TimestampMixin):
 
     period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_start_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="absent", server_default="absent"
+    )
+    period_end_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="absent", server_default="absent"
+    )
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
 
     opening_balance_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -424,6 +498,18 @@ class FinancialStatementPeriod(Base, TimestampMixin):
     )
     closing_balance_source: Mapped[str] = mapped_column(
         String(16), nullable=False, default="absent", server_default="absent"
+    )
+    # Set only where the matching source is 'carried_forward'.  See the class
+    # docstring for why this is a service-layer rule rather than a constraint.
+    opening_carried_from_period_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_statement_periods.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    closing_carried_from_period_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_statement_periods.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     reconciliation_status: Mapped[str] = mapped_column(
@@ -456,6 +542,16 @@ class FinancialStatementPeriod(Base, TimestampMixin):
     account = relationship("FinancialAccount", foreign_keys=[account_id])
     ingestion_run = relationship(
         "FinancialIngestionRun", foreign_keys=[ingestion_run_id]
+    )
+    opening_carried_from = relationship(
+        "FinancialStatementPeriod",
+        remote_side=[id],
+        foreign_keys=[opening_carried_from_period_id],
+    )
+    closing_carried_from = relationship(
+        "FinancialStatementPeriod",
+        remote_side=[id],
+        foreign_keys=[closing_carried_from_period_id],
     )
 
 

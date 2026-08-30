@@ -23,6 +23,19 @@ from services.financial.money import (
     parse_money,
     sum_money,
 )
+from services.financial.periods import (
+    BalanceCoherenceError,
+    BalanceObservation,
+    PeriodBounds,
+    PeriodBoundsError,
+    PeriodCurrencyError,
+    PeriodError,
+    StatementPeriodDraft,
+    read_bounds,
+    read_closing,
+    read_opening,
+    record_statement_period,
+)
 from services.financial.runs import (
     IngestionRunHandle,
     RunAborted,
@@ -55,6 +68,18 @@ __all__ = [
     "parse_amount",
     "parse_money",
     "sum_money",
+    # Statement periods and the provenance of their four values
+    "BalanceCoherenceError",
+    "BalanceObservation",
+    "PeriodBounds",
+    "PeriodBoundsError",
+    "PeriodCurrencyError",
+    "PeriodError",
+    "StatementPeriodDraft",
+    "read_bounds",
+    "read_closing",
+    "read_opening",
+    "record_statement_period",
     # Run identity
     "IngestionRunHandle",
     "RunAborted",
