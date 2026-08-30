@@ -87,6 +87,15 @@ from services.financial.duplicates import (
     restore_document,
     store_fingerprint,
 )
+from services.financial.export_manifest import (
+    DIGEST_COVERS_HTML,
+    MANIFEST_SCHEMA,
+    ExportManifest,
+    ExportManifestError,
+    describes,
+    document_digest,
+    manifest_for,
+)
 from services.financial.locators import (
     MILLIPOINTS_PER_POINT,
     Locator,
@@ -309,6 +318,14 @@ __all__ = [
     "resolve_duplicates",
     "restore_document",
     "store_fingerprint",
+    # What was exported, and the separate record of when it was exported
+    "DIGEST_COVERS_HTML",
+    "MANIFEST_SCHEMA",
+    "ExportManifest",
+    "ExportManifestError",
+    "describes",
+    "document_digest",
+    "manifest_for",
     # Where on a page a value was read from, in one declared coordinate space
     "MILLIPOINTS_PER_POINT",
     "Locator",
