@@ -168,8 +168,28 @@ FINANCIAL_CANDIDATE_KEYS = {
 }
 
 
+# Names the rule that decided the provenance fields on a node, so a reader can
+# tell records written under one policy from records written under another.
+# Bump this whenever the arbitration between inference and declaration changes.
+PROVENANCE_POLICY = "deterministic_inference_v1"
+
+
 def _normalized_text(*parts: Any) -> str:
     return " ".join(str(part or "").strip().lower() for part in parts if part).strip()
+
+
+def _declared_provenance_value(
+    financial_provenance: dict[str, Any] | None,
+    field: str,
+    allowed: set[str],
+) -> str:
+    """Return the model's own declaration for `field`, or "" if absent or invalid.
+
+    Declarations are recorded, never consumed. An empty string means the model
+    said nothing usable, which is distinct from it agreeing with the inference.
+    """
+    candidate = str((financial_provenance or {}).get(field, "")).strip().lower()
+    return candidate if candidate in allowed else ""
 
 
 def _parse_int_or_none(value: Any) -> int | None:
@@ -219,7 +239,6 @@ def _is_financial_candidate(
 
 
 def _infer_evidence_source_type(
-    financial_provenance: dict[str, Any] | None,
     *,
     file_name: str,
     file_type: str | None,
@@ -228,10 +247,13 @@ def _infer_evidence_source_type(
     source_quote: str,
     is_table: bool,
 ) -> str:
-    candidate = str((financial_provenance or {}).get("evidence_source_type", "")).strip().lower()
-    if candidate in EVIDENCE_SOURCE_TYPES:
-        return candidate
+    """Classify the kind of source this came from, using the source alone.
 
+    The extracting model is asked for its own `evidence_source_type` and that
+    answer is recorded, but it is deliberately not an input here: a claim the
+    model makes about its own output cannot be checked, so it must not be able
+    to decide the outcome. See `_build_financial_provenance`.
+    """
     probe = _normalized_text(file_name, file_type, specific_type, name, source_quote)
     keyword_map = (
         ("bank_statement", ("bank statement", "account statement", "bank account statement")),
@@ -256,16 +278,17 @@ def _infer_evidence_source_type(
 
 
 def _infer_evidence_strength(
-    financial_provenance: dict[str, Any] | None,
     *,
     evidence_source_type: str,
     file_type: str | None,
     is_table: bool,
 ) -> str:
-    candidate = str((financial_provenance or {}).get("evidence_strength", "")).strip().lower()
-    if candidate in EVIDENCE_STRENGTHS:
-        return candidate
+    """Grade the evidence from the classified source, not from the model's claim.
 
+    This is the most consequential of the three inferences: `documentary` is one
+    of the three conditions for `is_evidence_backed_transaction`, so a model
+    permitted to declare it here could promote hearsay to an exhibit.
+    """
     if evidence_source_type in DOCUMENTARY_SOURCE_TYPES:
         return "documentary"
     if evidence_source_type in NARRATIVE_SOURCE_TYPES:
@@ -276,7 +299,6 @@ def _infer_evidence_strength(
 
 
 def _infer_financial_record_kind(
-    financial_provenance: dict[str, Any] | None,
     *,
     category: str,
     specific_type: str,
@@ -284,10 +306,11 @@ def _infer_financial_record_kind(
     source_quote: str,
     properties: dict[str, Any],
 ) -> str:
-    candidate = str((financial_provenance or {}).get("financial_record_kind", "")).strip().lower()
-    if candidate in FINANCIAL_RECORD_KINDS:
-        return candidate
+    """Classify what kind of financial record this is, from the source alone.
 
+    The model's own claim is recorded but not consulted, for the same reason as
+    the two inferences above.
+    """
     probe = _normalized_text(category, specific_type, name, source_quote)
     if "balance" in probe:
         return "balance"
@@ -376,7 +399,6 @@ def _build_financial_provenance(
         return None
 
     evidence_source_type = _infer_evidence_source_type(
-        financial_provenance,
         file_name=file_name,
         file_type=file_type,
         specific_type=specific_type,
@@ -385,18 +407,34 @@ def _build_financial_provenance(
         is_table=is_table,
     )
     evidence_strength = _infer_evidence_strength(
-        financial_provenance,
         evidence_source_type=evidence_source_type,
         file_type=file_type,
         is_table=is_table,
     )
     record_kind = _infer_financial_record_kind(
-        financial_provenance,
         category=category,
         specific_type=specific_type,
         name=name,
         source_quote=source_quote,
         properties=properties,
+    )
+    declared_source_type = _declared_provenance_value(
+        financial_provenance, "evidence_source_type", EVIDENCE_SOURCE_TYPES
+    )
+    declared_strength = _declared_provenance_value(
+        financial_provenance, "evidence_strength", EVIDENCE_STRENGTHS
+    )
+    declared_record_kind = _declared_provenance_value(
+        financial_provenance, "financial_record_kind", FINANCIAL_RECORD_KINDS
+    )
+    declaration_conflicts = sorted(
+        field
+        for field, declared, inferred in (
+            ("evidence_source_type", declared_source_type, evidence_source_type),
+            ("evidence_strength", declared_strength, evidence_strength),
+            ("financial_record_kind", declared_record_kind, record_kind),
+        )
+        if declared and declared != inferred
     )
     transaction_like = _looks_like_transaction_event(
         category,
@@ -416,6 +454,22 @@ def _build_financial_provenance(
     if source_page_value is None:
         source_page_value = source_page
 
+    if declaration_conflicts:
+        logger.info(
+            "Financial provenance declaration not adopted: fields=%s name=%r file=%r "
+            "declared=(source_type=%s strength=%s record_kind=%s) "
+            "inferred=(source_type=%s strength=%s record_kind=%s)",
+            ",".join(declaration_conflicts),
+            name,
+            file_name,
+            declared_source_type or "-",
+            declared_strength or "-",
+            declared_record_kind or "-",
+            evidence_source_type,
+            evidence_strength,
+            record_kind,
+        )
+
     if transaction_like and not is_evidence_backed_transaction:
         logger.info(
             "Financial candidate downgraded to intelligence: name=%r file=%r source_type=%s strength=%s record_kind=%s",
@@ -433,6 +487,14 @@ def _build_financial_provenance(
         "is_evidence_backed_transaction": is_evidence_backed_transaction,
         "evidence_strength": evidence_strength,
         "evidence_source_type": evidence_source_type,
+        # What the model claimed, kept next to what was inferred, so the two can
+        # be compared later. Flat scalars and a primitive list: nested values are
+        # silently dropped by the Neo4j property writer.
+        "provenance_decided_by": PROVENANCE_POLICY,
+        "evidence_source_type_declared": declared_source_type,
+        "evidence_strength_declared": declared_strength,
+        "financial_record_kind_declared": declared_record_kind,
+        "provenance_declaration_conflicts": declaration_conflicts,
         "source_document_id": source_document_id or file_name,
         "source_filename": file_name,
         "source_page": source_page_value,

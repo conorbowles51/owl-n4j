@@ -102,6 +102,19 @@ def _geo_field_guidance(ontology: OntologySchema) -> str:
 
 
 def _financial_provenance_guidance() -> str:
+    """Ask the model to classify the financial provenance of an entity.
+
+    The model's answers here are recorded, not obeyed. `_build_financial_provenance`
+    in `app/pipeline/extract_entities.py` re-derives evidence_source_type,
+    evidence_strength, financial_record_kind, is_evidence_backed_transaction, and
+    financial_view_mode from the source document, and keeps the model's own
+    classification alongside as `*_declared` fields so the two can be compared.
+    A model cannot verify its own claim about the strength of its evidence, so
+    that claim must not decide whether something becomes an exhibit. Only
+    source_page and source_excerpt are consumed, and both are locators rather
+    than judgements. Wording here therefore affects what gets measured, not what
+    gets classified.
+    """
     return (
         "FINANCIAL PROVENANCE RULES:\n"
         "- If an entity involves a monetary amount, total, balance, payment, invoice, transfer, valuation, or alleged proceeds, populate financial_provenance\n"
