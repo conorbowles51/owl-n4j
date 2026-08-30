@@ -254,6 +254,22 @@ CAMT053_BALANCE_PREVIOUSLY_CLOSED_BOOKED = "PRCD"
 #: The camt.053 message root, whatever the version or the envelope around it.
 _STATEMENT_MESSAGE = "BkToCstmrStmt"
 
+#: ``Stmt/CpyDplctInd`` values.  ``CODU`` is a copy of a message that is also a
+#: duplicate, ``COPY`` a copy sent to a party other than the original
+#: recipient, ``DUPL`` a re-send of a message already delivered.
+CAMT053_COPY_DUPLICATE_CODU = "CODU"
+CAMT053_COPY_DUPLICATE_COPY = "COPY"
+CAMT053_COPY_DUPLICATE_DUPL = "DUPL"
+
+#: The two indicator values that say this statement's entries have been stated
+#: before.  ``COPY`` is deliberately absent: a copy is the same message
+#: delivered to an additional party, so it asserts money that moved, once.  A
+#: duplicate asserts money that some earlier message already asserted, and
+#: admitting both would count it twice.
+CAMT053_RESTATING_INDICATORS: frozenset[str] = frozenset(
+    {CAMT053_COPY_DUPLICATE_CODU, CAMT053_COPY_DUPLICATE_DUPL}
+)
+
 #: Every camt.053 entry is a row in a feed, not a rectangle on a page.  Stated
 #: once here so that no caller has to decide, and so that the absence of a
 #: click-through target reads as a property of the format rather than a defect
@@ -656,6 +672,34 @@ class Camt053Statement:
     balance_identity: Camt053BalanceIdentity
     summary_identity: Camt053SummaryIdentity
     batch_identities: tuple[Camt053BatchIdentity, ...]
+    copy_duplicate_indicator: Optional[str] = None
+
+    @property
+    def admissibility_reservations(self) -> tuple[str, ...]:
+        """Reasons this statement must not auto-admit, whatever its arithmetic says.
+
+        Kept out of the arithmetic for the reason
+        :attr:`~services.financial.bai2.Bai2Group.admissibility_reservations`
+        gives: a duplicate's totals are not merely sound, they are *identical*
+        to the original's, because it is the same message. Folding the
+        reservation into the reconciliation status would report an arithmetic
+        failure that did not happen and send a reviewer hunting for a
+        discrepancy in a file that has none. The statement adds up; the
+        question is whether admitting it counts the same money twice.
+
+        ``COPY`` draws no reservation. A copy is one message delivered to a
+        second party — the same assertion, made once. Only ``DUPL`` and
+        ``CODU`` say the entries beneath them have been stated before, and only
+        those two put a total at risk of being doubled.
+        """
+        indicator = self.copy_duplicate_indicator
+        if indicator is None or indicator not in CAMT053_RESTATING_INDICATORS:
+            return ()
+        return (
+            f"statement {self.identification!r} carries CpyDplctInd "
+            f"{indicator}; its entries have been stated in an earlier message, "
+            "and admitting both would count the same money twice",
+        )
 
     def balance(self, code: str) -> Optional[Camt053Balance]:
         """The first balance carrying a given ISO type code."""
@@ -729,8 +773,36 @@ class Camt053Document:
         the outcome and has no vote on what they add up to.  In practice the
         answer is p0 when every check balanced and p3 otherwise, which is the
         asymmetry `13` §2.2 requires.
+
+        The one thing decided here is the reservation, on the reasoning
+        :attr:`~services.financial.bai2.Bai2File.proof_class` sets out.  A
+        duplicate message's arithmetic is not merely sound but identical to the
+        original's, so ``assign_proof_class`` would rightly call it p0 on the
+        evidence it is given.  But p0 auto-admits with no human act (`13`
+        §2.2), and auto-admitting a re-send alongside the message it repeats
+        double-counts every figure in it.  The promotion is withheld and the
+        message lands at p3, where a person decides which copy is the exhibit.
         """
-        return assign_proof_class(self.source_shape, self.reconciliation_status)
+        earned = assign_proof_class(self.source_shape, self.reconciliation_status)
+        if earned is ProofClass.p0 and self.admissibility_reservations:
+            return ProofClass.p3
+        return earned
+
+    @property
+    def admissibility_reservations(self) -> tuple[str, ...]:
+        """Every statement's reservations, gathered so a caller reads one list.
+
+        Present on all four native parsers for the reason
+        :attr:`~services.financial.mt940.Mt940File.admissibility_reservations`
+        states: the caller that wires Layer 0 into extraction (`13` §4) reads
+        this from every one of them, and a caller that has to remember which
+        parsers have reservations is a caller that will eventually forget.
+        """
+        return tuple(
+            reason
+            for statement in self.statements
+            for reason in statement.admissibility_reservations
+        )
 
     @property
     def entries(self) -> tuple[Camt053Entry, ...]:
@@ -1330,6 +1402,7 @@ def _parse_statement(node: etree._Element, *, position: int) -> Camt053Statement
         balance_identity=_check_balances(balances, entries, currency),
         summary_identity=_check_summary(summary, entries, currency),
         batch_identities=_check_batches(entries),
+        copy_duplicate_indicator=_text(_child(node, "CpyDplctInd")),
     )
 
 

@@ -260,6 +260,28 @@ from services.financial.nacha import (
     NotANachaError,
     parse_nacha,
 )
+from services.financial.native import (
+    CENTURY_WINDOW_MAX_SPAN_YEARS,
+    NATIVE_LOCATORS,
+    PARSER_FINGERPRINT_CHARS,
+    SNIFF_BYTES,
+    AmbiguousFormatError,
+    CenturyWindow,
+    CenturyWindowError,
+    DateResolutionError,
+    NativeError,
+    NativeFormat,
+    NativeReading,
+    NativeRow,
+    UnmappedRow,
+    UnrecognisedFormatError,
+    detect_format,
+    parser_name,
+    parser_version,
+    read_native,
+    resolve_mmdd_near,
+    sniff,
+)
 from services.financial.periods import (
     BalanceCoherenceError,
     BalanceObservation,
@@ -634,6 +656,32 @@ __all__ = [
     "NachaRecord",
     "NotANachaError",
     "parse_nacha",
+    # Layer 0: the four native parsers above read behind one door, and the
+    # ledger-shaped rows they yield.  A row that reaches the ledger this way
+    # records that it was read from the format's own structure rather than
+    # recovered from a rendering of it, which is the whole of the difference
+    # between a value a court can trace to the bank and one it can trace to an
+    # extractor's guess.
+    "CENTURY_WINDOW_MAX_SPAN_YEARS",
+    "NATIVE_LOCATORS",
+    "PARSER_FINGERPRINT_CHARS",
+    "SNIFF_BYTES",
+    "AmbiguousFormatError",
+    "CenturyWindow",
+    "CenturyWindowError",
+    "DateResolutionError",
+    "NativeError",
+    "NativeFormat",
+    "NativeReading",
+    "NativeRow",
+    "UnmappedRow",
+    "UnrecognisedFormatError",
+    "detect_format",
+    "parser_name",
+    "parser_version",
+    "read_native",
+    "resolve_mmdd_near",
+    "sniff",
     # Statement periods and the provenance of their four values
     "BalanceCoherenceError",
     "BalanceObservation",
