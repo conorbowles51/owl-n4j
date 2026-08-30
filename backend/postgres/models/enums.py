@@ -108,6 +108,43 @@ class BalanceSource(str, Enum):
     absent = "absent"
 
 
+class TotalsConvention(str, Enum):
+    """How a source document signs the outflow figures it prints for itself.
+
+    A statement's own control totals are the strongest evidence it carries,
+    because they were computed by the institution rather than read by us.  But
+    they arrive in two incompatible dialects.  Most statements print outflows
+    as magnitudes, so the identity subtracts them::
+
+        opening + credits - debits - checks - fees = closing
+
+    Others print outflows already negative, so the identity adds them::
+
+        opening + credits + debits + checks + fees = closing
+
+    Both are correct and neither is announced.  Measured across the 326
+    extraction files of the ET-Fraud corpus, 197 carry a testable identity:
+    182 close only as ``magnitude``, 2 close only as ``signed``, 1 closes
+    either way because every outflow it prints is zero, and 12 close neither
+    way and are a separate question.  The signed pair are exact to the cent
+    under their own dialect and miss by $279,555.74 and $280,288.96 under the
+    other.  A check hard-coded to one dialect therefore does not merely miss
+    those two, it reports the two most accurate documents in the corpus as the
+    two largest discrepancies in it.
+
+    The convention is recorded rather than inferred at the point of use.  A
+    check permitted to retry dialects until one closes cannot fail, and a check
+    that cannot fail is not evidence.  ``undetermined`` is the honest state for
+    a document whose own figures do not distinguish the two — every outflow
+    zero, for instance — and it is resolved from the institution's prevailing
+    convention or by a person, not by whichever formula happens to close.
+    """
+
+    magnitude = "magnitude"
+    signed = "signed"
+    undetermined = "undetermined"
+
+
 class PeriodBoundsSource(str, Enum):
     """Where a statement period's start or end date came from.
 
