@@ -35,6 +35,21 @@ from services.financial.corpus import (
     read_extraction,
     survey,
 )
+from services.financial.continuity import (
+    AccountContinuity,
+    ContinuityError,
+    ContinuityScopeError,
+    ExcludedPeriod,
+    ExclusionReason,
+    PeriodLink,
+    Seam,
+    SeamAgreement,
+    SeamKind,
+    assess_seam,
+    build_run,
+    order_links,
+    read_account_continuity,
+)
 from services.financial.duplicates import (
     CrossCaseError,
     CrossMatterSighting,
@@ -171,6 +186,20 @@ __all__ = [
     "load_corpus",
     "read_extraction",
     "survey",
+    # Continuity across statement periods
+    "AccountContinuity",
+    "ContinuityError",
+    "ContinuityScopeError",
+    "ExcludedPeriod",
+    "ExclusionReason",
+    "PeriodLink",
+    "Seam",
+    "SeamAgreement",
+    "SeamKind",
+    "assess_seam",
+    "build_run",
+    "order_links",
+    "read_account_continuity",
     # Duplicate documents
     "CrossCaseError",
     "CrossMatterSighting",
