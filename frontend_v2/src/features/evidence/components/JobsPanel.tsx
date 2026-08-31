@@ -23,6 +23,7 @@ import { useJobProgress } from "../hooks/use-job-progress"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { useEvidenceStore, type UploadActivity } from "../evidence.store"
 import { JobCard } from "./JobCard"
+import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import type { BackgroundTask, EvidenceJob, PipelineStage } from "@/types/evidence.types"
 
 interface JobsPanelProps {
@@ -240,7 +241,11 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
   // a file that failed for being a bank statement must not come back through
   // the retry button. `retryingFileId` keeps the spinner on the one card that
   // was clicked, which the gate's single busy flag cannot say.
-  const { start: startProcess } = useGuardedProcess(caseId)
+  //
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start: startProcess } = gate
   const [retryingFileId, setRetryingFileId] = useState<string | null>(null)
 
   const retryFile = async (fileId: string) => {
@@ -386,6 +391,9 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
 
   return (
     <div className="flex h-full flex-col bg-muted/20">
+      {/* A retry can be held just as a first attempt can, and this panel is
+          where the person is looking when it is. */}
+      <ProcessHoldDialog gate={gate} />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <div className="flex items-center gap-2">

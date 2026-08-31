@@ -46,6 +46,7 @@ import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { evidenceAPI } from "../api"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
+import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { useFileEntities, useFileRelationships } from "../hooks/use-file-entities"
 import { getDisplayStatus } from "../utils/display-status"
 import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
@@ -458,11 +459,15 @@ function DetailsPanelContent({
 
   // `isProcessing` above is this file's own status, so the gate's two busy
   // flags are renamed rather than shadowing it.
+  //
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
   const {
     start: startProcess,
     isChecking,
     isProcessing: isSending,
-  } = useGuardedProcess(caseId)
+  } = gate
   const processBusy = isChecking || isSending
 
   useEffect(() => {
@@ -516,6 +521,9 @@ function DetailsPanelContent({
 
   return (
     <>
+      {/* `handleProcess` discards the gate's answer, so this is the only thing
+          that says a request was held. */}
+      <ProcessHoldDialog gate={gate} />
       <ScrollArea className="h-full">
         <div className="space-y-4 p-4">
           {/* Header */}

@@ -20,6 +20,7 @@ import { FileListToolbar } from "./FileListToolbar"
 import { FileRow } from "./FileRow"
 import { FolderRow } from "./FolderRow"
 import { InlineDropZone } from "./InlineDropZone"
+import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import type { EvidenceFile } from "@/types/evidence.types"
 
 const FILE_PAGE_SIZE = 250
@@ -77,7 +78,10 @@ export function FileListPanel({
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDraggingExternal, setIsDraggingExternal] = useState(false)
 
-  const { start: startProcess, isChecking, isProcessing } = useGuardedProcess(caseId)
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start: startProcess, isChecking, isProcessing } = gate
 
   const handleProcessSelected = async () => {
     if ((await startProcess({ fileIds: Array.from(selectedFileIds) })) !== "started") return
@@ -159,6 +163,8 @@ export function FileListPanel({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      <ProcessHoldDialog gate={gate} />
+
       {/* Breadcrumbs */}
       <div className="border-b border-border px-4 py-2">
         <FolderBreadcrumbs

@@ -25,10 +25,9 @@
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import {
-  ROUTE_OUTCOME_DESCRIPTION,
   ROUTE_OUTCOME_LABEL,
   ROUTE_OUTCOME_VARIANT,
-  formatLabel,
+  routeDetailLines,
 } from "../utils/financial-route"
 import type { FileRoute } from "../hooks/use-route-checks"
 
@@ -42,20 +41,12 @@ export function RouteBadge({ route }: RouteBadgeProps) {
   // The one outcome that is deliberately unlabelled. See the header.
   if (route.outcome === "not_native") return null
 
-  const { outcome, detected_format: detectedFormat, claimants, reason } = route
+  const { outcome } = route
 
-  // Everything the tooltip has to say, in the order a reader needs it: what
-  // will happen, then what was actually found, then whatever the service chose
-  // to add. The evidence is included because "format unclear" is not something
-  // a person can act on, and "camt.053 and BAI2 both claim this" is.
-  const detail: string[] = [ROUTE_OUTCOME_DESCRIPTION[outcome]]
-  if (outcome === "native" && detectedFormat) {
-    detail.push(`Format: ${formatLabel(detectedFormat)}`)
-  }
-  if (outcome === "ambiguous" && claimants.length > 0) {
-    detail.push(`Claimed by: ${claimants.map(formatLabel).join(", ")}`)
-  }
-  if (reason) detail.push(reason)
+  // Shared with the hold dialog rather than written here, so that the same
+  // file cannot be explained one way on the list and another way in the dialog
+  // that stops it being processed.
+  const detail = routeDetailLines(route)
 
   return (
     <Tooltip>

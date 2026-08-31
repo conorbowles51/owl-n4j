@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { CaseProfilePicker } from "@/features/case-profiles/components/CaseProfilePicker"
 import { evidenceAPI } from "@/features/evidence/api"
+import { ProcessHoldDialog } from "@/features/evidence/components/ProcessHoldDialog"
 import { useGuardedProcess } from "@/features/evidence/hooks/use-guarded-process"
 import { workspaceAPI } from "@/features/workspace/api"
 
@@ -31,7 +32,11 @@ export function FileBulkActionsBar({
   const tagRef = useRef<HTMLDivElement | null>(null)
   // Called before the early return below, because the count reaching zero must
   // not change how many hooks this component runs.
-  const { start: startProcess, isChecking, isProcessing } = useGuardedProcess(caseId)
+  //
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start: startProcess, isChecking, isProcessing } = gate
   const count = selectedIds.size
   const ids = [...selectedIds]
 
@@ -72,6 +77,13 @@ export function FileBulkActionsBar({
 
   return (
     <div className="flex shrink-0 items-center gap-1 border-b border-border bg-amber-500/10 px-3 py-1.5 text-xs">
+      {/* Below the early return, so a selection emptied while a hold is open
+          takes the dialog with it. That is the honest outcome rather than a
+          leak: the gate's state lives in this component too, so the held
+          request is gone either way, and a dialog offering to send files that
+          are no longer selected would be worse than no dialog. In practice the
+          modal covers the clear button, so it cannot happen by a click. */}
+      <ProcessHoldDialog gate={gate} />
       <span className="mr-1 font-semibold text-amber-700 dark:text-amber-300">{count} selected</span>
       <div ref={tagRef} className="relative">
         <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setTagOpen((current) => !current)}>

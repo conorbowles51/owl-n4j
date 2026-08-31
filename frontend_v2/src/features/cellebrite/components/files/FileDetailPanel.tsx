@@ -3,6 +3,7 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { evidenceAPI } from "@/features/evidence/api"
+import { ProcessHoldDialog } from "@/features/evidence/components/ProcessHoldDialog"
 import { useGuardedProcess } from "@/features/evidence/hooks/use-guarded-process"
 import { workspaceAPI } from "@/features/workspace/api"
 import { downloadProtectedFile, openProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
@@ -40,7 +41,11 @@ export function FileDetailPanel({
 }) {
   // Called before the early return below, because having no file selected must
   // not change how many hooks this component runs.
-  const { start: startProcess, isChecking, isProcessing } = useGuardedProcess(caseId)
+  //
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start: startProcess, isChecking, isProcessing } = gate
 
   if (!file) {
     return (
@@ -77,6 +82,11 @@ export function FileDetailPanel({
 
   return (
     <aside className="flex w-96 shrink-0 flex-col border-l border-border bg-card">
+      {/* Only on this branch. The other one renders a placeholder for "no file
+          selected", and a hold cannot exist there: the request came from this
+          file's own Process button, and losing the selection unmounts the gate
+          that holds it. */}
+      <ProcessHoldDialog gate={gate} />
       <div className="flex items-center gap-2 border-b border-border px-3 py-2" style={{ backgroundColor: `${color}18` }}>
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-foreground">{fileName(file)}</div>

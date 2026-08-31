@@ -173,13 +173,15 @@ describe("starting a process request", () => {
     expect(result.current.held?.held.map((file) => file.file_id)).toEqual(["b"])
     expect(result.current.held?.cleared).toEqual(["a"])
     expect(result.current.held?.checkError).toBeNull()
-    // Said out loud by the hook itself. A caller that ignores the return value
-    // must still not be able to leave a blocked request looking like a button
-    // that did nothing.
-    expect(toastMocks.warning).toHaveBeenCalledTimes(1)
-    expect(toastMocks.warning).toHaveBeenCalledWith(
+    // The sentence still exists and still says the same thing; what changed is
+    // that the record carries it rather than a toast raising it. A caller that
+    // ignores the return value is still not able to leave a blocked request
+    // looking like a button that did nothing -- `no unannounced hold` below is
+    // what makes that true now.
+    expect(describeHold(result.current.held!)).toBe(
       "1 file looks like bank records and was held back. 1 other file is ready to process."
     )
+    expect(toastMocks.warning).not.toHaveBeenCalled()
   })
 
   it("holds a file the local rule blocks even when the service says it does not", async () => {
@@ -260,9 +262,10 @@ describe("starting a process request", () => {
     expect(result.current.held?.checkError).toBe("404 Not Found")
     expect(result.current.held?.cleared).toEqual([])
     expect(result.current.held?.held).toEqual([])
-    expect(toastMocks.warning).toHaveBeenCalledWith(
+    expect(describeHold(result.current.held!)).toBe(
       "Nothing was sent: the files could not be checked. 404 Not Found"
     )
+    expect(toastMocks.warning).not.toHaveBeenCalled()
   })
 
   it("holds when the check answered for fewer files than were asked about", async () => {
@@ -581,5 +584,84 @@ describe("no door around the gate", () => {
 
     // Named rather than counted, so the failure says which file to fix.
     expect(offenders).toEqual([])
+  })
+})
+
+// --------------------------------------------------------------------------
+// A hold is always announced
+// --------------------------------------------------------------------------
+
+/**
+ * The obligation `hold` used to discharge with a toast.
+ *
+ * Removing that toast removed the one thing guaranteeing a held request said
+ * so on every screen.  The guarantee had to go somewhere, and a hook cannot
+ * make its caller render anything -- so it comes to rest here.
+ *
+ * The failure this prevents is specific and silent.  `EvidenceContextSidebar`
+ * discards the gate's return value (`void startProcess(...)`); with no toast
+ * and no dialog, its Process button would take a click, do nothing, and report
+ * nothing.  Not a safety failure -- the file is still held, because the gate
+ * holds it -- but the person is left with a broken-looking button and no way
+ * to learn otherwise.
+ */
+const CALLS_GATE = /useGuardedProcess\s*\(/
+const RENDERS_DIALOG = /<ProcessHoldDialog[\s/>]/
+
+/**
+ * The hook's own module, which names itself when it defines itself.
+ *
+ * The only exemption, and it exists because of how the pattern above is
+ * shaped rather than by policy.
+ */
+const GATE_MODULE = "features/evidence/hooks/use-guarded-process.ts"
+
+describe("no unannounced hold", () => {
+  const files = sourceFiles(SRC)
+  const gatePath = resolve(SRC, GATE_MODULE)
+
+  // Matching a call rather than the bare word, for the opposite reason to the
+  // block above. There, the bare word matched too little to guard anything;
+  // here it matches too much. `ProcessHoldDialog.tsx` says
+  // `ReturnType<typeof useGuardedProcess>` and `use-route-checks.ts` says
+  // `{@link useGuardedProcess}` -- neither calls the hook, so neither can hold
+  // anything, and requiring the dialog of them would mean requiring the dialog
+  // to render itself.
+  const consumers = files.filter(
+    (file) => file !== gatePath && CALLS_GATE.test(readFileSync(file, "utf8"))
+  )
+
+  it("found a plausible number of source files to check", () => {
+    expect(files.length).toBeGreaterThan(100)
+  })
+
+  it("found the screens that use the gate", () => {
+    // A floor rather than an equality, so that an eighth screen is a change to
+    // the product and not to this test. But a floor is needed: if the hook were
+    // renamed, `CALLS_GATE` would match nothing, `consumers` would be empty,
+    // and the assertion below would pass by having nothing to say -- exactly
+    // the way the first version of the guard above failed.
+    expect(consumers.length).toBeGreaterThanOrEqual(7)
+  })
+
+  it("the exemption is still load-bearing", () => {
+    // If the hook moved, this path would name a file that no longer defines
+    // it, and the module that does define it would be reported as a screen
+    // that forgot the dialog. The failure would be confusing rather than
+    // wrong; this makes it say what actually happened.
+    expect(CALLS_GATE.test(readFileSync(gatePath, "utf8"))).toBe(true)
+  })
+
+  it("every screen that can hold a request can say so", () => {
+    const silent: string[] = []
+
+    for (const file of consumers) {
+      if (!RENDERS_DIALOG.test(readFileSync(file, "utf8"))) {
+        silent.push(relative(SRC, file))
+      }
+    }
+
+    // Named rather than counted, so the failure says which screen to fix.
+    expect(silent).toEqual([])
   })
 })

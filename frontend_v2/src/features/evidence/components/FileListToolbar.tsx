@@ -35,6 +35,7 @@ import { useUIStore } from "@/stores/ui.store"
 import { useUploadToFolder } from "../hooks/use-upload-to-folder"
 import { useJobs } from "../hooks/use-jobs"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
+import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { toast } from "sonner"
 
 interface FileListToolbarProps {
@@ -78,7 +79,10 @@ export function FileListToolbar({
   const activeCount = jobs?.filter(
     (j) => !["completed", "failed"].includes(j.status)
   ).length ?? 0
-  const { start: startProcess, isChecking, isProcessing } = useGuardedProcess(caseId)
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start: startProcess, isChecking, isProcessing } = gate
 
   const selectionCount = selectedFileIds.size
   const activeSearchTerm = searchMode === "files" ? fileSearchTerm : textSearchTerm
@@ -145,6 +149,7 @@ export function FileListToolbar({
 
   return (
     <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
+      <ProcessHoldDialog gate={gate} />
       {/* One search control, two deliberately different scopes. */}
       <div className="flex min-w-[360px] max-w-[520px] flex-1 items-center overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
         <Select

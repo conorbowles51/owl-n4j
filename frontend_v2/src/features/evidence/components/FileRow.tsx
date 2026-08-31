@@ -17,6 +17,7 @@ import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { getFileTypeCategory } from "../utils/file-types"
 import { getDisplayStatus } from "../utils/display-status"
 import { RouteBadge } from "./RouteBadge"
+import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { toast } from "sonner"
 import type { FileRoute } from "../hooks/use-route-checks"
 import type { EvidenceFileRecord, EvidenceFile } from "@/types/evidence.types"
@@ -67,7 +68,10 @@ const STATUS_STYLES: Record<string, string> = {
 
 export function FileRow({ file, caseId, route, onDelete }: FileRowProps) {
   const { selectedFileIds, toggleFileSelection, openDetail } = useEvidenceStore()
-  const { start, isChecking, isProcessing } = useGuardedProcess(caseId)
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start, isChecking, isProcessing } = gate
 
   const isSelected = selectedFileIds.has(file.id)
   const typeCategory = getFileTypeCategory(file.original_filename)
@@ -154,6 +158,9 @@ export function FileRow({ file, caseId, route, onDelete }: FileRowProps) {
 
       {/* Actions */}
       <TableCell>
+        {/* Renders nothing until this row's own Process is held, and portals
+            out of the table when it does, so the row markup stays a row. */}
+        <ProcessHoldDialog gate={gate} />
         <div className="flex justify-end">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

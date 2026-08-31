@@ -138,6 +138,39 @@ export function formatLabel(code: string): string {
   return NATIVE_FORMAT_LABEL[code] ?? code
 }
 
+/** The fields any renderer needs to explain one file's route. */
+export interface RouteDetail {
+  outcome: RouteOutcome
+  detected_format: string | null
+  claimants: string[]
+  reason: string | null
+}
+
+/**
+ * Everything there is to say about one file's route, in the order a reader
+ * needs it: what will happen, then what was actually found, then whatever the
+ * service chose to add.
+ *
+ * The evidence is included because "format unclear" is not something a person
+ * can act on, and "camt.053 and BAI2 both claim this" is.
+ *
+ * Written once because it is said twice -- in the badge's tooltip on the file
+ * list, and in the dialog that appears when the gate holds a request.  Those
+ * are the same fact about the same file, and two copies of it would eventually
+ * be two different facts.
+ */
+export function routeDetailLines(route: RouteDetail): string[] {
+  const lines = [ROUTE_OUTCOME_DESCRIPTION[route.outcome]]
+  if (route.outcome === "native" && route.detected_format) {
+    lines.push(`Format: ${formatLabel(route.detected_format)}`)
+  }
+  if (route.outcome === "ambiguous" && route.claimants.length > 0) {
+    lines.push(`Claimed by: ${route.claimants.map(formatLabel).join(", ")}`)
+  }
+  if (route.reason) lines.push(route.reason)
+  return lines
+}
+
 /**
  * Whether an unknown string from either service is an outcome this build knows.
  *

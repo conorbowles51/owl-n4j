@@ -89,9 +89,11 @@ export type StartOutcome = "started" | "held" | "empty" | "failed"
 /**
  * One sentence saying what was held and what was not.
  *
- * Interim, and shared so that seven screens cannot describe the same event
- * seven different ways.  A hold is currently surfaced as a toast; the dialog
- * that replaces it needs this same sentence for its title.
+ * Shared so that seven screens cannot describe the same event seven different
+ * ways.  {@link ProcessHoldDialog} shows it as the dialog's description rather
+ * than its title -- an earlier draft of this comment said "title", but the
+ * sentence has two clauses and a heading with two clauses is a paragraph.  The
+ * title says how many were held; this says what became of the rest.
  *
  * It always says what happened to the files that were *not* held, because
  * "held" on its own reads as "nothing happened", and the difference between
@@ -156,16 +158,22 @@ export function useGuardedProcess(caseId: string) {
   })
 
   /**
-   * Record a hold and say so, as one event.
+   * Record a hold.  Saying so is {@link ProcessHoldDialog}'s job.
    *
-   * The announcement is not left to the caller. A screen that forgot it would
-   * turn a blocked request into a button that visibly does nothing, and the
-   * seven copies this hook replaced are evidence that anything left to each
-   * screen to remember eventually is not remembered by one of them.
+   * This used to raise a toast here, on the reasoning that a screen which
+   * forgot to announce a hold would leave a button that visibly does nothing.
+   * That reasoning still holds; what changed is who satisfies it.  A toast can
+   * only report, and the useful thing about a hold is the choice it comes with
+   * -- send the rest, or send nothing -- which needs somewhere to put two
+   * buttons.  Keeping both would have every screen state the same sentence
+   * twice at once.
+   *
+   * So the obligation moved rather than lapsed: `no unannounced hold` in
+   * `use-guarded-process.test.tsx` fails if any module calling this hook does
+   * not also render the dialog.
    */
   const hold = useCallback((request: HeldRequest): StartOutcome => {
     setHeld(request)
-    toast.warning(describeHold(request))
     return "held"
   }, [])
 
@@ -281,3 +289,13 @@ export function useGuardedProcess(caseId: string) {
     isProcessing: processMutation.isPending,
   }
 }
+
+/**
+ * Everything one call to the gate returns.
+ *
+ * Exported so that {@link ProcessHoldDialog} can take the whole thing as a
+ * single prop.  Passing `held`, `release` and `dismiss` separately would be
+ * three chances for a screen to wire two of them and think it was done; one
+ * prop is either present or it is not, and the scanner test can see which.
+ */
+export type ProcessGate = ReturnType<typeof useGuardedProcess>
