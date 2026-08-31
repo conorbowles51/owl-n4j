@@ -4,7 +4,7 @@ When $50,000 of traceable funds enters an account already holding $200,000 and
 $60,000 leaves, nothing about the world determines what left.  Money is
 fungible; the question has no factual answer.  Courts do not find one, they
 apply a rule -- and which rule applies depends on the jurisdiction and the
-cause of action (`12` §4.5, §5.1).
+cause of action.
 
 So a tracing result is not a fact.  It is a fact plus a rule.  A system that
 reports "$50,000 flowed from A to C" without naming the rule has made a legal
@@ -13,7 +13,7 @@ indefensible under cross-examination in about one question.  This module
 therefore has no default doctrine.  :func:`trace` requires one by name, and
 :func:`compare_doctrines` runs all of them so the choice can be shown to have
 been made knowingly and its consequence quantified -- which is the
-reliable-application showing FRE 702(d) demands (`12` §7.3, `13` §8.2).
+reliable-application showing FRE 702(d) demands.
 
 Showing the alternatives is not a hedge.  It is the most defensible thing the
 system can do.
@@ -133,8 +133,8 @@ class AttributionError(TracingError):
 
 # There is deliberately no ordering error.  Where the records do not fix the
 # order of movements within a day, the trace still runs and reports
-# :data:`NOTE_ORDER_UNEVIDENCED`, because `13` §8.2 requires that alternatives
-# be *shown*: refusing outright would suppress the very comparison that tells
+# :data:`NOTE_ORDER_UNEVIDENCED`.  The alternatives have to be *shown*, and
+# refusing outright would suppress the very comparison that tells
 # the reader the answer is order-dependent.  LIBR and pro rata are unaffected
 # by intraday order in any case, so a refusal would also withhold two results
 # that are not in doubt.
@@ -169,7 +169,7 @@ class Doctrine(str, Enum):
 
 
 #: Every doctrine, in the order a report should present them.  LIBR and pro
-#: rata lead because they are the most commonly applied (`13` §8.1); direct
+#: rata lead because they are the most commonly applied; direct
 #: tracing is last because it is not a presumption at all and usually answers
 #: for only part of the account.
 DOCTRINE_ORDER: tuple[Doctrine, ...] = (
@@ -820,7 +820,7 @@ def trace(
     ``proof_classes`` defaults to :data:`DEFAULT_TOTAL_CLASSES` -- P0 to P2, the
     classes that reach the ledger without a human act -- and the result records
     both the filter and how many rows it excluded, so a trace can never quietly
-    be running over material a reader would not have admitted (`13` §8.3).
+    be running over material a reader would not have admitted.
     """
     if not isinstance(doctrine, Doctrine):
         raise DoctrineError(
@@ -1151,9 +1151,9 @@ def _trace_direct(
     than picking -- picking would be a presumption with the label taken off,
     which is the one thing this module is built to prevent.
 
-    *Untainted deposits compete in that identification.*  `12` §5.1 states the
-    test as "a wire in on Tuesday, a wire out of the same amount on Wednesday,
-    **nothing else moving**", and an unattributed deposit of the same amount is
+    *Untainted deposits compete in that identification.*  The test is a wire in
+    on Tuesday, a wire out of the same amount on Wednesday, **and nothing else
+    moving** -- and an unattributed deposit of the same amount is
     something else moving: the money that left could as easily have been the
     holder's own.  Considering only attributed deposits would find a unique
     match wherever the competing deposit happened to be untainted, and would
@@ -1288,8 +1288,7 @@ def compare_doctrines(
     This is what an exhibit should be built from.  Reporting one doctrine's
     number alone leaves the reader unable to tell whether the choice mattered;
     reporting all of them shows the choice was made knowingly and shows what it
-    cost, which is what FRE 702(d) asks for and what `13` §8.2 requires the
-    output to say.
+    cost, which is what FRE 702(d) asks for.
     """
     results = {
         doctrine: trace(

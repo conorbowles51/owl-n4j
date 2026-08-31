@@ -154,7 +154,7 @@ def tag(rows, documents=None, **kwargs) -> ExhibitTag:
 
 
 class SummarySubstrateTests(unittest.TestCase):
-    """P0-P2 is substrate; P3 and P4 are not, per `13` §2.2."""
+    """P0-P2 is substrate; P3 and P4 are not."""
 
     def test_p0_p1_p2_may_bear_a_summary(self):
         for proof_class in (ProofClass.p0, ProofClass.p1, ProofClass.p2):
@@ -414,7 +414,7 @@ class ExhibitRowTests(unittest.TestCase):
 
     def test_an_empty_reference_is_refused(self):
         """Without a reference, an annotation on the exported page returns to
-        nothing -- the loss `11` §6 records."""
+        nothing -- the capability V1 had and Loupe lost."""
         with self.assertRaises(ExhibitContentError):
             row("")
 
@@ -787,8 +787,9 @@ class SubstrateDecidesTheCategory(unittest.TestCase):
         self.assertIs(self._sole(ProofClass.p4).rule, SummaryRule.rule_107)
 
     def test_one_weak_row_in_thirty_is_enough(self):
-        """`13` §2.2 is a floor, not an average.  A person eyeballing the table
-        would not see this row; a machine counting classes does."""
+        """The class requirement is a floor, not an average.  A person
+        eyeballing the table would not see this row; a machine counting
+        classes does."""
         rows = spread(29) + (row("weak", proof_class=ProofClass.p4),)
         self.assertIs(tag(rows).rule, SummaryRule.rule_107)
 

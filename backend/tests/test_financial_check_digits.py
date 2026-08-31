@@ -116,7 +116,7 @@ class OutcomeVocabularyTests(unittest.TestCase):
         self.assertIn("no check digit", result.detail)
 
     def test_the_gate_admits_the_uncheckable_and_holds_the_wrong(self) -> None:
-        """`13` §5.5's gate, and why ``no_check_digit`` has to pass it.
+        """The adjudication gate, and why ``no_check_digit`` has to pass it.
 
         Holding every BIC for human adjudication would stop a large fraction of
         the corpus for a reason that is a property of ISO 9362 rather than of
@@ -651,7 +651,7 @@ class Iso7064PrimitiveTests(unittest.TestCase):
 class MeasuredDetectionPowerTests(unittest.TestCase):
     """The claims the module docstring makes, re-measured rather than recited.
 
-    `12` §6.4 says Luhn catches "roughly 80% of adjacent transpositions".  These
+    Luhn is often said to catch "roughly 80% of adjacent transpositions".  These
     tests exist because that is not merely imprecise, it is the wrong shape of
     claim: the misses are categorical.  A reader who believed the 80% figure
     would think a transposed ``09`` had a four-in-five chance of being caught,
@@ -714,7 +714,7 @@ class MeasuredDetectionPowerTests(unittest.TestCase):
         self.assertEqual(len(caught), 44)
 
     def test_luhn_misses_three_twin_errors_and_misses_them_categorically(self) -> None:
-        """``22``↔``55``, ``33``↔``66``, ``44``↔``77``: absent from `12` entirely.
+        """``22``↔``55``, ``33``↔``66``, ``44``↔``77``: rarely mentioned at all.
 
         A twin error is a doubled digit mistyped as a different doubled digit,
         which is a plausible slip on a keypad and not an exotic one.  Doubling

@@ -9,8 +9,8 @@ Five code paths that all return the same numbers are one doctrine wearing five
 labels, and nothing else in the system would notice: every total still foots,
 every claim still balances, the report still names a doctrine and cites a case.
 The output would simply be a presumption applied under whichever name the
-analyst picked, which is precisely the invisible legal choice `12` §4.5 says is
-"indefensible under cross-examination in about one question".  So the divergence
+analyst picked — an invisible legal choice, and one that is indefensible under
+cross-examination in about one question.  So the divergence
 is asserted directly, on the fact patterns the authorities were decided on, and
 :class:`DoctrinesMustDisagree` exists to fail loudly if any two doctrines ever
 collapse into each other.
@@ -184,7 +184,7 @@ class DoctrinesMustDisagree(unittest.TestCase):
         self.assertEqual("2500.00", self._surviving()[Doctrine.pro_rata])
 
     def test_direct_declines_because_two_deposits_match_the_amount(self):
-        """`12` §5.1 requires "nothing else moving" for a one-to-one match.
+        """A one-to-one match requires nothing else moving.
 
         Both deposits are 5,000, so either could be the money that left.  The
         doctrine makes no finding rather than choosing, and the choice it
@@ -524,7 +524,7 @@ class DirectTracingRefusesRatherThanResolves(unittest.TestCase):
     """The doctrine that applies no presumption must be allowed to say nothing."""
 
     def test_a_clean_one_to_one_match_is_made(self):
-        """`12` §5.1: a wire in, a wire out of the same amount, nothing else."""
+        """A wire in, a wire out of the same amount, nothing else."""
         result = trace(
             [mv(1, 1, "2500.00", CR), mv(2, 2, "2500.00", DR)],
             [attr(1, "A", "2500.00")],
@@ -861,7 +861,7 @@ class OrderIsEvidenceNotAnAssumption(unittest.TestCase):
         self.assertEqual(forward.notes, backward.notes)
 
     def test_ordering_ambiguity_does_not_refuse_the_trace(self):
-        """`13` §8.2 requires alternatives be shown, so the trace still runs.
+        """The alternatives have to be shown, so the trace still runs.
 
         Refusing outright would suppress the comparison that tells the reader
         the answer is order-dependent, and would withhold LIBR and pro rata,
@@ -1056,7 +1056,7 @@ class AttributionsAreCheckedAgainstTheLedger(unittest.TestCase):
 
 
 class ProofClassGovernsWhatIsTraced(unittest.TestCase):
-    """`13` §8.3: the default runs over P0-P2 and says so."""
+    """The default runs over P0-P2 and says so."""
 
     def setUp(self):
         self.movements = [
@@ -1070,7 +1070,7 @@ class ProofClassGovernsWhatIsTraced(unittest.TestCase):
         """A p3 row needs a recorded human verdict before it counts.
 
         Including it by default would put an unchecked row inside a total,
-        which `13` §2.2 calls the exact failure the system exists to prevent.
+        which is the exact failure the system exists to prevent.
         """
         result = trace(
             self.movements,
@@ -1332,7 +1332,7 @@ class EveryTraceBalances(unittest.TestCase):
 
 
 class EveryTraceNamesItsDoctrine(unittest.TestCase):
-    """`12` §4.5: a result without its rule has made the choice invisibly."""
+    """A result without its rule has made the choice invisibly."""
 
     def test_trace_requires_a_doctrine_and_has_no_default(self):
         """The single most important line in the module.
@@ -1399,8 +1399,8 @@ class EveryTraceNamesItsDoctrine(unittest.TestCase):
         self.assertEqual(len(set(DOCTRINE_ORDER)), len(DOCTRINE_ORDER))
 
     def test_libr_and_pro_rata_lead_the_order(self):
-        """`13` §8.1 makes them the priority, being the most commonly applied,
-        and the narrative prints in this order."""
+        """They lead because they are the most commonly applied, and the
+        narrative prints in this order."""
         self.assertEqual(Doctrine.lowest_intermediate_balance, DOCTRINE_ORDER[0])
         self.assertEqual(Doctrine.pro_rata, DOCTRINE_ORDER[1])
 
@@ -1488,7 +1488,7 @@ class TheModuleDoesNotOpine(unittest.TestCase):
                 self.assertEqual(note, note.lower())
 
     def test_no_doctrine_is_marked_correct_or_preferred(self):
-        """`13` §8.2 requires alternatives be shown, not ranked.
+        """Alternatives are shown, not ranked.
 
         Which doctrine applies is a question of law for the instructing
         lawyer.  A "recommended" flag would be this module answering it.

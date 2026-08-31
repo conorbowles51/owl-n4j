@@ -6,14 +6,14 @@ comparisons are right.
 **That "contradicted" and "we do not have the records" never merge.**  This is
 the failure mode with real consequences outside the software.  A contradiction
 is put to a witness; an absence caused by a missing statement, dressed as a
-contradiction, is a manufactured discrepancy put to a witness.  `13` §9.1 says
-distinguishing them "is essential and is one of the places a careless system
-would do real harm", so the separation is asserted on fact patterns that differ
+contradiction, is a manufactured discrepancy put to a witness.  Distinguishing
+them is one of the few places in this system where carelessness would do real
+harm, so the separation is asserted on fact patterns that differ
 in *nothing* but the completeness of the record: the same claim, the same rows,
 one coverage with a gap and one without.  :class:`AbsenceMustBeEarned` holds
 every one of the gates.
 
-**That correlation never promotes.**  `13` §9.2.  A corroborated P4 claim is
+**That correlation never promotes.**  A corroborated P4 claim is
 still P4, and the module is built so the opposite is not expressible: no code
 path assigns a proof class, :class:`~services.financial.correlation.Claim`
 refuses any class but p4, and
@@ -1003,8 +1003,8 @@ class AbsenceMustBeEarned(unittest.TestCase):
     """Every gate between "no matching row" and "contradicted"."""
 
     def test_the_headline_finding(self):
-        # 13 §9.1: "A subject saying they paid $200,000 when the ledger shows
-        # $40,000 is exactly what an investigator is looking for."
+        # A subject saying they paid $200,000 when the ledger shows $40,000 is
+        # exactly what an investigator is looking for.
         res = correlate(a_claim("200000"), [a_row(amount="40000")],
                         coverage=COMPLETE)
         self.assertIs(res.outcome, Outcome.contradicted)
@@ -1236,7 +1236,7 @@ class MaterialityInCorrelationTests(unittest.TestCase):
 
 
 class CorrelationNeverPromotes(unittest.TestCase):
-    """`13` §9.2, asserted everywhere it could leak."""
+    """The invariant, asserted everywhere it could leak."""
 
     def test_a_corroborated_claim_is_still_p4(self):
         res = correlate(a_claim(), [a_row()], coverage=COMPLETE)
@@ -1428,7 +1428,7 @@ class CorrelateAllTests(unittest.TestCase):
 
 
 class DecisionTests(unittest.TestCase):
-    """`13` §9.2: a human confirms, and silence is not confirmation."""
+    """A human confirms, and silence is not confirmation."""
 
     def setUp(self):
         self.claim = a_claim()
@@ -1440,8 +1440,8 @@ class DecisionTests(unittest.TestCase):
 
     def test_an_undecided_proposal_does_not_stand(self):
         # A surface whose unreviewed proposals counted as accepted would be the
-        # auto-confirmation §9.2 tells us to resist, arrived at by leaving the
-        # queue alone.
+        # auto-confirmation this module exists to resist, arrived at by
+        # leaving the queue alone.
         adj = apply_decisions(self.res, [])
         self.assertFalse(adj.stands)
         self.assertFalse(adj.is_decided)

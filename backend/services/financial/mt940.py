@@ -1,21 +1,21 @@
 """Layer 0 for MT940: a specification-conformant parse, exact by construction.
 
-`13` §4 puts this layer first: "For P0 and P1 formats there is no extraction
-problem.  camt.053, BAI2, NACHA and MT940 are parsed with a
-specification-conformant parser.  The output is exact by construction."  This
+Extraction divides into layers and this one runs first.  For P0 and P1 formats
+there is no extraction problem: camt.053, BAI2, NACHA and MT940 are parsed with
+a specification-conformant parser and the output is exact by construction.  This
 is the third such parser, after :mod:`~services.financial.camt053` and
 :mod:`~services.financial.bai2`.
 
-`12` §6.1 says exactly what MT940 gives and exactly what it withholds: "The
-identity ``:60F: + Σ:61: = :62F:`` holds.  But field ``:86:`` — the
+What MT940 gives and what it withholds are both precise.  The identity
+``:60F: + Σ:61: = :62F:`` holds.  But field ``:86:`` — the
 information-to-account-owner field where the counterparty description actually
 lives — is unstructured and bank-specific, so the balance check is sound while
-the narrative parse is not."
+the narrative parse is not.
 
-The format is not going away.  `12` §6.1 again: "statement messages have no hard
-SWIFT migration deadline: the November 2025 deadline applied to payment
-messages.  camt migration for statements is planned for 2027 or later, so MT940
-will remain in circulation."
+The format is not going away.  Statement messages have no hard SWIFT migration
+deadline: the November 2025 deadline applied to payment messages.  camt
+migration for statements is planned for 2027 or later, so MT940 will remain in
+circulation.
 
 One check, and why it is only one
 ---------------------------------
@@ -31,33 +31,32 @@ format offers no count of anything.  No record count, no entry count, no
 declared credit or debit totals.
 
 **This is why MT940 is not a P0 format, and the distinction is worth being
-exact about.**  `13` §2.1 lists P0 as "camt.053, BAI2, NACHA" and does not list
-MT940, which reads at first like an oversight given §4 puts all four in Layer
-0.  It is not an oversight.  P0 is defined as a "structured bank-originated
-file with mandatory control totals", and a control total is a count or a sum
-that establishes that *nothing was lost in carriage*.  MT940 has none.  Two
-adjacent ``:61:`` lines merged into one during transmission, or a single line
-of net zero dropped entirely, leave a message whose balance identity still
-closes perfectly.  A BAI2 ``49`` record count would catch both.  Nothing in
-MT940 does.
+exact about.**  P0 is a structured bank-originated file with mandatory control
+totals, and a control total is a count or a sum that establishes that *nothing
+was lost in carriage*.  MT940 has none.  Two adjacent ``:61:`` lines merged into
+one during transmission, or a single line of net zero dropped entirely, leave a
+message whose balance identity still closes perfectly.  A BAI2 ``49`` record
+count would catch both.  Nothing in MT940 does.  So MT940 sits alongside the
+other three in this layer while falling one class short of them, and that is a
+property of the format rather than an oversight.
 
 So the shape is :attr:`~services.financial.proof_class.SourceShape.native_without_control_totals`
 and a clean statement earns p1 rather than p0.  Operationally this costs
-nothing — `13` §2.2 auto-admits p0, p1 and p2 alike — and it avoids asserting a
+nothing — p0, p1 and p2 are auto-admitted alike — and it avoids asserting a
 format guarantee the format does not make.  A statement whose identity *fails*
 still lands at p3, because
 :func:`~services.financial.proof_class.assign_proof_class` tests the failure
-before it dispatches on shape.  MT940 therefore behaves better than the bare
-P1 row in `13` §2.1 suggests ("format validation only"): it is a structured
-format without control totals that nevertheless carries a real arithmetic
-check, and the check is run.
+before it dispatches on shape.  MT940 therefore behaves better than a bare
+"format validation only" reading of P1 suggests: it is a structured format
+without control totals that nevertheless carries a real arithmetic check, and
+the check is run.
 
 Decisions the specification leaves open
 ---------------------------------------
 
-Each resolves toward refusing rather than guessing, on the reasoning `13` §2.2
-gives: a class assigned one step too low costs an adjudication a person will
-resolve, and one step too high puts an unchecked row inside a total.
+Each resolves toward refusing rather than guessing, because the error is
+asymmetric: a class assigned one step too low costs an adjudication a person
+will resolve, and one step too high puts an unchecked row inside a total.
 
 **The amount separator is a comma, and only a comma.**  SWIFT writes ``15d`` as
 digits with a mandatory comma for the decimal point and no thousands separator
@@ -100,7 +99,7 @@ that an earlier figure was withdrawn.  :attr:`Mt940StatementLine.is_reversal`
 keeps it.
 
 **``:86:`` is captured verbatim and left unparsed.**  This is the single most
-tempting field in the format and the one `12` §6.1 warns about by name.  It is
+tempting field in the format and the one the balance check does not cover.  It is
 where the counterparty actually lives, it is unstructured, and its layout is
 per-bank and frequently per-product.  A regex that works on one bank's
 narrative silently mis-splits another's, and the result is a counterparty
@@ -539,7 +538,7 @@ class Mt940StatementLine:
 
     ``information`` is the ``:86:`` narrative, verbatim and including its line
     breaks.  It is not parsed here and this module makes no claim about what is
-    in it — `12` §6.1 is explicit that it is bank-specific, and a counterparty
+    in it — the field is bank-specific, and a counterparty
     extracted from it by pattern would be a counterparty asserted on the
     authority of a guess.
     """
@@ -720,7 +719,7 @@ class Mt940File:
         and no reservation it could honestly raise.
 
         The property exists anyway because the caller that wires Layer 0 into
-        extraction (`13` §4) reads it from every native parser, and a caller
+        extraction reads it from every native parser, and a caller
         that has to remember which parsers have reservations is a caller that
         will eventually forget.
         """

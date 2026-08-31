@@ -1,15 +1,14 @@
 """Money flow from a chosen point of view.
 
-`13` §10 calls for two money-flow surfaces, and this is the quantitative one:
-select a *perspective set* of entities, and every transaction touching any of
+This is the quantitative money-flow surface: select a *perspective set* of
+entities, and every transaction touching any of
 them is classified as **inflow** (external money arriving), **outflow** (money
 leaving for an external party) or **internal** (payment inside the set).  The
 divergent counterparty chart that falls out of it answers "who is this party
-net-funding, and by how much", which `12` §4.4 records as an under-occupied
-part of the design space and which is a different -- often better -- question
-than "what is connected to what".
+net-funding, and by how much", which is a different -- often better -- question
+than "what is connected to what", and one that little else on the market asks.
 
-The model is V1's, and `11` §1 records that V1's implementation of it
+The model is V1's.  Its implementation there
 (``MoneyFlowSection.jsx``, 440 lines) was one of the genuinely good things the
 old interface had and one of the things Loupe lost entirely.  The analytical
 core is carried over intact:
@@ -31,7 +30,8 @@ What is not carried over
 ------------------------
 
 V1 computed all of this in floating point, off ``parseFloat(t.amount) || 0``,
-and rounded at the end.  `11` §5 records where that ended up: ``toFloat()`` on a
+and rounded at the end.  Where that ended up is worth stating exactly:
+``toFloat()`` on a
 malformed amount yields NaN, ``sum(abs(NaN))`` is NaN, NaN renders as $0.00 and
 ``CASE WHEN NaN >= 0`` is false so the outflow branch silently skipped the row.
 The live symptom was **Total Volume $0.00 alongside Outflows of $284M on the
@@ -45,7 +45,7 @@ string when no key was present.  Two distinct parties who share a name merge
 into one, and one party whose name is spelled two ways splits into two, and
 neither shows up as anything but a wrong number.  Here identity is a
 :class:`Party` key and the name is a label that is never load-bearing.  Deciding
-that two names are one party is entity resolution (`13` §6.2) and happens
+that two names are one party is entity resolution and happens
 upstream; :func:`attribute` is the boundary, and the type makes it impossible to
 build a flow row without having decided.
 
@@ -89,7 +89,7 @@ stronger of the two proof classes.
 Everything set aside says so
 ----------------------------
 
-`13` §2.2 requires a total to state which proof classes it covers, so every
+A total has to state which proof classes it covers, so every
 figure here carries its :class:`ClassComposition` and no figure is a bare
 number.  Rows in scope that fall outside the counted classes are reported as
 set aside with the reason, because "Net +$40,000" over a set whose volume is
@@ -323,8 +323,8 @@ def attribute(
 ) -> FlowRow:
     """Resolve a ledger entry's two sides into identities.
 
-    This function is the entity-resolution boundary made explicit.  `13` §6.2
-    puts resolution upstream of analysis, and the alternative to a boundary is
+    This function is the entity-resolution boundary made explicit.  Resolution
+    belongs upstream of analysis, and the alternative to a boundary is
     what V1 did: resolve implicitly, per row, by falling back to the display
     name whenever a key was missing.  Requiring the caller to say who these
     parties *are* is a small cost paid once, against a class of error that is
@@ -410,7 +410,7 @@ class Placement(str, Enum):
 class SetAsideReason(str, Enum):
     """Why an in-scope payment did not reach a figure."""
 
-    #: Its proof class is outside the counted set (`13` §2.2).
+    #: Its proof class is outside the counted set.
     class_not_counted = "class_not_counted"
     #: Neither party resolved, so the perspective cannot be applied to it.
     unplaceable = "unplaceable"
@@ -425,7 +425,7 @@ class SetAsideReason(str, Enum):
 class ClassComposition:
     """The proof classes behind a figure, with counts and subtotals.
 
-    `13` §2.2 requires a total to state its class composition, and the reason it
+    A total has to state its class composition, and the reason it
     has to be carried on the figure rather than computed beside it is that the
     two get separated: a number travels into an exhibit, a caption does not
     always travel with it.
@@ -1093,7 +1093,7 @@ class MoneyFlow:
     """Money in, money out, and internal transfers, from a chosen point of view.
 
     Every figure on this object is a :class:`Figure` and so states the proof
-    classes behind it, per `13` §2.2.  The three cards -- inflow, outflow,
+    classes behind it.  The three cards -- inflow, outflow,
     internal -- partition the in-scope, counted payments exactly once each, and
     :meth:`divergent_chart` decomposes inflow and outflow into bars that sum
     back to them.  What did not reach a card is not discarded: it is in

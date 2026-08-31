@@ -4,8 +4,8 @@ The limitation that opens ``test_financial_camt053`` and ``test_financial_bai2``
 applies here too, and is restated rather than cross-referenced because it is
 the single most important thing to know about this suite.  No corpus document
 backs any of it.  The ET-Fraud corpus carries no MT940 message, so every
-fixture below is constructed from `12` §6.1 and the SWIFT field definitions
-rather than measured from evidence.  A fixture built by the same reading of the
+fixture below is constructed from the SWIFT field definitions rather than
+measured from evidence.  A fixture built by the same reading of the
 specification as the parser shares the parser's blind spots exactly: if the
 reading is wrong, the test passes and the parser is wrong together.
 
@@ -377,11 +377,11 @@ class ProofClassTests(unittest.TestCase):
 
     def test_a_clean_message_earns_p1_and_deliberately_not_p0(self) -> None:
         # This is the most consequential decision in the module and the one
-        # most likely to be "corrected" by someone reading `13` §4, which
-        # requires MT940 be parsed natively, without reading §2.1, which lists
-        # P0 as camt.053, BAI2 and NACHA and omits MT940.
+        # most likely to be "corrected" by someone who notes that MT940 is
+        # parsed natively, like camt.053, BAI2 and NACHA, and concludes it
+        # must therefore be P0 like them.
         #
-        # The omission is not an oversight.  P0 means a bank-originated file
+        # It is not.  P0 means a bank-originated file
         # with mandatory control totals, and MT940 has none: no record count,
         # no entry count, no declared credit or debit total.  Two :61: lines
         # merged in carriage, or one of net zero dropped entirely, leave a
@@ -417,8 +417,8 @@ class ProofClassTests(unittest.TestCase):
         )
 
     def test_a_failing_identity_still_falls_to_p3(self) -> None:
-        # MT940 behaves better than the bare P1 row of `13` §2.1 ("format
-        # validation only") would suggest, because assign_proof_class tests the
+        # MT940 behaves better than a bare "format validation only" reading of
+        # P1 would suggest, because assign_proof_class tests the
         # outcome before it dispatches on the shape.  A message whose
         # arithmetic did not close is p3 whatever its shape.
         parsed = parse_mt940(build(closing=":62F:C240116USD8000,00"))
@@ -1031,8 +1031,8 @@ class CurrencyTests(unittest.TestCase):
 class NarrativeFidelityTests(unittest.TestCase):
     """:86: is carried, not interpreted.
 
-    Doc 12 §6.1 is explicit that the narrative is unstructured and that every
-    bank fills it differently.  Parsing it would mean inventing a structure the
+    The narrative is unstructured and every bank fills it differently.
+    Parsing it would mean inventing a structure the
     format does not have and attributing the invention to the bank.  So it is
     stored verbatim and left for a later, separately-labelled layer.
     """

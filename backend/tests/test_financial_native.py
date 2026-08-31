@@ -1092,9 +1092,9 @@ class ReadingTests(NativeTestCase):
     def test_every_reading_records_the_native_layer(self) -> None:
         """The field that lets a later reader tell read from inferred.
 
-        Months after ingestion both are numbers in the same table, and `13`
-        §2.1 grants the native layer its proof class on the strength of this
-        field alone.
+        Months after ingestion both are numbers in the same table, and the
+        native layer earns its proof class on the strength of this field
+        alone.
         """
         for data in (camt_bytes(), bai2_bytes(), mt940_bytes(), nacha_bytes(NACHA_SIMPLE)):
             reading = read_native(data, window=WINDOW)

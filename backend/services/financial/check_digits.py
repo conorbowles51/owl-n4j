@@ -1,6 +1,6 @@
 """Field-level check digits: the last gate a number passes before analysis.
 
-`13` §5.4 fixes what this module is for and, just as importantly, what it is
+One rule fixes what this module is for and, just as importantly, what it is
 not for:
 
     A failed check digit does not reject a row.  It flags it, because the
@@ -12,8 +12,8 @@ digit, and it may be evidence that the party who wrote the document wrote a
 number that never existed — which, in a matter about where money went, is
 frequently the more interesting of the two.  A module that dropped the row
 would destroy the second finding in the course of tidying up the first.  So
-nothing here rejects anything.  Everything here returns a verdict, and `13`
-§5.5 requires that verdict be recorded before the value is analysed:
+nothing here rejects anything.  Everything here returns a verdict, and that
+verdict has to be recorded before the value is analysed:
 
     No number reaches the analytical surface without having passed this gate
     or having been explicitly adjudicated by a named human.
@@ -33,10 +33,10 @@ What the checks are actually worth
 ----------------------------------
 
 Detection power is stated here as *measured* rather than as recalled, because
-the received wisdom about Luhn is wrong in a specific and quotable way.  `12`
-§6.4 says Luhn catches "roughly 80% of adjacent transpositions".  It does not,
-and the figure is not an approximation of the truth but a different shape of
-claim: Luhn's misses are **categorical, not probabilistic**.
+the received wisdom about Luhn is wrong in a specific and quotable way.  It is
+widely repeated that Luhn catches "roughly 80% of adjacent transpositions".  It
+does not, and the figure is not an approximation of the truth but a different
+shape of claim: Luhn's misses are **categorical, not probabilistic**.
 
 Measured over three thousand generated valid sixteen-digit numbers:
 
@@ -49,7 +49,7 @@ Measured over three thousand generated valid sixteen-digit numbers:
   ``09`` has a four-in-five chance of being caught when it has none.
 * **Twin errors** (``aa`` → ``bb``): ``22``↔``55``, ``33``↔``66`` and
   ``44``↔``77`` are missed, again categorically, and every other twin pair is
-  caught.  These are absent from `12` altogether.
+  caught.  The received account omits these entirely.
 
 MOD-97-10 measured by sweeping every single-character substitution and every
 adjacent transposition across four real IBANs (GB, DE, NL, CH):
@@ -220,7 +220,7 @@ class CheckDigitResult:
 
     @property
     def passes_gate(self) -> bool:
-        """Whether `13` §5.5's gate is satisfied without human adjudication.
+        """Whether the value clears the gate without human adjudication.
 
         True for ``passed`` and for ``no_check_digit``: in the second case
         there was no arithmetic to fail, and holding a BIC back for review on
@@ -513,9 +513,9 @@ def _verify_ssn(normalised: str) -> CheckDigitResult:
     """Nine digits, and the ranges the SSA has never issued.
 
     Randomisation from 25 June 2011 removed the geographic and sequential
-    structure that used to make an SSN partly self-describing, which is why
-    `12` §6.4 records that there is almost nothing left to check.  What
-    survived randomisation is a short list of never-issued ranges — area
+    structure that used to make an SSN partly self-describing, so there is
+    almost nothing left to check.  What survived randomisation is a short
+    list of never-issued ranges — area
     ``000``, ``666`` and ``900``-``999``, group ``00``, serial ``0000`` — and
     those are worth applying, because a value in one of them cannot be a real
     SSN and is very often a placeholder somebody typed.

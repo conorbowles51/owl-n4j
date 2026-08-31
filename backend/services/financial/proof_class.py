@@ -6,46 +6,44 @@ defined, and ``proof_class`` is a ``NOT NULL`` column on both
 constraint that refuses ``p4`` on a transaction.  What did not exist was
 anything that *computes* a class.  Every caller and every test supplied one by
 hand, which meant the taxonomy was enforced at the boundary and asserted
-everywhere inside it — exactly the shape `13` §2.3 rules out, since a class
-that a caller chooses is an opinion and the point of the taxonomy is that it
-is not one.  This module is the missing function.
+everywhere inside it — a class that a caller chooses is an opinion, and the
+whole point of the taxonomy is that it is not one.  This module is the missing
+function.
 
-Which taxonomy
---------------
+Which axis the classes key on
+-----------------------------
 
-Two incompatible P0–P4 taxonomies exist in the bundle under the same labels.
-`08` §3 keys the classes on *what proof the source carries* — p0 self-proving,
-p1 partially proving, **p2 cross-provable**, p3 structurally constrained, p4
-assertional.  `13` §2.1 keys them on *source format, then arithmetic outcome*
-— p0 native with control totals, p1 native without, **p2 statement that
-balances**, p3 statement that does not, p4 assertional.  `13` introduces its
-table with "Extending the taxonomy in `08`", but it does not extend it; it
-redefines three of the five labels on a different axis.
+P0–P4 can be keyed on two different axes, and the labels collide.  One keys on
+*what proof the source carries*: p0 self-proving, p1 partially proving, **p2
+cross-provable**, p3 structurally constrained, p4 assertional.  The other keys
+on *source format, then arithmetic outcome*: p0 native with control totals, p1
+native without, **p2 statement that balances**, p3 statement that does not, p4
+assertional.  Three of the five labels mean different things depending on which
+axis is in force, so the choice has to be stated rather than assumed.
 
-`14` item 9 settles precedence explicitly: replace ``EvidenceStrength`` with
-"the P0–P4 taxonomy of `13` §2".  So `13` governs and this module implements
-`13`.  One consequence is recorded here because it is invisible from inside
-the code: `08`'s p2 — cross-document corroboration, measured at 10,208 of
-24,077 independent rows (42.4%), and described there as the one capability
-that cannot be bought — has no class of its own under `13`, because `13` spent
-the p2 label on statement arithmetic.  Corroboration is not lost, but it is
-now an attribute a row carries rather than a class it belongs to.  Nothing
-here depends on resolving that; it is flagged so the next person does not
-assume `13`'s p2 means what `08`'s p2 meant.
+This module implements the second: format, then outcome.  One consequence is
+recorded here because it is invisible from inside the code.  Cross-document
+corroboration — one document independently confirming a row in another,
+measured across this corpus at 10,208 of 24,077 independent rows (42.4%) — has
+no class of its own here, because the p2 label is spent on statement
+arithmetic.  Corroboration is not lost; it is an attribute a row carries rather
+than a class it belongs to.  Nothing in this module depends on resolving that,
+but a reader who arrives expecting p2 to mean "cross-provable" will misread
+every class it assigns.
 
 Why this cannot live in the extractor
 -------------------------------------
 
-`13` §2.3: class is "a function of the source format **and the verification
-outcome**, computed at ingestion".  The verification outcome is
+A class is a function of the source format **and the verification outcome**,
+computed at ingestion.  The verification outcome is
 :class:`~postgres.models.enums.ReconciliationStatus`, produced by
 :func:`~services.financial.statement_totals.check_header_identity` over a
 normalised control block.  That runs in the backend, over a period that has
 already been read.  ``extract_entities.py`` runs before any of it exists.
 
 So an extractor cannot assign a proof class, and a design that asks it to must
-either guess p2 versus p3 or read the model's opinion — the two failures that
-`13` §2.3 and the work already done in ``6ef152e`` exist to prevent.  What the
+either guess p2 versus p3 or read the model's opinion — the two failures the
+work already done in ``6ef152e`` exists to prevent.  What the
 extractor can honestly report is the *shape* of the source, which is a
 property of the format alone.  :class:`SourceShape` is that, and
 :func:`assign_proof_class` is the join of shape with outcome.
@@ -53,12 +51,12 @@ property of the format alone.  :class:`SourceShape` is that, and
 The safe direction is not symmetric
 -----------------------------------
 
-p0, p1 and p2 enter the verified ledger automatically (`13` §2.2).  p3 enters
+p0, p1 and p2 enter the verified ledger automatically.  p3 enters
 only on a recorded human act.  p4 never enters at all.  So the errors are not
 equal: classifying a document one class too low costs an adjudication that a
 person will resolve, while classifying it one class too high puts an unchecked
-row inside a total, which `13` §2.2 calls "the exact failure this system exists
-to prevent".  Every ambiguous case below therefore resolves downward, and
+row inside a total — the exact failure this system exists
+to prevent.  Every ambiguous case below therefore resolves downward, and
 :func:`assign_proof_class` will not name an auto-admitting class on anything weaker than
 a passing check.
 """
@@ -94,9 +92,8 @@ class SourceShape(str, Enum):
     A statement is a statement whether or not it turns out to balance; that it
     balances is the other half, and it arrives later.
 
-    The four members are the four format rows of `13` §2.1 — p2 and p3 share
-    one, because they are the same kind of document distinguished only by
-    outcome.
+    There are four members rather than five: p2 and p3 share one, because they
+    are the same kind of document distinguished only by outcome.
     """
 
     # A structured file whose format mandates control totals: camt.053, BAI2,
@@ -116,7 +113,7 @@ class SourceShape(str, Enum):
     unstructured_narrative = "unstructured_narrative"
 
 
-#: Classes that enter the verified ledger with no human act (`13` §2.2).
+#: Classes that enter the verified ledger with no human act.
 AUTO_ADMITTED_CLASSES: frozenset[ProofClass] = frozenset(
     {ProofClass.p0, ProofClass.p1, ProofClass.p2}
 )
@@ -128,7 +125,7 @@ LEDGER_CLASSES: frozenset[ProofClass] = frozenset(
     {ProofClass.p0, ProofClass.p1, ProofClass.p2, ProofClass.p3}
 )
 
-#: The default membership of any total, chart or aggregate (`13` §2.2).  Stated
+#: The default membership of any total, chart or aggregate.  Stated
 #: as a constant so that a caller widening it has to say so in code that can be
 #: found, rather than by omitting a filter.
 DEFAULT_TOTAL_CLASSES: frozenset[ProofClass] = AUTO_ADMITTED_CLASSES
@@ -151,10 +148,11 @@ def assign_proof_class(
     where a check was possible and did not pass, the result is never an
     auto-admitting class.
 
-    Two rules here are not spelled out in `13` and are resolved conservatively:
+    Two rules here follow from no stated principle and are resolved
+    conservatively:
 
-    *Demotion on a failed check.*  `13` keys p0 and p1 on format alone, so on a
-    literal reading a camt.053 whose own mandatory totals contradict each other
+    *Demotion on a failed check.*  Keying p0 and p1 on format alone would leave
+    a camt.053 whose own mandatory totals contradict each other
     is still p0 and still auto-admits.  That cannot be right — a document that
     fails the check its format guarantees is the strongest possible signal that
     something is wrong with it — so a failing outcome demotes to p3 whatever
@@ -196,7 +194,7 @@ def assign_proof_class(
 
     # native_without_control_totals: no arithmetic is available by construction,
     # so there is nothing to demote on and format validation is the whole of the
-    # check.  `13` §2.2 admits p1 automatically on that basis.
+    # check.  p1 is admitted automatically on that basis.
     return ProofClass.p1
 
 
@@ -228,15 +226,15 @@ def counts_toward_totals(
 ) -> bool:
     """True where the class participates in an aggregate under ``included``.
 
-    The parameter exists because `13` §2.2 requires a total to *state* which
-    classes it covers, which means the set has to be a value that can be
-    reported, not a rule buried in a query.
+    The parameter exists because a total has to *state* which classes it
+    covers, which means the set has to be a value that can be reported, not a
+    rule buried in a query.
     """
     return proof_class in included
 
 
-#: Forward mapping from the retired four-value ``evidence_strength`` vocabulary
-#: (`14` item 9).  Deliberately lossy, and lossy downward:
+#: Forward mapping from the retired four-value ``evidence_strength``
+#: vocabulary.  Deliberately lossy, and lossy downward:
 #:
 #: ``narrative``   → p4.  Exact: both mean a claim in unstructured material.
 #: ``derived``     → p1.  A table or spreadsheet is a structured source with no
@@ -263,8 +261,8 @@ def from_legacy_strength(evidence_strength: str) -> ProofClass:
 
     This is a migration aid, not an ingestion path.  It exists so that a case
     ingested under the old model can be read in the new vocabulary, and it is
-    not applied automatically: `14` item 9 requires the
-    ``uses_legacy_financial_model`` pattern be kept, so a legacy case keeps
+    not applied automatically: the ``uses_legacy_financial_model`` pattern
+    is kept, so a legacy case keeps
     reporting the model it was built under until someone decides otherwise.
     Re-labelling old rows in place would claim a provenance they do not have.
 

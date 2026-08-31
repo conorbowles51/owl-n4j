@@ -13,9 +13,9 @@ provenance the schema asks for: ``extraction_layer``, ``parser_name`` and
 :class:`~postgres.models.enums.DateSource` on every row.
 
 ``extraction_layer`` is :attr:`~postgres.models.enums.ExtractionLayer.native`
-for everything this module produces, and that is not a formality.  `13` §2.1
-grants ``native_with_control_totals`` the strongest proof class available, and
-it does so because the format itself mandates the totals that make the
+for everything this module produces, and that is not a formality.
+``native_with_control_totals`` carries the strongest proof class available, and
+it earns it because the format itself mandates the totals that make the
 arithmetic a guarantee rather than a hope.  Recording the layer is what lets a
 later reader tell a figure that was *read* from a figure that was *inferred*,
 months after both have become numbers in the same table.

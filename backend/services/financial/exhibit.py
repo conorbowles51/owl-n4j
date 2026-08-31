@@ -1,8 +1,8 @@
 """Which kind of artefact this is: Rule 1006 evidence, or a Rule 107 aid.
 
-`13` §11.1 asks the system to know what it is producing, and `12` §7.2 explains
-why the question got sharper on 1 December 2024, when two amendments took effect
-on the same day.
+A system that produces exhibits has to know which kind it is producing, and the
+question got sharper on 1 December 2024, when two amendments took effect on the
+same day.
 
 **FRE 1006 as amended** lets a summary, chart or calculation of voluminous
 writings be admitted *as substantive evidence* whether or not the underlying
@@ -15,8 +15,8 @@ instruct the jury that such a summary is not evidence.  It is evidence.
 trier of fact understand evidence, which is **not** itself evidence and does not
 go to the jury room unless the parties consent or the court orders it.
 
-So there are two categories with different consequences, and `12` §8 records
-that no surveyed product distinguishes them.  Drawing the line costs almost
+So there are two categories with different consequences, and no product on the
+market distinguishes them.  Drawing the line costs almost
 nothing and is worth a great deal, because it is the difference between an
 exhibit the jury deliberates over and one it does not.
 
@@ -46,7 +46,7 @@ built the screen.
 
 The second half *is* computed, and it is the half a person gets wrong under time
 pressure.  Rule 1006 requires the underlying material to be admissible, and
-`13` §2.2 fixes what this system can stand behind: **P0-P2 material is the
+what this system can stand behind is fixed: **P0-P2 material is the
 substrate of a Rule 1006 summary.**  One P3 row in a thousand takes the artefact
 out of the category, and a person eyeballing a table will not see it.  A machine
 counting classes will, every time.
@@ -78,7 +78,7 @@ outstanding obligation, and the obligation is curable by an email.  Collapsing
 the two would mislabel the artefact and hide the one item that is actually
 actionable.  So the category lives in :attr:`ExhibitTag.rule` and the obligation
 lives in :attr:`ExhibitTag.conditions`, and the manifest of exactly what must be
-made available -- which `13` §11.1 asks for by name -- is built from the rows
+made available is built from the rows
 rather than typed by hand, so it cannot omit a document the exhibit rests on.
 
 Voluminousness is flagged, never asserted
@@ -121,7 +121,7 @@ class ExhibitContentError(ExhibitError):
 class DuplicateReferenceError(ExhibitError):
     """Two rows claim the same reference identifier.
 
-    `13` §11.2 makes the per-row reference the join between an exhibit and the
+    The per-row reference is the join between an exhibit and the
     ledger -- the thing that lets an annotation made on an exported page be
     brought back.  Two rows sharing one reference break that join in the
     direction that is hardest to notice: the export looks fine and the round
@@ -153,7 +153,7 @@ class ExhibitInvariantError(ExhibitError):
 # ---------------------------------------------------------------------------
 
 
-#: The classes that can bear a Rule 1006 summary, per `13` §2.2.
+#: The classes that can bear a Rule 1006 summary.
 #:
 #: This is presently the same membership as
 #: :data:`~services.financial.proof_class.AUTO_ADMITTED_CLASSES`, and it is
@@ -246,7 +246,8 @@ class ContentKind(str, Enum):
     """A conclusion the records do not state.
 
     A tracing doctrine's answer, a typology label such as structuring or
-    pass-through, a characterisation of a party's conduct.  `13` §8 keeps the
+    pass-through, a characterisation of a party's conduct.
+    :mod:`services.financial.tracing` keeps the
     doctrine named and the alternatives visible for exactly this reason: the
     answer is a consequence of a legal rule applied to the records, not a fact
     in them.
@@ -397,8 +398,8 @@ _SHA256 = re.compile(r"\A[0-9a-f]{64}\Z")
 class SourceDocument:
     """One document the exhibit rests on, and whether it has been disclosed.
 
-    The digest is required rather than optional.  `13` §3 has every artefact
-    carrying a path back to the SHA-256 of the original bytes, and an exhibit is
+    The digest is required rather than optional.  Every artefact in this system
+    carries a path back to the SHA-256 of the original bytes, and an exhibit is
     the artefact where that path is finally spent: FRE 902(14) makes a data copy
     self-authenticating on hash certification, and a manifest that named
     documents without their digests would hand the other side a list to argue
@@ -465,10 +466,10 @@ class ExhibitRow:
     """
 
     reference: str
-    """The stable per-row key, per `13` §11.2.
+    """The stable per-row key.
 
-    V1 carried one and `11` §6 records that Loupe lost it; without it a
-    reviewer's note on row 412 of an exported PDF refers to nothing.
+    V1 carried one and Loupe lost it; without it a reviewer's note on row 412
+    of an exported PDF refers to nothing.
     """
 
     proof_class: ProofClass
@@ -517,8 +518,8 @@ class ExhibitRow:
 class Disclosure:
     """Exactly what must be made available, and what still has to be.
 
-    `13` §11.1 asks a Rule 1006 export to carry "a manifest of exactly what must
-    be made available".  This is that manifest, and it is derived from the rows
+    A Rule 1006 export has to carry a manifest of exactly what must be made
+    available.  This is that manifest, and it is derived from the rows
     rather than supplied, so that it cannot omit a document the exhibit rests
     on -- which is the only way this list is ever wrong in practice, and the way
     that is fatal.
@@ -564,7 +565,7 @@ def _composition(rows: Sequence[ExhibitRow]) -> ClassComposition:
     """Counts and subtotals per proof class.
 
     Reuses :class:`~services.financial.flow.ClassComposition` rather than
-    growing a second one here.  `13` §2.2 asks one question about composition
+    growing a second one here.  There is one question about composition
     and there should be one answer to it; two structures with the same fields
     would drift, and the one that drifted would be the one a reader had not
     looked at recently.  Ordering comes from that class's own ``classes``
@@ -660,7 +661,7 @@ def _build_disclosure(
 class ExhibitTag:
     """What this artefact is, what it rests on, and what is still owed.
 
-    Everything `13` §11.1 asks a Rule 1006 export to carry, in one object that
+    Everything a Rule 1006 export has to carry, in one object that
     travels with the artefact: the complete underlying row set, the documents
     those rows came from with hashes, the proof-class composition, and the
     arithmetic demonstrating internal consistency.  The one thing it does not
@@ -748,7 +749,7 @@ class ExhibitTag:
     def references(self) -> tuple[str, ...]:
         """Every row reference, in row order.
 
-        The join back to the ledger, per `13` §11.2.  In row order rather than
+        The join back to the ledger.  In row order rather than
         sorted, because the order the rows are in is the order they appear on
         the page, and a reviewer's note on the fourth line means the fourth
         line.

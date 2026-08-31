@@ -1,8 +1,8 @@
 """Native reading of a NACHA ACH file, the strongest of the four formats.
 
-`13` §4 requires four formats be read natively rather than through a rendered
-statement, and `13` §2.1 places three of them at P0 on the strength of
-"mandatory control totals".  Of those three this is the one where that phrase
+Four formats are read natively here rather than through a rendered statement,
+and three of them reach P0 on the strength of mandatory control totals.  Of
+those three this is the one where that phrase
 is least of an understatement.  camt.053 states a closing balance.  BAI2 states
 a sum of amount fields.  A NACHA file states, at two levels independently:
 
@@ -74,7 +74,7 @@ zero-dollar test that an account exists, and it contributes nothing to either
 money total while still counting in the entry count and the entry hash.  A
 batch of them passes every check in this module vacuously.  That is not a
 defect and the file is not refused, but the promotion to P0 is withheld,
-because P0 admits with no human act (`13` §2.2) and admitting an account test
+because P0 admits with no human act at all, and admitting an account test
 to a ledger of payments is the failure the taxonomy exists to prevent.
 
 Currency
@@ -638,7 +638,8 @@ class NachaAddenda:
     contents are structured for some addenda types — ``05`` on a CTX entry
     carries an EDI or STP 820 remittance segment, ``99`` carries a return
     reason code, ``98`` a change code and the corrected data — and none of that
-    is decoded here, on the same authority as `12` §6.1: a field read into
+    is decoded here, for the reason that governs the parsers generally: a field
+    read into
     fields is a field a reader can no longer see as it was sent, and the return
     reason in particular is the sort of thing an opposing expert will want to
     read in the original.  What *is* read is the type code, because it changes
@@ -1185,7 +1186,7 @@ class NachaBatch:
         Each of these describes a batch whose arithmetic can be perfectly
         sound and whose contents are still not what a total of payments should
         be made of.  None of them is a defect and none is refused; what they
-        block is the *automatic* admission that p0 carries (`13` §2.2).
+        block is the *automatic* admission that p0 carries.
 
         A prenotification is a zero-dollar test that an account exists.  A
         batch of them contributes nothing to either money total while still
@@ -1296,7 +1297,7 @@ class NachaFile:
     physical_record_count: int
 
     #: Fixed.  NACHA is a structured file whose format mandates control totals
-    #: at two levels, which is the whole of what the shape asserts (`13` §2.1).
+    #: at two levels, which is the whole of what the shape asserts.
     #: Whether those totals agree is the other half of the class and arrives
     #: from the arithmetic, not from here.
     source_shape: SourceShape = field(

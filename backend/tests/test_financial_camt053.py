@@ -2,7 +2,7 @@
 
 No corpus document backs these.  The ET-Fraud corpus carries no camt.053, no
 BAI2, no MT940 and no NACHA file — its XML is Cellebrite call and audio
-forensics — so every fixture below is constructed from `12` §6.1 and the ISO
+forensics — so every fixture below is constructed from the ISO
 20022 message definition rather than measured from evidence.  That is a real
 weakness and it is stated here rather than left for someone to discover: a
 fixture built by the same reading of the specification as the parser shares the

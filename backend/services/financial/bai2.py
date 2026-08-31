@@ -1,15 +1,15 @@
 """Layer 0 for BAI2: a specification-conformant parse, exact by construction.
 
-`13` §4 puts this layer first: "For P0 and P1 formats there is no extraction
-problem.  camt.053, BAI2, NACHA and MT940 are parsed with a
-specification-conformant parser.  The output is exact by construction."  This
-is the second such parser, after :mod:`~services.financial.camt053`.
+For P0 and P1 formats there is no extraction problem.  camt.053, BAI2, NACHA
+and MT940 are parsed with a specification-conformant parser and the output is
+exact by construction, so this layer runs before anything that has to infer.
+This is the second such parser, after :mod:`~services.financial.camt053`.
 
-`12` §6.1 says why BAI2 is worth writing next: "Record types 01 file header, 02
-group header, 03 account identifier, 16 transaction detail, 88 continuation, 49
-account trailer, 98 group trailer, 99 file trailer.  The 49/98/99 trailers give
-control totals at three levels of nesting.  Full arithmetic validation is
-available."
+BAI2 is worth writing early because its structure is fully checkable.  Record
+type 01 is the file header, 02 the group header, 03 the account identifier, 16
+a transaction detail, 88 a continuation, and 49, 98 and 99 the account, group
+and file trailers.  The 49/98/99 trailers give control totals at three levels
+of nesting, so full arithmetic validation is available.
 
 Four checks, not one
 --------------------
@@ -64,7 +64,7 @@ different places.
 Decisions the specification leaves open
 ---------------------------------------
 
-Each resolves toward *not* claiming p0, on the reasoning `13` §2.2 gives: a
+Each resolves toward *not* claiming p0, because the error is asymmetric: a
 class assigned one step too low costs an adjudication a person will resolve,
 and one step too high puts an unchecked row inside a total.
 
@@ -110,17 +110,17 @@ on the second attempt.
 status ``4`` marks a test file and ``2`` marks a deletion.  Both can be
 arithmetically perfect while asserting nothing about money that moved: a test
 file states no fact about any account, and a deletion states the withdrawal of
-one.  P0 auto-admits to the verified ledger with no human act (`13` §2.2), so a
+one.  P0 auto-admits to the verified ledger with no human act, so a
 test file reaching it would be the exact failure the class exists to prevent.
 The reservation is recorded on :attr:`Bai2File.admissibility_reservations` and
 is visible rather than folded into the arithmetic, which stays a report of what
 the numbers did.  Status ``3``, a correction, is recorded without reservation:
 it does assert what moved.  That it implies an earlier file is an intake
-question (`13` §3) and not a parse question.
+question and not a parse question.
 
 **Continuation text is retained, never interpreted.**  The ``16`` record's text
-field and its ``88`` continuations are free-form and bank-specific.  `12` §6.1
-makes the same point about MT940's ``:86:``: the balance check is sound while
+field and its ``88`` continuations are free-form and bank-specific.  The same
+holds for MT940's ``:86:``: the balance check is sound while
 the narrative parse is not.  So the text is preserved verbatim — commas within
 it restored, continuation boundaries kept as line breaks — and no meaning is
 read out of it here.
@@ -424,7 +424,7 @@ class Bai2LogicalRecord:
         outer edges are stripped, and only because those are padding to the
         record length rather than anything the sender wrote.
 
-        Nothing here interprets the result — `12` §6.1's point about MT940's
+        Nothing here interprets the result — the point about MT940's
         ``:86:`` applies equally: the balance check is sound while the narrative
         parse is not, so the narrative is carried and not read.
         """
@@ -1252,7 +1252,7 @@ class Bai2Group:
 
         Status ``3`` (correction) draws no reservation.  A correction does
         assert what moved.  That it implies an earlier file whose records it
-        supersedes is a question for intake and de-duplication (`13` §3), not a
+        supersedes is a question for intake and de-duplication, not a
         reason to distrust this one.
         """
         if self.status is None:
@@ -1316,7 +1316,7 @@ class Bai2File:
     control_total: Bai2ControlTotal
 
     #: Fixed.  BAI2 is a structured file whose format mandates control totals,
-    #: which is the whole of what the shape asserts (`13` §2.1).  It says
+    #: which is the whole of what the shape asserts.  It says
     #: nothing about whether those totals agree; that arrives separately, and
     #: the two together decide the class.
     source_shape: SourceShape = field(
@@ -1372,7 +1372,7 @@ class Bai2File:
         group can produce a file whose every control total agrees, and
         ``assign_proof_class`` would rightly call that p0 on the evidence it is
         given — the arithmetic did pass.  But p0 auto-admits with no human act
-        (`13` §2.2), and admitting a test file to a verified ledger is a worse
+        at all, and admitting a test file to a verified ledger is a worse
         error than any this module's arithmetic could make.  So the promotion
         is withheld and the file lands at p3, which is where a human looks at
         it.  The reservations say why, in words, on the artefact.

@@ -10,8 +10,8 @@ Four such rules exist, and each has a test whose name says what breaks:
 * A class is never assigned from format alone where the format promises
   arithmetic.  A ``camt.053`` nobody checked is p3, not p0 — ``not_attempted``
   means the guarantee was not collected, not that it held.
-* A failed check demotes whatever the shape.  On a literal reading of `13`
-  §2.1, p0 keys on format, so a native file whose own mandatory totals
+* A failed check demotes whatever the shape.  Were p0 keyed on format alone,
+  a native file whose own mandatory totals
   contradict each other would still auto-admit.  That is the strongest
   available signal that something is wrong with the file, so it goes to p3.
 * An arithmetic outcome supplied alongside a narrative is ignored.  A
@@ -26,11 +26,11 @@ The full 4x5 matrix is asserted as a literal table.  It is small enough to
 write out, and a table makes a behaviour change show up as a diff on the
 expectation rather than as a passing test that now means something else.
 
-One asymmetry in `13` is recorded here rather than corrected, in
+One asymmetry in the admission rule is recorded here rather than corrected, in
 :meth:`AutoAdmissionTest.test_p1_auto_admits_without_any_arithmetic`: p1 — a
 bank CSV with no control totals — enters the ledger automatically having had
 no check run, while p3 — a statement that was checked and did not close —
-requires a human.  That is `13` §2.2 as written.  It is defensible (p1's
+requires a human.  It is defensible (p1's
 structure constrains the fields, and there is no arithmetic available to run)
 but it means "auto-admitted" does not mean "verified", and a reader who
 assumes it does will be wrong about roughly the population that matters.
@@ -166,9 +166,9 @@ class SafetyPropertyTest(unittest.TestCase):
     def test_mandatory_totals_file_is_not_p0_until_checked(self) -> None:
         """The guarantee has to be collected, not assumed from the format.
 
-        This is the rule `13` §2.1 does not state.  Reading it literally, p0
-        keys on format alone and this file is p0 the moment it is recognised.
-        That would auto-admit it on the strength of a check nobody ran.
+        On a reading where p0 keys on format alone, this file is p0 the moment
+        it is recognised.  That would auto-admit it on the strength of a check
+        nobody ran.
         """
         for outcome in (None, NOT_ATTEMPTED, UNAVAILABLE):
             with self.subTest(outcome=label(outcome)):
@@ -299,7 +299,7 @@ class AutoAdmissionTest(unittest.TestCase):
                 )
 
     def test_p1_auto_admits_without_any_arithmetic(self) -> None:
-        """Recorded, not endorsed: `13` §2.2 as written.
+        """Recorded, not endorsed: the admission rule as written.
 
         A bank CSV enters the verified ledger with no check run, while a
         statement that *was* checked and did not close needs a human.  The
@@ -333,7 +333,7 @@ class TotalsMembershipTest(unittest.TestCase):
     def test_widening_is_explicit_and_local(self) -> None:
         """A total including adjudicated rows has to say so in its call.
 
-        `13` §2.2 requires a total to state its own composition.  Passing the
+        A total has to state its own composition.  Passing the
         set is what makes that statement a value the caller holds, rather than
         a filter buried in a query where nobody can quote it.
         """

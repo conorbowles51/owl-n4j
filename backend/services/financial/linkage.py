@@ -1,6 +1,7 @@
 """One payment, seen from more than one vantage point, joined at a stated strength.
 
-`13` §6.1 calls this reconciliation.  This package already spends that word on
+The word for this is normally *reconciliation*.  This package already spends
+that word on
 :mod:`services.financial.reconcile`, which checks that one period's arithmetic
 closes, and the two answer questions that must not be confused.  The identity
 asks *do these rows add up*.  This module asks *are these two rows the same
@@ -40,7 +41,7 @@ per account and neither error moves a single account's arithmetic.
 Nothing here collapses anything
 -------------------------------
 
-`13` §6.1: *a reconciled transaction retains all its sources.*  This module
+*A reconciled transaction retains all its sources.*  This module
 writes no status, supersedes no row and deletes nothing.  It emits claims about
 pairs and groups of rows, and the rows stay exactly as they were.  That is a
 deliberate contrast with :mod:`services.financial.duplicates`, which does
@@ -63,7 +64,7 @@ and date, the last within a stated tolerance.  Reproducible from the ledger
 alone, by anybody, which is what makes it assertable without a person.
 
 Tier 2, *probabilistic*, adds a fuzzy counterparty name and widens the date
-window.  It is a proposal and `13` §6.1 forbids merging on it automatically.
+window.  It is a proposal, and nothing may be merged on it automatically.
 Nothing in this module merges on anything, so what tier 2 really marks is a
 link that must not be treated as established.
 
@@ -546,7 +547,7 @@ class LinkConflict:
     scope that is not as narrow as it was declared.
 
     This is not a link and not a failure.  It is a finding, in the same sense
-    `13` §5.4 gives a failed check digit: the corpus said something that cannot
+    a failed check digit is one: the corpus said something that cannot
     be true, and somebody should learn which half of it is wrong.
     """
 
@@ -1146,8 +1147,9 @@ def link_composite(
 ) -> LinkageResult:
     """Join rows on amount, currency, direction and a date within tolerance.
 
-    `13` §6.2's tier: "amount, date within the rail's settlement tolerance,
-    and both account identifiers".  The ledger carries a row's own account but
+    The deterministic tier is defined over amount, a date within the rail's
+    settlement tolerance, and *both* account identifiers.  The ledger carries a
+    row's own account but
     not its counterparty's, so the second half of that key cannot be read
     today.  Rather than claim it, the components recorded on each link say
     which fields actually participated -- so a tier-1 link made now is
@@ -1276,7 +1278,7 @@ def link_probabilistic(
 ) -> LinkageResult:
     """Propose pairs on amount, an approximate date and a similar party name.
 
-    `13` §6.3 admits this tier as a *proposal* only, and every link it returns
+    This tier is admissible as a *proposal* only, and every link it returns
     is a proposal whatever :class:`LinkOutcome` it carries: nothing here is
     :attr:`Link.is_asserted`, because :attr:`JoinTier.probabilistic` fails that
     test on its own.  The outcome still matters, since it separates a pair a

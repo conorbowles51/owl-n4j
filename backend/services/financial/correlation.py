@@ -2,8 +2,8 @@
 
 A subject says "I paid Halloran two hundred thousand in March".  The ledger,
 built from admitted statements whose arithmetic closes, shows one payment to
-Halloran in March for forty thousand.  That gap is the finding, and `13` §9.1
-is blunt about the market: no product surfaces it.
+Halloran in March for forty thousand.  That gap is the finding, and no product
+on the market surfaces it.
 
 This module is the surface that does.  It takes P4 claims -- financial
 assertions extracted from interviews, messages, emails and notes -- and matches
@@ -13,7 +13,7 @@ them against the verified ledger, returning one of three outcomes:
 The rule that makes it safe
 ---------------------------
 
-**Correlation never promotes** (`13` §9.2).  A corroborated P4 claim is still
+**Correlation never promotes.**  A corroborated P4 claim is still
 P4.  It gains a link to a P0-P2 transaction and the transaction gains a link
 back, and neither changes class.  There is no code path here that assigns a
 proof class, and there is no argument -- however many transactions corroborate
@@ -35,8 +35,8 @@ and the vocabulary is built so that it cannot be made to say so.  Whether a
 person was untruthful is for the trier of fact; AICPA SSFS No. 1 forbids the
 opinion and :mod:`services.financial.tracing` says the same thing about fraud.
 
-Distinguishing "contradicted" from "we do not have the records" is, in `13`
-§9.1's words, one of the places a careless system would do real harm.  So the
+Distinguishing "contradicted" from "we do not have the records" is one of the
+few places in this system where carelessness would do real harm.  So the
 gate on contradiction is deliberately hard to pass:
 
 * the claim's whole date window must be covered by an account in scope, with no
@@ -83,7 +83,7 @@ Names are compared as strings
 Party matching uses :func:`~services.financial.linkage.name_similarity` over
 :func:`~services.financial.linkage.normalise_name`, which is deliberately
 shallow.  Deciding that "Halloran Group" and "HG Holdings LLC" are one entity
-is entity resolution (`13` §6.2) and belongs upstream; callers should pass
+is entity resolution and belongs upstream; callers should pass
 resolved names.  Because a name this module sets aside might be the very
 transaction the claim describes, every correlation reports the candidates it
 excluded on a name alone, so a contradiction can be read together with what it
@@ -92,7 +92,7 @@ declined to look at.
 Nothing here confirms anything
 ------------------------------
 
-Correlation is a *proposal* surface (`13` §9.2).  :func:`correlate` produces a
+Correlation is a *proposal* surface.  :func:`correlate` produces a
 proposal with its reasoning visible; a person confirms or rejects it; the
 decision is appended as a :class:`CorrelationDecision`, in the same manner as
 an entity merge, and :func:`apply_decisions` shows the machine's proposal and
@@ -158,7 +158,7 @@ class CoverageError(CorrelationError):
 
 
 class Outcome(str, Enum):
-    """The three answers, and the only three (`13` §9.1)."""
+    """The three answers, and the only three."""
 
     #: A verified transaction answers the claim on every testable dimension.
     corroborated = "corroborated"
@@ -169,7 +169,7 @@ class Outcome(str, Enum):
 
 
 class ContradictionKind(str, Enum):
-    """Which of the two contradictions `13` §9.1 describes was found."""
+    """Which of the two kinds of contradiction was found."""
 
     #: Nothing in the covered period answers the claim at all.
     no_transaction = "no_transaction"
@@ -1164,7 +1164,7 @@ class Correlation:
 
     @property
     def claim_proof_class(self) -> ProofClass:
-        """Always P4, corroborated or not.  `13` §9.2: correlation never promotes.
+        """Always P4, corroborated or not: correlation never promotes.
 
         Present as a property so that a caller reading the result cannot find
         anywhere else to look for a class, and so that the invariant has a name
@@ -1476,7 +1476,7 @@ def correlate_all(
 class CorrelationDecision:
     """A person's verdict on a proposal, recorded as an event.
 
-    Appended in the manner of an entity merge (`13` §6.2): the proposal is not
+    Appended in the manner of an entity merge: the proposal is not
     edited and the decision does not replace it.  Both survive, so a report can
     show what the system proposed, what a person decided, and who they were.
     """
@@ -1530,7 +1530,7 @@ class AdjudicatedCorrelation:
 
         An undecided proposal does not stand.  It has not been looked at, and
         a surface whose unreviewed proposals counted as accepted would be the
-        auto-confirmation `13` §9.2 tells us to resist, arrived at by leaving
+        auto-confirmation this module exists to resist, arrived at by leaving
         the queue alone.
         """
         return bool(self.confirmed) and not self.rejected

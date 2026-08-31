@@ -387,7 +387,7 @@ class IdentifierKind(str, Enum):
     #: ISO 17442 legal entity identifier.  Twenty characters, MOD-97-10.
     lei = "lei"
     #: ISO 9362 business identifier code.  Structure only; no check digit
-    #: exists, which `12` §6.4 records and this member makes unmissable.
+    #: exists at all, and this member makes that unmissable.
     bic = "bic"
     #: US social security number.  Randomised since June 2011; only the
     #: never-issued ranges survive as a check, and they are not a check digit.
@@ -404,7 +404,7 @@ class CheckDigitOutcome(str, Enum):
     characters where eight and a letter were required — and points at the
     extractor or at the field mapping.  *Failed* says the value had exactly the
     right shape, the arithmetic ran, and the number disagrees with itself; that
-    points at the document, and under `13` §5.4 it is a finding to be flagged
+    points at the document, and is a finding to be flagged
     rather than a row to be dropped.  Reporting both as ``False`` would send an
     analyst to re-read a bank statement over what was a column misalignment,
     and to re-run an extractor over what was a genuine transcription error in
@@ -467,7 +467,7 @@ class JoinTier(int, Enum):
 
     The tier is not decoration.  It decides what may be done without a person:
     tiers 0 and 1 are mechanical and reproducible, and tier 2 is a proposal
-    that `13` §6.1 says must never merge automatically.
+    that must never merge automatically.
     """
 
     #: A shared identifier that is unique within a scope both rows share.

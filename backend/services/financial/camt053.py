@@ -1,14 +1,14 @@
 """Layer 0 for camt.053: a specification-conformant parse, exact by construction.
 
-`13` §4 divides extraction into layers and puts this one first: "For P0 and P1
-formats there is no extraction problem.  camt.053, BAI2, NACHA and MT940 are
-parsed with a specification-conformant parser.  The output is exact by
-construction."  Everything else in the pipeline reads a document and forms an
+Extraction divides into layers and this one runs first.  For P0 and P1 formats
+there is no extraction problem: camt.053, BAI2, NACHA and MT940 are parsed with
+a specification-conformant parser and the output is exact by
+construction.  Everything else in the pipeline reads a document and forms an
 opinion about what it says.  This module does not.  A camt.053 states its
 figures in named elements with a declared currency, and the only way to get
 them wrong is to misread the specification.
 
-`12` §6.1 records what the format guarantees, and it is the reason camt.053 is
+What the format guarantees is the reason camt.053 is
 the first parser worth writing:
 
     OPBD + ΣCredits − ΣDebits = CLBD
@@ -16,8 +16,8 @@ the first parser worth writing:
 That identity is *structural, not printed*.  A bank statement PDF prints its
 control totals and we check them because the institution computed them; here
 there is nothing to print, because the relationship is a property of a
-conformant document.  `12` §6.1 states the consequence exactly: "If a parse
-violates it, the parse is wrong."  This module therefore reports a violation as
+conformant document.  The consequence is exact: if a parse
+violates the identity, the parse is wrong.  This module therefore reports a violation as
 evidence against its own reading first, and against the document second — which
 is why a failure demotes the proof class rather than raising.
 
@@ -29,7 +29,7 @@ combined with :attr:`~postgres.models.enums.ReconciliationStatus.balanced`
 is the only route to :attr:`~postgres.models.enums.ProofClass.p0`, which until
 this module existed was unreachable — the shape's own comment in
 ``proof_class.py`` said so.  p0 auto-admits to the verified ledger with no
-human act (`13` §2.2), so the bar is high and the safe direction is asymmetric:
+human act at all, so the bar is high and the safe direction is asymmetric:
 ``assign_proof_class`` will not name p0 on anything weaker than a passing
 check, and neither will this module.  An unattempted check is not a passing
 one, so a document whose balances are absent lands at ``unavailable`` and
@@ -59,8 +59,8 @@ second statement cannot mask a first that failed.
 Decisions the specification leaves open
 ---------------------------------------
 
-Each of these resolves toward *not* claiming p0, on the reasoning `13` §2.2
-gives: a class assigned one step too low costs an adjudication a person will
+Each of these resolves toward *not* claiming p0, because the error is
+asymmetric: a class assigned one step too low costs an adjudication a person will
 resolve, and one step too high puts an unchecked row inside a total.
 
 **Direction comes from ``CdtDbtInd``, never from the sign of ``Amt``.**  camt
@@ -81,7 +81,7 @@ identity.
 
 **``PRCD`` may stand in for a missing ``OPBD``, and says so.**  The previous
 statement's closing booked balance is this one's opening only if no production
-gap separates them, which is the question `13` §3 raises at intake and cannot
+gap separates them, which is a question for intake and cannot
 be answered from inside one file.  The substitution is therefore recorded on
 :attr:`Camt053BalanceIdentity.opening_substituted` rather than performed silently.
 
@@ -754,7 +754,7 @@ class Camt053Document:
     namespace: Optional[str]
 
     #: Fixed.  A camt.053 is a structured file whose format mandates control
-    #: totals, which is the whole of what the shape asserts (`13` §2.1).
+    #: totals, which is the whole of what the shape asserts.
     source_shape: SourceShape = field(
         default=SourceShape.native_with_control_totals, init=False
     )
@@ -772,14 +772,14 @@ class Camt053Document:
         so that the rule lives in one place: this module supplies the shape and
         the outcome and has no vote on what they add up to.  In practice the
         answer is p0 when every check balanced and p3 otherwise, which is the
-        asymmetry `13` §2.2 requires.
+        asymmetry the classes require.
 
         The one thing decided here is the reservation, on the reasoning
         :attr:`~services.financial.bai2.Bai2File.proof_class` sets out.  A
         duplicate message's arithmetic is not merely sound but identical to the
         original's, so ``assign_proof_class`` would rightly call it p0 on the
-        evidence it is given.  But p0 auto-admits with no human act (`13`
-        §2.2), and auto-admitting a re-send alongside the message it repeats
+        evidence it is given.  But p0 auto-admits with no human act at
+        all, and auto-admitting a re-send alongside the message it repeats
         double-counts every figure in it.  The promotion is withheld and the
         message lands at p3, where a person decides which copy is the exhibit.
         """
@@ -794,7 +794,7 @@ class Camt053Document:
 
         Present on all four native parsers for the reason
         :attr:`~services.financial.mt940.Mt940File.admissibility_reservations`
-        states: the caller that wires Layer 0 into extraction (`13` §4) reads
+        states: the caller that wires Layer 0 into extraction reads
         this from every one of them, and a caller that has to remember which
         parsers have reservations is a caller that will eventually forget.
         """

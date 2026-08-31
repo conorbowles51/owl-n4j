@@ -23,8 +23,8 @@ three credits must produce three ambiguous links, not one confident one.  The
 tests assert the count and the outcome, because a matcher that quietly picks
 the nearest date would satisfy any test that only asked whether a link existed.
 
-**That nothing collapses.**  `13` §6.1: a reconciled transaction retains all
-its sources.  The module has no way to delete a row and these tests hold it to
+**That nothing collapses.**  A reconciled transaction retains all its
+sources.  The module has no way to delete a row and these tests hold it to
 that, so that a later refactor cannot borrow the supersede behaviour from
 :mod:`services.financial.duplicates`, where it is correct, into here, where it
 would destroy evidence.
@@ -1168,7 +1168,8 @@ class CompositeTierTests(unittest.TestCase):
         self.assertEqual(result.conflicts, ())
 
     def test_components_name_the_fields_that_actually_participated(self):
-        """`13` §6.2 also wants both account identifiers; the ledger has one.
+        """A full composite key wants both account identifiers; the ledger
+        has one.
 
         Recording what was checked rather than claiming the full key is what
         keeps a link made today distinguishable from one made after
@@ -1628,7 +1629,7 @@ class DeterminismTests(unittest.TestCase):
 
 
 class NothingCollapsesTests(unittest.TestCase):
-    """`13` §6.1: a reconciled transaction retains all its sources.
+    """A reconciled transaction retains all its sources.
 
     The deliberate contrast with ``duplicates``, which does supersede.  Stated
     as tests because the temptation to return one row per payment is

@@ -4,7 +4,7 @@ The same limitation that opens ``test_financial_camt053`` applies here and is
 worth restating rather than cross-referencing, because it is the single most
 important thing to know about this suite.  No corpus document backs any of it.
 The ET-Fraud corpus carries no BAI2 file at all, so every fixture below is
-constructed from `12` §6.1 and the BAI2 record layout rather than measured from
+constructed from the BAI2 record layout rather than measured from
 evidence.  A fixture built by the same reading of the specification as the
 parser shares the parser's blind spots exactly: if the reading is wrong, the
 test passes and the parser is wrong together.
@@ -1249,8 +1249,8 @@ class ProofClassTests(unittest.TestCase):
 class NarrativeFidelityTests(unittest.TestCase):
     """The free-text field comes back exactly as the sender wrote it.
 
-    Narrative is carried and not read — `12` §6.1's point about MT940's
-    ``:86:`` applies here too.  But carrying it means carrying it verbatim: a
+    Narrative is carried and not read, the same treatment MT940's ``:86:``
+    gets and for the same reason.  But carrying it means carrying it verbatim: a
     string that may end up quoted in an exhibit must not have been quietly
     edited on the way through.
     """
