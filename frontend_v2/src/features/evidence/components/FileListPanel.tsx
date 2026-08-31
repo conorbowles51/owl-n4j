@@ -13,6 +13,7 @@ import { Upload, Play, ChevronLeft, ChevronRight } from "lucide-react"
 import { useFolderContents } from "../hooks/use-folder-contents"
 import { useEvidenceStore } from "../evidence.store"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
+import { useRouteChecks } from "../hooks/use-route-checks"
 import { toast } from "sonner"
 import { FolderBreadcrumbs } from "./FolderBreadcrumbs"
 import { FileListToolbar } from "./FileListToolbar"
@@ -96,6 +97,11 @@ export function FileListPanel({
   const pageEnd = Math.min((filePage + 1) * FILE_PAGE_SIZE, fileTotal)
 
   const allFileIds = filteredFiles?.map((f) => f.id) ?? []
+
+  // One check for the page, not one per row. The hook splits it into as many
+  // requests as the fifty-id server limit needs, and answers for a page of 250.
+  const { routes } = useRouteChecks(caseId, allFileIds)
+
   const allSelected = allFileIds.length > 0 && selectedFileIds.size === allFileIds.length
   const someSelected = selectedFileIds.size > 0 && !allSelected
 
@@ -209,7 +215,7 @@ export function FileListPanel({
                   />
                 </TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead className="w-20">Type</TableHead>
+                <TableHead className="w-36">Type</TableHead>
                 <TableHead className="w-20">Size</TableHead>
                 <TableHead className="w-28">Status</TableHead>
                 <TableHead className="w-20">Entities</TableHead>
@@ -230,6 +236,7 @@ export function FileListPanel({
                   key={file.id}
                   file={file}
                   caseId={caseId}
+                  route={routes.get(file.id)}
                   onDelete={onDeleteFile}
                 />
               ))}

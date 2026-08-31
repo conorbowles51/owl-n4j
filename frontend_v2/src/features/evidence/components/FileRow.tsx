@@ -16,12 +16,21 @@ import { useEvidenceStore } from "../evidence.store"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { getFileTypeCategory } from "../utils/file-types"
 import { getDisplayStatus } from "../utils/display-status"
+import { RouteBadge } from "./RouteBadge"
 import { toast } from "sonner"
+import type { FileRoute } from "../hooks/use-route-checks"
 import type { EvidenceFileRecord, EvidenceFile } from "@/types/evidence.types"
 
 interface FileRowProps {
   file: EvidenceFileRecord
   caseId: string
+  /**
+   * This file's route, passed in rather than fetched here.
+   *
+   * The check is a batch call with a fifty-id limit, so it belongs to whatever
+   * renders the list. A row that asked for itself would be one request per row.
+   */
+  route?: FileRoute
   onDelete?: (file: EvidenceFile) => void
 }
 
@@ -56,7 +65,7 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
 }
 
-export function FileRow({ file, caseId, onDelete }: FileRowProps) {
+export function FileRow({ file, caseId, route, onDelete }: FileRowProps) {
   const { selectedFileIds, toggleFileSelection, openDetail } = useEvidenceStore()
   const { start, isChecking, isProcessing } = useGuardedProcess(caseId)
 
@@ -104,11 +113,14 @@ export function FileRow({ file, caseId, onDelete }: FileRowProps) {
         </Tooltip>
       </TableCell>
 
-      {/* Type badge */}
+      {/* Type badge, and the route badge when the file is not an ordinary document */}
       <TableCell>
-        <Badge variant="secondary" className="text-[10px]">
-          {typeCategory}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-1">
+          <Badge variant="secondary" className="text-[10px]">
+            {typeCategory}
+          </Badge>
+          <RouteBadge route={route} />
+        </div>
       </TableCell>
 
       {/* Size */}
