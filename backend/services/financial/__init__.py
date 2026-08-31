@@ -514,6 +514,28 @@ from services.financial.table_geometry import (
     cell_value,
     locate_table,
 )
+from services.financial.tracing import (
+    DOCTRINE_AUTHORITY,
+    DOCTRINE_ORDER,
+    NOTE_AMBIGUOUS_MATCH,
+    NOTE_DREW_ON_OPENING,
+    NOTE_ORDER_UNEVIDENCED,
+    NOTE_OVERDRAWN,
+    NOTE_SHORTFALL_SHARED,
+    NOTE_UNIDENTIFIED_WITHDRAWAL,
+    Attribution,
+    AttributionError,
+    ClaimOutcome,
+    Doctrine,
+    DoctrineComparison,
+    DoctrineError,
+    Draw,
+    Movement,
+    TraceResult,
+    TracingError,
+    compare_doctrines,
+    trace,
+)
 from services.financial.version import (
     PIPELINE_VERSION,
     code_fingerprint_detail,
@@ -1013,6 +1035,32 @@ __all__ = [
     "TableGeometryError",
     "cell_value",
     "locate_table",
+    # Doctrinal tracing.  A trace is a fact plus a rule and never a fact, so
+    # `trace` will not run without being told which rule, and `compare_doctrines`
+    # is what lets a report show the answer under each and name the spread.
+    # `AttributionError` is one letter from the builtin `AttributeError` and is
+    # a different thing entirely: it is raised when an analyst's assertion about
+    # a deposit does not survive checking against the ledger.
+    "DOCTRINE_AUTHORITY",
+    "DOCTRINE_ORDER",
+    "NOTE_AMBIGUOUS_MATCH",
+    "NOTE_DREW_ON_OPENING",
+    "NOTE_ORDER_UNEVIDENCED",
+    "NOTE_OVERDRAWN",
+    "NOTE_SHORTFALL_SHARED",
+    "NOTE_UNIDENTIFIED_WITHDRAWAL",
+    "Attribution",
+    "AttributionError",
+    "ClaimOutcome",
+    "Doctrine",
+    "DoctrineComparison",
+    "DoctrineError",
+    "Draw",
+    "Movement",
+    "TraceResult",
+    "TracingError",
+    "compare_doctrines",
+    "trace",
     # Code and ruleset identity
     "PIPELINE_VERSION",
     "code_fingerprint_detail",
