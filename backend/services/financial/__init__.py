@@ -192,6 +192,22 @@ from services.financial.decisions import (
     history,
     record,
 )
+from services.financial.documents import (
+    RECONCILIATION_ACTOR_EMAIL,
+    RECONCILIATION_ACTOR_NAME,
+    SHAPE_METADATA_KEY,
+    DocumentFieldError,
+    ExtractionLayerMismatchError,
+    SourceDocumentDraft,
+    SourceDocumentError,
+    UnknownSourceShapeError,
+    combine_period_outcomes,
+    document_reconciliation,
+    read_source_shape,
+    reclassify_after_reconciliation,
+    reconciliation_actor,
+    record_source_document,
+)
 from services.financial.duplicates import (
     CrossCaseError,
     CrossMatterSighting,
@@ -859,6 +875,24 @@ __all__ = [
     "SubjectMismatchError",
     "history",
     "record",
+    # Source documents: admission, and the regrade once the arithmetic reports.
+    # The proof class is derived from the source shape at both ends and is
+    # never a caller's to supply, because a class a caller chooses is an
+    # opinion and the taxonomy is what decides which rows enter a total.
+    "RECONCILIATION_ACTOR_EMAIL",
+    "RECONCILIATION_ACTOR_NAME",
+    "SHAPE_METADATA_KEY",
+    "DocumentFieldError",
+    "ExtractionLayerMismatchError",
+    "SourceDocumentDraft",
+    "SourceDocumentError",
+    "UnknownSourceShapeError",
+    "combine_period_outcomes",
+    "document_reconciliation",
+    "read_source_shape",
+    "reclassify_after_reconciliation",
+    "reconciliation_actor",
+    "record_source_document",
     # Duplicate documents
     "CrossCaseError",
     "CrossMatterSighting",

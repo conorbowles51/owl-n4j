@@ -87,10 +87,14 @@ _ADJUDICATION_SUBJECTS = (
 # free text answers it wrongly as many times as there are spellings.  Every
 # disposition here has its reversal in the same vocabulary, because the ledger
 # appends: undoing a supersession writes the undo, it does not retract the
-# original.  See postgres.models.enums.AdjudicationDecision.
+# original.  'reclassify_document' is the exception to both halves of that: it
+# is written by the reconciliation stage rather than by a person, and it is its
+# own reversal, because it carries the class before and the class after.  See
+# postgres.models.enums.AdjudicationDecision.
 _ADJUDICATION_DECISIONS = (
     "('supersede_duplicate', 'restore_document', 'purge_duplicate', "
-    "'quarantine_row', 'release_row', 'explain_balance_failure')"
+    "'quarantine_row', 'release_row', 'explain_balance_failure', "
+    "'reclassify_document')"
 )
 _QUARANTINE_REASONS = (
     "('balance_break', 'unreadable_row', 'currency_mismatch', "
@@ -827,7 +831,17 @@ class FinancialTransaction(Base, TimestampMixin):
 
 
 class FinancialAdjudication(Base):
-    """A human decision about financial evidence, recorded as an event.
+    """A decision about financial evidence, recorded as an event.
+
+    Almost every row is a human decision, and the table is shaped for that: a
+    mandatory reason, an actor copied in by name and address, a per-subject
+    sequence.  The one machine writer is the reconciliation stage, which moves
+    a document's proof class once the arithmetic it could not run at ingestion
+    has run.  It is here rather than in a log of its own because the question
+    "why is this document in this class" has one answer, and splitting the
+    answer across two tables would mean a reader could see half of it and
+    believe they had seen all of it.  Machine rows are separable by actor: see
+    ``AdjudicationDecision.reclassify_document``.
 
     Rows are appended and never updated, which is why this model does not take
     ``TimestampMixin``: an ``updated_at`` column would invite exactly the

@@ -140,6 +140,31 @@ class AdjudicationDecision(str, Enum):
     :mod:`services.financial.adjudication` about *why* an identity does not
     close.  It changes no status and never can: see that module on why a
     well-corroborated explanation of a p3 document leaves it p3.
+
+    ``reclassify_document`` is the only member here that a machine writes, and
+    the only one that changes a status without anyone deciding anything.  A
+    proof class is a function of the source shape and the arithmetic outcome,
+    but the outcome is not known when the document row is written — the
+    arithmetic runs over transactions that do not exist yet — so every
+    document whose format admits a check is stored at the class its *unchecked*
+    state deserves and moved when the check reports.  Recording that move is
+    not optional: ``proof_class`` is what totals filter on, so a document that
+    silently changed class would change every figure computed from it with
+    nothing on the record to say when or why.
+
+    It is a member rather than free text for the reason the other six are, and
+    it does not spoil the deposition count, because the automatic events are
+    separable by actor: they carry :data:`RECONCILIATION_ACTOR_EMAIL` from
+    :mod:`services.financial.documents`, which no person can hold.  "How many
+    documents did your analysts reclassify" and "how many did your software
+    reclassify" are therefore both exactly answerable, which is more than
+    either question could be if the move went unlogged.
+
+    It has no reversal member because it is its own: the event carries the
+    class before and the class after, so a later run that moves a document
+    back writes another ``reclassify_document`` rather than an undo.  The
+    disposition pairs need two names because a status flag cannot hold its own
+    history; a proof class recorded as a before/after pair already does.
     """
 
     supersede_duplicate = "supersede_duplicate"
@@ -150,6 +175,8 @@ class AdjudicationDecision(str, Enum):
     release_row = "release_row"
 
     explain_balance_failure = "explain_balance_failure"
+
+    reclassify_document = "reclassify_document"
 
 
 class IngestionRunStatus(str, Enum):
