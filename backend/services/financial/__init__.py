@@ -8,6 +8,27 @@ that fails to close can detect an absence.
 Nothing in this package may represent a monetary value as a float.
 """
 
+from services.financial.accounts import (
+    IDENTITY_TIERS,
+    NON_VALUES,
+    TIER_IBAN,
+    TIER_INSTITUTION_ACCOUNT,
+    TIER_INSTITUTION_MASKED,
+    TIER_ROUTING_ACCOUNT,
+    TIER_UNIDENTIFIED,
+    AccountCurrencyError,
+    AccountDraft,
+    AccountError,
+    AccountFieldError,
+    AccountIdentity,
+    AccountIdentityError,
+    PlaceholderIdentifierError,
+    digits_only,
+    is_masked,
+    is_non_value,
+    read_identity_tier,
+    record_account,
+)
 from services.financial.adjudication import (
     Adjudication,
     AdjudicationError,
@@ -670,6 +691,28 @@ from services.financial.version import (
 )
 
 __all__ = [
+    # Account identity.  The one writer whose failures are silent: merging two
+    # accounts that are not one account still closes every balance identity
+    # downstream, so the module refuses far more than it accepts.
+    "IDENTITY_TIERS",
+    "NON_VALUES",
+    "TIER_IBAN",
+    "TIER_INSTITUTION_ACCOUNT",
+    "TIER_INSTITUTION_MASKED",
+    "TIER_ROUTING_ACCOUNT",
+    "TIER_UNIDENTIFIED",
+    "AccountCurrencyError",
+    "AccountDraft",
+    "AccountError",
+    "AccountFieldError",
+    "AccountIdentity",
+    "AccountIdentityError",
+    "PlaceholderIdentifierError",
+    "digits_only",
+    "is_masked",
+    "is_non_value",
+    "read_identity_tier",
+    "record_account",
     # Adjudication of failing balance identities
     "Adjudication",
     "AdjudicationError",
