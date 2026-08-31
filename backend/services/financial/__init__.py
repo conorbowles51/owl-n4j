@@ -187,6 +187,37 @@ from services.financial.duplicates import (
     restore_document,
     store_fingerprint,
 )
+from services.financial.exhibit import (
+    CAVEAT_ADJUDICATION_RELIED_ON,
+    CAVEAT_ASSERTIONS_PRESENT,
+    CAVEAT_MIXED_COMPOSITION,
+    CAVEAT_NOT_OBVIOUSLY_VOLUMINOUS,
+    CAVEAT_SINGLE_DOCUMENT,
+    CAVEAT_UNADJUDICATED_P3,
+    CAVEAT_UNDISCLOSED_SOURCES,
+    CONDITION_MAKE_AVAILABLE,
+    CONVENIENTLY_EXAMINABLE_ROWS,
+    REASON_CONTENT_IS_AN_AID,
+    REASON_SUBSTRATE_BELOW_SUMMARY,
+    REASON_SUMMARISES_ADMISSIBLE_RECORDS,
+    SUMMARISING_CONTENT,
+    SUMMARY_SUBSTRATE_CLASSES,
+    ContentKind,
+    Disclosure,
+    DisclosureError,
+    DuplicateReferenceError,
+    ExhibitContentError,
+    ExhibitCurrencyError,
+    ExhibitError,
+    ExhibitInvariantError,
+    ExhibitRow,
+    ExhibitTag,
+    SourceDocument,
+    SummaryRule,
+    may_bear_summary,
+    tag_exhibit,
+    weakest_content,
+)
 from services.financial.export_manifest import (
     DIGEST_COVERS_HTML,
     MANIFEST_SCHEMA,
@@ -800,6 +831,49 @@ __all__ = [
     "resolve_duplicates",
     "restore_document",
     "store_fingerprint",
+    # Whether an artefact is Rule 1006 evidence or a Rule 107 illustrative
+    # aid.  Both amendments took effect on 1 December 2024: a Rule 1006
+    # summary of voluminous records is substantive evidence, goes to the jury
+    # room, and the court may not instruct that it is not evidence; a Rule 107
+    # aid is not evidence and does not go back absent consent or an order.
+    # Two independent grounds send an artefact to 107, and both are recorded
+    # when both hold — the artefact asserts more than the records contain, or
+    # some underlying row is not P0-P2.  Adjudication does not move a row into
+    # substrate: `adjudication` admits a failing document to the ledger and
+    # explains why its arithmetic does not close, which is not the same as
+    # closing it, so an adjudicated P3 row still forces 107.  Disclosure is
+    # kept out of the category question entirely: making records available is
+    # an act of the proponent's, curable by an email, so it is a `condition`
+    # on the tag rather than a downgrade of it.
+    "CAVEAT_ADJUDICATION_RELIED_ON",
+    "CAVEAT_ASSERTIONS_PRESENT",
+    "CAVEAT_MIXED_COMPOSITION",
+    "CAVEAT_NOT_OBVIOUSLY_VOLUMINOUS",
+    "CAVEAT_SINGLE_DOCUMENT",
+    "CAVEAT_UNADJUDICATED_P3",
+    "CAVEAT_UNDISCLOSED_SOURCES",
+    "CONDITION_MAKE_AVAILABLE",
+    "CONVENIENTLY_EXAMINABLE_ROWS",
+    "REASON_CONTENT_IS_AN_AID",
+    "REASON_SUBSTRATE_BELOW_SUMMARY",
+    "REASON_SUMMARISES_ADMISSIBLE_RECORDS",
+    "SUMMARISING_CONTENT",
+    "SUMMARY_SUBSTRATE_CLASSES",
+    "ContentKind",
+    "Disclosure",
+    "DisclosureError",
+    "DuplicateReferenceError",
+    "ExhibitContentError",
+    "ExhibitCurrencyError",
+    "ExhibitError",
+    "ExhibitInvariantError",
+    "ExhibitRow",
+    "ExhibitTag",
+    "SourceDocument",
+    "SummaryRule",
+    "may_bear_summary",
+    "tag_exhibit",
+    "weakest_content",
     # What was exported, and the separate record of when it was exported
     "DIGEST_COVERS_HTML",
     "MANIFEST_SCHEMA",
