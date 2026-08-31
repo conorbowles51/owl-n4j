@@ -208,6 +208,19 @@ from services.financial.documents import (
     reconciliation_actor,
     record_source_document,
 )
+from services.financial.transactions import (
+    NonLedgerClassError,
+    OrderingDateError,
+    ORDERING_PRECEDENCE,
+    SignConvention,
+    SignConventionError,
+    TransactionDraft,
+    TransactionFieldError,
+    TransactionWriteError,
+    choose_ordering_date,
+    normalise_sign,
+    record_transactions,
+)
 from services.financial.duplicates import (
     CrossCaseError,
     CrossMatterSighting,
@@ -893,6 +906,21 @@ __all__ = [
     "reclassify_after_reconciliation",
     "reconciliation_actor",
     "record_source_document",
+    # Ledger rows: written a document at a time, because occurrence indices are
+    # counted across the document and a row-at-a-time writer would collide two
+    # genuinely distinct identical rows on the content constraint.  Sign is
+    # declared by the caller and never inferred from a column of numbers.
+    "NonLedgerClassError",
+    "ORDERING_PRECEDENCE",
+    "OrderingDateError",
+    "SignConvention",
+    "SignConventionError",
+    "TransactionDraft",
+    "TransactionFieldError",
+    "TransactionWriteError",
+    "choose_ordering_date",
+    "normalise_sign",
+    "record_transactions",
     # Duplicate documents
     "CrossCaseError",
     "CrossMatterSighting",

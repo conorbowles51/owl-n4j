@@ -84,6 +84,7 @@ from postgres.models.financial import (
     FinancialAdjudication,
     FinancialSourceDocument,
     FinancialStatementPeriod,
+    FinancialTransaction,
 )
 from services.financial import decisions
 from services.financial.money import get_currency
@@ -507,9 +508,34 @@ def reclassify_after_reconciliation(
     The class is derived from the document's recorded shape and the outcome
     passed in.  No caller supplies a class here either.
 
+    The document's ledger rows move with it
+    ---------------------------------------
+
+    Every row carries a copy of its document's class, because totals filter on
+    it and a filter that joins to the document on every aggregate is a filter
+    that gets forgotten.  The copy is what makes this function's job bigger
+    than one column.
+
+    ``DEFAULT_TOTAL_CLASSES`` is ``{p0, p1, p2}``.  A statement is admitted at
+    p3; its rows cannot exist before it does and the arithmetic cannot run
+    before its rows do, so the rows are necessarily written at p3 too.  If
+    promoting the document to p2 left them there, every row of a statement that
+    *balanced* would silently leave every total -- the arithmetic would have
+    passed and the money would have vanished from the report.  So the rows are
+    moved here, and the count moved is recorded in the decision.
+
+    Only rows still holding the document's previous class are touched.  A row
+    adjudicated to a class of its own no longer matches, and so is left alone:
+    an automatic pass must not erase a human decision.  One consequence is
+    worth naming rather than hiding -- if a document's class does *not* change,
+    this function returns early and rows left stale by some earlier interrupted
+    pass stay stale.  Repairing those needs a marker distinguishing an
+    adjudicated row from a stale one, which the schema does not yet carry.
+
     :raises UnknownSourceShapeError: if the document did not record its shape.
     :raises RunScopeError: if ``run`` is ingesting a different case.
     """
+    from sqlalchemy import func, select, update
     if not isinstance(reconciliation, ReconciliationStatus):
         raise SourceDocumentError(
             "reconciliation must be a ReconciliationStatus, got "
@@ -529,6 +555,17 @@ def reclassify_after_reconciliation(
     if graded.value == current:
         return None
 
+    # Counted before anything moves, so the number in the reason is the number
+    # the update is then held to.
+    stale_rows = session.scalar(
+        select(func.count())
+        .select_from(FinancialTransaction)
+        .where(
+            FinancialTransaction.source_document_id == document.id,
+            FinancialTransaction.proof_class == current,
+        )
+    )
+
     adjudication = decisions.record(
         session,
         case_id=document.case_id,
@@ -537,13 +574,38 @@ def reclassify_after_reconciliation(
         decision=AdjudicationDecision.reclassify_document,
         reason=(
             f"reconciliation reported {reconciliation.value} for a "
-            f"{shape.value} source; proof class {current} -> {graded.value}"
+            f"{shape.value} source; proof class {current} -> {graded.value}; "
+            f"{stale_rows} ledger row(s) reclassified with it"
         ),
         actor=reconciliation_actor(),
         before={"proof_class": current},
         after={"proof_class": graded.value},
         ingestion_run_id=None if run is None else run.run_id,
     )
+
+    if stale_rows:
+        # "fetch" so that rows already loaded in this session are expired
+        # rather than left holding the old class in memory, which would make
+        # the caller's own objects disagree with the table it just wrote.
+        result = session.execute(
+            update(FinancialTransaction)
+            .where(
+                FinancialTransaction.source_document_id == document.id,
+                FinancialTransaction.proof_class == current,
+            )
+            .values(proof_class=graded.value)
+            .execution_options(synchronize_session="fetch")
+        )
+        if result.rowcount != stale_rows:
+            # The count in the decision is now a claim the table does not
+            # support.  Raising leaves the caller to roll back rather than
+            # commit a log entry that misstates what happened.
+            raise SourceDocumentError(
+                f"source document {document.id}: {stale_rows} ledger rows were "
+                f"at {current} when the decision was written but "
+                f"{result.rowcount} moved; the recorded count would misstate "
+                "the change, so nothing here is committed"
+            )
 
     document.proof_class = graded.value
     session.flush()
