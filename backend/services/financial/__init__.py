@@ -475,6 +475,16 @@ from services.financial.native import (
     resolve_mmdd_near,
     sniff,
 )
+from services.financial.native_ingest import (
+    AMBIGUOUS_PERIOD_METADATA_KEY,
+    RESERVATIONS_METADATA_KEY,
+    REVERSAL_METADATA_KEY,
+    ContradictoryPeriodError,
+    IngestionError,
+    NativeIngestion,
+    UnattributableRowError,
+    ingest_native_reading,
+)
 from services.financial.native_subjects import (
     AccountSubject,
     PeriodFacts,
@@ -1220,6 +1230,21 @@ __all__ = [
     "PeriodFacts",
     "SubjectError",
     "describe_subjects",
+    # Storing a native reading: the one order the writers may be called in, and
+    # the two things the driver will not guess.  A row whose account key matches
+    # no subject is refused rather than attributed; a row whose account has two
+    # periods in one file is stored unlinked, because which statement it belongs
+    # to is not in the reading.  The metadata keys are named here because a
+    # reader of a stored row needs them to find the reversal flag and the reason
+    # a period link is missing.
+    "AMBIGUOUS_PERIOD_METADATA_KEY",
+    "RESERVATIONS_METADATA_KEY",
+    "REVERSAL_METADATA_KEY",
+    "ContradictoryPeriodError",
+    "IngestionError",
+    "NativeIngestion",
+    "UnattributableRowError",
+    "ingest_native_reading",
     # Statement periods and the provenance of their four values
     "BalanceCoherenceError",
     "BalanceObservation",
