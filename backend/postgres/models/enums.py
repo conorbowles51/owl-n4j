@@ -426,3 +426,98 @@ class CheckDigitOutcome(str, Enum):
     #: The identifier is well-formed and the standard gives it no check digit.
     #: Structure is all that was verified and the result says so.
     no_check_digit = "no_check_digit"
+
+
+class LinkRelation(str, Enum):
+    """What a link between two rows actually asserts.
+
+    The two values are not degrees of the same thing.  They are opposite
+    claims about whether the ledger is holding one movement or two, and
+    conflating them corrupts totals in one direction or balances in the other.
+
+    ``same_side`` says two rows are the *same* movement of money in the *same*
+    account, seen from two sources -- the payer's own statement and the payer's
+    own ACH file, say.  Only one of them is a movement.  Anything that adds
+    them together counts the payment twice.
+
+    ``counterparty`` says two rows are the *two sides* of one payment: a debit
+    in the payer's account and a credit in the payee's.  Both are real, both
+    belong in their own account's totals, and both are needed for either
+    account's balance identity to hold.  Merging them, or dropping one, breaks
+    :mod:`services.financial.reconcile` for two periods at once.  The link is
+    what lets a tracing engine walk from one account to the other; it is not a
+    licence to collapse anything.
+    """
+
+    #: One movement, observed more than once.  Redundant: count it once.
+    same_side = "same_side"
+    #: Two movements, being the two ends of one payment.  Not redundant.
+    counterparty = "counterparty"
+
+
+class JoinTier(int, Enum):
+    """How strongly two rows were shown to describe one payment.
+
+    Ordered by decreasing strength so that ``<`` means stronger, matching
+    :class:`DuplicateMatchRung`.  Unlike that class the tiers are *not* nested:
+    a pair joined on a shared UETR has not thereby been shown to agree on
+    amount and date, because the tiers read different fields.  So a link
+    records the one tier it was made at, and the components it actually
+    matched on travel with it.
+
+    The tier is not decoration.  It decides what may be done without a person:
+    tiers 0 and 1 are mechanical and reproducible, and tier 2 is a proposal
+    that `13` §6.1 says must never merge automatically.
+    """
+
+    #: A shared identifier that is unique within a scope both rows share.
+    #: Certain, and only as certain as the scope is honest -- which is why
+    #: :class:`ReferenceScope` exists.
+    exact_identifier = 0
+    #: Amount, currency, direction and date agree, the last within a stated
+    #: tolerance.  Mechanically reproducible from the ledger alone.
+    deterministic_composite = 1
+    #: Amount and approximate date and a fuzzy counterparty name.  A proposal
+    #: for a human, never an assertion.
+    probabilistic = 2
+
+
+class ReferenceScope(str, Enum):
+    """The universe within which an identifier is unique.
+
+    Tier-0 joins live or die on this.  "Exact match" on a bare string is a
+    trap: cheque number 1001 exists in every chequebook ever printed, and
+    joining two accounts' cheque 1001 into one payment is a confident,
+    mechanical, entirely wrong answer that no downstream check would catch.
+    An identifier is therefore only ever compared inside a scope, and a
+    reference whose scope key is unknown is not a candidate for a tier-0 join
+    at all.
+    """
+
+    #: Unique everywhere by construction.  A UETR is a UUID and needs no
+    #: further qualification.
+    global_ = "global"
+    #: Unique within the institution that issued it.  A NACHA trace number
+    #: carries its own scope -- the first eight digits are the ODFI's routing
+    #: prefix -- so full-string equality is already scoped equality.
+    institution = "institution"
+    #: Unique within one account, and reused once the book runs out.  Usable
+    #: for a ``same_side`` link, where the account is shared by definition,
+    #: and useless for a ``counterparty`` link, where it is not.
+    account = "account"
+
+
+class LinkOutcome(str, Enum):
+    """Whether a match resolved to one partner, or to several.
+
+    A payment has two ends.  When one debit answers to three candidate credits
+    the honest result is not the first of the three; it is the fact that there
+    are three.  Emitting the first would let a tracing engine walk money down a
+    path chosen by iteration order, and the ambiguity -- the thing an analyst
+    needs to see -- would be the one part not written down.
+    """
+
+    #: Exactly one partner on each side.  Asserted.
+    resolved = "resolved"
+    #: More than one partner.  Recorded with all of them, asserted as none.
+    ambiguous = "ambiguous"
