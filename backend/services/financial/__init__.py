@@ -475,6 +475,12 @@ from services.financial.native import (
     resolve_mmdd_near,
     sniff,
 )
+from services.financial.native_subjects import (
+    AccountSubject,
+    PeriodFacts,
+    SubjectError,
+    describe_subjects,
+)
 from services.financial.periods import (
     BalanceCoherenceError,
     BalanceObservation,
@@ -1205,6 +1211,15 @@ __all__ = [
     "read_native",
     "resolve_mmdd_near",
     "sniff",
+    # Who a native document is about.  A reading yields rows keyed by an account
+    # the file printed but never resolved; these turn that key into an account
+    # draft and, where the format states one, the period the rows sit inside.
+    # Nothing here writes: a subject is what the document said, not what the
+    # matter holds, and the two are reconciled by the writers.
+    "AccountSubject",
+    "PeriodFacts",
+    "SubjectError",
+    "describe_subjects",
     # Statement periods and the provenance of their four values
     "BalanceCoherenceError",
     "BalanceObservation",
