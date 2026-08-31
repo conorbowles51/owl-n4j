@@ -196,6 +196,47 @@ from services.financial.export_manifest import (
     document_digest,
     manifest_for,
 )
+from services.financial.flow import (
+    DEFAULT_CHART_LIMIT,
+    DEFAULT_SETTLEMENT_DAYS,
+    NOTE_MIRRORS_AMBIGUOUS,
+    NOTE_MIRRORS_COLLAPSED,
+    NOTE_MIRRORS_NOT_COLLAPSED,
+    NOTE_MIXED_COMPOSITION,
+    NOTE_NAMES_COLLIDE,
+    NOTE_NOT_BILATERAL,
+    NOTE_SET_ASIDE_ON_CLASS,
+    NOTE_SETTLEMENT_LAG,
+    NOTE_UNATTRIBUTED_INFLOW,
+    NOTE_UNATTRIBUTED_OUTFLOW,
+    NOTE_UNPLACEABLE,
+    NOTE_UNRECONCILED,
+    ChartBar,
+    ClassComposition,
+    CounterpartyFlow,
+    DivergentChart,
+    DuplicateRowError,
+    EntityOption,
+    Figure,
+    FlowCurrencyError,
+    FlowError,
+    FlowInvariantError,
+    FlowRow,
+    MirrorPair,
+    MoneyFlow,
+    Party,
+    PartyAttributionError,
+    Payment,
+    Perspective,
+    PerspectiveError,
+    Placement,
+    SetAsideReason,
+    analyse,
+    attribute,
+    collapse_mirrors,
+    entity_options,
+    place,
+)
 from services.financial.linkage import (
     DEFAULT_TOLERANCE_DAYS,
     MATCH_ACCOUNT,
@@ -767,6 +808,59 @@ __all__ = [
     "describes",
     "document_digest",
     "manifest_for",
+    # The money flow view: pick a set of entities, and ask what crossed the
+    # boundary of that set.  Scope is an OR across both sides of a row, which
+    # is what makes it a different question from the From/To cross-filter, an
+    # AND across two columns.  The one thing this module exists to prevent is
+    # the reconciled-ledger double count: where both sides of a relationship
+    # are in evidence, one payment appears as a debit in the payer's account
+    # and a credit in the payee's, and a view that reads rows rather than
+    # payments reports exactly twice the money, more wrongly the better the
+    # collection.  `collapse_mirrors` pairs those rows into one `Payment`,
+    # which is why the type is not called `Movement` — `tracing.Movement` is
+    # this package's name for a single admitted row, the thing called
+    # `FlowRow` here.  `PartyAttributionError` is likewise distinct from
+    # `tracing.AttributionError`: this one is raised when a ledger entry
+    # cannot be read as a payment between two parties at all.
+    "DEFAULT_CHART_LIMIT",
+    "DEFAULT_SETTLEMENT_DAYS",
+    "NOTE_MIRRORS_AMBIGUOUS",
+    "NOTE_MIRRORS_COLLAPSED",
+    "NOTE_MIRRORS_NOT_COLLAPSED",
+    "NOTE_MIXED_COMPOSITION",
+    "NOTE_NAMES_COLLIDE",
+    "NOTE_NOT_BILATERAL",
+    "NOTE_SETTLEMENT_LAG",
+    "NOTE_SET_ASIDE_ON_CLASS",
+    "NOTE_UNATTRIBUTED_INFLOW",
+    "NOTE_UNATTRIBUTED_OUTFLOW",
+    "NOTE_UNPLACEABLE",
+    "NOTE_UNRECONCILED",
+    "ChartBar",
+    "ClassComposition",
+    "CounterpartyFlow",
+    "DivergentChart",
+    "DuplicateRowError",
+    "EntityOption",
+    "Figure",
+    "FlowCurrencyError",
+    "FlowError",
+    "FlowInvariantError",
+    "FlowRow",
+    "MirrorPair",
+    "MoneyFlow",
+    "Party",
+    "PartyAttributionError",
+    "Payment",
+    "Perspective",
+    "PerspectiveError",
+    "Placement",
+    "SetAsideReason",
+    "analyse",
+    "attribute",
+    "collapse_mirrors",
+    "entity_options",
+    "place",
     # Joining the rows that describe one payment, and how strongly.  The
     # horizontal counterpart to the balance identity below: `reconcile` asks
     # whether one account's arithmetic closes, this asks whether two rows are
