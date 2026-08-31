@@ -49,28 +49,3 @@ export function useSyncFilesystem(caseId: string) {
     },
   })
 }
-
-export function useProcessBackground(caseId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({
-      fileIds,
-      profile,
-      maxWorkers,
-      imageProvider,
-    }: {
-      fileIds: string[]
-      profile?: string
-      maxWorkers?: number
-      imageProvider?: string
-    }) => evidenceAPI.processBackground(caseId, fileIds, profile, maxWorkers, imageProvider),
-    onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: ["background-tasks"] })
-      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
-      await queryClient.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
-    },
-  })
-}

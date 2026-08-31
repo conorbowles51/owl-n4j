@@ -26,19 +26,3 @@ export function useUploadEvidence(caseId: string) {
     },
   })
 }
-
-export function useProcessEvidence(caseId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({
-      fileIds,
-      profile,
-    }: {
-      fileIds: string[]
-      profile?: string
-    }) => evidenceAPI.process(caseId, fileIds, profile),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
-    },
-  })
-}

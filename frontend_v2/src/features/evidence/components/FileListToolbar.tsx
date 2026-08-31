@@ -34,8 +34,7 @@ import { useEvidenceStore } from "../evidence.store"
 import { useUIStore } from "@/stores/ui.store"
 import { useUploadToFolder } from "../hooks/use-upload-to-folder"
 import { useJobs } from "../hooks/use-jobs"
-import { evidenceAPI } from "../api"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { toast } from "sonner"
 
 interface FileListToolbarProps {
@@ -79,17 +78,7 @@ export function FileListToolbar({
   const activeCount = jobs?.filter(
     (j) => !["completed", "failed"].includes(j.status)
   ).length ?? 0
-  const queryClient = useQueryClient()
-  const processMutation = useMutation({
-    mutationFn: (data: { fileIds: string[] }) =>
-      evidenceAPI.processBackground(caseId, data.fileIds),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
-    },
-  })
+  const { start: startProcess, isChecking, isProcessing } = useGuardedProcess(caseId)
 
   const selectionCount = selectedFileIds.size
   const activeSearchTerm = searchMode === "files" ? fileSearchTerm : textSearchTerm
@@ -147,19 +136,11 @@ export function FileListToolbar({
     e.currentTarget.value = ""
   }
 
-  const handleProcess = () => {
-    if (selectionCount === 0) return
-    processMutation.mutate(
-      { fileIds: Array.from(selectedFileIds) },
-      {
-        onSuccess: () => {
-          toast.success("Processing started")
-          useEvidenceStore.getState().clearSelection()
-          useEvidenceStore.getState().openSidebarTo("processing")
-        },
-        onError: (err) => toast.error(err.message),
-      }
-    )
+  const handleProcess = async () => {
+    if ((await startProcess({ fileIds: Array.from(selectedFileIds) })) !== "started") return
+    toast.success("Processing started")
+    useEvidenceStore.getState().clearSelection()
+    useEvidenceStore.getState().openSidebarTo("processing")
   }
 
   return (
@@ -344,7 +325,7 @@ export function FileListToolbar({
             variant="primary"
             size="sm"
             className="h-8 gap-1.5 text-xs"
-            disabled={selectionCount === 0 || processMutation.isPending}
+            disabled={selectionCount === 0 || isChecking || isProcessing}
             onClick={handleProcess}
           >
             <Play className="size-3.5" />

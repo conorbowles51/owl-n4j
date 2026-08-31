@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import {
   AlertCircle,
   CheckCircle2,
@@ -20,7 +20,7 @@ import { toast } from "sonner"
 import { useJobs } from "../hooks/use-jobs"
 import { useBackgroundTasks } from "../hooks/use-background-tasks"
 import { useJobProgress } from "../hooks/use-job-progress"
-import { evidenceAPI } from "../api"
+import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { useEvidenceStore, type UploadActivity } from "../evidence.store"
 import { JobCard } from "./JobCard"
 import type { BackgroundTask, EvidenceJob, PipelineStage } from "@/types/evidence.types"
@@ -236,22 +236,23 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
     [caseId, uploadActivities]
   )
 
-  const retryMutation = useMutation({
-    mutationFn: async (fileId: string) => {
-      return evidenceAPI.processBackground(caseId, [fileId])
-    },
-    onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
-      await queryClient.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
-      toast.success("Retry started")
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to retry job")
-    },
-  })
+  // A retry is a process request like any other, so it goes through the gate:
+  // a file that failed for being a bank statement must not come back through
+  // the retry button. `retryingFileId` keeps the spinner on the one card that
+  // was clicked, which the gate's single busy flag cannot say.
+  const { start: startProcess } = useGuardedProcess(caseId)
+  const [retryingFileId, setRetryingFileId] = useState<string | null>(null)
+
+  const retryFile = async (fileId: string) => {
+    setRetryingFileId(fileId)
+    try {
+      if ((await startProcess({ fileIds: [fileId] })) === "started") {
+        toast.success("Retry started")
+      }
+    } finally {
+      setRetryingFileId(null)
+    }
+  }
 
   const clearJobMutation = useMutation({
     mutationFn: async (jobId: string) => {
@@ -455,12 +456,14 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
                     toast.error("This failed job is not linked to a retryable evidence file")
                     return
                   }
-                  retryMutation.mutate(selectedJob.evidence_file_id)
+                  void retryFile(selectedJob.evidence_file_id)
                 }}
                 onClear={(selectedJob: EvidenceJob) => {
                   clearJobMutation.mutate(selectedJob.id)
                 }}
-                retrying={retryMutation.isPending && retryMutation.variables === job.evidence_file_id}
+                retrying={
+                  retryingFileId !== null && retryingFileId === job.evidence_file_id
+                }
                 clearing={clearJobMutation.isPending && clearJobMutation.variables === job.id}
               />
             ))}

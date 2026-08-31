@@ -12,8 +12,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Upload, Play, ChevronLeft, ChevronRight } from "lucide-react"
 import { useFolderContents } from "../hooks/use-folder-contents"
 import { useEvidenceStore } from "../evidence.store"
-import { evidenceAPI } from "../api"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { toast } from "sonner"
 import { FolderBreadcrumbs } from "./FolderBreadcrumbs"
 import { FileListToolbar } from "./FileListToolbar"
@@ -77,30 +76,14 @@ export function FileListPanel({
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDraggingExternal, setIsDraggingExternal] = useState(false)
 
-  const queryClient = useQueryClient()
-  const processMutation = useMutation({
-    mutationFn: (data: { fileIds: string[] }) =>
-      evidenceAPI.processBackground(caseId, data.fileIds),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
-    },
-  })
+  const { start: startProcess, isChecking, isProcessing } = useGuardedProcess(caseId)
 
-  const handleProcessSelected = () => {
-    if (selectedFileIds.size === 0) return
-    processMutation.mutate(
-      { fileIds: Array.from(selectedFileIds) },
-      {
-        onSuccess: () => {
-          toast.success("Processing started")
-          clearSelection()
-        },
-        onError: (err) => toast.error(err.message),
-      }
-    )
+  const handleProcessSelected = async () => {
+    if ((await startProcess({ fileIds: Array.from(selectedFileIds) })) !== "started") return
+    // The selection is kept when a request is held, because the dialog that
+    // offers to release part of it is about exactly these files.
+    toast.success("Processing started")
+    clearSelection()
   }
 
   const filteredFiles = contents?.files ?? []
@@ -296,7 +279,11 @@ export function FileListPanel({
           <span className="text-xs font-medium text-muted-foreground">
             {selectedFileIds.size} file{selectedFileIds.size !== 1 ? "s" : ""} selected
           </span>
-          <Button size="sm" onClick={handleProcessSelected}>
+          <Button
+            size="sm"
+            onClick={handleProcessSelected}
+            disabled={isChecking || isProcessing}
+          >
             <Play className="mr-1.5 size-3.5" />
             Process
           </Button>

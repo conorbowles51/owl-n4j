@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { CaseProfilePicker } from "@/features/case-profiles/components/CaseProfilePicker"
 import { evidenceAPI } from "@/features/evidence/api"
+import { useGuardedProcess } from "@/features/evidence/hooks/use-guarded-process"
 import { workspaceAPI } from "@/features/workspace/api"
 
 import { evidenceTagsAPI } from "../../api"
@@ -28,6 +29,9 @@ export function FileBulkActionsBar({
   const [entityOpen, setEntityOpen] = useState(false)
   const [tagInput, setTagInput] = useState("")
   const tagRef = useRef<HTMLDivElement | null>(null)
+  // Called before the early return below, because the count reaching zero must
+  // not change how many hooks this component runs.
+  const { start: startProcess, isChecking, isProcessing } = useGuardedProcess(caseId)
   const count = selectedIds.size
   const ids = [...selectedIds]
 
@@ -41,6 +45,21 @@ export function FileBulkActionsBar({
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Action failed")
     }
+  }
+
+  /**
+   * Deliberately not routed through `run`.
+   *
+   * The gate already says what it held and why, and already reports a failed
+   * send.  Wrapping it in `run` would put a second toast on top of the first,
+   * and `run`'s success line would fire for a request that was held rather than
+   * started.  The refresh `run` performs is kept, but only when something was
+   * actually sent.
+   */
+  async function processSelected() {
+    if ((await startProcess({ fileIds: ids })) !== "started") return
+    toast.success("Started AI processing")
+    onChanged()
   }
 
   async function addTag(tag: string) {
@@ -137,7 +156,8 @@ export function FileBulkActionsBar({
         variant="ghost"
         size="sm"
         className="h-7 px-2 text-xs"
-        onClick={() => void run(() => evidenceAPI.processBackground(caseId, ids), "Started AI processing")}
+        disabled={isChecking || isProcessing}
+        onClick={() => void processSelected()}
       >
         <Sparkles className="size-3" />
         Process

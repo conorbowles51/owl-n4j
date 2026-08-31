@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/cn"
 import { useEvidenceStore } from "../evidence.store"
-import { useProcessBackground } from "../hooks/use-evidence-detail"
+import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { getFileTypeCategory } from "../utils/file-types"
 import { getDisplayStatus } from "../utils/display-status"
 import { toast } from "sonner"
@@ -58,21 +58,19 @@ const STATUS_STYLES: Record<string, string> = {
 
 export function FileRow({ file, caseId, onDelete }: FileRowProps) {
   const { selectedFileIds, toggleFileSelection, openDetail } = useEvidenceStore()
-  const processMutation = useProcessBackground(caseId)
+  const { start, isChecking, isProcessing } = useGuardedProcess(caseId)
 
   const isSelected = selectedFileIds.has(file.id)
   const typeCategory = getFileTypeCategory(file.original_filename)
   const displayStatus = getDisplayStatus(file)
   const statusClass = STATUS_STYLES[displayStatus] ?? STATUS_STYLES.unprocessed
 
-  const handleProcess = () => {
-    processMutation.mutate(
-      { fileIds: [file.id] },
-      {
-        onSuccess: () => toast.success(`Processing ${file.original_filename}`),
-        onError: (err) => toast.error(err.message),
-      }
-    )
+  // Only the success is announced here. A hold and a failure are both reported
+  // by the gate, which knows what it held and why.
+  const handleProcess = async () => {
+    if ((await start({ fileIds: [file.id] })) === "started") {
+      toast.success(`Processing ${file.original_filename}`)
+    }
   }
 
   // Cast EvidenceFileRecord to EvidenceFile shape for compatibility with legacy handlers
@@ -162,7 +160,7 @@ export function FileRow({ file, caseId, onDelete }: FileRowProps) {
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleProcess}
-                disabled={file.status === "processing"}
+                disabled={file.status === "processing" || isChecking || isProcessing}
               >
                 <Play className="size-4" />
                 Process

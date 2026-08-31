@@ -45,7 +45,7 @@ import { FileSummaryPanel } from "./FileSummaryPanel"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { evidenceAPI } from "../api"
-import { useProcessBackground } from "../hooks/use-evidence-detail"
+import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { useFileEntities, useFileRelationships } from "../hooks/use-file-entities"
 import { getDisplayStatus } from "../utils/display-status"
 import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
@@ -456,7 +456,14 @@ function DetailsPanelContent({
   const isUnprocessed = file.status === "unprocessed"
   const isStale = displayStatus === "stale"
 
-  const processMutation = useProcessBackground(caseId)
+  // `isProcessing` above is this file's own status, so the gate's two busy
+  // flags are renamed rather than shadowing it.
+  const {
+    start: startProcess,
+    isChecking,
+    isProcessing: isSending,
+  } = useGuardedProcess(caseId)
+  const processBusy = isChecking || isSending
 
   useEffect(() => {
     setTranscriptSpeakers(file.transcription_speakers || {})
@@ -476,7 +483,7 @@ function DetailsPanelContent({
   )
 
   const handleProcess = () => {
-    processMutation.mutate({ fileIds: [file.id] })
+    void startProcess({ fileIds: [file.id] })
   }
 
   const handleDownload = () => {
@@ -569,9 +576,9 @@ function DetailsPanelContent({
                   variant="primary"
                   size="sm"
                   onClick={handleProcess}
-                  disabled={processMutation.isPending}
+                  disabled={processBusy}
                 >
-                  {processMutation.isPending ? (
+                  {processBusy ? (
                     <Loader2 className="size-3.5 animate-spin" />
                   ) : (
                     <Play className="size-3.5" />
@@ -598,9 +605,9 @@ function DetailsPanelContent({
                     size="sm"
                     className="mt-3"
                     onClick={handleProcess}
-                    disabled={processMutation.isPending}
+                    disabled={processBusy}
                   >
-                    {processMutation.isPending ? (
+                    {processBusy ? (
                       <Loader2 className="size-3.5 animate-spin" />
                     ) : (
                       <RotateCcw className="size-3.5" />
@@ -648,9 +655,9 @@ function DetailsPanelContent({
                     size="sm"
                     className="mt-2"
                     onClick={handleProcess}
-                    disabled={processMutation.isPending}
+                    disabled={processBusy}
                   >
-                    {processMutation.isPending ? (
+                    {processBusy ? (
                       <Loader2 className="size-3.5 animate-spin" />
                     ) : (
                       <RotateCcw className="size-3.5" />
