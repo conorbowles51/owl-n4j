@@ -843,5 +843,196 @@ class ReclassifyTests(DocumentPersistenceTestCase):
         self.assertIn("p3 -> p2", reason)
 
 
+class ReservationTests(DocumentPersistenceTestCase):
+    """A file that passes its arithmetic and still must not auto-admit.
+
+    The reserving cases are the ones where grading on the arithmetic is exactly
+    inverted.  A camt.053 marked ``DUPL`` is a *re-sent* message: it repeats
+    totals that already agreed, so it balances perfectly, and admitting it
+    counts the same money twice.  A NACHA batch of prenotifications is a run of
+    zero-dollar account tests: it satisfies every control total vacuously,
+    because nothing had to add up, and admitting it enters rehearsal data as
+    payments.  In both, the better the agreement the more certainly the
+    document admits itself, and the thing it admits is wrong.
+
+    So these tests are not about arithmetic failing.  Every document below
+    reports ``balanced``.
+    """
+
+    # Borrowed rather than inherited: subclassing ReclassifyTests would re-run
+    # all of its cases here under a second name.
+    adjudications = ReclassifyTests.adjudications
+
+    CAMT = dict(
+        shape=SourceShape.native_with_control_totals,
+        extraction_layer=ExtractionLayer.native,
+        document_type="camt.053",
+    )
+    OFX = dict(
+        shape=SourceShape.native_without_control_totals,
+        extraction_layer=ExtractionLayer.native,
+        document_type="ofx",
+    )
+    DUPL = ("camt.053 carries CopyDuplicateIndicator DUPL",)
+
+    def test_a_reserved_camt053_does_not_reach_p0(self):
+        """The defect this parameter exists for."""
+        document = self.admit(**self.CAMT)
+        self.db.flush()
+
+        reclassify_after_reconciliation(
+            self.db,
+            document,
+            ReconciliationStatus.balanced,
+            reservations=self.DUPL,
+        )
+        self.db.commit()
+        self.assertEqual(document.proof_class, ProofClass.p3.value)
+
+    def test_the_same_file_unreserved_still_reaches_p0(self):
+        """The withholding has to be the reservation doing it, not the
+        parameter's presence breaking the promotion for everyone."""
+        document = self.admit(**self.CAMT)
+        self.db.flush()
+
+        reclassify_after_reconciliation(
+            self.db, document, ReconciliationStatus.balanced, reservations=()
+        )
+        self.db.commit()
+        self.assertEqual(document.proof_class, ProofClass.p0.value)
+
+    def test_withholding_a_promotion_that_never_happened_writes_nothing(self):
+        """A reserved native file was admitted at p3 and stays there, so there
+        is no change to record.  An event saying so would be a reader's evidence
+        that something moved."""
+        document = self.admit(**self.CAMT)
+        self.db.flush()
+
+        self.assertIsNone(
+            reclassify_after_reconciliation(
+                self.db,
+                document,
+                ReconciliationStatus.balanced,
+                reservations=self.DUPL,
+            )
+        )
+        self.db.commit()
+        self.assertEqual(self.adjudications(), [])
+
+    def test_a_reserved_totals_free_export_is_taken_back_out(self):
+        """p1 is auto-admitted on format validation alone, so unlike the
+        native-totals case there is a real demotion here: the document was
+        already in the ledger and the reservation removes it."""
+        document = self.admit(**self.OFX)
+        self.db.flush()
+        self.assertEqual(document.proof_class, ProofClass.p1.value)
+
+        logged = reclassify_after_reconciliation(
+            self.db,
+            document,
+            ReconciliationStatus.balanced,
+            reservations=("rehearsal file",),
+        )
+        self.db.commit()
+
+        self.assertIsNotNone(logged)
+        self.assertEqual(document.proof_class, ProofClass.p3.value)
+
+    def test_a_reserved_statement_document_does_not_reach_p2(self):
+        """p2 auto-admits too.  Keying the rule on p0 would have let this one
+        through."""
+        document = self.admit()
+        self.db.flush()
+
+        reclassify_after_reconciliation(
+            self.db,
+            document,
+            ReconciliationStatus.balanced,
+            reservations=("scan is stamped COPY",),
+        )
+        self.db.commit()
+        self.assertEqual(document.proof_class, ProofClass.p3.value)
+
+    def test_the_reason_names_the_class_withheld_and_why(self):
+        """A reviewer looking at a document that balanced and did not admit
+        needs the reason on the record, not in a parser."""
+        document = self.admit(**self.OFX)
+        self.db.flush()
+        reclassify_after_reconciliation(
+            self.db,
+            document,
+            ReconciliationStatus.balanced,
+            reservations=("prenotification batch", "no funds moved"),
+        )
+        self.db.commit()
+
+        reason = self.adjudications()[0].reason
+        self.assertIn("p1 withheld", reason)
+        self.assertIn("balanced", reason)
+        self.assertIn("2 admissibility reservation(s)", reason)
+        self.assertIn("prenotification batch", reason)
+        self.assertIn("no funds moved", reason)
+
+    def test_a_reservation_does_not_demote_a_failed_document(self):
+        """p3 already requires the human act the reservation is asking for."""
+        document = self.admit(**self.CAMT)
+        self.db.flush()
+
+        self.assertIsNone(
+            reclassify_after_reconciliation(
+                self.db,
+                document,
+                ReconciliationStatus.unbalanced,
+                reservations=self.DUPL,
+            )
+        )
+        self.assertEqual(document.proof_class, ProofClass.p3.value)
+
+    def test_a_reservation_does_not_regrade_a_narrative(self):
+        """p4 is not an auto-admitting class and is never regraded at all."""
+        document = self.admit(
+            shape=SourceShape.unstructured_narrative, document_type="chat_export"
+        )
+        self.db.flush()
+
+        self.assertIsNone(
+            reclassify_after_reconciliation(
+                self.db,
+                document,
+                ReconciliationStatus.balanced,
+                reservations=self.DUPL,
+            )
+        )
+        self.assertEqual(document.proof_class, ProofClass.p4.value)
+
+    def test_a_bare_string_reservation_is_refused(self):
+        """A string is a sequence of characters, so one reservation passed
+        unwrapped would become dozens of one-letter reasons -- and would still
+        be truthy, so the withholding would appear to work while the logged
+        reason was nonsense."""
+        document = self.admit(**self.CAMT)
+        self.db.flush()
+        with self.assertRaises(SourceDocumentError):
+            reclassify_after_reconciliation(
+                self.db,
+                document,
+                ReconciliationStatus.balanced,
+                reservations="camt.053 carries DUPL",
+            )
+
+    def test_a_reservation_that_is_not_a_string_is_refused(self):
+        document = self.admit(**self.CAMT)
+        self.db.flush()
+        for bad in (7, None, ["nested"]):
+            with self.subTest(reservation=bad):
+                with self.assertRaises(SourceDocumentError):
+                    reclassify_after_reconciliation(
+                        self.db,
+                        document,
+                        ReconciliationStatus.balanced,
+                        reservations=(bad,),
+                    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

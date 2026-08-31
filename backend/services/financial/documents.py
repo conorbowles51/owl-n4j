@@ -88,7 +88,11 @@ from postgres.models.financial import (
 )
 from services.financial import decisions
 from services.financial.money import get_currency
-from services.financial.proof_class import SourceShape, assign_proof_class
+from services.financial.proof_class import (
+    SourceShape,
+    admits_automatically,
+    assign_proof_class,
+)
 from services.financial.runs import RunScopeError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -486,6 +490,7 @@ def reclassify_after_reconciliation(
     reconciliation: ReconciliationStatus,
     *,
     run: Optional["IngestionRunHandle"] = None,
+    reservations: Sequence[str] = (),
 ) -> Optional[FinancialAdjudication]:
     """Move a document's proof class to the one the arithmetic now supports.
 
@@ -507,6 +512,47 @@ def reclassify_after_reconciliation(
 
     The class is derived from the document's recorded shape and the outcome
     passed in.  No caller supplies a class here either.
+
+    A reservation withholds the auto-admitting class
+    ------------------------------------------------
+
+    ``reservations`` carries the reasons the reader of the file said it must
+    not auto-admit, whatever its arithmetic says.  Where they are present, any
+    class that would enter the ledger without a human act is withheld and the
+    document lands at p3 instead.
+
+    The test is :func:`~services.financial.proof_class.admits_automatically`
+    rather than an equality against p0, because p0 is not the only class that
+    admits itself -- ``AUTO_ADMITTED_CLASSES`` also holds p1 and p2.  Keying
+    this on p0 would state the rule in terms of the one class today's reserving
+    parsers happen to reach, and a totals-free format that later learns to
+    raise a reservation would land at p1 and auto-admit anyway, having said in
+    terms that it must not.  The property being asserted is "does not enter the
+    ledger unexamined", so it is the property that is tested.
+
+    This is not a second opinion about the arithmetic, and it does not claim
+    the file failed.  The three cases that raise a reservation -- a camt.053
+    marked ``DUPL``, a BAI2 group carrying test status, a NACHA batch of
+    prenotifications -- all *pass*, and the first and last of them pass
+    perfectly, because a re-sent message repeats totals that already agreed and
+    a run of zero-dollar account tests satisfies every control total while
+    moving no money at all.  Grading on the arithmetic alone is therefore
+    exactly wrong here: the stronger the agreement, the more certainly the
+    document auto-admits, and what it auto-admits is either money counted twice
+    or test data entered as payments.
+
+    The rule is applied here rather than left to callers because this function
+    is the only place a *stored* document's class changes.  The four native
+    parsers each withhold the same promotion when computing the class of a
+    document they have just read, but a parser's verdict is not what this
+    column holds -- a caller reporting a reconciliation outcome would otherwise
+    undo it, and the document would auto-admit on the strength of a check that
+    was never in dispute.
+
+    A reservation only ever withholds auto-admission.  It does not demote a
+    document the arithmetic already placed at p3, because p3 requires the human
+    act the reservation is asking for and there is nothing below it to gain,
+    and it does not touch p4: a narrative is never regraded at all.
 
     The document's ledger rows move with it
     ---------------------------------------
@@ -549,9 +595,31 @@ def reclassify_after_reconciliation(
             f"{document.case_id}, but this run is ingesting case {run.case_id}"
         )
 
+    # A bare string is a sequence of characters, so passing one reservation
+    # unwrapped would silently become dozens of one-letter reasons -- and
+    # would still be truthy, so the withholding would appear to work and the
+    # logged reason would be nonsense.
+    if isinstance(reservations, (str, bytes)):
+        raise SourceDocumentError(
+            "reservations must be a sequence of strings, not a single string; "
+            f"{reservations!r} would be read one character at a time"
+        )
+    held = tuple(reservations)
+    for reason in held:
+        if not isinstance(reason, str):
+            raise SourceDocumentError(
+                "each reservation must be a string, got "
+                f"{type(reason).__name__}; the reason is written into the "
+                "decision log and read by a person"
+            )
+
     shape = read_source_shape(document)
     current = document.proof_class
-    graded = assign_proof_class(shape, reconciliation)
+    earned = assign_proof_class(shape, reconciliation)
+    graded = earned
+    withheld = bool(held) and admits_automatically(earned)
+    if withheld:
+        graded = ProofClass.p3
     if graded.value == current:
         return None
 
@@ -566,6 +634,18 @@ def reclassify_after_reconciliation(
         )
     )
 
+    # Spelled out on the artefact rather than left to be inferred from a class
+    # lower than the arithmetic earned.  A reviewer looking at a document that
+    # balanced and did not auto-admit needs the reason on the record, not in a
+    # parser.
+    withholding = ""
+    if withheld:
+        withholding = (
+            f"; {earned.value} withheld despite the check reporting "
+            f"{reconciliation.value}, on {len(held)} admissibility "
+            "reservation(s): " + " | ".join(held)
+        )
+
     adjudication = decisions.record(
         session,
         case_id=document.case_id,
@@ -575,7 +655,7 @@ def reclassify_after_reconciliation(
         reason=(
             f"reconciliation reported {reconciliation.value} for a "
             f"{shape.value} source; proof class {current} -> {graded.value}; "
-            f"{stale_rows} ledger row(s) reclassified with it"
+            f"{stale_rows} ledger row(s) reclassified with it" + withholding
         ),
         actor=reconciliation_actor(),
         before={"proof_class": current},

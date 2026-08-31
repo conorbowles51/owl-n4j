@@ -828,5 +828,95 @@ class ProofClassPropagationTests(TransactionPersistenceTestCase):
         self.assertEqual(row.proof_class, ProofClass.p3.value)
 
 
+class ReservedDocumentRowTests(TransactionPersistenceTestCase):
+    """Rows of a document withheld from auto-admission come out with it.
+
+    The case above moves rows *into* the default total population when the
+    arithmetic closes.  This is the same mechanism run the other way: a
+    totals-free export is auto-admitted at p1, so its rows are written at p1
+    and are already inside every figure, and a reservation on the file is the
+    statement that they should not be.  Leaving them at p1 while the document
+    sits at p3 would keep rehearsal money in the totals, which is the entire
+    thing the withholding exists to prevent.
+    """
+
+    def export(self):
+        """A totals-free native export, which is admitted at p1 rather than p3."""
+        document = self.admit(
+            sha256_at_ingestion=HASH_B,
+            shape=SourceShape.native_without_control_totals,
+            extraction_layer=ExtractionLayer.native,
+            document_type="ofx",
+            parser_name="ofx",
+        )
+        self.db.flush()
+        self.assertEqual(document.proof_class, ProofClass.p1.value)
+        return document
+
+    def test_p1_is_inside_the_default_total_population(self):
+        """The premise, asserted rather than assumed."""
+        self.assertIn(ProofClass.p1, DEFAULT_TOTAL_CLASSES)
+        self.assertNotIn(ProofClass.p3, DEFAULT_TOTAL_CLASSES)
+
+    def test_the_rows_leave_the_totals_with_their_document(self):
+        document = self.export()
+        rows = self.write(
+            [self.draft(row_index=0), self.draft(row_index=1)], document=document
+        )
+        self.db.flush()
+        self.assertEqual({row.proof_class for row in rows}, {ProofClass.p1.value})
+
+        reclassify_after_reconciliation(
+            self.db,
+            document,
+            ReconciliationStatus.balanced,
+            reservations=("prenotification batch; no funds moved",),
+        )
+        self.db.commit()
+
+        self.assertEqual(document.proof_class, ProofClass.p3.value)
+        for row in rows:
+            self.db.refresh(row)
+            self.assertEqual(row.proof_class, ProofClass.p3.value)
+
+    def test_the_moved_count_is_recorded_alongside_the_withholding(self):
+        document = self.export()
+        self.write(
+            [self.draft(row_index=0), self.draft(row_index=1)], document=document
+        )
+        self.db.flush()
+
+        adjudication = reclassify_after_reconciliation(
+            self.db,
+            document,
+            ReconciliationStatus.balanced,
+            reservations=("prenotification batch",),
+        )
+        self.db.commit()
+
+        self.assertIn("2 ledger row", adjudication.reason)
+        self.assertIn("p1 withheld", adjudication.reason)
+        self.assertIn("prenotification batch", adjudication.reason)
+
+    def test_without_the_reservation_the_same_rows_stay_in(self):
+        """The rows have to be leaving because of the reservation, not because
+        a balanced totals-free export moves them anyway."""
+        document = self.export()
+        rows = self.write([self.draft(row_index=0)], document=document)
+        self.db.flush()
+
+        self.assertIsNone(
+            reclassify_after_reconciliation(
+                self.db, document, ReconciliationStatus.balanced
+            )
+        )
+        self.db.commit()
+
+        self.assertEqual(document.proof_class, ProofClass.p1.value)
+        for row in rows:
+            self.db.refresh(row)
+            self.assertEqual(row.proof_class, ProofClass.p1.value)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
