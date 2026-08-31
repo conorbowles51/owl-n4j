@@ -9,6 +9,7 @@ import type {
   AIModelPolicy,
   EvidenceDocumentMatchesResponse,
   EvidenceTextSearchResponse,
+  RouteCheckResponse,
   TranscriptSpeakerSettings,
 } from "@/types/evidence.types"
 
@@ -108,6 +109,21 @@ export const evidenceAPI = {
     fetchAPI<void>("/api/evidence/process", {
       method: "POST",
       body: { case_id: caseId, file_ids: fileIds, profile },
+    }),
+
+  /**
+   * Ask what these files are before asking for them to be processed.
+   *
+   * Takes the same two identifiers `processBackground` takes, so the answer
+   * describes exactly the request that is about to be made. A check keyed on
+   * anything else -- a folder, a selection, a page of results -- could be
+   * answered for a different set of files than the ones eventually processed,
+   * and this screen would have no way to notice the difference.
+   */
+  routeCheck: (caseId: string, fileIds: string[]) =>
+    fetchAPI<RouteCheckResponse>("/api/evidence/route-check", {
+      method: "POST",
+      body: { case_id: caseId, file_ids: fileIds },
     }),
 
   processBackground: (
