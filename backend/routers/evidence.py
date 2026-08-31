@@ -676,6 +676,19 @@ class ProcessRequest(BaseModel):
     image_provider: Optional[str] = None  # "tesseract" (local OCR) or "openai" (GPT-4 Vision)
 
 
+class RouteCheckRequest(BaseModel):
+    """The same two identifiers ``ProcessRequest`` takes, and nothing else.
+
+    Deliberately the same shape, because the point of the check is to answer a
+    question about the exact request that is about to be made.  A check taking
+    different identifiers could be answered for a different set of files than
+    the one processed, and the interface would have no way to notice.
+    """
+
+    case_id: str
+    file_ids: List[str]
+
+
 class ProcessResponse(BaseModel):
     processed: int
     skipped: int
@@ -1297,6 +1310,101 @@ async def process_evidence_background(
             "job_ids": job_ids or None,
             "message": "; ".join(messages) if messages else "No files to process",
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/route-check")
+async def check_evidence_financial_route(
+    request: RouteCheckRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Say which of these uploaded files are bank files, before processing them.
+
+    Called in the gap between ``POST /upload``, which stages a file and returns
+    no job, and ``POST /process/background``, which is what actually enqueues
+    work.  Four formats -- camt.053, BAI2, MT940 and NACHA -- are parsed exactly
+    by the financial ledger, and sending one of them through the document
+    pipeline instead would have a model infer its figures from extracted text.
+    The result is indistinguishable downstream from a parsed reading, so the
+    only place to tell them apart is before the choice is made.
+
+    Mirrors the role of ``/cellebrite/check`` -- a cheap "what is this?" ahead
+    of an expensive process -- but takes ``file_ids`` rather than a folder path,
+    because that is what this pipeline processes and what the caller is about to
+    pass to ``/process/background``.  For the same reason there is no path
+    traversal guard: the paths come from evidence rows scoped to a case the
+    caller can already see, not from the caller, which is a stronger guarantee
+    than checking a string for "..".
+
+    ``POST`` rather than ``GET`` despite reading nothing: the batch limit is
+    fifty ids, and fifty UUIDs do not belong in a query string.
+    """
+    try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from services.financial.route_check import check_case_files, summarise
+
+        try:
+            case_uuid = UUID(request.case_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="case_id is not a valid UUID")
+
+        # A read, so viewing the case is the right bar -- the same one
+        # ``/cellebrite/check`` sets, and lower than the ``evidence:upload``
+        # that ``/process/background`` requires.  Someone who may look at a case
+        # may ask what its files are without being able to spend money on them.
+        try:
+            check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+        if not request.file_ids:
+            raise HTTPException(status_code=400, detail="No file_ids provided")
+
+        if len(request.file_ids) > MAX_BATCH_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Too many files ({len(request.file_ids)}). Maximum {MAX_BATCH_SIZE} "
+                    "files per request. Please batch your requests."
+                ),
+            )
+
+        # An id that is not a UUID is a fault in the caller, not a fact about a
+        # file, so it is rejected rather than given a per-file outcome.  Giving
+        # it one would put a made-up file in a list the interface reads as a
+        # description of real ones.
+        malformed = []
+        file_uuids = []
+        for raw in request.file_ids:
+            try:
+                file_uuids.append(UUID(raw))
+            except (ValueError, AttributeError, TypeError):
+                malformed.append(str(raw))
+        if malformed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{len(malformed)} file id(s) are not valid UUIDs: {', '.join(malformed[:5])}",
+            )
+
+        checks = await run_in_threadpool(
+            check_case_files,
+            db,
+            case_id=case_uuid,
+            file_ids=file_uuids,
+            resolve_path=_resolve_stored_path,
+        )
+        return {
+            "case_id": str(case_uuid),
+            "files": [check.as_dict() for check in checks],
+            "summary": summarise(checks),
+        }
+    except HTTPException:
+        # Re-raised before the catch-all so that a 400 or a 403 stays what it
+        # is.  ``/process/background`` above omits this and turns its own
+        # permission denials into 500s; that is not copied here.
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

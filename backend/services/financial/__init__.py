@@ -615,6 +615,18 @@ from services.financial.references import (
     normalise,
     ref_id,
 )
+from services.financial.route_check import (
+    BLOCKING_OUTCOMES,
+    FileRouteCheck,
+    check_case_files,
+    check_head,
+    check_path,
+)
+
+# Aliased for the same reason as ``normalise_identifier`` above: at package
+# scope a bare ``summarise`` says nothing about what is being summarised, and
+# this namespace is flat and already large.
+from services.financial.route_check import summarise as summarise_route_checks
 from services.financial.runs import (
     IngestionRunHandle,
     RunAborted,
@@ -1368,6 +1380,13 @@ __all__ = [
     "is_reference",
     "normalise",
     "ref_id",
+    # What an uploaded file is, before the document pipeline is paid to read it
+    "BLOCKING_OUTCOMES",
+    "FileRouteCheck",
+    "check_case_files",
+    "check_head",
+    "check_path",
+    "summarise_route_checks",
     # Run identity
     "IngestionRunHandle",
     "RunAborted",

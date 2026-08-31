@@ -18,6 +18,10 @@ from app.pipeline.extract_text import (
     get_transcription,
     get_transcription_segments,
 )
+from app.pipeline.financial_route import (
+    detect_financial_route,
+    refusal_message,
+)
 from app.pipeline.pdf_extraction import PdfExtractionProgress
 from app.pipeline.generate_document_summary import generate_document_summary
 from app.pipeline.generate_summaries import generate_summaries
@@ -85,6 +89,34 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
     await db.commit()
 
     try:
+        # Pre-stage: is this a bank file the ledger reads directly?  Before the
+        # cost context opens, so a job about to be turned away does not leave an
+        # ingestion cost record behind for work nobody did, and before any text
+        # is extracted, because extracting it is the thing being prevented.
+        route = await asyncio.to_thread(detect_financial_route, job.file_path)
+        routed_state = dict(getattr(job, "pipeline_state", None) or {})
+        routed_state["financial_route"] = route.as_state()
+        job.pipeline_state = routed_state
+        await db.commit()
+
+        if route.is_native:
+            logger.warning(
+                "Job %s is a %s bank file; refusing the document pipeline",
+                job_id,
+                route.detected_format,
+            )
+            await _update_job(
+                job,
+                JobStatus.FAILED,
+                0.0,
+                db,
+                "Belongs to the financial ledger",
+                error_message=refusal_message(route, job.file_name),
+            )
+            # Returned, not raised: arq retries what is raised to it, and a
+            # file's format is the same on the second attempt as the first.
+            return
+
         async with ingestion_cost_context(
             case_id=job.case_id,
             requested_by_user_id=str(job.requested_by_user_id) if job.requested_by_user_id else None,
