@@ -3,19 +3,19 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 1 September 2026 (third rewrite this date; this one records the
-item-12 survey, Neil's sequencing ruling, and the first item-12 unit)
+**Last updated:** 1 September 2026 (fourth rewrite this date; this one records
+the second item-12 unit, the page-render endpoint)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `d79199a`, "Item 12, first unit:
-  source-highlight viewer component with locator reader". The commit carrying
-  the current revision of this file sits one above that, so **confirm the real
-  tip with `git log --oneline -5`** at the start of every session rather than
-  trusting this line.
+- **Head when this was written:** `530c3a6`, "Item 12: page-render endpoint,
+  the image a stored rectangle refers to". The commit carrying the current
+  revision of this file sits one above that, so **confirm the real tip with
+  `git log --oneline -5`** at the start of every session rather than trusting
+  this line.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 
 ### Uncommitted
@@ -31,11 +31,79 @@ No tracked changes are outstanding. The tree is otherwise clean of build work.
 
 ### Scale, measured from git
 
-63 commits since `c4246c0` (27 August) before this one lands.
-`backend/services/financial/` is 41 modules, 31,819 lines by `wc -l`.
-`backend/tests/test_financial_*.py` is 43 files, 40,807 lines, **2,993 tests**.
-Frontend unit suite after this session: **52 files, 277 tests** (was 50/246;
-the two new files and 31 new tests are this unit's).
+65 commits since `c4246c0` (27 August), counting `530c3a6`.
+`backend/services/financial/` is 42 modules, 31,916 lines by `wc -l`.
+`backend/tests/test_financial_*.py` is 44 files, 41,242 lines, **3,019 tests**.
+Frontend unit suite unchanged this unit: **52 files, 277 tests**.
+
+---
+
+## What this session did (fourth part): the page-render endpoint (`530c3a6`)
+
+After the viewer unit and its state rewrite (`65ab0fd`), Neil said "continue
+here". Presented with the remaining item-12 chunks, he chose **"page-render
+endpoint"**: store-agnostic, needed whichever store feeds the viewer, so it
+dodges the unruled data-path question entirely.
+
+### The unit that landed
+
+Four files, one commit:
+
+- `backend/services/financial/page_render.py` — `render_page_png(document, *,
+  page_number, width)` plus `PageRenderError`. Fitz-free and duck-typed like
+  `pdf_tables` (written against `page_count`, `load_page`, `rect`,
+  `get_pixmap`), so the logic tests without the library. Validates before
+  touching the document: non-plain-int (bool included) or `<1` page and width
+  refused, page beyond `page_count` refused with a singular/plural count
+  message, zero-extent page refused. `zoom = width / rect.width`, matrix passed
+  as a plain 6-tuple, `pixmap.tobytes("png")`. Refusal messages are written to
+  be shown to the person who asked, unedited.
+- `backend/services/financial/__init__.py` — exports `PageRenderError`,
+  `render_page_png`. Exports guard passed unchanged.
+- `backend/routers/evidence.py` — `GET
+  /api/evidence/{evidence_id}/page/{page_number}/image`. Deliberately a **sync
+  `def`** so FastAPI threadpools the CPU-bound render. FastAPI bounds at the
+  edge (`page_number ge=1`; `width Query(1200, ge=100, le=3000)` → 422), the
+  service's own refusals behind them as defence in depth. Resolves the record
+  and path exactly as `get_evidence_file` does (`_evidence_record_for_id`,
+  `_resolve_stored_path`, same 404 messages). Status map: non-`.pdf` → 400;
+  PyMuPDF absent → 503 via `_load_pymupdf()` (`pymupdf` then `fitz` fallback —
+  the library is not in requirements.txt, so absence is a deployment state, not
+  an error, and the rest of the router keeps working); unopenable file → 422;
+  `PageRenderError` → 404 carrying the service's sentence verbatim; document
+  closed in `finally`. FastAPI's `Path` is imported as `PathParam` because
+  pathlib's `Path` is already imported at line 18.
+- `backend/tests/test_financial_page_render.py` — 26 tests in three layers:
+  recording fakes (which page was loaded, the exact matrix tuple, whose bytes
+  come back, refusals never touching the document), real-library pins where
+  PyMuPDF is installed, and **static AST tests of the endpoint** (see the
+  durable fact below on why import is impossible).
+
+### Design decisions recorded
+
+- **Width-only sizing.** The caller chooses width; height follows from the
+  page's own aspect ratio. Letting a caller pick both would let it distort the
+  one thing the locator contract depends on.
+- **No rotation arithmetic anywhere.** `capture()` stores displayed page
+  dimensions (what `page.rect` reports after rotation), and a pixmap rendered
+  from the same page shares that orientation, so image and `normalised()`
+  fractions agree by construction.
+- **Render per request, no cache.** Measured ~10ms per page. Recorded in the
+  commit message as a cheaply reversible decision; revisit only if it shows up
+  as a real cost.
+
+Verification: the new file alone `Ran 26 tests ... OK` (real-library tests ran,
+not skipped); full suite on the new fingerprint below; four-file diffstat
+`610 insertions(+), 1 deletion(-)`; tree tracked-clean after the ref update.
+
+### Remaining item-12 chunks, in no ruled order
+
+- The data path: either expose the Postgres ledger read-side, or join to the
+  `per_table` locators already in Neo4j, or both. Also unresolved: nothing in
+  production writes the ledger yet (`ingest_native_reading` uncalled).
+- Wiring `SourceHighlight` into `TransactionDetailPanel` once data exists. The
+  image half is now served: the caller builds `pageImageUrl` from the new
+  endpoint and the component does not change.
 
 ---
 
@@ -96,9 +164,9 @@ Four files under `frontend_v2/src/features/financial/`:
   `locator-no-page-image`, `locator-highlight` with
   `locator-highlight-box`). The box is positioned with percentage
   `left/top/width/height` from `normalised()`. **The page image is a prop, not
-  a fetch**, because no page-render endpoint exists yet; when one lands the
-  caller supplies its URL and the component does not change. The image must be
-  the full page — a cropped render would misplace the box.
+  a fetch**; the caller supplies its URL (now available from the `530c3a6`
+  endpoint) and the component does not change. The image must be the full
+  page — a cropped render would misplace the box.
 - `lib/locator.test.ts` (20 tests) and `components/SourceHighlight.test.tsx`
   (11 tests). Test fractions were chosen to be exact in binary
   (quarters/halves of 612000×792000) so percentage assertions are equalities.
@@ -106,27 +174,35 @@ Four files under `frontend_v2/src/features/financial/`:
 Verification: unit suite 52 files / 277 tests all passing, `tsc -b` 0,
 `eslint` 0.
 
-### Correction to the previous revision of this file
+### Correction to an earlier revision of this file
 
 The item-12 entry (two revisions running) named a backend method
 `SourceRectangle.as_fractions`. **No such method exists.** The real method is
 `SourceRectangle.normalised()` (`locators.py:170`); confirmed by grep, and the
 TS mirror uses the same name.
 
-### Remaining item-12 chunks, in no ruled order
-
-- A page-render endpoint (the image the viewer needs; nothing serves a page
-  image today — `PdfPreview` streams the whole file into an iframe).
-- The data path: either expose the Postgres ledger read-side, or join to the
-  `per_table` locators already in Neo4j, or both. Also unresolved: nothing in
-  production writes the ledger yet (`ingest_native_reading` uncalled).
-- Wiring `SourceHighlight` into `TransactionDetailPanel` once data and image
-  exist.
-
 ---
 
 ## Durable facts from earlier sessions, kept so no one rediscovers them
 
+- **`routers.evidence` cannot be imported in this environment, so its
+  endpoints are tested statically.** The import chain (`routers/__init__.py`,
+  and equally evidence.py's own `from .auth import get_current_user`) reaches
+  `services/auth_service.py` → `from jose import ...` →
+  ModuleNotFoundError. No TestClient, no import of the module at all. The
+  house precedent is `tests/test_financial_route_check.py`, whose docstring
+  explains the same wall: `ast.parse` the router source, find the endpoint
+  FunctionDef by name, assert decorator path, parameter bounds, and body
+  structure via `ast.unparse` substrings and node counts.
+  `test_financial_page_render.py` follows it. Verify router edits with
+  `ast.parse`, not import.
+- **PyMuPDF 1.28.2 facts, measured in this sandbox.** `get_pixmap` accepts a
+  plain 6-tuple as `matrix` (no `fitz.Matrix` import needed, which is what
+  keeps `page_render.py` fitz-free). Rotation is applied on both sides of the
+  locator agreement: a US-Letter page at `set_rotation(90)` reports
+  `rect` 792×612 and renders a pixmap of the same aspect (1200×928 at width
+  1200; unrotated 1200×1553). This is why neither `capture()` nor
+  `render_page_png` contains rotation arithmetic.
 - **The item-10 design ruling, and why.** Neil ruled ("go with deliberate")
   that `TransactionDraft.locator` is **required with no default**. A caller
   with nothing to say passes `Locator(kind=LocatorKind.unlocated)` explicitly.
@@ -167,11 +243,13 @@ TS mirror uses the same name.
   pinned install (`--break-system-packages`): SQLAlchemy 2.0.46, pydantic 2.12.5,
   pydantic_core 2.41.5, fastapi 0.123.9, httpx 0.28.1, neo4j 5.28.2,
   python-dotenv 1.2.1, requests 2.32.5, psycopg[binary] 3.2.13, openai 2.9.0,
-  and optionally pymupdf 1.28.2. Suite fingerprints, both measured: without
-  PyMuPDF `Ran 2993 tests, FAILED (errors=1, skipped=9)`; with it
-  `Ran 2993 tests, FAILED (errors=1)`, skipped=0. The one error is the
-  long-standing `jose` ModuleNotFoundError. **Do not install python-jose**:
-  leaving it out is what reproduces the documented fingerprint.
+  and optionally pymupdf 1.28.2. Suite fingerprints after `530c3a6`: with
+  PyMuPDF **`Ran 3019 tests, FAILED (errors=1)`, skipped=0 (measured)**;
+  without it, expected `errors=1, skipped=12` — derived (the old measured 9
+  plus the new file's 3 real-library tests), not re-measured. The one error is
+  the long-standing `jose` ModuleNotFoundError in
+  `tests.test_financial_router`. **Do not install python-jose**: leaving it
+  out is what reproduces the documented fingerprint.
 - **Frontend verification trio**: from `frontend_v2/`, `npx vitest run`,
   `npx tsc -b`, `npx eslint .`. The vitest config has a separate **browser
   project** matching `src/**/*.browser.test.*` which **cannot run in the
@@ -181,12 +259,14 @@ TS mirror uses the same name.
   exempt underscore-prefixed unused destructures; use `delete record["key"]`
   on a copy instead of `const { units: _units, ...rest }`.
 - Stale `/tmp/loupe*.index` files from earlier sessions cannot be removed;
-  the commit procedure works fine with a fresh name per session
-  (`/tmp/loupe_item12_viewer.index` this time). Pick a fresh index filename if
-  `rm` refuses.
-- **The exports guard needs no edit for a new name from an existing module.**
-  It is structural (AST over `__init__.py`); it passed unchanged when
-  `LOCATOR_PROVENANCE_KEY` was added.
+  the commit procedure works fine with a fresh name per commit
+  (`/tmp/loupe_item12_pagerender.index` this time). Pick a fresh index
+  filename if `rm` refuses.
+- **The exports guard needs no edit for a new module either**, as long as the
+  module contributes its names through `__init__.py` and carries no
+  module-level `__all__` of its own. It is structural (AST over
+  `__init__.py`); it passed unchanged for `LOCATOR_PROVENANCE_KEY` and again
+  for `page_render`.
 
 ---
 
@@ -227,10 +307,10 @@ commit `3784dbe`.
     stays immutable beside it, and the ledger records who, when and why.
     **Blocked on an open question, below.**
 
-12. **In progress — first unit landed (`d79199a`).** UI: transaction review
-    with click-through to the highlighted region of the source page. The
-    survey, Neil's "viewer component first" ruling, the landed unit and the
-    remaining chunks are in the session section above. This is where
+12. **In progress — two units landed (`d79199a` viewer, `530c3a6` page-render
+    endpoint).** UI: transaction review with click-through to the highlighted
+    region of the source page. What remains: the data-path ruling, and wiring
+    `SourceHighlight` into `TransactionDetailPanel`. This is where
     `suspect_amounts` and the row locators gain their first consumer.
 
 13. User-defined view tabs. Named snapshots of filter state, persisted, creatable,
@@ -278,14 +358,16 @@ is wanted before any correction storage is written.**
 **Capability with no route to the user — narrowed again this session.** What
 remains without a route: `exhibit.py` (984 lines, no API route, no screen),
 `tracing.py` (no caller outside its own package), and `suspect_amounts.py` plus
-the row locators (committed, tested; the viewer that will consume the locators
-now exists but is not yet wired to data). Item 12's remaining chunks close the
+the row locators (committed, tested; the viewer exists and its page image is
+now served, but no data reaches it). Item 12's remaining chunks close the
 locator half.
 
 **Which store feeds the viewer.** Deliberately left open by the "viewer
-component first" ruling: Postgres ledger read API, a Neo4j `per_table` join, or
-both. Also whether wiring `native_ingest` into production comes before or after
-the read side. Neil has not ruled.
+component first" ruling, and the page-render endpoint was chosen precisely
+because it is store-agnostic: Postgres ledger read API, a Neo4j `per_table`
+join, or both. Also whether wiring `native_ingest` into production comes before
+or after the read side. Neil has not ruled. **This is now the only ruling item
+12 waits on.**
 
 **Provenance of `exhibit.py`.** It came from a build order proposed by Claude, not
 from a stated Owl requirement. It is 984 lines justified from the rules of evidence
