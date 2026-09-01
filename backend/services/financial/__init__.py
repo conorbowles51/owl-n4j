@@ -728,6 +728,18 @@ from services.financial.table_geometry import (
     cell_value,
     locate_table,
 )
+from services.financial.suspect_amounts import (
+    FALLIBLE_ORIGINS,
+    FULL_PAGE_IMAGE_COVERAGE,
+    AmountReading,
+    Proposal,
+    Suspicion,
+    SuspectAmountError,
+    TextOrigin,
+    page_text_origin,
+    read_amount,
+    require_certain,
+)
 from services.financial.text_rows import (
     TextRowTable,
     read_text_rows,
@@ -1295,6 +1307,17 @@ __all__ = [
     # Rows recovered from where the words sit, when nothing was ruled
     "TextRowTable",
     "read_text_rows",
+    # Amounts a machine read but no one should sum yet
+    "FALLIBLE_ORIGINS",
+    "FULL_PAGE_IMAGE_COVERAGE",
+    "AmountReading",
+    "Proposal",
+    "Suspicion",
+    "SuspectAmountError",
+    "TextOrigin",
+    "page_text_origin",
+    "read_amount",
+    "require_certain",
     # The proof class a source earns, and what each class licenses
     "AUTO_ADMITTED_CLASSES",
     "DEFAULT_TOTAL_CLASSES",
