@@ -29,6 +29,14 @@ from services.financial.accounts import (
     read_identity_tier,
     record_account,
 )
+from services.financial.admission import (
+    ROUTED_DOCUMENT_PIPELINE,
+    ROUTED_HELD,
+    AdmissionError,
+    NothingToOverrideError,
+    WrongFileError,
+    record_admission,
+)
 from services.financial.adjudication import (
     Adjudication,
     AdjudicationError,
@@ -1381,12 +1389,18 @@ __all__ = [
     "normalise",
     "ref_id",
     # What an uploaded file is, before the document pipeline is paid to read it
+    "AdmissionError",
     "BLOCKING_OUTCOMES",
     "FileRouteCheck",
+    "NothingToOverrideError",
+    "WrongFileError",
     "check_case_files",
     "check_head",
     "check_path",
     "summarise_route_checks",
+    "ROUTED_DOCUMENT_PIPELINE",
+    "ROUTED_HELD",
+    "record_admission",
     # Run identity
     "IngestionRunHandle",
     "RunAborted",

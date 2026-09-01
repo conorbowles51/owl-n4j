@@ -63,6 +63,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 
 from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
+from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import (
     FinancialAccount,
     AdjudicationEvent,
@@ -102,7 +103,24 @@ _SUBJECT_MODELS: dict[AdjudicationSubject, type] = {
     AdjudicationSubject.statement_period: FinancialStatementPeriod,
     AdjudicationSubject.source_document: FinancialSourceDocument,
     AdjudicationSubject.account: FinancialAccount,
+    AdjudicationSubject.evidence_file: EvidenceFile,
 }
+
+# Every member of the vocabulary must be reachable, or a decision that the
+# database would accept raises KeyError here instead -- a failure that reads
+# as a bug in the caller rather than as the missing line it actually is.
+# Asserted at import so a member added to the enum without a model here stops
+# the process rather than one request.
+_MISSING_SUBJECT_MODELS = tuple(
+    subject.value
+    for subject in AdjudicationSubject
+    if subject not in _SUBJECT_MODELS
+)
+if _MISSING_SUBJECT_MODELS:  # pragma: no cover - import-time guard
+    raise RuntimeError(
+        "AdjudicationSubject members with no model in _SUBJECT_MODELS: "
+        + ", ".join(_MISSING_SUBJECT_MODELS)
+    )
 
 
 @dataclass(frozen=True)

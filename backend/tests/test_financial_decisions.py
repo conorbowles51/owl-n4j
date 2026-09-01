@@ -340,6 +340,7 @@ class TheSubject(DecisionTestCase):
             AdjudicationSubject.statement_period: self.period,
             AdjudicationSubject.source_document: self.document,
             AdjudicationSubject.account: self.account,
+            AdjudicationSubject.evidence_file: self.evidence_file,
         }
         self.assertEqual(set(subjects), set(AdjudicationSubject))
 

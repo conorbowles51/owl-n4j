@@ -110,10 +110,24 @@ class DocumentStatus(str, Enum):
 
 
 class AdjudicationSubject(str, Enum):
+    """What a decision was about.
+
+    ``evidence_file`` is the one member naming no financial table, and it is
+    why the ledger dropped its ``financial_`` prefix in
+    ``20260901_rename_adjudications``.  The decision to send a file for
+    document processing is taken on the evidence list, *before* any financial
+    row exists to be the subject of it — which is exactly what makes it worth
+    recording, since nothing downstream would otherwise show that anyone
+    chose.  Nothing structural had to change to hold it: ``subject_id`` never
+    carried a foreign key, so the only thing that ever stopped it was one
+    ``CHECK`` constraint.
+    """
+
     transaction = "transaction"
     statement_period = "statement_period"
     source_document = "source_document"
     account = "account"
+    evidence_file = "evidence_file"
 
 
 class AdjudicationDecision(str, Enum):
@@ -152,7 +166,7 @@ class AdjudicationDecision(str, Enum):
     silently changed class would change every figure computed from it with
     nothing on the record to say when or why.
 
-    It is a member rather than free text for the reason the other six are, and
+    It is a member rather than free text for the reason the others are, and
     it does not spoil the deposition count, because the automatic events are
     separable by actor: they carry :data:`RECONCILIATION_ACTOR_EMAIL` from
     :mod:`services.financial.documents`, which no person can hold.  "How many
@@ -165,6 +179,32 @@ class AdjudicationDecision(str, Enum):
     back writes another ``reclassify_document`` rather than an undo.  The
     disposition pairs need two names because a status flag cannot hold its own
     history; a proof class recorded as a before/after pair already does.
+
+    ``admit_financial_document`` needs its name read carefully, because the
+    name points the wrong way on its own.  It does **not** mean a document was
+    admitted *into* the financial ledger.  It means a file the router held
+    back — a bank statement that arrived on the evidence list, where the
+    general document pipeline would index it as prose and its figures would
+    become searchable text that no total could ever be traced to — was
+    admitted *out* to that pipeline anyway, by a named person who was shown
+    what the router found and chose to proceed.  ``financial`` in the name
+    describes the *document*, not the destination.  Nothing is admitted to the
+    ledger by this event and nothing can be: it is written on the evidence
+    file, before any financial row exists.
+
+    It is the only member whose subject is an ``evidence_file``, and the only
+    one recording a decision to *not* use this subsystem on evidence it would
+    otherwise claim.  That is precisely why it is logged.  An override that
+    left no trace would make the router's judgement look like the system's
+    behaviour, and a reader months later, finding a statement's figures in the
+    text index and nowhere in any total, would have no way to tell a
+    deliberate call from a routing failure.
+
+    It takes no reversal member, and for the same reason
+    ``explain_balance_failure`` does not: it changes no stored column.  It
+    authorises one send, and a send cannot be un-sent.  Reprocessing the same
+    file through the financial path later is a new ingestion with its own run
+    and its own records, not an undo of this.
     """
 
     supersede_duplicate = "supersede_duplicate"
@@ -177,6 +217,8 @@ class AdjudicationDecision(str, Enum):
     explain_balance_failure = "explain_balance_failure"
 
     reclassify_document = "reclassify_document"
+
+    admit_financial_document = "admit_financial_document"
 
 
 class IngestionRunStatus(str, Enum):

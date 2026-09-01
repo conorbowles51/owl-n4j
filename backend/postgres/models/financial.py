@@ -79,8 +79,13 @@ _DIRECTIONS = "('credit', 'debit')"
 _DATE_SOURCES = "('transaction', 'posted', 'value', 'effective')"
 _BALANCE_SOURCES = "('printed', 'carried_forward', 'absent')"
 _PERIOD_BOUNDS_SOURCES = "('printed', 'derived', 'absent')"
+# 'evidence_file' is not a financial table, and it is here because the
+# decision to route a file away from this subsystem is taken before any
+# financial row exists to record it against.  The list is what makes this
+# ledger polymorphic in practice; subject_id has never carried a foreign key.
 _ADJUDICATION_SUBJECTS = (
-    "('transaction', 'statement_period', 'source_document', 'account')"
+    "('transaction', 'statement_period', 'source_document', 'account', "
+    "'evidence_file')"
 )
 # Closed for the reason the quarantine reasons are closed: "how many rows did
 # you set aside, and how many did you put back" is answered by a GROUP BY, and
@@ -89,12 +94,16 @@ _ADJUDICATION_SUBJECTS = (
 # appends: undoing a supersession writes the undo, it does not retract the
 # original.  'reclassify_document' is the exception to both halves of that: it
 # is written by the reconciliation stage rather than by a person, and it is its
-# own reversal, because it carries the class before and the class after.  See
-# postgres.models.enums.AdjudicationDecision.
+# own reversal, because it carries the class before and the class after.
+# 'admit_financial_document' has no reversal either, for the reason
+# 'explain_balance_failure' has none: it changes no stored column, so there is
+# nothing an undo could restore.  Read its name with care -- it records a
+# financial document admitted *out* to general document processing, not one
+# admitted into this ledger.  See postgres.models.enums.AdjudicationDecision.
 _ADJUDICATION_DECISIONS = (
     "('supersede_duplicate', 'restore_document', 'purge_duplicate', "
     "'quarantine_row', 'release_row', 'explain_balance_failure', "
-    "'reclassify_document')"
+    "'reclassify_document', 'admit_financial_document')"
 )
 _QUARANTINE_REASONS = (
     "('balance_break', 'unreadable_row', 'currency_mismatch', "
