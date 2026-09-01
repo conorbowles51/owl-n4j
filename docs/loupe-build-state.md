@@ -3,18 +3,19 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 1 September 2026 (second rewrite this date; this one records the
-wiring verification session)
+**Last updated:** 1 September 2026 (third rewrite this date; this one records the
+item-12 survey, Neil's sequencing ruling, and the first item-12 unit)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `ffaceb4`, "Rewrite build state: item 10 landed,
-  item 12 next candidate". The commit carrying the current revision of this file
-  sits one above that, so **confirm the real tip with `git log --oneline -5`** at
-  the start of every session rather than trusting this line.
+- **Head when this was written:** `d79199a`, "Item 12, first unit:
+  source-highlight viewer component with locator reader". The commit carrying
+  the current revision of this file sits one above that, so **confirm the real
+  tip with `git log --oneline -5`** at the start of every session rather than
+  trusting this line.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 
 ### Uncommitted
@@ -30,112 +31,97 @@ No tracked changes are outstanding. The tree is otherwise clean of build work.
 
 ### Scale, measured from git
 
-61 commits since `c4246c0` (27 August) before this one lands.
+63 commits since `c4246c0` (27 August) before this one lands.
 `backend/services/financial/` is 41 modules, 31,819 lines by `wc -l`.
 `backend/tests/test_financial_*.py` is 43 files, 40,807 lines, **2,993 tests**.
+Frontend unit suite after this session: **52 files, 277 tests** (was 50/246;
+the two new files and 31 new tests are this unit's).
 
 ---
 
-## What this session did: verified the production wiring, then corrected the record
+## What this session did (third part): item 12 opened, viewer unit landed
 
-No production code changed. The session was a survey, a ruling, and a
-verification, and its output is this file.
+The session had already verified the engine wiring and committed two state
+rewrites (`72d1b1a` and before it `ffaceb4`); Neil said "continue for now"
+rather than ending at that boundary, so item 12 began in the same session.
 
-**The premise it started from was half wrong.** The previous revision of this
-file carried a standing flag saying the geometry and text-row machinery built for
-item 1 "is not reached in production". Reading the source disproved half of that:
-`evidence-engine/app/pipeline/pdf_extraction.py` **already wires
-`services.financial.pdf_tables.read_tables` into the case-evidence extraction
-path**. Only the triage preview extractor is flat. The flag is corrected below,
-and the discovery was surfaced to Neil before anything was built on the bad
-premise.
+### The item-12 survey, as read from source
 
-**Neil's ruling (1 September, verbatim scope answer: "triage not part of build.
-engine path then flag"):** the triage extractor
-(`services/triage_processors/text_extractor.py`, flat `pypdf==6.4.0`) stays
-untouched and is **not part of the build**. The work was to verify the
-evidence-engine path end to end, then correct the flag. Both halves are done.
+The locator, as of item 10, is written but has **no read path at all**:
 
-### The wiring, as read from source
+- The Postgres ledger (`financial_transactions` table,
+  `backend/postgres/models/financial.py:666`) is where
+  `record_transactions` lands `provenance["locator"]`. **No router exposes
+  this table**, and `ingest_native_reading` has no production caller, so in
+  production the table has neither a reader nor a writer yet.
+- The UI's transaction screen reads **Neo4j**, via `/api/financial` →
+  `neo4j/financial_service.py::get_financial_transactions` (line 183). Its
+  Cypher returns `source_document_id`, `source_filename`, `source_page`,
+  `source_excerpt`, confidence and correction fields — **no rectangle, no
+  locator**.
+- `TransactionDetailPanel.tsx` already shows filename/page/excerpt as static
+  metadata fields; there is no click-through.
+- `PdfPreview.tsx` is a bare `<iframe src=...>`: no page targeting, no
+  overlay capability. It cannot highlight anything as it stands.
+- One indirect rectangle source does exist in Neo4j: the engine persists
+  `table_geometry.per_table` (cell locators) inside `ProcessedArtifact`
+  metadata. A future join could reach rectangles that way; noted, not
+  pursued.
 
-- `evidence-engine/` is a separate package ("ingestion-service",
-  `requires-python >=3.12`, its own pyproject declaring `PyMuPDF>=1.25,<2`,
-  pytesseract, Pillow, sqlalchemy, neo4j, lxml). It is the case-evidence
-  extraction pipeline.
-- `_load_table_reader()` inserts the sibling `backend/` dir into `sys.path` and
-  imports `services.financial.pdf_tables`; the result is cached, and an import
-  failure is remembered and surfaced in metadata as `available: False` with the
-  reason, rather than retried or hidden.
-- `_extract_native_tables` calls `reader.read_tables(page, page_number)` then
-  `reader.chunks_of(tables)`. `_extract_native_tables_unaided` keeps the
-  pre-geometry extraction verbatim as the fallback when the reader is
-  unavailable.
-- `_table_geometry_metadata` lands `available`, `coordinate_space`,
-  `geometry_summary`, and `per_table` (each table's `to_json()`) in
-  `metadata["table_geometry"]`. The module itself warns that `per_table` is
-  transient and heavy (~221 bytes per located value; ~1.52 MB for a 40-page
-  statement) and must be bounded or dropped by anything persisting metadata
-  wholesale. **The registry does persist `ProcessingResult.metadata` wholesale**
-  (`json.dumps` into a Neo4j `ProcessedArtifact` property), so that warning is
-  live, not theoretical.
-- Triage artifacts never reach cases: `services/triage/ingest_bridge.py` copies
-  the **original files** into evidence storage and registers provenance; triage
-  `extracted_text` is preview-side working data served only by the triage UI
-  (`routers/triage.py`). So the flat triage path and the geometry-aided engine
-  path do not feed the same store.
-- Engine processors are loaded in `try/except ImportError`; a processor whose
-  import fails silently vanishes from the roster. Worth knowing when a processor
-  seems to be missing.
+### Neil's ruling: viewer component first
 
-### The verification, all passed
+Presented as a four-way fork (viewer component first / ledger read API first /
+wire `native_ingest` first / page-jump-only on the existing screen). Neil chose
+**"Viewer component first"**: build the page-render + rectangle-overlay viewer
+consuming Locator JSON, fully testable standalone with fixture locators, no
+data-store commitment yet — both stores can feed it later.
 
-- **`pymupdf==1.28.2` installs cleanly on the sandbox's Python 3.10.12** via
-  `pip install --break-system-packages`, despite the engine package itself
-  demanding ≥3.12. That version is the one all measurements below used.
-- **The nine suite skips were exactly the PyMuPDF duck-typing verification
-  tests, and all pass against the real library.** Suite fingerprints, both now
-  measured: without PyMuPDF, `Ran 2993 tests, FAILED (errors=1, skipped=9)`;
-  with it, `Ran 2993 tests, FAILED (errors=1), skipped=0`. The one error is the
-  long-standing `jose` ModuleNotFoundError via `services/auth_service.py:10` in
-  both. The four geometry test files are 167/167 with zero skips.
-- **The exact engine seam was exercised on a real document**:
-  `read_tables(page, page_number)` → `chunks_of(tables)` → `geometry_summary` →
-  per-table `to_json()`, against
-  `ingestion/data/60b9367c-ec0a-4619-b3ba-eb18ddb91bfb/bank_statements_first_metropolitan.pdf`
-  (3 pages, fictional bank statement, Date/Description/Reference/Debit/Credit/
-  Balance tables). Result: 5 tables, `geometry_summary` =
-  `{"tables": 5, "located_values": 224, "unlocated_values": 101, "by_source":
-  {"cell_rectangles": 3, "table_rectangle_only": 2, "unavailable": 0},
-  "by_table_source": {"drawn_geometry": 3, "text_alignment": 2}}`. Both the
-  drawn-geometry pass and the text-alignment recovery pass fired on one real
-  document, exactly as designed. `per_table` JSON for those 3 pages: 63,324
-  bytes, confirming the transience warning's arithmetic. Table JSON keys:
-  `degraded_reason`, `geometry_source`, `table`, `table_source`; a real
-  `degraded_reason` observed: "cells (0, 0) and (0, 1) share page area; a click
-  in the overlap would resolve to either value".
+### The unit that landed (`d79199a`)
 
-### Two defects found by the verification, recorded not fixed
+Four files under `frontend_v2/src/features/financial/`:
 
-Both are additions to the defect list at the bottom; detail here because a fresh
-session would otherwise re-diagnose them.
+- `lib/locator.ts` — TS mirror of `Locator.from_json`
+  (`backend/services/financial/locators.py`), refusal for refusal: unknown
+  keys, unknown kinds, rectangle keys on non-rectangle kinds, units other than
+  `millipoints`, spaces other than `pdf_displayed`, malformed or impossible
+  rectangles, the per-kind coherence rules (`page_only` requires a page,
+  `not_positional` refuses one, `unlocated` permits either). Nothing throws:
+  `readLocator(payload: unknown)` returns
+  `{ok:true, locator} | {ok:false, reason}` with reasons written to be shown
+  to an investigator as-is. `normalised(rectangle)` returns fractions of the
+  page, matching the backend method, and like the backend never stores them.
+- `components/SourceHighlight.tsx` — renders the four kinds honestly plus the
+  parse failure, each under its own `data-testid` (`locator-unreadable`,
+  `locator-not-positional`, `locator-unlocated`, `locator-page-only`,
+  `locator-no-page-image`, `locator-highlight` with
+  `locator-highlight-box`). The box is positioned with percentage
+  `left/top/width/height` from `normalised()`. **The page image is a prop, not
+  a fetch**, because no page-render endpoint exists yet; when one lands the
+  caller supplies its URL and the component does not change. The image must be
+  the full page — a cropped render would misplace the box.
+- `lib/locator.test.ts` (20 tests) and `components/SourceHighlight.test.tsx`
+  (11 tests). Test fractions were chosen to be exact in binary
+  (quarters/halves of 612000×792000) so percentage assertions are equalities.
 
-- **The engine docstring's byte-identity claim is false on real data.**
-  `_extract_native_tables` claims `result.tables` "must come out of here
-  byte-identical to what it was before geometry existed". On the verification
-  document, pages 2–3 differ from the unaided path: the drawn pass yielded
-  `table_rectangle_only` (a box but no cells), so `read_tables`' recovery pass
-  ran, resolved cells, and **replaced** the drawn reading — the backend's own
-  documented, measured design (`_resolved_cells` gates on cells resolved, not
-  text produced). The behaviour is intended; the engine-side doc overstates the
-  contract. Fix is a doc correction on the engine side, not a code change.
-- **Recovered-chunk rendering has two text-level flaws** (geometry unaffected;
-  every value is still individually located). In the text-alignment chunk on
-  page 3: (a) empty cells collapse in the `" | "` join, so
-  `"$168,083.48 |  | $552,873.52"` renders as
-  `"$168,083.48 | $552,873.52"`, losing the Debit/Credit column distinction in
-  text form and making row column counts disagree with the header; (b)
-  non-tabular footer prose ("IMPORTANT NOTICES…", bank footer lines) is swept
-  into the table chunk. Affects what embedding/readers see of recovered tables.
+Verification: unit suite 52 files / 277 tests all passing, `tsc -b` 0,
+`eslint` 0.
+
+### Correction to the previous revision of this file
+
+The item-12 entry (two revisions running) named a backend method
+`SourceRectangle.as_fractions`. **No such method exists.** The real method is
+`SourceRectangle.normalised()` (`locators.py:170`); confirmed by grep, and the
+TS mirror uses the same name.
+
+### Remaining item-12 chunks, in no ruled order
+
+- A page-render endpoint (the image the viewer needs; nothing serves a page
+  image today — `PdfPreview` streams the whole file into an iframe).
+- The data path: either expose the Postgres ledger read-side, or join to the
+  `per_table` locators already in Neo4j, or both. Also unresolved: nothing in
+  production writes the ledger yet (`ingest_native_reading` uncalled).
+- Wiring `SourceHighlight` into `TransactionDetailPanel` once data and image
+  exist.
 
 ---
 
@@ -154,23 +140,49 @@ session would otherwise re-diagnose them.
   exported from the package); a caller-supplied `provenance["locator"]` is
   refused at the draft. The key is the same one `table_geometry` writes cell
   locators under, deliberately, so one reader can open a row's place in its
-  source whatever produced the row. Item 12's reader should consume this key.
-- **`Locator(kind=page_rectangle, rectangle=...)` needs no separate
-  `page_number`**: the page comes from the rectangle, and an explicit
-  `page_number` is checked for agreement if given (`locators.py`,
-  `__post_init__`).
+  source whatever produced the row. Item 12's reader consumes this key;
+  `frontend_v2/.../lib/locator.ts` is now that reader's parsing half.
+- **Locator JSON shape, as `to_json` writes it**: `{"kind": ...}` plus `page`
+  when known (omitted, not null), and for `page_rectangle` only `rect`
+  `[x0,y0,x1,y1]`, `page_size` `[w,h]`, `units: "millipoints"`,
+  `space: "pdf_displayed"`. US Letter is 612,000 × 792,000 millipoints.
+- **Engine wiring (verified end to end, 1 September).**
+  `evidence-engine/app/pipeline/pdf_extraction.py` wires
+  `services.financial.pdf_tables.read_tables` into the case-evidence path via
+  `_load_table_reader()` (sys.path insertion, cached, failure surfaced as
+  `available: False`). Verified on
+  `ingestion/data/60b9367c-.../bank_statements_first_metropolitan.pdf`:
+  5 tables, `geometry_summary` `{"tables": 5, "located_values": 224,
+  "unlocated_values": 101, "by_source": {"cell_rectangles": 3,
+  "table_rectangle_only": 2, "unavailable": 0}, "by_table_source":
+  {"drawn_geometry": 3, "text_alignment": 2}}`; `per_table` JSON 63,324 bytes
+  for 3 pages, so the transience warning's arithmetic is right and the
+  registry's wholesale metadata persistence keeps it live. Triage
+  (`services/triage_processors/text_extractor.py`, flat pypdf) is **out of the
+  build by Neil's ruling** ("triage not part of build. engine path then
+  flag"); triage artifacts are preview-only and never carried into cases.
 - **Test environment rebuild.** The sandbox starts with no backend deps. Full
   `pip install -r requirements.txt` fails because `numpy==2.3.5` needs Python
   ≥3.11 and the sandbox is 3.10.12. The financial suite runs on a selective
   pinned install (`--break-system-packages`): SQLAlchemy 2.0.46, pydantic 2.12.5,
   pydantic_core 2.41.5, fastapi 0.123.9, httpx 0.28.1, neo4j 5.28.2,
   python-dotenv 1.2.1, requests 2.32.5, psycopg[binary] 3.2.13, openai 2.9.0,
-  and now optionally pymupdf 1.28.2 (see fingerprints above for the effect).
-  **Do not install python-jose**: leaving it out is what reproduces the
-  documented baseline fingerprint (errors=1 on `jose`).
+  and optionally pymupdf 1.28.2. Suite fingerprints, both measured: without
+  PyMuPDF `Ran 2993 tests, FAILED (errors=1, skipped=9)`; with it
+  `Ran 2993 tests, FAILED (errors=1)`, skipped=0. The one error is the
+  long-standing `jose` ModuleNotFoundError. **Do not install python-jose**:
+  leaving it out is what reproduces the documented fingerprint.
+- **Frontend verification trio**: from `frontend_v2/`, `npx vitest run`,
+  `npx tsc -b`, `npx eslint .`. The vitest config has a separate **browser
+  project** matching `src/**/*.browser.test.*` which **cannot run in the
+  sandbox** (Playwright browsers are not downloaded; it errors at close with
+  "Executable doesn't exist"). The unit-project counts are the baseline; the
+  browser error is environmental and pre-existing. Eslint here does **not**
+  exempt underscore-prefixed unused destructures; use `delete record["key"]`
+  on a copy instead of `const { units: _units, ...rest }`.
 - Stale `/tmp/loupe*.index` files from earlier sessions cannot be removed;
   the commit procedure works fine with a fresh name per session
-  (`/tmp/loupe_wiring_verify.index` this time). Pick a fresh index filename if
+  (`/tmp/loupe_item12_viewer.index` this time). Pick a fresh index filename if
   `rm` refuses.
 - **The exports guard needs no edit for a new name from an existing module.**
   It is structural (AST over `__init__.py`); it passed unchanged when
@@ -205,7 +217,7 @@ commit `3784dbe`.
     caller-supplied `provenance["locator"]` refused, `native_ingest` passing
     the object, five new tests. Design ruling and reasoning recorded above.
 
-10a. **Done (this session, no code).** Wiring investigation closed by Neil's
+10a. **Done (1 September, no code).** Wiring investigation closed by Neil's
     ruling: the evidence-engine path is the production consumer of
     `pdf_tables.read_tables` and is verified end to end; the triage extractor is
     out of the build. Two defects recorded (engine docstring, recovered-chunk
@@ -215,13 +227,11 @@ commit `3784dbe`.
     stays immutable beside it, and the ledger records who, when and why.
     **Blocked on an open question, below.**
 
-12. **Next candidate** (unless Neil rules on the correction question first, or
-    redirects). UI: transaction review with click-through to the highlighted
-    region of the source page. This is where `suspect_amounts` and the row
-    locators gain their first consumer; until then both are built-but-unwired
-    capability. The reader opens `provenance[LOCATOR_PROVENANCE_KEY]` via
-    `Locator.from_json`, and `SourceRectangle.as_fractions` exists for rendering
-    at any zoom.
+12. **In progress — first unit landed (`d79199a`).** UI: transaction review
+    with click-through to the highlighted region of the source page. The
+    survey, Neil's "viewer component first" ruling, the landed unit and the
+    remaining chunks are in the session section above. This is where
+    `suspect_amounts` and the row locators gain their first consumer.
 
 13. User-defined view tabs. Named snapshots of filter state, persisted, creatable,
     renameable, deletable. Also expose source document type onto the transaction row.
@@ -265,12 +275,17 @@ closes moves the class. That keeps the rule that class is never user-settable an
 makes a correction a re-ingestion of one row rather than an override. **Neil's call
 is wanted before any correction storage is written.**
 
-**Capability with no route to the user — narrowed this session.** The document
-reader is off this list: the evidence-engine is its production consumer, verified
-end to end. What remains without a route: `exhibit.py` (984 lines, no API route,
-no screen), `tracing.py` (no caller outside its own package), and
-`suspect_amounts.py` plus the row locators (committed, tested, no consumer until
-item 12). Item 12 would consume two of these at once.
+**Capability with no route to the user — narrowed again this session.** What
+remains without a route: `exhibit.py` (984 lines, no API route, no screen),
+`tracing.py` (no caller outside its own package), and `suspect_amounts.py` plus
+the row locators (committed, tested; the viewer that will consume the locators
+now exists but is not yet wired to data). Item 12's remaining chunks close the
+locator half.
+
+**Which store feeds the viewer.** Deliberately left open by the "viewer
+component first" ruling: Postgres ledger read API, a Neo4j `per_table` join, or
+both. Also whether wiring `native_ingest` into production comes before or after
+the read side. Neil has not ruled.
 
 **Provenance of `exhibit.py`.** It came from a build order proposed by Claude, not
 from a stated Owl requirement. It is 984 lines justified from the rules of evidence
@@ -287,7 +302,7 @@ but worth remembering how it got written.
   tracing and exhibit have not been exercised against the real corpus end to end.
 - **The item-1 geometry and text-row machinery IS reached in production**, at the
   evidence-engine layer (`evidence-engine/app/pipeline/pdf_extraction.py`), and
-  was verified end to end on a real document this session. The earlier revision
+  was verified end to end on a real document on 1 September. The earlier revision
   of this flag said the opposite and was wrong. What remains flat is the triage
   preview extractor (`services/triage_processors/text_extractor.py`, `pypdf`),
   which **Neil ruled out of the build on 1 September** — triage artifacts are
@@ -322,12 +337,12 @@ Small, real, none blocking:
 - `scripts/categorize_transactions.py:443` hardcodes `national telegraph`.
 - `ProcessConfirmDialog.tsx` contains dead code.
 - `frontend_v2/node_modules/.__dom_probe_leftover` left behind.
-- **New (1 Sept, wiring verification):** the engine docstring in
+- **(1 Sept, wiring verification):** the engine docstring in
   `evidence-engine/app/pipeline/pdf_extraction.py` claims table text is
   byte-identical to the pre-geometry path; false whenever the recovery pass
   replaces a `table_rectangle_only` reading, which is intended backend
   behaviour. Doc fix on the engine side.
-- **New (1 Sept, wiring verification):** recovered text-alignment chunks
+- **(1 Sept, wiring verification):** recovered text-alignment chunks
   collapse empty cells in the `" | "` join (losing Debit/Credit distinction in
   text form) and sweep non-tabular footer prose into the table chunk. Geometry
-  unaffected; detail in the session section above.
+  unaffected; a full diagnosis is in the `72d1b1a` revision of this file.
