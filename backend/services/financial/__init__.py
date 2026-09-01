@@ -771,6 +771,11 @@ from services.financial.tracing import (
     compare_doctrines,
     trace,
 )
+from services.financial.transaction_locators import (
+    TRANSACTION_MATCH_MINIMUM_CELLS,
+    attach_transaction_locators,
+    locate_transaction,
+)
 from services.financial.version import (
     PIPELINE_VERSION,
     code_fingerprint_detail,
@@ -1504,6 +1509,14 @@ __all__ = [
     "TracingError",
     "compare_doctrines",
     "trace",
+    # Joining a graph transaction back to the rectangle it was read from.
+    # The join is textual because no key from a transaction to a cell was
+    # ever stored, and it refuses ties for the same reason `locate_table`
+    # refuses overlapping cells: a guess wearing the interface's authority
+    # is worse than an honest page_only.
+    "TRANSACTION_MATCH_MINIMUM_CELLS",
+    "attach_transaction_locators",
+    "locate_transaction",
     # Cross-class correlation: what people said about money, against what the
     # records show.  Correlation never promotes -- a corroborated P4 claim is
     # still P4 -- so nothing here assigns a proof class, and the constructors

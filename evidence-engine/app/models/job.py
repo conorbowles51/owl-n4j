@@ -95,6 +95,31 @@ class EvidenceDocumentText(Base):
     )
 
 
+class EvidenceTableGeometry(Base):
+    """Engine-side mirror of the backend's ``evidence_table_geometry`` table.
+
+    One row per (evidence file, page); ``payload`` holds the geometry-bearing
+    ``per_table`` entries whose table rectangle landed on that page.  The
+    backend's alembic tree owns the schema; this mirror only writes to it.
+    """
+
+    __tablename__ = "evidence_table_geometry"
+
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("evidence_files.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    page_number: Mapped[int] = mapped_column(primary_key=True)
+    engine_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    payload: Mapped[list] = mapped_column(JSONB, server_default="[]", nullable=False)
+    extracted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class EvidenceClaim(Base):
     __tablename__ = "evidence_claims"
 

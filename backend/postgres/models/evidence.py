@@ -228,6 +228,40 @@ class EvidenceDocumentText(Base):
     evidence_file = relationship("EvidenceFile", back_populates="document_text")
 
 
+class EvidenceTableGeometry(Base):
+    """One page's worth of extracted table geometry for one evidence file.
+
+    ``payload`` is the list of geometry-bearing ``per_table`` entries (see
+    ``services/financial/pdf_tables.py`` ``ExtractedTable.to_json``) whose
+    table rectangle landed on this page.  Bounded per page deliberately: the
+    read path always knows which page it is asking about, and a year of a
+    busy account never becomes one unbounded JSONB value.
+    """
+
+    __tablename__ = "evidence_table_geometry"
+    __table_args__ = (
+        CheckConstraint("page_number >= 1", name="ck_evidence_table_geometry_page"),
+    )
+
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evidence_files.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    page_number: Mapped[int] = mapped_column(Integer, primary_key=True)
+    engine_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    payload: Mapped[list] = mapped_column(
+        _jsonb_column(),
+        server_default="[]",
+        nullable=False,
+    )
+    extracted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class EvidenceClaim(Base):
     __tablename__ = "evidence_claims"
 

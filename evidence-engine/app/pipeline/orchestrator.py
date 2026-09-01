@@ -32,6 +32,7 @@ from app.pipeline.write_graph import write_graph
 from app.services.cost_tracking import ingestion_cost_context
 from app.services.ai_model_policy import get_ai_runtime_snapshot, load_ai_model_policy
 from app.services.evidence_document_text import upsert_evidence_document_text
+from app.services.evidence_table_geometry import replace_evidence_table_geometry
 from app.services.redis_client import publish_progress
 from app.services.pipeline_run_state import (
     add_verification_quality,
@@ -160,6 +161,32 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
                     engine_job_id=job.id,
                     doc=doc,
                 )
+                # Geometry is auxiliary to the job: a failure here costs the
+                # click-through highlight, not the text or the transactions,
+                # so it is logged rather than allowed to fail the ingestion.
+                try:
+                    geometry = await replace_evidence_table_geometry(
+                        db,
+                        evidence_file_id=job.source_evidence_file_id,
+                        engine_job_id=job.id,
+                        metadata=doc.metadata,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Table geometry persistence failed for job %s", job.id
+                    )
+                    # The session is shared with the rest of the pipeline; a
+                    # half-done geometry transaction must not poison the next
+                    # commit.  The document text above already committed, so
+                    # nothing else is lost by rolling back.
+                    await db.rollback()
+                else:
+                    if geometry.entries_invalid:
+                        logger.warning(
+                            "Table geometry for job %s: %d malformed entries not stored",
+                            job.id,
+                            geometry.entries_invalid,
+                        )
             job.transcription = get_transcription(doc)
             job.transcription_segments = get_transcription_segments(doc)
             await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.15, db, "Text extracted")

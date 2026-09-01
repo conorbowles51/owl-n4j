@@ -15,9 +15,14 @@ from postgres.models.user import User
 from postgres.session import get_db
 from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
+from services.financial import attach_transaction_locators
 from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _financial_case_permission(request, payload: dict) -> tuple[str, str] | None:
@@ -226,6 +231,7 @@ async def get_financial_transactions(
     start_date: Optional[str] = Query(None, description="Filter on or after this date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter on or before this date (YYYY-MM-DD)"),
     categories: Optional[str] = Query(None, description="Comma-separated financial categories to include"),
+    db: Session = Depends(get_db),
 ):
     """
     Get financial transactions with from/to entity resolution for a specific case.
@@ -242,6 +248,18 @@ async def get_financial_transactions(
             end_date=end_date,
             categories=parsed_categories,
         )
+        rows = (
+            transactions.get("transactions")
+            if isinstance(transactions, dict)
+            else transactions
+        )
+        if isinstance(rows, list):
+            # A locator is auxiliary to the row it decorates: a failure here
+            # costs the click-through highlight, never the transaction list.
+            try:
+                attach_transaction_locators(db, rows)
+            except Exception:
+                logger.exception("Attaching transaction locators failed for case %s", case_id)
         return transactions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
