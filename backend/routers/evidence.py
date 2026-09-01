@@ -34,6 +34,7 @@ from services.cypher_generator import generate_cypher_from_graph
 from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_text_search_service import search_case_text, search_document_text
 from services import evidence_engine_client
+from services.financial import PageRenderError, render_page_png
 from .auth import get_current_user
 from routers.case_access import (
     authorize_case,
@@ -41,7 +42,7 @@ from routers.case_access import (
     request_json_payload,
 )
 from routers.users import get_current_db_user
-from fastapi import Query, status
+from fastapi import Path as PathParam, Query, status
 from postgres.session import get_db
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.user import User
@@ -2209,6 +2210,82 @@ async def get_evidence_file(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _load_pymupdf():
+    """The PDF rendering library, or None where it is not installed.
+
+    PyMuPDF is not in requirements.txt, so its absence is an expected
+    deployment state, not an error: the page-image endpoint answers 503 and
+    everything else on this router keeps working.  ``pymupdf`` is the
+    current import name; ``fitz`` is the same library's older name, kept as
+    a fallback for environments that predate the rename.
+    """
+    try:
+        import pymupdf
+        return pymupdf
+    except Exception:
+        try:
+            import fitz
+            return fitz
+        except Exception:
+            return None
+
+
+@router.get("/{evidence_id}/page/{page_number}/image")
+def get_evidence_page_image(
+    evidence_id: str,
+    page_number: int = PathParam(ge=1),
+    width: int = Query(1200, ge=100, le=3000),
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Render one page of a PDF evidence file as a PNG.
+
+    This is the image a stored source rectangle refers to: the page as
+    displayed, with any page rotation already applied by the library, so a
+    viewer drawing a locator's rectangle as fractions of this image places
+    it where the value was actually read.  The caller chooses only the
+    width; height follows from the page's own aspect ratio.
+
+    Deliberately synchronous: rendering is CPU-bound, and a sync route runs
+    in FastAPI's threadpool instead of blocking the event loop.
+    """
+    # Look up by UUID or legacy ID, as get_evidence_file does.
+    record = _evidence_record_for_id(db, evidence_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    file_path = _resolve_stored_path(record.stored_path)
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    if file_path.suffix.lower() != ".pdf":
+        raise HTTPException(status_code=400, detail="File is not a PDF")
+
+    pdf_library = _load_pymupdf()
+    if pdf_library is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Page rendering is unavailable: PyMuPDF is not installed on this server",
+        )
+
+    try:
+        document = pdf_library.open(file_path)
+    except Exception:
+        raise HTTPException(status_code=422, detail="The file could not be opened as a PDF")
+
+    try:
+        png = render_page_png(document, page_number=page_number, width=width)
+    except PageRenderError as error:
+        # The service's messages are written to be shown to the person who
+        # asked, unedited; a page that does not exist is a 404 like any
+        # other missing resource.
+        raise HTTPException(status_code=404, detail=str(error))
+    finally:
+        document.close()
+
+    return Response(content=png, media_type="image/png")
 
 
 FRAMES_CACHE_DIR = BASE_DIR / "data" / "video_frames"

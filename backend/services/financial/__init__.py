@@ -500,6 +500,10 @@ from services.financial.native_subjects import (
     SubjectError,
     describe_subjects,
 )
+from services.financial.page_render import (
+    PageRenderError,
+    render_page_png,
+)
 from services.financial.periods import (
     BalanceCoherenceError,
     BalanceObservation,
@@ -1285,6 +1289,9 @@ __all__ = [
     "NativeIngestion",
     "UnattributableRowError",
     "ingest_native_reading",
+    # Rendering an evidence page as the image a stored rectangle refers to
+    "PageRenderError",
+    "render_page_png",
     # Statement periods and the provenance of their four values
     "BalanceCoherenceError",
     "BalanceObservation",
