@@ -24,8 +24,11 @@ except Exception:  # pragma: no cover
 
 from postgres.models.enums import LocatorKind
 from services.financial.pdf_tables import (
+    TABLE_COORDINATE_SPACE,
+    TEXT_COORDINATE_SPACE,
     ExtractedTable,
     GeometrySource,
+    TableSource,
     chunks_of,
     geometry_summary,
     read_tables,
@@ -114,6 +117,42 @@ class StubPage:
 
     def find_tables(self):
         return StubTables(self._tables)
+
+
+# Two lines of two columns each, positioned so that the words inside a column
+# sit 2pt apart and the gutter between columns is 100pt.  The reader's split
+# threshold is a multiple of the *median* gap on the page, so a stub whose cells
+# are single words would report one enormous median and never split at all --
+# which is a property of the real pages too, and the reason the words here come
+# in pairs rather than singly.
+WORDS = [
+    (100.0, 100.0, 125.0, 108.0, "Trans", 0, 0, 0),
+    (127.0, 100.0, 150.0, 108.0, "Date", 0, 0, 1),
+    (250.0, 100.0, 300.0, 108.0, "Merchant", 0, 0, 2),
+    (302.0, 100.0, 330.0, 108.0, "Name", 0, 0, 3),
+    (100.0, 140.0, 112.0, 148.0, "01", 0, 1, 0),
+    (114.0, 140.0, 140.0, 148.0, "Feb", 0, 1, 1),
+    (250.0, 140.0, 300.0, 148.0, "COFFEE", 0, 1, 2),
+    (302.0, 140.0, 340.0, 148.0, "SHOP", 0, 1, 3),
+]
+
+
+class RecoverablePage(StubPage):
+    """A page whose rows are legible only from where its words sit.
+
+    This is the shape both real statements take: text everywhere, ruled cells
+    nowhere.  Every other stub in this file omits ``get_text`` entirely, which
+    is itself deliberate -- a reader that does not offer positioned words at
+    all must cost the recovery pass and nothing else.
+    """
+
+    def __init__(self, tables, words=WORDS, **kwargs):
+        super().__init__(tables, **kwargs)
+        self._words = words
+
+    def get_text(self, kind):
+        assert kind == "words", f"unexpected get_text({kind!r})"
+        return self._words
 
 
 def only(page, page_number=1):
@@ -431,24 +470,175 @@ class PageFailureTests(unittest.TestCase):
             read_tables(StubPage([NoExtract(GRID, RECTS)]), 1)
 
 
+class RecoveryTests(unittest.TestCase):
+    """A detector finding nothing is not evidence that there is nothing there.
+
+    This is the whole of the tier, stated as tests.  The drawn reading is the
+    document's own statement about which figures belong together and always
+    wins; the recovered reading only ever fills a gap the drawn one left.
+    """
+
+    def test_a_page_with_no_drawn_tables_is_read_by_word_position(self):
+        table = only(RecoverablePage([]))
+        self.assertEqual(table.table_source, TableSource.text_alignment)
+        self.assertIn("Trans Date | Merchant Name", table.chunk)
+        self.assertIn("01 Feb | COFFEE SHOP", table.chunk)
+
+    def test_a_drawn_table_that_resolved_its_cells_is_never_replaced(self):
+        # The stub offers both readings.  Preferring the recovered one would
+        # substitute an inference for a fact the page states outright.  Note
+        # the qualifier in the name: precedence is earned by resolving cells,
+        # not by the drawn pass having returned an object.
+        table = only(RecoverablePage([StubTable(GRID, RECTS)]))
+        self.assertEqual(table.table_source, TableSource.drawn_geometry)
+        self.assertIn("Alice | 25000", table.chunk)
+
+    def test_a_drawn_table_with_no_text_falls_through_to_recovery(self):
+        # A table object that yields no rows at all.  "Found a table" is not
+        # the same question as "found any rows", and only the second matters.
+        table = only(RecoverablePage([StubTable([[""], [None]], RECTS)]))
+        self.assertEqual(table.table_source, TableSource.text_alignment)
+
+    def test_a_drawn_table_that_resolves_no_cells_falls_through(self):
+        # The rule this file got wrong first time.  A table rectangle with no
+        # cells inside it is a box the reader found and could not read; it
+        # makes no claim about which figures belong together, so there is
+        # nothing there for the drawn reading's precedence to protect.
+        # Measured on 34 pages of a real card-statement set: preferring it
+        # yielded 718 rows no analyst could click through to, against 1,719
+        # that every analyst can.
+        table = only(RecoverablePage([StubTable(GRID)]))
+        self.assertEqual(table.table_source, TableSource.text_alignment)
+        self.assertEqual(table.geometry_source, GeometrySource.cell_rectangles)
+
+    def test_the_drawn_text_is_replaced_rather_than_joined(self):
+        # Two readings of the same page in one list is every figure counted
+        # twice, in a subsystem whose output is summed.
+        tables = read_tables(RecoverablePage([StubTable(GRID)]), 1)
+        self.assertEqual(len(tables), 1)
+        self.assertNotIn("Alice | 25000", tables[0].chunk)
+
+    def test_the_drawn_reading_is_kept_when_neither_can_be_located(self):
+        # With no page extent, no rectangle can be stored either way.  With
+        # nothing to choose between the two readings, the document's own wins.
+        class NoExtent(RecoverablePage):
+            @property
+            def rect(self):
+                raise RuntimeError("no rect")
+
+            @rect.setter
+            def rect(self, value):
+                pass
+
+        table = only(NoExtent([StubTable(GRID, RECTS)]))
+        self.assertEqual(table.table_source, TableSource.drawn_geometry)
+        self.assertEqual(table.geometry_source, GeometrySource.unavailable)
+        self.assertIn("Alice | 25000", table.chunk)
+
+    def test_recovery_keeps_a_rectangle_for_every_value(self):
+        table = only(RecoverablePage([]))
+        self.assertEqual(table.geometry_source, GeometrySource.cell_rectangles)
+        self.assertEqual(table.geometry.located_values, 4)
+        self.assertEqual(table.geometry.unlocated_values, 0)
+
+    def test_a_page_offering_no_words_costs_only_the_recovery(self):
+        # Every other stub in this file is such a page: no get_text at all.
+        self.assertEqual(read_tables(StubPage([]), 1), ())
+
+    def test_a_reader_that_raises_on_words_costs_only_the_recovery(self):
+        class Hostile(RecoverablePage):
+            def get_text(self, kind):
+                raise RuntimeError("no words")
+
+        # A fallback that turns a page the pipeline merely found empty into a
+        # page the pipeline fails on would be worse than the bug it fixes.
+        self.assertEqual(read_tables(Hostile([]), 1), ())
+
+    def test_a_find_tables_failure_is_survivable_when_rows_are_recovered(self):
+        class NoTables(RecoverablePage):
+            def find_tables(self):
+                raise RuntimeError("no tables")
+
+        table = only(NoTables([]))
+        self.assertEqual(table.table_source, TableSource.text_alignment)
+
+    def test_a_find_tables_failure_still_raises_when_nothing_is_recovered(self):
+        class NoTables(RecoverablePage):
+            def find_tables(self):
+                raise RuntimeError("no tables")
+
+        with self.assertRaises(RuntimeError):
+            read_tables(NoTables([], words=[]), 1)
+
+    def test_a_single_line_is_not_a_table(self):
+        # Otherwise every page of running prose acquires a spurious one.
+        self.assertEqual(read_tables(RecoverablePage([], words=WORDS[:4]), 1), ())
+
+    def test_recovered_rectangles_are_read_as_unrotated(self):
+        # The test that could not have been written from the two real
+        # documents: every page of both is at rotation 0, where the displayed
+        # and unrotated spaces coincide exactly.  get_text("words") reports
+        # unrotated coordinates and find_tables() reports displayed ones, so a
+        # single shared constant would have passed every measurement taken so
+        # far and then put the highlight in the wrong quarter of the page.
+        self.assertNotEqual(TEXT_COORDINATE_SPACE, TABLE_COORDINATE_SPACE)
+        table = only(RecoverablePage([], rotation=180))
+        rectangle = table.geometry.cells[0].locator.rectangle
+        # The first cell is "Trans Date" at (100, 100, 150, 108) unrotated;
+        # turned half way round on a 612x792 page that is (462, 684, 512, 692).
+        self.assertEqual(
+            (rectangle.x0, rectangle.y0, rectangle.x1, rectangle.y1),
+            (462000, 684000, 512000, 692000),
+        )
+
+    def test_the_summary_counts_how_each_table_was_found(self):
+        tables = read_tables(RecoverablePage([]), 1) + read_tables(
+            StubPage([StubTable(GRID, RECTS)]), 2
+        )
+        summary = geometry_summary(tables)
+        self.assertEqual(
+            summary["by_table_source"],
+            {"drawn_geometry": 1, "text_alignment": 1},
+        )
+
+    def test_every_table_source_appears_even_at_zero(self):
+        summary = geometry_summary(read_tables(StubPage([StubTable(GRID, RECTS)]), 1))
+        self.assertEqual(
+            set(summary["by_table_source"]), {s.value for s in TableSource}
+        )
+
+
 class SerialisationTests(unittest.TestCase):
     def test_full_geometry_serialises_with_a_fixed_key_order(self):
         table = only(StubPage([StubTable(GRID, RECTS)]))
         payload = table.to_json()
-        self.assertEqual(list(payload), ["geometry_source", "table"])
+        self.assertEqual(
+            list(payload), ["table_source", "geometry_source", "table"]
+        )
+        self.assertEqual(payload["table_source"], "drawn_geometry")
         self.assertEqual(payload["geometry_source"], "cell_rectangles")
         self.assertEqual(payload["table"]["page"], 1)
 
     def test_a_degraded_table_records_why(self):
         payload = only(StubPage([StubTable(GRID)])).to_json()
         self.assertEqual(
-            list(payload), ["geometry_source", "table", "degraded_reason"]
+            list(payload),
+            ["table_source", "geometry_source", "table", "degraded_reason"],
         )
         self.assertEqual(payload["geometry_source"], "table_rectangle_only")
 
     def test_an_unavailable_table_carries_no_geometry_key(self):
         payload = only(StubPage([StubTable(GRID, RECTS, bbox=None)])).to_json()
-        self.assertEqual(list(payload), ["geometry_source", "degraded_reason"])
+        self.assertEqual(
+            list(payload), ["table_source", "geometry_source", "degraded_reason"]
+        )
+
+    def test_a_recovered_table_says_so_in_its_payload(self):
+        # The whole reason table_source exists: a reader of a finished report
+        # must be able to tell a row the document ruled from a row this code
+        # inferred out of spacing, and the payload is where that survives.
+        payload = only(RecoverablePage([])).to_json()
+        self.assertEqual(payload["table_source"], "text_alignment")
 
     def test_the_chunk_is_not_duplicated_into_the_payload(self):
         # It travels in the pipeline's own tables list.  A second copy could

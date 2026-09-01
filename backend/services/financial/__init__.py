@@ -514,8 +514,10 @@ from services.financial.periods import (
 )
 from services.financial.pdf_tables import (
     TABLE_COORDINATE_SPACE,
+    TEXT_COORDINATE_SPACE,
     ExtractedTable,
     GeometrySource,
+    TableSource,
     chunks_of,
     geometry_summary,
     read_tables,
@@ -725,6 +727,10 @@ from services.financial.table_geometry import (
     TableGeometryError,
     cell_value,
     locate_table,
+)
+from services.financial.text_rows import (
+    TextRowTable,
+    read_text_rows,
 )
 from services.financial.tracing import (
     DOCTRINE_AUTHORITY,
@@ -1279,11 +1285,16 @@ __all__ = [
     "record_statement_period",
     # Reading a page's tables once, so text and geometry cannot disagree
     "TABLE_COORDINATE_SPACE",
+    "TEXT_COORDINATE_SPACE",
     "ExtractedTable",
     "GeometrySource",
+    "TableSource",
     "chunks_of",
     "geometry_summary",
     "read_tables",
+    # Rows recovered from where the words sit, when nothing was ruled
+    "TextRowTable",
+    "read_text_rows",
     # The proof class a source earns, and what each class licenses
     "AUTO_ADMITTED_CLASSES",
     "DEFAULT_TOTAL_CLASSES",
