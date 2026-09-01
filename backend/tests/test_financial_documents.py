@@ -56,7 +56,7 @@ from postgres.models.enums import (
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.financial import (
     FinancialAccount,
-    FinancialAdjudication,
+    AdjudicationEvent,
     FinancialIngestionRun,
     FinancialSourceDocument,
     FinancialStatementPeriod,
@@ -92,7 +92,7 @@ TABLES = [
     FinancialAccount.__table__,
     FinancialStatementPeriod.__table__,
     FinancialTransaction.__table__,
-    FinancialAdjudication.__table__,
+    AdjudicationEvent.__table__,
 ]
 
 GBP = "GBP"
@@ -629,8 +629,8 @@ class ReclassifyTests(DocumentPersistenceTestCase):
     def adjudications(self):
         return list(
             self.db.scalars(
-                select(FinancialAdjudication).order_by(
-                    FinancialAdjudication.subject_sequence
+                select(AdjudicationEvent).order_by(
+                    AdjudicationEvent.subject_sequence
                 )
             ).all()
         )

@@ -48,7 +48,7 @@ from postgres.models.enums import (
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.financial import (
     FinancialAccount,
-    FinancialAdjudication,
+    AdjudicationEvent,
     FinancialIngestionRun,
     FinancialSourceDocument,
     FinancialStatementPeriod,
@@ -63,7 +63,7 @@ FINANCIAL_MODELS = [
     FinancialAccount,
     FinancialStatementPeriod,
     FinancialTransaction,
-    FinancialAdjudication,
+    AdjudicationEvent,
 ]
 
 # Creation order.  The financial tables depend on cases, users and evidence
@@ -98,8 +98,8 @@ VOCABULARY_CONSTRAINTS = {
     "ck_financial_transactions_ledger_status": LedgerStatus,
     "ck_financial_transactions_quarantine_reason": QuarantineReason,
     "ck_financial_transactions_ordering_date_source": DateSource,
-    "ck_financial_adjudications_subject_type": AdjudicationSubject,
-    "ck_financial_adjudications_decision": AdjudicationDecision,
+    "ck_adjudications_subject_type": AdjudicationSubject,
+    "ck_adjudications_decision": AdjudicationDecision,
 }
 
 _IN_LIST = re.compile(r"\bIN\s*\(([^)]*)\)", re.IGNORECASE)
@@ -229,7 +229,7 @@ class FinancialLedgerStructureTests(unittest.TestCase):
 
     def test_adjudications_carry_no_updated_at(self):
         """The table records decisions, so it must not invite editing them."""
-        columns = set(FinancialAdjudication.__table__.columns.keys())
+        columns = set(AdjudicationEvent.__table__.columns.keys())
         self.assertIn("created_at", columns)
         self.assertNotIn("updated_at", columns)
 
@@ -241,7 +241,7 @@ class FinancialLedgerStructureTests(unittest.TestCase):
         choice and is asserted rather than left to be re-added by someone
         tidying up.
         """
-        subject_id = FinancialAdjudication.__table__.columns["subject_id"]
+        subject_id = AdjudicationEvent.__table__.columns["subject_id"]
         self.assertEqual(len(subject_id.foreign_keys), 0)
 
     def test_all_models_are_exported_from_the_package(self):
@@ -419,7 +419,7 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
         a real one.  Any test writing a second decision about the *same*
         subject has to say which position it takes.
         """
-        adjudication = FinancialAdjudication(
+        adjudication = AdjudicationEvent(
             id=overrides.pop("id", uuid4()),
             case_id=overrides.pop("case_id", self.case.id),
             subject_type=overrides.pop(
@@ -713,13 +713,13 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
         for reason in ("", "   ", "\t\n "):
             with self.subTest(reason=repr(reason)):
                 self.assertRejectedBy(
-                    "ck_financial_adjudications_reason_not_blank",
+                    "ck_adjudications_reason_not_blank",
                     lambda: self.make_adjudication(reason=reason),
                 )
 
     def test_unknown_adjudication_subject_is_rejected(self):
         self.assertRejectedBy(
-            "ck_financial_adjudications_subject_type",
+            "ck_adjudications_subject_type",
             lambda: self.make_adjudication(subject_type="hunch"),
         )
 
@@ -733,7 +733,7 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
         for decision in ("admit", "supersede", "quarantine", "released"):
             with self.subTest(decision=decision):
                 self.assertRejectedBy(
-                    "ck_financial_adjudications_decision",
+                    "ck_adjudications_decision",
                     lambda: self.make_adjudication(decision=decision),
                 )
 
@@ -907,7 +907,7 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
         self.assertEqual(
             len(self.db.execute(select(FinancialTransaction)).scalars().all()), 0
         )
-        surviving = self.db.execute(select(FinancialAdjudication)).scalar_one()
+        surviving = self.db.execute(select(AdjudicationEvent)).scalar_one()
         self.assertEqual(surviving.subject_id, subject_id)
         self.assertEqual(surviving.reason, "Amount unreadable in the scan.")
 
@@ -944,7 +944,7 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
         self.db.execute(delete(User).where(User.id == analyst_id))
         self.db.commit()
 
-        adjudication = self.db.execute(select(FinancialAdjudication)).scalar_one()
+        adjudication = self.db.execute(select(AdjudicationEvent)).scalar_one()
         self.assertIsNone(adjudication.actor_user_id)
         self.assertEqual(adjudication.actor_email, "analyst@example.test")
         self.assertEqual(adjudication.actor_name, "Second Analyst")

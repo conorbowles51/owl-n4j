@@ -31,8 +31,8 @@ from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 from postgres.models.significant import SignificantEntity
 from postgres.models.loupe import Loupe, LoupeLink, LoupeMember, LoupeRevision
 from postgres.models.financial import (
+    AdjudicationEvent,
     FinancialAccount,
-    FinancialAdjudication,
     FinancialIngestionRun,
     FinancialSourceDocument,
     FinancialStatementPeriod,
@@ -74,7 +74,7 @@ __all__ = [
     "LoupeMember",
     "LoupeLink",
     "LoupeRevision",
-    "FinancialAccount", "FinancialAdjudication", "FinancialIngestionRun",
+    "AdjudicationEvent", "FinancialAccount", "FinancialIngestionRun",
     "FinancialSourceDocument", "FinancialStatementPeriod", "FinancialTransaction",
     "CaseProfile", "CaseProfileAttribute", "CaseProfileEvidenceLink",
     "CaseProfileFindingLink", "CaseProfileGraphNodeLink", "CaseProfileNoteLink",

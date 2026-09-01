@@ -73,7 +73,7 @@ from typing import TYPE_CHECKING, Any, Mapping, Optional
 
 from postgres.models.financial import (
     FinancialAccount,
-    FinancialAdjudication,
+    AdjudicationEvent,
     FinancialSourceDocument,
     FinancialStatementPeriod,
     FinancialTransaction,
@@ -153,7 +153,7 @@ class NativeIngestion:
     accounts: tuple[FinancialAccount, ...]
     periods: tuple[FinancialStatementPeriod, ...]
     transactions: tuple[FinancialTransaction, ...]
-    adjudication: Optional[FinancialAdjudication] = None
+    adjudication: Optional[AdjudicationEvent] = None
     unlinked_rows: int = 0
 
     @property

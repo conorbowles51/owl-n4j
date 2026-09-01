@@ -56,7 +56,7 @@ from postgres.models.enums import (
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.financial import (
     FinancialAccount,
-    FinancialAdjudication,
+    AdjudicationEvent,
     FinancialIngestionRun,
     FinancialSourceDocument,
     FinancialStatementPeriod,
@@ -91,7 +91,7 @@ TABLES = [
     FinancialAccount.__table__,
     FinancialStatementPeriod.__table__,
     FinancialTransaction.__table__,
-    FinancialAdjudication.__table__,
+    AdjudicationEvent.__table__,
 ]
 
 USD = "USD"
@@ -269,7 +269,7 @@ class DecisionTestCase(unittest.TestCase):
             actor_email=self.user.email,
         )
         defaults.update(over)
-        self.db.add(FinancialAdjudication(**defaults))
+        self.db.add(AdjudicationEvent(**defaults))
 
     def assert_refused_by(self, constraint: str):
         """Commit, and require the named constraint to be what refused it."""
@@ -311,7 +311,7 @@ class TheActor(DecisionTestCase):
         self.db.commit()
         self.db.expire_all()
 
-        reloaded = self.db.get(FinancialAdjudication, stored.id)
+        reloaded = self.db.get(AdjudicationEvent, stored.id)
         self.assertEqual(reloaded.actor_name, "Investigator")
 
 
@@ -558,7 +558,7 @@ class TheSequence(DecisionTestCase):
             self.db.commit()
         message = str(caught.exception.orig)
         for column in ("subject_type", "subject_id", "subject_sequence"):
-            self.assertIn(f"financial_adjudications.{column}", message)
+            self.assertIn(f"adjudications.{column}", message)
         self.db.rollback()
 
     def test_the_hand_written_control_row_is_accepted(self):
@@ -576,7 +576,7 @@ class TheSequence(DecisionTestCase):
 
     def test_a_sequence_below_one_is_refused(self):
         self.insert_by_hand(subject_sequence=0)
-        self.assert_refused_by("ck_financial_adjudications_sequence_positive")
+        self.assert_refused_by("ck_adjudications_sequence_positive")
 
     def test_a_decision_outside_the_vocabulary_is_refused_by_the_database(self):
         """The service checks the enum; the check constraint catches the rest.
@@ -588,18 +588,18 @@ class TheSequence(DecisionTestCase):
         would silently split the count in two.
         """
         self.insert_by_hand(decision="released")
-        self.assert_refused_by("ck_financial_adjudications_decision")
+        self.assert_refused_by("ck_adjudications_decision")
 
     def test_a_subject_type_outside_the_vocabulary_is_refused_by_the_database(
         self,
     ):
         self.insert_by_hand(subject_type="txn")
-        self.assert_refused_by("ck_financial_adjudications_subject_type")
+        self.assert_refused_by("ck_adjudications_subject_type")
 
     def test_a_blank_reason_is_refused_by_the_database(self):
         """The service refuses whitespace; so, independently, does the table."""
         self.insert_by_hand(reason="   ")
-        self.assert_refused_by("ck_financial_adjudications_reason_not_blank")
+        self.assert_refused_by("ck_adjudications_reason_not_blank")
 
 
 class TheHistory(DecisionTestCase):
@@ -630,8 +630,8 @@ class TheHistory(DecisionTestCase):
 
         first, second = (
             self.db.execute(
-                select(FinancialAdjudication).order_by(
-                    FinancialAdjudication.subject_sequence
+                select(AdjudicationEvent).order_by(
+                    AdjudicationEvent.subject_sequence
                 )
             )
             .scalars()
@@ -708,7 +708,7 @@ class TheHistory(DecisionTestCase):
         self.db.commit()
         self.db.expire_all()
 
-        reloaded = self.db.get(FinancialAdjudication, stored.id)
+        reloaded = self.db.get(AdjudicationEvent, stored.id)
         self.assertEqual(reloaded.case_id, self.case.id)
         self.assertEqual(reloaded.subject_id, self.row.id)
         self.assertEqual(reloaded.ingestion_run_id, self.run.run_id)

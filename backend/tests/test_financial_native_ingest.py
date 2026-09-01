@@ -67,7 +67,7 @@ from postgres.models.enums import GlobalRole, ProofClass
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.financial import (
     FinancialAccount,
-    FinancialAdjudication,
+    AdjudicationEvent,
     FinancialIngestionRun,
     FinancialSourceDocument,
     FinancialStatementPeriod,
@@ -116,7 +116,7 @@ TABLES = [
     FinancialAccount.__table__,
     FinancialStatementPeriod.__table__,
     FinancialTransaction.__table__,
-    FinancialAdjudication.__table__,
+    AdjudicationEvent.__table__,
 ]
 
 HASH_A = "a" * 64

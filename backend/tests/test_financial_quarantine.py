@@ -45,7 +45,7 @@ from postgres.models.enums import (
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.financial import (
     FinancialAccount,
-    FinancialAdjudication,
+    AdjudicationEvent,
     FinancialIngestionRun,
     FinancialSourceDocument,
     FinancialStatementPeriod,
@@ -96,7 +96,7 @@ TABLES = [
     FinancialAccount.__table__,
     FinancialStatementPeriod.__table__,
     FinancialTransaction.__table__,
-    FinancialAdjudication.__table__,
+    AdjudicationEvent.__table__,
 ]
 
 USD = "USD"
@@ -1089,7 +1089,7 @@ class QuarantineSurvivesTheDatabase(unittest.TestCase):
         self.db.commit()
 
         self.db.add(
-            FinancialAdjudication(
+            AdjudicationEvent(
                 id=uuid.uuid4(),
                 case_id=self.case.id,
                 subject_type=AdjudicationSubject.transaction.value,

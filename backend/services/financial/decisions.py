@@ -1,6 +1,6 @@
 """Every decision about financial evidence, appended before the row changes.
 
-``financial_adjudications`` was built to be the append-only record of who did
+``adjudications`` was built to be the append-only record of who did
 what to which piece of evidence and why.  Until this module there was exactly
 one writer — :func:`services.financial.duplicates.purge_document` — and the
 consequence was not that the log was thin.  It was that **the log recorded the
@@ -49,7 +49,7 @@ round on the way in, and be quoted later as the figure of record.
 
 A fifth thing is not checked but assigned: ``subject_sequence``.  A log whose
 purpose is sequence has to be able to state one, and ``created_at`` cannot.
-See :class:`~postgres.models.financial.FinancialAdjudication` for why; the
+See :class:`~postgres.models.financial.AdjudicationEvent` for why; the
 consequence here is that :func:`record` reads the subject's current high-water
 mark and writes one past it, in the same flush as the row.
 """
@@ -65,7 +65,7 @@ from typing import TYPE_CHECKING, Any, Mapping, Optional
 from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
 from postgres.models.financial import (
     FinancialAccount,
-    FinancialAdjudication,
+    AdjudicationEvent,
     FinancialSourceDocument,
     FinancialStatementPeriod,
     FinancialTransaction,
@@ -224,9 +224,9 @@ def _next_sequence(
     from sqlalchemy import func, select
 
     highest = session.scalar(
-        select(func.max(FinancialAdjudication.subject_sequence))
-        .where(FinancialAdjudication.subject_type == subject_type.value)
-        .where(FinancialAdjudication.subject_id == subject_id)
+        select(func.max(AdjudicationEvent.subject_sequence))
+        .where(AdjudicationEvent.subject_type == subject_type.value)
+        .where(AdjudicationEvent.subject_id == subject_id)
     )
     return 1 if highest is None else int(highest) + 1
 
@@ -243,7 +243,7 @@ def record(
     before: Optional[Mapping[str, Any]] = None,
     after: Optional[Mapping[str, Any]] = None,
     ingestion_run_id: Optional[uuid.UUID] = None,
-) -> FinancialAdjudication:
+) -> AdjudicationEvent:
     """Append one decision.  Call this *before* mutating ``subject``.
 
     Returns the flushed row, so the caller holds a decision with an identity
@@ -301,7 +301,7 @@ def record(
     after_json = _snapshot(after, "after")
     _check_diff(before_json, after_json)
 
-    adjudication = FinancialAdjudication(
+    adjudication = AdjudicationEvent(
         case_id=case_id,
         subject_type=subject_type.value,
         subject_id=subject.id,
@@ -324,7 +324,7 @@ def history(
     session: "Session",
     subject: Any,
     subject_type: AdjudicationSubject,
-) -> tuple[FinancialAdjudication, ...]:
+) -> tuple[AdjudicationEvent, ...]:
     """Every decision recorded about one subject, oldest first.
 
     Ordered by ``subject_sequence``, which is the only column here that can
@@ -339,9 +339,9 @@ def history(
     from sqlalchemy import select
 
     rows = session.scalars(
-        select(FinancialAdjudication)
-        .where(FinancialAdjudication.subject_type == subject_type.value)
-        .where(FinancialAdjudication.subject_id == subject.id)
-        .order_by(FinancialAdjudication.subject_sequence)
+        select(AdjudicationEvent)
+        .where(AdjudicationEvent.subject_type == subject_type.value)
+        .where(AdjudicationEvent.subject_id == subject.id)
+        .order_by(AdjudicationEvent.subject_sequence)
     ).all()
     return tuple(rows)

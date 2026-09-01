@@ -55,7 +55,7 @@ from postgres.models.enums import (
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.financial import (
     FinancialAccount,
-    FinancialAdjudication,
+    AdjudicationEvent,
     FinancialIngestionRun,
     FinancialSourceDocument,
     FinancialStatementPeriod,
@@ -95,7 +95,7 @@ TABLES = [
     FinancialAccount.__table__,
     FinancialStatementPeriod.__table__,
     FinancialTransaction.__table__,
-    FinancialAdjudication.__table__,
+    AdjudicationEvent.__table__,
 ]
 
 GBP = "GBP"
@@ -1194,7 +1194,7 @@ class PurgeTests(DuplicateTestCase):
         self.assertIsNone(
             self.db.get(FinancialSourceDocument, excluded_id)
         )
-        stored = self.db.get(FinancialAdjudication, adjudication.id)
+        stored = self.db.get(AdjudicationEvent, adjudication.id)
         self.assertIsNotNone(stored)
         self.assertEqual(stored.subject_id, excluded_id)
         self.assertEqual(stored.subject_type, "source_document")
@@ -1277,7 +1277,7 @@ class PurgeTests(DuplicateTestCase):
         self.db.commit()
         self.db.expire_all()
 
-        stored = self.db.get(FinancialAdjudication, adjudication.id)
+        stored = self.db.get(AdjudicationEvent, adjudication.id)
         self.assertIsNotNone(stored)
         self.assertEqual(stored.subject_id, document_id)
         self.assertIsNone(self.db.get(FinancialSourceDocument, document_id))
@@ -1470,7 +1470,7 @@ class TheDecisionLog(DuplicateTestCase):
         self.db.expire_all()
 
         self.assertIsNone(self.db.get(FinancialSourceDocument, excluded_id))
-        stored = self.db.get(FinancialAdjudication, adjudication.id)
+        stored = self.db.get(AdjudicationEvent, adjudication.id)
         self.assertEqual(
             stored.decision, AdjudicationDecision.purge_duplicate.value
         )

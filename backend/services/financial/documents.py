@@ -81,7 +81,7 @@ from postgres.models.enums import (
 )
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import (
-    FinancialAdjudication,
+    AdjudicationEvent,
     FinancialSourceDocument,
     FinancialStatementPeriod,
     FinancialTransaction,
@@ -491,7 +491,7 @@ def reclassify_after_reconciliation(
     *,
     run: Optional["IngestionRunHandle"] = None,
     reservations: Sequence[str] = (),
-) -> Optional[FinancialAdjudication]:
+) -> Optional[AdjudicationEvent]:
     """Move a document's proof class to the one the arithmetic now supports.
 
     Returns the logged decision, or ``None`` if the class is already what the

@@ -95,7 +95,7 @@ from postgres.models.enums import (
 )
 from postgres.models.financial import (
     FinancialAccount,
-    FinancialAdjudication,
+    AdjudicationEvent,
     FinancialSourceDocument,
     FinancialStatementPeriod,
     FinancialTransaction,
@@ -730,7 +730,7 @@ def purge_document(
     reason: str,
     actor: Actor,
     ingestion_run_id: Optional[uuid.UUID] = None,
-) -> FinancialAdjudication:
+) -> AdjudicationEvent:
     """Delete a duplicate for good.  Separate from hiding, and on purpose.
 
     Hiding is reversible and is what the automatic path does.  Purging is not
@@ -738,7 +738,7 @@ def purge_document(
     is refused across matters outright rather than merely filtered.
 
     The adjudication is written and flushed before the delete.
-    ``FinancialAdjudication`` carries no foreign key to its subject precisely
+    ``AdjudicationEvent`` carries no foreign key to its subject precisely
     so that the record of a decision can outlive the row it was about.  Within
     a single transaction the committed end state does not depend on which of
     the two writes is issued first, so the ordering here buys two narrower

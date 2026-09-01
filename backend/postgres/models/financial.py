@@ -830,8 +830,8 @@ class FinancialTransaction(Base, TimestampMixin):
     )
 
 
-class FinancialAdjudication(Base):
-    """A decision about financial evidence, recorded as an event.
+class AdjudicationEvent(Base):
+    """A decision about evidence, recorded as an event.
 
     Almost every row is a human decision, and the table is shaped for that: a
     mandatory reason, an actor copied in by name and address, a per-subject
@@ -848,10 +848,28 @@ class FinancialAdjudication(Base):
     mutation the table exists to rule out.
 
     ``subject_id`` carries no foreign key because the subject may be any of
-    four tables.  The trade is deliberate: a decision must outlive the row it
+    several tables.  The trade is deliberate: a decision must outlive the row it
     was about, and a cascade that deleted the record of a decision would
     destroy the audit trail at precisely the moment it was needed.  Referential
     integrity is checked in the service layer instead.
+
+    That is also why this model lives in ``financial.py`` under an unqualified
+    name.  The table was built polymorphic and first used by the financial
+    stages, so it was called ``financial_adjudications`` until
+    ``20260901_rename_adjudications`` dropped the prefix.  Which subjects it
+    accepts is a fact about one ``CHECK`` constraint and the
+    ``AdjudicationSubject`` vocabulary, not about the structure or about this
+    module; the file it is declared in is history rather than scope.
+
+    The class is ``AdjudicationEvent`` rather than ``Adjudication`` because
+    ``Adjudication`` is taken, by
+    :class:`services.financial.adjudication.Adjudication` -- a balance-failure
+    verdict, which is the *payload* of one member of this table's vocabulary
+    (``explain_balance_failure``) rather than a row of it.  Both are exported
+    from their package roots, so sharing a name would leave a reader of
+    ``Adjudication(...)`` unable to tell a ledger row from a verdict without
+    checking the imports.  ``Event`` is the accurate half of the distinction:
+    rows here are appended facts about what was done, whatever the subject.
 
     Actor name and email are copied in at the time of the decision for the same
     reason the run table copies them: a deleted user must not erase who
@@ -874,34 +892,34 @@ class FinancialAdjudication(Base):
     absence you would have to already suspect to look for.
     """
 
-    __tablename__ = "financial_adjudications"
+    __tablename__ = "adjudications"
     __table_args__ = (
         CheckConstraint(
             f"subject_type IN {_ADJUDICATION_SUBJECTS}",
-            name="ck_financial_adjudications_subject_type",
+            name="ck_adjudications_subject_type",
         ),
         CheckConstraint(
             f"decision IN {_ADJUDICATION_DECISIONS}",
-            name="ck_financial_adjudications_decision",
+            name="ck_adjudications_decision",
         ),
         CheckConstraint(
             _REASON_NOT_BLANK,
-            name="ck_financial_adjudications_reason_not_blank",
+            name="ck_adjudications_reason_not_blank",
         ),
         CheckConstraint(
             "subject_sequence >= 1",
-            name="ck_financial_adjudications_sequence_positive",
+            name="ck_adjudications_sequence_positive",
         ),
         UniqueConstraint(
             "subject_type",
             "subject_id",
             "subject_sequence",
-            name="uq_financial_adjudications_subject_sequence",
+            name="uq_adjudications_subject_sequence",
         ),
         Index(
-            "ix_financial_adjudications_subject", "subject_type", "subject_id"
+            "ix_adjudications_subject", "subject_type", "subject_id"
         ),
-        Index("ix_financial_adjudications_case", "case_id", "created_at"),
+        Index("ix_adjudications_case", "case_id", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
