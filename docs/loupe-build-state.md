@@ -10,31 +10,51 @@ Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `2584afd`, "Keep working state on disk instead of
-  in a conversation". The commit carrying the current revision of this file sits one
-  above that, so **confirm the real tip with `git log --oneline -5`** at the start of
-  every session rather than trusting this line.
+- **Head when this was written:** `0910d9f`, "Add suspect-amount reading between
+  the money parser and evidence". The commit carrying the current revision of this
+  file sits one above that, so **confirm the real tip with `git log --oneline -5`**
+  at the start of every session rather than trusting this line.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 
 ### Uncommitted
 
-- `backend/services/financial/suspect_amounts.py` — new, untracked, 26.5 KB.
-  Module is written and verified. **Tests are not written.**
-- `backend/services/financial/__init__.py` — modified, +23 lines, exporting the
-  suspect-amounts surface.
-- Two stray `.bak` files that should be deleted rather than committed:
+- Two stray `.bak` files that should be deleted, not committed:
   `backend/services/financial/export_manifest.py.bak`,
-  `backend/services/financial_export_service.py.bak`.
+  `backend/services/financial_export_service.py.bak`. **The session workspace
+  denies `unlink` for workspace files, so they cannot be deleted from a session.
+  Neil has to remove them from his side.** They are untracked and harmless
+  meanwhile.
 
-The next commit is: write `backend/tests/test_financial_suspect_amounts.py`, add the
-new exports to `backend/tests/test_financial_exports.py`, run the full financial
-suite, then commit the module, the exports and the tests together.
+No tracked changes are outstanding. The tree is otherwise clean of build work.
 
 ### Scale, measured from git
 
-55 commits since `c4246c0` (27 August). 127 files changed, 80,216 insertions.
-`backend/services/financial/` is 41 modules and about 31,773 lines.
-`backend/tests/test_financial_*.py` is 42 files, about 40,197 lines, 2,933 tests.
+56 commits since `c4246c0` (27 August). `backend/services/financial/` is 41
+modules and about 32,400 lines. `backend/tests/test_financial_*.py` is 43 files,
+about 40,750 lines, **2,988 tests**.
+
+### Facts established this session, so no one rediscovers them
+
+- **The exports guard needs no edit for a new module.** The state file previously
+  said to "add the new exports to `backend/tests/test_financial_exports.py`", but
+  that guard is structural: it parses `services/financial/__init__.py` with AST and
+  verifies every `__all__` name resolves and every module is reachable. It passed
+  unchanged (5 tests OK) once `__init__.py` exported the new surface.
+- **Test environment rebuild.** The sandbox starts with no backend deps. Full
+  `pip install -r requirements.txt` fails because `numpy==2.3.5` needs Python
+  ≥3.11 and the sandbox is 3.10.12. The financial suite runs on a selective
+  pinned install (`--break-system-packages`): SQLAlchemy 2.0.46, pydantic 2.12.5,
+  pydantic_core 2.41.5, fastapi 0.123.9, httpx 0.28.1, neo4j 5.28.2,
+  python-dotenv 1.2.1, requests 2.32.5, psycopg[binary] 3.2.13, openai 2.9.0.
+  **Do not install python-jose**: leaving it out is what reproduces the
+  documented baseline fingerprint (errors=1 on `jose`).
+- **Suite baseline is now 2,988 tests, FAILED (errors=1, skipped=9)**, the one
+  error still the long-standing `jose` ModuleNotFoundError via
+  `services/auth_service.py:10`. Before this commit it was 2,933 with the same
+  error. Any other failure is new.
+- `/tmp/loupe.index` left by an earlier session could not be removed this
+  session either; the commit procedure works fine with a fresh name
+  (`/tmp/loupe_item9.index`). Pick a fresh index filename if `rm` refuses.
 
 ---
 
@@ -48,20 +68,27 @@ commit `3784dbe`.
    "being built" section carrying the review screen, money over time, tracing,
    following money through intermediaries, and output labelling. The exhibits and
    tracing bullets were cut from the working sections first, on the grounds that
-   everything above the last line has to be something she can do today.
+   everything above the last line has to be something she can do today. **The full
+   text is not on disk and not in git history**; only this recorded shape survives.
+   If Neil pastes it, store it under `docs/`.
 
-9. **Next.** Suspect-amount detection. Module written and verified; remaining work
-   is tests, full-suite run, commit. See "Uncommitted" above.
+9. **Done.** Suspect-amount detection, committed `0910d9f` as one unit:
+   `backend/services/financial/suspect_amounts.py`, the `__init__.py` exports, and
+   `backend/tests/test_financial_suspect_amounts.py` (55 tests, 12 classes, every
+   `Suspicion` member reached end to end through `read_amount`, reading
+   invariants, `require_certain` refusals, `to_json` payload shape and ordering,
+   `page_text_origin` via duck-typed fakes).
 
-10. Carry a per-transaction source locator through the writers so every row can cite
-    its origin.
+10. **Next.** Carry a per-transaction source locator through the writers so every
+    row can cite its origin.
 
 11. Correction storage. The corrected value is canonical, the machine's original
     stays immutable beside it, and the ledger records who, when and why.
     **Blocked on an open question, below.**
 
 12. UI: transaction review with click-through to the highlighted region of the
-    source page.
+    source page. This is also where `suspect_amounts` gains its first consumer;
+    until then it is another built-but-unwired capability.
 
 13. User-defined view tabs. Named snapshots of filter state, persisted, creatable,
     renameable, deletable. Also expose source document type onto the transaction row.
@@ -105,12 +132,14 @@ closes moves the class. That keeps the rule that class is never user-settable an
 makes a correction a re-ingestion of one row rather than an override. **Neil's call
 is wanted before any correction storage is written.**
 
-**Capability with no route to the user.** Three instances found, which makes it a
+**Capability with no route to the user.** Four instances now, which makes it a
 pattern rather than a coincidence: the document reader (rows are recovered and
-nothing downstream consumes them, item 9), `exhibit.py` (984 lines, no API route, no
-screen), and `tracing.py` (no caller outside its own package). Both exhibit and
-tracing have since been confirmed as wanted, so the question is narrower now: whether
-the next block of work is new capability or connecting up what already exists.
+nothing downstream consumes them, item 1), `exhibit.py` (984 lines, no API route, no
+screen), `tracing.py` (no caller outside its own package), and now
+`suspect_amounts.py` (committed, tested, no consumer until item 12). Both exhibit
+and tracing have since been confirmed as wanted, so the question is narrower now:
+whether the next block of work is new capability or connecting up what already
+exists.
 
 **Provenance of `exhibit.py`.** It came from a build order proposed by Claude, not
 from a stated Owl requirement. It is 984 lines justified from the rules of evidence
