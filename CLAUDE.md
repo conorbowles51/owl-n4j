@@ -184,3 +184,23 @@ work correct. So sessions end for a good reason, not because they ran out.
 - Signs the session is already past its stopping point: re-reading a file read
   earlier in the same session, asking Neil something he already answered, or a
   compaction having just occurred.
+
+### After every commit, without being asked
+
+A commit is the clean boundary, so it is the trigger. As soon as a commit lands,
+before starting anything else:
+
+1. Rewrite `docs/loupe-build-state.md`. New head and commit subject, what is now
+   uncommitted, where the build order stands, anything newly parked, any question
+   raised that Neil has not ruled on, any defect found and not fixed.
+2. Record anything a fresh session would otherwise have to rediscover: a command
+   that failed and the form that worked, a fact established by reading source, a
+   decision made and its reasoning.
+3. Commit the state file.
+4. Then tell Neil **in bold** that the state is written and this is a good point to
+   start a new session, and say in one line what the next session should pick up.
+
+Do this even when there is plenty of window left. The point is that the handoff is
+always current, so a session can be ended at any moment without losing anything. Do
+not carry on into the next item first and write the state afterwards, because by then
+the detail that made the state accurate is the thing that has been spent.

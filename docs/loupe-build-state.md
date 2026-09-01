@@ -10,9 +10,11 @@ Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head:** `3784dbe605cc9e729501d9cdff79a72bd67a4c8c` — "Read a page's rows from
-  where its words sit when nothing was ruled (extraction rebuild, item 1 of 5)"
-- **Not yet pushed.** Push is blocked; Neil pushes.
+- **Head when this was written:** `2584afd`, "Keep working state on disk instead of
+  in a conversation". The commit carrying the current revision of this file sits one
+  above that, so **confirm the real tip with `git log --oneline -5`** at the start of
+  every session rather than trusting this line.
+- **Nothing is pushed.** Push is blocked; Neil pushes.
 
 ### Uncommitted
 
@@ -41,8 +43,12 @@ suite, then commit the module, the exports and the tests together.
 1–7. **Done.** Through the text-alignment tier, its tests, the package export and
 commit `3784dbe`.
 
-8. **Done.** Financial subsystem description for Alex. Delivered. Held all build
-   work while it was in progress.
+8. **Done.** Financial subsystem description for Alex. Delivered 1 September. Held
+   all build work while it was in progress. Final shape: two halves, then a separate
+   "being built" section carrying the review screen, money over time, tracing,
+   following money through intermediaries, and output labelling. The exhibits and
+   tracing bullets were cut from the working sections first, on the grounds that
+   everything above the last line has to be something she can do today.
 
 9. **Next.** Suspect-amount detection. Module written and verified; remaining work
    is tests, full-suite run, commit. See "Uncommitted" above.
