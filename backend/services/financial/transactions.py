@@ -70,6 +70,12 @@ writer gives -- a class a caller chooses is an opinion, and it decides which
 rows enter a total.  The reference and the hash because they are functions of
 the reading and the document digest, and a caller-supplied reference is a
 reference that stops reproducing when the file is ingested again.
+
+``provenance["locator"]`` is likewise written here and only here, serialised
+from the draft's own ``locator`` field.  A caller-supplied one is refused at
+the draft: the locator is a typed value whose coherence rules live in
+:mod:`services.financial.locators`, and a hand-built dict that bypassed them
+would be indistinguishable from one that did not once stored.
 """
 
 from __future__ import annotations
@@ -92,6 +98,7 @@ from postgres.models.financial import (
     FinancialStatementPeriod,
     FinancialTransaction,
 )
+from services.financial.locators import Locator
 from services.financial.money import get_currency
 from services.financial.proof_class import may_produce_ledger_rows
 from services.financial.references import (
@@ -105,6 +112,12 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.orm import Session
 
     from services.financial.runs import IngestionRunHandle
+
+
+#: The provenance key a row's locator is stored under.  The same key
+#: :mod:`services.financial.table_geometry` writes cell locators under, so one
+#: reader can open a row's place in its source whatever produced the row.
+LOCATOR_PROVENANCE_KEY = "locator"
 
 
 # ---------------------------------------------------------------------------
@@ -341,11 +354,23 @@ class TransactionDraft:
     is layer 3 sitting in a layer 0 document, which is true and worth
     recording, whereas a row claiming a native read inside a model-read
     document claims a guarantee the file never offered.
+
+    ``locator`` is required and has no default, for the reason
+    :func:`services.financial.locators.capture` gives its ``space`` argument
+    none: a default would be wrong exactly when a call site forgot to thread
+    position data through, and silently.  A row with nothing to say about
+    where it was read says so out loud with
+    :attr:`~postgres.models.enums.LocatorKind.unlocated`, which keeps the
+    count of unlocated rows a measure of reader failure rather than of
+    forgotten parameters.  For the same reason ``provenance`` may not carry a
+    ``"locator"`` key of its own: the writer serialises the field, and two
+    statements of where a row came from is one more than can be true.
     """
 
     reading: RowReading
     row_index: int
     account_id: uuid.UUID
+    locator: Locator
     statement_period_id: Optional[uuid.UUID] = None
     ordering_date: Optional[date] = None
     ordering_date_source: Optional[DateSource] = None
@@ -373,6 +398,13 @@ class TransactionDraft:
         if not isinstance(self.account_id, uuid.UUID):
             raise TransactionFieldError(
                 f"account_id is {type(self.account_id).__name__}, not a UUID"
+            )
+        if not isinstance(self.locator, Locator):
+            raise TransactionFieldError(
+                f"locator must be a Locator, got {type(self.locator).__name__}; "
+                "a row with nothing to say about where it was read says so "
+                "with LocatorKind.unlocated rather than by leaving the field "
+                "loose"
             )
         if self.statement_period_id is not None and not isinstance(
             self.statement_period_id, uuid.UUID
@@ -445,6 +477,13 @@ class TransactionDraft:
                 raise TransactionFieldError(
                     f"{label} must be a mapping, got {type(value).__name__}"
                 )
+        if LOCATOR_PROVENANCE_KEY in self.provenance:
+            raise TransactionFieldError(
+                f"provenance already carries {LOCATOR_PROVENANCE_KEY!r}; the "
+                "locator is the draft's own field and the writer serialises "
+                "it, so a second copy here could only agree by luck or "
+                "disagree in silence"
+            )
         object.__setattr__(self, "provenance", dict(self.provenance))
         object.__setattr__(self, "metadata", dict(self.metadata))
 
@@ -650,7 +689,11 @@ def record_transactions(
             extraction_layer=layer.value,
             ledger_status="admitted",
             quarantine_reason=None,
-            provenance=dict(draft.provenance),
+            # The draft guarantees the key is free, so this cannot clobber.
+            provenance={
+                **draft.provenance,
+                LOCATOR_PROVENANCE_KEY: draft.locator.to_json(),
+            },
             metadata_=dict(draft.metadata),
         )
         run.stamp(row)

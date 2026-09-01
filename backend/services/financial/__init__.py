@@ -217,6 +217,7 @@ from services.financial.documents import (
     record_source_document,
 )
 from services.financial.transactions import (
+    LOCATOR_PROVENANCE_KEY,
     NonLedgerClassError,
     OrderingDateError,
     ORDERING_PRECEDENCE,
@@ -964,6 +965,7 @@ __all__ = [
     # counted across the document and a row-at-a-time writer would collide two
     # genuinely distinct identical rows on the content constraint.  Sign is
     # declared by the caller and never inferred from a column of numbers.
+    "LOCATOR_PROVENANCE_KEY",
     "NonLedgerClassError",
     "ORDERING_PRECEDENCE",
     "OrderingDateError",

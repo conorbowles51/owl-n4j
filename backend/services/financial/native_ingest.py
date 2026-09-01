@@ -59,7 +59,8 @@ the one arrangement that would otherwise be reported as a contradiction.  Droppe
 here, the fact is not in the database at all and cannot be recovered without
 re-parsing the file.
 
-The locator goes into provenance under the key
+The locator travels as the draft's own field, and the transaction writer
+serialises it into provenance under the key
 :mod:`services.financial.table_geometry` already uses, so that one reader can
 open a row's place in its source whatever produced the row.
 """
@@ -394,10 +395,10 @@ def _transaction_drafts(
                 reading=row.reading,
                 row_index=row.row_index,
                 account_id=account.id,
+                locator=row.locator,
                 statement_period_id=linkable.get(row.account_key),
                 ordering_date=row.ordering_date,
                 ordering_date_source=row.ordering_date_source,
-                provenance={"locator": row.locator.to_json()},
                 metadata={REVERSAL_METADATA_KEY: row.is_reversal},
             )
         )

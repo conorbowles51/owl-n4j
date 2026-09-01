@@ -47,6 +47,7 @@ from postgres.models.enums import (
     DateSource,
     ExtractionLayer,
     GlobalRole,
+    LocatorKind,
     ProofClass,
     ReconciliationStatus,
     TransactionDirection,
@@ -66,10 +67,12 @@ from services.financial.documents import (
     reclassify_after_reconciliation,
     record_source_document,
 )
+from services.financial.locators import Locator, SourceRectangle
 from services.financial.proof_class import DEFAULT_TOTAL_CLASSES, SourceShape
 from services.financial.references import RowReading, content_hash
 from services.financial.runs import RunScopeError, open_ingestion_run
 from services.financial.transactions import (
+    LOCATOR_PROVENANCE_KEY,
     ORDERING_PRECEDENCE,
     NonLedgerClassError,
     OrderingDateError,
@@ -101,6 +104,9 @@ HASH_B = "b" * 64
 
 JANUARY = date(2024, 1, 15)
 FEBRUARY = date(2024, 2, 15)
+
+#: The honest locator for a row these tests are not about: nothing is claimed.
+UNLOCATED = Locator(kind=LocatorKind.unlocated)
 
 
 def reading(**overrides) -> RowReading:
@@ -292,6 +298,7 @@ class TransactionDraftTests(unittest.TestCase):
         overrides.setdefault("reading", reading())
         overrides.setdefault("row_index", 0)
         overrides.setdefault("account_id", uuid.uuid4())
+        overrides.setdefault("locator", UNLOCATED)
         return TransactionDraft(**overrides)
 
     def test_no_draft_field_names_a_proof_class_or_a_reference(self):
@@ -366,6 +373,28 @@ class TransactionDraftTests(unittest.TestCase):
         draft = self.draft(provenance=supplied)
         supplied["page"] = 99
         self.assertEqual(draft.provenance, {"page": 2})
+
+    def test_a_draft_that_says_nothing_about_location_is_refused(self):
+        """The locator is required, not defaulted.
+
+        Defaulting to unlocated would make a call site that forgot the
+        argument indistinguishable from a reader that tried and failed, and
+        the count of unlocated rows is a defect measure only while those two
+        stay apart.
+        """
+        with self.assertRaises(TypeError):
+            TransactionDraft(
+                reading=reading(), row_index=0, account_id=uuid.uuid4()
+            )
+
+    def test_a_locator_spelled_as_its_json_is_refused(self):
+        with self.assertRaises(TransactionFieldError):
+            self.draft(locator={"kind": "unlocated"})
+
+    def test_provenance_may_not_carry_its_own_locator(self):
+        """The writer serialises the field; a second copy could disagree."""
+        with self.assertRaises(TransactionFieldError):
+            self.draft(provenance={"locator": UNLOCATED.to_json()})
 
 
 # ---------------------------------------------------------------------------
@@ -511,6 +540,7 @@ class TransactionPersistenceTestCase(unittest.TestCase):
         overrides.setdefault("reading", reading())
         overrides.setdefault("row_index", 0)
         overrides.setdefault("account_id", self.acct.id)
+        overrides.setdefault("locator", UNLOCATED)
         return TransactionDraft(**overrides)
 
     def write(self, drafts, document=None):
@@ -639,6 +669,32 @@ class RecordTransactionsTests(TransactionPersistenceTestCase):
     def test_a_string_is_not_a_sequence_of_drafts(self):
         with self.assertRaises(TransactionFieldError):
             self.write("rows")
+
+    def test_the_locator_is_serialised_into_provenance(self):
+        located = Locator(
+            kind=LocatorKind.page_rectangle,
+            rectangle=SourceRectangle(
+                page_number=3,
+                x0=100_000,
+                y0=200_000,
+                x1=250_000,
+                y1=215_000,
+                page_width=612_000,
+                page_height=792_000,
+            ),
+        )
+        (row,) = self.write([self.draft(locator=located)])
+        self.db.commit()
+        self.assertEqual(
+            row.provenance[LOCATOR_PROVENANCE_KEY], located.to_json()
+        )
+
+    def test_the_callers_provenance_keys_survive_beside_the_locator(self):
+        (row,) = self.write([self.draft(provenance={"parser_note": "footer"})])
+        self.assertEqual(row.provenance["parser_note"], "footer")
+        self.assertEqual(
+            row.provenance[LOCATOR_PROVENANCE_KEY], UNLOCATED.to_json()
+        )
 
 
 class ScopeTests(TransactionPersistenceTestCase):
