@@ -10,10 +10,11 @@ Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `0910d9f`, "Add suspect-amount reading between
-  the money parser and evidence". The commit carrying the current revision of this
-  file sits one above that, so **confirm the real tip with `git log --oneline -5`**
-  at the start of every session rather than trusting this line.
+- **Head when this was written:** `0d6b399`, "Carry a per-transaction locator
+  through the transaction writer". The commit carrying the current revision of
+  this file sits one above that, so **confirm the real tip with
+  `git log --oneline -5`** at the start of every session rather than trusting
+  this line.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 
 ### Uncommitted
@@ -29,17 +30,42 @@ No tracked changes are outstanding. The tree is otherwise clean of build work.
 
 ### Scale, measured from git
 
-56 commits since `c4246c0` (27 August). `backend/services/financial/` is 41
-modules and about 32,400 lines. `backend/tests/test_financial_*.py` is 43 files,
-about 40,750 lines, **2,988 tests**.
+60 commits since `c4246c0` (27 August). `backend/services/financial/` is 41
+modules, 31,819 lines by `wc -l`. `backend/tests/test_financial_*.py` is 43
+files, 40,807 lines, **2,993 tests**.
 
 ### Facts established this session, so no one rediscovers them
 
-- **The exports guard needs no edit for a new module.** The state file previously
-  said to "add the new exports to `backend/tests/test_financial_exports.py`", but
-  that guard is structural: it parses `services/financial/__init__.py` with AST and
-  verifies every `__all__` name resolves and every module is reachable. It passed
-  unchanged (5 tests OK) once `__init__.py` exported the new surface.
+- **Suite baseline is now 2,993 tests, FAILED (errors=1, skipped=9)**, the one
+  error still the long-standing `jose` ModuleNotFoundError via
+  `services/auth_service.py:10`. Before this commit it was 2,988 with the same
+  error. Any other failure is new.
+- **The item-10 design ruling, and why.** Neil ruled ("go with deliberate")
+  that `TransactionDraft.locator` is **required with no default**. A caller
+  with nothing to say passes `Locator(kind=LocatorKind.unlocated)` explicitly.
+  Reasoning that carried the decision: a default of `unlocated` would make a
+  call site that forgot to thread position data through indistinguishable from
+  a reader that tried and failed, and the count of unlocated rows is a defect
+  measure only while those two stay apart. Same reasoning `locators.capture`
+  gives its `space` argument no default. Migration cost was measured before
+  proposing: exactly one production constructor site (`native_ingest.py`,
+  which already held a real locator) and two test `draft()` helpers, one
+  `setdefault` line each.
+- **The writer owns the provenance key.** `record_transactions` serialises the
+  draft's locator into `provenance["locator"]` (`LOCATOR_PROVENANCE_KEY`,
+  exported from the package); a caller-supplied `provenance["locator"]` is
+  refused at the draft. The key is the same one `table_geometry` writes cell
+  locators under, deliberately, so one reader can open a row's place in its
+  source whatever produced the row. Item 12's reader should consume this key.
+- **`Locator(kind=page_rectangle, rectangle=...)` needs no separate
+  `page_number`**: the page comes from the rectangle, and an explicit
+  `page_number` is checked for agreement if given (`locators.py`,
+  `__post_init__`).
+- **`ingest_native_reading` still has no production caller** (one of the four
+  capability-with-no-route instances). Its refusals (`IngestionError` family,
+  and now the draft's locator refusals) are development-time guardrails; the
+  user-visible artefact of item 10 is the honest `unlocated` marking that item
+  12 will surface.
 - **Test environment rebuild.** The sandbox starts with no backend deps. Full
   `pip install -r requirements.txt` fails because `numpy==2.3.5` needs Python
   ≥3.11 and the sandbox is 3.10.12. The financial suite runs on a selective
@@ -48,13 +74,14 @@ about 40,750 lines, **2,988 tests**.
   python-dotenv 1.2.1, requests 2.32.5, psycopg[binary] 3.2.13, openai 2.9.0.
   **Do not install python-jose**: leaving it out is what reproduces the
   documented baseline fingerprint (errors=1 on `jose`).
-- **Suite baseline is now 2,988 tests, FAILED (errors=1, skipped=9)**, the one
-  error still the long-standing `jose` ModuleNotFoundError via
-  `services/auth_service.py:10`. Before this commit it was 2,933 with the same
-  error. Any other failure is new.
-- `/tmp/loupe.index` left by an earlier session could not be removed this
-  session either; the commit procedure works fine with a fresh name
-  (`/tmp/loupe_item9.index`). Pick a fresh index filename if `rm` refuses.
+- Stale `/tmp/loupe*.index` files from earlier sessions cannot be removed;
+  the commit procedure works fine with a fresh name per session
+  (`/tmp/loupe_item10.index` this time). Pick a fresh index filename if `rm`
+  refuses.
+- **The exports guard needs no edit for a new name from an existing module.**
+  It is structural (AST over `__init__.py`); it passed unchanged when
+  `LOCATOR_PROVENANCE_KEY` was added to the `transactions` import block and
+  `__all__`.
 
 ---
 
@@ -79,16 +106,23 @@ commit `3784dbe`.
    invariants, `require_certain` refusals, `to_json` payload shape and ordering,
    `page_text_origin` via duck-typed fakes).
 
-10. **Next.** Carry a per-transaction source locator through the writers so every
-    row can cite its origin.
+10. **Done.** Per-transaction source locator through the writers, committed
+    `0d6b399` as one unit: required `locator: Locator` on `TransactionDraft`,
+    writer serialisation into provenance under `LOCATOR_PROVENANCE_KEY`,
+    caller-supplied `provenance["locator"]` refused, `native_ingest` passing
+    the object, five new tests. Design ruling and reasoning recorded above.
 
 11. Correction storage. The corrected value is canonical, the machine's original
     stays immutable beside it, and the ledger records who, when and why.
     **Blocked on an open question, below.**
 
-12. UI: transaction review with click-through to the highlighted region of the
-    source page. This is also where `suspect_amounts` gains its first consumer;
-    until then it is another built-but-unwired capability.
+12. **Next candidate** (unless Neil rules on the correction question first, or
+    redirects to wiring). UI: transaction review with click-through to the
+    highlighted region of the source page. This is where `suspect_amounts` and
+    the row locators gain their first consumer; until then both are
+    built-but-unwired capability. The reader opens
+    `provenance[LOCATOR_PROVENANCE_KEY]` via `Locator.from_json`, and
+    `SourceRectangle.as_fractions` exists for rendering at any zoom.
 
 13. User-defined view tabs. Named snapshots of filter state, persisted, creatable,
     renameable, deletable. Also expose source document type onto the transaction row.
@@ -132,14 +166,14 @@ closes moves the class. That keeps the rule that class is never user-settable an
 makes a correction a re-ingestion of one row rather than an override. **Neil's call
 is wanted before any correction storage is written.**
 
-**Capability with no route to the user.** Four instances now, which makes it a
-pattern rather than a coincidence: the document reader (rows are recovered and
-nothing downstream consumes them, item 1), `exhibit.py` (984 lines, no API route, no
-screen), `tracing.py` (no caller outside its own package), and now
-`suspect_amounts.py` (committed, tested, no consumer until item 12). Both exhibit
-and tracing have since been confirmed as wanted, so the question is narrower now:
-whether the next block of work is new capability or connecting up what already
-exists.
+**Capability with no route to the user.** Four instances, a pattern rather than a
+coincidence: the document reader (rows are recovered and nothing downstream consumes
+them, item 1), `exhibit.py` (984 lines, no API route, no screen), `tracing.py` (no
+caller outside its own package), and `suspect_amounts.py` plus now the row locators
+(committed, tested, no consumer until item 12). Both exhibit and tracing have since
+been confirmed as wanted, so the question is narrower now: whether the next block of
+work is new capability or connecting up what already exists. Item 12 would consume
+two of these at once.
 
 **Provenance of `exhibit.py`.** It came from a build order proposed by Claude, not
 from a stated Owl requirement. It is 984 lines justified from the rules of evidence
