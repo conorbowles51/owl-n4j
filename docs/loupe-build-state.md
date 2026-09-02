@@ -3,20 +3,20 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 1 September 2026 (fifth rewrite this date; this one records
-the geometry persistence + transaction join unit, both halves of the
-`per_table` data path)
+**Last updated:** 2 September 2026 (records the item-12 frontend wiring unit:
+`SourceHighlight` into `TransactionDetailPanel`, closing the Neo4j-side loop
+end to end)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `d48f189`, "Persist table geometry and join
-  transactions to it (persistence + join, one unit)". The commit carrying the
-  current revision of this file sits one above that, so **confirm the real tip
-  with `git log --oneline -5`** at the start of every session rather than
-  trusting this line.
+- **Head when this was written:** `de7ef21`
+  (`de7ef212623d4751ec3a1f5f2da334216e64b9a1`), "Wire SourceHighlight into
+  TransactionDetailPanel (frontend, one unit)", parent `b3d1c48`. **Confirm
+  the real tip with `git log --oneline -5`** at the start of every session
+  rather than trusting this line.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 
 ### Uncommitted
@@ -27,131 +27,87 @@ the geometry persistence + transaction join unit, both halves of the
   denies `unlink` for workspace files, so they cannot be deleted from a session.
   Neil has to remove them from his side.** They are untracked and harmless
   meanwhile.
+- **New this session, same restriction:** `frontend_v2/src/__probe.test.ts`.
+  Created to check whether this sandbox's jsdom implements
+  `URL.createObjectURL` (it does — see durable facts below), then could not be
+  removed by `rm`, `mv`, `git clean -f`, or Python `os.remove()`, all
+  "Operation not permitted." Overwritten with a harmless always-passing test
+  and a comment asking Neil to delete it from a normal shell. Deliberately
+  left out of the commit. **Now three files in this category**, all needing a
+  session-external delete.
 
 No tracked changes are outstanding. The tree is otherwise clean of build work.
 
 ### Scale, measured from git
 
-67 commits since `c4246c0` (27 August), counting `d48f189`.
-`backend/services/financial/` is 43 modules, 32,221 lines by `wc -l`.
-`backend/tests/test_financial_*.py` is 45 files, 41,860 lines, **3,041 tests**.
-Frontend unit suite unchanged this unit: **52 files, 277 tests** (not re-run
-this session; no frontend file changed).
+69 commits since `c4246c0` (27 August), counting `de7ef21`.
+`backend/services/financial/` is unchanged this unit: 43 modules, 32,221
+lines by `wc -l`; `backend/tests/test_financial_*.py` unchanged: 45 files,
+**3,041 tests** (no backend file touched this unit, so not re-run).
+Frontend unit suite, re-run this session: **54 files, 285 tests**, 0
+failures — up from 52 files / 277 tests: +2 files exactly accounts for the
+new `TransactionSourceHighlight.test.tsx` and the stray `__probe.test.ts`
+(the new `.tsx` component itself is not a test file), and +8 tests is the
+7 in the new suite plus the probe's 1.
 
 ---
 
-## What this session did: the persistence + join unit (`d48f189`)
+## What this session did: wire `SourceHighlight` into `TransactionDetailPanel` (`de7ef21`)
 
-### The survey, and a correction to the last two revisions of this file
+### The unit
 
-The session opened on the item-12 data-path question. The survey read the
-engine source before designing anything, and it disproved a claim the previous
-two revisions of this file carried: that "the engine persists
-`table_geometry.per_table` (cell locators) inside `ProcessedArtifact` metadata"
-and that "the registry's wholesale metadata persistence keeps it live."
-**Wrong.** The extraction module's own docstring
-(`evidence-engine/app/pipeline/pdf_extraction.py`,
-`_table_geometry_metadata`) says the dict is transient: it is passed to
-`build_extraction_quality_report`, which reads named keys and keeps only the
-summary counts, and is never written to a column. `per_table` died with the
-job. There was no rectangle anywhere durable for a join to reach.
+Confirmed with Neil at the start of the session (item 12's first remaining
+sub-bullet): the data to close the Neo4j-side loop already existed in two
+separate places — `/api/financial` rows carry `locator` JSON since `d48f189`,
+and `GET /api/evidence/{id}/page/{n}/image` can render the page it points at
+since `530c3a6` — but nothing on the frontend read both together. This unit
+is entirely that reading-together: five files, one commit, 277 insertions,
+0 deletions.
 
-This was surfaced to Neil rather than silently worked around. Three rulings
-came back, in order:
+- `frontend_v2/src/features/financial/api.ts` — `BaseFinancialRecord` gained
+  an unparsed `locator?: unknown` field. Left unparsed deliberately:
+  `readLocator` in `features/financial/lib/locator.ts` is the one place that
+  reads it, so this side of the contract never guesses at a shape the backend
+  didn't commit to.
+- `frontend_v2/src/features/evidence/api.ts` — `evidenceAPI.getPageImageUrl`,
+  mirroring the existing `getFileUrl`.
+- `frontend_v2/src/features/financial/components/TransactionSourceHighlight.tsx`
+  (new). The gate in front of the existing `SourceHighlight`: runs the same
+  `readLocator` parse `SourceHighlight` uses internally to decide whether a
+  locator kind (`page_only` or `page_rectangle`) needs an image at all, so the
+  two components never disagree about what kind a payload is. Only then does
+  it fetch — an authenticated blob via the existing house
+  `useProtectedObjectUrl` pattern from `frontend_v2/src/lib/protected-file.ts`
+  (the image endpoint sits behind the same auth as every other evidence file,
+  so a bare `<img src>` could not have carried the token). `not_positional`,
+  `unlocated`, and any payload `readLocator` refuses cost no network call,
+  and neither does a `page_only`/`page_rectangle` locator with no
+  `sourceDocumentId` on the row. `SourceHighlight` itself is unchanged — its
+  own docstring already said the image arrives as a prop because no
+  page-render endpoint existed yet, and that held exactly as written.
+- `TransactionDetailPanel.tsx` — wired to render the new wrapper in place of
+  the bare locator sentence.
 
-1. **Data path: "Both."** The viewer will be fed by a Postgres ledger read
-   API AND a Neo4j `per_table` join. (This closes the "which store feeds the
-   viewer" open question from the previous revision.)
-2. **Order: the `per_table` join first** — join the transaction screen's
-   existing Neo4j read path to cell locators.
-3. **Unit reshape, after the transience finding:** since the join's premise
-   (persisted geometry) did not exist, Neil ruled **"Persistence + join, one
-   big unit"** — land durable persistence and the join in this one session,
-   accepting the break in the one-unit-per-session rhythm to deliver a
-   clickable path end to end.
-
-### The unit that landed
-
-Eleven files, one commit, 1,404 insertions. The commit message on `d48f189`
-carries the full reasoning; the shape:
-
-**Engine half — geometry now outlives the job.**
-
-- `evidence-engine/app/services/evidence_table_geometry.py` —
-  `group_per_table_by_page` (geometry-less entries counted not stored,
-  malformed entries counted invalid not raised on) and
-  `replace_evidence_table_geometry` (delete-then-insert in one commit, so the
-  stored geometry always describes exactly one extraction run, including a run
-  that found no tables). Returns `GeometryPersistenceResult` so orchestrators
-  log what happened rather than inferring it.
-- New table `evidence_table_geometry`: one row per (evidence file, page),
-  JSONB payload of the geometry-bearing `per_table` entries whose table
-  rectangle landed on that page. Per-page rows are the bounding the extraction
-  docstring demanded before anything persisted `per_table`.
-- **The backend alembic tree owns the schema**: new head
-  `20260902_evidence_table_geometry` (file
-  `backend/postgres/alembic/versions/20260902_add_evidence_table_geometry.py`),
-  model in `backend/postgres/models/evidence.py` with a
-  `page_number >= 1` check constraint. The engine model in
-  `evidence-engine/app/models/job.py` is a write-only mirror, said so in its
-  docstring.
-- `orchestrator.py` and `batch_orchestrator.py` call the replace after the
-  document-text upsert. Failure is logged and never propagates
-  (auxiliary-not-fatal, same doctrine as the grouping). The shared-session
-  orchestrator does `await db.rollback()` in its except so a failed geometry
-  write cannot poison the session for the steps after it; the batch path uses
-  its own `async with async_session()`.
-
-**Backend half — the join the transaction screen reads through.**
-
-- `backend/services/financial/transaction_locators.py`. There is no stored key
-  from a transaction to a cell, so the join is textual and the module
-  docstring says so plainly: a grid row is a candidate when at least
-  `TRANSACTION_MATCH_MINIMUM_CELLS = 2` of its distinct non-empty
-  whitespace-normalised cell texts occur inside the normalised
-  `source_excerpt`; a candidate wins only by strictly beating every other
-  candidate on the page. A tie refuses and degrades to `page_only` — the same
-  refusal `locate_table` makes for overlapping cells. Fallback ladder, best to
-  worst: union rectangle of the winning row's clickable cells; the owning
-  table's own rectangle (matched by cell identity, not equality); `page_only`;
-  `unlocated`. Case is deliberately not folded: the excerpt was built from
-  these same cell texts, so a case difference is a real difference, and
-  folding could only convert a safe fallback into a wrong highlight.
-- `attach_transaction_locators(db, transactions)` mutates the router's dicts
-  in place under `LOCATOR_PROVENANCE_KEY` — the same `"locator"` key the
-  ledger writer uses, deliberately, so one reader serves both stores. Rows
-  already carrying the key are left alone (an ingestion-time locator knows
-  more than this join does). Non-UUID `source_document_id` (the filename
-  fallback) gets the honest `page_only`/`unlocated` rather than nothing. One
-  geometry query per evidence file, not per row.
-- `backend/routers/financial.py` `GET /api/financial` now depends on the
-  Postgres session and calls the attach inside try/except with
-  `logger.exception`: the transaction list is the one thing this feature must
-  never take down.
-- Exports: `TRANSACTION_MATCH_MINIMUM_CELLS`, `attach_transaction_locators`,
-  `locate_transaction` through `services/financial/__init__.py`. Exports guard
-  passed unchanged, as its structural design predicts.
-
-**Tests.** `backend/tests/test_financial_transaction_locators.py`, 22 tests in
-four classes (pure-join wins, refusals, the full fallback ladder, and
-sqlite-backed `attach` tests on the real model following the
-`test_financial_admission.py` fixture template).
-`evidence-engine/tests/test_evidence_table_geometry.py`, 7 pytest tests in the
-house engine convention (AsyncMock session, compiled-SQL assertions,
-delete-before-insert order, string-UUID coercion).
+**Tests.** `TransactionSourceHighlight.test.tsx`, 7 tests: the three no-image
+locator kinds never fetch; a page-needing kind with no `sourceDocumentId`
+never fetches; a `page_only` fetch shows the loading state then the resolved
+image with no box; a `page_rectangle` fetch draws the highlight box and the
+accessible label once resolved; a failed fetch falls back to
+`SourceHighlight`'s own no-image sentence rather than erroring.
 
 ### Verification
 
-- Backend financial suite: **`Ran 3041 tests, FAILED (errors=1)`, skipped=0
-  (measured)** — exactly the old 3,019 plus the 22 new, and the single error
-  was verified by traceback to be the documented `jose` ModuleNotFoundError in
-  `tests.test_financial_router`, nothing else. This is the new fingerprint.
-- Engine tests: the new file `7 passed` alone. The collectable engine subset
-  (see the durable environment facts below for why it is a subset) ran
-  **244 passed, 1 failed, 1 error**; the failure and the error are both
-  pre-existing and are recorded below, neither is from this unit.
-- Diffstat verified against HEAD before committing (11 files, 1,404
-  insertions, nothing else); tree tracked-clean after the ref update.
+- Full frontend suite: **54 files, 285 tests, 0 failures** (up from 52/277 —
+  see Scale above for exactly what accounts for the difference).
+- `npx tsc -b`: clean. `npx eslint .`: clean.
+- One unrelated, non-blocking artifact during the vitest run: an "Unhandled
+  Error" `EPERM: operation not permitted, unlink
+  '.../node_modules/.vite/vitest/.../deps/@tanstack_react-query.js'` — Vite's
+  own dependency-cache cleanup hitting the same sandbox unlink restriction
+  documented elsewhere in this file, not a test failure, not from this unit's
+  code.
+- Diffstat verified against HEAD before committing (5 files, 277 insertions,
+  0 deletions, nothing else); tree tracked-clean after the ref update.
 
 ---
 
@@ -159,12 +115,40 @@ delete-before-insert order, string-UUID coercion).
 
 ### New this session
 
+- **`Response` mocks in vitest/jsdom need a string body, not a `Blob`.**
+  `new Response(new Blob(["x"], { type: "image/png" }), { status: 200 })`
+  fails with `TypeError: object.stream is not a function` — jsdom's `Blob`
+  is not stream-capable in the way Node's native `Response` constructor
+  expects. Fix: `new Response("fake-png-bytes", { status: 200, headers: {
+  "Content-Type": "image/png" } })`, matching the existing pattern in
+  `frontend_v2/src/lib/protected-file.test.ts`. Anything mocking a fetched
+  binary response should use this shape.
+- **jsdom in this sandbox implements `URL.createObjectURL` and
+  `URL.revokeObjectURL` as real functions**, so both can be `vi.spyOn`'d
+  directly in a test without replacing the `URL` global. Confirmed with a
+  disposable probe test (see next point for why that was a mistake to leave
+  behind).
+- **A self-created file can hit the same unlink restriction as the
+  pre-existing `.bak` files.** This is not limited to files that were
+  already in the tree: a throwaway probe test created and then no longer
+  wanted (`frontend_v2/src/__probe.test.ts`) could not be removed by `rm`,
+  `mv`, `git clean -f`, or Python's `os.remove()` — all "Operation not
+  permitted." **Lesson for future sessions: don't create a scratch file in
+  the workspace tree at all for a quick check like this** — there is no
+  guaranteed way to remove it afterward. If one is created by mistake,
+  overwrite its content to something harmless and clearly labeled rather
+  than leaving it in whatever half-finished state the check left it in, and
+  record it here and in Uncommitted so it isn't mistaken for product code.
+
+### Carried forward
+
 - **The commit procedure in CLAUDE.md is missing committer identity.**
-  `git commit-tree` failed with "Committer identity unknown" — the documented
+  `git commit-tree` fails with "Committer identity unknown" — the documented
   env line sets only `GIT_AUTHOR_*`. The fix that respects "never modify git
   config": also set `GIT_COMMITTER_NAME="Neil Byrne"
   GIT_COMMITTER_EMAIL="thenofisamizdat@gmail.com"` on the same command.
-  CLAUDE.md should gain this line; flagged for Neil below.
+  Used again successfully this session. CLAUDE.md should gain this line;
+  flagged for Neil below.
 - **SQLAlchemy flush ordering does not follow raw ForeignKeys.** With no ORM
   `relationship()` between two mappers, a single flush has no insert-ordering
   constraint between them, and under SQLite `PRAGMA foreign_keys=ON` the
@@ -198,8 +182,6 @@ delete-before-insert order, string-UUID coercion).
   installing them plus `neo4j==5.28.2` and `openai==2.9.0` is what walks that
   chain back to failing on `jose` — which is the documented state. **Still do
   not install python-jose.**
-
-### Carried forward
 
 - **`routers.evidence` cannot be imported in this environment, so its
   endpoints are tested statically.** The import chain reaches
@@ -237,10 +219,11 @@ delete-before-insert order, string-UUID coercion).
   (no Playwright browsers); unit-project counts are the baseline. Eslint does
   not exempt underscore-prefixed unused destructures.
 - Stale `/tmp/loupe*.index` files cannot be removed; pick a fresh index
-  filename per commit (`/tmp/loupe_item13_geometry_join.index` this time).
+  filename per commit (`/tmp/loupe_sourcehighlight_wire.index` this time).
 - **The exports guard needs no edit for a new module**, as long as the module
   contributes names through `__init__.py` and has no module-level `__all__`.
-  Passed unchanged again for `transaction_locators`.
+  Passed unchanged again for `transaction_locators`. (Not exercised this
+  session — no backend module was added.)
 
 ---
 
@@ -263,15 +246,15 @@ delete-before-insert order, string-UUID coercion).
 11. Correction storage. **Still blocked on the correction-versus-re-ingestion
     question, below.**
 
-12. **In progress — four units landed** (`d79199a` viewer, `530c3a6`
-    page-render endpoint, and now `d48f189` carrying both the geometry
-    persistence and the transaction join). The data-path ruling is in:
-    **both stores**. What remains, in no ruled order:
-    - **Wire `SourceHighlight` into `TransactionDetailPanel`.** The data now
-      reaches it: `/api/financial` rows carry `locator` JSON, and the page
-      image is served by the `530c3a6` endpoint. This is the natural next
-      chunk — it closes the loop for the Neo4j path end to end.
+12. **In progress — five units landed** (`d79199a` viewer, `530c3a6`
+    page-render endpoint, `d48f189` geometry persistence + transaction join,
+    and now `de7ef21` wiring `SourceHighlight` into `TransactionDetailPanel`).
+    The data-path ruling is in: **both stores**. The Neo4j side of item 12 is
+    now closed end to end: a transaction with a locator, opened in the
+    detail panel, shows its source page with the value highlighted on it.
+    What remains, in no ruled order:
     - **The Postgres ledger read API** (the other half of the "Both" ruling).
+      Nothing on the frontend reads the ledger yet.
     - **Wiring `ingest_native_reading` into production** — the ledger still
       has no production writer. Whether this comes before or after the read
       API is unruled.
@@ -302,9 +285,9 @@ item 11. Proposal on the table (a correction triggers a genuine re-run of the
 balance identity; only a re-run that closes moves the class), not accepted.
 
 **Capability with no route to the user — narrowed again.** `exhibit.py` and
-`tracing.py` remain unrouted. `suspect_amounts` plus the row locators now
-have data flowing to the API row; the last gap on the Neo4j side is the
-frontend wiring chunk of item 12.
+`tracing.py` remain unrouted. The Neo4j-side gap in item 12 is now closed
+(`de7ef21`); the only remaining route-to-user gap on the financial screen is
+the Postgres ledger half of item 12, which has no frontend at all yet.
 
 **Should CLAUDE.md's commit procedure gain the committer-identity line?** The
 procedure as written fails on a fresh sandbox (see durable facts). The state
