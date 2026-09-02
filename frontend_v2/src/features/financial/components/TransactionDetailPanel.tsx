@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import type { Transaction } from "../api"
+import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 
 interface TransactionDetailPanelProps {
   transaction: Transaction
@@ -18,6 +19,14 @@ interface TransactionDraft {
   purpose: string
   counterparty: string
   notes: string
+}
+
+function amountValueLabel(transaction: Transaction): string {
+  const formatted = transaction.amount.toLocaleString("en-US", {
+    style: "currency",
+    currency: transaction.currency || "USD",
+  })
+  return `the ${formatted} amount`
 }
 
 function createTransactionDraft(transaction: Transaction): TransactionDraft {
@@ -92,6 +101,18 @@ export function TransactionDetailPanel({
             <p className="text-xs text-muted-foreground">{transaction.source_excerpt}</p>
           </div>
         )}
+
+        {/* Source */}
+        <div className="col-span-3">
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Source
+          </label>
+          <TransactionSourceHighlight
+            locatorPayload={transaction.locator}
+            sourceDocumentId={transaction.source_document_id}
+            valueLabel={amountValueLabel(transaction)}
+          />
+        </div>
 
         {/* Purpose */}
         <div>

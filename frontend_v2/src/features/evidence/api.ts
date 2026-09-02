@@ -165,6 +165,15 @@ export const evidenceAPI = {
 
   getFileUrl: (evidenceId: string) => `/api/evidence/${evidenceId}/file`,
 
+  /**
+   * One page of a PDF evidence file, rendered as a PNG at the given width
+   * (backend default 1200; 100-3000 accepted). This is the image a stored
+   * `page_rectangle` or `page_only` locator refers to — the page as
+   * displayed, full page, so a fraction-of-page rectangle lands correctly.
+   */
+  getPageImageUrl: (evidenceId: string, page: number, width?: number) =>
+    `/api/evidence/${evidenceId}/page/${page}/image${width ? `?width=${width}` : ""}`,
+
   updateTranscriptSpeakerSettings: (
     evidenceId: string,
     settings: TranscriptSpeakerSettings

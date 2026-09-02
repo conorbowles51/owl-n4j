@@ -62,6 +62,15 @@ interface BaseFinancialRecord {
   source_page?: number | null
   source_excerpt?: string | null
   extraction_confidence?: number | null
+  /**
+   * The raw value of `provenance["locator"]` (Neo4j: attached by
+   * `attach_transaction_locators` on read; Postgres ledger: written at
+   * ingestion). Unparsed on purpose — `readLocator` in
+   * `features/financial/lib/locator.ts` is the one place that reads it, so
+   * this side of the contract never guesses at a shape the backend didn't
+   * commit to.
+   */
+  locator?: unknown
 }
 
 export interface TransactionRecord extends BaseFinancialRecord {
