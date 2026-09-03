@@ -776,6 +776,12 @@ from services.financial.transaction_locators import (
     attach_transaction_locators,
     locate_transaction,
 )
+from services.financial.transaction_query import (
+    LedgerQueryError,
+    TransactionView,
+    list_transactions,
+    to_view,
+)
 from services.financial.version import (
     PIPELINE_VERSION,
     code_fingerprint_detail,
@@ -1517,6 +1523,13 @@ __all__ = [
     "TRANSACTION_MATCH_MINIMUM_CELLS",
     "attach_transaction_locators",
     "locate_transaction",
+    # Reading the ledger back out.  Defaults to the admitted population because
+    # that is the population every other total in this ledger is filtered to;
+    # a caller that wants quarantined or superseded rows says so explicitly.
+    "LedgerQueryError",
+    "TransactionView",
+    "list_transactions",
+    "to_view",
     # Cross-class correlation: what people said about money, against what the
     # records show.  Correlation never promotes -- a corroborated P4 claim is
     # still P4 -- so nothing here assigns a proof class, and the constructors
