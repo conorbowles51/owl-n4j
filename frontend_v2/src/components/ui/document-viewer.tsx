@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -53,6 +54,7 @@ interface DocumentViewerProps {
   documentUrl?: string
   documentName?: string
   initialPage?: number
+  initialTime?: number
   navigationKey?: string
   transcription?: string | null
   transcriptionSegments?: TranscriptSegment[]
@@ -69,6 +71,7 @@ export function DocumentViewer({
   documentUrl,
   documentName,
   initialPage = 1,
+  initialTime,
   navigationKey,
   transcription,
   transcriptionSegments,
@@ -183,6 +186,7 @@ export function DocumentViewer({
             segments={transcriptionSegments}
             speakers={transcriptSpeakers}
             speakerMerges={transcriptSpeakerMerges}
+            initialTime={initialTime}
             onSpeakerSettingsChange={onTranscriptSpeakerSettingsChange}
             onCanPlay={() => setLoading(false)}
             onError={() => {
@@ -257,9 +261,14 @@ export function DocumentViewer({
         <DialogHeader className="flex-row items-center justify-between border-b border-border px-4 py-3 space-y-0">
           <div className="flex items-center gap-3">
             <IconComp className="size-5 text-muted-foreground" />
-            <DialogTitle className="text-base">
-              {documentName || "Document Viewer"}
-            </DialogTitle>
+            <div>
+              <DialogTitle className="text-base">
+                {documentName || "Document Viewer"}
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                Review this evidence file and any available source location or transcript.
+              </DialogDescription>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             {isPdf && (

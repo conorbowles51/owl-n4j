@@ -31,6 +31,7 @@ from services.chat_db_service import (
     require_case_access,
 )
 from services.case_service import CaseAccessDenied, CaseNotFound
+from services.mandate_context_service import mandate_context_service
 
 router = APIRouter(prefix="/api/chat-history", tags=["chat-history"])
 
@@ -61,6 +62,7 @@ class ChatHistoryResponse(BaseModel):
     case_id: str
     case_revision_id: Optional[str] = None
     message_count: int
+    mandate_version_id: Optional[str] = None
 
 
 class ChatHistorySummary(BaseModel):
@@ -74,6 +76,7 @@ class ChatHistorySummary(BaseModel):
     owner_user_id: str
     case_id: str
     message_count: int
+    mandate_version_id: Optional[str] = None
 
 
 def _to_response(conversation: ChatConversation) -> ChatHistoryResponse:
@@ -97,6 +100,11 @@ async def create_chat_history(
         user=current_user,
         case_id=chat.case_id,
         title=chat.name or "New conversation",
+        mandate_version_id=(
+            active.id
+            if (active := mandate_context_service.active_version(db, case_id=chat.case_id))
+            else None
+        ),
     )
     if chat.messages:
         revision = create_case_revision(
@@ -178,6 +186,24 @@ async def get_chat_history(
     except (CaseNotFound, CaseAccessDenied) as exc:
         raise HTTPException(status_code=404, detail="Chat history not found") from exc
     return _to_response(conversation)
+
+
+@router.post("/{chat_id}/adopt-current-mandate")
+async def adopt_current_mandate(
+    chat_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        conversation = get_conversation_for_user(db, chat_id, current_user)
+    except (CaseNotFound, CaseAccessDenied) as exc:
+        raise HTTPException(status_code=404, detail="Chat history not found") from exc
+    active = mandate_context_service.active_version(db, case_id=conversation.case_id)
+    conversation.mandate_version_id = active.id if active else None
+    db.commit()
+    return mandate_context_service.metadata(
+        db, case_id=conversation.case_id, version_id=conversation.mandate_version_id
+    )
 
 
 @router.put("/{chat_id}", response_model=ChatHistoryResponse)

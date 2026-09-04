@@ -166,14 +166,20 @@ def _evidence_record_from_db(record) -> dict:
         "case_id": str(record.case_id),
         "original_filename": record.original_filename,
         "stored_path": record.stored_path or "",
+        "folder_id": str(record.folder_id) if record.folder_id else None,
         "size": record.size,
         "sha256": record.sha256,
         "status": record.status,
+        "processing_stale": record.processing_stale,
+        "is_duplicate": record.is_duplicate,
         "duplicate_of": str(record.duplicate_of_id) if record.duplicate_of_id else None,
+        "is_relevant": record.is_relevant,
+        "owner": record.owner,
         "created_at": record.created_at.isoformat() if record.created_at else "",
         "processed_at": record.processed_at.isoformat() if record.processed_at else None,
         "last_error": record.last_error,
         "engine_job_id": record.engine_job_id,
+        "legacy_id": record.legacy_id,
         "summary": record.summary,
         "transcription": record.transcription,
         "transcription_segments": list(record.transcription_segments or []),
@@ -183,7 +189,7 @@ def _evidence_record_from_db(record) -> dict:
         ),
         "entity_count": record.entity_count,
         "relationship_count": record.relationship_count,
-        "processing_stale": record.processing_stale,
+        "last_processed_folder_id": str(record.last_processed_folder_id) if record.last_processed_folder_id else None,
     }
 
 
@@ -637,10 +643,15 @@ class EvidenceRecord(BaseModel):
     case_id: str
     original_filename: str
     stored_path: str = ""
+    folder_id: Optional[str] = None
     size: int
     sha256: str
     status: str
+    processing_stale: bool = False
+    is_duplicate: bool = False
     duplicate_of: Optional[str] = None
+    is_relevant: bool = False
+    owner: Optional[str] = None
     created_at: str
     processed_at: Optional[str] = None
     last_error: Optional[str] = None
@@ -652,7 +663,8 @@ class EvidenceRecord(BaseModel):
     entity_count: Optional[int] = None
     relationship_count: Optional[int] = None
     engine_job_id: Optional[str] = None  # Evidence engine job ID for progress tracking
-    processing_stale: bool = False
+    legacy_id: Optional[str] = None
+    last_processed_folder_id: Optional[str] = None
 
 
 class EvidenceListResponse(BaseModel):
@@ -806,6 +818,19 @@ async def text_search(
     )
     response.headers["Cache-Control"] = "no-store"
     return result
+
+
+@router.get("/{evidence_id}", response_model=EvidenceRecord)
+async def get_evidence_record(
+    evidence_id: str,
+    db: Session = Depends(get_db),
+):
+    """Return one authorized evidence record for deep-linked citations."""
+
+    record = _evidence_record_for_id(db, evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    return _evidence_record_from_db(record)
 
 
 @router.get("/{evidence_id}/text-matches", response_model=DocumentTextMatchesResponse)
@@ -2254,12 +2279,6 @@ class TagsSetRequest(BaseModel):
     tags: List[str]
 
 
-class EntityLinkRequest(BaseModel):
-    case_id: str
-    evidence_ids: List[str]
-    entity_ids: List[str]
-
-
 def _verify_evidence_case_access(
     case_id: str,
     current_user: User,
@@ -2305,72 +2324,6 @@ async def set_evidence_relevance(
     updated = EvidenceDBStorage.set_relevance(db, file_uuids, body.is_relevant)
     db.commit()
     return {"updated": updated, "is_relevant": body.is_relevant}
-
-
-@router.put("/relevance/from-theory")
-async def set_relevance_from_theory(
-    case_id: str = Query(..., description="Case ID"),
-    theory_id: str = Query(..., description="Theory ID"),
-    user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Mark all evidence files linked to a theory as relevant.
-    Collects IDs from attached_evidence_ids, attached_document_ids,
-    and any evidence files referenced by graph nodes in the theory's snapshot.
-    """
-    from services.workspace_service import workspace_service
-    from services.evidence_db_storage import EvidenceDBStorage
-    from uuid import UUID
-
-    theory = workspace_service.get_theory(case_id, theory_id)
-    if not theory:
-        raise HTTPException(status_code=404, detail="Theory not found")
-
-    evidence_ids = set()
-
-    for field in ("attached_evidence_ids", "attached_document_ids"):
-        for eid in (theory.get(field) or []):
-            evidence_ids.add(eid)
-
-    snapshot_id = theory.get("attached_snapshot_ids", [None])
-    if snapshot_id and isinstance(snapshot_id, list):
-        snapshot_id = snapshot_id[0] if snapshot_id else None
-    if snapshot_id:
-        try:
-            from services.snapshot_storage import snapshot_storage
-            snapshot = snapshot_storage.get(snapshot_id)
-            if snapshot:
-                nodes = snapshot.get("graph_data", {}).get("nodes", [])
-                all_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id))
-                filename_to_id = {
-                    (f.original_filename or "").lower(): str(f.id) for f in all_files
-                }
-                for node in nodes:
-                    for prop_key in ("source", "source_doc", "source_document", "file"):
-                        val = node.get("properties", {}).get(prop_key)
-                        if val and isinstance(val, str):
-                            match = filename_to_id.get(val.lower())
-                            if match:
-                                evidence_ids.add(match)
-        except Exception:
-            pass
-
-    updated = 0
-    if evidence_ids:
-        file_uuids = []
-        for eid in evidence_ids:
-            try:
-                file_uuids.append(UUID(eid))
-            except ValueError:
-                rec = EvidenceDBStorage.get_by_legacy_id(db, eid)
-                if rec:
-                    file_uuids.append(rec.id)
-        if file_uuids:
-            updated = EvidenceDBStorage.set_relevance(db, file_uuids, True)
-            db.commit()
-
-    return {"updated": updated, "theory_id": theory_id, "evidence_ids_marked": list(evidence_ids)}
 
 
 @router.post("/tags/add")
@@ -2423,45 +2376,6 @@ def get_case_tags(
     """Return the case's evidence tag cloud."""
     case_uuid = _verify_evidence_case_access(case_id, current_user, db, ("case", "view"))
     return {"tags": EvidenceDBStorage.get_tag_counts(db, case_uuid)}
-
-
-@router.post("/entity-links/add")
-def add_entity_links(
-    body: EntityLinkRequest,
-    current_user: User = Depends(get_current_db_user),
-    db: Session = Depends(get_db),
-):
-    """Link evidence records to case/entity profile IDs."""
-    _verify_evidence_case_access(body.case_id, current_user, db)
-    updated = EvidenceDBStorage.link_entities(db, body.evidence_ids, body.entity_ids)
-    db.commit()
-    return {"updated": updated, "entity_ids": body.entity_ids}
-
-
-@router.post("/entity-links/remove")
-def remove_entity_links(
-    body: EntityLinkRequest,
-    current_user: User = Depends(get_current_db_user),
-    db: Session = Depends(get_db),
-):
-    """Unlink evidence records from case/entity profile IDs."""
-    _verify_evidence_case_access(body.case_id, current_user, db)
-    updated = EvidenceDBStorage.unlink_entities(db, body.evidence_ids, body.entity_ids)
-    db.commit()
-    return {"updated": updated, "entity_ids": body.entity_ids}
-
-
-@router.get("/by-entity")
-def list_evidence_by_entity(
-    case_id: str = Query(...),
-    entity_id: str = Query(...),
-    current_user: User = Depends(get_current_db_user),
-    db: Session = Depends(get_db),
-):
-    """Return evidence records in a case linked to a case/entity profile."""
-    case_uuid = _verify_evidence_case_access(case_id, current_user, db, ("case", "view"))
-    files = EvidenceDBStorage.list_by_entity(db, case_uuid, entity_id)
-    return {"files": files, "total": len(files)}
 
 
 @router.get("/wiretap/processed")

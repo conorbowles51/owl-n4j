@@ -80,6 +80,16 @@ export interface AgentMessageResponse {
   clarification?: AgentClarification | null
   status: "running" | "completed" | "failed" | "cancelled" | "clarification_required"
   created_at: string
+  mandate: AgentMandateUsage
+}
+
+export interface AgentMandateUsage {
+  version?: { id: string; version_number: number; objective?: string | null } | null
+  active_version_id?: string | null
+  active_version_number?: number | null
+  is_stale: boolean
+  is_incomplete: boolean
+  temporary_override?: boolean
 }
 
 export type AgentStreamEvent =
@@ -162,6 +172,7 @@ export interface AgentThreadSummary {
   last_message_at: string
   created_at: string
   updated_at: string
+  mandate_version_id?: string | null
 }
 
 export interface AgentStoredMessage {

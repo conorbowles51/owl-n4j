@@ -6,17 +6,14 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { ConfidenceBar } from "@/components/ui/confidence-bar"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Input } from "@/components/ui/input"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { GitMerge, X, Search, StopCircle, Eye, Filter } from "lucide-react"
+import { EntityTypeFilterPopover } from "@/components/ui/entity-type-filter-popover"
+import { GitMerge, X, Search, StopCircle, Eye } from "lucide-react"
 import { useSimilarEntities } from "../hooks/use-similar-entities"
 import { useEntityTypes } from "../hooks/use-graph-data"
 import { graphAPI } from "../api"
 import { MergeEntitiesDialog } from "./MergeEntitiesDialog"
 import { useMergeTracker } from "../hooks/use-merge-tracker"
 import { EntityComparisonDialog } from "./EntityComparisonDialog"
-import { getNodeColor } from "@/lib/theme"
 import type { GraphData, GraphNode, SimilarPair } from "@/types/graph.types"
 
 interface SimilarEntitiesViewProps {
@@ -31,9 +28,8 @@ export function SimilarEntitiesView({
   onRefresh,
 }: SimilarEntitiesViewProps) {
   const [threshold, setThreshold] = useState([0.7])
-  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set())
+  const [selectedTypes, setSelectedTypes] = useState<Set<string> | null>(null)
   const [typeFilterOpen, setTypeFilterOpen] = useState(false)
-  const [typeSearch, setTypeSearch] = useState("")
   const {
     isScanning,
     progress,
@@ -81,45 +77,31 @@ export function SimilarEntitiesView({
     [typeCounts]
   )
 
-  const visibleTypes = useMemo(
-    () =>
-      Array.from(typeCounts.entries())
-        .sort(([, a], [, b]) => b - a)
-        .filter(([type]) =>
-          type.toLowerCase().includes(typeSearch.trim().toLowerCase())
-        ),
-    [typeCounts, typeSearch]
-  )
-
-  const hasActiveTypeFilter =
-    selectedTypes.size > 0 && selectedTypes.size < allTypes.length
+  const hasActiveTypeFilter = selectedTypes !== null
 
   const effectiveSelectedTypes =
-    selectedTypes.size === 0 ? allTypes : Array.from(selectedTypes)
+    selectedTypes === null ? allTypes : Array.from(selectedTypes)
 
   const toggleType = (type: string) => {
     setSelectedTypes((current) => {
-      const next = current.size === 0 ? new Set(allTypes) : new Set(current)
+      const next = current === null ? new Set(allTypes) : new Set(current)
       if (next.has(type)) next.delete(type)
       else next.add(type)
-      return next.size === 0 || next.size === allTypes.length
-        ? new Set()
-        : next
+      return next.size === allTypes.length ? null : next
     })
   }
 
   const selectAllTypes = () => {
-    setSelectedTypes(new Set())
+    setSelectedTypes(null)
   }
 
-  const clearTypeFilter = () => {
+  const deselectAllTypes = () => {
     setSelectedTypes(new Set())
-    setTypeSearch("")
   }
 
   const handleScan = () => {
     startScan({
-      entityTypes: hasActiveTypeFilter ? effectiveSelectedTypes : null,
+      entityTypes: selectedTypes === null ? null : effectiveSelectedTypes,
       similarityThreshold: threshold[0],
     })
   }
@@ -152,82 +134,21 @@ export function SimilarEntitiesView({
 
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <Popover open={typeFilterOpen} onOpenChange={setTypeFilterOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="shrink-0">
-                  <Filter className="size-3.5" />
-                  Types
-                  {hasActiveTypeFilter && (
-                    <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
-                      {selectedTypes.size}
-                    </Badge>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-64 p-0">
-                <div className="border-b border-border p-2">
-                  <Input
-                    placeholder="Filter types..."
-                    value={typeSearch}
-                    onChange={(e) => setTypeSearch(e.target.value)}
-                    className="h-7 text-xs"
-                  />
-                </div>
-                <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-[11px]"
-                    onClick={selectAllTypes}
-                    disabled={allTypes.length === 0}
-                  >
-                    Select All
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-[11px]"
-                    onClick={clearTypeFilter}
-                  >
-                    Clear Filter
-                  </Button>
-                </div>
-                <ScrollArea className="max-h-64">
-                  <div className="p-1">
-                    {visibleTypes.map(([type, count]) => {
-                      const checked =
-                        selectedTypes.size === 0 || selectedTypes.has(type)
-                      return (
-                        <button
-                          key={type}
-                          type="button"
-                          onClick={() => toggleType(type)}
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted"
-                        >
-                          <Checkbox checked={checked} />
-                          <span
-                            className="size-2.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: getNodeColor(type) }}
-                          />
-                          <span className="flex-1 text-left capitalize">{type}</span>
-                          <Badge variant="outline" className="h-4 px-1 text-[10px]">
-                            {count}
-                          </Badge>
-                        </button>
-                      )
-                    })}
-                    {visibleTypes.length === 0 && (
-                      <p className="px-2 py-3 text-center text-xs text-muted-foreground">
-                        No types found
-                      </p>
-                    )}
-                  </div>
-                </ScrollArea>
-              </PopoverContent>
-            </Popover>
+            <EntityTypeFilterPopover
+              open={typeFilterOpen}
+              onOpenChange={setTypeFilterOpen}
+              typeCounts={typeCounts}
+              selectedTypes={selectedTypes}
+              onToggleType={toggleType}
+              onSelectAll={selectAllTypes}
+              onDeselectAll={deselectAllTypes}
+              triggerVariant="outline"
+            />
 
             <div className="min-w-0 flex-1">
-              {hasActiveTypeFilter ? (
+              {selectedTypes === null ? (
+                <span className="text-xs text-muted-foreground">All entity types</span>
+              ) : selectedTypes.size > 0 ? (
                 <div className="flex flex-wrap gap-1">
                   {effectiveSelectedTypes
                     .sort((a, b) => a.localeCompare(b))
@@ -238,7 +159,7 @@ export function SimilarEntitiesView({
                     ))}
                 </div>
               ) : (
-                <span className="text-xs text-muted-foreground">All entity types</span>
+                <span className="text-xs text-muted-foreground">No entity types selected</span>
               )}
             </div>
           </div>
@@ -278,6 +199,7 @@ export function SimilarEntitiesView({
                 size="sm"
                 onClick={handleScan}
                 className="flex-1"
+                disabled={selectedTypes !== null && selectedTypes.size === 0}
               >
                 <Search className="size-3.5" />
                 Scan

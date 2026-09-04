@@ -13,6 +13,7 @@ import {
   Sparkles,
   Star,
   StarOff,
+  ContactRound,
 } from "lucide-react"
 import { useGraphStore } from "@/stores/graph.store"
 import { toast } from "sonner"
@@ -21,6 +22,9 @@ import {
   useRemoveSignificantEntities,
   useSignificantManifest,
 } from "@/features/significant/hooks/use-significant"
+import { useCreateDossier } from "@/features/dossiers"
+import { useCase } from "@/features/cases/hooks/use-cases"
+import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 
 interface GraphContextMenuProps {
   caseId: string
@@ -54,6 +58,9 @@ export function GraphContextMenu({
   const { entityKeySet: significantEntityKeys } = useSignificantManifest(caseId)
   const addSignificant = useAddSignificantEntities(caseId)
   const removeSignificant = useRemoveSignificantEntities(caseId)
+  const createDossier = useCreateDossier(caseId)
+  const caseQuery = useCase(caseId)
+  const { canEdit } = useCasePermissions(caseQuery.data)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -98,6 +105,15 @@ export function GraphContextMenu({
     }
   }
 
+  const addToDossiers = async () => {
+    try {
+      await createDossier.mutateAsync({ canonical_entity_key: nodeKey, display_name: nodeLabel })
+      toast.success("Added to Dossiers")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not create Dossier")
+    } finally { closeContextMenu() }
+  }
+
   type MenuItem =
     | { separator: true }
     | { icon: typeof Eye; label: string; onClick: () => void; className?: string }
@@ -129,6 +145,11 @@ export function GraphContextMenu({
       label: isSignificant ? "Remove from Significant" : "Add to Significant",
       onClick: () => { void toggleSignificant() },
     },
+    ...(canEdit ? [{
+      icon: ContactRound,
+      label: "Add to Dossiers",
+      onClick: () => { void addToDossiers() },
+    } as MenuItem] : []),
     {
       icon: isPinned ? PinOff : Pin,
       label: isPinned ? "Unpin Node" : "Pin Node",

@@ -12,4 +12,12 @@
 
 ## Technical And Product Notes
 
+- [Workspace Redesign](workspace-redesign.md)
+
+  Living product and engineering plan for rebuilding the investigator workspace, including agreed direction, current-state findings, open decisions, and migration considerations.
+
+- [Workspace Migration Inventory](workspace-redesign-migration-inventory.md)
+
+  Phase 0 ownership map for legacy Workspace stores, dependent consumers, compatibility paths, deterministic preflight, and retirement gates.
+
 This folder also contains existing product, frontend, performance, and cost-analysis notes. The business readiness pack is intended for founder/advisor review rather than end-user product documentation.

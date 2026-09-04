@@ -18,6 +18,7 @@ export interface SendAgentMessageParams {
   provider?: string
   model?: string
   caseLayer?: CaseLayer
+  mandateOverride?: Record<string, unknown>
 }
 
 export const agentAPI = {
@@ -39,6 +40,7 @@ export const agentAPI = {
         artifact_preference: params.artifactPreference || "auto",
         case_layer: params.caseLayer || "all",
         persist: true,
+        mandate_override: params.mandateOverride,
       },
       timeout: 240000,
     }),
@@ -64,6 +66,7 @@ export const agentAPI = {
         artifact_preference: params.artifactPreference || "auto",
         case_layer: params.caseLayer || "all",
         persist: true,
+        mandate_override: params.mandateOverride,
       }),
     })
 
@@ -112,6 +115,12 @@ export const agentAPI = {
     fetchAPI<AgentRunStatus>(`/api/agent/runs/${runId}:cancel`, {
       method: "POST",
     }),
+
+  adoptCurrentMandate: (threadId: string) =>
+    fetchAPI<import("./types").AgentMandateUsage>(
+      `/api/agent/threads/${threadId}/adopt-current-mandate`,
+      { method: "POST" },
+    ),
 
   artifactExportUrl: (artifactId: string, format: AgentArtifactExportFormat = "csv") =>
     `/api/agent/artifacts/${artifactId}/export?format=${format}`,

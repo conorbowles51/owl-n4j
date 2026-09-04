@@ -34,7 +34,10 @@ export function useProtectedObjectUrl(
   } | null>(null)
 
   useEffect(() => {
-    if (!activeUrl) return
+    if (!activeUrl) {
+      setResult(null)
+      return
+    }
 
     const controller = new AbortController()
     let nextObjectUrl: string | null = null

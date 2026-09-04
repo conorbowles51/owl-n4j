@@ -9,7 +9,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { Upload, Play, ChevronLeft, ChevronRight } from "lucide-react"
+import { Upload, Play, ChevronLeft, ChevronRight, ContactRound, Pin } from "lucide-react"
 import { useFolderContents } from "../hooks/use-folder-contents"
 import { useEvidenceStore } from "../evidence.store"
 import { evidenceAPI } from "../api"
@@ -21,6 +21,15 @@ import { FileRow } from "./FileRow"
 import { FolderRow } from "./FolderRow"
 import { InlineDropZone } from "./InlineDropZone"
 import type { EvidenceFile } from "@/types/evidence.types"
+import { AddEvidenceToDossierDialog } from "@/features/dossiers/components/AddEvidenceToDossierDialog"
+import { useCase } from "@/features/cases/hooks/use-cases"
+import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
+import {
+  useBulkPinItems,
+  usePinItem,
+  usePinStatus,
+  useUnpinItem,
+} from "@/features/workspace/hooks/use-workspace"
 
 const FILE_PAGE_SIZE = 250
 
@@ -76,6 +85,9 @@ export function FileListPanel({
   })
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDraggingExternal, setIsDraggingExternal] = useState(false)
+  const [dossierFiles, setDossierFiles] = useState<Array<{ id: string; name: string }>>([])
+  const caseQuery = useCase(caseId)
+  const { canEdit } = useCasePermissions(caseQuery.data)
 
   const queryClient = useQueryClient()
   const processMutation = useMutation({
@@ -105,6 +117,12 @@ export function FileListPanel({
 
   const filteredFiles = contents?.files ?? []
   const filteredFolders = contents?.folders ?? []
+  const visibleFileIds = filteredFiles.map((file) => file.id)
+  const pinStatusQuery = usePinStatus(caseId, visibleFileIds)
+  const pinMutation = usePinItem(caseId)
+  const bulkPinMutation = useBulkPinItems(caseId)
+  const unpinMutation = useUnpinItem(caseId)
+  const pinStatus = pinStatusQuery.data ?? {}
   const fileTotal = contents?.file_total ?? 0
   const pageCount = Math.max(1, Math.ceil(fileTotal / FILE_PAGE_SIZE))
   const canPageBack = filePage > 0
@@ -248,6 +266,17 @@ export function FileListPanel({
                   file={file}
                   caseId={caseId}
                   onDelete={onDeleteFile}
+                  onAddToDossier={canEdit ? (file) => setDossierFiles([{ id: file.id, name: file.original_filename }]) : undefined}
+                  isPinned={Boolean(pinStatus[file.id])}
+                  pinId={pinStatus[file.id]}
+                  onPin={canEdit ? (fileId) => pinMutation.mutate(
+                    { itemType: "evidence", itemId: fileId },
+                    { onSuccess: () => toast.success("Pinned to workspace") },
+                  ) : undefined}
+                  onUnpin={canEdit ? (pinId) => unpinMutation.mutate(
+                    pinId,
+                    { onSuccess: () => toast.success("Removed from workspace") },
+                  ) : undefined}
                 />
               ))}
             </TableBody>
@@ -300,11 +329,32 @@ export function FileListPanel({
             <Play className="mr-1.5 size-3.5" />
             Process
           </Button>
+          {canEdit ? <Button
+            size="sm"
+            variant="outline"
+            onClick={() => bulkPinMutation.mutate(
+              Array.from(selectedFileIds),
+              {
+                onSuccess: (result) => {
+                  toast.success(
+                    result.created > 0
+                      ? `${result.created} item${result.created === 1 ? "" : "s"} pinned to workspace`
+                      : "All selected evidence is already pinned",
+                  )
+                },
+              },
+            )}
+            disabled={bulkPinMutation.isPending}
+          >
+            <Pin className="mr-1.5 size-3.5" /> Pin to workspace
+          </Button> : null}
+          {canEdit ? <Button size="sm" variant="outline" onClick={() => setDossierFiles(filteredFiles.filter((file) => selectedFileIds.has(file.id)).map((file) => ({ id: file.id, name: file.original_filename })))}><ContactRound className="mr-1.5 size-3.5" /> Add to Dossier</Button> : null}
           <Button size="sm" variant="ghost" onClick={clearSelection}>
             Clear
           </Button>
         </div>
       )}
+      <AddEvidenceToDossierDialog caseId={caseId} files={dossierFiles} open={dossierFiles.length > 0} onOpenChange={(value) => { if (!value) setDossierFiles([]) }} onDone={clearSelection} />
     </div>
   )
 }

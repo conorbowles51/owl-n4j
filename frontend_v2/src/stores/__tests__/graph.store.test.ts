@@ -9,7 +9,7 @@ describe("graph.store", () => {
       searchMode: "filter",
       searchDraft: "",
       appliedSearchQuery: "",
-      filters: {},
+      selectedEntityTypes: null,
       graphDimension: "2d",
       viewSettings: {
         layout: "force",
@@ -82,12 +82,12 @@ describe("graph.store", () => {
       expect(useGraphStore.getState().appliedSearchQuery).toBe("")
     })
 
-    it("setFilter adds/updates filter", () => {
-      useGraphStore.getState().setFilter("person", true)
-      expect(useGraphStore.getState().filters.person).toBe(true)
+    it("distinguishes all entity types from no entity types", () => {
+      useGraphStore.getState().setSelectedEntityTypes(new Set())
+      expect(useGraphStore.getState().selectedEntityTypes).toEqual(new Set())
 
-      useGraphStore.getState().setFilter("person", false)
-      expect(useGraphStore.getState().filters.person).toBe(false)
+      useGraphStore.getState().setSelectedEntityTypes(null)
+      expect(useGraphStore.getState().selectedEntityTypes).toBeNull()
     })
   })
 

@@ -77,6 +77,46 @@ def authorize_case(
     return case_uuid
 
 
+def authorize_case_view(
+    db: Session,
+    case_id: str | UUID,
+    current_user: User,
+) -> UUID:
+    """Authorize the shared case-view boundary used by Workspace services."""
+
+    return authorize_case(db, case_id, current_user, ("case", "view"))
+
+
+def authorize_case_edit(
+    db: Session,
+    case_id: str | UUID,
+    current_user: User,
+) -> UUID:
+    """Authorize the shared case-edit boundary used by Workspace services."""
+
+    return authorize_case(db, case_id, current_user, ("case", "edit"))
+
+
+def require_case_view(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+) -> UUID:
+    """FastAPI dependency for case-scoped Workspace read routes."""
+
+    return authorize_case_view(db, case_id, current_user)
+
+
+def require_case_edit(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+) -> UUID:
+    """FastAPI dependency for case-scoped Workspace mutation routes."""
+
+    return authorize_case_edit(db, case_id, current_user)
+
+
 def case_access_dependency(
     permission_resolver: PermissionResolver,
 ):

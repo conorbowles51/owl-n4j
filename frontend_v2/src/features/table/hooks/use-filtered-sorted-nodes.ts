@@ -8,7 +8,7 @@ interface UseFilteredSortedNodesParams {
   nodes: GraphNode[]
   edges: GraphEdge[]
   searchTerm: string
-  selectedTypes: Set<string>
+  selectedTypes: Set<string> | null
   sortColumns: SortColumn[]
   pageSize: number
   currentPage: number
@@ -118,9 +118,9 @@ export function useFilteredSortedNodes({
 
   const result = useMemo(() => {
     // [1] Type filter
-    let filtered = selectedTypes.size > 0
-      ? nodes.filter((n) => selectedTypes.has(n.type))
-      : [...nodes]
+    let filtered = selectedTypes === null
+      ? [...nodes]
+      : nodes.filter((node) => selectedTypes.has(node.type))
 
     // [2] Text search (fuzzy + alias-aware)
     if (searchTerm.trim()) {

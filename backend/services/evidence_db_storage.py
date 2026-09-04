@@ -413,7 +413,6 @@ class EvidenceDBStorage:
                 cellebrite_model_id=fd.get("cellebrite_model_id"),
                 cellebrite_category=fd.get("cellebrite_category"),
                 tags=_clean_string_list(fd.get("tags")),
-                linked_entity_ids=_clean_string_list(fd.get("linked_entity_ids")),
                 metadata_=fd.get("metadata") or {},
             )
             db.add(ef)
@@ -472,7 +471,6 @@ class EvidenceDBStorage:
                 longitude=fd.get("longitude"),
                 has_geotag=bool(fd.get("has_geotag")),
                 tags=_clean_string_list(fd.get("tags")),
-                linked_entity_ids=_clean_string_list(fd.get("linked_entity_ids")),
                 metadata_=fd.get("metadata") or {},
             )
             db.add(ef)
@@ -604,75 +602,6 @@ class EvidenceDBStorage:
             {"tag": tag, "count": count}
             for tag, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         ]
-
-    @staticmethod
-    def link_entities(
-        db: Session,
-        evidence_ids: Sequence[Any],
-        entity_ids: Sequence[str],
-    ) -> int:
-        clean = _clean_string_list(entity_ids)
-        if not clean:
-            return 0
-        updated = 0
-        for ef in EvidenceDBStorage._files_for_ids(db, evidence_ids):
-            merged = _clean_string_list([*(ef.linked_entity_ids or []), *clean])
-            if merged != (ef.linked_entity_ids or []):
-                ef.linked_entity_ids = merged
-                updated += 1
-        if updated:
-            db.flush()
-        return updated
-
-    @staticmethod
-    def unlink_entities(
-        db: Session,
-        evidence_ids: Sequence[Any],
-        entity_ids: Sequence[str],
-    ) -> int:
-        remove = set(_clean_string_list(entity_ids))
-        if not remove:
-            return 0
-        updated = 0
-        for ef in EvidenceDBStorage._files_for_ids(db, evidence_ids):
-            existing = set(ef.linked_entity_ids or [])
-            if existing & remove:
-                ef.linked_entity_ids = sorted(existing - remove)
-                updated += 1
-        if updated:
-            db.flush()
-        return updated
-
-    @staticmethod
-    def list_by_entity(db: Session, case_id: uuid.UUID, entity_id: str) -> List[Dict[str, Any]]:
-        if not entity_id:
-            return []
-        rows = db.scalars(
-            select(EvidenceFile).where(EvidenceFile.case_id == case_id)
-        ).all()
-        return [
-            EvidenceDBStorage._file_to_dict(row)
-            for row in rows
-            if entity_id in (row.linked_entity_ids or [])
-        ]
-
-    @staticmethod
-    def unlink_entities_from_all(db: Session, case_id: uuid.UUID, entity_id: str) -> int:
-        if not entity_id:
-            return 0
-        updated = 0
-        rows = db.scalars(
-            select(EvidenceFile).where(EvidenceFile.case_id == case_id)
-        ).all()
-        for row in rows:
-            existing = set(row.linked_entity_ids or [])
-            if entity_id in existing:
-                existing.discard(entity_id)
-                row.linked_entity_ids = sorted(existing)
-                updated += 1
-        if updated:
-            db.flush()
-        return updated
 
     @staticmethod
     def _files_for_ids(db: Session, evidence_ids: Sequence[Any]) -> List[EvidenceFile]:
@@ -1040,7 +969,6 @@ class EvidenceDBStorage:
             "longitude": ef.longitude,
             "has_geotag": ef.has_geotag,
             "tags": list(ef.tags or []),
-            "linked_entity_ids": list(ef.linked_entity_ids or []),
             "metadata": dict(ef.metadata_ or {}),
         }
 

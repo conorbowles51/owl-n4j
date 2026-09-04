@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -59,7 +59,14 @@ class CaseProfile(Base, TimestampMixin):
     profile_type: Mapped[str] = mapped_column(String(32), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    importance: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    importance: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    canonical_entity_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    linkage_state: Mapped[str] = mapped_column(String(32), nullable=False, default="unlinked")
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="active")
+    needs_link_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    graph_entity_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    legacy_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    legacy_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -244,6 +251,12 @@ class CaseProfileNoteLink(Base, TimestampMixin):
         index=True,
     )
     note_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspace_entries.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     relationship_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -254,6 +267,7 @@ class CaseProfileNoteLink(Base, TimestampMixin):
     profile = relationship("CaseProfile", back_populates="note_links")
     case = relationship("Case", foreign_keys=[case_id])
     created_by = relationship("User", foreign_keys=[created_by_user_id])
+    workspace_entry = relationship("WorkspaceEntry", foreign_keys=[workspace_entry_id])
 
 
 class CaseProfileFindingLink(Base, TimestampMixin):
@@ -277,6 +291,12 @@ class CaseProfileFindingLink(Base, TimestampMixin):
         index=True,
     )
     finding_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspace_entries.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     relationship_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -287,3 +307,4 @@ class CaseProfileFindingLink(Base, TimestampMixin):
     profile = relationship("CaseProfile", back_populates="finding_links")
     case = relationship("Case", foreign_keys=[case_id])
     created_by = relationship("User", foreign_keys=[created_by_user_id])
+    workspace_entry = relationship("WorkspaceEntry", foreign_keys=[workspace_entry_id])

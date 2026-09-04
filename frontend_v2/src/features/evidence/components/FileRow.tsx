@@ -1,4 +1,4 @@
-import { MoreHorizontal, Eye, Play, FolderInput, Trash2 } from "lucide-react"
+import { MoreHorizontal, Eye, Play, FolderInput, Trash2, ContactRound, Pin, PinOff } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,11 @@ interface FileRowProps {
   file: EvidenceFileRecord
   caseId: string
   onDelete?: (file: EvidenceFile) => void
+  onAddToDossier?: (file: EvidenceFile) => void
+  isPinned?: boolean
+  onPin?: (fileId: string) => void
+  onUnpin?: (pinId: string) => void
+  pinId?: string
 }
 
 function formatSize(bytes: number): string {
@@ -56,7 +61,7 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
 }
 
-export function FileRow({ file, caseId, onDelete }: FileRowProps) {
+export function FileRow({ file, caseId, onDelete, onAddToDossier, isPinned, onPin, onUnpin, pinId }: FileRowProps) {
   const { selectedFileIds, toggleFileSelection, openDetail } = useEvidenceStore()
   const processMutation = useProcessBackground(caseId)
 
@@ -150,6 +155,7 @@ export function FileRow({ file, caseId, onDelete }: FileRowProps) {
               <Button
                 variant="ghost"
                 size="icon-sm"
+                aria-label={`Actions for ${file.original_filename}`}
                 className="opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <MoreHorizontal className="size-4" />
@@ -167,6 +173,21 @@ export function FileRow({ file, caseId, onDelete }: FileRowProps) {
                 <Play className="size-4" />
                 Process
               </DropdownMenuItem>
+              {isPinned && pinId && onUnpin ? (
+                <DropdownMenuItem onClick={() => onUnpin(pinId)}>
+                  <PinOff className="size-4" />
+                  Unpin from workspace
+                </DropdownMenuItem>
+              ) : onPin ? (
+                <DropdownMenuItem onClick={() => onPin(file.id)}>
+                  <Pin className="size-4" />
+                  Pin to workspace
+                </DropdownMenuItem>
+              ) : null}
+              {onAddToDossier ? <DropdownMenuItem onClick={() => onAddToDossier(asLegacyFile)}>
+                <ContactRound className="size-4" />
+                Add to Dossier
+              </DropdownMenuItem> : null}
               <DropdownMenuItem disabled>
                 <FolderInput className="size-4" />
                 Move To...

@@ -1,10 +1,11 @@
 import { useRef, useState } from "react"
-import { CheckCircle2, Pin, Sparkles, Tag, User, X } from "lucide-react"
+import { CheckCircle2, ContactRound, Pin, Sparkles, Tag, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { CaseProfilePicker } from "@/features/case-profiles/components/CaseProfilePicker"
+import { DossierPicker } from "@/features/dossiers/components/DossierPicker"
+import { dossiersAPI } from "@/features/dossiers/api"
 import { evidenceAPI } from "@/features/evidence/api"
 import { workspaceAPI } from "@/features/workspace/api"
 
@@ -25,7 +26,7 @@ export function FileBulkActionsBar({
   onChanged: () => void
 }) {
   const [tagOpen, setTagOpen] = useState(false)
-  const [entityOpen, setEntityOpen] = useState(false)
+  const [dossierOpen, setDossierOpen] = useState(false)
   const [tagInput, setTagInput] = useState("")
   const tagRef = useRef<HTMLDivElement | null>(null)
   const count = selectedIds.size
@@ -93,20 +94,19 @@ export function FileBulkActionsBar({
         ) : null}
       </div>
       <div className="relative">
-        <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setEntityOpen((current) => !current)}>
-          <User className="size-3" />
-          Link entity
+        <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setDossierOpen((current) => !current)}>
+          <ContactRound className="size-3" />
+          Add to Dossier
         </Button>
-        {entityOpen ? (
+        {dossierOpen ? (
           <div className="absolute left-0 top-8 z-40 w-80">
-            <CaseProfilePicker
+            <DossierPicker
               caseId={caseId}
-              placeholder="Search case profiles..."
-              onSelect={(profile) => {
-                setEntityOpen(false)
+              onSelect={(dossier) => {
+                setDossierOpen(false)
                 void run(
-                  () => evidenceTagsAPI.linkEntities(caseId, ids, [profile.id]),
-                  `Linked ${count} file${count === 1 ? "" : "s"} to ${profile.display_name}`
+                  () => dossiersAPI.addEvidence(dossier.id, ids),
+                  `Added ${count} file${count === 1 ? "" : "s"} to ${dossier.display_name}`
                 )
               }}
             />

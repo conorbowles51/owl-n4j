@@ -17,11 +17,12 @@ import type { Snapshot } from "../snapshots-api"
 
 interface SnapshotsSectionProps {
   caseId: string
+  canEdit?: boolean
 }
 
 const PAGE_SIZE = 10
 
-export function SnapshotsSection({ caseId }: SnapshotsSectionProps) {
+export function SnapshotsSection({ caseId, canEdit = true }: SnapshotsSectionProps) {
   const { data: snapshots, isLoading } = useSnapshots()
   const deleteMutation = useDeleteSnapshot()
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -76,7 +77,7 @@ export function SnapshotsSection({ caseId }: SnapshotsSectionProps) {
             className="h-7 pl-7 text-xs"
           />
         </div>
-        {caseSnapshots.length > 0 && (
+        {canEdit && caseSnapshots.length > 0 && (
           <Button
             variant="danger"
             size="sm"
@@ -114,6 +115,7 @@ export function SnapshotsSection({ caseId }: SnapshotsSectionProps) {
               }
               onDelete={() => deleteMutation.mutate(snapshot.id)}
               isDeleting={deleteMutation.isPending}
+              canEdit={canEdit}
             />
           ))}
         </div>
@@ -162,6 +164,7 @@ function SnapshotRow({
   onToggle,
   onDelete,
   isDeleting,
+  canEdit,
 }: {
   snapshot: Snapshot
   isLatest: boolean
@@ -169,6 +172,7 @@ function SnapshotRow({
   onToggle: () => void
   onDelete: () => void
   isDeleting: boolean
+  canEdit: boolean
 }) {
   return (
     <div className="border-b border-border bg-transparent last:border-b-0">
@@ -221,7 +225,7 @@ function SnapshotRow({
               <span>{snapshot.timeline_count} timeline events</span>
             )}
           </div>
-          <div className="mt-2 flex gap-2">
+          {canEdit && <div className="mt-2 flex gap-2">
             <Button
               variant="danger"
               size="sm"
@@ -235,7 +239,7 @@ function SnapshotRow({
               <Trash2 className="size-3" />
               Delete
             </Button>
-          </div>
+          </div>}
         </div>
       )}
     </div>

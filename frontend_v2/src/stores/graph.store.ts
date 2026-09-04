@@ -30,7 +30,7 @@ interface GraphStore {
   searchMode: GraphSearchMode
   searchDraft: string
   appliedSearchQuery: string
-  filters: Record<string, boolean>
+  selectedEntityTypes: Set<string> | null
   viewSettings: GraphViewSettings
   graphDimension: GraphDimension
 
@@ -64,7 +64,7 @@ interface GraphStore {
   setSearchDraft: (term: string) => void
   applySearch: (term?: string) => void
   clearSearch: () => void
-  setFilter: (key: string, value: boolean) => void
+  setSelectedEntityTypes: (types: Set<string> | null) => void
   setViewSetting: <K extends keyof GraphViewSettings>(
     key: K,
     value: GraphViewSettings[K]
@@ -107,7 +107,7 @@ export const useGraphStore = create<GraphStore>((set) => ({
   searchMode: "filter",
   searchDraft: "",
   appliedSearchQuery: "",
-  filters: {},
+  selectedEntityTypes: null,
   viewSettings: { layout: "force", showLabels: true, showEdgeLabels: false },
   graphDimension: "2d",
 
@@ -151,8 +151,7 @@ export const useGraphStore = create<GraphStore>((set) => ({
     set((state) => ({ appliedSearchQuery: (term ?? state.searchDraft).trim() })),
   clearSearch: () => set({ searchDraft: "", appliedSearchQuery: "" }),
 
-  setFilter: (key, value) =>
-    set((s) => ({ filters: { ...s.filters, [key]: value } })),
+  setSelectedEntityTypes: (types) => set({ selectedEntityTypes: types }),
 
   setViewSetting: (key, value) =>
     set((s) => ({

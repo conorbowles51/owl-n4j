@@ -45,7 +45,7 @@ import { FileSummaryPanel } from "./FileSummaryPanel"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { evidenceAPI } from "../api"
-import { useProcessBackground } from "../hooks/use-evidence-detail"
+import { useEvidenceFile, useProcessBackground } from "../hooks/use-evidence-detail"
 import { useFileEntities, useFileRelationships } from "../hooks/use-file-entities"
 import { getDisplayStatus } from "../utils/display-status"
 import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
@@ -433,12 +433,15 @@ function TranscriptionPanel({
 function DetailsPanelContent({
   file,
   caseId,
+  anchor,
 }: {
   file: EvidenceFileRecord
   caseId: string
+  anchor: ReturnType<typeof useEvidenceStore.getState>["detailAnchor"]
 }) {
   const [viewerOpen, setViewerOpen] = useState(false)
   const [viewerPage, setViewerPage] = useState(1)
+  const [viewerTime, setViewerTime] = useState<number | undefined>()
   const [transcriptSpeakers, setTranscriptSpeakers] = useState(
     file.transcription_speakers || {}
   )
@@ -457,6 +460,13 @@ function DetailsPanelContent({
   const isStale = displayStatus === "stale"
 
   const processMutation = useProcessBackground(caseId)
+
+  useEffect(() => {
+    if (!anchor) return
+    setViewerPage(anchor.page ?? 1)
+    setViewerTime(anchor.startSeconds)
+    setViewerOpen(true)
+  }, [anchor, file.id])
 
   useEffect(() => {
     setTranscriptSpeakers(file.transcription_speakers || {})
@@ -812,7 +822,8 @@ function DetailsPanelContent({
         documentUrl={fileUrl}
         documentName={file.original_filename}
         initialPage={viewerPage}
-        navigationKey={`${file.id}:${viewerPage}`}
+        initialTime={viewerTime}
+        navigationKey={`${file.id}:${viewerPage}:${viewerTime ?? ""}`}
         transcription={file.transcription}
         transcriptionSegments={file.transcription_segments || []}
         transcriptSpeakers={transcriptSpeakers}
@@ -838,6 +849,7 @@ export function EvidenceContextSidebar({
     sidebarTab,
     setSidebarTab,
     detailFileId,
+    detailAnchor,
     currentFolderId,
     textSearchOverlayOpen,
     closeTextSearch,
@@ -846,7 +858,11 @@ export function EvidenceContextSidebar({
 
   // Resolve detail file internally
   const { data: folderContents } = useFolderContents(caseId, currentFolderId)
-  const detailFile = folderContents?.files.find((f) => f.id === detailFileId) ?? null
+  const folderDetailFile = folderContents?.files.find((f) => f.id === detailFileId) ?? null
+  const { data: deepLinkedFile } = useEvidenceFile(
+    detailFileId && !folderDetailFile ? detailFileId : null
+  )
+  const detailFile = folderDetailFile ?? deepLinkedFile ?? null
   const { data: jobs } = useJobs(caseId, true)
   const hasActiveJobs = useMemo(
     () =>
@@ -940,7 +956,7 @@ export function EvidenceContextSidebar({
           <TextSearchPanel caseId={caseId} />
         ) : sidebarTab === "details" && (
           detailFile ? (
-            <DetailsPanelContent file={detailFile} caseId={caseId} />
+            <DetailsPanelContent file={detailFile} caseId={caseId} anchor={detailAnchor} />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
               <Info className="size-8 text-muted-foreground/40" />

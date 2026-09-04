@@ -25,6 +25,11 @@ WORKLOADS: dict[str, dict[str, str]] = {
         "description": "Tool-using investigation agents.",
         "group": "Interactive",
     },
+    "workspace_analysis": {
+        "label": "Workspace analysis",
+        "description": "Cited statement summaries, comparisons, and balanced Theory analysis.",
+        "group": "Investigation",
+    },
     "ingestion_extraction": {
         "label": "Entity extraction",
         "description": "Entities, facts, and relationships extracted from source text.",
@@ -56,6 +61,7 @@ WORKLOADS: dict[str, dict[str, str]] = {
 DEFAULT_POLICY: dict[str, dict[str, str]] = {
     "chat": {"provider": "openai", "model_id": "gpt-5.6-terra"},
     "agent": {"provider": "openai", "model_id": "gpt-5.6-sol"},
+    "workspace_analysis": {"provider": "openai", "model_id": "gpt-5.6-sol"},
     "ingestion_extraction": {"provider": "openai", "model_id": "gpt-5.6-terra"},
     "ingestion_resolution": {"provider": "openai", "model_id": "gpt-5.6-terra"},
     "ingestion_entity_summary": {"provider": "openai", "model_id": "gpt-5.6-terra"},
@@ -68,6 +74,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
     "anthropic": {
         "chat": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
         "agent": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
+        "workspace_analysis": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
         "ingestion_extraction": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
         "ingestion_resolution": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
         "ingestion_entity_summary": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
@@ -77,6 +84,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
     "gemini": {
         "chat": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
         "agent": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
+        "workspace_analysis": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
         "ingestion_extraction": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
         "ingestion_resolution": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
         "ingestion_entity_summary": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
@@ -86,6 +94,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
     "deepseek": {
         "chat": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
         "agent": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
+        "workspace_analysis": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
         "ingestion_extraction": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
         "ingestion_resolution": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
         "ingestion_entity_summary": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
@@ -174,7 +183,7 @@ def validate_policy(
             raise ValueError(f"{model_id} does not belong to {provider}")
         if workload == "agent" and not model.supports_agent:
             raise ValueError(f"{model_id} does not support agent tool use")
-        if workload.startswith("ingestion_") and not model.supports_structured_output:
+        if (workload.startswith("ingestion_") or workload == "workspace_analysis") and not model.supports_structured_output:
             raise ValueError(f"{model_id} does not support reliable structured output")
         if require_configured_provider and not provider_is_configured(provider, db):
             raise ValueError(

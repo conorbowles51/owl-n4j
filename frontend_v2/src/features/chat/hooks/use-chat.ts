@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { chatAPI, chatHistoryAPI } from "../api"
+import { chatAPI, chatHistoryAPI, type MandateUsage } from "../api"
+import { workspaceAPI } from "@/features/workspace/api"
 import { useChatStore } from "../stores/chat.store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useGraphStore } from "@/stores/graph.store"
@@ -11,6 +12,7 @@ export function useChat(caseId: string) {
   const queryClient = useQueryClient()
   const [isLoading, setIsLoading] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
+  const [mandate, setMandate] = useState<MandateUsage | null>(null)
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const savedConversationId = useRef<string | null>(null)
 
@@ -70,7 +72,8 @@ export function useChat(caseId: string) {
       model?: string,
       provider?: string,
       scope: ChatScope = "case_overview",
-      viewContext?: Record<string, unknown>
+      viewContext?: Record<string, unknown>,
+      mandateOverride?: Record<string, unknown>
     ) => {
       const effectiveScope =
         scope === "selection" && selectedNodeKeys.size > 0
@@ -105,6 +108,7 @@ export function useChat(caseId: string) {
           selected_entity_keys: selectedKeys,
           view_context: viewContext,
           persist: true,
+          mandate_override: mandateOverride,
           ...(model ? { model } : {}),
           ...(provider ? { provider } : {}),
         })
@@ -133,6 +137,7 @@ export function useChat(caseId: string) {
         }
 
         setSuggestions(response.suggestions.map((item) => item.question))
+        setMandate(response.mandate)
         queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY })
       } catch (err) {
         const errorMsg: ChatMessageData = {
@@ -164,11 +169,24 @@ export function useChat(caseId: string) {
   const loadConversation = useCallback(
     async (id: string) => {
       try {
-        const conv = await chatHistoryAPI.get(id)
+        const [conv, caseContext, versions] = await Promise.all([
+          chatHistoryAPI.get(id),
+          workspaceAPI.getCaseContext(caseId),
+          workspaceAPI.listMandateVersions(caseId),
+        ])
         setMessages(conv.messages)
         setActiveConversation(id)
         setActiveConversationOwnerId(conv.owner_user_id)
         savedConversationId.current = id
+        const anchored = versions.find((item) => item.id === conv.mandate_version_id) ?? null
+        setMandate({
+          version: anchored,
+          active_version_id: caseContext.active_mandate?.id ?? null,
+          active_version_number: caseContext.active_mandate?.version_number ?? null,
+          is_stale: Boolean(anchored && caseContext.active_mandate && anchored.id !== caseContext.active_mandate.id),
+          is_incomplete: !anchored,
+          temporary_override: false,
+        })
 
         const store = useChatStore.getState()
         store.clearResultGraphs()
@@ -184,6 +202,7 @@ export function useChat(caseId: string) {
       }
     },
     [
+      caseId,
       refreshSuggestions,
       setMessages,
       setActiveConversation,
@@ -196,6 +215,7 @@ export function useChat(caseId: string) {
     savedConversationId.current = null
     setActiveConversation(null)
     setActiveConversationOwnerId(null)
+    setMandate(null)
     void refreshSuggestions("case_overview")
   }, [
     clearMessages,
@@ -204,6 +224,13 @@ export function useChat(caseId: string) {
     setActiveConversationOwnerId,
   ])
 
+  const adoptCurrentMandate = useCallback(async () => {
+    const conversationId = savedConversationId.current || activeConversationId
+    if (!conversationId) return
+    const usage = await chatHistoryAPI.adoptCurrentMandate(conversationId)
+    setMandate(usage)
+  }, [activeConversationId])
+
   return {
     messages,
     isLoading,
@@ -211,5 +238,7 @@ export function useChat(caseId: string) {
     sendMessage,
     loadConversation,
     startNewConversation,
+    mandate,
+    adoptCurrentMandate,
   }
 }

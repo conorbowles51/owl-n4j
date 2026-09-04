@@ -75,7 +75,7 @@ export function CaseDetailPanel() {
           isExpanded={expandedSections.has("deadlines")}
           onToggle={() => toggleSection("deadlines")}
         >
-          <DeadlinesSection caseId={selectedCaseId} />
+          <DeadlinesSection caseId={selectedCaseId} canEdit={permissions.canEdit} />
         </CollapsibleSection>
 
         <CollapsibleSection
@@ -85,7 +85,7 @@ export function CaseDetailPanel() {
           isExpanded={expandedSections.has("snapshots")}
           onToggle={() => toggleSection("snapshots")}
         >
-          <SnapshotsSection caseId={selectedCaseId} />
+          <SnapshotsSection caseId={selectedCaseId} canEdit={permissions.canEdit} />
         </CollapsibleSection>
 
       </div>

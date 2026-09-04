@@ -79,7 +79,11 @@ import {
 } from "@/components/ui/resizable"
 import { cn } from "@/lib/cn"
 import { agentAPI } from "../api"
+import { useAgentRunStore } from "../stores/agent-run.store"
 import { ActiveAIModel } from "@/features/settings/components/ActiveAIModel"
+import { MandateUsageBanner } from "@/features/workspace/components/MandateUsageBanner"
+import { useCaseContext } from "@/features/workspace/hooks/use-workspace"
+import { workspaceAPI } from "@/features/workspace/api"
 import type { AgentArtifactExportFormat } from "../api"
 import type {
   AgentArtifact,
@@ -89,6 +93,7 @@ import type {
   AgentStoredMessage,
   AgentThreadSummary,
   AgentToolTraceItem,
+  AgentMandateUsage,
 } from "../types"
 
 type Dict = Record<string, unknown>
@@ -535,9 +540,8 @@ export function AgentPage() {
   const [toolTrace, setToolTrace] = useState<AgentToolTraceItem[]>([])
   const [activityTrail, setActivityTrail] = useState<AgentActivityItem[]>([])
   const [input, setInput] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [activeRunId, setActiveRunId] = useState<string | null>(null)
-  const [runStatusText, setRunStatusText] = useState<string | null>(null)
+  const [mandateOverride, setMandateOverride] = useState("")
+  const [mandateUsage, setMandateUsage] = useState<AgentMandateUsage | null>(null)
   const [pendingClarification, setPendingClarification] = useState<AgentClarification | null>(null)
   const [showInvestigationTrail, setShowInvestigationTrail] = useState(loadInvestigationTrailSetting)
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
@@ -547,6 +551,13 @@ export function AgentPage() {
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const sharedPanelTab = useUIStore((s) => s.graphPanelTab)
   const sharedPanelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
+  const sharedRun = useAgentRunStore((state) =>
+    caseId ? state.runsByCase[caseId] : undefined
+  )
+  const isLoading = sharedRun?.isLoading ?? false
+  const activeRunId = sharedRun?.runId ?? null
+  const runStatusText = sharedRun?.statusText ?? null
+  const caseContext = useCaseContext(caseId ?? "")
 
   const selectedArtifact = useMemo(
     () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0] ?? null,
@@ -625,7 +636,12 @@ export function AgentPage() {
 
   const loadThread = useCallback(async (threadId: string) => {
     try {
-      const thread = await agentAPI.getThread(threadId)
+      if (!caseId) return
+      const [thread, context, versions] = await Promise.all([
+        agentAPI.getThread(threadId),
+        workspaceAPI.getCaseContext(caseId),
+        workspaceAPI.listMandateVersions(caseId),
+      ])
       setActiveThreadId(thread.id)
       setMessages(thread.messages.map(storedToClientMessage).filter(Boolean) as AgentClientMessage[])
       setArtifacts(thread.artifacts)
@@ -633,10 +649,64 @@ export function AgentPage() {
       setActivityTrail([])
       setPendingClarification(null)
       setSelectedArtifactId(thread.artifacts[0]?.id ?? null)
+      const anchored = versions.find((version) => version.id === thread.mandate_version_id) ?? null
+      setMandateUsage({
+        version: anchored,
+        active_version_id: context.active_mandate?.id ?? null,
+        active_version_number: context.active_mandate?.version_number ?? null,
+        is_stale: Boolean(anchored && context.active_mandate && anchored.id !== context.active_mandate.id),
+        is_incomplete: !anchored,
+      })
     } catch {
       toast.error("Failed to load agent thread")
     }
-  }, [])
+  }, [caseId])
+
+  useEffect(() => {
+    if (!sharedRun?.isLoading || !sharedRun.threadId || activeThreadId === sharedRun.threadId) {
+      return
+    }
+    loadThread(sharedRun.threadId)
+  }, [activeThreadId, loadThread, sharedRun?.isLoading, sharedRun?.threadId])
+
+  useEffect(() => {
+    if (!caseId || !sharedRun?.terminalState) return
+
+    let cancelled = false
+    const terminalState = sharedRun.terminalState
+    const terminalError = sharedRun.error
+    const terminalRunId = sharedRun.runId
+
+    const consumeTerminalRun = async () => {
+      if (sharedRun.runId && sharedRun.threadId) {
+        await loadThread(sharedRun.threadId)
+      }
+      if (cancelled) return
+
+      if (terminalState === "failed") {
+        const message = terminalError || "Agent request failed"
+        setMessages((current) => [
+          ...current.map((item) => (item.pending ? { ...item, pending: false } : item)),
+          {
+            id: `error_${Date.now()}`,
+            role: "assistant",
+            content: `The run failed before I could write a final response.\n\n${message}`,
+            createdAt: new Date().toISOString(),
+          },
+        ])
+      }
+
+      await loadThreads()
+      if (!cancelled) {
+        useAgentRunStore.getState().clearRun(caseId, terminalRunId)
+      }
+    }
+
+    void consumeTerminalRun()
+    return () => {
+      cancelled = true
+    }
+  }, [caseId, loadThread, loadThreads, sharedRun?.error, sharedRun?.runId, sharedRun?.terminalState, sharedRun?.threadId])
 
   const startNewThread = () => {
     setActiveThreadId(null)
@@ -647,8 +717,8 @@ export function AgentPage() {
     setPendingClarification(null)
     setSelectedArtifactId(null)
     setInput("")
-    setRunStatusText(null)
-    setActiveRunId(null)
+    setMandateOverride("")
+    setMandateUsage(null)
   }
 
   const sendMessage = async (overridePrompt?: string) => {
@@ -656,12 +726,11 @@ export function AgentPage() {
     if (!prompt || !caseId || isLoading) return
 
     const optimisticId = `local_${Date.now()}`
-    let committedUserMessageId = optimisticId
+    const requestMandateOverride = mandateOverride.trim()
     setInput("")
+    if (requestMandateOverride) setMandateOverride("")
     setPendingClarification(null)
-    setIsLoading(true)
-    setRunStatusText("Starting agent run")
-    setActiveRunId(null)
+    useAgentRunStore.getState().startRun(caseId, activeThreadId)
     setToolTrace([])
     setActivityTrail([])
     setMessages((current) => [
@@ -676,13 +745,18 @@ export function AgentPage() {
           message: prompt,
           threadId: activeThreadId,
           caseLayer,
+          mandateOverride: requestMandateOverride ? { perspective: requestMandateOverride } : undefined,
         },
         (event) => {
           if (event.type === "run_started") {
             setActiveThreadId(event.thread_id)
-            setActiveRunId(event.run_id)
-            committedUserMessageId = event.user_message_id ?? optimisticId
-            setRunStatusText("Investigating the case")
+            useAgentRunStore.getState().updateRun(caseId, {
+              threadId: event.thread_id,
+              runId: event.run_id,
+            })
+            useAgentRunStore.getState().updateRun(caseId, {
+              statusText: "Investigating the case",
+            })
             setMessages((current) =>
               current.map((message) =>
                 message.id === optimisticId
@@ -697,15 +771,20 @@ export function AgentPage() {
           }
 
           if (event.type === "status") {
-            setRunStatusText(event.message)
+            useAgentRunStore.getState().updateRun(caseId, { statusText: event.message })
           }
 
           if (event.type === "activity") {
             setActivityTrail((current) => upsertActivity(current, event.activity))
             if (event.activity.phase === "plan") {
-              setRunStatusText(event.activity.title)
+              useAgentRunStore.getState().updateRun(caseId, {
+                statusText: event.activity.title,
+              })
             } else if (event.activity.result_detail || event.activity.detail) {
-              setRunStatusText(event.activity.result_detail || event.activity.detail || event.activity.title)
+              useAgentRunStore.getState().updateRun(caseId, {
+                statusText:
+                  event.activity.result_detail || event.activity.detail || event.activity.title,
+              })
             }
           }
 
@@ -721,7 +800,9 @@ export function AgentPage() {
                 }).title
               )
               .join(", ")
-            setRunStatusText(names || "Using tools")
+            useAgentRunStore.getState().updateRun(caseId, {
+              statusText: names || "Using tools",
+            })
           }
 
           if (event.type === "tool_result") {
@@ -741,7 +822,9 @@ export function AgentPage() {
                   null,
               })
             )
-            setRunStatusText(event.tool.summary || describeToolActivity(event.tool).title)
+            useAgentRunStore.getState().updateRun(caseId, {
+              statusText: event.tool.summary || describeToolActivity(event.tool).title,
+            })
           }
 
           if (event.type === "artifact") {
@@ -750,16 +833,22 @@ export function AgentPage() {
               setSelectedArtifactId((selected) => selected ?? event.artifact.id)
               return next
             })
-            setRunStatusText(`Created ${event.artifact.type} artifact`)
+            useAgentRunStore.getState().updateRun(caseId, {
+              statusText: `Created ${event.artifact.type} artifact`,
+            })
           }
 
           if (event.type === "clarification") {
             setPendingClarification(event.clarification)
-            setRunStatusText("Clarification needed")
+            useAgentRunStore.getState().updateRun(caseId, {
+              statusText: "Clarification needed",
+            })
           }
 
           if (event.type === "answer") {
-            setRunStatusText("Writing final answer")
+            useAgentRunStore.getState().updateRun(caseId, {
+              statusText: "Writing final answer",
+            })
           }
 
           if (event.type === "done") {
@@ -787,11 +876,12 @@ export function AgentPage() {
               setSelectedArtifactId(response.artifacts[0]?.id ?? null)
             }
             setToolTrace(response.tool_trace)
-            setRunStatusText(null)
+            setMandateUsage(response.mandate)
+            useAgentRunStore.getState().finishRun(caseId, "completed")
           }
 
           if (event.type === "cancelled") {
-            setRunStatusText("Run cancelled")
+            useAgentRunStore.getState().finishRun(caseId, "cancelled")
           }
 
           if (event.type === "error") {
@@ -799,30 +889,19 @@ export function AgentPage() {
           }
         }
       )
-      loadThreads()
     } catch (error) {
       const message = error instanceof Error ? error.message : "Agent request failed"
-      setMessages((current) => {
-        const next = current.map((item) =>
-          item.id === optimisticId || item.id === committedUserMessageId
-            ? { ...item, pending: false }
-            : item
-        )
-        return [
-          ...next,
-          {
-            id: `error_${Date.now()}`,
-            role: "assistant",
-            content: `The run failed before I could write a final response.\n\n${message}`,
-            createdAt: new Date().toISOString(),
-          },
-        ]
-      })
+      useAgentRunStore.getState().finishRun(caseId, "failed", message)
       toast.error(message, { duration: 12000 })
-    } finally {
-      setIsLoading(false)
-      setActiveRunId(null)
-      setRunStatusText(null)
+    }
+  }
+
+  const adoptCurrentMandate = async () => {
+    if (!activeThreadId) return
+    try {
+      setMandateUsage(await agentAPI.adoptCurrentMandate(activeThreadId))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not adopt the current mandate")
     }
   }
 
@@ -830,7 +909,11 @@ export function AgentPage() {
     if (!activeRunId) return
     try {
       await agentAPI.cancelRun(activeRunId)
-      setRunStatusText("Cancellation requested")
+      if (caseId) {
+        useAgentRunStore.getState().updateRun(caseId, {
+          statusText: "Cancellation requested",
+        })
+      }
     } catch {
       toast.error("Failed to cancel agent run")
     }
@@ -963,6 +1046,16 @@ export function AgentPage() {
                 </Badge>
               </div>
             </header>
+
+            <MandateUsageBanner
+              versionNumber={mandateUsage?.version?.version_number ?? caseContext.data?.active_mandate?.version_number}
+              activeVersionNumber={mandateUsage?.active_version_number ?? caseContext.data?.active_mandate?.version_number}
+              stale={mandateUsage?.is_stale}
+              incomplete={mandateUsage ? mandateUsage.is_incomplete : !caseContext.data?.active_mandate}
+              temporaryOverride={mandateOverride}
+              onTemporaryOverrideChange={setMandateOverride}
+              onAdoptCurrent={mandateUsage?.is_stale ? adoptCurrentMandate : undefined}
+            />
 
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
               {messages.length === 0 ? (

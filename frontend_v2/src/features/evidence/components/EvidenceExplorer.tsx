@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useParams } from "react-router-dom"
+import { useParams, useSearchParams } from "react-router-dom"
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -22,16 +22,36 @@ import type { EvidenceFile } from "@/types/evidence.types"
 
 export function EvidenceExplorer() {
   const { id: caseId } = useParams()
+  const [searchParams] = useSearchParams()
   const {
     currentFolderId,
     selectedFileIds,
     clearSelection,
   } = useEvidenceStore()
   const resetForCase = useEvidenceStore((s) => s.resetForCase)
+  const openDetail = useEvidenceStore((s) => s.openDetail)
 
   useEffect(() => {
     if (caseId) resetForCase(caseId)
   }, [caseId, resetForCase])
+
+  useEffect(() => {
+    const fileId = searchParams.get("file")
+    if (!caseId || !fileId) return
+    const finiteNumber = (name: string) => {
+      const raw = searchParams.get(name)
+      if (raw === null) return undefined
+      const value = Number(raw)
+      return Number.isFinite(value) ? value : undefined
+    }
+    const page = finiteNumber("page")
+    openDetail(fileId, {
+      page: page === undefined ? undefined : Math.max(1, Math.floor(page)),
+      startSeconds: finiteNumber("start_seconds"),
+      endSeconds: finiteNumber("end_seconds"),
+      startChar: finiteNumber("start_char"),
+    })
+  }, [caseId, openDetail, searchParams])
 
   // Dialog state
   const [createFolderOpen, setCreateFolderOpen] = useState(false)

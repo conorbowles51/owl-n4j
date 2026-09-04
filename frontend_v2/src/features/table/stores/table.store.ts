@@ -16,7 +16,7 @@ export interface RelationshipNavEntry {
 interface TableStoreState {
   // Filters
   searchTerm: string
-  selectedTypes: Set<string>
+  selectedTypes: Set<string> | null
 
   // Sorting
   sortColumns: SortColumn[]
@@ -41,9 +41,9 @@ interface TableStoreState {
 
 interface TableStoreActions {
   setSearchTerm: (term: string) => void
-  setSelectedTypes: (types: Set<string>) => void
-  toggleType: (type: string) => void
-  selectAllTypes: (types: string[]) => void
+  setSelectedTypes: (types: Set<string> | null) => void
+  toggleType: (type: string, availableTypes: string[]) => void
+  selectAllTypes: () => void
   clearTypes: () => void
 
   toggleSort: (key: string, multi?: boolean) => void
@@ -72,7 +72,7 @@ type TableStore = TableStoreState & TableStoreActions
 
 const initialState: TableStoreState = {
   searchTerm: "",
-  selectedTypes: new Set<string>(),
+  selectedTypes: null,
   sortColumns: [{ key: "label", asc: true }],
   pageSize: 50,
   currentPage: 0,
@@ -90,14 +90,19 @@ export const useTableStore = create<TableStore>()(
 
       setSearchTerm: (term) => set({ searchTerm: term, currentPage: 0 }),
       setSelectedTypes: (types) => set({ selectedTypes: types, currentPage: 0 }),
-      toggleType: (type) =>
+      toggleType: (type, availableTypes) =>
         set((s) => {
-          const next = new Set(s.selectedTypes)
+          const next = s.selectedTypes === null
+            ? new Set(availableTypes)
+            : new Set(s.selectedTypes)
           if (next.has(type)) next.delete(type)
           else next.add(type)
-          return { selectedTypes: next, currentPage: 0 }
+          return {
+            selectedTypes: next.size === availableTypes.length ? null : next,
+            currentPage: 0,
+          }
         }),
-      selectAllTypes: (types) => set({ selectedTypes: new Set(types), currentPage: 0 }),
+      selectAllTypes: () => set({ selectedTypes: null, currentPage: 0 }),
       clearTypes: () => set({ selectedTypes: new Set<string>(), currentPage: 0 }),
 
       toggleSort: (key, multi) =>

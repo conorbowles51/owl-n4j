@@ -10,7 +10,7 @@ from routers.timeline import router as timeline_router
 from routers.snapshots import router as snapshots_router
 from routers.cases import router as cases_router
 from routers.case_members import router as case_members_router
-from routers.case_profiles import router as case_profiles_router
+from routers.dossiers import router as dossiers_router
 from routers.auth import router as auth_router
 from routers.evidence import router as evidence_router
 from routers.background_tasks import router as background_tasks_router
@@ -23,6 +23,10 @@ from routers.database import router as database_router
 from routers.llm_config import router as llm_config_router
 from routers.ai_settings import router as ai_settings_router
 from routers.workspace import router as workspace_router
+from routers.work import router as work_router
+from routers.workspace_overview import router as workspace_overview_router
+from routers.workspace_entries import router as workspace_entries_router
+from routers.workspace_ai import router as workspace_ai_router
 from routers.users import router as users_router
 from routers.setup import router as setup_router
 from routers.cost_ledger import router as cost_ledger_router
@@ -46,7 +50,7 @@ __all__ = [
     "snapshots_router",
     "cases_router",
     "case_members_router",
-    "case_profiles_router",
+    "dossiers_router",
     "auth_router",
     "evidence_router",
     "background_tasks_router",
@@ -59,6 +63,10 @@ __all__ = [
     "llm_config_router",
     "ai_settings_router",
     "workspace_router",
+    "work_router",
+    "workspace_overview_router",
+    "workspace_entries_router",
+    "workspace_ai_router",
     "users_router",
     "setup_router",
     "cost_ledger_router",

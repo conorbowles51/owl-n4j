@@ -62,7 +62,7 @@ export function DashboardPage() {
                     userRole={c.user_role}
                     ownerName={c.owner_name}
                     lastUpdated={c.updated_at}
-                    onClick={() => navigate(`/cases/${c.id}/graph`)}
+                    onClick={() => navigate(`/cases/${c.id}`)}
                   />
                 ))}
               </div>

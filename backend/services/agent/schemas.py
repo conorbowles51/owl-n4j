@@ -30,6 +30,7 @@ class AgentMessageRequest(BaseModel):
     artifact_preference: AgentArtifactPreference = "auto"
     case_layer: Literal["all", "significant"] = "all"
     persist: bool = True
+    mandate_override: dict[str, Any] | None = None
 
     @field_validator("message")
     @classmethod
@@ -109,6 +110,7 @@ class AgentMessageResponse(BaseModel):
     clarification: AgentClarification | None = None
     status: AgentRunStatus
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    mandate: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentRunStatusResponse(BaseModel):
@@ -130,6 +132,8 @@ class AgentRunDetail(AgentRunStatusResponse):
     started_at: datetime
     artifacts: list[AgentArtifact] = Field(default_factory=list)
     tool_trace: list[AgentToolTraceItem] = Field(default_factory=list)
+    mandate_version_id: str | None = None
+    mandate_override: dict[str, Any] | None = None
 
 
 class AgentThreadSummary(BaseModel):
@@ -142,6 +146,7 @@ class AgentThreadSummary(BaseModel):
     last_message_at: datetime
     created_at: datetime
     updated_at: datetime
+    mandate_version_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

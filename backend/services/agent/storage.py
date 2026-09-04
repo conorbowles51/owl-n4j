@@ -39,12 +39,20 @@ def summarize_title(message: str) -> str:
     return title or "New agent thread"
 
 
-def create_thread(db: Session, *, user: User, case_id: UUID, title: str | None = None) -> AgentThread:
+def create_thread(
+    db: Session,
+    *,
+    user: User,
+    case_id: UUID,
+    title: str | None = None,
+    mandate_version_id: UUID | None = None,
+) -> AgentThread:
     thread = AgentThread(
         case_id=case_id,
         owner_user_id=user.id,
         title=sanitize_text(title or "New agent thread"),
         status="active",
+        mandate_version_id=mandate_version_id,
     )
     db.add(thread)
     db.flush()
@@ -106,6 +114,7 @@ def list_threads(db: Session, *, user: User, case_id: UUID | None = None) -> lis
             last_message_at=thread.last_message_at,
             created_at=thread.created_at,
             updated_at=thread.updated_at,
+            mandate_version_id=str(thread.mandate_version_id) if thread.mandate_version_id else None,
         )
         for thread in threads
     ]
@@ -170,6 +179,7 @@ def create_run(
     model_id: str,
     input_message: str,
     extra_metadata: dict[str, Any] | None = None,
+    mandate_override: dict[str, Any] | None = None,
 ) -> AgentRun:
     run = AgentRun(
         thread_id=thread.id,
@@ -180,6 +190,8 @@ def create_run(
         model_id=sanitize_text(model_id),
         input_message=sanitize_text(input_message),
         extra_metadata=to_jsonable(extra_metadata) if extra_metadata else None,
+        mandate_version_id=thread.mandate_version_id,
+        mandate_override=to_jsonable(mandate_override) if mandate_override else None,
     )
     db.add(run)
     db.flush()
@@ -312,6 +324,8 @@ def get_run_detail(db: Session, *, run_id: UUID, user: User) -> AgentRunDetail:
         completed_at=run.completed_at,
         artifacts=[to_api_artifact(artifact) for artifact in supported_artifacts(run.artifacts)],
         tool_trace=[to_api_tool_trace(tool_call) for tool_call in run.tool_calls],
+        mandate_version_id=str(run.mandate_version_id) if run.mandate_version_id else None,
+        mandate_override=run.mandate_override,
     )
 
 
@@ -348,6 +362,7 @@ def get_thread_detail(db: Session, *, thread_id: UUID, user: User) -> AgentThrea
         last_message_at=thread.last_message_at,
         created_at=thread.created_at,
         updated_at=thread.updated_at,
+        mandate_version_id=str(thread.mandate_version_id) if thread.mandate_version_id else None,
         messages=messages,
         artifacts=[to_api_artifact(artifact) for artifact in supported_artifacts(thread.artifacts)],
     )

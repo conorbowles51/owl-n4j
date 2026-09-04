@@ -17,6 +17,7 @@ export function useCreateDeadline(caseId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] })
       queryClient.invalidateQueries({ queryKey: ["cases"] })
+      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] })
     },
   })
 }
@@ -34,6 +35,7 @@ export function useUpdateDeadline(caseId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] })
       queryClient.invalidateQueries({ queryKey: ["cases"] })
+      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] })
     },
   })
 }
@@ -46,6 +48,7 @@ export function useDeleteDeadline(caseId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] })
       queryClient.invalidateQueries({ queryKey: ["cases"] })
+      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] })
     },
   })
 }

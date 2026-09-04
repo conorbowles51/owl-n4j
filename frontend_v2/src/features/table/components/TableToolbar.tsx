@@ -12,7 +12,7 @@ interface TableToolbarProps {
   typeFilterOpen: boolean
   onTypeFilterOpenChange: (open: boolean) => void
   typeCounts: Map<string, number>
-  selectedTypes: Set<string>
+  selectedTypes: Set<string> | null
   onToggleType: (type: string) => void
   onSelectAllTypes: () => void
   onClearTypes: () => void
@@ -77,7 +77,7 @@ export function TableToolbar({
         selectedTypes={selectedTypes}
         onToggleType={onToggleType}
         onSelectAll={onSelectAllTypes}
-        onClearAll={onClearTypes}
+        onDeselectAll={onClearTypes}
       />
 
       <TableColumnConfig columns={columns} onChange={onColumnsChange} />

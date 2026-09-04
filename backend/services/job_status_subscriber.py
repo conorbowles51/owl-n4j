@@ -375,6 +375,14 @@ class JobStatusSubscriber:
                         source_entity_keys=source_keys,
                         merged_entity_key=merged_key,
                     )
+                    from services.dossier_service import transfer_dossiers_after_merge
+
+                    transfer_dossiers_after_merge(
+                        db,
+                        case_id=merge_job.case_id,
+                        source_entity_keys=source_keys,
+                        merged_entity_key=merged_key,
+                    )
                 if failed:
                     merge_job.status = "partial"
                     merge_job.error_message = (

@@ -11,6 +11,7 @@ Analytics endpoints for the Cellebrite Multi-Phone View:
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pydantic import BaseModel
@@ -21,6 +22,7 @@ from services.case_service import get_case_if_allowed, CaseNotFound, CaseAccessD
 from services import cellebrite_intersection_service
 from postgres.session import get_db
 from postgres.models.user import User
+from postgres.models.dossier import DossierLink
 from routers.users import get_current_db_user
 
 router = APIRouter(prefix="/api/cellebrite", tags=["cellebrite"])
@@ -909,7 +911,7 @@ def get_cellebrite_files(
     source_app: Optional[str] = Query(None),
     device_path: Optional[str] = Query(None, description="Filter by device-path prefix"),
     tag: Optional[str] = Query(None),
-    entity_id: Optional[str] = Query(None),
+    dossier_id: Optional[UUID] = Query(None),
     search: Optional[str] = Query(None, description="Substring match on filename"),
     only_relevant: bool = Query(False),
     capture_after: Optional[str] = Query(None, description="YYYY-MM-DD lower bound on capture/creation time"),
@@ -922,6 +924,7 @@ def get_cellebrite_files(
 ):
     """Paginated Cellebrite file listing with parent-entity info resolved."""
     _require_case_access(case_id, current_user, db)
+    case_uuid = _case_uuid(case_id)
     rks = _csv_param(report_keys)
     files = _cellebrite_files_for_case(db, case_id, rks)
 
@@ -933,8 +936,17 @@ def get_cellebrite_files(
         files = [f for f in files if (f.get("cellebrite_category") or "").lower() == category.lower()]
     if tag:
         files = [f for f in files if tag in (f.get("tags") or [])]
-    if entity_id:
-        files = [f for f in files if entity_id in (f.get("linked_entity_ids") or [])]
+    if dossier_id:
+        linked_evidence_ids = set(
+            db.scalars(
+                select(DossierLink.target_id).where(
+                    DossierLink.case_id == case_uuid,
+                    DossierLink.dossier_id == dossier_id,
+                    DossierLink.target_type == "evidence",
+                )
+            ).all()
+        )
+        files = [f for f in files if str(f.get("id")) in linked_evidence_ids]
     if only_relevant:
         files = [f for f in files if f.get("is_relevant")]
     if has_geotag is True:
@@ -984,6 +996,25 @@ def get_cellebrite_files(
 
     total = len(enriched)
     enriched = enriched[offset: offset + limit]
+
+    # Hydrate only the bounded response page from the canonical Dossier links.
+    evidence_ids = [str(file.get("id")) for file in enriched if file.get("id")]
+    dossier_ids_by_evidence: dict[str, list[str]] = {}
+    if evidence_ids:
+        for linked_dossier_id, target_id in db.execute(
+            select(DossierLink.dossier_id, DossierLink.target_id).where(
+                DossierLink.case_id == case_uuid,
+                DossierLink.target_type == "evidence",
+                DossierLink.target_id.in_(evidence_ids),
+            )
+        ).all():
+            dossier_ids_by_evidence.setdefault(str(target_id), []).append(
+                str(linked_dossier_id)
+            )
+    for file in enriched:
+        file["linked_dossier_ids"] = sorted(
+            dossier_ids_by_evidence.get(str(file.get("id")), [])
+        )
     return {"files": enriched, "total": total}
 
 

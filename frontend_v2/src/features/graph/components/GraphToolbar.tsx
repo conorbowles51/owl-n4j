@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   Search,
   ZoomIn,
@@ -21,6 +21,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { EntityTypeFilterPopover } from "@/components/ui/entity-type-filter-popover"
 import {
   Tooltip,
   TooltipContent,
@@ -45,7 +46,10 @@ interface GraphToolbarProps {
   scope: CaseLayer
   filteredNodes: number
   totalNodes: number
+  typeCounts?: Map<string, number>
 }
+
+const EMPTY_TYPE_COUNTS = new Map<string, number>()
 
 export function GraphToolbar({
   graphRef,
@@ -60,6 +64,7 @@ export function GraphToolbar({
   scope,
   filteredNodes,
   totalNodes,
+  typeCounts = EMPTY_TYPE_COUNTS,
 }: GraphToolbarProps) {
   const {
     searchMode,
@@ -78,8 +83,22 @@ export function GraphToolbar({
     toggleSpotlight,
     graphDimension,
     toggleGraphDimension,
+    selectedEntityTypes,
+    setSelectedEntityTypes,
   } = useGraphStore()
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [typeFilterOpen, setTypeFilterOpen] = useState(false)
+
+  const allEntityTypes = Array.from(typeCounts.keys())
+
+  const toggleEntityType = (type: string) => {
+    const next = selectedEntityTypes === null
+      ? new Set(allEntityTypes)
+      : new Set(selectedEntityTypes)
+    if (next.has(type)) next.delete(type)
+    else next.add(type)
+    setSelectedEntityTypes(next.size === allEntityTypes.length ? null : next)
+  }
 
   useEffect(() => {
     if (searchMode !== "filter") return
@@ -210,6 +229,16 @@ export function GraphToolbar({
           {filteredNodes.toLocaleString()} / {totalNodes.toLocaleString()}
         </span>
       </div>
+
+      <EntityTypeFilterPopover
+        open={typeFilterOpen}
+        onOpenChange={setTypeFilterOpen}
+        typeCounts={typeCounts}
+        selectedTypes={selectedEntityTypes}
+        onToggleType={toggleEntityType}
+        onSelectAll={() => setSelectedEntityTypes(null)}
+        onDeselectAll={() => setSelectedEntityTypes(new Set())}
+      />
 
       {/* Zoom controls */}
       <div className="flex items-center gap-0.5 border-l border-border pl-2">

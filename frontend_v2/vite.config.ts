@@ -45,6 +45,10 @@ export default defineConfig({
       "@tanstack/react-virtual",
       "react-force-graph-3d",
       "three-spritetext",
+      "sonner",
+      "react-markdown",
+      "remark-gfm",
+      "@testing-library/user-event",
     ],
   },
   define: {

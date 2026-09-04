@@ -169,6 +169,7 @@ def create_conversation(
     user: User,
     case_id: UUID,
     title: str,
+    mandate_version_id: UUID | None = None,
 ) -> ChatConversation:
     require_case_access(db, user, case_id)
     conversation = ChatConversation(
@@ -176,6 +177,7 @@ def create_conversation(
         owner_user_id=user.id,
         title=title or "New conversation",
         status=DEFAULT_CONVERSATION_STATUS,
+        mandate_version_id=mandate_version_id,
     )
     db.add(conversation)
     db.flush()
@@ -217,6 +219,8 @@ def append_conversation_turn(
     result_graph: dict[str, Any] | None,
     cost_record: CostRecord | None,
     snapshot_id: str | None = None,
+    mandate_version_id: UUID | None = None,
+    mandate_override: dict[str, Any] | None = None,
 ) -> tuple[ChatMessage, ChatMessage]:
     next_sequence = (
         db.query(func.max(ChatMessage.sequence_number))
@@ -240,6 +244,8 @@ def append_conversation_turn(
         selected_entity_keys=selected_keys_payload,
         case_revision_id=revision_id,
         snapshot_id=snapshot_id,
+        mandate_version_id=mandate_version_id,
+        mandate_override=sanitize_json(mandate_override) if mandate_override else None,
     )
     assistant_message = ChatMessage(
         conversation_id=conversation.id,
@@ -255,6 +261,8 @@ def append_conversation_turn(
         result_graph_json=sanitized_result_graph,
         case_revision_id=revision_id,
         snapshot_id=snapshot_id,
+        mandate_version_id=mandate_version_id,
+        mandate_override=sanitize_json(mandate_override) if mandate_override else None,
     )
     db.add(user_message)
     db.add(assistant_message)
@@ -349,6 +357,8 @@ def build_message_payload(message: ChatMessage, case_id: UUID) -> dict[str, Any]
         ),
         "resultGraph": message.result_graph_json,
         "provenance": provenance,
+        "mandate_version_id": str(message.mandate_version_id) if message.mandate_version_id else None,
+        "mandate_override": message.mandate_override,
     }
 
 
@@ -376,6 +386,7 @@ def build_conversation_payload(conversation: ChatConversation) -> dict[str, Any]
         "snapshot_id": latest_snapshot_id,
         "case_revision_id": latest_revision_id,
         "message_count": len(ordered_messages),
+        "mandate_version_id": str(conversation.mandate_version_id) if conversation.mandate_version_id else None,
     }
 
 
@@ -391,4 +402,5 @@ def build_conversation_summary_payload(conversation: ChatConversation) -> dict[s
         "owner_user_id": str(conversation.owner_user_id),
         "case_id": str(conversation.case_id),
         "message_count": len(conversation.messages),
+        "mandate_version_id": str(conversation.mandate_version_id) if conversation.mandate_version_id else None,
     }

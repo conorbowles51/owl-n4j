@@ -1728,6 +1728,7 @@ Only include candidates with score >= 5."""
         llm_context: Any = None,
         view_context: Optional[Dict[str, Any]] = None,
         scope_entity_keys: Optional[List[str]] = None,
+        mandate_context_block: str = "",
     ) -> Dict[str, Any]:
         """
         Answer a question using hybrid retrieval:
@@ -2094,6 +2095,11 @@ Only include candidates with score >= 5."""
             model_context_window=model_ctx_window,
             view_context_block=view_context_block,
         )
+        if mandate_context_block:
+            # The mandate is an explicit instruction layer. It is deliberately
+            # separate from retrieved evidence so it cannot be mistaken for a
+            # source and is traceable by its stored version identifier.
+            context = f"{mandate_context_block[:12000]}\n\n{context}"
 
         # Build context description
         parts = []
@@ -2111,6 +2117,8 @@ Only include candidates with score >= 5."""
         context_description = context_prefix + ": " + ", ".join(parts) if parts else f"{context_prefix}: no relevant context found"
         if view_context_block:
             context_description += " with current view context"
+        if mandate_context_block:
+            context_description += " using case mandate"
 
         debug_log["context_mode"] = context_mode
         debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
@@ -2126,6 +2134,8 @@ Only include candidates with score >= 5."""
             context_sections.append("CYPHER RESULTS")
         if view_context_block:
             context_sections.insert(0, "CURRENT VIEW CONTEXT")
+        if mandate_context_block:
+            context_sections.insert(0, "CASE MANDATE")
 
         _add_stage(
             "Context Building", 6, t6,

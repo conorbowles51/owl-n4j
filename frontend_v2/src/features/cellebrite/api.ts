@@ -410,7 +410,7 @@ export const cellebriteFilesAPI = {
         sourceApp?: string | null
         devicePath?: string | null
         tag?: string | null
-        entityId?: string | null
+        dossierId?: string | null
         search?: string | null
         onlyRelevant?: boolean
         captureAfter?: string | null
@@ -424,7 +424,7 @@ export const cellebriteFilesAPI = {
     if (opts.sourceApp) params.set("source_app", opts.sourceApp)
     if (opts.devicePath) params.set("device_path", opts.devicePath)
     if (opts.tag) params.set("tag", opts.tag)
-    if (opts.entityId) params.set("entity_id", opts.entityId)
+    if (opts.dossierId) params.set("dossier_id", opts.dossierId)
     if (opts.search) params.set("search", opts.search)
     if (opts.onlyRelevant) params.set("only_relevant", "true")
     if (opts.captureAfter) params.set("capture_after", opts.captureAfter)
@@ -477,40 +477,6 @@ export const evidenceTagsAPI = {
       `/api/evidence/tags?case_id=${encodeURIComponent(caseId)}`
     ),
 
-  linkEntities: (caseId: string, evidenceIds: string[], entityIds: string[]) =>
-    fetchAPI<{ updated: number; entity_ids: string[] }>(
-      "/api/evidence/entity-links/add",
-      {
-        method: "POST",
-        body: {
-          case_id: caseId,
-          evidence_ids: evidenceIds,
-          entity_ids: entityIds,
-        },
-      }
-    ),
-
-  unlinkEntities: (
-    caseId: string,
-    evidenceIds: string[],
-    entityIds: string[]
-  ) =>
-    fetchAPI<{ updated: number; entity_ids: string[] }>(
-      "/api/evidence/entity-links/remove",
-      {
-        method: "POST",
-        body: {
-          case_id: caseId,
-          evidence_ids: evidenceIds,
-          entity_ids: entityIds,
-        },
-      }
-    ),
-
-  listByEntity: (caseId: string, entityId: string) =>
-    fetchAPI<{ files: CellebriteRecord[]; total: number }>(
-      `/api/evidence/by-entity?case_id=${encodeURIComponent(caseId)}&entity_id=${encodeURIComponent(entityId)}`
-    ),
 }
 
 export const evidenceCellebriteAPI = {

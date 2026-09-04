@@ -26,6 +26,7 @@ import {
   ChevronDown,
   ChevronRight,
   Eye,
+  ContactRound,
 } from "lucide-react"
 import { graphAPI } from "../api"
 import {
@@ -49,6 +50,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { useCreateDossier } from "@/features/dossiers"
+import { useCase } from "@/features/cases/hooks/use-cases"
+import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 
 interface NodeDetailSheetProps {
   caseId: string
@@ -78,6 +82,9 @@ export function NodeDetailSheet({
   const { entityKeySet: significantEntityKeys } = useSignificantManifest(caseId)
   const addSignificant = useAddSignificantEntities(caseId)
   const removeSignificant = useRemoveSignificantEntities(caseId)
+  const createDossier = useCreateDossier(caseId)
+  const caseQuery = useCase(caseId)
+  const { canEdit } = useCasePermissions(caseQuery.data)
 
   const firstKey = Array.from(selectedNodeKeys)[0] ?? null
   const { data: detail, isLoading } = useNodeDetails(firstKey, caseId)
@@ -329,6 +336,25 @@ export function NodeDetailSheet({
             surface="entity_detail"
             compact
           />
+          {canEdit ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Add to Dossiers"
+              title="Add to Dossiers"
+              disabled={createDossier.isPending}
+              onClick={async () => {
+                try {
+                  await createDossier.mutateAsync({ canonical_entity_key: detail.key, display_name: detail.label })
+                  toast.success("Added to Dossiers")
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Could not create Dossier")
+                }
+              }}
+            >
+              <ContactRound className="size-3.5" />
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="icon-sm"

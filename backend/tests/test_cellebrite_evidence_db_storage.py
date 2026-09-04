@@ -115,7 +115,7 @@ class CellebriteEvidenceDBStorageTests(unittest.TestCase):
             self.assertEqual(deleted, 2)
             self.assertEqual(EvidenceDBStorage.list_cellebrite_files(db, self.case_id), [])
 
-    def test_tags_relevance_and_entity_links_are_postgres_backed(self):
+    def test_tags_and_relevance_are_postgres_backed(self):
         with self.SessionLocal() as db:
             file_row = EvidenceDBStorage.add_cellebrite_files(
                 db,
@@ -142,13 +142,6 @@ class CellebriteEvidenceDBStorageTests(unittest.TestCase):
                 EvidenceDBStorage.get_tag_counts(db, self.case_id),
                 [{"tag": "priority", "count": 1}, {"tag": "reviewed", "count": 1}],
             )
-
-            self.assertEqual(EvidenceDBStorage.link_entities(db, [file_row.id], ["person-1"]), 1)
-            linked = EvidenceDBStorage.list_by_entity(db, self.case_id, "person-1")
-            self.assertEqual([row["id"] for row in linked], [str(file_row.id)])
-
-            self.assertEqual(EvidenceDBStorage.unlink_entities_from_all(db, self.case_id, "person-1"), 1)
-            self.assertEqual(EvidenceDBStorage.list_by_entity(db, self.case_id, "person-1"), [])
 
     def test_file_linker_registers_media_under_cellebrite_export_folders(self):
         with TemporaryDirectory() as tmp, self.SessionLocal() as db:

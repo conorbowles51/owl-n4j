@@ -76,6 +76,39 @@ describe("graphAPI edit helpers", () => {
     expect(graph.nodes[0].source_count).toBe(2)
   })
 
+  it("maps the case-scoped search contract for Notebook consumers", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          nodes: [
+            {
+              key: "person-1",
+              name: "Henry Walsh",
+              type: "Person",
+              summary: "Named in the transfer records",
+            },
+          ],
+          links: [],
+        }),
+        { status: 200 }
+      )
+    )
+
+    const result = await graphAPI.search("Henry", "case-1", 8)
+
+    expect(result.nodes).toEqual([
+      expect.objectContaining({
+        key: "person-1",
+        label: "Henry Walsh",
+        type: "person",
+      }),
+    ])
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/graph/search?q=Henry&limit=8&case_id=case-1",
+      expect.any(Object)
+    )
+  })
+
   it("scopes graph analysis to the induced Significant graph", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ results: [] }), { status: 200 })

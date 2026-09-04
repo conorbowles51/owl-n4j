@@ -8,6 +8,7 @@ import {
 import { useUIStore } from "@/stores/ui.store"
 import { CaseSidePanelRail, CaseSidePanelContent } from "./CaseSidePanel"
 import { EvidenceContextSidebar } from "@/features/evidence/components/EvidenceContextSidebar"
+import { useMediaQuery } from "@/hooks/use-media-query"
 
 export function CaseLayout() {
   const { id: caseId } = useParams()
@@ -15,6 +16,7 @@ export function CaseLayout() {
   const isGraphRoute = !!useMatch("/cases/:id/graph")
   const isAgentRoute = !!useMatch("/cases/:id/agent")
   const isEvidenceRoute = !!useMatch("/cases/:id/evidence")
+  const narrowViewport = useMediaQuery("(max-width: 767px)")
 
   // Graph and Agent routes manage their own full-width workspaces.
   const showCaseSidePanel = !isGraphRoute && !isAgentRoute
@@ -23,7 +25,34 @@ export function CaseLayout() {
     <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex flex-1 overflow-hidden">
-          {showCaseSidePanel ? (
+          {showCaseSidePanel && narrowViewport ? (
+            <div className="relative flex min-w-0 flex-1 overflow-hidden">
+              <div
+                className={
+                  graphPanelCollapsed
+                    ? "min-w-0 flex-1 overflow-hidden pr-12"
+                    : "min-w-0 flex-1 overflow-hidden"
+                }
+              >
+                <ErrorBoundary level="page">
+                  <Outlet />
+                </ErrorBoundary>
+              </div>
+              {graphPanelCollapsed ? (
+                <div className="absolute inset-y-0 right-0 z-30">
+                  <CaseSidePanelRail />
+                </div>
+              ) : (
+                <div className="absolute inset-0 z-40 bg-background">
+                  {isEvidenceRoute ? (
+                    <EvidenceContextSidebar caseId={caseId!} />
+                  ) : (
+                    <CaseSidePanelContent />
+                  )}
+                </div>
+              )}
+            </div>
+          ) : showCaseSidePanel ? (
             <ResizablePanelGroup orientation="horizontal" className="flex-1">
               <ResizablePanel
                 id="case-content"
@@ -63,7 +92,9 @@ export function CaseLayout() {
           )}
 
           {/* Collapsed rail for non-graph views */}
-          {showCaseSidePanel && graphPanelCollapsed && <CaseSidePanelRail />}
+          {showCaseSidePanel && !narrowViewport && graphPanelCollapsed && (
+            <CaseSidePanelRail />
+          )}
         </div>
       </div>
     </div>

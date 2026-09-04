@@ -1,3 +1,4 @@
+import { render, waitFor } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import {
   findActiveSegmentIndex,
@@ -8,6 +9,7 @@ import {
   unmergeSpeaker,
 } from "./audio-transcript.utils"
 import type { TranscriptSegment } from "@/types/evidence.types"
+import { AudioTranscriptViewer } from "./AudioTranscriptViewer"
 
 const segments: TranscriptSegment[] = [
   { id: "a", start: 1.5, end: 4, speaker: "A", text: "First turn" },
@@ -22,6 +24,20 @@ describe("findActiveSegmentIndex", () => {
     expect(findActiveSegmentIndex(segments, 2)).toBe(0)
     expect(findActiveSegmentIndex(segments, 4.4)).toBe(0)
     expect(findActiveSegmentIndex(segments, 6)).toBe(1)
+  })
+})
+
+describe("citation navigation", () => {
+  it("seeks an audio transcript to the cited starting time", async () => {
+    const { container } = render(
+      <AudioTranscriptViewer
+        segments={segments}
+        initialTime={8.2}
+      />,
+    )
+    const audio = container.querySelector("audio")
+    expect(audio).not.toBeNull()
+    await waitFor(() => expect(audio?.currentTime).toBe(8.2))
   })
 })
 

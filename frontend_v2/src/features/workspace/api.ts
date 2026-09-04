@@ -4,138 +4,142 @@ import { fetchAPI } from "@/lib/api-client"
 // Types
 // ---------------------------------------------------------------------------
 
-export interface CaseContext {
-  case_id?: string
-  client_profile?: Record<string, unknown>
-  charges?: string[]
-  allegations?: string[]
-  denials?: string[]
-  legal_exposure?: Record<string, unknown>
-  defense_strategy?: string[]
-  trial_date?: string | null
-  court_info?: Record<string, unknown>
-  // Legacy fields that may coexist in JSONB
-  summary?: string
-  objectives?: string[]
-  [key: string]: unknown
+export type CaseContextFieldType =
+  | "short_text"
+  | "long_text"
+  | "date"
+  | "number"
+  | "boolean"
+  | "single_choice"
+  | "multiple_choice"
+  | "dossier_reference"
+
+export interface CaseContextTemplateField {
+  key: string
+  label: string
+  type: CaseContextFieldType
+  choices: string[]
+  required: boolean
+  position: number
 }
 
-export interface WitnessInterview {
-  interview_id?: string
-  date: string
-  duration?: string
-  statement?: string
-  status?: string
-  credibility_rating?: number
-  risk_assessment?: string
-  created_at?: string
-  updated_at?: string
-}
-
-export interface Witness {
-  id: string
-  witness_id?: string
+export interface CaseContextTemplate {
+  key: string
   name: string
-  role?: string
-  organization?: string
-  category?: "FRIENDLY" | "NEUTRAL" | "ADVERSE"
-  status?: string
-  credibility_rating?: number
-  statement_summary?: string
-  risk_assessment?: string
-  strategy_notes?: string
-  interviews?: WitnessInterview[]
-  created_at?: string
-  updated_at?: string
-  [key: string]: unknown
+  description?: string | null
+  is_builtin: boolean
+  fields: CaseContextTemplateField[]
 }
 
-export interface InvestigativeNote {
+export interface MandateVersion {
   id: string
-  note_id?: string
-  title?: string
-  content: string
-  tags?: string[]
-  created_at?: string
-  updated_at?: string
-  [key: string]: unknown
+  case_id: string
+  version_number: number
+  objective?: string | null
+  key_questions: string[]
+  in_scope?: string | null
+  out_of_scope?: string | null
+  perspective?: string | null
+  success_criteria?: string | null
+  constraints?: string | null
+  author_user_id?: string | null
+  author_name?: string | null
+  created_at?: string | null
 }
 
-export interface Finding {
-  id: string
-  finding_id?: string
-  title: string
-  content?: string
-  priority?: "HIGH" | "MEDIUM" | "LOW" | string
-  linked_evidence_ids?: string[]
-  linked_document_ids?: string[]
-  linked_entity_keys?: string[]
-  created_at?: string
-  updated_at?: string
-  [key: string]: unknown
+export interface CaseContext {
+  case_id: string
+  case_summary?: string | null
+  background?: string | null
+  investigation_type?: string | null
+  jurisdiction?: string | null
+  active_template_key: string
+  custom_values: Record<string, unknown>
+  active_mandate?: MandateVersion | null
+  mandate_complete: boolean
+  templates: CaseContextTemplate[]
+  updated_at?: string | null
 }
 
-export interface Theory {
-  id: string
-  theory_id?: string
-  title: string
-  type?: "PRIMARY" | "SECONDARY" | "NOTE"
-  confidence_score?: number
-  hypothesis?: string
-  supporting_evidence?: string[]
-  counter_arguments?: string[]
-  next_steps?: string[]
-  privilege_level?: "PUBLIC" | "ATTORNEY_ONLY" | "PRIVATE"
-  author_id?: string
-  attached_evidence_ids?: string[]
-  attached_witness_ids?: string[]
-  attached_note_ids?: string[]
-  attached_document_ids?: string[]
-  attached_task_ids?: string[]
-  attached_graph_data?: {
-    entity_keys: string[]
-    entities: Array<{
-      key: string
-      name: string
-      type: string
-      summary?: string
-      distance: number
-    }>
-    created_at: string
-  }
-  created_at?: string
-  updated_at?: string
-  [key: string]: unknown
+export type CaseContextUpdate = Pick<
+  CaseContext,
+  "case_summary" | "background" | "investigation_type" | "jurisdiction" | "active_template_key" | "custom_values"
+>
+
+export type MandateVersionCreate = Pick<
+  MandateVersion,
+  "objective" | "key_questions" | "in_scope" | "out_of_scope" | "perspective" | "success_criteria" | "constraints"
+>
+
+export type TaskStatus = "todo" | "in_progress" | "done"
+export type TaskPriority = "low" | "standard" | "high" | "urgent"
+
+export interface TaskLink {
+  id?: string
+  target_type: "dossier" | "entry" | "evidence"
+  target_id: string
+  label?: string | null
+  source_anchor?: Record<string, unknown>
 }
 
 export interface InvestigationTask {
   id: string
   task_id?: string
+  case_id?: string
   title: string
-  description?: string
-  priority?: "URGENT" | "HIGH" | "STANDARD"
-  due_date?: string
-  assigned_to?: string
-  status?: "PENDING" | "IN_PROGRESS" | "COMPLETED" | string
-  completion_percentage?: number
-  status_text?: string
-  created_at?: string
-  updated_at?: string
+  description?: string | null
+  status: TaskStatus
+  priority: TaskPriority
+  assignee_user_id?: string | null
+  assignee_name?: string | null
+  assignee_email?: string | null
+  due_at?: string | null
+  parent_task_id?: string | null
+  deadline_id?: string | null
+  deadline_name?: string | null
+  deadline_date?: string | null
+  completed_at?: string | null
+  deleted_at?: string | null
+  created_by_user_id?: string | null
+  created_by_name?: string | null
+  updated_by_user_id?: string | null
+  links: TaskLink[]
+  subtask_progress: { done: number; total: number }
+  migration_metadata?: Record<string, unknown>
+  needs_migration_review?: boolean
+  created_at?: string | null
+  updated_at?: string | null
   [key: string]: unknown
 }
 
-export interface DeadlineConfig {
-  trial_date?: string | null
-  trial_court?: string | null
-  judge?: string | null
-  court_division?: string | null
-  deadlines?: Array<{
-    title: string
-    date: string
-    type?: string
-    notes?: string
+export type InvestigationTaskCreate = Pick<
+  InvestigationTask,
+  | "title"
+  | "description"
+  | "status"
+  | "priority"
+  | "assignee_user_id"
+  | "due_at"
+  | "parent_task_id"
+  | "deadline_id"
+  | "links"
+>
+
+export interface CaseWorkResponse {
+  tasks: InvestigationTask[]
+  task_total: number
+  deadlines: Array<{
+    id: string
+    case_id: string
+    name: string
+    due_date: string
+    created_by_user_id?: string | null
+    created_at?: string | null
+    updated_at?: string | null
   }>
-  [key: string]: unknown
+  deadline_total: number
+  bounded: boolean
+  limit: number
 }
 
 export interface PinnedItem {
@@ -143,51 +147,96 @@ export interface PinnedItem {
   pin_id?: string
   item_type: string
   item_id: string
-  user_id?: string
-  annotations_count?: number
+  evidence_file_id?: string
+  filename?: string
+  display_name?: string
+  size?: number
+  status?: string
+  source_type?: string | null
+  summary?: string | null
+  sha256?: string
+  pinned_by_user_id?: string | null
+  pinned_by_name?: string | null
   created_at?: string
   [key: string]: unknown
 }
 
-export interface PresenceEntry {
-  user_id: string
-  user_name: string
-  status: string
-  last_seen?: string
-}
+export type AttentionReasonCode =
+  | "deadline_overdue"
+  | "deadline_due_soon"
+  | "deadline_upcoming"
+  | "task_overdue"
+  | "task_urgent"
+  | "task_due_soon"
+  | "task_assigned"
+  | "review_required"
+  | "finding_high_significance"
+  | "theory_material_change"
+  | "contradiction_recorded"
+  | "personal_draft"
+  | "recent_casework_update"
 
-export interface TheoryGraphResult {
-  entity_keys: string[]
-  entities: Array<{
-    key: string
-    name: string
-    type: string
-    summary?: string
-    distance: number
-  }>
-  text_length?: number
-}
-
-export interface TimelineEvent {
-  id: string
-  type: string
-  thread: string
-  date: string
+export interface WorkspaceAttentionItem {
+  attention_key: string
+  source_type: string
+  source_id: string
+  reason_code: AttentionReasonCode
+  reason_label: string
+  rank: number
+  priority_band: number
   title: string
-  description?: string
-  metadata?: Record<string, unknown>
+  summary?: string | null
+  occurred_at?: string | null
+  due_at?: string | null
+  href: string
+  metadata: Record<string, unknown>
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Normalize backend ID field (e.g. theory_id) to `id` */
-function withId<T extends Record<string, unknown>>(
-  item: T,
-  field: string,
-): T & { id: string } {
-  return { ...item, id: (item[field] as string) ?? (item.id as string) }
+export interface WorkspaceOverviewResponse {
+  case_id: string
+  as_of: string
+  timezone: string
+  shared_attention: WorkspaceAttentionItem[]
+  personal_attention: WorkspaceAttentionItem[]
+  context: {
+    case_summary?: string | null
+    background?: string | null
+    investigation_type?: string | null
+    jurisdiction?: string | null
+    mandate_complete: boolean
+    mandate?: {
+      id: string
+      version_number: number
+      objective?: string | null
+      key_questions: string[]
+      author_name?: string | null
+      created_at?: string | null
+    } | null
+    updated_at?: string | null
+  }
+  recent_casework: Array<{
+    id: string
+    entry_type: "note" | "finding" | "theory"
+    title: string
+    summary?: string | null
+    lifecycle_state?: string | null
+    significance?: string | null
+    review_state: string
+    updated_at?: string | null
+    href: string
+  }>
+  dossier_highlights: Array<{
+    id: string
+    display_name: string
+    dossier_type: string
+    summary?: string | null
+    importance?: string | null
+    needs_link_review: boolean
+    href: string
+  }>
+  pinned_evidence: PinnedItem[]
+  bounded: boolean
+  limits: Record<string, number>
 }
 
 // ---------------------------------------------------------------------------
@@ -195,196 +244,124 @@ function withId<T extends Record<string, unknown>>(
 // ---------------------------------------------------------------------------
 
 export const workspaceAPI = {
+  // -- Attention-driven overview -------------------------------------------
+  getOverview: (caseId: string, timezoneName: string) => {
+    const qs = new URLSearchParams({ timezone: timezoneName })
+    return fetchAPI<WorkspaceOverviewResponse>(
+      `/api/workspace/${encodeURIComponent(caseId)}/overview?${qs}`,
+    )
+  },
+
+  setAttentionState: (
+    caseId: string,
+    attentionKey: string,
+    input: { action: "dismiss" | "snooze"; snoozed_until?: string },
+  ) =>
+    fetchAPI<{
+      attention_key: string
+      dismissed_at?: string | null
+      snoozed_until?: string | null
+    }>(
+      `/api/workspace/${encodeURIComponent(caseId)}/attention/${encodeURIComponent(attentionKey)}`,
+      { method: "PUT", body: input },
+    ),
+
+  clearAttentionState: (caseId: string, attentionKey: string) =>
+    fetchAPI<void>(
+      `/api/workspace/${encodeURIComponent(caseId)}/attention/${encodeURIComponent(attentionKey)}`,
+      { method: "DELETE" },
+    ),
+
   // -- Case Context (returned unwrapped) ------------------------------------
   getCaseContext: (caseId: string) =>
     fetchAPI<CaseContext>(`/api/workspace/${caseId}/context`),
 
-  updateCaseContext: (caseId: string, context: Partial<CaseContext>) =>
+  updateCaseContext: (caseId: string, context: CaseContextUpdate) =>
     fetchAPI<CaseContext>(`/api/workspace/${caseId}/context`, {
       method: "PUT",
       body: context,
     }),
 
-  // -- Witnesses (wrapped: {"witnesses": [...]}) ----------------------------
-  getWitnesses: (caseId: string) =>
-    fetchAPI<{ witnesses: Witness[] }>(
-      `/api/workspace/${caseId}/witnesses`,
-    ).then((r) => (r.witnesses ?? []).map((w) => withId(w, "witness_id"))),
+  listMandateVersions: (caseId: string) =>
+    fetchAPI<{ versions: MandateVersion[] }>(
+      `/api/workspace/${caseId}/context/mandates`,
+    ).then((result) => result.versions),
 
-  createWitness: (caseId: string, witness: Omit<Witness, "id">) =>
-    fetchAPI<Witness>(`/api/workspace/${caseId}/witnesses`, {
+  createMandateVersion: (caseId: string, mandate: MandateVersionCreate) =>
+    fetchAPI<MandateVersion>(`/api/workspace/${caseId}/context/mandates`, {
       method: "POST",
-      body: witness,
-    }).then((w) => withId(w, "witness_id")),
-
-  updateWitness: (
-    caseId: string,
-    witnessId: string,
-    witness: Partial<Witness>,
-  ) =>
-    fetchAPI<Witness>(
-      `/api/workspace/${caseId}/witnesses/${witnessId}`,
-      { method: "PUT", body: witness },
-    ).then((w) => withId(w, "witness_id")),
-
-  deleteWitness: (caseId: string, witnessId: string) =>
-    fetchAPI<void>(`/api/workspace/${caseId}/witnesses/${witnessId}`, {
-      method: "DELETE",
-    }),
-
-  // -- Investigative Notes (wrapped: {"notes": [...]}) ----------------------
-  getNotes: (caseId: string) =>
-    fetchAPI<{ notes: InvestigativeNote[] }>(
-      `/api/workspace/${caseId}/notes`,
-    ).then((r) => (r.notes ?? []).map((n) => withId(n, "note_id"))),
-
-  createNote: (
-    caseId: string,
-    note: Omit<InvestigativeNote, "id">,
-  ) =>
-    fetchAPI<InvestigativeNote>(`/api/workspace/${caseId}/notes`, {
-      method: "POST",
-      body: note,
-    }).then((n) => withId(n, "note_id")),
-
-  updateNote: (
-    caseId: string,
-    noteId: string,
-    note: Partial<InvestigativeNote>,
-  ) =>
-    fetchAPI<InvestigativeNote>(
-      `/api/workspace/${caseId}/notes/${noteId}`,
-      { method: "PUT", body: note },
-    ).then((n) => withId(n, "note_id")),
-
-  deleteNote: (caseId: string, noteId: string) =>
-    fetchAPI<void>(`/api/workspace/${caseId}/notes/${noteId}`, {
-      method: "DELETE",
-    }),
-
-  // -- Findings (wrapped: {"findings": [...]}) -----------------------------
-  getFindings: (caseId: string) =>
-    fetchAPI<{ findings: Finding[] }>(
-      `/api/workspace/${caseId}/findings`,
-    ).then((r) => (r.findings ?? []).map((f) => withId(f, "finding_id"))),
-
-  createFinding: (caseId: string, finding: Omit<Finding, "id">) =>
-    fetchAPI<Finding>(`/api/workspace/${caseId}/findings`, {
-      method: "POST",
-      body: finding,
-    }).then((f) => withId(f, "finding_id")),
-
-  updateFinding: (
-    caseId: string,
-    findingId: string,
-    finding: Partial<Finding>,
-  ) =>
-    fetchAPI<Finding>(`/api/workspace/${caseId}/findings/${findingId}`, {
-      method: "PUT",
-      body: finding,
-    }).then((f) => withId(f, "finding_id")),
-
-  deleteFinding: (caseId: string, findingId: string) =>
-    fetchAPI<void>(`/api/workspace/${caseId}/findings/${findingId}`, {
-      method: "DELETE",
-    }),
-
-  // -- Theories (wrapped: {"theories": [...]}) ------------------------------
-  getTheories: (caseId: string) =>
-    fetchAPI<{ theories: Theory[] }>(
-      `/api/workspace/${caseId}/theories`,
-    ).then((r) => (r.theories ?? []).map((t) => withId(t, "theory_id"))),
-
-  createTheory: (caseId: string, theory: Omit<Theory, "id">) =>
-    fetchAPI<Theory>(`/api/workspace/${caseId}/theories`, {
-      method: "POST",
-      body: theory,
-    }).then((t) => withId(t, "theory_id")),
-
-  updateTheory: (
-    caseId: string,
-    theoryId: string,
-    theory: Partial<Theory>,
-  ) =>
-    fetchAPI<Theory>(
-      `/api/workspace/${caseId}/theories/${theoryId}`,
-      { method: "PUT", body: theory },
-    ).then((t) => withId(t, "theory_id")),
-
-  deleteTheory: (caseId: string, theoryId: string) =>
-    fetchAPI<void>(`/api/workspace/${caseId}/theories/${theoryId}`, {
-      method: "DELETE",
-    }),
-
-  buildTheoryGraph: (
-    caseId: string,
-    theoryId: string,
-    options?: Record<string, unknown>,
-  ) =>
-    fetchAPI<TheoryGraphResult>(
-      `/api/workspace/${caseId}/theories/${theoryId}/build-graph`,
-      { method: "POST", body: options },
-    ),
-
-  buildWorkspaceGraph: (
-    caseId: string,
-    request: {
-      source_type: "theory" | "witness" | "note"
-      source_id: string
-      include_attached_items?: boolean
-      top_k?: number
-    },
-  ) =>
-    fetchAPI<TheoryGraphResult>(`/api/workspace/${caseId}/build-graph`, {
-      method: "POST",
-      body: request,
+      body: mandate,
     }),
 
   // -- Tasks (wrapped: {"tasks": [...]}) ------------------------------------
   getTasks: (caseId: string) =>
-    fetchAPI<{ tasks: InvestigationTask[] }>(
+    fetchAPI<{ tasks: InvestigationTask[]; total: number }>(
       `/api/workspace/${caseId}/tasks`,
-    ).then((r) => (r.tasks ?? []).map((t) => withId(t, "task_id"))),
+    ).then((r) => r.tasks ?? []),
 
   createTask: (
     caseId: string,
-    task: Omit<InvestigationTask, "id">,
+    task: InvestigationTaskCreate,
   ) =>
     fetchAPI<InvestigationTask>(`/api/workspace/${caseId}/tasks`, {
       method: "POST",
       body: task,
-    }).then((t) => withId(t, "task_id")),
+    }),
 
   updateTask: (
     caseId: string,
     taskId: string,
-    task: Partial<InvestigationTask>,
+    task: Partial<InvestigationTaskCreate>,
   ) =>
     fetchAPI<InvestigationTask>(
       `/api/workspace/${caseId}/tasks/${taskId}`,
-      { method: "PUT", body: task },
-    ).then((t) => withId(t, "task_id")),
+      { method: "PATCH", body: task },
+    ),
 
   deleteTask: (caseId: string, taskId: string) =>
     fetchAPI<void>(`/api/workspace/${caseId}/tasks/${taskId}`, {
       method: "DELETE",
     }),
 
-  // -- Deadlines (returned unwrapped) ---------------------------------------
-  getDeadlines: (caseId: string) =>
-    fetchAPI<DeadlineConfig>(`/api/workspace/${caseId}/deadlines`),
+  restoreTask: (caseId: string, taskId: string) =>
+    fetchAPI<InvestigationTask>(
+      `/api/workspace/${caseId}/tasks/${taskId}/restore`,
+      { method: "POST" },
+    ),
 
-  updateDeadlines: (caseId: string, deadlineConfig: DeadlineConfig) =>
-    fetchAPI<DeadlineConfig>(`/api/workspace/${caseId}/deadlines`, {
-      method: "PUT",
-      body: deadlineConfig,
-    }),
+  getWork: (
+    caseId: string,
+    params: {
+      includeTasks?: boolean
+      includeDeadlines?: boolean
+      taskStatus?: TaskStatus | "all"
+      assigneeUserId?: string
+      limit?: number
+    } = {},
+  ) => {
+    const qs = new URLSearchParams()
+    if (params.includeTasks !== undefined) qs.set("include_tasks", String(params.includeTasks))
+    if (params.includeDeadlines !== undefined) qs.set("include_deadlines", String(params.includeDeadlines))
+    if (params.taskStatus && params.taskStatus !== "all") qs.set("task_status", params.taskStatus)
+    if (params.assigneeUserId) qs.set("assignee_user_id", params.assigneeUserId)
+    if (params.limit) qs.set("limit", String(params.limit))
+    const suffix = qs.toString() ? `?${qs}` : ""
+    return fetchAPI<CaseWorkResponse>(`/api/workspace/${caseId}/work${suffix}`)
+  },
 
   // -- Pinned Items (wrapped: {"pinned_items": [...]}) ----------------------
   getPinnedItems: (caseId: string) =>
-    fetchAPI<{ pinned_items: PinnedItem[] }>(
-      `/api/workspace/${caseId}/pinned`,
-    ).then((r) => (r.pinned_items ?? []).map((p) => withId(p, "pin_id"))),
+    fetchAPI<{ pinned_items: PinnedItem[]; total: number }>(
+      `/api/workspace/${caseId}/pinned?limit=100`,
+    ).then((r) => r.pinned_items ?? []),
+
+  getPinStatus: (caseId: string, evidenceFileIds: string[]) => {
+    const qs = new URLSearchParams()
+    evidenceFileIds.forEach((id) => qs.append("evidence_file_ids", id))
+    return fetchAPI<{ pins: Record<string, string> }>(
+      `/api/workspace/${caseId}/pinned/status?${qs}`,
+    ).then((result) => result.pins)
+  },
 
   pinItem: (
     caseId: string,
@@ -397,34 +374,18 @@ export const workspaceAPI = {
       qs.set("annotations_count", String(annotationsCount))
     return fetchAPI<PinnedItem>(`/api/workspace/${caseId}/pinned?${qs}`, {
       method: "POST",
-    }).then((p) => withId(p, "pin_id"))
+    })
   },
+
+  bulkPinItems: (caseId: string, evidenceFileIds: string[]) =>
+    fetchAPI<{ pins: PinnedItem[]; created: number; already_pinned: number }>(
+      `/api/workspace/${caseId}/pinned/bulk`,
+      { method: "POST", body: { evidence_file_ids: evidenceFileIds } },
+    ),
 
   unpinItem: (caseId: string, pinId: string) =>
     fetchAPI<void>(`/api/workspace/${caseId}/pinned/${pinId}`, {
       method: "DELETE",
     }),
 
-  // -- Presence (wrapped: {"online_users": [], "count": N}) -----------------
-  getPresence: (caseId: string) =>
-    fetchAPI<{ online_users: PresenceEntry[]; count: number }>(
-      `/api/workspace/${caseId}/presence`,
-    ).then((r) => r.online_users ?? []),
-
-  updatePresence: (caseId: string, status: string) =>
-    fetchAPI<void>(`/api/workspace/${caseId}/presence`, {
-      method: "PUT",
-      body: { status },
-    }),
-
-  // -- Investigation Timeline (wrapped: {"events": [], "total": N}) ---------
-  getInvestigationTimeline: (caseId: string) =>
-    fetchAPI<{ events: TimelineEvent[]; total: number }>(
-      `/api/workspace/${caseId}/investigation-timeline`,
-    ).then((r) => r.events ?? []),
-
-  getTheoryTimeline: (caseId: string, theoryId: string) =>
-    fetchAPI<{ events: TimelineEvent[]; total: number }>(
-      `/api/workspace/${caseId}/theories/${theoryId}/timeline`,
-    ).then((r) => r.events ?? []),
 }

@@ -5,6 +5,13 @@ type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed
 export type EvidenceSearchMode = "files" | "text"
 export type UploadActivityStatus = "running" | "completed" | "failed"
 
+export interface EvidenceDetailAnchor {
+  page?: number
+  startSeconds?: number
+  endSeconds?: number
+  startChar?: number
+}
+
 export interface UploadActivity {
   id: string
   caseId: string
@@ -38,8 +45,9 @@ interface EvidenceState {
 
   // Detail sheet
   detailFileId: string | null
+  detailAnchor: EvidenceDetailAnchor | null
   detailOpen: boolean
-  openDetail: (fileId: string) => void
+  openDetail: (fileId: string, anchor?: EvidenceDetailAnchor) => void
   closeDetail: () => void
 
   // Context sidebar (tab state only — collapse is managed by UIStore.graphPanelCollapsed)
@@ -129,9 +137,10 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
   clearSelection: () => set({ selectedFileIds: new Set(), selectedFolderIds: new Set() }),
 
   detailFileId: null,
+  detailAnchor: null,
   detailOpen: false,
-  openDetail: (fileId) => {
-    set({ detailFileId: fileId, detailOpen: true, sidebarTab: "details", textSearchOverlayOpen: false })
+  openDetail: (fileId, anchor) => {
+    set({ detailFileId: fileId, detailAnchor: anchor ?? null, detailOpen: true, sidebarTab: "details", textSearchOverlayOpen: false })
     useUIStore.getState().setGraphPanelCollapsed(false)
   },
   closeDetail: () => set({ detailOpen: false }),
@@ -209,6 +218,7 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
         selectedFileIds: new Set(),
         selectedFolderIds: new Set(),
         detailFileId: null,
+        detailAnchor: null,
         detailOpen: false,
         sidebarTab: "details" as const,
         searchMode: "files" as EvidenceSearchMode,

@@ -19,7 +19,7 @@ from routers import (
     snapshots_router,
     cases_router,
     case_members_router,
-    case_profiles_router,
+    dossiers_router,
     auth_router,
     evidence_router,
     background_tasks_router,
@@ -32,6 +32,10 @@ from routers import (
     llm_config_router,
     ai_settings_router,
     workspace_router,
+    work_router,
+    workspace_overview_router,
+    workspace_entries_router,
+    workspace_ai_router,
     users_router,
     setup_router,
     cost_ledger_router,
@@ -137,7 +141,7 @@ app.include_router(timeline_router)
 app.include_router(snapshots_router)
 app.include_router(cases_router)
 app.include_router(case_members_router)
-app.include_router(case_profiles_router)
+app.include_router(dossiers_router)
 app.include_router(auth_router)
 app.include_router(evidence_router)
 app.include_router(background_tasks_router)
@@ -149,7 +153,11 @@ app.include_router(backfill_router)
 app.include_router(database_router)
 app.include_router(llm_config_router)
 app.include_router(ai_settings_router)
+app.include_router(work_router)
+app.include_router(workspace_overview_router)
 app.include_router(workspace_router)
+app.include_router(workspace_entries_router)
+app.include_router(workspace_ai_router)
 app.include_router(users_router)
 app.include_router(setup_router)
 app.include_router(cost_ledger_router)
