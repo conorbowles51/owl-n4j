@@ -158,20 +158,39 @@ module exported from `services/financial/__init__.py` must be added there.
 
 Always set the Vite cache to `/tmp`, or the workspace `unlink` denial aborts the
 browser project before it collects anything, and `passWithNoTests: true` then
-reports a clean "no tests" so the failure is silent:
+reports a clean "no tests" so the failure is silent. **The cache path must carry
+the current user**, like every other `/tmp` path here: `/tmp` is sticky and the
+sandbox user changes every session, so a directory left by an earlier session is
+owned by another uid and the browser project dies with `EACCES ... rmdir` —
+reporting "no tests", which is the same silent failure.
 
 ```
-VITE_CACHE_DIR=/tmp/vite-cache npx vitest run --project unit
-VITE_CACHE_DIR=/tmp/vite-cache npx vitest run --project browser
+VITE_CACHE_DIR=/tmp/vite-cache-$(id -un) npx vitest run --project unit
+VITE_CACHE_DIR=/tmp/vite-cache-$(id -un) npx vitest run --project browser
 npx tsc -b
 npx eslint .
 ```
 
-Baseline: unit **54 files, 285 tests**; browser **2 files, 4 tests**; `tsc -b`
-returns 0; eslint returns 0. Use `fireEvent`, not `userEvent`.
+Baseline: unit **64 files, 437 tests**; browser **2 files, 4 tests**; `tsc -b`
+returns 0; eslint returns 0. Use `fireEvent`, not `userEvent`. The unit project
+takes about 75 seconds; that is not a hang.
 
-The browser project needs Chromium: `npx playwright install chromium`. Do **not**
-pass `--with-deps`, which requires root and fails.
+**The browser project needs Chromium, and it is a per-session install.** The
+browsers live under `/sessions/<session>/.cache/ms-playwright`, which is new
+every session, so on a fresh session the gate fails with `Executable doesn't
+exist ... headless_shell` and again reports "no tests". Install it once, before
+the browser gate. Stage the download on `/sessions`, because `os.tmpdir()` is
+`/tmp` on the root filesystem, which is 99% full:
+
+```
+mkdir -p /sessions/<session>/tmpdl && TMPDIR=/sessions/<session>/tmpdl \
+  npx playwright install chromium
+```
+
+Do **not** pass `--with-deps`, which requires root and fails.
+
+**Never read a "no tests" result as green.** All three failure modes above
+produce it.
 
 **The `storybook` project cannot run in this sandbox.** Its iframe orchestrator
 fails against `localhost` and it completes 3 of 36 files. No story covers financial

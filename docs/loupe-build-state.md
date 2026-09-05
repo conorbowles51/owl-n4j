@@ -3,16 +3,16 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the reaper wiring, `21687c0`)
+**Last updated:** 5 September 2026 (records the runs data layer, `cde43c5`)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `21687c0`
-  (`21687c08c69374814827a0911ddfaea246a81a01`), "Run the abandoned-ingestion-run
-  sweep on a schedule", parent `b7446fa`.
+- **Head when this was written:** `cde43c5`
+  (`cde43c5f43e1558f063020eb6925a6ef2821703f`), "Read the ingestion runs from the
+  frontend", parent `7d2ff98`.
   **Confirm the real tip with `git log --oneline -5`** at the start of every
   session rather than trusting this line — the state-file commit that follows
   this one will already have moved it.
@@ -41,22 +41,22 @@ Also untracked, and **not** mine — Neil's own documents, left alone:
 
 ### Scale
 
-93 commits since `c4246c0` (27 August), counting `21687c0`.
+95 commits since `c4246c0` (27 August), counting `cde43c5`.
 
 `backend/services/financial/` **48 modules**;
 `backend/tests/test_financial_*.py` **52 files**, **3,201 tests**.
 
-### Gate baselines as of `21687c0`
+### Gate baselines as of `cde43c5`
 
-- **Backend financial suite: `Ran 3201 tests, OK (skipped=12)`.** Up from 3183.
-  The delta is exactly the 18 tests in the one new file. The count line was read,
-  not inferred from the exit code. **There are no expected failures.**
-- **Frontend unit: 62 files, 405 tests, all passing.** Unchanged; no frontend
-  file was touched this session, and the gate was run in full anyway to confirm
-  it. The `CLAUDE.md` figure of 54/285 is stale; 405 includes the stray probe
-  test.
-- **Frontend browser: 2 files, 4 tests — run and green,** using the per-user
-  cache path below.
+- **Backend financial suite: `Ran 3201 tests, OK (skipped=12)`.** Unchanged and
+  **not re-run this session** — no backend file was touched. **There are no
+  expected failures.**
+- **Frontend unit: 64 files, 437 tests, all passing.** Up from 62/405. The delta
+  is exactly the two new test files: 14 in `api.runs.test.ts`, 18 in
+  `lib/run-format.test.ts`. 437 includes the stray probe test.
+- **Frontend browser: 2 files, 4 tests — run and green,** after installing
+  chromium, which is a per-session step. **`CLAUDE.md` now carries the corrected
+  frontend gate commands**; use them as written.
 - **`tsc -b --force` returns 0. `eslint .` returns 0.**
 
 **One traceback on stderr during the backend run is expected and is not a
@@ -71,96 +71,102 @@ purpose; `native_ingest_file.py:376` catches `SQLAlchemyError`, logs it with
 
 ## What this session did
 
-**Phase 2 item 5, ingestion runs.** Two commits, both backend.
+**Phase 2 item 5, the frontend half.** The backend was finished two commits ago
+(`11ff36e` the read, `21687c0` the reaper). Nothing in the interface called the
+endpoint, so a failed or half-finished ingest was invisible on screen.
 
-- `11ff36e` — the read half. `run_query.py`, its 19 tests, the `__all__`
-  entries, and `GET /api/financial/runs` on the ledger router.
-- `21687c0` — the reaper half. Five files, 623 insertions.
+Split into two commits, matching how the backend half landed. **The first has
+landed; the second has not been started.**
 
-**The backend for item 5 is now complete.** What remains of the item is the
-frontend, which is not started. See "Next unit".
+- `cde43c5` — **the data layer.** Six files, 785 insertions.
+- *(not yet written)* — the screen. See "Next unit".
 
 ### What landed this commit
 
-- **`services/financial/run_reaper.py`** (114 lines, new).
-  `reap_stale_runs_forever(*, older_than, every, session_factory=None)`, plus a
-  private `_report`.
-- **`tests/test_financial_run_reaper.py`** (459 lines, 18 tests, new).
-- **`config.py`** (+15). Two settings and the reasoning for both numbers.
-- **`main.py`** (+26/−1). Task creation in the lifespan, cancellation in the
-  shutdown half.
-- **`services/financial/__init__.py`** (+10).
+- **`frontend_v2/src/features/financial/api.ts`** (+116). The runs types
+  (`INGESTION_RUN_STATUSES`, `IngestionRunStatus`, `IngestionRun`,
+  `INGESTION_RUN_FIELDS`, `IngestionRunsResponse`) and
+  `financialAPI.getIngestionRuns`.
+- **`lib/run-format.ts`** (185 lines, new). Turns a run row into English.
+- **`hooks/use-ingestion-runs.ts`** (45 lines, new).
+- **`api.runs.test.ts`** (239 lines, 14 tests, new).
+- **`lib/run-format.test.ts`** (189 lines, 18 tests, new).
+- **`CLAUDE.md`** (+11). The orientation rule, below.
 
-### The gap this closed
+### The rule added to `CLAUDE.md`, and why
 
-`reap_stale_runs` was written, tested, exported — **and called by nothing.**
-Confirmed by grepping the backend excluding `tests`, `venv` and `__pycache__`:
-the only references were its own tests, the `__all__` block, and docstrings.
+Neil's words, after the third bad opening question in a row: *"Jesus every
+session starts the same. You just bring stuff up out of context and give zero
+explanation and do no research,"* then *"You do this every single session."*
 
-So a run whose process was killed before it could record a terminal status
-stayed `running` forever. Since the read half now surfaces those rows, they were
-about to become visible without anything ever closing them.
+The structural cause is in this file. **`docs/loupe-build-state.md` is written
+for the next session to resume from. It is not a briefing for Neil and he has
+not read it.** Opening a continued session in this file's register — item
+numbers, module names, words like "runs" and "reaper" used as if shared —
+produces a question he cannot answer without opening a file, which is a badly
+asked question.
+
+The rule is now a standing instruction under "Working agreement", not a promise.
+**Anyone resuming a session should read it before writing the first message.**
 
 ### Decisions taken, each from the source rather than invented
 
-- **A separate module, not a function in `runs.py`.** Keeps `runs.py`
-  synchronous, and keeps the schedule separable from the judgement of what
-  counts as abandoned.
-- **Neither number is defaulted inside the package.** `grep` confirmed **no
-  module under `services/financial/` imports `config`** — the package imports no
-  configuration at all, and that is what lets its tests run with no environment.
-  Both values live in `config.py` and are passed in from `main.py`.
-- **The loop copies `platform_update_service.poll_forever`, not
-  `_cleanup_stale_chunks`.** The wiring plan named the latter as the shape to
-  copy. Reading it (`routers/snapshots.py:288`) shows it has **no error handling
-  at all**, so one exception ends it silently and permanently. `poll_forever`
-  (`platform_update_service.py:376`) has the `try` / `except CancelledError:
-  raise` / `except Exception:` / `sleep` structure that a safety net needs.
-  **The plan's recommendation was followed for placement and overruled for
-  shape.**
-- **Sweep first, then sleep.** A restart is precisely when abandoned runs are
-  sitting there waiting to be found.
-- **`asyncio.to_thread`,** because the sweep is blocking database work and would
-  otherwise stall the event loop.
-- **Six hours stale, five minute interval.** Grounded, not picked: the only run
-  shape that exists today is one file handled inline inside one HTTP request,
-  and the longest single call anywhere waits `EVIDENCE_ENGINE_TIMEOUT`, 300
-  seconds. Six hours sits far above any real run and still closes an abandoned
-  one inside a working day. The margin is deliberately wide because reaping a
-  live run writes `failed` onto a row that is still working. Five minutes rather
-  than one because the sweep touches the database and the threshold it applies
-  is measured in hours.
-- **Lifespan, not an endpoint.** The sweep is global (see the run rules below),
-  so behind a case-gated route a caller would terminate runs in cases they
-  cannot see.
-
-### Two things worth knowing about the tests
-
-- **The fixture holds ids, not ORM objects.** Six tests errored with
-  `DetachedInstanceError` on first run: `commit()` expires an instance and
-  `close()` detaches it, so a later `self.case.id` goes looking for a session
-  that is gone. Fixed by generating the UUIDs up front and keeping the `User`
-  and `Case` rows as locals.
-- **The module logger is silenced in `setUp` and restored in `tearDown`.**
-  Several tests close a run incidentally on the way to checking something else,
-  and the resulting warnings printed during the whole suite. `assertLogs`
-  installs its own handler and re-enables propagation for its block, so the
-  three tests that assert on this logger are unaffected.
+- **`if (params.limit !== undefined)`, not `if (params.limit)`.** The falsy form
+  swallows `limit: 0` and returns every run to a caller who asked for none. The
+  backend refuses 0 with a 400, which is the answer that caller should get.
+  There is a named test.
+- **`getIngestionRuns` sends no status of its own when none was asked for.** A
+  default here could drift from the endpoint's, and the first rows a drifted
+  default would hide are the failed ones. Tested on both sides of the wire: the
+  request carries only `case_id`, and the router still declares
+  `status: Optional[str] = Query(None, ...)`.
+- **`needsAttention` is false for an unrecognised status.** True for `pending`,
+  `running`, `failed` and `aborted` — every ending that left the ledger holding
+  less than the evidence handed to it. An unknown word may name a perfectly
+  ordinary ending; raising an alarm about it would report a problem this build
+  has no grounds to claim.
+- **`failed` and `aborted` keep distinct labels and descriptions** ("Broke" and
+  "Stopped"). The backend keeps them separate on purpose; collapsing them on
+  screen would hide whether a person decided an incomplete ledger or a fault
+  caused it.
+- **Narrowing goes through `ledger-format.ts`'s `narrow`,** not a second
+  implementation, so an unknown status is named and marked the same way it is
+  everywhere else. `RUN_STATUS_VARIANT` is a `Record<IngestionRunStatus, ...>`
+  so a forgotten member is a compile error rather than a `default` badge.
+- **The frontend mirrors the backend's three refusals** in
+  `run-format.ts`'s docstring and in tests: no staleness judgement, no
+  reconciliation of the counts, no ranking of runs. This is to stop the screen
+  drifting into forming a second opinion the backend deliberately declines to
+  form.
+- **`RUN_COUNTS_ARE_HISTORY` is one exported string,** so the sentence on screen
+  and the sentence the test asserts cannot drift apart.
+- **No polling in the hook.** Matches the ledger. How often a half-finished
+  ingest is worth a request has not been settled, and an interval would be that
+  decision taken silently.
+- **Its own query key, `["financial-runs", caseId, params]`.** Neither read
+  invalidates the other: refetching the ledger does not change what an attempt
+  recorded when it ended.
 
 ### Verification
 
-All five gates run and green. Backend 3183 → 3201, matching the new file
-exactly.
+Unit 405 → 437, matching the two new files exactly (14 + 18). Browser 2/4 green.
+`tsc -b --force` 0, `eslint .` 0. Backend not re-run: no backend file touched.
 
-### Carried forward from the two sessions before
+### Carried forward from the sessions before
 
+- **The reaper** (`run_reaper.py`, lifespan loop, six hours stale / five minute
+  interval) closes a run whose process died. It copies
+  `platform_update_service.poll_forever`, **not** `_cleanup_stale_chunks`, which
+  the wiring plan wrongly named and which has no error handling at all.
+- **No module under `services/financial/` imports `config`.** That is why the
+  financial tests need no environment. A new module takes its knobs as
+  arguments.
 - The ledger screen is mounted as the first of four peer tabs on
   `FinancialPage`, and the page always opens on it.
 - **Stopping tab persistence took two mechanisms.** Dropping `mainView` from
   `partialize` stops a choice being written; it does not stop one already
   written being read. An explicit `merge` deletes `mainView` from the persisted
-  object and keeps the rest. A discard rather than a `version`/`migrate` bump,
-  because a discard is version-independent.
+  object and keeps the rest.
 - The graph's two early returns moved inside the graph tabs, so a case with
   ledger rows and no graph no longer renders a full-page empty state with no
   tabs.
@@ -172,53 +178,38 @@ exactly.
 The bootstrap, the baselines, the playwright install, the storybook limitation and
 the git procedure all live in **`CLAUDE.md`**. Deliberately not duplicated here.
 
-### `CLAUDE.md` is wrong in one place — fix it when convenient
+### The `CLAUDE.md` frontend section was wrong; it is fixed
 
-**`VITE_CACHE_DIR=/tmp/vite-cache` does not work.** `CLAUDE.md` hardcodes that
-path, but `/tmp` is sticky and the sandbox user changes every session, so a cache
-directory left by an earlier session is owned by another uid and the browser
-project dies with `EACCES: permission denied, rmdir '/tmp/vite-cache/vitest/...'`
-— reporting **"no tests"**, which is the silent-failure mode `CLAUDE.md` itself
-warns about. Use **`VITE_CACHE_DIR=/tmp/vite-cache-$(id -un)`**. This is the same
-per-user rule `CLAUDE.md` states elsewhere, applied to the one path `CLAUDE.md`
-exempts from it. **Hit again this session**; the fix worked immediately.
+It hardcoded `VITE_CACHE_DIR=/tmp/vite-cache` (no user suffix), carried a unit
+baseline three sessions stale (54/285), and treated `npx playwright install
+chromium` as a one-off rather than a per-session step. **All three produce the
+identical symptom: a clean-looking "no tests".** Corrected in the same commit as
+this file, along with a line saying never to read "no tests" as green. **The
+frontend gate commands in `CLAUDE.md` can now be copied as written.**
 
-Note the unit project tolerates the shared path and only the browser project
+Note the unit project tolerates a shared cache path and only the browser project
 fails on it, so a green unit run says nothing about the cache being usable.
 
 ### New this session
 
-- **No module in `services/financial/` imports `config`.** Verified by grep.
-  This is a real invariant worth preserving: it is why the financial tests need
-  no environment. **A new module in this package should take its knobs as
-  arguments and let the caller read `config`.**
-- **`_cleanup_stale_chunks` is not a safe loop to copy.**
-  `routers/snapshots.py:288` is `while True: await asyncio.sleep(60)` and then
-  work, with no `try` anywhere. One exception ends it for the life of the
-  process and nothing reports that it stopped. **Copy
-  `platform_update_service.poll_forever` instead.**
-- **`asyncio.CancelledError` must be re-raised before any `except Exception`.**
-  On 3.10 it inherits from `BaseException`, so a bare `except Exception` will
-  not catch it — but a loop that catches broadly and then sleeps will still
-  swallow the cancellation on the next iteration. There is a named test for
-  this.
-- **Two new config knobs**, both `int` from the environment in the house shape:
-  `FINANCIAL_RUN_STALE_AFTER_HOURS` (default 6) and
-  `FINANCIAL_RUN_REAP_INTERVAL_SECONDS` (default 300).
+- **The git ref file must be `Read` before it can be `Write`n.** The last step
+  of the commit procedure updates
+  `.git/refs/heads/integration/evidence-main-reunion` by writing the new sha
+  into it. `Write` refuses with "File has not been read yet" unless that exact
+  path was `Read` earlier in the same session. Read it first; its contents are
+  the old head, which is worth seeing anyway.
+- **`Edit` on a large file needs the file read in full, not in slices.** Reading
+  `api.ts` with `offset`/`limit` does not satisfy the precondition, and the
+  refusal does not say why.
+- **The vitest unit project takes about 75 seconds** at 64 files. Not a hang.
 
 ### From earlier sessions, still true
 
-- **The `ENOSPC` that once blocked the browser gate is fixable.** `npx
-  playwright install chromium` stages its download through `os.tmpdir()`, which
-  is `/tmp` on the **root** filesystem — 99% full — while the browsers path is
-  on `/sessions`. Move the staging directory, do not try to clear `/tmp`:
-
-  ```
-  mkdir -p /sessions/<session>/tmpdl && TMPDIR=/sessions/<session>/tmpdl \
-    npx playwright install chromium
-  ```
-
-  Check both filesystems with `df -h /sessions` and `df -h /tmp` before
+- **The `ENOSPC` that once blocked the browser gate is fixable,** by staging the
+  playwright download on `/sessions`. **The command now lives in `CLAUDE.md`**
+  and is not repeated here. The reason it is needed: `os.tmpdir()` is `/tmp` on
+  the **root** filesystem, which is 99% full, while the browsers path is on
+  `/sessions`. Check both with `df -h /sessions` and `df -h /tmp` before
   concluding anything about space.
 - **Radix tab triggers activate on `mousedown`, not `click`.** `activationMode`
   defaults to `"automatic"`, the trigger carries `onMouseDown` and `onFocus`,
@@ -377,6 +368,37 @@ fails on it, so a green unit run says nothing about the cache being usable.
   total order and a case can hold two runs opened within one recorded moment.
   Without the tiebreak the same query answers differently on two calls.
 
+### And on the frontend, as of `cde43c5`
+
+- **`readRunStatus(raw).needsAttention` is the one signal that puts a run in
+  front of a reader who did not ask for it.** True for `pending`, `running`,
+  `failed`, `aborted`. **False for an unrecognised status** — deliberately, and
+  there is a named test. Anything deciding whether to speak up should read this
+  rather than test the status word itself.
+- **`RUN_COUNTS_ARE_HISTORY` is the sentence that must accompany the three
+  counts** wherever they are shown. It is exported from `lib/run-format.ts` so
+  the screen and the test cannot drift.
+- **`readRunStarter` prefers the email**, falls back to `User <id>`, and says
+  "Not recorded" rather than rendering an empty cell, which would read as nobody
+  having started the run.
+- **`formatRunTime` is fixed to `en-GB`, not the browser's locale**, matching
+  `formatLedgerAmount`, so two people reading the same case see the same run. An
+  unparseable value is shown **as it arrived**, not as "Invalid Date", which
+  keeps the fault attributable to the record.
+- **`runDuration` returns `null` rather than `0`** for a run that has not ended,
+  for timestamps that disagree, and for a time it cannot parse. Zero would read
+  as a run that did nothing instantly.
+- **The runs query key is `["financial-runs", caseId, params]`**, outside both
+  `["financial-ledger", ...]` and `["financial", ...]`. Nothing invalidates it
+  yet; `useIngestFile` does not, and whether it should is an open question for
+  the screen pass.
+- **`api.runs.test.ts` reads the Python source** to prove the two languages still
+  agree: the route decorator and prefix, the three parameter names, the
+  every-status default, the envelope keys, `RunView.to_json`'s field set against
+  `INGESTION_RUN_FIELDS`, the `IngestionRunStatus` members, and the
+  `started_at.desc(), id.asc()` ordering clause. **A backend change to any of
+  those fails a frontend test**, which is the intended alarm.
+
 ---
 
 ## Build order
@@ -393,31 +415,43 @@ to depend on something later in the list, stop and ask.
   ingest endpoint ✅ `43f8358`, the interface action on a held file ✅ `17d94ac`,
   mount the ledger ✅ `4324b24`.
 - **Phase 2, make the rows trustworthy** — runs (**item 5, backend complete,
-  frontend not started**), quarantine, reconciliation, adjudication and proof
-  class, duplicates, suspect amounts, locators.
+  frontend data layer complete, no screen yet**), quarantine, reconciliation,
+  adjudication and proof class, duplicates, suspect amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-**Next unit: the frontend for runs, closing item 5. Then item 6, quarantine.**
+**Next unit: the runs screen, closing item 5. Then item 6, quarantine.**
 
-The previous state file left open "whether the frontend is part of item 5 or a
-separate pass is a judgement call the next session should make explicitly rather
-than drift into." **Making it explicitly: it is part of item 5.** The wiring
-plan's own reading list for this item included "whatever the frontend needs to
-show a run", so calling the item done with no caller for the endpoint would be
-closing it on a technicality.
+Everything the screen needs now exists and is tested: `useIngestionRuns`,
+`readRunStatus` with `needsAttention`, `readRunStarter`, `formatRunTime`,
+`runDuration`, `RUN_COUNTS_ARE_HISTORY`. **What remains is rendering, mounting
+and component tests.**
 
-What that pass has to deal with, all of it already established above: the
-endpoint returns every status and the failures are the point; a `running` row
-means only that no terminal status was written, so the screen must show the
-start time rather than imply the run is working; the counts are historical and
-must not be reconciled against the ledger; and the actor should be read from
-`started_by_email`.
+The shape agreed before the data layer was written, and not yet built:
 
-There is no run-related frontend code at all yet — no hook, no component, no
-query key. The ledger query key convention (`["financial-ledger", caseId, ...]`)
-is the nearest precedent for naming one.
+1. **A short notice that speaks only when something needs saying** — a run
+   failed, was stopped, or is still open. Driven by `needsAttention`.
+2. **A full history of attempts for the case**, most likely a fifth tab, which
+   would need a new member on `FinancialMainView` in `stores/financial.store.ts`.
+
+**The notice must be a sibling of `LedgerPanel`, not a child.**
+`LedgerPanel.tsx` has **four early returns** — no `caseId`, `isPending`,
+`isError`, and `rows.length === 0` — so anything mounted inside it disappears
+exactly when the ledger is empty, which is precisely the moment a failed run is
+the explanation. Mount it in the ledger `TabsContent` in `FinancialPage.tsx`,
+above the panel.
+
+Two things to settle during that pass rather than drift into:
+
+- **Whether `useIngestFile` should invalidate `["financial-runs", ...]`.** It
+  invalidates the ledger key only. An ingest creates a run, so the runs list is
+  stale immediately after one, but the ledger read has the same property and
+  chose not to poll.
+- **What the notice says for `pending` and `running`.** `needsAttention` is true
+  for both, but neither is a failure, and the run read makes no staleness
+  judgement — so the wording has to report a start time and claim nothing about
+  whether work is happening.
 
 ### Where the old numbering went
 
@@ -503,9 +537,11 @@ the standing flag below. Raised, unruled.
   hours is a long time to look wrong, and the number is a knob
   (`FINANCIAL_RUN_STALE_AFTER_HOURS`) precisely so it can be lowered once real
   run durations are known.
-- **A failed or half-finished run is still invisible on screen.** The endpoint
-  exists and returns them; **nothing in the interface calls it.** This is the
-  remaining half of item 5 and it is the next thing to build.
+- **A failed or half-finished run is still invisible on screen.** Still true
+  after `cde43c5`. The endpoint returns them and the frontend can now read,
+  narrow and phrase them — but **nothing renders any of it**: no component
+  imports `useIngestionRuns` or `run-format.ts`. This is the remaining half of
+  item 5 and it is the next thing to build.
 - **No row in the corpus carries a running-balance column.** 30,570 rows across
   325 documents. So on real data **every** row will show "No running balance".
   That is the component working, not failing.
