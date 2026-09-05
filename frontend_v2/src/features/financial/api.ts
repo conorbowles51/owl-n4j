@@ -673,6 +673,181 @@ export interface RowAdjudicationParams {
   reason: string
 }
 
+/*
+ * Reading back what was decided.
+ *
+ * The section above writes to the adjudication log. This one reads it, and it
+ * is the only thing that does. Every quarantine, release, supersession, purge
+ * and machine reclassification a case has ever recorded is appended there, and
+ * until `/api/financial/decisions` existed none of it could be got back out.
+ *
+ * Three things about this read shape the types below.
+ *
+ * **The page is bounded and says so.** Unlike `/ledger`, which returns every
+ * matching row, this read is capped. It has to be: `reclassify_document` is
+ * written by the reconciliation stage on every run, so the log grows without
+ * anybody deciding anything. `total` counts every decision matching the same
+ * filters and `truncated` says whether any were left off. Neither is optional
+ * and neither may be dropped on the way to a screen, because a history that
+ * quietly stops is worse than no history.
+ *
+ * **`by_machine` is the one derived field**, and it is the one that matters
+ * most to get in front of a reader. The reconciliation stage decides under an
+ * address at `.invalid`, which no person's account can hold, so the backend can
+ * separate a machine's reclassification from a person's judgement exactly. It
+ * does that separation once, on its side, rather than leaving every reader to
+ * compare against a constant -- a reader that got it wrong would show software
+ * moving a document as though an analyst had.
+ *
+ * **Adjacency is not sequence.** The order is newest first by `recorded_at`,
+ * which is transaction-start time on the backend, so two decisions written in
+ * one transaction share it exactly. Within one subject `subject_sequence` is
+ * authoritative and the order respects it. Across subjects it says nothing, and
+ * nothing built on this shape may present two neighbouring rows about different
+ * subjects as having happened in the order shown.
+ */
+
+/** Mirrors `AdjudicationSubject` in `backend/postgres/models/enums.py`. */
+export const ADJUDICATION_SUBJECTS = [
+  "transaction",
+  "statement_period",
+  "source_document",
+  "account",
+  "evidence_file",
+] as const
+export type AdjudicationSubject = (typeof ADJUDICATION_SUBJECTS)[number]
+
+/**
+ * Mirrors `AdjudicationDecision` in `backend/postgres/models/enums.py`.
+ *
+ * Declared in the backend's own order, which groups the reversible pairs: a
+ * supersession beside its restore, a quarantine beside its release. That
+ * pairing is the point of the vocabulary -- the log appends the undo rather
+ * than retracting the original -- so anything rendering these words should keep
+ * the pairs together rather than sorting them alphabetically.
+ */
+export const ADJUDICATION_DECISIONS = [
+  "supersede_duplicate",
+  "restore_document",
+  "purge_duplicate",
+  "quarantine_row",
+  "release_row",
+  "explain_balance_failure",
+  "reclassify_document",
+  "admit_financial_document",
+] as const
+export type AdjudicationDecision = (typeof ADJUDICATION_DECISIONS)[number]
+
+/**
+ * One recorded decision, exactly as `DecisionRecord.as_dict` in
+ * `backend/services/financial/decision_log.py` emits it.
+ *
+ * `subject_type` and `decision` are typed `string` rather than as the unions
+ * above, for the reason `LedgerTransaction` gives: a backend one version ahead
+ * can send a member this build has never heard of, and a union would let it
+ * through while claiming it had been checked. Narrowing is a runtime job.
+ */
+export interface DecisionRecord {
+  id: string
+  case_id: string
+  /** One of `ADJUDICATION_SUBJECTS`, narrowed rather than trusted. */
+  subject_type: string
+  subject_id: string
+  /**
+   * 1 for the first decision about this subject, one more for each after. The
+   * only order in this log that is authoritative; see the section comment on
+   * what that means for a list spanning subjects.
+   */
+  subject_sequence: number
+  /** One of `ADJUDICATION_DECISIONS`, narrowed rather than trusted. */
+  decision: string
+  reason: string
+  /**
+   * The subject's state either side of the decision, as stored. Shape is the
+   * writer's, not this file's, and money in it is already in integer minor
+   * units. `unknown` rather than a record type because nothing here knows what
+   * a given decision chose to record.
+   */
+  before: unknown
+  after: unknown
+  /**
+   * `actor_user_id` nulls when the account is deleted. The name and address are
+   * recorded beside it precisely so that who decided survives that, which is
+   * the whole reason an audit trail copies them rather than joining.
+   */
+  actor_name: string
+  actor_email: string
+  actor_user_id: string | null
+  ingestion_run_id: string | null
+  /** ISO 8601, or null on a row whose timestamp could not be read. */
+  recorded_at: string | null
+  /** Whether the reconciliation stage wrote this, rather than a person. */
+  by_machine: boolean
+}
+
+/**
+ * Every field a decision record carries, as a value rather than a type.
+ *
+ * The same contract as the interface, in a form `api.decisions.test.ts` can
+ * hold up against the Python. Typed `keyof DecisionRecord`, so a name here the
+ * interface does not declare fails to compile; the test closes the other
+ * direction. A field added to the log and not listed here is not a compile
+ * error on either side -- it is a fact about a decision that never reaches
+ * anyone.
+ */
+export const DECISION_FIELDS: readonly (keyof DecisionRecord)[] = [
+  "id",
+  "case_id",
+  "subject_type",
+  "subject_id",
+  "subject_sequence",
+  "decision",
+  "reason",
+  "before",
+  "after",
+  "actor_name",
+  "actor_email",
+  "actor_user_id",
+  "ingestion_run_id",
+  "recorded_at",
+  "by_machine",
+]
+
+/**
+ * One page of a case's decision log.
+ *
+ * `limit` is the limit the backend *applied*, which is not always the one that
+ * was asked for: a limit above the cap is capped and answered rather than
+ * refused. Read the page size from here rather than from what was sent.
+ */
+export interface DecisionsResponse {
+  case_id: string
+  decisions: DecisionRecord[]
+  /** Every decision matching the same filters, not the length of this page. */
+  total: number
+  limit: number
+  offset: number
+  /** Whether decisions matching this read were left off the page. */
+  truncated: boolean
+}
+
+/**
+ * What a read of the decision log may be narrowed by.
+ *
+ * `subjectId` may be given without `subjectType`. The pair is not unique in
+ * principle, but the returned records each name their own subject type, and
+ * the read is scoped to the case either way: a subject belonging to another
+ * matter comes back empty rather than answered.
+ */
+export interface CaseDecisionsParams {
+  caseId: string
+  subjectType?: AdjudicationSubject
+  subjectId?: string
+  decision?: AdjudicationDecision
+  limit?: number
+  offset?: number
+}
+
 export const financialAPI = {
   getTransactions: (params: {
     caseId: string
@@ -951,4 +1126,37 @@ export const financialAPI = {
         `/release?${new URLSearchParams({ case_id: params.caseId })}`,
       { method: "POST", body: { reason: params.reason } }
     ),
+
+  /**
+   * What has been decided in one case, newest first.
+   *
+   * A read, despite sitting beside the two writes above, and it is on the
+   * ledger router rather than the adjudication one for that reason: the
+   * adjudication router puts every route behind the write bar on purpose, and
+   * reading a history needs no more permission than reading the rows does.
+   *
+   * **No limit or offset is sent unless one was asked for.** The endpoint has
+   * its own default page size and its own cap, and both are enforced by the
+   * service that knows the difference between them -- a limit below 1 is
+   * refused, a limit above the cap is capped and answered. A default sent from
+   * here would be a second copy of a bound that only drifts, and a bound
+   * declared on this side would turn a request the backend is willing to serve
+   * into a rejection it never saw.
+   *
+   * A limit of `0` is therefore sent rather than dropped, so the caller gets
+   * the backend's refusal instead of silently receiving a full page.
+   *
+   * The answer carries `total` and `truncated` beside the records. Hand the
+   * response on whole; a page rebuilt field by field is one careless edit away
+   * from losing the two figures that say what is not being shown.
+   */
+  getCaseDecisions: (params: CaseDecisionsParams) => {
+    const qs = new URLSearchParams({ case_id: params.caseId })
+    if (params.subjectType) qs.set("subject_type", params.subjectType)
+    if (params.subjectId) qs.set("subject_id", params.subjectId)
+    if (params.decision) qs.set("decision", params.decision)
+    if (params.limit !== undefined) qs.set("limit", String(params.limit))
+    if (params.offset !== undefined) qs.set("offset", String(params.offset))
+    return fetchAPI<DecisionsResponse>(`/api/financial/decisions?${qs}`)
+  },
 }
