@@ -3,18 +3,19 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the ledger mount, `4324b24`)
+**Last updated:** 5 September 2026 (records the run read, `11ff36e`)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `4324b24`
-  (`4324b247eac11da2320b14be9bc17f37d8c046e4`), "Mount the ledger on the
-  financial page, as the tab it opens on", parent `f6e3617`. **Confirm the real
-  tip with `git log --oneline -5`** at the start of every session rather than
-  trusting this line.
+- **Head when this was written:** `11ff36e`
+  (`11ff36eb11a4482355e4c1c6d9b12958411e9c64`), "Read the ingestion runs back
+  out: what produced the ledger, and what failed trying", parent `d5f22f1`.
+  **Confirm the real tip with `git log --oneline -5`** at the start of every
+  session rather than trusting this line — the state-file commit that follows
+  this one will already have moved it.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 - **The build order lives in `docs/loupe-wiring-plan.md`,** not in this file. Read
   it before picking up work. It is an agreed plan and is not to be resequenced
@@ -40,40 +41,106 @@ Also untracked, and **not** mine — Neil's own documents, left alone:
 
 ### Scale
 
-89 commits since `c4246c0` (27 August), counting `4324b24`.
+91 commits since `c4246c0` (27 August), counting `11ff36e`.
 
-Backend untouched this session: `backend/services/financial/` **46 modules**,
-**33,759 lines**; `backend/tests/test_financial_*.py` **50 files**,
-**3,164 tests**.
+`backend/services/financial/` **47 modules**, **33,952 lines**;
+`backend/tests/test_financial_*.py` **51 files**, **3,183 tests**.
 
-### Gate baselines as of `4324b24`
+### Gate baselines as of `11ff36e`
 
-- **Backend financial suite: `Ran 3164 tests, OK (skipped=12)`.** Unchanged; no
-  backend file was touched this session. The gate was run in full anyway and the
-  count line was read, not inferred from the exit code. **There are no expected
-  failures.**
-- **Frontend unit: 62 files, 405 tests, all passing.** Up from 60 / 395. The
-  delta is exactly the two files added this session and their ten tests:
-  `FinancialPage.test.tsx` (6) and `financial.store.test.ts` (4). Nothing else
-  moved. The `CLAUDE.md` figure of 54/285 is stale; 405 includes the stray probe
+- **Backend financial suite: `Ran 3183 tests, OK (skipped=12)`.** Up from 3164.
+  The delta is exactly the 19 tests in the one new file. The count line was read,
+  not inferred from the exit code. **There are no expected failures.**
+- **Frontend unit: 62 files, 405 tests, all passing.** Unchanged; no frontend
+  file was touched this session, and the gate was run in full anyway to confirm
+  it. The `CLAUDE.md` figure of 54/285 is stale; 405 includes the stray probe
   test.
-- **Frontend browser: 2 files, 4 tests — NOT RUN THIS SESSION.** See the disk
-  note under Durable facts. The number above is carried from `17d94ac` and has
-  not been re-verified. It cannot cover this change either way: its only two
-  files are `TextSearchPanel.browser.test.tsx` (evidence) and
-  `CaseSettingsPage.browser.test.tsx` (cases), and grepping both for financial
-  and ledger imports returns nothing, while every file changed this session is
-  under `features/financial/`. **Re-run it next session if the disk allows.**
-- **`tsc -b --force` returns 0. `eslint .` returns 0.** Both re-run after the
-  last edit.
+- **Frontend browser: 2 files, 4 tests — RUN AND GREEN.** First time in three
+  sessions. See the chromium note under Durable facts: the install is fixable
+  and the two previous sessions recorded it unrun unnecessarily.
+- **`tsc -b --force` returns 0. `eslint .` returns 0.**
+
+**One traceback on stderr during the backend run is expected and is not a
+failure.** A `sqlite3.IntegrityError: UNIQUE constraint failed:
+financial_transactions.case_id, financial_transactions.ref_id` prints mid-run.
+`tests/test_financial_native_ingest_file.py` ingests the same file twice on
+purpose; `native_ingest_file.py:376` catches `SQLAlchemyError`, logs it with
+`logger.exception` — which is what puts the traceback on screen — and returns
+`write_failed`. Verified this session by reading both sites. **Do not spend a
+session chasing it.**
 
 ---
 
 ## What this session did
 
-**Phase 1 item 4 of the wiring plan: mount the ledger screen.** Committed as
-`4324b24`, four files, 533 insertions, 142 deletions. All frontend. **This
-closes Phase 1.**
+**Phase 2 item 5, ingestion runs — the read half.** Committed as `11ff36e`, four
+files, 645 insertions, 2 deletions. All backend.
+
+### The item is HALF DONE. Read this before picking it up.
+
+Item 5 is `RunCounts`, run status **and `reap_stale_runs`**. Only the read
+landed. **The reaper is still not called from anywhere in production** and that
+was the second half of the plan for this session. The next session should finish
+item 5 before moving to item 6. Detail under "Next unit" below.
+
+### What landed
+
+- **`services/financial/run_query.py`** (178 lines, new). `list_runs`,
+  `RunView`, `to_run_view`, `RunQueryError`. Follows `transaction_query.py`
+  exactly as the house pattern for a read module.
+- **`tests/test_financial_run_query.py`** (380 lines, 19 tests, new).
+- **`services/financial/__init__.py`** (+15). Import block and `__all__` entries.
+- **`routers/financial_ledger.py`** (+74/−2). `GET /api/financial/runs`.
+
+### What was actually missing, established by reading
+
+- **`FinancialIngestionRun` had no reader at all.** The run service has written a
+  row per pipeline execution since it was built. Grepping the whole backend
+  excluding tests and `venv` found no query function and no endpoint touching the
+  model outside `runs.py` and the model relationships. Every ledger fact carries a
+  non-null `ingestion_run_id`, so the database could always say which run produced
+  a transaction; nothing could ask the opposite question.
+- **`reap_stale_runs` has zero production callers.** Same grep. It is exported
+  from the package and defined, and nothing invokes it.
+
+### Three decisions taken, all defensible from the source
+
+- **`list_runs` defaults to every status, inverting the ledger read.**
+  `list_transactions` defaults to `admitted` because that is the population
+  totals are filtered to. Runs are the opposite case: a failed or aborted run is
+  the reason to look at all, so it cannot sit behind an opt-in. Documented in the
+  module docstring, the `__all__` comment, the endpoint docstring and a named
+  test.
+- **The read makes no staleness judgement.** A `running` row is reported as
+  `running` with the time it started, and nothing else is claimed. That verdict
+  is `reap_stale_runs`'s and the reaper writes it down; a reader forming the same
+  opinion independently would have no record behind it and the two would diverge
+  the moment either threshold moved.
+- **The endpoint went on `financial_ledger.py`, not `financial_ingest.py`.**
+  The ledger router declares itself read-only on the stated grounds that none of
+  its routes write. This route does not write, so the claim stays true. Putting it
+  on the ingest router would have inherited `evidence:upload` for a pure read.
+
+### Two things worth knowing about the code
+
+- **Ordering needs the secondary sort on `id`.** `started_at` alone is not a
+  total order and a case can hold two runs opened within one recorded moment.
+  Without the tiebreak the same query answers differently on two calls. There is
+  a test that calls twice and compares.
+- **`completed_at` cannot be asserted against a literal.** The column is
+  `DateTime(timezone=True)`: Postgres returns it with its offset, SQLite has
+  nowhere to keep one and returns it naive, so `'2026-03-04T12:02:00'` !=
+  `'2026-03-04T12:02:00+00:00'`. This failed once and was fixed by asserting
+  against the row's own value plus a prefix check. **Converting whatever was
+  stored is the function's whole job; pinning one backend's spelling of the
+  instant tests the driver instead.** The sibling ledger test never hit this
+  because its date column is a bare `Date`.
+
+### Verification
+
+All five gates green and all five actually run, which has not been true for three
+sessions. Backend 3183 (+19, matching the new file exactly), frontend unit
+62/405 unchanged, frontend browser 2/4, `tsc` 0, `eslint` 0.
 
 `LedgerPanel` was built two sessions ago and mounted nowhere. It is now the tab
 the financial page opens on. Rows that could be created from seven places in the
@@ -177,16 +244,35 @@ Use **`VITE_CACHE_DIR=/tmp/vite-cache-$(id -un)`**. This is the same per-user ru
 
 ### New this session
 
-- **The sandbox disk can be full, and `playwright install` is where you find
-  out.** `npx playwright install chromium` failed with `ENOSPC: no space left on
-  device`; `df -h` showed 9.6G total, 9.4G used, **99% full, 177M free**. The
-  space is in `/tmp` caches left by **earlier sessions under different uids**
-  (`mutate_exports_cache` 61M, `pyc_run` 43M, `pyc_all` 42M and others), and the
-  sticky bit means a session cannot remove them.
-  `find /tmp -maxdepth 1 -user $(id -un)` showed my own files totalling well
-  under 100K — **there is nothing a session can reclaim.** If the browser gate is
-  needed and chromium is not already installed, either Neil clears `/tmp` or the
-  gate is honestly recorded as not run. **Do not claim it green.**
+- **The `ENOSPC` that blocked the browser gate for two sessions is fixable, and
+  the previous diagnosis in this file was wrong.** `npx playwright install
+  chromium` fails with `ENOSPC: no space left on device` because it **stages the
+  download through `os.tmpdir()`**, which is `/tmp` on the **root** filesystem —
+  9.6G, 99% full, 177M free, and full of caches left by earlier sessions under
+  other uids that the sticky bit prevents removing. The browsers path itself is
+  on `/sessions`, which had **4.1G free**. So there was plenty of room in the
+  destination and none on the route to it. **The fix is to move the staging
+  directory, not to clear `/tmp`:**
+
+  ```
+  mkdir -p /sessions/<session>/tmpdl && TMPDIR=/sessions/<session>/tmpdl \
+    npx playwright install chromium
+  ```
+
+  106.4 MiB, downloads in about a minute, and the browser project then runs
+  green. Delete the staging directory afterwards. The previous entry here
+  concluded "there is nothing a session can reclaim" and told the next session to
+  record the gate as not run; that was true about `/tmp` and wrong about the
+  outcome. **Two sessions skipped the browser gate for a reason that took one
+  environment variable to remove.** Note the two filesystems really are separate:
+  check both with `df -h /sessions` and `df -h /tmp` before concluding anything
+  about space.
+- **The vite cache still has to live on `/tmp`,** per the note above about the
+  workspace `unlink` denial, and 177M is enough for it. Only the chromium
+  download needed relocating.
+
+### From the session before, still true
+
 - **Radix tab triggers activate on `mousedown`, not `click`.** Verified by
   reading `node_modules/@radix-ui/react-tabs/dist/index.mjs`: `activationMode`
   defaults to `"automatic"` (line 30), the trigger carries `onMouseDown`
@@ -344,6 +430,31 @@ Use **`VITE_CACHE_DIR=/tmp/vite-cache-$(id -un)`**. This is the same per-user ru
   outside `["financial", caseId, ...]`, because a graph mutation cannot change a
   relational ledger row. `useIngestFile` invalidates the former only.
 
+### The run read's own rules, now that it exists
+
+- **`GET /api/financial/runs` returns every status by default,** which is the
+  opposite of the ledger read. Anything built on top must not "helpfully" filter
+  to completed runs; the failures are the payload.
+- **A `running` run means only that no terminal status has been written.** It
+  does not mean the run is alive. Nothing in the read distinguishes a run in
+  progress from one whose process died, and it must not try to — that is
+  `reap_stale_runs`'s call and the reaper records it. **Any interface showing a
+  running run has to say what it actually knows**, which is when it started, not
+  that it is currently working.
+- **The counts on a run are historical.** `documents_seen`,
+  `transactions_admitted` and `transactions_quarantined` were true when the run
+  ended. Adjudication moves rows afterwards, so they will legitimately disagree
+  with a `COUNT(*)` over the ledger today, and that is not a bug. **Do not
+  reconcile them.** The model docstring says the same thing.
+- **`started_by_email` outlives `started_by_user_id`.** The FK is
+  `ON DELETE SET NULL`; the email column is plain and is not touched. Who started
+  a run survives the account being deleted, which is why the writer records both.
+  Anything displaying an actor should prefer the email.
+- **`reap_stale_runs` is global, not case-scoped.** `runs.py:422` selects every
+  `running` row across every case with no case filter. **This is why it cannot
+  become an endpoint on a case-gated router** — a caller with access to one case
+  would terminate runs belonging to cases they cannot see.
+
 ---
 
 ## Build order
@@ -359,19 +470,41 @@ to depend on something later in the list, stop and ask.
 - **Phase 1, make rows exist — COMPLETE.** Precheck endpoint ✅ `a4eb3dc`,
   ingest endpoint ✅ `43f8358`, the interface action on a held file ✅ `17d94ac`,
   mount the ledger ✅ `4324b24`.
-- **Phase 2, make the rows trustworthy** — runs, quarantine, reconciliation,
-  adjudication and proof class, duplicates, suspect amounts, locators.
+- **Phase 2, make the rows trustworthy** — runs (**item 5, half done, in
+  progress**), quarantine, reconciliation, adjudication and proof class,
+  duplicates, suspect amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-**Next unit: Phase 2 item 5, ingestion runs.** `RunCounts`, run status,
-`reap_stale_runs`. What happened during an ingest, and what a run that died left
-half-done. The plan puts it first in this phase because it is the record of the
-thing Phase 1 just finished building, and **a failed ingest is otherwise
-invisible** — the send dialog reports what one call did and nothing anywhere
-reports a run that never completed. The plan's reading list for it:
-`runs.py`, plus whatever the frontend needs to show a run.
+**Next unit: finish Phase 2 item 5. Do not start item 6.**
+
+The read landed as `11ff36e`. What remains is the reaper, and there is no
+frontend for runs yet either.
+
+**The reaper, and where it goes.** `reap_stale_runs` is written, tested and
+called by nothing. It belongs in a periodic background loop started from the
+FastAPI lifespan, and **the precedent is already in the tree** — `main.py:62` is
+`async def lifespan`, `main.py:76` is
+`cleanup_task = asyncio.create_task(_cleanup_stale_chunks())`, and the shutdown
+half cancels it. `_cleanup_stale_chunks` at `routers/snapshots.py:288` is a
+`while True: await asyncio.sleep(60)` loop and is the shape to copy.
+`platform_update_service.poll_forever()` is a second precedent, structured as a
+service object with an `enabled` flag. **This is settled by reading and does not
+need a ruling.** A loop is right rather than a route precisely because the reaper
+is global (see the run-read rules above), so a case-gated endpoint would let a
+caller close runs in cases they cannot see.
+
+Open sub-questions for that work, both needing a decision but neither needing
+Neil unless the answer is not obvious from the tree: what the staleness threshold
+should be, and what interval the loop ticks on. Take the existing loops'
+conventions as the starting point rather than inventing numbers.
+
+**The frontend for runs is not started.** The plan's reading list included
+"whatever the frontend needs to show a run" and nothing was built. `GET
+/api/financial/runs` currently has no caller. Whether that is part of item 5 or a
+separate pass is a judgement call the next session should make explicitly rather
+than drift into.
 
 ### Where the old numbering went
 
@@ -460,8 +593,16 @@ proposed build order, not a stated Owl requirement.
   strip, which makes a disagreement visible to a reader for the first time, and
   nothing in the interface explains it. Worth a ruling on whether the page should
   say anything about that before Phase 3 lands.
-- **A failed or half-finished ingestion run is invisible everywhere.** This is
-  what Phase 2 item 5 exists to fix and it is the reason that item is next.
+- **A failed or half-finished ingestion run is still invisible to a reader, but
+  it is no longer unreadable.** `GET /api/financial/runs` returns every run for a
+  case including the failed and aborted ones, and **nothing in the interface
+  calls it yet**, so nothing has changed on screen. Half of Phase 2 item 5.
+- **A run whose process died is still recorded as `running` forever.**
+  `reap_stale_runs` exists and is called from nowhere, so no row is ever moved
+  off `running` by anything other than the run itself finishing. The read reports
+  such a run honestly as `running` and declines to guess, which means **a dead
+  run and a live one are indistinguishable through the API today.** This is the
+  remaining half of item 5 and it is the next thing to build.
 - **No row in the corpus carries a running-balance column.** 30,570 rows across
   325 documents. So on real data **every** row will show "No running balance".
   That is the component working, not failing.
@@ -475,9 +616,10 @@ proposed build order, not a stated Owl requirement.
 - **The alembic migration `20260902_evidence_table_geometry` has not been applied
   to any real database from a session** — the sandbox has no Postgres. First
   deployment needs an `alembic upgrade head` on Neil's side.
-- **The sandbox disk is at 99%.** See Durable facts. It cost the browser gate this
-  session and it will cost the next session too unless `/tmp` is cleared from
-  outside.
+- **The root filesystem is at 99% but `/sessions` is not, and the browser gate
+  runs fine.** See Durable facts for the one-line `TMPDIR` fix for
+  `playwright install`. This flag previously said the gate was blocked; **it is
+  not, and it was not.**
 
 ---
 
