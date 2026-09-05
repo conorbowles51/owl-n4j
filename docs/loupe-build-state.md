@@ -3,20 +3,20 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records `35cc6be`, the arithmetic half of
-Phase 2 item 6: the localisation reader, and the write path now reporting when a
-quarantine is what makes a statement balance. Read the disk note under Standing
-flags **before running anything** — the documented bootstrap no longer works and
-the replacement is recorded there.)
+**Last updated:** 5 September 2026 (records `1894fc4`, the first chunk of the
+quarantine screen: the adjudication call, the shape of its answer, and the
+contract test holding the two languages together. Read the disk note under
+Standing flags **before running anything** — the documented bootstrap no longer
+works and the replacement is recorded there.)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `35cc6be`
-  (`35cc6be0c36a091e7f9bef3191cd3c8d3448f0a2`), "Give the localisation arithmetic
-  a reader, and say when a quarantine balances the statement", parent `37f5c8d`.
+- **Head when this was written:** `1894fc4`
+  (`1894fc4a67734b7b4667b11b6a89c1b4d3871306`), "Give the frontend a way to set a
+  ledger row aside, and to read the answer", parent `1212055`.
   **Confirm the real tip with `git log --oneline -5`** at the start of every
   session rather than trusting this line — the state-file commit that follows
   this one will already have moved it.
@@ -47,23 +47,24 @@ disk note under Standing flags.
 
 ### Scale
 
-**108 commits** since `c4246c0` (27 August), counting `35cc6be`; 109 once the
+**110 commits** since `c4246c0` (27 August), counting `1894fc4`; 111 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`.
 
 `backend/services/financial/` **50 modules** excluding `__init__.py`;
 `backend/tests/test_financial_*.py` **57 files**, **3,336 tests**.
 
-### Gate baselines as of `35cc6be`
+### Gate baselines as of `1894fc4`
 
-- **Backend financial suite: `Ran 3336 tests, OK (skipped=12)`.** Up 36 from
-  3,300, accounted for exactly: 27 in the new localisation tests, 8 in the new
-  rescue-wiring class, and 1 added to the existing quarantine driver tests.
+- **Frontend unit: 68 files, 510 tests.** Re-run this session, green. Up one
+  file and 16 tests from `35cc6be`'s 67/494, accounted for exactly by the new
+  `api.adjudication.test.ts`. 510 includes the stray probe test.
+- **`tsc -b` 0, `eslint .` 0.** Both actually re-run this session over the whole
+  project, not just the touched files.
+- **Backend financial suite: `Ran 3336 tests, OK (skipped=12)`.** NOT re-run at
+  this head and it did not need to be: the commit touched two frontend files and
+  no Python. The figure carries forward from `35cc6be`, where it was measured.
   **There are no expected failures.**
-- **Frontend unit: 67 files, 494 tests.** NOT re-run and it did not need to be:
-  `git status --porcelain` showed six changed files and every one was backend.
-  494 includes the stray probe test.
-- **`tsc -b` 0, `eslint .` 0.** Also not re-run, for the same reason.
 - **Frontend browser: NOT RUN, and it could not be.** See the disk note. Last
   known-good figure is 2 files, 4 tests. **Do not carry "browser green" forward
   as though it were verified at this head.**
@@ -88,102 +89,84 @@ Counted directly, not from memory:
 
 ## What this session did
 
-**The arithmetic half of Phase 2 item 6 landed as `35cc6be`.** Six files, 1,211
-insertions, no deletions.
+**The first chunk of the quarantine screen landed as `1894fc4`.** Two files, 496
+insertions, no deletions. Frontend only; no Python was touched.
 
-Item 6 had two remaining pieces: wire `would_rescue` and
-`QuarantineBasis.from_proof` into production, and build the quarantine screen.
-This session did the first and left the second. **The screen is the next unit**
-and nothing now blocks it.
+The screen is being built in five chunks, one commit each. **Chunk 1 of 5 is
+done.** What it added is the call the screen will make and the shape of the
+answer it gets back, with a test holding the TypeScript and the Python together.
+No user-visible surface yet.
 
-### The gap that had to be closed first
+### The decision that shaped the unit, and what would reverse it
 
-`would_rescue` and `localise` are arithmetic. They take a live `IdentityOutcome`
-and a sequence of `RowObservation`s and answer questions about a residual.
-**Nothing in the codebase could produce either of those from a stored period**,
-so both functions were fully written, fully tested, and unreachable — the same
-shape of finding as the previous two units, and found the same way, by grepping
-for the import and listing the files rather than counting name occurrences.
+**The quarantine screen and the adjudication write path are one unit, not two.**
+A read-only screen would be a permanently empty state by construction: the only
+production writer of `ledger_status = "quarantined"` is `quarantine_case_row`,
+reachable only over `POST /api/financial/transactions/{id}/quarantine`. Nothing
+else in the running system puts a row into that state, so a screen that could
+only read would have nothing to read. Building the list and the write together is
+therefore the smallest thing that can actually be seen to work.
 
-So the unit is a reader: the thing that turns rows and periods already in the
-database into the inputs the arithmetic wants.
+*What would reverse it:* a production path that writes computed grounds at
+ingest, which is Phase 2 item 8. Once that exists the list has a second source
+and could stand on its own.
 
 ### What landed
 
-- **`backend/services/financial/localisation.py`** (228 lines, new). Public
-  surface, all five re-exported from the package: `observe_transaction`,
-  `observe_period_rows`, `current_identity`, `localise_period`,
-  `rescue_if_removed`. Plus the private `_page_of`.
-- **`backend/services/financial/quarantine_row.py`** (+91). `_rescue`, and its
-  call from `quarantine_case_row`; `RowAdjudication` gains `rescues_period`.
-- **`backend/services/financial/__init__.py`** (+13).
-- **`backend/tests/test_financial_localisation.py`** (624 lines, 27 tests, new).
-- **`backend/tests/test_financial_quarantine_row.py`** (+244). A new
-  `QuarantineRescueTests` class, 8 tests, against real SQLite.
-- **`backend/tests/test_financial_adjudication_router.py`** (+11). Two exact-dict
-  assertions had to learn the new key; see below.
+- **`frontend_v2/src/features/financial/api.ts`** (+145). A new section before
+  `financialAPI`: `ROW_ADJUDICATION_OUTCOMES`, the `RowAdjudication` interface,
+  `ROW_ADJUDICATION_FIELDS`, `RowAdjudicationParams`. Then `quarantineRow` and
+  `releaseRow` appended to `financialAPI` itself.
+- **`frontend_v2/src/features/financial/api.adjudication.test.ts`** (351 lines,
+  16 tests, new). Two halves: nine tests on what the calls actually put on the
+  wire, seven reading the Python source and asserting the two languages still
+  agree.
 
-### The two decisions inside the reader, and why each went the way it did
+### The three shape decisions, each checked against the Python rather than recalled
 
-Both are load bearing and neither is obvious from outside.
+- **`outcome`, `ledger_status` and `quarantine_reason` are typed `string`, not
+  unions.** Same rule `LedgerTransaction` already follows. A backend one version
+  ahead can send a member this build has never heard of, and a union type would
+  let it through while claiming it had been checked. Narrowing is a runtime job
+  and belongs in `adjudication-format.ts`, which is chunk 2.
+- **`reason` is required on both calls and has no default.** The backend requires
+  it on both routes. Setting a row aside takes it out of every sum, search and
+  money flow the case reports; a row set aside with nothing on the record leaves
+  a total lower than the evidence and no way to explain the difference. A release
+  needs it for a reason the row cannot hold: a released row carries no quarantine
+  reason, so the log is the only place that can say why it was let back in.
+- **`rescues_period` is `boolean | null` and the interface says so at length.**
+  Three values, not two, and the response is the only place the fact is ever
+  said — it is deliberately not in the log, because a machine's observation must
+  not be recorded as a person's finding. A screen that drops it loses it.
 
-- **The chain is walked over `admitted` rows only.** Not over every row on the
-  period. The `proved` strength rests on a residual taken from
-  `total_transactions`, which sums admitted rows, so walking a different
-  population than the residual was computed from would let the arithmetic prove
-  something about a set nobody is looking at. **What this means in practice:**
-  quarantine a row and the localisation answer legitimately changes, exactly as
-  the reconciliation answer does.
-- **The identity is recomputed, never read off the period.** The stored
-  `reconciliation_status` column holds whatever the last sweep wrote, which may
-  be `not_attempted` and on a live case usually is. A rescue check reading that
-  column would report against arithmetic that was true at some earlier moment, or
-  against no arithmetic at all.
+### Almost nothing this endpoint says is an error
 
-### The hazard the reporting exists for
+`_respond` in `routers/financial_adjudication.py` turns exactly two outcomes into
+HTTP errors: `not_found` → 404 and `write_failed` → 500. **A refusal comes back
+200 carrying the refusal**, so it can be shown beside the row rather than thrown.
+There is a test that reads the `_respond` block and asserts the set of
+`RowAdjudicationOutcome.*` references inside it is exactly
+`{not_found, write_failed}` — so a future change that starts raising on a refusal
+fails here rather than silently turning a shown refusal into a thrown one.
 
-**Quarantining the row whose amount equals the residual makes the period balance
-by arithmetic necessity, whatever the row was.** That is true of a row proved
-wrong by the statement's own chain and equally true of a row removed for a bad
-reason. The balance is therefore not evidence of anything on its own.
+### The contract test, and what it is guarding
 
-The system **refuses nothing and warns about nothing**. It records the fact, so
-that a reviewer reading the decision later can weigh the grounds against the
-effect rather than finding a clean statement with no way to know it was cleaned.
-There is a named test holding the write path to not refusing.
+Seven tests read `routers/financial_adjudication.py` and
+`services/financial/quarantine_row.py` off disk and assert against them: the
+router is still registered in `routers/__init__.py`; the prefix and both POST
+decorators are present; each route still takes `case_id` as a `Query` and
+`reason` as an embedded `Body`; the enum members match
+`ROW_ADJUDICATION_OUTCOMES` exactly; the `as_dict()` keys match
+`ROW_ADJUDICATION_FIELDS` exactly; `QuarantineReason.adjudicated` exists on both
+sides.
 
-### `rescues_period` is three-valued, and the third value is not a bug
-
-`True` and `False` are both findings; **`None` is the absence of one.** It arrives
-by four distinct routes and each has a test: the row belongs to no period, the
-check raised something unanswerable, the quarantine was refused so nothing was
-removed, or the request was a release. Anything rendering this field has to
-distinguish "we checked and it does not balance" from "we did not get an answer".
-
-### Authorship: the machine's sentence must not be written into the person's
-
-`QuarantineBasis.from_adjudication` builds its detail as `"<actor>: <reason>"`,
-and that string is what the adjudication log stores. Appending the rescue
-sentence to the reason would leave a record in which **the person appears to have
-written words nobody wrote.** So the sentence travels in the response and not in
-the log. There is a test asserting the stored reason is exactly
-`"Alex: <what she typed>"`.
-
-**This is a real gap, recorded honestly:** the fact is on screen at the moment of
-the decision and is not durable. Giving it a home in the log needs somewhere to
-put it that is neither the person's reason nor the row's before/after columns,
-which is a change to `quarantine_transaction`. See Standing decisions.
-
-### The router needed no schema work, and this was checked rather than assumed
-
-`routers/financial_adjudication._respond` ends in `return result.as_dict()` and
-the routes declare no response model, so the new key reaches the interface by
-itself. **Two router tests failed on the new field** — both named
-`test_the_service_is_called_with_the_row_case_actor_and_reason`, both asserting an
-exact response dict. That is the tests working. Fixed by threading the field
-through the `_result` helper, and the quarantine case now asserts `True` end to
-end rather than merely tolerating the key, so the route is held to carrying the
-finding out.
+**Why this and not a type:** a drift between the Python and the TypeScript is
+otherwise silent, and silent in the direction of showing a figure that looks
+complete and is not. `ROW_ADJUDICATION_FIELDS` is typed
+`readonly (keyof RowAdjudication)[]`, which closes one direction at compile time
+— a name the interface does not declare will not build. The test closes the
+other: a field the Python emits and the interface has never heard of fails here.
 
 ### Carried forward: the environment, unchanged and still broken
 
@@ -219,19 +202,56 @@ cd <repo>/backend && env PYTHONPATH=/dev/shm/pylibs-$(id -un) \
 full filesystem. `/dev/shm` is RAM-backed and does not survive the session, so
 this is a per-session step exactly like the old bootstrap was.
 
+**New this session, and it unblocks the frontend gates: the repo is not on the
+full filesystem.** `df -h` on the repo path shows a separate virtiofs mount
+(`/mnt/.virtiofs-root/shared/Documents/Owl/owl-n4j`), 461G with **37G free**. So
+`/sessions` reporting zero bytes does **not** mean the working tree cannot be
+written to, and it does not mean the frontend gates cannot run. What it does mean
+is that anything the tooling wants to put outside the repo has to be redirected.
+The vite cache is the one that matters, and `CLAUDE.md`'s `/tmp` path is on the
+99%-full root filesystem, so send it to `/dev/shm` instead:
+
+```
+cd <repo>/frontend_v2 && VITE_CACHE_DIR=/dev/shm/vite-cache-$(id -un) \
+  npx vitest run --project unit
+```
+
+Both `tsc -b` and `eslint .` ran clean over the whole project with no
+redirection needed. The **browser** project is still not runnable: it additionally
+wants a per-session Chromium download, and the documented staging directory is on
+the full filesystem.
+
 ### Verification
 
-Backend 3,300 → 3,336, accounted for exactly. The staged tree
-(`dfb02bac85e173d34bd5f642f9fb56dabec0d72f`) was diffed against `HEAD` before
-committing and held exactly the six intended files, with the untracked `.bak`
-files, the probe test and all of Neil's case material correctly excluded.
+Frontend unit re-run in full and green, 68 files / 510 tests, up exactly the
+16 tests in the new file. `tsc -b` 0 and `eslint .` 0, both over the whole
+project. Backend not run and not claimed — `git status --porcelain` showed two
+changed files and both were TypeScript.
 
-Frontend untouched, confirmed by `git status --porcelain`, so no frontend gate
-was run and none is claimed.
+The staged tree (`ef30ec672f39503f1a1fb76d0ff9963b0a7e5382`) was diffed against
+`HEAD` before committing and held exactly the two intended files, 496 insertions
+and no deletions, with the untracked `.bak` files, the probe test and all of
+Neil's case material correctly excluded. `git status --porcelain | grep -v '^??'`
+was empty afterwards.
 
 ---
 
-## The two previous sessions, in brief
+## The three previous sessions, in brief
+
+**`35cc6be`, the arithmetic half of Phase 2 item 6.** Six files, 1,211
+insertions. Built `services/financial/localisation.py` — the reader that turns
+rows and periods already in the database into the inputs `would_rescue` and
+`localise` want, both of which were fully written, fully tested and unreachable
+before it. `quarantine_row.py` gained `_rescue` and `RowAdjudication` gained
+`rescues_period`. Three rules from that unit that the screen work depends on:
+**the chain is walked over `admitted` rows only**, because the residual it is
+compared against sums admitted rows; **the identity is recomputed, never read off
+the stored `reconciliation_status` column**, which on a live case is usually
+`not_attempted`; and **the system refuses nothing and warns about nothing** when a
+removal makes a period balance, it only records the fact, because that balance is
+an arithmetic necessity whatever the row was and so is not evidence on its own.
+The `rescues_period` authorship rule and its recorded gap are under Standing
+decisions.
 
 **`74d9bdf`, the run reaper test race.** No build item moved; one test file
 changed. The suite was intermittently failing with `no logs of level WARNING or
@@ -264,6 +284,19 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
 
 ### New this session
 
+- **`mockResolvedValue(new Response(...))` hands every call the same object, and
+  a `Response` body can only be read once.** The second call in a test dies with
+  `TypeError: Body is unusable: Body has already been read`, thrown from inside
+  `fetchAPI` at `api-client.ts:86` — **which reads exactly like the code under
+  test having failed**, not like a bad stub. Cost a debugging round here. Use
+  `mockImplementation(() => Promise.resolve(new Response(...)))` so a fresh
+  response is built per call. `api.ledger.test.ts` never hit this because every
+  one of its tests makes exactly one call; `api.adjudication.test.ts` compares
+  the two routes, so several of its tests make two.
+- **The repo is on a different filesystem from `/sessions`.** See the expanded
+  environment note above: 37G free on the repo mount, so the frontend gates run
+  even while `/sessions` reports zero bytes. The state file previously implied
+  the whole environment was blocked; only the backend bootstrap is.
 - **Two rows identical in amount, date and direction inside one document collide
   on the content hash.** `uq` is `(source_document_id, content_hash)` and the
   hash is computed from the reading, so a fixture making several rows on one
@@ -690,10 +723,30 @@ Read it before touching anything in item 6's remaining half.
 - **Ordering runs needs the secondary sort on `id`.** `started_at` alone is not
   a total order. Same rule now applies to ordering periods.
 
-### And on the frontend, as of `35cc6be`
+### And on the frontend, as of `1894fc4`
 
-Unchanged from `bc23570`; no frontend file has been touched for four sessions.
-The next unit changes that: the quarantine screen is frontend work.
+The first frontend change in five sessions landed here. New rules from it:
+
+- **`financialAPI.quarantineRow` and `.releaseRow` exist and are the only way to
+  change a stored row's standing.** Both take `{ caseId, transactionId, reason }`,
+  all three required. `case_id` goes in the query string, `reason` in the JSON
+  body under its own key, the row id percent-encoded into the path.
+- **A refusal is a 200, not a throw.** Only `not_found` (404) and `write_failed`
+  (500) leave the happy path. Callers must read the returned `outcome`, not treat
+  a resolved promise as success. `applied` is true for exactly `quarantined` and
+  `released`.
+- **`RowAdjudication.reason` is overloaded by outcome and must not be presented
+  as one thing.** On `quarantined` it is the machine's rescue note or null; on
+  `refused` and `unchanged` it is why the writers would not act; on the two error
+  outcomes it never arrives, because those become HTTP errors.
+- **`ROW_ADJUDICATION_FIELDS` is typed `readonly (keyof RowAdjudication)[]`** so
+  a name the interface does not declare fails to compile, and
+  `api.adjudication.test.ts` closes the other direction against the Python.
+  **A new field on the backend `as_dict()` must be added to both.**
+- **`outcome`, `ledger_status` and `quarantine_reason` are `string` on purpose.**
+  Narrowing is `adjudication-format.ts`'s job. Do not "fix" them into unions.
+
+Everything below is unchanged from `bc23570`.
 
 - **`readRunStatus(raw).needsAttention`** is true for `pending`, `running`,
   `failed`, `aborted`, and **false for an unrecognised status**, deliberately,
@@ -741,18 +794,43 @@ turns out to depend on something later in the list, stop and ask.
   mount the ledger ✅ `4324b24`.
 - **Phase 2, make the rows trustworthy** — runs ✅ item 5 complete (backend
   `cde43c5`, notice `8924668`, attempts list `bc23570`); quarantine item 6
-  **backend complete, screen remaining** (write path `150084a`, localisation
-  reader and rescue reporting `35cc6be`); reconciliation ✅ item 7 (`dfcef2b`).
+  **backend complete, screen in progress** (write path `150084a`, localisation
+  reader and rescue reporting `35cc6be`, screen chunk 1 of 5 `1894fc4`);
+  reconciliation ✅ item 7 (`dfcef2b`).
   Then adjudication and proof class, duplicates, suspect amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-### Next unit: the quarantine screen, item 6's last piece
+### Next unit: the quarantine screen, chunks 2 to 5
 
-**The backend is done and nothing blocks the screen.** Start it directly.
+**Chunk 1 landed as `1894fc4`.** The screen is being built in five commits and
+the plan below is the agreed sequence. Pick up at chunk 2.
 
-What it has to show, and why each thing is on the list:
+- **Chunk 1 ✅ `1894fc4`.** `api.ts`: the two calls, the `RowAdjudication` shape,
+  `ROW_ADJUDICATION_OUTCOMES`, `ROW_ADJUDICATION_FIELDS`, `RowAdjudicationParams`,
+  plus `api.adjudication.test.ts` holding the contract against the Python.
+- **Chunk 2 — `lib/adjudication-format.ts`, plus tests, then commit.** Reuse the
+  existing `narrow()` helper from `lib/ledger-format.ts` with a different
+  `source` string, to narrow `outcome`, `ledger_status` and `quarantine_reason`.
+  Give `rescues_period`'s three values **three distinct, non-blank
+  presentations** — `false` and `null` must not render alike — and give the
+  overloaded `reason` a reader that knows which of its three meanings it is
+  carrying, keyed off `outcome`.
+- **Chunk 3 — `use-row-adjudication` hooks, plus tests, then commit.** Mutations
+  over `quarantineRow` and `releaseRow`. **A refused outcome is a resolved
+  promise, not a rejection**, so the hook must not treat success as applied;
+  surface the outcome to the caller. Invalidate the ledger query on `applied`
+  only.
+- **Chunk 4 — dialog, quarantine table, quarantine panel, plus tests, then
+  commit.** The dialog takes the reason, which is required and has no default.
+  The table is where the conditional-column-versus-second-table question below
+  gets answered against `LedgerTable.tsx`.
+- **Chunk 5 — wire the tab into the store and `FinancialPage`, and the set-aside
+  action on the ledger, then commit.** `FinancialMainView` gains its sixth
+  member; the ledger row gets the action that opens the dialog.
+
+What the screen has to show, and why each thing is on the list:
 
 - **The quarantined population**, which has existed since `150084a` and is still
   reachable only through the API. **The ledger tab's own totals silently exclude
@@ -765,13 +843,19 @@ What it has to show, and why each thing is on the list:
   place the rescue fact currently surfaces, because it is deliberately not in the
   log. If the screen drops it, the fact is lost entirely.
 
-**One open question the screen unit should settle first, and it is a small one.**
-`from_proof` is reachable from the reader now, but **no production path calls
-it** — computed grounds are still unreachable from HTTP by design, so on a live
-case every quarantined row reads `adjudicated`. Decide whether the screen ships
-the two-value column anyway (recommended: yes, it is correct and costs nothing,
-and the second value arrives with item 8) or waits. **Do not raise this with
-Neil**; it is settled by the recommendation unless something contradicts it.
+### Two questions settled by reading the source, not open
+
+**The two-value grounds column ships now.** `from_proof` is reachable from the
+reader but **no production path calls it** — computed grounds are unreachable
+from HTTP by design — so on a live case every quarantined row currently reads
+`adjudicated`. The column is correct, costs nothing, and its second value arrives
+with item 8. *What would reverse it:* nothing short of item 8 being dropped.
+**Settled; do not raise it with Neil.**
+
+**The screen and the write path are one unit.** A read-only screen would be a
+permanently empty state by construction: `quarantine_case_row`, over the
+adjudication route, is the only production writer of `quarantined`. *What would
+reverse it:* item 8 giving the list a second source.
 
 ### The screen question, settled by reading the source
 
@@ -985,9 +1069,11 @@ before item 12 lands.
 - **Whether ingestion should trigger a sweep at the end of a run is not
   decided and was not decided here.** It is the obvious next caller, and item 8
   (proof class) is the unit that will actually need one. Flagged, not parked.
-- **A row can now be set aside and let back in, but only through the API.**
-  Nothing in the interface calls either endpoint yet. Until the screen lands,
-  the quarantine population is reachable only via
+- **A row can now be set aside and let back in, but still nothing on screen does
+  it.** As of `1894fc4` the frontend has the two calls
+  (`financialAPI.quarantineRow`, `.releaseRow`) and **no component calls
+  either** — chunks 2 to 5 add the callers. Until they land, the quarantine
+  population is reachable only via
   `GET /api/financial/ledger?ledger_status=quarantined`, and **the ledger tab's
   own totals silently exclude it**.
 - **The write path now reports when a quarantine is what makes a statement
@@ -1033,12 +1119,19 @@ before item 12 lands.
   applied to any real database from a session** — the sandbox has no Postgres.
   First deployment needs an `alembic upgrade head` on Neil's side.
 - **Disk: `/sessions` is completely full and this is the first thing to check
-  every session.** Measured again at `35cc6be`: 9.8G of 9.8G, **zero bytes
-  free** — unchanged from last session, against 129M two sessions ago and 291M
-  three. Root is at 99% with 121M free. `/dev/shm` is 2.0G with 1.8G free.
+  every session.** Measured again at `1894fc4`: 9.8G of 9.8G, **zero bytes
+  free** — unchanged for three sessions, against 129M four sessions ago. Root is
+  at 99% with 121M free. `/dev/shm` is 2.0G with 1.8G free.
+  - **This does not block the repo, and the previous wording implied it did.**
+    `df -h` on the repo path shows a **separate virtiofs mount with 37G free**.
+    The working tree writes normally and the **frontend gates run normally**,
+    provided the vite cache goes to `/dev/shm` rather than `CLAUDE.md`'s `/tmp`,
+    which is on the 99%-full root. Unit, `tsc -b` and `eslint .` were all run in
+    full this session on that basis.
   - **The backend suite is still runnable** via the `/dev/shm` bootstrap
-    recorded above. That is the workaround, it is reliable, and it was used for
-    every run of this session, including the full-suite runs.
+    recorded above. That is the workaround and it is reliable. **Not exercised at
+    this head** — the commit was frontend only — but it was used for every run of
+    the previous session, including the full-suite runs.
   - **The browser gate is not runnable and will not become runnable.** Chromium
     needs roughly 700M to install and there is nowhere to put it: `/dev/shm` is
     2.0G but is RAM, and spending most of it on browser binaries to run four
