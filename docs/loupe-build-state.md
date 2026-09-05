@@ -3,18 +3,18 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the ledger data layer, `fd88318`)
+**Last updated:** 5 September 2026 (records the ledger screen, `94af112`)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `fd88318`
-  (`fd8831809428f505a1d4f541ff1eb65f81865854`), "Frontend read path for the
-  relational ledger", parent `2a4c12d`. **Confirm the real tip with
-  `git log --oneline -5`** at the start of every session rather than trusting
-  this line.
+- **Head when this was written:** `94af112`
+  (`94af112e0ddd438fe971659c29ce5008454d01da`), "The ledger screen: relational
+  ledger rows as a table a reader can trust", parent `0581b3a`. **Confirm the
+  real tip with `git log --oneline -5`** at the start of every session rather
+  than trusting this line.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 
 ### Uncommitted
@@ -27,15 +27,15 @@ Still untracked and still un-removable from a session (workspace denies
 - `backend/services/financial/export_manifest.py.bak`
 - `backend/services/financial_export_service.py.bak`
 - `frontend_v2/src/__probe.test.ts` — a diagnostic left by the vitest
-  investigation two sessions ago. It is **counted in the frontend baseline
+  investigation three sessions ago. It is **counted in the frontend baseline
   below** (it contributes 1 file and 1 test), so when it is deleted the unit
   numbers drop by one each and that is expected, not a regression.
 
 ### Scale
 
-75 commits since `c4246c0` (27 August), counting `fd88318`.
+77 commits since `c4246c0` (27 August), counting `94af112`.
 
-Backend unchanged this session and these figures were measured last session:
+Backend unchanged for two sessions; these figures were measured then:
 `backend/services/financial/` **44 modules**, **32,452 lines**;
 `backend/tests/test_financial_*.py` **47 files**, **3,057 tests**.
 
@@ -43,112 +43,107 @@ Backend unchanged this session and these figures were measured last session:
 
 ## What this session did
 
-One build item: **the frontend read path for the relational ledger**, item 12's
-first remainder. Committed as `fd88318`, 1,103 insertions across five files, no
-deletions.
+One build item: **the ledger screen**, item 12's second remainder. Committed as
+`94af112`, 981 insertions across four files, no deletions.
 
-This is the **data layer only**. It is deliberately a unit on its own, because
-the decisions in it are the ones that are expensive to get wrong, and the screen
-that consumes it is a separate and much more mechanical piece of work.
+The previous session built the data layer — the fetch, the money scaling, the
+vocabulary narrowing. This session builds the thing that puts it on a screen. It
+splits in two on purpose, so the drawing half can be tested against rows alone
+rather than staged through a query.
 
 ### What landed
 
-- `frontend_v2/src/features/financial/api.ts` — **+185 lines, purely
-  additive.** The existing Neo4j-backed `Transaction` types are untouched above;
-  the ledger block sits below a section comment saying plainly that these are
-  two different stores. Adds the five closed-vocabulary arrays,
-  `LedgerTransaction` (27 fields), `LEDGER_TRANSACTION_FIELDS`,
-  `LedgerResponse`, and `financialAPI.getLedgerTransactions`.
-- `frontend_v2/src/features/financial/lib/ledger-format.ts` — **new, 369
-  lines.** Money scaling and vocabulary narrowing. The only module that knows
-  how to turn a stored row into something a person reads.
-- `frontend_v2/src/features/financial/hooks/use-ledger-transactions.ts` —
-  **new, 47 lines.** The React Query read.
-- `frontend_v2/src/features/financial/api.ledger.test.ts` — **new, 280 lines,
-  16 tests.**
-- `frontend_v2/src/features/financial/lib/ledger-format.test.ts` — **new, 222
-  lines, 22 tests.**
+- `frontend_v2/src/features/financial/components/LedgerTable.tsx` — **new, 367
+  lines.** Presentational. Takes `LedgerTransaction[]` and draws them. Knows
+  nothing about fetching.
+- `frontend_v2/src/features/financial/components/LedgerPanel.tsx` — **new, 125
+  lines.** The fetching half. Owns the four states a table cannot be in the
+  middle of: no case chosen, in flight, failed, returned empty.
+- `frontend_v2/src/features/financial/components/LedgerTable.test.tsx` — **new,
+  298 lines, 21 tests.**
+- `frontend_v2/src/features/financial/components/LedgerPanel.test.tsx` — **new,
+  191 lines, 10 tests.** Mocks the hook rather than the network, because what is
+  under test is the panel's reading of a query result, not the query.
 
-### The three decisions, and why
+### Two facts read out of the backend, not assumed
 
-Recorded here as well as in the commit message, because these are the ones a
-later session is most likely to undo by accident.
+Both changed what got built. Recorded here because a later session looking at
+the panel will otherwise wonder why it is doing more than rendering.
 
-**1. Money is scaled by cutting the digit string, never by dividing.**
-`amount_minor` is an integer count of minor units, and how many minor units make
-a major unit depends on the currency: none for yen, two for most, three for
-Bahraini and Kuwaiti dinar. A blanket division by a hundred would report every
-yen figure as a hundredth of itself and every dinar figure as ten times itself.
-Separately, near the top of the safe integer range the gap between representable
-floating-point numbers is wider than a cent, so dividing there silently loses the
-last one; `9007199254740991` is a tested case. Cutting a digit string cannot
-round anything.
+**1. The ledger read defaults to `admitted`.** `list_transactions` in
+`backend/services/financial/transaction_query.py` does
+`status = ledger_status if ledger_status is not None else LedgerStatus.admitted`
+— it substitutes a filter, rather than returning every row regardless of status.
+So zero rows does **not** mean the case has no financial material. It means
+nothing holds that one status, and the quarantined, superseded and rejected rows
+are sitting outside the filter, uncounted and unshown. An empty state reading "no
+transactions" would state the opposite of what was checked. The one that shipped
+names the status it filtered on and says where the rest are.
 
-The scale itself comes from `Intl.NumberFormat(...).resolvedOptions()
-.maximumFractionDigits` — the runtime's own currency data — rather than a
-hardcoded table that would go stale. When the code cannot be scaled at all, the
-result carries `scaled: false` and the raw digits, so a caller has been told it
-is not a real figure rather than being handed one that is a hundred times too
-small.
+**2. `total` is `len(transactions)` of the same response.** Verified in
+`backend/routers/financial_ledger.py`; there is no paging behind it. Reading a
+count from `total` would be reading a number that means "how many are in front of
+you" while implying "how many exist". So the count comes from `rows.length`, the
+two are compared, and a disagreement is surfaced — because the only way they can
+differ is a backend that has started paging without this screen knowing, at which
+point every figure derived from a page is a figure over a subset.
 
-Thousands grouping is **fixed en-US, not locale-derived**, so two people reading
-the same case see the same figure.
+Also read rather than assumed: `list_transactions` orders by
+`ordering_date.asc(), row_index.asc()`. The second of those is what keeps a
+statement's own printed sequence intact where one day holds several movements. So
+the table draws rows in the order they arrive and does not sort. **Do not add
+client-side sorting without dealing with that.**
 
-**2. Closed vocabularies are typed `string` on the wire and narrowed at
-runtime.** A backend one version ahead of the deployed bundle can legitimately
-send a `ledger_status` this build has never heard of. A union type would let that
-value through while claiming it had been checked, and it would arrive on screen
-as an empty badge — which reads as *an answer* ("this row has no status") rather
-than as this build being out of date. So `LedgerTransaction` types those fields
-loosely on purpose, and `ledger-format.ts` narrows every one of them, returning
-either the member's meaning or an explicit statement that we do not recognise it.
-This follows the precedent already set by `use-route-checks.ts` for route-check
-outcomes.
+### The three things in the table that are correctness, not presentation
 
-Each vocabulary also refuses members belonging to a *different* vocabulary:
-`readProofClass("admitted")` narrows to null. Tested.
+Each exists because the alternative misleads silently rather than loudly.
 
-**3. The hook sits under the query key `["financial-ledger", ...]`, outside the
-`["financial", ...]` prefix.** Verified by grep, not assumed: every mutation in
-`use-financial-data.ts` invalidates `["financial", caseId]`. Those write to the
-**Neo4j graph** and cannot change a Postgres ledger row — categorising a graph
-transaction or correcting its amount there leaves the ledger exactly as it was.
-Sharing the prefix would refetch the ledger on every graph edit, and worse, would
-imply a relationship between the two stores that the write paths do not have.
+**An unscaled amount is marked.** `formatLedgerAmount` returns `scaled: false`
+when it could not turn a stored minor-unit count into a figure, and its own
+docstring is explicit that a caller which renders that without saying so shows
+123456 where 1,234.56 belongs. The marker is not decoration; dropping it turns a
+hundredfold error into a plausible number.
 
-### Cross-language guards, and proof that they bite
+**An absent running balance is stated in words.** `running_balance_minor` is
+nullable, and a blank cell reads as zero, or as a balance of nothing, neither of
+which is what null means. See the standing flag below: on the current corpus this
+is **every row**.
 
-Four guards read backend Python source and fail if the two languages drift:
-
-- the emitted field set against `TransactionView.to_json` in
-  `backend/services/financial/transaction_query.py`;
-- each of the five vocabularies against `backend/postgres/models/enums.py`;
-- the extraction-layer range against the `extraction_layer BETWEEN 0 AND 3`
-  CHECK in `backend/postgres/models/financial.py`;
-- the endpoint's own parameter list and response envelope in
-  `backend/routers/financial_ledger.py`.
-
-Each Python block is located and **scoped to its own body** rather than searched
-for anywhere in the file, following the note in `use-route-checks.test.tsx` that
-a whole-file search once passed on a copy of a guard living elsewhere.
-
-**These were mutation-tested this session, not just asserted.** Removing
-`"bank_reference"` from `LEDGER_TRANSACTION_FIELDS` and `"superseded"` from
-`LEDGER_STATUSES` produced exactly two failures with the right messages; the file
-was then restored byte-identically from a backup and re-run green. A guard that
-has never been seen to fail is not evidence of anything.
+**An unrecognised vocabulary member is shown, loudly.** Every closed vocabulary
+arrives as a bare string or int and is narrowed at runtime, so a backend one
+version ahead of this build can send a member this build has never heard of. Those
+rows still render, still show the raw value, and carry a reserved `warning` badge
+plus `data-unrecognised="true"` — because a blank badge on a financial row reads
+as an answer. The attribute exists so tests assert on the narrowing rather than on
+a class name.
 
 ### Verification, all run this session
 
-- Frontend unit project: **56 files, 323 tests, pass** (was 54 / 285; +2 files
-  and +38 tests, exactly the new work).
+- Frontend unit project: **58 files, 354 tests, pass** (was 56 / 323; +2 files
+  and +31 tests, exactly the new work).
 - Frontend browser project: **2 files, 4 tests, pass**.
 - `npx tsc -b`: 0. `npx eslint .`: 0.
 - Commit verified by `git diff --stat HEAD <tree>` before the ref was written:
-  exactly the five intended files, 1,103 insertions, no deletions. Tree
+  exactly the four intended files, 981 insertions, no deletions. Tree
   tracked-clean afterwards.
 
 Backend was not re-run; nothing backend changed.
+
+**Mutation-tested in four rounds**, because a test that has never been seen to
+fail is not evidence of anything. Each round rewrote exactly one expression, with
+`assert s.count(old) == 1` so a missed match failed loudly rather than silently
+mutating nothing:
+
+- `data-unrecognised={unrecognised ? "true" : "false"}` pinned to `"false"` →
+  **2 failed / 19 passed**, exactly the two `TermBadge` tests. The date-source and
+  extraction-layer badges carry their own inline flags, so their tests correctly
+  still passed.
+- `{!amount.scaled && (` → `{false && (` → **1 failed / 20 passed**.
+- The string `No running balance` emptied → **1 failed / 20 passed**.
+- `{countDisagrees && (` → `{false && (` in the panel → **1 failed / 9 passed**.
+
+Both files were restored from per-user backups, `diff` confirmed byte-identical,
+and the suite re-run green at 31.
 
 ---
 
@@ -160,27 +155,45 @@ install, the storybook limitation and the git procedure all live in
 
 ### New this session
 
-- **Any scratch file in `/tmp` needs a per-user name, not just the git index.**
-  `/tmp` is sticky and the sandbox user changes every session, so a plain
-  `/tmp/tsc.out` left by an earlier session is owned by another uid and a
-  redirect into it fails with `Permission denied`. This cost a few minutes
-  looking like a typecheck failure when the typecheck was fine. Use
-  `/tmp/<name>-$(id -un).<ext>` for everything, the same way `CLAUDE.md` already
-  requires for the index.
-- **The house pattern for API tests** is in `src/features/cases/api.test.ts`:
-  swap `globalThis.fetch` for a `vi.fn()`, resolve a hand-built `Response`,
-  assert with `toHaveBeenCalledWith(url, expect.objectContaining({...}))`, and
-  restore in `afterEach`.
-- **No shared money formatter existed before this unit.** Every financial
-  component reaches for `toLocaleString("en-US", ...)` on a float. Those are the
-  Neo4j-backed `Transaction` rows, which carry floats, so they are not wrong
-  today — but any new code touching `amount_minor` must use
-  `formatLedgerAmount` and nothing else.
-- **`backend/routers/financial_ledger.py` is reachable and tested.** Its five
-  router tests ran for the first time last session and pass.
+- **`GIT_INDEX_FILE` does not survive between Bash invocations.** The staging and
+  the `commit-tree` have to happen in **one** command. Splitting them means the
+  second call writes against the real index. The tree hash is the check: stage
+  again, confirm `git write-tree` reproduces the hash you verified, then commit in
+  the same breath.
+- **`&&`-chaining a `grep` that finds nothing silently kills the rest of the
+  line.** `grep` exits 1 on no match, so `git status | grep -v '^??' && echo ...`
+  prints nothing and looks like the command ran. Use `;` between verification
+  steps, never `&&`.
+- **The house component-test conventions** are `render`/`screen` from
+  `@testing-library/react`, `data-testid` for anything a test needs to find, and
+  `fireEvent` never `userEvent`. The cleanest exemplar is
+  `src/features/financial/components/TransactionSourceHighlight.test.tsx`.
+- **`Badge` spreads `React.ComponentProps<"span">`**, so `title` and `data-*` pass
+  through. Its variants are `default`, `secondary`, `destructive`, `outline`,
+  `success`, `danger`, `warning`, `info`, `amber`, `slate`. An unmapped lookup
+  falls through to `default`, which is a **loud filled primary** — so a variant map
+  must be explicit for every member rather than left empty.
+- **`tsconfig` has `strict: true` but not `noUncheckedIndexedAccess`**, so
+  indexing a `Record<string, T>` types as `T` and not `T | undefined`.
+- **React Query is `^5.90.21`**, so `isPending` is the settled name, not
+  `isLoading`.
+- **Verify a `lucide-react` export before importing it.** `node -e` against the
+  package is a two-second check and it is cheaper than a compile failure. The
+  icons used here — `CircleAlert`, `CircleHelp`, `TriangleAlert`, `Loader2`,
+  `ScrollText` — are all present.
 
 ### Carried forward, still true
 
+- **Any scratch file in `/tmp` needs a per-user name.** `/tmp` is sticky and the
+  sandbox user changes every session; a plain `/tmp/tsc.out` from an earlier
+  session is owned by another uid and a redirect into it fails with
+  `Permission denied`, which looks exactly like the command having failed. Use
+  `/tmp/<name>-$(id -un).<ext>` for everything.
+- **No shared money formatter existed before the data-layer unit.** Other
+  financial components reach for `toLocaleString("en-US", ...)` on a float. Those
+  are the Neo4j-backed `Transaction` rows, which carry floats, so they are not
+  wrong today — but any new code touching `amount_minor` must use
+  `formatLedgerAmount` and nothing else.
 - **SQLAlchemy flush ordering does not follow raw ForeignKeys.** With no ORM
   `relationship()` between two mappers, commit the parent row first, then the
   dependent row in a second commit.
@@ -220,15 +233,17 @@ install, the storybook limitation and the git procedure all live in
     Postgres by `a9e0d29`. Remainders:
     - ~~**Frontend data layer for `GET /api/financial/ledger`.**~~ **Done,
       `fd88318`.**
-    - **The ledger screen itself.** The next unit, and the obvious one to pick
-      up. Nothing renders ledger rows yet: `getLedgerTransactions` and
-      `useLedgerTransactions` have no caller outside their tests. Needs a
-      component that lists rows and shows, per row, the amount through
-      `formatLedgerAmount` and the narrowed status, proof class, direction,
-      date source and extraction layer through the `read*` functions —
-      including the "unrecognised" path, which must be visible rather than
-      blank. Note the sequencing risk below: on real data it reads an empty
-      table.
+    - ~~**The ledger screen itself.**~~ **Done, `94af112`.**
+    - **Mounting it.** The small remaining piece, and the obvious next unit.
+      `LedgerPanel` has no caller outside its own test — verified by grep, not
+      assumed: its only other mentions are its own definition and a docstring
+      line in `LedgerTable.tsx`. Nothing in
+      `src/features/financial/components/FinancialPage.tsx` or any route renders
+      it, so the screen exists but is unreachable in the running app. Needs a
+      decision on where it sits — most
+      likely alongside the existing Neo4j-backed financial view rather than
+      replacing it, since the two read different stores and the distinction is
+      the point. **Ask Neil before choosing the placement.**
     - **Wiring `ingest_native_reading` into production.** The larger piece.
       Neil's ordering ruling was frontend first.
 
@@ -263,35 +278,40 @@ identity; only a re-run that closes moves the class), not accepted.
 document.
 
 **Capability with no route to the user.** `exhibit.py` and `tracing.py` remain
-unrouted. Item 12's route-to-user gap is now half closed: the data layer exists,
-the screen does not.
+unrouted. Item 12's route-to-user gap is now nearly closed: the data layer and the
+screen both exist, and only the mount is missing.
 
 **Provenance of `exhibit.py`.** Unchanged: confirmed valuable, but it came from a
 proposed build order, not a stated Owl requirement.
 
-### Nothing new raised this session
+### New this session
 
-No question arose during this unit that Neil has not already ruled on.
+**Where does the ledger screen mount?** Not a blocker for the unit that landed,
+but it is the first question the next unit has to answer, and it is a placement
+decision rather than a technical one. Noted under item 12 above.
 
 ---
 
 ## Standing flags
 
 - **The Postgres ledger has no production writer.** `ingest_native_reading` has
-  no caller outside its own test file. The data layer committed this session is
-  correct and tested, but against real data it will read an empty table until
+  no caller outside its own test file. The screen committed this session is
+  correct and tested, but against real data it will draw its empty state until
   the wiring item lands. Neil was told this before the ordering ruling and ruled
   frontend first anyway; do not reopen it, but **do not let the empty screen be
   mistaken for a defect.**
+- **Nothing mounts `LedgerPanel` yet.** Two units of work are now reachable only
+  from their tests. This is the whole of what remains before item 12 closes.
+- **No row in the corpus carries a running-balance column.** 30,570 rows across
+  325 documents. So on real data **every** row will show "No running balance".
+  That is the component working, not failing.
 - **P0 is unreachable on the current corpus.** No document carries its own
-  control totals in a form that qualifies.
+  control totals in a form that qualifies. The proof-class badge will therefore
+  never show P0 on real material today.
 - **Half two has only ever run against synthetic ledgers.**
 - **The item-1 geometry machinery IS reached in production** at the
   evidence-engine layer, verified end to end 1 September. Triage is out of the
   build by ruling; do not reopen without a new ruling.
-- **No row in the corpus carries a running-balance column.** 30,570 rows across
-  325 documents. Worth remembering for the screen: `running_balance_minor` is
-  nullable and on this corpus will be null everywhere.
 - **The alembic migration `20260902_evidence_table_geometry` has not been applied
   to any real database from a session** — the sandbox has no Postgres. First
   deployment needs an `alembic upgrade head` on Neil's side.
