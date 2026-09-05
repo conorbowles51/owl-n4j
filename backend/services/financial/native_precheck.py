@@ -51,6 +51,7 @@ that the file is not what it looked like.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import uuid
 from dataclasses import dataclass
@@ -485,16 +486,83 @@ def precheck_reading(
 # ---------------------------------------------------------------------------
 
 
-def precheck_bytes(
+@dataclass(frozen=True, slots=True)
+class NativeParse:
+    """One file located, opened and parsed -- or the reason it was not.
+
+    The step before description, named and returned on its own because
+    ingestion needs the same step and a different second half.  Precheck goes
+    on to describe the accounts and report what it finds.  Ingestion hands the
+    reading to a writer, which describes them itself and refuses on what it
+    finds.  What both need first is identical: the file located, size-checked,
+    opened, parsed, and a parser that raises turned into one of the same four
+    words.
+
+    A second copy of that in the ingest path would drift from this one, and the
+    two endpoints would then answer differently about the same file -- which is
+    the one thing the precheck dialog exists to rule out.
+
+    ``reading`` is set when the parse succeeded and ``outcome`` when it did
+    not.  Exactly one of the two is ever populated.
+    """
+
+    file_id: str
+    file_name: Optional[str] = None
+    #: The evidence row's recorded content hash, set only by
+    #: :func:`read_case_file`, which is the only layer with a row to read it
+    #: from.  It serves as both the distinguisher and the hash the document
+    #: records, for the reason ``ingest_native_reading`` gives.
+    sha256: Optional[str] = None
+    reading: Optional[NativeReading] = None
+    outcome: Optional[PrecheckOutcome] = None
+    reason: Optional[str] = None
+
+    @property
+    def parsed(self) -> bool:
+        return self.reading is not None
+
+
+def _unparsed(
+    file_id: str,
+    file_name: Optional[str],
+    outcome: PrecheckOutcome,
+    reason: str,
+) -> NativeParse:
+    return NativeParse(
+        file_id=file_id, file_name=file_name, outcome=outcome, reason=reason
+    )
+
+
+def _described(
+    parse: NativeParse, *, window: CenturyWindow, distinguisher: str
+) -> FilePrecheck:
+    """A parse that failed as a description of the failure; one that did not,
+    described in full."""
+    if parse.reading is None:
+        return FilePrecheck(
+            file_id=parse.file_id,
+            file_name=parse.file_name,
+            outcome=parse.outcome or PrecheckOutcome.unreadable,
+            reason=parse.reason,
+        )
+    return precheck_reading(
+        parse.reading,
+        window=window,
+        distinguisher=distinguisher,
+        file_id=parse.file_id,
+        file_name=parse.file_name,
+    )
+
+
+def parse_bytes(
     data: bytes,
     *,
     window: CenturyWindow,
-    distinguisher: str,
     file_id: str,
     file_name: Optional[str] = None,
     default_currency: Optional[str] = None,
-) -> FilePrecheck:
-    """Parse and describe one native file's bytes.
+) -> NativeParse:
+    """Parse one native file's bytes, or say in one word why it did not parse.
 
     Every failure comes back as an outcome rather than an exception, because
     the caller's question -- what does this file hold -- has an answer in each
@@ -505,44 +573,113 @@ def precheck_bytes(
             data, window=window, default_currency=default_currency
         )
     except UnrecognisedFormatError as exc:
-        return FilePrecheck(
-            file_id=file_id,
-            file_name=file_name,
-            outcome=PrecheckOutcome.unrecognised,
-            reason=str(exc),
+        return _unparsed(
+            file_id, file_name, PrecheckOutcome.unrecognised, str(exc)
         )
     except AmbiguousFormatError as exc:
-        return FilePrecheck(
-            file_id=file_id,
-            file_name=file_name,
-            outcome=PrecheckOutcome.ambiguous,
-            reason=str(exc),
-        )
+        return _unparsed(file_id, file_name, PrecheckOutcome.ambiguous, str(exc))
     except DateResolutionError as exc:
-        return FilePrecheck(
-            file_id=file_id,
-            file_name=file_name,
-            outcome=PrecheckOutcome.out_of_window,
-            reason=str(exc),
+        return _unparsed(
+            file_id, file_name, PrecheckOutcome.out_of_window, str(exc)
         )
     except Exception as exc:  # noqa: BLE001 - a parser that raises is not a verdict
         # Deliberately broad.  A malformed file reaches the parsers as bytes
         # and they raise their own errors; none of them is a reason to fail the
         # request, and all of them mean the same thing to the person asking.
         logger.exception("Native parse raised while prechecking a file")
-        return FilePrecheck(
-            file_id=file_id,
-            file_name=file_name,
-            outcome=PrecheckOutcome.unreadable,
-            reason=f"{type(exc).__name__}: {exc}",
+        return _unparsed(
+            file_id,
+            file_name,
+            PrecheckOutcome.unreadable,
+            f"{type(exc).__name__}: {exc}",
         )
 
-    return precheck_reading(
-        reading,
+    return NativeParse(file_id=file_id, file_name=file_name, reading=reading)
+
+
+def parse_path(
+    path: Optional[Path],
+    *,
+    window: CenturyWindow,
+    file_id: str,
+    file_name: Optional[str] = None,
+    default_currency: Optional[str] = None,
+) -> NativeParse:
+    """Open one file in full and parse it.
+
+    Unlike :func:`~services.financial.route_check.check_path` this reads the
+    whole file, because the question is what the file holds and a prefix cannot
+    answer it.  Hence the size guard.
+    """
+    if path is None:
+        return _unparsed(
+            file_id,
+            file_name,
+            PrecheckOutcome.unreadable,
+            "the file has no stored path",
+        )
+
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        return _unparsed(
+            file_id,
+            file_name,
+            PrecheckOutcome.unreadable,
+            f"{type(exc).__name__}: {exc}",
+        )
+
+    if size > MAX_PRECHECK_BYTES:
+        return _unparsed(
+            file_id,
+            file_name,
+            PrecheckOutcome.unreadable,
+            (
+                f"the file is {size} bytes, above the {MAX_PRECHECK_BYTES}-byte "
+                "limit for reading a bank file in full; a native statement this "
+                "large is not a native statement"
+            ),
+        )
+
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return _unparsed(
+            file_id,
+            file_name,
+            PrecheckOutcome.unreadable,
+            f"{type(exc).__name__}: {exc}",
+        )
+
+    return parse_bytes(
+        data,
         window=window,
-        distinguisher=distinguisher,
         file_id=file_id,
         file_name=file_name,
+        default_currency=default_currency,
+    )
+
+
+def precheck_bytes(
+    data: bytes,
+    *,
+    window: CenturyWindow,
+    distinguisher: str,
+    file_id: str,
+    file_name: Optional[str] = None,
+    default_currency: Optional[str] = None,
+) -> FilePrecheck:
+    """Parse and describe one native file's bytes."""
+    return _described(
+        parse_bytes(
+            data,
+            window=window,
+            file_id=file_id,
+            file_name=file_name,
+            default_currency=default_currency,
+        ),
+        window=window,
+        distinguisher=distinguisher,
     )
 
 
@@ -555,59 +692,72 @@ def precheck_path(
     file_name: Optional[str] = None,
     default_currency: Optional[str] = None,
 ) -> FilePrecheck:
-    """Open one file in full and describe it.
+    """Open one file in full and describe it."""
+    return _described(
+        parse_path(
+            path,
+            window=window,
+            file_id=file_id,
+            file_name=file_name,
+            default_currency=default_currency,
+        ),
+        window=window,
+        distinguisher=distinguisher,
+    )
 
-    Unlike :func:`~services.financial.route_check.check_path` this reads the
-    whole file, because the question is what the file holds and a prefix cannot
-    answer it.  Hence the size guard.
+
+@dataclass(frozen=True, slots=True)
+class _CaseFile:
+    """An evidence row resolved far enough to be worth opening."""
+
+    file_id: str
+    file_name: Optional[str]
+    sha256: str
+    stored_path: Optional[str]
+
+
+def _locate_case_file(
+    db: "Session", *, case_id: uuid.UUID, file_id: uuid.UUID
+) -> "_CaseFile | NativeParse":
+    """Find the evidence row, or return the parse that will never happen.
+
+    Shared by :func:`precheck_case_file` and :func:`read_case_file` so that the
+    two cannot come to disagree about which files belong to a case or which
+    rows are usable.
     """
-    if path is None:
-        return FilePrecheck(
-            file_id=file_id,
-            file_name=file_name,
-            outcome=PrecheckOutcome.unreadable,
-            reason="the file has no stored path",
+    from services.evidence_db_storage import EvidenceDBStorage
+
+    record = EvidenceDBStorage.get(db, file_id)
+    if record is None or record.case_id != case_id:
+        return _unparsed(
+            str(file_id),
+            None,
+            PrecheckOutcome.not_found,
+            "no such file in this case",
         )
 
-    try:
-        size = path.stat().st_size
-    except OSError as exc:
-        return FilePrecheck(
-            file_id=file_id,
-            file_name=file_name,
-            outcome=PrecheckOutcome.unreadable,
-            reason=f"{type(exc).__name__}: {exc}",
-        )
-
-    if size > MAX_PRECHECK_BYTES:
-        return FilePrecheck(
-            file_id=file_id,
-            file_name=file_name,
-            outcome=PrecheckOutcome.unreadable,
-            reason=(
-                f"the file is {size} bytes, above the {MAX_PRECHECK_BYTES}-byte "
-                "limit for reading a bank file in full; a native statement this "
-                "large is not a native statement"
+    sha256 = (record.sha256 or "").strip()
+    if not sha256:
+        # The column is NOT NULL, so this is a row that predates the constraint
+        # or was written around it.  Falling back to the file id would produce
+        # account keys that ingestion would not reproduce, which is worse than
+        # saying so.
+        return _unparsed(
+            str(record.id),
+            record.original_filename,
+            PrecheckOutcome.unreadable,
+            (
+                "this file has no recorded content hash, and the hash is what "
+                "tells an unidentified account in one document from an "
+                "unidentified account in another"
             ),
         )
 
-    try:
-        data = path.read_bytes()
-    except OSError as exc:
-        return FilePrecheck(
-            file_id=file_id,
-            file_name=file_name,
-            outcome=PrecheckOutcome.unreadable,
-            reason=f"{type(exc).__name__}: {exc}",
-        )
-
-    return precheck_bytes(
-        data,
-        window=window,
-        distinguisher=distinguisher,
-        file_id=file_id,
-        file_name=file_name,
-        default_currency=default_currency,
+    return _CaseFile(
+        file_id=str(record.id),
+        file_name=record.original_filename,
+        sha256=sha256,
+        stored_path=record.stored_path,
     )
 
 
@@ -638,38 +788,50 @@ def precheck_case_file(
     given for the same file.  Taking it from the same column is what makes the
     account keys shown here the keys that would actually be written.
     """
-    from services.evidence_db_storage import EvidenceDBStorage
-
-    record = EvidenceDBStorage.get(db, file_id)
-    if record is None or record.case_id != case_id:
-        return FilePrecheck(
-            file_id=str(file_id),
-            outcome=PrecheckOutcome.not_found,
-            reason="no such file in this case",
-        )
-
-    sha256 = (record.sha256 or "").strip()
-    if not sha256:
-        # The column is NOT NULL, so this is a row that predates the constraint
-        # or was written around it.  Falling back to the file id would produce
-        # account keys that ingestion would not reproduce, which is worse than
-        # saying so.
-        return FilePrecheck(
-            file_id=str(record.id),
-            file_name=record.original_filename,
-            outcome=PrecheckOutcome.unreadable,
-            reason=(
-                "this file has no recorded content hash, and the hash is what "
-                "tells an unidentified account in one document from an "
-                "unidentified account in another"
-            ),
-        )
+    located = _locate_case_file(db, case_id=case_id, file_id=file_id)
+    if isinstance(located, NativeParse):
+        return _described(located, window=window, distinguisher="")
 
     return precheck_path(
-        resolve_path(record.stored_path),
+        resolve_path(located.stored_path),
         window=window,
-        distinguisher=sha256,
-        file_id=str(record.id),
-        file_name=record.original_filename,
+        distinguisher=located.sha256,
+        file_id=located.file_id,
+        file_name=located.file_name,
         default_currency=default_currency,
     )
+
+
+def read_case_file(
+    db: "Session",
+    *,
+    case_id: uuid.UUID,
+    file_id: uuid.UUID,
+    resolve_path: Callable[[Optional[str]], Optional[Path]],
+    window: CenturyWindow,
+    default_currency: Optional[str] = None,
+) -> NativeParse:
+    """Locate and parse one evidence file, without describing what is in it.
+
+    What :func:`precheck_case_file` does up to the point where the two paths
+    part.  Ingestion stops here because the writer describes the subjects
+    itself, from the same reading, and refuses on what it finds; describing
+    them twice would put the same judgement in two places.
+
+    The returned :attr:`NativeParse.sha256` is the row's own recorded hash, and
+    it is what the caller must pass on as the document's hash and its
+    distinguisher.  Reading it here rather than at the call site is what keeps
+    the account keys ingestion writes identical to the ones precheck showed.
+    """
+    located = _locate_case_file(db, case_id=case_id, file_id=file_id)
+    if isinstance(located, NativeParse):
+        return located
+
+    parse = parse_path(
+        resolve_path(located.stored_path),
+        window=window,
+        file_id=located.file_id,
+        file_name=located.file_name,
+        default_currency=default_currency,
+    )
+    return dataclasses.replace(parse, sha256=located.sha256)

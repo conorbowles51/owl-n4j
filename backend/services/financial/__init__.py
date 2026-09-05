@@ -494,18 +494,29 @@ from services.financial.native_ingest import (
     UnattributableRowError,
     ingest_native_reading,
 )
+from services.financial.native_ingest_file import (
+    READING_OUTCOMES,
+    FileIngestion,
+    IngestOutcome,
+    existing_document_for,
+    ingest_case_file,
+)
 from services.financial.native_precheck import (
     MAX_PRECHECK_BYTES,
     FilePrecheck,
+    NativeParse,
     PrecheckAccount,
     PrecheckBalance,
     PrecheckOutcome,
     PrecheckPeriod,
     SkippedRow,
+    parse_bytes,
+    parse_path,
     precheck_bytes,
     precheck_case_file,
     precheck_path,
     precheck_reading,
+    read_case_file,
 )
 from services.financial.native_subjects import (
     AccountSubject,
@@ -1322,15 +1333,35 @@ __all__ = [
     # rows already stored.
     "MAX_PRECHECK_BYTES",
     "FilePrecheck",
+    "NativeParse",
     "PrecheckAccount",
     "PrecheckBalance",
     "PrecheckOutcome",
     "PrecheckPeriod",
     "SkippedRow",
+    "parse_bytes",
+    "parse_path",
     "precheck_bytes",
     "precheck_case_file",
     "precheck_path",
     "precheck_reading",
+    # Locating and parsing an evidence file without saying what is in it.  The
+    # step ingestion shares with the precheck above, so that a file which
+    # precheck could not open cannot be opened by the write path either.
+    "read_case_file",
+    # Storing one evidence file: the half ``native_ingest`` deliberately leaves
+    # out.  That module takes an already-open run so one run can cover many
+    # documents, and imports ``runs`` only for type checking; this one owns the
+    # run's lifetime, the commit, and the translation of every documented
+    # failure into a named outcome rather than an exception the caller has to
+    # recognise.  A file the case already holds is refused before a run opens:
+    # ``uq_financial_transactions_case_ref`` would refuse the second set of
+    # rows anyway, and refusing early turns a constraint name into an answer.
+    "READING_OUTCOMES",
+    "FileIngestion",
+    "IngestOutcome",
+    "existing_document_for",
+    "ingest_case_file",
     # Rendering an evidence page as the image a stored rectangle refers to
     "PageRenderError",
     "render_page_png",
