@@ -3,25 +3,26 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records `2eefc4d`, the HTTP read over the
-adjudication log: `GET /api/financial/decisions`, placed on the **ledger** router
-and not the adjudication one, for the reason set out below. The service reader
-landed the commit before, at `a40bb61`; this is what lets anything outside the
-process reach it. **Item 8 is still in progress** — the decisions *screen* is
-next, then the admission path, then proof class. Read the disk note under
-Standing flags **before running anything**: the documented `CLAUDE.md` bootstrap
-still fails, and the working form needs one more environment variable than this
-file previously recorded.)
+**Last updated:** 5 September 2026 (records `0fa07d5`, the first frontend chunk
+of the decisions screen: the wire shape and the client call for
+`GET /api/financial/decisions`, plus a contract test that reads the Python source
+and pins what the wire depends on. **No screen yet** — this is the layer under
+it. **Item 8 is still in progress** and the standing flag about the log being
+readable-but-invisible is **still open**; it was not narrowed by this commit,
+because nothing a user can see changed. Read the disk note under Standing flags
+**before running anything**: the documented `CLAUDE.md` bootstrap still fails,
+and the working form needs one more environment variable than this file
+previously recorded.)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `2eefc4d`
-  (`2eefc4d52510a4b8578f177502c5c24f03cae0e8`), "Let the adjudication log be read
-  over HTTP, scoped to a case", parent `dfb9715` (which was the state-file commit
-  for `a40bb61`). **Confirm the real tip with `git log --oneline -5`** at the
+- **Head when this was written:** `0fa07d5`
+  (`0fa07d54203ea1a51d593ca95a35db7e9f7cfa86`), "Give the frontend a way to ask
+  what was decided in a case", parent `9971207` (which was the state-file commit
+  for `2eefc4d`). **Confirm the real tip with `git log --oneline -5`** at the
   start of every session rather than trusting this line — the state-file commit
   that follows this one will already have moved it.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
@@ -51,25 +52,27 @@ disk note under Standing flags.
 
 ### Scale
 
-**124 commits** since `c4246c0` (27 August), counting `2eefc4d`; 125 once the
+**126 commits** since `c4246c0` (27 August), counting `0fa07d5`; 127 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`, not incremented from the previous figure.
 
 `backend/services/financial/` **51 modules** excluding `__init__.py` (unchanged —
-this commit added a route, not a service); `backend/tests/test_financial_*.py`
-**58 files**, **3,381 tests**.
+this commit is frontend only); `backend/tests/test_financial_*.py` **58 files**,
+**3,381 tests**.
 
-### Gate baselines as of `2eefc4d`
+### Gate baselines as of `0fa07d5`
 
-- **Backend financial suite: `Ran 3381 tests in 13.049s, OK (skipped=12)`.**
-  Re-run this session in full at this head. Up 8 from `a40bb61`'s 3,373,
-  accounted for exactly by the eight new tests added to the existing
-  `tests/test_financial_ledger_router.py`. **Nothing else moved, and there are no
-  expected failures.**
-- **Frontend unit: 72 files, 633 tests; `tsc -b --force` 0; `eslint .` 0.** NOT
-  re-run at this head and they did not need to be: the commit is two Python
-  files and no TypeScript. The figures carry forward from `e64c2ca`, where all
-  three were measured over the whole project.
+- **Frontend unit: 73 files, 658 tests, all passing.** Measured at this head over
+  the whole project. Up 1 file and 25 tests from `2eefc4d`'s 72/633, accounted
+  for exactly by the new `api.decisions.test.ts`. **Nothing else moved.**
+- **`tsc -b --force` 0; `eslint .` 0.** Both measured at this head over the whole
+  project.
+- **Backend financial suite: `Ran 3381 tests in 13.049s, OK (skipped=12)`.** NOT
+  re-run at this head and it did not need to be: the commit is two TypeScript
+  files and no Python. The figure carries forward from `2eefc4d`, where it was
+  measured in full. **The Python bootstrap was therefore not run this session
+  either**, which is why a fresh session picking up backend work must still do
+  it — see the disk note.
 - **Frontend browser: NOT RUN, and it could not be.** See the disk note. Last
   known-good figure is 2 files, 4 tests. **Do not carry "browser green" forward
   as though it were verified at this head.**
@@ -117,139 +120,152 @@ being exercised. A `logger.error` without a traceback is not a failure either.
 
 ## What this session did
 
-**The HTTP read over the adjudication log landed as `2eefc4d`.** Two files, 309
-insertions, 5 deletions. Backend only; no TypeScript was touched.
+**The frontend can now ask what was decided in a case, as `0fa07d5`.** Two files,
+618 insertions, no deletions. **Frontend only; no Python was touched.**
 
-This finishes the *service-and-route* half of chunk 1 of Phase 2 item 8.
-`a40bb61` gave the adjudication log a reader, `list_case_decisions`, and nothing
-outside the Python process could call it. `GET /api/financial/decisions` is what
-gives it reach. **The screen is still missing, so the log is still invisible to a
-user** — that is the next unit, and the standing flag below has been narrowed
-rather than cleared.
+This is the first of several chunks that together make the decisions screen. It
+is the wire shape and the client call, not the screen. The quarantine screen was
+built the same way — chunks 1, 2, 3, 4, 4b and 5 — and this follows that
+precedent rather than trying to land a whole feature in one commit.
 
-### Where the route went, and why it is not on the adjudication router
-
-The previous session parked this as the thing chunk 2 had to decide before
-writing a line, and named a preferred direction. It was confirmed by reading all
-three financial routers rather than inherited from that note.
-
-`routers/financial_adjudication.py` is the obvious home, because the two routes
-that **write** these records live there. It cannot take a read.
-`_adjudication_case_permission` resolves **every** route to `("case", "edit")`
-unconditionally, and its comment states the reason: a route added there inherits
-the write bar, which is the safe direction for a mistake to fall. A read dropped
-in would take a permission it does not need *and* would make that comment false.
-
-`routers/financial_ledger.py` resolves to `("case", "view")` unconditionally, on
-the stated grounds that none of its routes write — which stays true of a
-decisions read. `routers/financial_reconciliation.py` was read too, as the third
-pattern: it resolves by HTTP method. That is the right shape for a router serving
-both a read and a recompute, and the wrong shape for either of the other two,
-which are each uniformly one thing.
-
-So the read went on the ledger router. **Both comments stay true and neither had
-to change.** The ledger router's module docstring did have to change: it opened
-"Two reads of the same store" and now says three, with the router-choice
-reasoning written into it, because a docstring carrying a now-false count is the
-kind of small untruth that makes the rest of a file stop being trusted.
-
-*Reversed by:* the decisions read ever needing something from the adjudication
-router that the ledger router does not have. Nothing found suggests it will.
+**Nothing a user can see changed, so the standing flag about the adjudication log
+being readable-but-invisible is still open.** It was narrowed at `2eefc4d` and
+has not moved since. It clears when a panel renders.
 
 ### What landed
 
-**`backend/routers/financial_ledger.py`** — the module docstring rewritten from
-two reads to three, imports extended, a `_parsed_member` helper, and
-`get_case_decisions` on `GET /api/financial/decisions`. Query parameters:
-`case_id` (required), `subject_type`, `subject_id`, `decision`, `limit`
-(defaulting to `DEFAULT_DECISION_LIMIT`), `offset`.
+**`frontend_v2/src/features/financial/api.ts`** (+208) — a new section, "Reading
+back what was decided", placed after `RowAdjudicationParams` because this read
+reads back what those writes produce. It adds `ADJUDICATION_SUBJECTS` and
+`ADJUDICATION_DECISIONS` as `as const` arrays with derived member types, the
+`DecisionRecord` interface (15 fields), `DECISION_FIELDS`, `DecisionsResponse`
+(the page envelope: `case_id`, `decisions`, `total`, `limit`, `offset`,
+`truncated`) and `CaseDecisionsParams`. Then `getCaseDecisions` on
+`financialAPI`, after `releaseRow`.
 
-**`backend/tests/test_financial_ledger_router.py`** — a new
-`GetCaseDecisionsTests` class, **8 tests**, awaiting the handler directly with
-`list_case_decisions` patched, matching how the two existing route classes in
-that file are written.
-
-**No wiring change was needed and none was made.** `financial_ledger_router` is
-already registered in `routers/__init__.py` and `main.py`. That the new path is
-actually served was verified rather than assumed, by printing `router.routes`:
-`GET /api/financial/ledger`, `GET /api/financial/runs`,
-`GET /api/financial/decisions`.
+**`frontend_v2/src/features/financial/api.decisions.test.ts`** (new, 410 lines,
+**25 tests**) — modelled on `api.runs.test.ts`, which is the established pattern
+for these: read the Python source with `readFileSync` and assert that what the
+TypeScript believes about the wire is still true of the backend.
 
 ### The three calls that were decisions, not defaults
 
-**No `ge=1` or `le=MAX_DECISION_LIMIT` on the `limit` `Query`.** The service
-already validates, and it does not treat the two bounds the same way: a limit
-below 1 is **refused**, a limit above the cap is **capped and answered**. A
-`le=` in the route would turn a request the service is willing to serve into a
-422, and a bound declared in two places drifts the moment one moves. Validation
-stays in the service, which is the only place that knows the difference. There is
-a named test pinning this.
+**The limit and offset bounds are not mirrored on the frontend.**
+`DEFAULT_DECISION_LIMIT` (100) and `MAX_DECISION_LIMIT` (500) live in
+`decision_log.py` and stay there. The service refuses a limit below one and caps
+a limit above the maximum — two different rules — and a bound written down twice
+drifts the moment one side moves. So the client sends no page size of its own
+when none was asked for, and sends a limit above the cap as asked rather than
+refusing it locally. The response reports the limit that was actually applied,
+which is the only figure a caller should trust.
 
-**The page is handed back whole, as `page.as_dict()`,** rather than rebuilt into
-a response dict field by field. `DecisionPage` carries `total`, `limit`, `offset`
-and `truncated` beside the records, and the point of `total` and `truncated` is
-that a history which does not say it was truncated is worse than no history. A
-hand-built response is one careless edit away from dropping one of them silently.
-There is a named test asserting the handler's return **equals** `as_dict()`,
-truncation included.
+**Zero is sent, not dropped.** `limit` and `offset` are guarded with
+`!== undefined`, not truthiness. A `if (params.limit)` would silently swallow
+`limit: 0` and `offset: 0`, turning an explicit request into a default. There are
+two named tests, one per parameter.
 
-**The two existing routes were not refactored to use `_parsed_member`.** The
-helper turns one query string into a member of a closed vocabulary or raises a
-400 naming the valid values, and the existing routes each do that inline. Changing
-working routes with tests already pinned to them, to save four lines, is churn.
-The reason is recorded in the helper's own docstring so the next reader does not
-"tidy" it.
+**`subject_type` and `decision` are typed `string` on the wire, not unions.** The
+`as const` vocabularies exist and are exported, and the *params* type uses them
+so a caller cannot ask for a member that does not exist. But the *record* type
+that comes back off the wire says `string`, so a backend one version ahead cannot
+smuggle an unrecognised member through a union type that claims it cannot exist.
+Narrowing happens at the edge, in a `decision-format.ts` that a later chunk adds.
+**This is the same treatment `LedgerTransaction.ledger_status` already gets** and
+was copied from it deliberately.
 
-### What the eight tests pin
+### What the 25 tests pin
 
-- **Defaults ask for the whole case.** No filters means no filters, not a
-  silently narrowed read.
-- **Both vocabularies are parsed before the service sees them.** The assertion is
-  that `AdjudicationSubject` and `AdjudicationDecision` **members** reach the
-  service, not the raw strings — a string arriving intact would filter on nothing
-  and look like an empty case.
-- **An unknown `subject_type`, and separately an unknown `decision`, is a 400
-  naming the valid values,** and `assert_not_called` on the service, so a typo
-  cannot reach the database. The decision test uses `"released"` against the real
-  member `"release_row"`, which is the near-miss a caller would actually type.
-- **A `DecisionLogError` is a 400 carrying its own words,** so the service's
-  message about what was wrong with a limit or offset survives to the caller.
-- **Anything else is a 500.**
-- **A limit over the cap reaches the service rather than a 422** — this is the
-  test that fails if someone adds `le=` later.
-- **The page is handed back whole, truncation included.**
+Ten on what the client sends: it asks the decisions endpoint; it sends nothing
+but the case when nothing else was asked for; it sends no page size of its own;
+it sends every filter under the endpoint's own parameter names; it can send a
+subject id without a subject type; zero limit and zero offset survive; a limit
+above the cap is sent rather than refused here; values are escaped; and the page
+is handed back whole, `total` and `truncated` included.
+
+Six on the endpoint contract, read out of `routers/financial_ledger.py`: the
+route is still mounted; it is still on the router that resolves every route to
+`("case", "view")` and still has no per-route `case_access_dependency`; it still
+reads every parameter the client sends; **it still leaves the page bounds to the
+service**; an unknown member still goes through `_parsed_member`; and it still
+returns `page.as_dict()`.
+
+Three on the record shape and four on the page envelope, read out of
+`decision_log.py`: the emitted keys are set-equal to `DECISION_FIELDS` in both
+directions (the runtime comparison one way, and a compile-time
+`Exclude<keyof DecisionRecord, ...> extends [never]` assertion the other, so a
+field added to the interface and forgotten in the list is a type error); the
+`by_machine` derivation is intact; the envelope is still exactly those six keys;
+`_validated_limit` still ends `return min(limit, MAX_DECISION_LIMIT)`; the count
+still runs over the same filters as the page; and the four-column ordering clause
+is unchanged.
+
+Two on the vocabularies: subjects match, and decisions match **in the order that
+pairs them** — `supersede_duplicate`/`restore_document`,
+`quarantine_row`/`release_row` — because that pairing is the reason for the
+order and a reordering would be a real change, not a cosmetic one.
+
+### Two traps in reading the Python, both hit and both fixed before running
+
+**`decision_log.py` declares `as_dict` twice**, once on `DecisionRecord` and once
+on `DecisionPage`. The `pythonBlock(source, header)` idiom copied from
+`api.runs.test.ts` scopes from a header to the next column-0 line, so
+`indexOf("def as_dict")` would find the first one both times and the block would
+run past the end of the class. **The scan keys off the class first**
+(`class DecisionRecord:` / `class DecisionPage:`) and finds `as_dict` inside that
+body. Any future contract test over a file with two same-named methods needs the
+same care.
+
+**The route docstring contains the literal text `` le= ``**, in the sentence
+explaining why a `le=` is deliberately absent. So a naive
+`expect(body).not.toMatch(/le=/)` over the route fails on the prose that exists
+to justify the assertion. **The assertion is scoped to the `limit` parameter
+itself**, sliced between `limit: int = Query(` and `offset: int = Query(`.
+
+Also worth carrying forward: `api.runs.test.ts` extracts emitted keys with
+`/"([a-z_0-9]+)":\s*self\./g`, which does not match `DecisionPage`'s
+`"decisions": [record.as_dict() for record in self.decisions]`. This file uses
+the looser `/"([a-z_0-9]+)":/g`, scoped to the `as_dict` slice so the looseness
+cannot pick up strings from elsewhere in the module.
 
 ### Verification
 
-The changed test file was run alone first — **13 tests, `OK`** (5 pre-existing
-plus the 8 new) — and only then the whole backend financial suite:
-**`Ran 3381 tests in 13.049s, OK (skipped=12)`**, `EXIT=0`. The delta was checked
-rather than eyeballed: 3,373 → 3,381 is +8, which is the eight new tests exactly.
-**Nothing unaccounted for.**
+The new test file was run alone first — **25 tests, all passing** — and only then
+the whole unit project: **73 files, 658 tests, all passing**, `STATUS=0`. The
+delta was checked rather than eyeballed: 72 → 73 files and 633 → 658 tests is
++1 and +25, which is this file exactly. **Nothing unaccounted for.**
 
-The traceback count on stderr was **measured, not assumed**, and this is where the
-long-standing "six" in this file was found to be wrong. The run gave eight. Rather
-than treat that as a regression from this change, the **baseline tree at
-`dfb9715`** was run and counted as well: also eight. The corrected account is
-under Gate baselines above.
+`npx tsc -b --force` returned 0. `npx eslint .` returned 0, and its output file
+was read to confirm the only content was npm's version notice.
 
-Frontend gates not run and **not claimed** — the commit is two Python files and no
-TypeScript.
+**The vite cache was pointed at `/dev/shm`, never `/tmp`.** `/` is 99% full and a
+cache directory there is one of the three ways the gate reports a silent "no
+tests". The path carries `$(id -un)` for the usual reason.
+
+Backend gates not run and **not claimed** — the commit is two TypeScript files
+and no Python. This is symmetric with `2eefc4d`, where the frontend gates were
+not run and not claimed for a Python-only commit.
 
 **Every gate command was redirected to a file and its status read from `$?`,
 never through a pipe.**
 
-The staged tree (`81a2fff3e773cb4fa2b90fa9c6e83248316021ec`) was diffed against
-`HEAD` before committing and held exactly the two intended files, 309 insertions
-and 5 deletions, with the untracked `.bak` files, the probe test and all of
-Neil's case material correctly excluded. `git status --porcelain | grep -v '^??'`
-was empty afterwards.
+The staged tree (`816112cbda670d0b9902c0a07d1b852fb093088a`) was diffed against
+`HEAD` before committing and held exactly the two intended files, 618 insertions
+and no deletions, with the untracked `.bak` files, the probe test and all of
+Neil's case material correctly excluded. `git status --porcelain` showed no
+tracked modifications afterwards.
 
 ### What the next unit is
 
-**The decisions screen.** The route exists and no user can reach it. Item 8 is
-not closed and should not be described as closed; what is done is the reader and
-its route. After the screen: the admission path, which is what finally gives
+**`decision-format.ts`, then the hook, then the panel.** In that order, and the
+order matters: the format module is what turns a `string` off the wire into
+something with words, and both the hook and the panel depend on it. Concretely,
+the remaining chunks are (a) a `decision-format.ts` that narrows `subject_type`
+and `decision` and gives every member a phrase an investigator would recognise,
+plus a reading for `by_machine`; (b) a `use-case-decisions` hook following
+`use-ingestion-runs`; (c) a `DecisionsPanel` and its tab on `FinancialPage`.
+**Only when (c) lands does the standing flag clear.**
+
+After the screen: the admission path, which is what finally gives
 `record_admission` a caller, and then proof class and `requires_adjudication`.
 The three-way split of item 8, and the reasoning for that order, is under the
 `a40bb61` entry in "The previous sessions, in brief" below.
@@ -257,6 +273,48 @@ The three-way split of item 8, and the reasoning for that order, is under the
 ---
 
 ## The previous sessions, in brief
+
+**`2eefc4d`, the HTTP read over the adjudication log.** Two files, 309
+insertions, 5 deletions, backend only. `GET /api/financial/decisions` on
+`routers/financial_ledger.py`, with `case_id` required and `subject_type`,
+`subject_id`, `decision`, `limit`, `offset` optional; 8 tests in a new
+`GetCaseDecisionsTests` class.
+
+**The route is on the ledger router and not the adjudication one, and that was
+the decision of that session.** `routers/financial_adjudication.py` is the
+obvious home because the two routes that *write* these records live there, but
+`_adjudication_case_permission` resolves **every** route to `("case", "edit")`
+unconditionally and its comment says why: anything added there inherits the write
+bar. A read dropped in would take a permission it does not need *and* would make
+that comment false. `routers/financial_ledger.py` resolves to `("case", "view")`
+unconditionally on the stated grounds that none of its routes write, which stays
+true of a decisions read. (`routers/financial_reconciliation.py` was read as the
+third pattern: it resolves by HTTP method, which is right for a router serving
+both a read and a recompute and wrong for either of the other two, each of which
+is uniformly one thing.) **Both comments stayed true and neither had to change.**
+The ledger router's module docstring did change — it opened "Two reads of the
+same store" and now says three, with the router-choice reasoning written into it.
+*Reversed by:* the decisions read ever needing something from the adjudication
+router that the ledger router does not have.
+
+Three calls from that session worth keeping: **no `ge=1` or `le=` on the `limit`
+`Query`**, because the service refuses a low limit and caps a high one and a
+`le=` would turn a servable request into a 422; **the page is handed back whole
+as `page.as_dict()`** rather than rebuilt field by field, because a hand-built
+response is one careless edit away from silently dropping `truncated`; and **the
+two existing routes were not refactored** to use the new `_parsed_member` helper,
+because changing working routes with tests pinned to them to save four lines is
+churn. The reason is in the helper's own docstring so nobody "tidies" it.
+
+No wiring change was needed: `financial_ledger_router` was already registered in
+`routers/__init__.py` and `main.py`, and that the new path is actually served was
+verified by printing `router.routes` rather than assumed.
+
+**That session is also where the traceback count in this file was found to be
+wrong.** It had read "six" for several sessions. The run gave eight; the baseline
+tree at `dfb9715` was run and counted as well and also gave eight, so the extra
+two are not a regression. The corrected account is under Gate baselines above.
+
 
 **`a40bb61`, the first half of chunk 1 of item 8: a reader for the adjudication
 log, scoped to a case.** Three files, 1,112 insertions, no deletions, backend
@@ -1361,11 +1419,27 @@ this session did":**
 
 1. **The decisions surface.** `services/financial/decision_log.py` ✅ `a40bb61`.
    `GET /api/financial/decisions` on the **ledger** router ✅ `2eefc4d`.
-   **Still to do: the screen — this is the next unit.** The log is now readable
-   over HTTP and no user can see it. Nothing needs deciding about where the route
-   lives; that was settled and built. What the screen has to decide is its own
-   question, and it is a frontend unit, so the `/dev/shm` pip bootstrap is *not*
-   needed for it — the vitest and Chromium notes are.
+   `financialAPI.getCaseDecisions` and its contract test ✅ `0fa07d5`.
+   **Still to do, in this order: the format module, the hook, the panel.** The
+   log is readable over HTTP and callable from TypeScript, and no user can see
+   it. Nothing needs deciding about where the route lives or what the wire looks
+   like; both are settled and built. The remaining three are frontend units, so
+   the `/dev/shm` pip bootstrap is *not* needed for any of them — the vitest and
+   Chromium notes are. Specifically:
+   - **`decision-format.ts`.** Narrow `subject_type` and `decision` from the
+     `string` they arrive as, give every member of both vocabularies a phrase an
+     investigator would recognise, and give `by_machine` a reading. Follow
+     `ledger-format.ts`, which does exactly this for ledger status and proof
+     class and is the file to read first. The vocabularies are already exported
+     from `api.ts` as `ADJUDICATION_SUBJECTS` and `ADJUDICATION_DECISIONS`.
+   - **`use-case-decisions`.** Follow `use-ingestion-runs`. The page envelope
+     carries `total` and `truncated`, and both have to reach the component —
+     a hook that returns only `decisions` throws away the fact that the history
+     was cut short, which is the one thing this read exists to be honest about.
+   - **`DecisionsPanel` and its tab on `FinancialPage`.** Note the keep-mounted
+     rule under Standing flags before touching `FinancialPage`:
+     `RowAdjudicationDialog` is mounted outside `Tabs` on purpose and two tests
+     hold it there.
 2. **The admission path**, which gives `record_admission` its first caller.
 3. **Proof class and `requires_adjudication`**, last, because the class is
    already computed and already rendered; what is missing is the explanation of
@@ -1800,15 +1874,19 @@ before item 12 lands.
 - **Whether ingestion should trigger a sweep at the end of a run is not
   decided and was not decided here.** It is the obvious next caller, and item 8
   (proof class) is the unit that will actually need one. Flagged, not parked.
-- **The adjudication log is now readable over HTTP, and no screen shows it.**
-  Narrowed at `2eefc4d`, not cleared. `decision_log.list_case_decisions` landed
-  at `a40bb61` and `GET /api/financial/decisions` at `2eefc4d`, both tested, and
-  the route is confirmed mounted. What is still missing is the screen: nothing in
-  `frontend_v2` calls that path, so on a live case the history remains invisible
-  to the person using the product, even though it is now one HTTP request away.
-  **This flag clears when the decisions screen lands.** Until then, do not
-  describe the history as something anybody can see — "reachable" and "visible"
-  are different claims and only the first is true.
+- **The adjudication log is readable over HTTP, the frontend has a call for it,
+  and no screen shows it.** Narrowed at `2eefc4d`, narrowed again at `0fa07d5`,
+  **not cleared.** `decision_log.list_case_decisions` landed at `a40bb61`,
+  `GET /api/financial/decisions` at `2eefc4d`, and `financialAPI.getCaseDecisions`
+  at `0fa07d5`, all tested, and the route is confirmed mounted. **The line this
+  flag used to carry — "nothing in `frontend_v2` calls that path" — is now
+  false and has been removed.** What is still missing is everything above the
+  client call: no format module, no hook, no panel, no tab. So on a live case the
+  history remains invisible to the person using the product, even though it is
+  now one function call away from a component that does not exist yet. **This
+  flag clears when a panel renders it, not before.** Until then, do not describe
+  the history as something anybody can see — "reachable", "callable" and
+  "visible" are three different claims and only the first two are true.
 - **The quarantine screen is reachable as of `e64c2ca`, and this flag is
   cleared.** It read, for four commits, that every part existed and none of it
   was reachable. That is no longer true: the "Held out" tab is in the tab strip,
