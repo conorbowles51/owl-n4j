@@ -3,17 +3,17 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the run notice, `8924668`, and the
-correction-storage direction that followed it)
+**Last updated:** 5 September 2026 (records the attempts list, `bc23570`, which
+closes Phase 2 item 5)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `8924668`
-  (`892466838b1c2441a837c122bb59ff36272a93a6`), "Say above the ledger when an
-  attempt to load it did not finish", parent `3cb3da8`.
+- **Head when this was written:** `bc23570`
+  (`bc2357067b5667316f9ec9c090e457947e6c9f2f`), "Show every attempt to load the
+  ledger, not only the ones that broke", parent `801b928`.
   **Confirm the real tip with `git log --oneline -5`** at the start of every
   session rather than trusting this line — the state-file commit that follows
   this one will already have moved it.
@@ -42,19 +42,24 @@ Also untracked, and **not** mine — Neil's own documents, left alone:
 
 ### Scale
 
-97 commits since `c4246c0` (27 August), counting `8924668`.
+**100 commits** since `c4246c0` (27 August), counting `bc23570`; 101 once the
+state-file commit lands on top of it. Counted with
+`git rev-list --count c4246c0..HEAD`, not estimated — the figure carried here
+before this session was three low.
 
 `backend/services/financial/` **48 modules**;
 `backend/tests/test_financial_*.py` **52 files**, **3,201 tests**.
 
-### Gate baselines as of `8924668`
+### Gate baselines as of `bc23570`
 
 - **Backend financial suite: `Ran 3201 tests, OK (skipped=12)`.** Unchanged and
   **not re-run this session** — no backend file was touched. **There are no
   expected failures.**
-- **Frontend unit: 65 files, 457 tests, all passing.** Up from 64/437. The delta
-  is exactly the one new test file: 20 in
-  `components/IngestionRunNotice.test.tsx`. 457 includes the stray probe test.
+- **Frontend unit: 67 files, 494 tests, all passing.** Up from 65/457. The delta
+  is two new test files and four new tests in an existing one: 20 in
+  `components/IngestionRunsTable.test.tsx`, 13 in
+  `components/IngestionRunsPanel.test.tsx`, 4 added to
+  `components/FinancialPage.test.tsx`. 494 includes the stray probe test.
 - **Frontend browser: 2 files, 4 tests — run and green,** after installing
   chromium, which is a per-session step. **`CLAUDE.md` now carries the corrected
   frontend gate commands**; use them as written.
@@ -72,105 +77,126 @@ purpose; `native_ingest_file.py:376` catches `SQLAlchemyError`, logs it with
 
 ## What this session did
 
-**Phase 2 item 5, the screen.** The data layer landed last session (`cde43c5`)
-and nothing rendered any of it, so a failed or half-finished ingest was still
-invisible.
+**Phase 2 item 5 is now closed.** Neil's ruling two sessions ago was **"Both, in
+two commits"** — a short notice, then the full history of attempts, one commit
+each.
 
-Neil's ruling when asked how much of the screen to build: **"Both, in two
-commits"** — the notice and the full attempts list, one commit each.
-
-- `8924668` — **the notice.** Three files, 504 insertions. Landed.
-- *(not yet written)* — the attempts list. See "Next unit".
+- `8924668` — the notice. Landed last session.
+- `bc23570` — **the attempts list.** Seven files, 996 insertions, 7 deletions.
+  Landed. **Item 5 is complete.**
 
 ### What landed this commit
 
-- **`components/IngestionRunNotice.tsx`** (148 lines, new). Speaks only when an
-  attempt did not finish.
-- **`components/IngestionRunNotice.test.tsx`** (343 lines, 20 tests, new).
-- **`components/FinancialPage.tsx`** (+13). The import and the mount, as a
-  sibling above `LedgerPanel` in the ledger tab, each in its own
-  `ErrorBoundary`, with `space-y-3` on the shared scroll container.
+- **`components/IngestionRunsTable.tsx`** (203 lines, new). Presentational only,
+  fetches nothing. Six columns: Attempt, Started, Ended, Documents seen, Rows
+  admitted, Rows set aside.
+- **`components/IngestionRunsTable.test.tsx`** (283 lines, 20 tests, new).
+  Nothing mocked; the formatters are left real so the words asserted are the
+  words a reader sees.
+- **`components/IngestionRunsPanel.tsx`** (118 lines, new). The fetching half.
+  Four states before a table can be drawn, then the summary line, then the
+  table.
+- **`components/IngestionRunsPanel.test.tsx`** (249 lines, 13 tests, new). Mocks
+  the hook rather than the network, because what is under test is the panel's
+  reading of a query result. `IngestionRunsTable` is left real, so a state that
+  should not reach the table can be shown not to.
+- **`stores/financial.store.ts`** (+9). `"runs"` added to `FinancialMainView`,
+  second in the union, with the reason recorded in a docstring.
+- **`components/FinancialPage.tsx`** (+28). The import, the trigger and the
+  content, each with a comment saying why it sits where it does.
+- **`components/FinancialPage.test.tsx`** (+106, −7). Four new tests, the tab
+  strip assertions widened from four to five, and a missing mock added — see the
+  defect below.
 
-### What the notice does and refuses to do
+### What the attempts list does and refuses to do
 
-- **Silence is its normal output.** Nothing for no case, nothing while the read
-  is in flight, nothing when no attempt is flagged, nothing when the case has no
-  attempts at all.
-- **An unrecognised status raises no alarm,** because `needsAttention` is false
-  for one. A backend a version ahead cannot make this build warn about an ending
-  it cannot read. There is a named test.
-- **A failed read of the attempts is not silence.** Rendering nothing there would
-  assert nothing went wrong on the strength of a request that never came back.
-  It says the record could not be read, and appends the reason when the reason is
-  an `Error`.
-- **It carries no counts,** so it does not have to print
-  `RUN_COUNTS_ARE_HISTORY`, which is too long to sit inside a warning. A test
-  asserts the count values do not appear. The counts go on the attempts list.
-- **It gives no denominator** — "2 attempts…", never "2 of 14". That keeps it
-  clear of `total`, and therefore clear of the total-versus-length disagreement
-  check `LedgerPanel` carries. That check belongs on the attempts list, where a
-  count is shown prominently.
-- **It is not truncated.** Six broken attempts render six entries; the length is
-  proportional to how much evidence may be missing. Tested at six.
-- **It sends no limit,** so it reads every attempt on the case and shares one
-  fetch and one cache entry — `["financial-runs", caseId, null]` — with the
-  attempts list to come. A test asserts the hook is called with the case id and
-  nothing else.
-- Singular and plural are separate strings, including "the evidence it was
-  given" versus "they were given". Both tested.
+The notice above the ledger is a warning and stays quiet by default. This screen
+is the opposite: its job is to show everything, so every silence the notice keeps
+had to be broken deliberately here.
 
-### The two things flagged last session, now settled
+- **It draws every attempt it is handed, the ones that finished included.** The
+  read is not narrowed to failures and must not become so. A test hands the panel
+  a mixed `completed`/`failed`/`running` list and asserts all three rows come
+  out, in the order given.
+- **A status this build cannot read renders loudly,** not silently. The row is
+  kept, the raw value is named as `Unrecognised (reconciling)`, and the badge
+  carries `data-unrecognised="true"` with `data-variant="warning"`. The notice
+  ignores an unknown status because it is a warning; a list of everything cannot.
+- **The table owns `RUN_COUNTS_ARE_HISTORY` itself** rather than taking it from a
+  caller, so no future caller can draw the three count columns without the
+  sentence that qualifies them. Without it they read as a count of the ledger as
+  it stands, which they are not.
+- **The two reasons a duration is unknown are different messages.** No
+  `completed_at` gives "No end recorded"; two timestamps that disagree give
+  "Length not known". A blank cell would read as an attempt that took no time,
+  and collapsing the two would hide a clock problem behind an open run.
+- **It calls `useIngestionRuns(caseId)` with the case id alone,** sharing the
+  notice's cache entry and its single fetch. Asserted twice: in the panel test,
+  and in the page test by iterating every recorded call.
+- **It carries the total-versus-length check** the notice deliberately does not.
+  `total` is the length of the same list, so a disagreement means the backend has
+  started paging and a history that looks complete is a window onto part of one.
+- **Nothing is truncated and nothing is re-sorted.** The backend orders by
+  `started_at.desc(), id.asc()`, which is why the summary line can say "newest
+  first"; the table keeps the order it is given.
+- **A failed read says so.** Drawing nothing where the history should be reads as
+  a case nothing was ever loaded into.
+- **The empty state claims nothing about the ledger** in either direction: "If
+  the ledger holds rows, this screen has no record of what put them there."
+- Singular and plural are separate strings — "1 attempt", "2 attempts". Both
+  tested.
 
-- **`useIngestFile` does not invalidate `["financial-runs", ...]` and is
-  unchanged.** Neil, asked about it: *"Why would there ever be a need to re-fetch
-  the list of attempts??"* **Do not raise this again.**
-- **Wording for `pending` and `running`** was not a new decision to take. The
-  existing rule — the read makes no staleness judgement — already fixes it: the
-  notice prints the start time and the status copy already written in
-  `run-format.ts`, and claims nothing about whether work is happening.
+### Where it is mounted, and why there
 
-### The opening of this session went badly, again
+The attempts tab is **second in the strip**, between Ledger and Transactions, and
+that order is load bearing rather than cosmetic: **the first two tabs read
+Postgres and the last three read the graph.** Which store is on screen is a fact
+about what a reader is looking at, and the strip now says it.
 
-Three questions were put to Neil. One was answerable ("Both, in two commits").
-The other two he rejected: *"Again you're asking me questions out of context …
-Please stop opening these sessions with questions plucked from seemingly
-nowhere. I've asked you countless times now"* and, on the wording question, *"I
-don't know what the fuck you are talking about."*
+It takes **no graph chrome**, for the same reason the ledger tab does not. Gating
+it on the graph query would hide the record of what was loaded from a case whose
+graph is empty — and a case whose graph is empty is very often a case whose
+loading is what went wrong. There is a test for exactly that.
 
-This is the same failure the orientation rule in `CLAUDE.md` was written for last
-session, repeated one session later. **The test for a question is not whether it
-is open, it is whether Neil can answer it without opening a file.** Both rejected
-questions were decidable from the source and from rulings already given, and both
-were closed that way afterwards without costing anything. **Decide it if the
-source can decide it. Only ask about things that are genuinely his call.**
+The screen word is **"Attempts"**, which is what the notice already says in front
+of a reader. The code word is `runs`, which is what the endpoint, the hook and
+the store member use. Both are correct in their own register; do not unify them.
 
-### And then it was corrected, by instruction
+### A defect found and fixed on the way
 
-After the notice landed, Neil asked what was coming in later sessions and then
-what "correction storage is blocked" actually meant. The answer to the second was
-researched from the source in the same exchange, and it turned out not to be a
-question at all: the ledger schema had already answered it and nobody had looked.
-His instruction on the back of that: *"I don't want open questions at the start of
-these sessions. You should be giving clear direction."*
+`FinancialPage.test.tsx` did not mock `../hooks/use-ingestion-runs`. So
+`IngestionRunNotice` was reaching for a `QueryClientProvider` the test render does
+not supply and throwing, its own `ErrorBoundary` was catching the throw, and **the
+page tests were green with a dead component on screen.** This is the same trap
+that the missing `TooltipProvider` set earlier in the build, in the same file.
 
-**So the open-questions section of this file is gone.** It is replaced by
-**Standing decisions, and what would reverse each one**, and the rule now sits in
-`CLAUDE.md`. Every entry states the direction the build takes by default. Nothing
-in this file waits on Neil. **Do not reintroduce a queue of questions here** — if
-something is undecided, read the source, decide it, and record what would reverse
-it.
+Fixed in this commit, and called out in the commit message. **The general shape is
+worth remembering: on this page a component that throws for want of a provider
+does not fail a test, it disappears.** When adding anything to `FinancialPage`,
+mock every hook it reaches for, and assert the thing is actually on screen rather
+than assuming a passing render proves it.
 
 ### Verification
 
-Unit 437 → 457, matching the one new file exactly (20). Browser 2/4 green after
-the per-session chromium install. `tsc -b --force` 0, `eslint .` 0. Backend not
-re-run: no backend file touched.
+Unit 457 → 494, accounted for exactly: 20 + 13 in the two new files and 4 added
+to the page tests. Browser 2/4 green after the per-session chromium install.
+`tsc -b --force` 0, `eslint .` 0. Backend not re-run: no backend file touched.
 
-The documentation commit that follows the notice touches no code, so no gate was
-re-run for it.
+The staged tree was diffed against `HEAD` before committing and held exactly the
+seven intended files, with the untracked `.bak` files and the probe test correctly
+excluded.
 
 ### Carried forward from the sessions before
 
+- **The notice** (`IngestionRunNotice`, `8924668`) speaks only when an attempt did
+  not finish. Silence is its normal output. It carries no counts, gives no
+  denominator, is not truncated, and sends no limit. An unrecognised status raises
+  no alarm there, deliberately, with a named test.
+- **Two sessions in a row opened by putting questions to Neil that the source
+  could have answered**, and both openings were rejected in his words. The rules
+  that came out of it now live in `CLAUDE.md` and in **Standing decisions** below.
+  **The test for a question is whether Neil can answer it without opening a file.**
+  This file holds no queue of questions and is not to grow one.
 - **The reaper** (`run_reaper.py`, lifespan loop, six hours stale / five minute
   interval) closes a run whose process died. It copies
   `platform_update_service.poll_forever`, **not** `_cleanup_stale_chunks`, which
@@ -178,8 +204,8 @@ re-run for it.
 - **No module under `services/financial/` imports `config`.** That is why the
   financial tests need no environment. A new module takes its knobs as
   arguments.
-- The ledger screen is mounted as the first of four peer tabs on
-  `FinancialPage`, and the page always opens on it.
+- The ledger screen is mounted as the first of the peer tabs on `FinancialPage`
+  (four until this session, five now), and the page always opens on it.
 - **Stopping tab persistence took two mechanisms.** Dropping `mainView` from
   `partialize` stops a choice being written; it does not stop one already
   written being read. An explicit `merge` deletes `mainView` from the persisted
@@ -209,6 +235,15 @@ fails on it, so a green unit run says nothing about the cache being usable.
 
 ### New this session
 
+- **A component that throws for want of a provider does not fail a
+  `FinancialPage` test — it vanishes.** Every panel on that page is wrapped in its
+  own `ErrorBoundary`, which catches the throw and renders a fallback, so the
+  suite stays green while the thing under test is dead. Mock every hook the page
+  reaches for, and assert presence explicitly.
+- **`tsc -b` alone is not enough after writing test fixtures.** Vitest does not
+  typecheck, so a green unit run says nothing about the types in a `.test.tsx`.
+  Use `--force`; the incremental build will otherwise skip a project it thinks is
+  current.
 - **The git ref file must be `Read` before it can be `Write`n.** The last step
   of the commit procedure updates
   `.git/refs/heads/integration/evidence-main-reunion` by writing the new sha
@@ -222,7 +257,7 @@ fails on it, so a green unit run says nothing about the cache being usable.
   far outside the slice. The refusal does not say why when it comes. Try the
   slice on a large file — it may be enough — and fall back to a full read rather
   than assuming either way.
-- **The vitest unit project takes about 75 seconds** at 65 files. Not a hang.
+- **The vitest unit project takes about 80 seconds** at 67 files. Not a hang.
 
 ### From earlier sessions, still true
 
@@ -389,7 +424,7 @@ fails on it, so a green unit run says nothing about the cache being usable.
   total order and a case can hold two runs opened within one recorded moment.
   Without the tiebreak the same query answers differently on two calls.
 
-### And on the frontend, as of `8924668`
+### And on the frontend, as of `bc23570`
 
 - **`readRunStatus(raw).needsAttention` is the one signal that puts a run in
   front of a reader who did not ask for it.** True for `pending`, `running`,
@@ -429,6 +464,29 @@ fails on it, so a green unit run says nothing about the cache being usable.
   `INGESTION_RUN_FIELDS`, the `IngestionRunStatus` members, and the
   `started_at.desc(), id.asc()` ordering clause. **A backend change to any of
   those fails a frontend test**, which is the intended alarm.
+- **`IngestionRunsTable` overrides `readRunStatus`'s variant for an unrecognised
+  status,** forcing `warning` rather than the `outline` the formatter returns.
+  `UNRECOGNISED_VARIANT = "warning"` is reserved in `LedgerTable` for "this build
+  cannot read this value" and is used for nothing else; the attempts table keeps
+  that colour and that meaning paired. **No outcome anywhere maps to the `default`
+  Badge variant.**
+- **`IngestionRunsTable` renders `RUN_COUNTS_ARE_HISTORY` itself,** rather than
+  accepting it or leaving it to the caller. The three count columns and the
+  sentence cannot be separated by anyone reusing the component.
+- **`runDuration` returning `null` has two distinct presentations**, keyed
+  `run-no-end` and `run-no-duration`. Do not collapse them: the first is an
+  attempt that has not ended, the second is two recorded times that disagree, and
+  showing a clock problem as an open run hides it.
+- **`FinancialMainView` now has five members**, `"ledger" | "runs" |
+  "transactions" | "counterparties" | "trends"`. **The order is load bearing:**
+  the first two read Postgres, the last three read the graph. Anything added
+  should be placed by which store it reads.
+- **The attempts tab takes no graph chrome**, like the ledger tab and unlike the
+  other three. A case with an empty graph must still reach the record of what was
+  loaded into it.
+- **Radix tab triggers activate on `mousedown`, not `click`.** `fireEvent.click`
+  leaves the tab where it was and every assertion after it silently describes the
+  previous tab. The page tests use `fireEvent.mouseDown` throughout.
 
 ---
 
@@ -445,55 +503,36 @@ to depend on something later in the list, stop and ask.
 - **Phase 1, make rows exist — COMPLETE.** Precheck endpoint ✅ `a4eb3dc`,
   ingest endpoint ✅ `43f8358`, the interface action on a held file ✅ `17d94ac`,
   mount the ledger ✅ `4324b24`.
-- **Phase 2, make the rows trustworthy** — runs (**item 5, backend complete,
-  notice complete, attempts list outstanding**), quarantine, reconciliation,
-  adjudication and proof class, duplicates, suspect amounts, locators.
+- **Phase 2, make the rows trustworthy** — runs ✅ **item 5 complete**, backend
+  `cde43c5`, notice `8924668`, attempts list `bc23570`. Then quarantine,
+  reconciliation, adjudication and proof class, duplicates, suspect amounts,
+  locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-**Next unit: the attempts list, the second of the two commits Neil authorised,
-which closes item 5. Then item 6, quarantine.**
+**Next unit: item 6, quarantine.**
 
-Everything it needs exists and is tested: `useIngestionRuns`, `readRunStatus`
-with `needsAttention`, `readRunStarter`, `formatRunTime`, `runDuration`,
-`RUN_COUNTS_ARE_HISTORY`. **What remains is rendering, one store change,
-mounting and component tests.**
+Nothing has been read for it yet, so the shape below is what the plan says and
+not yet what the source says. **Read `docs/loupe-wiring-plan.md` and the backend
+quarantine modules before deciding anything.**
 
-The shape, as agreed and as half-built:
+What is known without reading:
 
-1. **A short notice that speaks only when something needs saying** ✅ `8924668`.
-2. **A full history of every attempt on the case** — not yet built. Intended as a
-   **fifth tab** on `FinancialPage`, which needs a new member on
-   `FinancialMainView` in `stores/financial.store.ts` (currently `"ledger" |
-   "transactions" | "counterparties" | "trends"`).
-
-What the attempts list has to carry that the notice deliberately does not:
-
-- **Every attempt, not only the flagged ones,** including the ones that finished.
-  A reader checking whether the ledger is complete needs the successes too.
-- **The three counts, with `RUN_COUNTS_ARE_HISTORY` beside them.** That sentence
-  is the reason the counts are here rather than in the notice; it must appear
-  wherever they do.
-- **`runDuration`,** which nothing currently calls. It returns `null` for an open
-  run and for timestamps that disagree, so the list needs a stated absence rather
-  than a blank cell.
-- **A total-versus-length check,** matching `LedgerPanel`'s: `total` is
-  `len(runs)` of the same response and no paging sits behind it, so a
-  disagreement means the backend has started paging.
-- **A status this build does not recognise must render loudly** with
-  `data-unrecognised="true"`, the way `LedgerTable` does — the notice's silence
-  on an unknown status is right for a warning and wrong for a list whose job is
-  to show everything.
-
-Practical notes for that pass:
-
-- **Call `useIngestionRuns(caseId)` with no second argument** so it shares the
-  notice's cache entry. See the frontend section above.
-- **Radix tab triggers activate on `mousedown`.** A test that clicks a new tab
-  and then asserts will silently describe the old one.
-- The four existing triggers live in the `TabsList` around line 430 of
-  `FinancialPage.tsx`; the ledger `TabsContent` follows at about line 459.
+- **Quarantine is where the ledger read already points.** `GET
+  /api/financial/transactions` defaults to `admitted`, so every ledger figure on
+  screen today is a figure over admitted rows only. The rows held back exist and
+  nothing renders them.
+- **The pattern to follow is the one item 5 just established:** a panel that
+  fetches and states its four pre-table conditions, a table that only draws, both
+  tested separately, mounted as a tab whose position says which store it reads.
+  Quarantine reads Postgres, so it belongs with the first two tabs, not after
+  them.
+- **`FinancialMainView` will need a sixth member** if it becomes its own tab.
+  Whether it should be a tab or a filter on the ledger tab is the first thing to
+  settle, and the source can settle it: look at what the quarantine endpoints
+  actually return and whether a quarantined row carries fields a ledger row does
+  not.
 
 ### Where the old numbering went
 
@@ -646,16 +685,20 @@ disagree in front of an investigator before item 12 lands.
   hours is a long time to look wrong, and the number is a knob
   (`FINANCIAL_RUN_STALE_AFTER_HOURS`) precisely so it can be lowered once real
   run durations are known.
-- **A failed or half-finished attempt is now visible above the ledger** as of
-  `8924668`, and this flag is closed. What remains uncovered is narrower: **an
-  attempt that finished has nowhere to be seen**, so a reader cannot check what
-  the ledger was built from, only be warned when something broke. The attempts
-  list closes that.
-- **The notice is only on the ledger tab.** A reader on the transactions,
-  counterparties or trends tab sees nothing about a broken attempt. That is
-  deliberate for now — those three tabs read the graph, which the ledger does not
-  feed — but it stops being defensible at Phase 3 item 12, when the graph becomes
-  a projection of the ledger. **Revisit the mounting then.**
+- **What the ledger was built from is now visible, and this flag is closed.** A
+  broken attempt warns above the ledger (`8924668`); every attempt, finished ones
+  included, is listed on its own tab (`bc23570`).
+- **The notice is only on the ledger tab, and the attempts list only on its own.**
+  A reader on the transactions, counterparties or trends tab sees nothing about a
+  broken attempt. That is deliberate for now — those three tabs read the graph,
+  which the ledger does not feed — but it stops being defensible at Phase 3 item
+  12, when the graph becomes a projection of the ledger. **Revisit the mounting
+  then.**
+- **Nothing on screen explains that the tab strip spans two stores.** The order
+  now encodes it (Postgres, Postgres, graph, graph, graph) and the code comments
+  record it, but a reader is told nothing. **This is deliberate and already
+  ruled** — see the standing decision below on saying nothing until Phase 3 item
+  12. Listed here only so it is not rediscovered as an oversight.
 - **No row in the corpus carries a running-balance column.** 30,570 rows across
   325 documents. So on real data **every** row will show "No running balance".
   That is the component working, not failing.
@@ -690,7 +733,7 @@ Small, real, none blocking:
   anything starts relying on graph corrections before then, fix it immediately
   instead.**
 - **`IngestionRunHandle.terminate()` does not check the row's stored status.**
-  Found this session by reading `runs.py`. It guards only on the in-process
+  Found while reading `runs.py` for item 5. It guards only on the in-process
   `self._closed` flag, then unconditionally assigns `run.status`. So a run the
   reaper closed as `failed` — because its process looked dead — that then turns
   out to be alive and finishes will overwrite the status with `completed`
