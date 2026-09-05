@@ -34,10 +34,41 @@ vi.mock("sonner", () => ({ toast: toastMocks }))
 // `describeHold` pulls the API client in with it.
 vi.mock("../api", () => ({ evidenceAPI: {} }))
 
+// Stubbed, for the same reason the gate is: this file is about what the hold
+// dialog decides, and the send dialog is a subject in its own right with its
+// own file. Rendering the real one would also drag a query client in here for
+// the sake of a few assertions about props.
+//
+// The stub keeps the last `onClose` it was given, because the send dialog
+// closing is something this component has to survive and the stub renders
+// nothing to click.
+const sendDialog = vi.hoisted(() => ({ close: () => {} }))
+
+vi.mock("@/features/financial/components/SendToLedgerDialog", () => ({
+  SendToLedgerDialog: (props: {
+    caseId: string
+    fileId: string
+    fileName: string | null
+    onClose: () => void
+  }) => {
+    sendDialog.close = props.onClose
+    return (
+      <div
+        data-testid="send-dialog"
+        data-case={props.caseId}
+        data-file={props.fileId}
+        data-name={props.fileName ?? ""}
+      />
+    )
+  },
+}))
+
 beforeEach(() => {
   toastMocks.success.mockReset()
   toastMocks.error.mockReset()
 })
+
+const CASE_ID = "case-1"
 
 function heldFile(overrides: Partial<HeldFile> & { file_id: string }): HeldFile {
   return {
@@ -82,6 +113,9 @@ function footerButton(name: string | RegExp): HTMLElement {
 /** A gate that holds what it is given and records what is asked of it. */
 function stubGate(held: HeldRequest | null, overrides: Partial<ProcessGate> = {}): ProcessGate {
   return {
+    // The gate carries the case so the dialog can offer a bank file somewhere
+    // to go. Spread last, so a case passed in an override still wins.
+    caseId: CASE_ID,
     start: vi.fn().mockResolvedValue("held"),
     release: vi.fn().mockResolvedValue(0),
     dismiss: vi.fn(),
@@ -382,5 +416,162 @@ describe("ProcessHoldDialog", () => {
 
     expect(footerButton("Cancel")).toBeEnabled()
     expect(footerButton(/Process 1 other file/)).toBeEnabled()
+  })
+})
+
+/**
+ * The one thing a held file can now be sent to.
+ *
+ * The offer is narrower than the hold: `belongsToLedger` is `native` alone,
+ * while four outcomes block. The cases below pin that gap in both directions,
+ * because the two plausible mistakes are opposite. Offering the button on every
+ * held file would put an action on rows where the reading refuses the bytes --
+ * a button that can only be refused. Gating it on something narrower still, or
+ * on `blocks_document_processing`, would hide it from the files it exists for.
+ */
+describe("sending a held file to the ledger", () => {
+  it("offers the ledger the one kind of file the ledger can read", () => {
+    render(<ProcessHoldDialog gate={stubGate(heldRequest())} />)
+
+    expect(screen.getByTestId("send-to-ledger-a")).toBeInTheDocument()
+  })
+
+  it("does not offer it for a file the reading would refuse", () => {
+    // `ambiguous` is held, and blocking is not the test. The reading requires
+    // exactly one format to claim the bytes, so this file would be turned away
+    // there. `not_native` is here too because a file can be held for reasons
+    // its outcome word does not carry, and being held is still not an
+    // invitation to the ledger.
+    for (const outcome of ["ambiguous", "not_native", "unreadable"] as const) {
+      const { unmount } = render(
+        <ProcessHoldDialog
+          gate={stubGate(
+            heldRequest({ held: [heldFile({ file_id: "a", outcome })] })
+          )}
+        />
+      )
+      expect(
+        screen.queryByTestId("send-to-ledger-a"),
+        `${outcome} must not be offered the ledger`
+      ).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it("names the case and the file it was pressed on", () => {
+    // The send dialog cannot ask which file it is about, so a wrong id here
+    // would read a different file's rows into the ledger under this row's
+    // name. The case comes from the gate rather than a prop of this component
+    // for the same reason.
+    render(
+      <ProcessHoldDialog
+        gate={stubGate(
+          heldRequest({
+            request: { fileIds: ["a", "b"] },
+            held: [
+              heldFile({ file_id: "a", file_name: "march.pdf" }),
+              heldFile({ file_id: "b", file_name: "april.pdf" }),
+            ],
+          })
+        )}
+      />
+    )
+
+    fireEvent.click(screen.getByTestId("send-to-ledger-b"))
+
+    const sent = screen.getByTestId("send-dialog")
+    expect(sent).toHaveAttribute("data-case", CASE_ID)
+    expect(sent).toHaveAttribute("data-file", "b")
+    expect(sent).toHaveAttribute("data-name", "april.pdf")
+  })
+
+  it("passes an absent name as absent rather than inventing one", () => {
+    // The row falls back to the id for its own heading, but the send dialog is
+    // shown the truth: a file id printed where a file name goes would look
+    // like the name of the file being written to the ledger.
+    render(
+      <ProcessHoldDialog
+        gate={stubGate(
+          heldRequest({ held: [heldFile({ file_id: "a", file_name: null })] })
+        )}
+      />
+    )
+
+    fireEvent.click(screen.getByTestId("send-to-ledger-a"))
+
+    expect(screen.getByTestId("send-dialog")).toHaveAttribute("data-name", "")
+  })
+
+  it("sends nothing anywhere by being opened", () => {
+    // Opening the send dialog is a question, not an answer. Releasing the
+    // cleared files here would process the rest of the request on the strength
+    // of someone asking about one bank file.
+    const gate = stubGate(heldRequest({ cleared: ["b"] }))
+    render(<ProcessHoldDialog gate={gate} />)
+
+    fireEvent.click(screen.getByTestId("send-to-ledger-a"))
+
+    expect(gate.release).not.toHaveBeenCalled()
+    expect(gate.dismiss).not.toHaveBeenCalled()
+  })
+
+  it("leaves the hold standing behind it", () => {
+    // Sending one bank file says nothing about the rest of the request, and
+    // the cleared files are still undecided. Closing the hold here would
+    // answer that question by default, with nothing sent.
+    render(<ProcessHoldDialog gate={stubGate(heldRequest({ cleared: ["b"] }))} />)
+
+    fireEvent.click(screen.getByTestId("send-to-ledger-a"))
+
+    expect(screen.getByRole("heading")).toHaveTextContent("1 file was held back")
+    expect(footerButton(/Process 1 other file/)).toBeInTheDocument()
+  })
+
+  it("keeps one open at a time", () => {
+    // The send dialog asks for a period. Two of them open at once would invite
+    // the reader to answer that twice with no sign the answers differed, and
+    // the second answer would be about a file they had stopped looking at.
+    render(
+      <ProcessHoldDialog
+        gate={stubGate(
+          heldRequest({
+            request: { fileIds: ["a", "b"] },
+            held: [heldFile({ file_id: "a" }), heldFile({ file_id: "b" })],
+          })
+        )}
+      />
+    )
+
+    fireEvent.click(screen.getByTestId("send-to-ledger-a"))
+    fireEvent.click(screen.getByTestId("send-to-ledger-b"))
+
+    const open = screen.getAllByTestId("send-dialog")
+    expect(open).toHaveLength(1)
+    expect(open[0]).toHaveAttribute("data-file", "b")
+  })
+
+  it("is not open until it is asked for", () => {
+    render(<ProcessHoldDialog gate={stubGate(heldRequest())} />)
+
+    expect(screen.queryByTestId("send-dialog")).not.toBeInTheDocument()
+  })
+
+  it("closes on its own without taking the hold with it", () => {
+    // `onClose` clears the row being sent. If it also dismissed the gate, a
+    // reader who opened the send dialog and changed their mind would lose the
+    // hold and the cleared files with it.
+    const gate = stubGate(heldRequest({ cleared: ["b"] }))
+    render(<ProcessHoldDialog gate={gate} />)
+
+    fireEvent.click(screen.getByTestId("send-to-ledger-a"))
+    act(() => {
+      // The stub renders nothing that can be clicked, so the close is invoked
+      // the way the real dialog invokes it: by calling the prop.
+      sendDialog.close()
+    })
+
+    expect(screen.queryByTestId("send-dialog")).not.toBeInTheDocument()
+    expect(screen.getByRole("heading")).toHaveTextContent("1 file was held back")
+    expect(gate.dismiss).not.toHaveBeenCalled()
   })
 })

@@ -281,6 +281,14 @@ export function useGuardedProcess(caseId: string) {
   const dismiss = useCallback(() => setHeld(null), [])
 
   return {
+    // Returned rather than left in the closure because the hold dialog has to
+    // offer a native bank file somewhere to go, and both ends of that road
+    // need the case.  Putting it on the gate means every screen that already
+    // renders the dialog gets it with no change of its own; a new prop on the
+    // dialog would be seven call sites and seven chances to forget one, which
+    // is the argument {@link ProcessGate} already makes about `held`,
+    // `release` and `dismiss`.
+    caseId,
     start,
     release,
     dismiss,

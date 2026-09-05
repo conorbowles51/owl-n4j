@@ -282,6 +282,193 @@ export interface LedgerResponse {
   total: number
 }
 
+/*
+ * Getting rows into the ledger.
+ *
+ * Two endpoints reading the same file: `/precheck` says what it holds and
+ * stores nothing, `/ingest` does that reading again and keeps it. They share a
+ * parser on purpose, so a precheck that promised one thing and an ingest that
+ * did another is not a state this pair can reach.
+ *
+ * Neither has a success flag and an error flag. Both answer with a single word
+ * in `outcome`, and nearly every value of it arrives as a 200 because it is a
+ * fact about the evidence rather than a fault: a file that will not parse, a
+ * row naming an account the document never introduced, a period contradicting
+ * one already stored. Those belong on the screen beside the files that went
+ * in, not in the browser's error path. Only three become statuses -- 404 for a
+ * file this case cannot see, 500 for a write that failed for a reason that is
+ * not about the evidence, 400 for a century window that is not a window.
+ *
+ * The vocabularies are arrays for the same reason the ledger's are:
+ * `ingest-format.ts` narrows a word this build has never heard of rather than
+ * rendering it raw or crashing on it. `outcome` is therefore typed `string` on
+ * both wire shapes below, because a union there would be this file claiming to
+ * have checked something it has not.
+ */
+
+/** Mirrors `PrecheckOutcome` in `services/financial/native_precheck.py`. */
+export const PRECHECK_OUTCOMES = [
+  "readable",
+  "unrecognised",
+  "ambiguous",
+  "out_of_window",
+  "unattributable",
+  "unreadable",
+  "not_found",
+] as const
+export type PrecheckOutcome = (typeof PRECHECK_OUTCOMES)[number]
+
+/**
+ * Mirrors `IngestOutcome` in `services/financial/native_ingest_file.py`.
+ *
+ * Six of these are spelled the same as a `PrecheckOutcome` and mean the same
+ * thing; the backend maps them across in `READING_OUTCOMES`. `readable` has no
+ * counterpart here on purpose: once the rows are written the word is `stored`.
+ * The three that precheck cannot reach -- `already_ingested`,
+ * `contradictory_period`, `refused` -- are each decided against rows already in
+ * the ledger rather than against the file, which is why a clean precheck is not
+ * a promise that the ingest will store.
+ */
+export const INGEST_OUTCOMES = [
+  "stored",
+  "already_ingested",
+  "not_found",
+  "unrecognised",
+  "ambiguous",
+  "out_of_window",
+  "unreadable",
+  "undescribable",
+  "unattributable",
+  "contradictory_period",
+  "refused",
+  "write_failed",
+] as const
+export type IngestOutcome = (typeof INGEST_OUTCOMES)[number]
+
+/** A balance the file printed, or a record that it printed none. */
+export interface PrecheckBalance {
+  source: string
+  /**
+   * Null with `source: "absent"` means the file stated no balance. It does not
+   * mean zero, and must never be rendered as one.
+   */
+  amount_minor: number | null
+  currency: string | null
+}
+
+export interface PrecheckPeriod {
+  currency: string | null
+  start: string | null
+  end: string | null
+  start_source: string
+  end_source: string
+  opening: PrecheckBalance
+  closing: PrecheckBalance
+}
+
+export interface PrecheckAccount {
+  account_key: string | null
+  /**
+   * Whether the rows could be attributed to an account the document
+   * introduced. False does not mean no account number was printed --
+   * `identifier_as_printed` sits beside it for exactly that case.
+   */
+  identified: boolean
+  row_count: number
+  institution_name: string | null
+  identifier_as_printed: string | null
+  account_type: string | null
+  holder_name: string | null
+  currency: string | null
+  iban: string | null
+  bic: string | null
+  routing_number: string | null
+  /** Null for every NACHA account, which is not a gap in the reading. */
+  period: PrecheckPeriod | null
+}
+
+export interface PrecheckSkippedRow {
+  row_index: number
+  reason: string
+}
+
+/** The shape of `FilePrecheck.as_dict()`. */
+export interface FilePrecheck {
+  file_id: string
+  file_name: string | null
+  /** One of `PRECHECK_OUTCOMES`, narrowed rather than trusted. */
+  outcome: string
+  would_ingest: boolean
+  reason: string | null
+  detected_format: string | null
+  parser_name: string | null
+  parser_version: string | null
+  extraction_layer: number | null
+  source_shape: string | null
+  reconciliation_status: string | null
+  proof_class: string | null
+  admissibility_reservations: string[]
+  row_count: number | null
+  parsed_row_count: number | null
+  skipped: PrecheckSkippedRow[]
+  earliest_ordering_date: string | null
+  latest_ordering_date: string | null
+  accounts: PrecheckAccount[]
+  unattributed_keys: (string | null)[]
+  unattributed_row_count: number
+}
+
+/** The shape of `FileIngestion.as_dict()`. */
+export interface FileIngestion {
+  file_id: string
+  file_name: string | null
+  /** One of `INGEST_OUTCOMES`, narrowed rather than trusted. */
+  outcome: string
+  stored: boolean
+  reason: string | null
+  run_id: string | null
+  document_id: string | null
+  detected_format: string | null
+  account_ids: string[]
+  period_ids: string[]
+  transactions_stored: number
+  unlinked_rows: number
+  adjudication_id: string | null
+}
+
+/**
+ * The window both endpoints require, and the currency neither will guess.
+ *
+ * `windowStart`/`windowEnd` are not optional and have no default. Three of the
+ * four native formats print two-digit years and none carries the century, so
+ * without a stated period the year cannot be resolved. A default would decide
+ * which decade a statement belongs to silently, in the one place the document
+ * itself is no help.
+ *
+ * `defaultCurrency` is asked for rather than inferred because a wrong guess
+ * produces amounts that look right.
+ */
+export interface IngestWindowParams {
+  caseId: string
+  fileId: string
+  /** `YYYY-MM-DD`. Earliest date this matter's evidence may fall in. */
+  windowStart: string
+  /** `YYYY-MM-DD`. Latest date this matter's evidence may fall in. */
+  windowEnd: string
+  defaultCurrency?: string
+}
+
+function ingestWindowQuery(params: IngestWindowParams): URLSearchParams {
+  const qs = new URLSearchParams({
+    case_id: params.caseId,
+    file_id: params.fileId,
+    window_start: params.windowStart,
+    window_end: params.windowEnd,
+  })
+  if (params.defaultCurrency) qs.set("default_currency", params.defaultCurrency)
+  return qs
+}
+
 export const financialAPI = {
   getTransactions: (params: {
     caseId: string
@@ -465,5 +652,42 @@ export const financialAPI = {
     if (params.startDate) qs.set("start_date", params.startDate)
     if (params.endDate) qs.set("end_date", params.endDate)
     return fetchAPI<LedgerResponse>(`/api/financial/ledger?${qs}`)
+  },
+
+  /**
+   * What one native bank file says it holds. Stores nothing.
+   *
+   * A POST because it takes a file and does work, not because it changes
+   * anything; the backend gates it on being able to see the case rather than
+   * on being able to add to it, and resolves the method the same way.
+   *
+   * A `readable` answer here is the strongest thing that can be said before a
+   * write is attempted, and it is still not a promise. Three of the ingest
+   * outcomes are decided against rows already stored and no amount of reading
+   * this file would find them.
+   */
+  precheckFile: (params: IngestWindowParams) =>
+    fetchAPI<FilePrecheck>(`/api/financial/precheck?${ingestWindowQuery(params)}`, {
+      method: "POST",
+    }),
+
+  /**
+   * Read the file again and keep it, under a recorded ingestion run.
+   *
+   * `documentType` overrides the format's own name on the stored document.
+   * `institutionName` names the bank where the file does not; it is recorded as
+   * given and never inferred from an account number, because an account number
+   * that resembles a bank's range is not evidence of which bank issued it.
+   */
+  ingestFile: (
+    params: IngestWindowParams & {
+      documentType?: string
+      institutionName?: string
+    }
+  ) => {
+    const qs = ingestWindowQuery(params)
+    if (params.documentType) qs.set("document_type", params.documentType)
+    if (params.institutionName) qs.set("institution_name", params.institutionName)
+    return fetchAPI<FileIngestion>(`/api/financial/ingest?${qs}`, { method: "POST" })
   },
 }

@@ -53,10 +53,12 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import {
   ROUTE_OUTCOME_LABEL,
   ROUTE_OUTCOME_VARIANT,
+  belongsToLedger,
   routeDetailLines,
 } from "../utils/financial-route"
 import { describeHold } from "../hooks/use-guarded-process"
-import type { HeldRequest, ProcessGate } from "../hooks/use-guarded-process"
+import type { HeldFile, HeldRequest, ProcessGate } from "../hooks/use-guarded-process"
+import { SendToLedgerDialog } from "@/features/financial/components/SendToLedgerDialog"
 
 interface ProcessHoldDialogProps {
   /**
@@ -93,6 +95,11 @@ export function ProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
   // Declared before the early return, so that a hold arriving does not change
   // how many hooks this component runs.
   const [isReleasing, setIsReleasing] = useState(false)
+  // The held file currently being offered to the ledger, or null. Held here
+  // rather than in each row so that only one can be open at a time: the send
+  // dialog asks for a period, and two of them open at once would invite the
+  // reader to answer that question twice with no sign the answers differed.
+  const [sending, setSending] = useState<HeldFile | null>(null)
   const held = gate.held
 
   if (!held) return null
@@ -115,6 +122,7 @@ export function ProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
   }
 
   return (
+    <>
     <Dialog
       open
       onOpenChange={(open) => {
@@ -157,6 +165,24 @@ export function ProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
                     {line}
                   </p>
                 ))}
+                {/* Offered only for `native`, which is narrower than the set
+                    of files held here and deliberately so. `belongsToLedger`
+                    is not `blocksDocumentProcessing`: an `ambiguous` file is
+                    also held, but sending it to the ledger would fail there
+                    too, because the reading requires exactly one format to
+                    claim the bytes. A button that could only be refused is
+                    worse than no button. */}
+                {belongsToLedger(file.outcome) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2.5"
+                    data-testid={`send-to-ledger-${file.file_id}`}
+                    onClick={() => setSending(file)}
+                  >
+                    Send to ledger
+                  </Button>
+                )}
               </div>
             ))}
           </div>
@@ -183,5 +209,21 @@ export function ProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* A sibling rather than a child, so it is not unmounted by the hold
+        dialog closing underneath it, and so neither one's escape handling has
+        to know about the other. The hold stays open behind it: sending one
+        bank file to the ledger says nothing about the rest of the request,
+        and the reader still has the cleared files to decide about. */}
+    {sending && (
+      <SendToLedgerDialog
+        caseId={gate.caseId}
+        fileId={sending.file_id}
+        fileName={sending.file_name ?? null}
+        open
+        onClose={() => setSending(null)}
+      />
+    )}
+    </>
   )
 }

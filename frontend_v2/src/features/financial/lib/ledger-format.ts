@@ -53,15 +53,26 @@ export interface NarrowedTerm<T extends string> {
   description: string
 }
 
-interface TermCopy {
+export interface TermCopy {
   label: string
   description: string
 }
 
-function narrow<T extends string>(
+/**
+ * Exported for `ingest-format.ts`, which narrows the ingestion vocabularies
+ * against the same rule. Shared rather than copied so that an unrecognised
+ * word cannot be handled one way on the ledger screen and another way in the
+ * dialog that puts rows on it.
+ *
+ * `source` names where the value came from, and only appears in the
+ * unrecognised copy. It defaults to the ledger because that is where every
+ * caller in this file reads from.
+ */
+export function narrow<T extends string>(
   raw: string,
   members: readonly T[],
-  copy: Record<T, TermCopy>
+  copy: Record<T, TermCopy>,
+  source: string = "the ledger"
 ): NarrowedTerm<T> {
   const match = members.find((member) => member === raw)
   if (match === undefined) {
@@ -70,7 +81,7 @@ function narrow<T extends string>(
       raw,
       label: `Unrecognised (${raw})`,
       description:
-        `This build does not recognise "${raw}". It came from the ledger, ` +
+        `This build does not recognise "${raw}". It came from ${source}, ` +
         `so it is a real value; this screen is older than the ledger that ` +
         `produced it.`,
     }
