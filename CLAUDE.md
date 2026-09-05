@@ -49,6 +49,17 @@ These are standing instructions from Neil. They are not preferences.
 - **Check before defending.** When Neil challenges something as wrong, verify it
   against the source and report what is actually there, including when the answer
   is that he is right.
+- **Open with direction, never with questions.** "I don't want open questions at
+  the start of these sessions. You should be giving clear direction." A session
+  opens by saying what it is going to do and then doing it. If something is
+  genuinely undecided, decide it: read the source, take the defensible position,
+  state it plainly along with what would reverse it, and proceed. A decision
+  recorded with its reasoning can be overturned in one line; a question parked in
+  a file blocks the work and hands Neil homework. Escalate only when the unit in
+  front of you actually turns on the answer and the source cannot settle it — and
+  then bring a recommendation, not a menu. `docs/loupe-build-state.md` holds these
+  as **Standing decisions**, each with what would reverse it. It has no queue of
+  questions waiting on Neil, and it is not to grow one.
 - **Orient Neil before asking him anything.** `docs/loupe-build-state.md` is
   written for the next session to resume from. It is not a briefing for Neil and
   he has not read it. So a continued session does not open in that register.

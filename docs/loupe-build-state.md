@@ -3,7 +3,8 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the run notice, `8924668`)
+**Last updated:** 5 September 2026 (records the run notice, `8924668`, and the
+correction-storage direction that followed it)
 
 ---
 
@@ -143,11 +144,30 @@ questions were decidable from the source and from rulings already given, and bot
 were closed that way afterwards without costing anything. **Decide it if the
 source can decide it. Only ask about things that are genuinely his call.**
 
+### And then it was corrected, by instruction
+
+After the notice landed, Neil asked what was coming in later sessions and then
+what "correction storage is blocked" actually meant. The answer to the second was
+researched from the source in the same exchange, and it turned out not to be a
+question at all: the ledger schema had already answered it and nobody had looked.
+His instruction on the back of that: *"I don't want open questions at the start of
+these sessions. You should be giving clear direction."*
+
+**So the open-questions section of this file is gone.** It is replaced by
+**Standing decisions, and what would reverse each one**, and the rule now sits in
+`CLAUDE.md`. Every entry states the direction the build takes by default. Nothing
+in this file waits on Neil. **Do not reintroduce a queue of questions here** — if
+something is undecided, read the source, decide it, and record what would reverse
+it.
+
 ### Verification
 
 Unit 437 → 457, matching the one new file exactly (20). Browser 2/4 green after
 the per-session chromium install. `tsc -b --force` 0, `eslint .` 0. Backend not
 re-run: no backend file touched.
+
+The documentation commit that follows the notice touches no code, so no gate was
+re-run for it.
 
 ### Carried forward from the sessions before
 
@@ -483,8 +503,11 @@ Items 1–10a and their commits are unchanged history and stay listed here.
 suspect-amount detection, `0910d9f`. 10 done, per-transaction source locator,
 `0d6b399`. 10a closed 1 September with no code; triage is out of the build.
 
-11, correction storage, is **still blocked** on the correction-versus-re-ingestion
-question below. It maps onto Phase 2 item 10.
+11, correction storage, **is no longer blocked.** It maps onto Phase 2 item 10,
+and the direction is settled in Standing decisions below: a correction inserts a
+replacement row and supersedes the old one. The separate question of whether a
+correction re-runs the balance identity is deliberately left until items 7 and 8
+are built, and does not block the storage design.
 
 12 is absorbed into Phase 1, which is now complete. Both halves of the "both
 stores" ruling were built (`de7ef21`, `a9e0d29`), the frontend data layer landed
@@ -504,40 +527,104 @@ longer parked** — they are Phase 4 of the plan.
 
 ---
 
-## Open questions, waiting on Neil
+## Standing decisions, and what would reverse each one
 
-**Was removing `reingest` the right call?** Raised three sessions ago, still
-unruled. Short form: the override could not succeed for unchanged bytes, and
-where it could succeed it would leave two contradictory readings of one file in
-one case with nothing able to resolve them until `duplicates.py` is wired at
-Phase 2 item 9. **Reversible — say the word and it comes back.** The send dialog
-has no override either, for the same reason: it reports `already_ingested`
-plainly and offers nothing to force past it.
+**This section is not a queue of questions for Neil.** By standing instruction, a
+session does not open by asking him to rule on things. Every entry below states
+the direction the build takes by default, so a session can proceed without a
+conversation. Each one also says exactly what evidence or instruction would
+reverse it, so a decision taken on thin grounds is visible as such rather than
+hidden. Raise one with Neil only when the unit in front of you actually turns on
+it, and then raise it oriented and with a recommendation, never as an open
+question.
 
-**Correction versus re-ingestion.** Unchanged, still open, still blocking item 11.
-Proposal on the table (a correction triggers a genuine re-run of the balance
-identity; only a re-run that closes moves the class), not accepted. **Related to
-the `reingest` question above but not the same one** — that one is about reading
-the same file twice, this one is about a human editing a stored value.
+**Correction storage: a correction inserts a replacement row, it does not edit
+the row.** This is the direction for Phase 2 item 10, and item 11 of the old
+numbering is unblocked by it. It was researched on 5 September by reading the
+source rather than the plan, and the findings are these.
 
-**Is content-hash de-duplication meant to be call-scoped only?** Still unruled.
-`document_content_hashes` disambiguates duplicate content within one
-`record_transactions()` call but not across two separate calls to the same
-document. Today the early `already_ingested` refusal means a second call for the
-same file does not happen, so nothing depends on the answer yet. That stops being
-true the moment an override exists.
+- **The relational ledger has no correction columns at all.** Verified against
+  `postgres/models/financial.py`: no `amount_corrected`, no `original_amount`,
+  no `correction_reason`. What it does have is supersession —
+  `ledger_status IN ('admitted', 'quarantined', 'superseded', 'rejected')` with
+  `superseded_by_id` on `FinancialTransaction` (line 807) and the same pair on
+  `FinancialSourceDocument` (line 321). The model docstring at line 21 states the
+  intended behaviour outright: a row found to be wrong keeps its row, gains
+  `superseded_by_id`, and moves to `superseded` while its replacement is
+  inserted.
+- **Corrections today happen only on the graph side**, in
+  `services/neo4j/financial_service.py:599`, `update_transaction_amount`. It
+  stashes `original_amount` on first touch, overwrites `amount`, sets
+  `amount_corrected = true` and stores a reason. That is edit-in-place, and it is
+  the competing design. It is not wrong for the graph; `projection.py` lists all
+  three of those properties in `USER_OWNED_PROPERTIES` and refuses to write them,
+  precisely so a projection run cannot undo a person's work.
+- **The citation reference decides it.** `references.py` (see the module docstring
+  from line 25) computes the reference a report cites a row by from the row's
+  content, deliberately, so that a row re-read the same way keeps its name and a
+  row whose figure changed gets a new one. Under supersession that falls out for
+  free. Under edit-in-place the reference either changes underneath a report that
+  already cited it, or is frozen and then names a figure it was not computed from.
+  `ref_id` also carries `UniqueConstraint("case_id", "ref_id")`, so the two
+  designs are not merely different, they collide.
+- **The cost of the chosen direction, stated honestly:** two rows exist for one
+  corrected transaction, and every reader of the ledger has to be status-aware.
+  The ledger endpoint already defaults to `admitted`, so the existing readers are
+  correct by default; new ones are the risk.
+- **What would reverse it:** an instruction from Neil, or a downstream unit that
+  genuinely cannot work across a supersession pair. The graph's edit-in-place path
+  is not evidence against it — the graph is not the ledger.
 
-**Should the engagement period live on the case?** **Answered by construction for
-now, not by ruling:** the dialog asks for the window every time, because the
-alternative is new schema. If a case ever grows a date range, the dialog should
-default from it rather than stop asking, since a file can legitimately fall
-outside the engagement period and the reader has to be able to say so.
+**Whether a correction re-runs the arithmetic: not yet decided, and it does not
+need to be yet.** The proposal is that a correction re-runs the balance identity
+and only a re-run that closes moves the proof class. It has support in the source:
+`adjudication.py`'s `restated_opening` (line 332) says the figure it computes is
+what a re-extraction ought to produce and that comparing the two after a reader
+fix is how a verdict is confirmed or refuted mechanically, and `restatement_delta`
+(line 357) says a verdict that closes the identity is one whose correction is
+exactly the amount by which it missed. It is consistent with the settled rule that
+proof class is computed and never set by hand. **But it makes a correction an
+event that can change how much of a document is trusted, not a local edit, and
+that is a bigger claim than the storage question.** Reconciliation (Phase 2 item
+7) and proof class (item 8) both land before the correction unit, so by the time
+this matters the machinery it depends on will exist and can be read rather than
+imagined. **Decide it then, from the built code, not now.**
 
-**Provenance of `exhibit.py`.** Unchanged: confirmed valuable, but it came from a
-proposed build order, not a stated Owl requirement.
+**Removing `reingest` stands.** The override could not succeed for unchanged
+bytes, and where it could succeed it would leave two contradictory readings of one
+file in one case with nothing able to resolve them until `duplicates.py` is wired
+at Phase 2 item 9. The send dialog has no override either, for the same reason: it
+reports `already_ingested` plainly and offers nothing to force past it.
+**Reversible at any time and cheap to reverse** — it comes back if Neil says so,
+and item 9 is the natural moment to revisit it, because that is when the thing
+that would resolve the contradiction exists.
 
-**Should the financial page say anything about the two stores disagreeing?** See
-the standing flag below. Raised, unruled.
+**Content-hash de-duplication stays call-scoped.** `document_content_hashes`
+disambiguates duplicate content within one `record_transactions()` call and not
+across two calls to the same document. Nothing depends on the wider behaviour
+today, because the early `already_ingested` refusal means a second call for the
+same file does not happen. **What would reverse it:** an override existing. If
+`reingest` comes back, this has to be answered in the same session, not after.
+
+**The engagement period stays off the case.** The dialog asks for the window every
+time, because the alternative is new schema for no present benefit. If a case ever
+grows a date range, the dialog **defaults from it and keeps asking** rather than
+stopping, because a file can legitimately fall outside the engagement period and
+the reader has to be able to say so.
+
+**`exhibit.py` stays in the plan at Phase 4 item 15.** Its provenance is a
+proposed build order rather than a stated Owl requirement, and that is recorded so
+nobody later mistakes it for a requirement Neil gave. It is not a reason to defer
+it; it is a reason to confirm the shape with Neil when the unit is picked up
+rather than inferring it from the module.
+
+**The financial page will say nothing about the two stores disagreeing until
+Phase 3 item 12.** Explaining a disagreement to a reader before the thing that
+removes it is built means shipping an explanation with a short life, and the
+honest version of that text is an admission that the interface cannot say which
+store is right. Item 12 makes the graph a projection of the ledger and the
+question dissolves. **What would reverse it:** a real case where the two visibly
+disagree in front of an investigator before item 12 lands.
 
 ---
 
@@ -591,6 +678,17 @@ the standing flag below. Raised, unruled.
 
 Small, real, none blocking:
 
+- **The graph's correction path takes the new amount as a `float`.**
+  `services/neo4j/financial_service.py:599`, `update_transaction_amount(..., new_amount: float, ...)`.
+  Found 5 September while researching correction storage. The ledger side handles
+  money exactly through `Money`, so a corrected figure entered on the graph and a
+  total computed from the ledger can disagree at the cent, and the settled rule
+  that only the corrected value feeds sums makes that disagreement load bearing.
+  **Direction: fix it as part of Phase 2 item 10**, when the correction path is
+  built properly against the ledger, rather than patching the graph call in
+  isolation — item 10 is where the two paths have to be reconciled anyway. **If
+  anything starts relying on graph corrections before then, fix it immediately
+  instead.**
 - **`IngestionRunHandle.terminate()` does not check the row's stored status.**
   Found this session by reading `runs.py`. It guards only on the in-process
   `self._closed` flag, then unconditionally assigns `run.status`. So a run the
