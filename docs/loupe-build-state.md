@@ -3,23 +3,24 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records `519895e`, chunk 4b of the quarantine
-screen: the list of rows being held out of the totals, and a column saying what
-put each one there. **Chunks 1 to 4b are done; chunk 5, the wiring, is the last
-one.** Read the disk note under Standing flags **before running anything** — the
-documented bootstrap no longer works and the replacement is recorded there.)
+**Last updated:** 5 September 2026 (records `e64c2ca`, chunk 5 of the quarantine
+screen: the "Held out" tab wired into the page, and a per-row button that asks
+for the one change the row admits of. **The quarantine screen is complete and
+Phase 2 item 6 is closed. The next unit is item 8, adjudication and proof
+class.** Read the disk note under Standing flags **before running anything** —
+the documented bootstrap no longer works and the replacement is recorded there.)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `519895e`
-  (`519895e27ddbfdccf46cc83d31667caf608864cd`), "Show the quarantined rows, and
-  what put them there", parent `eb8f0ea` (which was the state-file commit for
-  `66d1e67`). **Confirm the real tip with `git log --oneline -5`** at the start of
-  every session rather than trusting this line — the state-file commit that
-  follows this one will already have moved it.
+- **Head when this was written:** `e64c2ca`
+  (`e64c2ca9ea5bf12f398a6e935ac192b121a44c0b`), "Put the held-out rows on screen
+  and let a person change one", parent `73f828a` (which was the state-file commit
+  for `519895e`). **Confirm the real tip with `git log --oneline -5`** at the
+  start of every session rather than trusting this line — the state-file commit
+  that follows this one will already have moved it.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 - **The build order lives in `docs/loupe-wiring-plan.md`,** not in this file. Read
   it before picking up work. It is an agreed plan and is not to be resequenced
@@ -47,27 +48,27 @@ disk note under Standing flags.
 
 ### Scale
 
-**118 commits** since `c4246c0` (27 August), counting `519895e`; 119 once the
+**120 commits** since `c4246c0` (27 August), counting `e64c2ca`; 121 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`, not incremented from the previous figure.
 
 `backend/services/financial/` **50 modules** excluding `__init__.py`;
 `backend/tests/test_financial_*.py` **57 files**, **3,336 tests**.
 
-### Gate baselines as of `519895e`
+### Gate baselines as of `e64c2ca`
 
-- **Frontend unit: 72 files, 612 tests.** Re-run this session in full, green. Up
-  one file and 26 tests from `66d1e67`'s 71/586, accounted for exactly by the new
-  `QuarantinePanel.test.tsx` (13) plus the tests added to two existing files:
-  `ledger-format.test.ts` (+6) and `LedgerTable.test.tsx` (+7). 612 includes the
-  stray probe test.
+- **Frontend unit: 72 files, 633 tests.** Re-run this session in full, green. No
+  new file; up 21 tests from `519895e`'s 72/612, accounted for exactly by three
+  existing files: `FinancialPage.test.tsx` (+9 — four for the held-out tab, five
+  for the dialog), `LedgerTable.test.tsx` (+7) and `ledger-format.test.ts` (+5).
+  633 includes the stray probe test.
 - **`tsc -b --force` 0, `eslint .` 0.** Both re-run this session over the whole
   project, not just the touched files. `--force` was used deliberately so the
   result could not come from a cached build info file.
 - **Backend financial suite: `Ran 3336 tests, OK (skipped=12)`.** NOT re-run at
-  this head and it did not need to be: the commit touched six frontend files and
-  no Python. The figure carries forward from `35cc6be`, where it was measured.
-  **There are no expected failures.**
+  this head and it did not need to be: the commit touched eleven frontend files
+  and no Python. The figure carries forward from `35cc6be`, where it was
+  measured. **There are no expected failures.**
 - **Frontend browser: NOT RUN, and it could not be.** See the disk note. Last
   known-good figure is 2 files, 4 tests. **Do not carry "browser green" forward
   as though it were verified at this head.**
@@ -92,111 +93,125 @@ Counted directly, not from memory:
 
 ## What this session did
 
-**Chunk 4b of the quarantine screen landed as `519895e`.** Six files, 747
-insertions, 9 deletions. Frontend only; no Python was touched.
+**Chunk 5 of the quarantine screen landed as `e64c2ca`, and with it the screen is
+finished.** Eleven files, 718 insertions, 39 deletions. Frontend only; no Python
+was touched.
 
-This is the list itself: the rows a case is holding out of its own totals, with a
-column saying what put each one there. Chunk 4 built the dialog for changing one
-row. **Nothing here imports that dialog. Wiring the two together is chunk 5, and
-chunk 5 is the last one.**
+Chunks 1 to 4b built the pieces and wired none of them to anything: the dialog
+existed and no screen opened it, the quarantined list existed and no tab showed
+it. This is the commit that connects them. The financial page gains a **"Held
+out"** tab, and **every ledger row gains a button** that asks for the one change
+that row admits of.
+
+**Phase 2 item 6, quarantine, is now complete end to end** — write path,
+localisation reader, and screen.
 
 ### What landed
 
-- **`lib/ledger-format.ts`** (+71). New `readQuarantineGrounds`, and the
-  `QuarantineGrounds` type it returns.
-- **`components/LedgerTable.tsx`** (+108, −9). The grounds column, behind a
-  `showQuarantineGrounds` flag, off by default.
-- **`components/QuarantinePanel.tsx`** (144 lines, new).
-- **`lib/ledger-format.test.ts`** (+61, 6 tests),
-  **`components/LedgerTable.test.tsx`** (+116, 7 tests),
-  **`components/QuarantinePanel.test.tsx`** (256 lines, 13 tests, new).
+- **`lib/ledger-format.ts`** (+40). `RowChange`, `ROW_CHANGE_LABELS` and
+  `changeAvailableFor`. The single reading of which change a row admits of.
+- **`components/LedgerTable.tsx`** (+97, −8). The action column, drawn only when
+  `onAdjudicate` is given, plus the eighth and ninth column arithmetic.
+- **`components/FinancialPage.tsx`** (+74, −6). The sixth tab, the dialog's mount
+  point, and the page state that drives it.
+- **`stores/financial.store.ts`** (+23, −3). `"quarantine"` added to
+  `FinancialMainView`.
+- **`components/LedgerPanel.tsx`** (+12, −1) and
+  **`components/QuarantinePanel.tsx`** (+17, −1): `onAdjudicate` threaded
+  through, plus the docstrings explaining why neither of them owns the dialog.
+- **`components/RowAdjudicationDialog.tsx`** (+20, −1) and
+  **`hooks/use-row-adjudication.ts`** (+12, −1): docstring only, recording the
+  mount point that was decided here.
+- **`components/FinancialPage.test.tsx`** (+301, 9 tests),
+  **`components/LedgerTable.test.tsx`** (+114, 7 tests),
+  **`lib/ledger-format.test.ts`** (+47, 5 tests).
 
-### The question this chunk existed to settle, and how it was settled
+### Where the dialog is mounted, and why it is not anywhere more obvious
 
-The plan left one thing open and said to settle it *against `LedgerTable.tsx`, by
-reading it rather than by reasoning from the plan*: **a conditional column on the
-existing table, or a second table of its own.**
+**The dialog is mounted by `FinancialPage`, on the page's own state, outside the
+`Tabs` element and outside both panels.** This is the keep-mounted rule from
+chunk 4a, and chunk 5 is where it stops being a note and starts constraining
+code.
 
-**It is a conditional column.** Read the table and three of its seven cells turn
-out to be correctness rather than presentation: the amount cell marks a figure it
-could not scale instead of printing a plausible wrong one, the balance cell says
-a running balance was absent rather than leaving a blank, and every closed
-vocabulary renders an unrecognised member loudly instead of going empty. A second
-table would be a second copy of all three, and **the copy is what drifts** — it
-does not drift on the day it is written, it drifts on the day one of the three is
-corrected in one place only.
+The mechanism, stated exactly: a change that succeeds invalidates
+`["financial-ledger", caseId]`, which is a prefix of both the admitted list and
+the quarantined list. So the row **leaves the list it was clicked in**. Both
+panels return an early empty state before rendering anything below them, so a
+dialog owned by a panel is unmounted at the moment its answer arrives — and that
+answer, including whether the change rescued a reconciled period, **is said in
+that one mutation response and on no record anywhere**. Mounting it outside the
+tab strip covers the same failure one level up: Radix `Tabs` mounts only the
+active tab's content, so a dialog inside a tab dies on a tab change too.
 
-*What would reverse it:* the quarantined list needing a cell the general ledger
-list has no use for. It does not today; the grounds column was the only such cell
-and it fits behind a flag.
+**Two tests pin it, one per panel:** the row goes on being passed to the dialog
+after it has left every list on screen.
 
-- **The status column stays when the grounds column appears,** rather than being
-  replaced by it. A row that is somehow *not* quarantined while sitting in a
-  quarantined list is exactly the thing a reader has to be able to see, and
-  hiding the status because "they are all quarantined" is what would hide it.
-- **The reason moves rather than duplicates.** With the column on, the badge
-  leaves the status cell; there is one of it on the row either way. Pinned by a
-  test that reads the status cell's own text and asserts the reason is not still
-  in it.
+**There is no companion test for changing tab while the dialog is open, and this
+is a fact about Radix, not an omission.** The dialog is modal, so Radix marks the
+rest of the document `aria-hidden` and the tab strip cannot be reached by role.
+The test is unreachable by construction. The mount point is outside `Tabs`
+anyway, which is what the code guarantees; the two panel tests are what can
+actually be asserted.
 
-### What the grounds column actually says
+### The store question, settled by reading `financial.store.ts`
 
-- **`readQuarantineGrounds` wraps `readQuarantineReason` rather than replacing
-  it,** so a caller that needs the badge and the classification does not call two
-  readers and hope they agree.
-- **Only `adjudicated` is a person's decision.** Settled by reading
-  `QuarantineBasis`: grounds are a proof or a person and nothing else, and
-  `from_adjudication` is the only constructor that produces `adjudicated`, with
-  `quarantine_case_row` refusing to let a person type any of the others. A screen
-  that blurred the two would let a class a person raised read as one the
-  arithmetic proved.
-- **`decidedByPerson` is three-valued, and the third value is not `false`.** An
-  unrecognised member gets `null`, surfaced as
-  `data-decided-by-person="unknown"`. `false` means *the ledger's own checks
-  established this*, which is the more trusted of the two answers, and a member
-  this build cannot read has not earned it.
-- **The words behind an adjudicated hold are not on this screen, so the screen
-  says where they are.** Established by reading the model:
-  `AdjudicationEvent.__tablename__` is `adjudications` and its `reason` column is
-  `Text, nullable=False` — free text and mandatory, because an adjudication
-  without a stated reason is an unexplained edit. The ledger read carries the
-  *category* and no detail field. Saying "a person decided" and stopping would
-  leave a reader to conclude no reason was given, so both the column's origin
-  text and the panel point at the adjudication record instead.
-- **The badges stay outline in both positions.** Filled would read as a second
-  status when stacked under one; colouring them once they have a column of their
-  own would rank five different grounds as if they were a severity scale.
+`FinancialMainView` gained a sixth member, `"quarantine"`. The question that had
+to be settled before adding it was whether a persisted store needed a migration,
+because a browser holding `mainView: "trends"` from an older build must not be
+able to put the page into a state the new build cannot render.
 
-### Why `QuarantinePanel` is a component and not `<LedgerPanel params={...} />`
+**No migration is needed, and this was read rather than assumed.** `mainView` is
+**omitted from `partialize`**, so it is never written to storage in the first
+place, and `merge` **deletes it** from any incoming persisted object before the
+merge. A value stored by an older build is discarded on read. There is nothing to
+migrate because there is nothing persisted.
 
-**The empty state means the opposite thing.** `LedgerPanel`'s empty copy tells a
-reader that quarantined, superseded and rejected rows are sitting outside the
-filter, uncounted, and to change the status filter to see them. Pointed at a
-quarantined list that sentence states the reverse of what was checked: quarantined
-rows are not outside this filter, they are the whole of it. Zero rows here means
-nothing in the case is being held out of its totals, which is a good result and
-now reads as one. There is a test that asserts the borrowed sentence is *not*
-present, because that is the failure that would otherwise be invisible.
+*What would reverse it:* `mainView` being added to `partialize`. At that moment
+the store needs a version bump and a migration, and the sixth member is the
+reason.
 
-Three smaller things follow the same logic. **The status is fixed, not
-defaulted**, so no caller can point a panel whose every sentence is about
-quarantine at some other population; a test casts past the prop type to prove the
-runtime guarantee, not just the compile-time one. **The count comes from the rows,
-not from `total`** — the endpoint returns `total` as `len(transactions)` of the
-same response, so a disagreement can only mean paging has appeared without this
-screen knowing, and a page of quarantined rows shown as the whole set is an
-undercount of what is being excluded. **The read is the ordinary ledger read**
-with `ledger_status=quarantined`; there is no endpoint of its own and none is
-needed.
+### The action column, and the row it refuses to guess about
 
-### One test deliberately not written
+**Which change a row admits of is one reading, `changeAvailableFor`, in
+`lib/ledger-format.ts`.** It lives in `lib/` and not in a hook because `lib/`
+must not import from `hooks/`, and both the table and the dialog need it. The
+word on the row and the word on the button that commits the change come from
+`ROW_CHANGE_LABELS`, one definition. A person who presses one word and is asked
+to confirm a different one has been handed something to reconcile while deciding
+whether a figure counts.
 
-`api.ledger.test.ts` already reads the Python off disk and closes
-`QUARANTINE_REASONS` against the backend enum, so a sixth member added there fires
-in that file. Repeating it here would have been a second guard on the same fact.
-The new test covers the other half instead: a member that is *in* the list and has
-no classification would report as unknown grounds while being perfectly
-recognised, which nothing else would catch.
+- **Quarantined offers a release; every other readable status offers a setting
+  aside** — including `superseded` and `rejected`, which the ledger may well
+  refuse. **The refusal is deliberately not pre-empted in the browser.** It is an
+  answer a person is entitled to see and it arrives in the response to the ask; a
+  button withheld here replaces that answer with silence. This is the same rule
+  as chunk 4a's "does not screen out rows the ledger will refuse", now applied a
+  layer up.
+- **A status this build cannot read gets no button, and the cell says so.**
+  `changeAvailableFor` returns `null`, and the cell renders "Status unread, no
+  change offered" rather than going blank. An empty cell in a column of buttons
+  reads as *nothing can be done to this row*, when what is true is that this
+  build cannot tell **whether the row is counting toward the totals at all**.
+  That is the one row on the screen that most needs explaining.
+- **The column is drawn only when `onAdjudicate` is given.** A column of buttons
+  that do nothing would say a change can be asked for from a screen that cannot
+  ask for one. The general ledger list and the quarantined list both pass it; a
+  caller that does not gets the seven-column table unchanged.
+- **The table hands the row back and stops.** No mutation, no dialog, no state.
+  This is what keeps every case in `LedgerTable.test.tsx` testable against rows
+  alone.
+
+### Two guards written so a later change cannot go quiet
+
+- **`changeAvailableFor` is tested by looping over `LEDGER_STATUSES`,** not
+  against a hand-written list. A fifth member added to the backend enum and not
+  thought about here would otherwise fall through to `"quarantine"` by default
+  rather than being decided on; the loop asserts every known status classifies
+  non-null.
+- **The table tests assert `data-change`, not the button text.** The two labels
+  can be reworded without the rule going quiet, which is the point: the rule is
+  *which change was offered on which row*, and that must not be pinned to
+  wording somebody will improve.
 
 ### Carried forward: the environment, unchanged and still broken
 
@@ -209,11 +224,13 @@ suite unrunnable by the documented route. **This is not something a session can
 fix**; almost none of the used space belongs to this session, and the rest is
 other sessions' directories that are not readable or removable from here.
 
-**The workaround, which worked in the previous session and was not needed in this
-one** — nothing backend was touched, so the suite was correctly not run: install
-into the `/dev/shm` tmpfs, which is 2.0G and starts empty, and put it on
-`PYTHONPATH`. The seventeen packages come to 151M, so there is ample room.
-`/dev/shm` was measured this session at 1.8G available.
+**The workaround, which worked two sessions ago and has not been needed since** —
+neither `519895e` nor `e64c2ca` touched Python, so the backend suite was
+correctly not run at either: install into the `/dev/shm` tmpfs, which is 2.0G,
+and put it on `PYTHONPATH`. The seventeen packages come to 151M, so there is
+ample room. `/dev/shm` was re-measured at the end of this session at **1.8G
+available**. **The next unit is item 8, which is backend work, so this is the
+first thing the next session will need.**
 
 ```
 PYLIB=/dev/shm/pylibs-$(id -un); mkdir -p "$PYLIB" /dev/shm/tmp-$(id -un)
@@ -263,26 +280,26 @@ unchanged and correct, including that the index name must carry the current user
 
 ### Verification
 
-The four affected test files were run on their own first — **79 tests, green on
-the first attempt** — and only then was the whole project run. Frontend unit in
-full and green, **72 files / 612 tests**, up exactly the 26 added from
-`66d1e67`'s 71/586. `eslint .` 0 and `tsc -b --force` 0, both over the whole
+The affected test files were run on their own first — **68 tests across
+`ledger-format.test.ts` and `LedgerTable.test.tsx`, green** — and only then was
+the whole project run. Frontend unit in full and green, **72 files / 633 tests**.
+The delta was checked rather than eyeballed: 612 → 633 is +21, which is
+`ledger-format` +5, `LedgerTable` +7 and `FinancialPage` +9. **Nothing
+unaccounted for.** `eslint .` 0 and `tsc -b --force` 0, both over the whole
 project; `--force` deliberately, so a clean result could not be coming from a
-stale build info file. Backend not run and not claimed — the commit is six
+stale build info file. Backend not run and not claimed — the commit is eleven
 TypeScript files and no Python.
 
-Nothing failed on the way in, which is worth naming rather than glossing: the two
-traps recorded at `66d1e67` were the reason. The tests mock the hook, never
-`../api`, so the closed vocabularies the format readers import stayed real; and
-nothing in this chunk reads `isPending` after a click, because nothing in it
-clicks.
+**Every gate command was redirected to a file and its status read from `$?`,
+never through a pipe.** `CLAUDE.md` warns about this and it is the trap that
+turns a failing gate into a passing one.
 
-The staged tree (`fb9471d5196eec77b8379c0cccd098d828602a5a`) was diffed against
-`HEAD` before committing and held exactly the six intended files, 747 insertions
-and 9 deletions, with the untracked `.bak` files, the probe test and all of
-Neil's case material correctly excluded. `git status --porcelain | grep -v '^??'`
-was empty afterwards, and `git log --oneline` confirms `519895e` sitting on
-`eb8f0ea`.
+The staged tree (`fbedc1c356ad32b29f21e9756340da58ab9a763a`) was diffed against
+`HEAD` before committing and held exactly the eleven intended files, 718
+insertions and 39 deletions, with the untracked `.bak` files, the probe test and
+all of Neil's case material correctly excluded. `git status --porcelain |
+grep -v '^??'` was empty afterwards, and `git log --oneline` confirms `e64c2ca`
+sitting on `73f828a` sitting on `519895e`.
 
 The `warning: unable to unlink '.git/objects/../tmp_obj_...': Operation not
 permitted` lines during `write-tree` and `commit-tree` are the known workspace
@@ -292,6 +309,28 @@ failure, do not chase them.**
 ---
 
 ## The previous sessions, in brief
+
+**`519895e`, chunk 4b of the quarantine screen.** Six files, 747 insertions, 9
+deletions, frontend only. The list of rows a case is holding out of its own
+totals, plus a column saying what put each one there: `readQuarantineGrounds` in
+`lib/ledger-format.ts`, the grounds column on `LedgerTable.tsx` behind
+`showQuarantineGrounds` (off by default), and `components/QuarantinePanel.tsx`.
+**The open question — a conditional column on the existing table or a second
+table — was settled in favour of the column by reading `LedgerTable.tsx`:** three
+of its seven cells are correctness rather than presentation (the amount cell
+marks a figure it could not scale, the balance cell says a running balance was
+absent, every closed vocabulary renders an unrecognised member loudly), and a
+second table would be a second copy of all three. **The copy is what drifts** —
+not on the day it is written, on the day one of the three is corrected in one
+place only. *Reversed by:* the quarantined list needing a cell the general list
+has no use for. **The status column stays when the grounds column appears**,
+because a row that is somehow not quarantined inside a quarantined list is
+exactly what a reader must be able to see. **`QuarantinePanel` is its own
+component and not `<LedgerPanel params={{ ledgerStatus: "quarantined" }} />`**
+because the empty state means the opposite thing: zero rows there means rows are
+sitting outside the filter uncounted, zero rows here means nothing is being held
+out, which is a good result. A test asserts the borrowed sentence is *not*
+present. The rest of its rules are under "And on the frontend" below.
 
 **`66d1e67`, chunk 4 of the quarantine screen.** Two files, 1,103 insertions,
 frontend only. Added `components/RowAdjudicationDialog.tsx` (523 lines) plus 28
@@ -975,9 +1014,54 @@ Read it before touching anything in item 6's remaining half.
 - **Ordering runs needs the secondary sort on `id`.** `started_at` alone is not
   a total order. Same rule now applies to ordering periods.
 
-### And on the frontend, as of `519895e`
+### And on the frontend, as of `e64c2ca`
 
-Rules from the five quarantine-screen chunks so far.
+Rules from the quarantine screen, now complete in six commits.
+
+From the wiring, `FinancialPage.tsx`, `LedgerTable.tsx`, `financial.store.ts` and
+`ledger-format.ts`:
+
+- **`RowAdjudicationDialog` is mounted by `FinancialPage`, on page state, outside
+  `Tabs` and outside both panels. Do not move it into either.** A successful
+  change invalidates `["financial-ledger", caseId]`, which is a prefix of both
+  lists, so the row leaves the list it was clicked in and the panel returns its
+  early empty state; and Radix `Tabs` mounts only the active tab's content, so a
+  tab change would do the same one level up. Either way the dialog is torn down
+  at the moment its answer arrives, **and `rescues_period` with it**, which is
+  said in that one response and on no record.
+- **Two tests pin the mount point, one per panel:** the row goes on being passed
+  to the dialog after it has left every list on screen. **There is no test for a
+  tab change while the dialog is open and there cannot be one** — the dialog is
+  modal, Radix marks the rest of the document `aria-hidden`, and the tab strip
+  cannot be reached by role behind it. Do not file this as missing coverage.
+- **`changeAvailableFor` in `lib/ledger-format.ts` is the single reading of which
+  change a row admits of,** and `ROW_CHANGE_LABELS` the single source of the two
+  words. It is in `lib/` and not a hook because **`lib/` must not import from
+  `hooks/`** and both the table and the dialog need it. A second copy of either
+  lets the word on the row and the word on the confirm button disagree.
+- **`null` from it means "this build cannot read the status", not "no change is
+  possible".** The cell says "Status unread, no change offered" rather than going
+  blank; a blank cell in a column of buttons reads as *nothing can be done to
+  this row*, when what is true is that the build cannot tell whether the row
+  counts toward the totals. **Do not render an empty cell here.**
+- **Every readable status other than `quarantined` is offered a setting aside,
+  including `superseded` and `rejected`.** The ledger may refuse; the refusal is
+  the answer and it arrives in the response. **Do not add a client-side status
+  filter to the button** — same rule as the dialog's, one layer up.
+- **The action column is drawn only when `onAdjudicate` is passed.** A column of
+  buttons that do nothing states that a change can be asked for from a screen
+  that cannot ask for one.
+- **`LedgerTable` never mutates.** It hands the row back and stops, which is what
+  keeps every case in its test file assertable against rows alone.
+- **`changeAvailableFor`'s tests loop over `LEDGER_STATUSES`,** so a fifth member
+  added to the backend enum cannot silently fall through to `"quarantine"`. **The
+  table's tests assert `data-change`, not the button text,** so the labels can be
+  reworded without the rule going quiet.
+- **`mainView` is omitted from `partialize` and deleted in `merge`, so it is
+  never persisted and a new member needs no migration.** Read there, not assumed.
+  **If `mainView` is ever added to `partialize`, that changes: the store then
+  needs a version and a migration**, and a browser holding an older value could
+  otherwise put the page in a state the build cannot render.
 
 From the list, `QuarantinePanel.tsx`, `LedgerTable.tsx` and `ledger-format.ts`:
 
@@ -1109,7 +1193,8 @@ From the hook and the layers below it:
 - **`outcome`, `ledger_status` and `quarantine_reason` are `string` on purpose.**
   Narrowing is `adjudication-format.ts`'s job. Do not "fix" them into unions.
 
-Everything below is unchanged from `bc23570`.
+Everything below is from `bc23570`, **except the two `FinancialMainView` bullets,
+which were updated at `e64c2ca` when the sixth tab landed.**
 
 - **`readRunStatus(raw).needsAttention`** is true for `pending`, `running`,
   `failed`, `aborted`, and **false for an unrecognised status**, deliberately,
@@ -1131,11 +1216,12 @@ Everything below is unchanged from `bc23570`.
 - **The notice is a sibling of `LedgerPanel`, not inside it.** `LedgerPanel`'s
   four early returns would otherwise hide it exactly when the ledger is empty.
   **Do not "tidy" this by nesting them.**
-- **`FinancialMainView` has five members**, `"ledger" | "runs" | "transactions"
-  | "counterparties" | "trends"`. **The order is load bearing:** the first two
-  read Postgres, the last three read the graph.
-- **The ledger and attempts tabs take no graph chrome.** A case with an empty
-  graph must still reach both.
+- **`FinancialMainView` has six members** as of `e64c2ca`, `"ledger" | "runs" |
+  "quarantine" | "transactions" | "counterparties" | "trends"`. **The order is
+  load bearing:** the first three read Postgres, the last three read the graph,
+  and `"quarantine"` is placed with the first group for that reason.
+- **The ledger, attempts and held-out tabs take no graph chrome.** A case with an
+  empty graph must still reach all three.
 - **`api.runs.test.ts` reads the Python source** to prove the two languages
   still agree. A backend change to the route, the parameters, the envelope keys
   or the ordering clause fails a frontend test. That is the intended alarm.
@@ -1156,22 +1242,67 @@ turns out to depend on something later in the list, stop and ask.
   ingest endpoint ✅ `43f8358`, the interface action on a held file ✅ `17d94ac`,
   mount the ledger ✅ `4324b24`.
 - **Phase 2, make the rows trustworthy** — runs ✅ item 5 complete (backend
-  `cde43c5`, notice `8924668`, attempts list `bc23570`); quarantine item 6
-  **backend complete, screen in progress** (write path `150084a`, localisation
-  reader and rescue reporting `35cc6be`, screen chunks 1 to 4b of 5 `1894fc4`,
-  `19bffae`, `610df9b`, `66d1e67` and `519895e`);
-  reconciliation ✅ item 7 (`dfcef2b`).
-  Then adjudication and proof class, duplicates, suspect amounts, locators.
+  `cde43c5`, notice `8924668`, attempts list `bc23570`); quarantine ✅ item 6
+  **complete end to end** (write path `150084a`, localisation reader and rescue
+  reporting `35cc6be`, screen chunks 1 to 5 `1894fc4`, `19bffae`, `610df9b`,
+  `66d1e67`, `519895e` and `e64c2ca`); reconciliation ✅ item 7 (`dfcef2b`).
+  **Next is item 8, adjudication and proof class**, then duplicates, suspect
+  amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-### Next unit: the quarantine screen, chunk 5 — the last one
+### Next unit: item 8, adjudication and proof class
 
-**Chunks 1 to 4b landed, as `1894fc4`, `19bffae`, `610df9b`, `66d1e67` and
-`519895e`.** The screen was planned in five commits; chunk 4 was split in two
-because the dialog alone came to 1,103 insertions. **Pick up at chunk 5: wiring.
-Everything it needs is built and nothing is wired to anything.**
+**Start here.** The wiring plan's own words for it: *"`assign_proof_class`,
+`requires_adjudication`, `record_admission`, the decisions surface. Proof class
+is computed and never set by hand; the interface shows it and shows what an
+adjudication changed, and never offers a control that sets it."*
+
+**Four facts established by grepping the source at `e64c2ca`, not remembered.**
+They change the shape of the unit, so check them again before building but do not
+re-derive them from scratch:
+
+- **`assign_proof_class` already has production callers and is not dark code.**
+  It is called from `camt053.py`, `bai2.py`, `mt940.py`, `nacha.py` and
+  `documents.py` (three call sites there, including `proof_class=...` on a draft).
+  So proof class is **already being computed and stored at parse time**. This
+  unit is not "start computing it"; it is the surface that shows it.
+- **`requires_adjudication` has zero production callers.** It is defined at
+  `proof_class.py:206` and exported from `__init__.py`, and nothing else calls
+  it. That is the gap.
+- **`record_admission` has zero production callers.** Defined at
+  `admission.py:104`, exported, and referenced only in docstrings —
+  `reconcile_case.py:28` and `routers/financial_reconciliation.py:33` both say in
+  so many words that it is *"a later unit"*. **This unit is that later unit.**
+- **`routers/financial_adjudication.py` exists but has only two routes,** both
+  from item 6: `POST /transactions/{id}/quarantine` and
+  `.../release`. There is **no admission route and no proof-class route.** The
+  router, its permission dependency `_adjudication_case_permission` and its
+  `_respond` helper are already built and are the natural home.
+
+**Read before building:** `services/financial/proof_class.py`,
+`services/financial/admission.py`, `services/financial/adjudication.py` (which
+carries `AdjudicationError`, `UnpaidObligationError`, `MalformedVerdictError` and
+the `Adjudication` class at line 180), and `routers/financial_adjudication.py`.
+**Do not plan the chunking from this file** — plan it from those four.
+
+**This is backend work, so the `/dev/shm` pip bootstrap under "Carried forward"
+is the first thing the session has to do.** The documented `CLAUDE.md` bootstrap
+still fails on `ENOSPC`.
+
+**The settled rule that constrains the whole unit** is already in `CLAUDE.md`:
+*proof class is computed, never set by hand, including by us. A class a person
+can raise is an opinion.* So the surface shows the class and shows what an
+adjudication changed; it never offers a control that sets a class.
+
+### The quarantine screen, as built — item 6 is closed
+
+Six commits, the last of them `e64c2ca`. The screen was planned in five; chunk 4
+was split in two because the dialog alone came to 1,103 insertions. **Nothing in
+this list is outstanding.** It is kept because the chunk boundaries record where
+each rule was decided, and the rules themselves are under "And on the frontend"
+above.
 
 - **Chunk 1 ✅ `1894fc4`.** `api.ts`: the two calls, the `RowAdjudication` shape,
   `ROW_ADJUDICATION_OUTCOMES`, `ROW_ADJUDICATION_FIELDS`, `RowAdjudicationParams`,
@@ -1207,37 +1338,24 @@ Everything it needs is built and nothing is wired to anything.**
   `components/QuarantinePanel.tsx`, plus tests. The conditional-column-versus-
   second-table question was **answered against `LedgerTable.tsx` in favour of the
   column**; reasoning and reversal in the session notes above and in Standing
-  decisions below. What chunk 5 needs to know: **`QuarantinePanel` takes
-  `caseId: string | undefined` and an optional `params` that cannot carry
-  `ledgerStatus`**, and it handles the no-case, loading, error and empty states
-  itself, so a caller mounts it and passes the case. Nothing in it imports the
-  dialog.
-- **Chunk 5 — wire the tab into the store and `FinancialPage`, and the set-aside
-  action on the ledger, then commit.** `FinancialMainView` gains its sixth
-  member; the ledger row gets the action that opens the dialog. **This is the
-  chunk that has to respect the keep-mounted rule:** a successful change
-  invalidates the ledger lists, so the row leaves the list underneath the dialog,
-  and the answer — including `rescues_period`, which exists in no other response
-  — lives in the dialog's own mutation. A caller that unmounts the dialog when
-  its row leaves the list destroys the answer before it has been read. The row
-  identity the dialog sends is `row.key`, which the backend sets at
-  `services/financial/transaction_query.py:184` as `key=str(row.id)` — read
-  there, not remembered. If a guard proving the adjudication route and the
-  ledger read still name the same identity is wanted, it belongs here, walking
-  the source the way `api.runs.test.ts` does.
+  decisions below. **`QuarantinePanel` takes `caseId: string | undefined` and an
+  optional `params` that cannot carry `ledgerStatus`**, and it handles the
+  no-case, loading, error and empty states itself, so a caller mounts it and
+  passes the case.
+- **Chunk 5 ✅ `e64c2ca`.** The "Held out" tab wired into `financial.store.ts`
+  and `FinancialPage.tsx`, the action column on `LedgerTable.tsx` driven by
+  `changeAvailableFor`, and the dialog mounted on page state outside `Tabs` and
+  outside both panels. `FinancialMainView` took its sixth member with **no
+  migration**, because `mainView` is omitted from `partialize` and deleted in
+  `merge`. Rules under "And on the frontend" above.
 
-What the screen has to show, and why each thing is on the list:
-
-- **The quarantined population**, which has existed since `150084a` and is still
-  reachable only through the API. **The ledger tab's own totals silently exclude
-  it,** so today a row can be set aside and leave no trace on screen.
-- **Why a row is held.** `quarantine_reason` distinguishes computed grounds from
-  `adjudicated`, and this is the column that matters most: an arithmetic proof
-  and a person's opinion must not look alike.
-- **`rescues_period`, three-valued.** See the localisation rules above. The
-  interface has to distinguish `False` from `None`, and this is the **only**
-  place the rescue fact currently surfaces, because it is deliberately not in the
-  log. If the screen drops it, the fact is lost entirely.
+**One guard considered and not written, recorded so it is not silently
+forgotten.** The row identity the dialog sends is `row.key`, which the backend
+sets at `services/financial/transaction_query.py:184` as `key=str(row.id)` — read
+there, not remembered. A test walking the Python to prove the adjudication route
+and the ledger read still name the same identity, the way `api.runs.test.ts`
+does, would be a real guard and does not exist. **It is not blocking anything;
+pick it up if a session has room.**
 
 ### Two questions settled by reading the source, not open
 
@@ -1267,8 +1385,9 @@ reverse it:* item 8 giving the list a second source.
   table.** Settled at `519895e` by reading `LedgerTable.tsx`, which is what this
   bullet used to defer. `showQuarantineGrounds` is off by default, so the general
   ledger list is unchanged; `QuarantinePanel` turns it on. `FinancialMainView`
-  gaining a sixth member is still the shape for chunk 5, placed with the first two
-  because it reads Postgres.
+  gained its sixth member at `e64c2ca`, placed with the first two because it reads
+  Postgres. **This bullet is now history rather than plan; nothing here is
+  outstanding.**
 
 ### Where the old numbering went
 
@@ -1516,17 +1635,16 @@ before item 12 lands.
 - **Whether ingestion should trigger a sweep at the end of a run is not
   decided and was not decided here.** It is the obvious next caller, and item 8
   (proof class) is the unit that will actually need one. Flagged, not parked.
-- **Every part of the quarantine screen now exists and none of it is reachable.**
-  As of `519895e` the frontend has the two calls (`financialAPI.quarantineRow`,
-  `.releaseRow`), a reader for the answer, a hook that makes the call and
-  invalidates the ledger, `RowAdjudicationDialog`, and `QuarantinePanel` with the
-  grounds column behind it. All complete, all tested. **No route, tab or row
-  action reaches any of it, and nothing imports the dialog.** Chunk 5 is the
-  whole of what is missing. Until it lands, the quarantined population is
-  reachable only via `GET /api/financial/ledger?ledger_status=quarantined`, and
-  **the ledger tab's own totals silently exclude it**. This is now a
-  one-commit gap rather than a build gap, and it is worth saying plainly because
-  the number of finished-but-unreachable components makes it easy to over-claim.
+- **The quarantine screen is reachable as of `e64c2ca`, and this flag is
+  cleared.** It read, for four commits, that every part existed and none of it
+  was reachable. That is no longer true: the "Held out" tab is in the tab strip,
+  `QuarantinePanel` renders under it, every ledger row carries an action button,
+  and `RowAdjudicationDialog` is mounted on the page and opened by it. The two
+  calls, the reader, the hook, the dialog and the grounds column are all wired
+  end to end. **What remains true and still worth stating: the ledger tab's own
+  totals exclude quarantined rows.** That is the point of quarantine, but it
+  means the held-out tab is the only place the excluded population is visible,
+  and nothing on the ledger tab says a total is net of anything.
 - **The write path reports when a quarantine is what makes a statement balance,
   and as of `66d1e67` something finally renders it.** The fact is deliberately
   not stored in the log, so if it is not on screen at the moment of the decision
@@ -1537,14 +1655,20 @@ before item 12 lands.
   whenever the reading has anything to say. **This is closed as a gap, and it
   converts into the keep-mounted rule:** the only copy of the fact lives in the
   dialog's mutation, so a caller that unmounts the dialog when the row leaves the
-  list destroys it. Chunk 5 is where that can go wrong.
+  list destroys it. **`e64c2ca` is the commit that had to honour that, and does:**
+  the dialog is mounted on `FinancialPage` outside `Tabs`, not inside either
+  panel, so an invalidation that empties the list the row came from cannot take
+  the answer with it. Two tests hold it, one per panel. Anything that later moves
+  the mount point back inside a panel breaks this silently.
 - **`QuarantineBasis.from_proof` is still unreachable from HTTP,** by design —
   computed grounds must not be settable by a person. So on a live case every
   quarantined row's reason reads `adjudicated`, and the second value in that
   column arrives with item 8. **Do not read the single value as evidence the
-  distinction is not implemented** — as of `519895e` the grounds column, its
-  `decidedByPerson` classification and the tests over all five members are all
-  built; there is simply only one member a live case can currently produce.
+  distinction is not implemented** — the grounds column, its `decidedByPerson`
+  classification and the tests over all five members are all built and, as of
+  `e64c2ca`, on screen; there is simply only one member a live case can currently
+  produce. **Item 8 is what will produce the second one**, which is one reason it
+  is the next unit.
 - **`localisation.py` has no production caller except `_rescue`.**
   `localise_period` and `current_identity` are reachable and tested but nothing
   in the product asks them anything yet. Item 8 is the expected first caller.
@@ -1577,10 +1701,10 @@ before item 12 lands.
   applied to any real database from a session** — the sandbox has no Postgres.
   First deployment needs an `alembic upgrade head` on Neil's side.
 - **Disk: `/sessions` is completely full and this is the first thing to check
-  every session.** Measured again at `519895e`: 9.8G of 9.8G, **zero bytes
-  available** — unchanged for seven sessions, against 129M eight sessions ago.
+  every session.** Measured again at `e64c2ca`: 9.8G of 9.8G, **zero bytes
+  available** — unchanged for eight sessions, against 129M nine sessions ago.
   Root is at 99% with 120M free. `/dev/shm` is 2.0G with 1.8G free. Every one of
-  those figures came back identical to the previous session's, so this is a
+  those figures came back identical to the previous session's again, so this is a
   steady state rather than something still getting worse.
   - **This does not block the repo, and an older wording implied it did.**
     `df -h` on the repo path shows a **separate virtiofs mount with 36G free**
