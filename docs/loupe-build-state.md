@@ -3,18 +3,18 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the send-to-ledger interface, `17d94ac`)
+**Last updated:** 5 September 2026 (records the ledger mount, `4324b24`)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `17d94ac`
-  (`17d94ac12f83cf470594768e544d089abb8db3e4`), "The interface sends a held bank
-  file to the ledger", parent `a0b9efe`. **Confirm the real tip with
-  `git log --oneline -5`** at the start of every session rather than trusting
-  this line.
+- **Head when this was written:** `4324b24`
+  (`4324b247eac11da2320b14be9bc17f37d8c046e4`), "Mount the ledger on the
+  financial page, as the tab it opens on", parent `f6e3617`. **Confirm the real
+  tip with `git log --oneline -5`** at the start of every session rather than
+  trusting this line.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 - **The build order lives in `docs/loupe-wiring-plan.md`,** not in this file. Read
   it before picking up work. It is an agreed plan and is not to be resequenced
@@ -30,7 +30,7 @@ Still untracked and still un-removable from a session (workspace denies
 - `backend/services/financial/export_manifest.py.bak`
 - `backend/services/financial_export_service.py.bak`
 - `frontend_v2/src/__probe.test.ts` — a diagnostic left by the vitest
-  investigation six sessions ago. It is **counted in the frontend baseline
+  investigation seven sessions ago. It is **counted in the frontend baseline
   below** (it contributes 1 file and 1 test), so when it is deleted the unit
   numbers drop by one each and that is expected, not a regression.
 
@@ -40,134 +40,124 @@ Also untracked, and **not** mine — Neil's own documents, left alone:
 
 ### Scale
 
-85 commits since `c4246c0` (27 August), counting `17d94ac`.
+89 commits since `c4246c0` (27 August), counting `4324b24`.
 
-Backend unchanged this session: `backend/services/financial/` **46 modules**,
+Backend untouched this session: `backend/services/financial/` **46 modules**,
 **33,759 lines**; `backend/tests/test_financial_*.py` **50 files**,
 **3,164 tests**.
 
-### Gate baselines as of `17d94ac`
+### Gate baselines as of `4324b24`
 
 - **Backend financial suite: `Ran 3164 tests, OK (skipped=12)`.** Unchanged; no
-  backend file was touched this session. The gate was run in full anyway.
-  **There are no expected failures.**
-- **Frontend unit: 60 files, 395 tests, all passing.** Up from 58 / 354. The
-  delta is exactly 2 files and 41 tests: `ingest-format.test.ts` (19, new),
-  `SendToLedgerDialog.test.tsx` (13, new), and `ProcessHoldDialog.test.tsx`
-  (21 → 30). The `CLAUDE.md` figure of 54/285 is stale; 395 includes the stray
-  probe test.
-- **Frontend browser: 2 files, 4 tests.** `tsc -b` returns 0. `eslint .` returns 0.
+  backend file was touched this session. The gate was run in full anyway and the
+  count line was read, not inferred from the exit code. **There are no expected
+  failures.**
+- **Frontend unit: 62 files, 405 tests, all passing.** Up from 60 / 395. The
+  delta is exactly the two files added this session and their ten tests:
+  `FinancialPage.test.tsx` (6) and `financial.store.test.ts` (4). Nothing else
+  moved. The `CLAUDE.md` figure of 54/285 is stale; 405 includes the stray probe
+  test.
+- **Frontend browser: 2 files, 4 tests — NOT RUN THIS SESSION.** See the disk
+  note under Durable facts. The number above is carried from `17d94ac` and has
+  not been re-verified. It cannot cover this change either way: its only two
+  files are `TextSearchPanel.browser.test.tsx` (evidence) and
+  `CaseSettingsPage.browser.test.tsx` (cases), and grepping both for financial
+  and ledger imports returns nothing, while every file changed this session is
+  under `features/financial/`. **Re-run it next session if the disk allows.**
+- **`tsc -b --force` returns 0. `eslint .` returns 0.** Both re-run after the
+  last edit.
 
 ---
 
 ## What this session did
 
-**Phase 1 item 3 of the wiring plan: the interface sends it.** Committed as
-`17d94ac`, ten files, 1,881 insertions, 5 deletions. All frontend.
+**Phase 1 item 4 of the wiring plan: mount the ledger screen.** Committed as
+`4324b24`, four files, 533 insertions, 142 deletions. All frontend. **This
+closes Phase 1.**
 
-The two endpoints existed and nothing called them. They are now reachable from
-the interface, which closes Phase 1's ingestion half. **A bank file held by the
-gate is no longer a dead end.**
+`LedgerPanel` was built two sessions ago and mounted nowhere. It is now the tab
+the financial page opens on. Rows that could be created from seven places in the
+interface can now be seen.
+
+### Two rulings taken this session, both from Neil
+
+- **Four peer tabs.** The strip reads Ledger, Transactions, Counterparties,
+  Trends. The graph views do **not** collapse behind a single entry. This closes
+  the open question "Do the three graph tabs stay three peers of the ledger tab?"
+  which the previous session raised and could not answer.
+- **Always open on the Ledger.** The financial page's tab choice is no longer
+  saved to the browser at all. Every visit opens on the Ledger regardless of
+  where the reader was last time. This was chosen over migrating the stored
+  value.
 
 ### What landed
 
-Five new files under `frontend_v2/src/features/financial/`:
+Two files modified, two created.
 
-- **`lib/ingest-format.ts`** (255 lines). The vocabulary layer: copy and badge
-  variants for all seven precheck outcomes and all twelve ingest outcomes, plus
-  `wouldStore`, `didStore`, `formatPeriodRange`, `accountLabel`.
-- **`lib/ingest-format.test.ts`** (232 lines, 19 tests).
-- **`hooks/use-ledger-ingest.ts`** (70 lines). `usePrecheckFile` and
-  `useIngestFile`, two mutations. The ingest one invalidates
-  `["financial-ledger", caseId]` **only when `result.stored`** — an
-  `already_ingested` answer changed nothing and refetching on it would be a
-  request sent to say so.
-- **`components/SendToLedgerDialog.tsx`** (424 lines). The three-step dialog.
-- **`components/SendToLedgerDialog.test.tsx`** (419 lines, 13 tests).
+- **`stores/financial.store.ts`** (+38/−3). `"ledger"` added to the view union
+  with a docstring saying plainly that this is **the tab on the financial page
+  and nothing wider** — the name `mainView` reads like it could mean the app's
+  main view and does not. Default flipped to `"ledger"`. `mainView` removed from
+  `partialize`, and an explicit `merge` added.
+- **`components/FinancialPage.tsx`** (+219/−139). The restructure, described
+  below. Most of the deletions are the two early returns and the chrome block
+  moving rather than being removed, so the line count overstates the change.
+- **`stores/financial.store.test.ts`** (77 lines, 4 tests). New.
+- **`components/FinancialPage.test.tsx`** (199 lines, 6 tests). New — **the page
+  had no test at all before this session.**
 
-Five modified:
+### The restructure, and what it fixes
 
-- **`financial/api.ts`** (+224). The wire types and the two calls.
-- **`financial/lib/ledger-format.ts`** (+19/−5). `narrow` and `TermCopy`
-  exported, with a new optional `source` argument defaulting to `"the ledger"`
-  so existing behaviour is unchanged byte for byte. Precheck passes
-  `"the reading"`.
-- **`evidence/hooks/use-guarded-process.ts`** (+8). `caseId` on the returned
-  gate.
-- **`evidence/components/ProcessHoldDialog.tsx`** (+44/−0) and its test
-  (+191).
+The page held two early returns **above the tab strip**, both keyed on the Neo4j
+graph query: one while it was in flight, one when it came back with no rows.
 
-### The shape of the dialog, and why it has three steps
+A case whose bank file has just been sent to the relational ledger is exactly
+that shape — ledger rows, no graph. Under the old arrangement it rendered a
+full-page "No documentary transactions" and **no tabs at all**, so the rows that
+did exist were unreachable. Both returns now sit inside the three graph tabs, in
+a `graphTab(content)` helper, so the graph reports its own emptiness in its own
+tab and the Ledger tab is always reachable. Four of the six page tests exist to
+stop that early return coming back.
 
-Ask, read, store. The middle step writes nothing.
+The four pieces of graph chrome moved inside the graph tabs with them, collected
+in a `graphChrome` fragment: `FinancialToolbar`, the `uses_legacy_financial_model`
+banner, `FinancialFilterPanel` and `FinancialSummaryCards`. Their counts, filters
+and totals are computed from graph rows; drawn above a ledger table they would
+read as a description of it. **They did not become tab-aware** — moving them
+leaves four components each describing one store, and no component that has to be
+right about which store is on screen.
 
-**Step one asks for the period,** because it has to. `window_start` and
-`window_end` are required query parameters on both endpoints and cannot be
-defaulted or derived — three of the four native formats print two-digit years
-and nothing carries the century. The read button stays disabled until both are
-given. `default_currency` is offered beside them, optional, trimmed, and sent as
-`undefined` when blank.
+### Why stopping persistence took two mechanisms, not one
 
-**Step two shows what the file says it holds** — the outcome, the accounts, the
-row counts, the span the statement actually covers, the opening and closing
-balances — with a "Change dates" button beside it, because the most likely
-reason a reading looks wrong is that the window was wrong.
+This is the part that would have been silently half-done.
 
-**Step three is offered only when the endpoint says it would take the file.**
-The store button is gated on `would_ingest`, the endpoint's own flag, never on
-the outcome word.
+Dropping `mainView` from `partialize` stops a tab choice being **written**. It
+does not stop one already written being **read**. Any browser that used this page
+before today still holds `"transactions"` in `owl-financial-store`, and zustand's
+default merge lays the stored object over the initial state on rehydrate. Without
+the second half, every existing user would keep landing on the graph and the
+change would be visible only to people who had never opened the page.
 
-### Decisions taken, and the reasoning for each
+So there is an explicit `merge` that deletes `mainView` from the persisted object
+and keeps everything else — page size, sort columns, mode. **A discard rather
+than a `version`/`migrate` bump**, because a discard is version-independent and
+cannot be defeated by a blob an older build writes later. The store test asserts
+both halves separately: what gets written, and what survives being read back.
 
-**`wouldStore` and `didStore` read the flag rather than judge the word.** They
-are one line each and are tested anyway, because the failure they prevent is
-silent: a backend one version ahead sends an outcome word this build has never
-seen, and any code that recomputed storability from the word would hide the
-store button on a file the backend is willing to take. The test pins the
-combination that catches it — an unknown word with `would_ingest: true`.
+### A correction to the wiring plan, lines 121–123
 
-**An unrecognised outcome is named in the label, not rendered blank.** A word
-from a future backend is not an error and must not come through as an empty
-badge, because an empty badge reads as an answer. It says
-`Unrecognised (<word>)` and explains that the screen is older than the service.
-Precheck attributes it to "the reading" and ingest to "the ledger", because no
-row was written on the precheck path and pointing at the ledger would send
-someone to look for one.
-
-**No outcome is mapped to the `default` badge variant, and the tests forbid it.**
-`Badge` falls through to `default` for a key a variant map does not carry, and
-`default` is a loud filled primary — so an outcome nobody wrote copy for would
-arrive on screen looking like the most important thing on it. A member mapped to
-`default` deliberately would be indistinguishable from one that was forgotten,
-so `default` is banned outright and unrecognised words get `outline`.
-
-**`already_ingested` is not coloured or worded as a failure.** Nothing was
-stored and that is the correct answer. It does not claim rows were added.
-
-**The action on the held rows is offered for `native` only.** `belongsToLedger`
-is deliberately narrower than `blocksDocumentProcessing`: four outcomes block the
-document pipeline, but the reading requires exactly one format to claim the
-bytes, so an `ambiguous` file would be refused at the ledger too. **A button that
-can only be refused is worse than no button.** Tested in both directions, since
-the two plausible mistakes are opposite ones.
-
-**`useGuardedProcess` returns `caseId` rather than the dialog taking a new
-prop.** Seven render sites get it free that way. A prop would have been seven
-chances to forget it, and the failure would have been a send dialog pointed at no
-case.
-
-**The send dialog is a sibling of the hold dialog, not a child.** It is not
-unmounted by the hold closing underneath it, neither one's escape handling has to
-know about the other, and the hold stays open behind it — sending one bank file
-says nothing about the rest of the request, and the cleared files are still
-undecided. One send dialog at a time, held in the parent rather than per row,
-because the dialog asks for a period and two of them open at once would invite
-the reader to answer that twice with no sign the answers differed.
+The plan says adding a tab value "needs a migration or it will read a stale
+persisted value it does not recognise." **That is wrong in this direction.** Once
+`"ledger"` is added to the union, a stored `"transactions"` is still a valid
+member — nothing fails to recognise it. The only consequence was landing on the
+wrong tab. The plan's other line, "a sibling route is the current
+recommendation", was overruled two sessions ago. Both are now superseded by the
+work; leaving the text in place is fine as history, but do not act on it.
 
 ### Verification
 
-Both gates green and recorded above. The frontend unit delta of 41 is exactly
-19 + 13 + 9, which confirms nothing else moved.
+Both gates as recorded above. The frontend unit delta of exactly 2 files and 10
+tests confirms nothing else moved.
 
 ---
 
@@ -187,32 +177,48 @@ Use **`VITE_CACHE_DIR=/tmp/vite-cache-$(id -un)`**. This is the same per-user ru
 
 ### New this session
 
-- **Chromium is not installed in a fresh sandbox and the browser project fails
-  loudly when it is missing** — `browserType.launch: Executable doesn't exist`,
-  reported as an unhandled error with "no tests", not as a test failure.
-  `npx playwright install chromium` takes about 30 seconds and 106 MiB. **Do not
-  pass `--with-deps`**; it needs root. Budget for this once per session if the
-  browser gate is in scope.
-- **`vi.mock` factories are hoisted above `const` declarations, so a mock that
-  has to capture a prop needs `vi.hoisted`.** Used in
-  `ProcessHoldDialog.test.tsx` to keep the send dialog's `onClose` reachable:
-  the stub renders nothing clickable, so the close is exercised by calling the
-  captured prop inside `act`.
-- **Mock the seam, not the network, when a component owns real hooks.**
-  `use-ledger-ingest.ts` reaches the client by property access at call time
-  (`financialAPI.precheckFile(...)`), so `vi.spyOn(financialAPI, "precheckFile")`
-  works and lets `SendToLedgerDialog.test.tsx` drive the real mutations against a
-  real `QueryClient`. Set `mutations: { retry: false }` as well as `queries`, or
-  a rejection is retried and the assertion races it.
-- **Walk the vocabulary array in the test rather than re-typing the list.** The
-  compiler catches a gap in a `Record<Outcome, ...>` only for members this build
-  knows about; a member added to `api.ts` and forgotten everywhere else is caught
-  only by iterating `INGEST_OUTCOMES` itself. A companion assertion on the array
-  lengths (7 and 12) catches the reverse — a copy table gaining a member the
-  array never got.
-- **A held file is not necessarily a ledger file.** `blocksDocumentProcessing`
-  covers four outcomes; `belongsToLedger` covers one. Any future action attached
-  to a held row has to pick deliberately between them.
+- **The sandbox disk can be full, and `playwright install` is where you find
+  out.** `npx playwright install chromium` failed with `ENOSPC: no space left on
+  device`; `df -h` showed 9.6G total, 9.4G used, **99% full, 177M free**. The
+  space is in `/tmp` caches left by **earlier sessions under different uids**
+  (`mutate_exports_cache` 61M, `pyc_run` 43M, `pyc_all` 42M and others), and the
+  sticky bit means a session cannot remove them.
+  `find /tmp -maxdepth 1 -user $(id -un)` showed my own files totalling well
+  under 100K — **there is nothing a session can reclaim.** If the browser gate is
+  needed and chromium is not already installed, either Neil clears `/tmp` or the
+  gate is honestly recorded as not run. **Do not claim it green.**
+- **Radix tab triggers activate on `mousedown`, not `click`.** Verified by
+  reading `node_modules/@radix-ui/react-tabs/dist/index.mjs`: `activationMode`
+  defaults to `"automatic"` (line 30), the trigger carries `onMouseDown`
+  (line 121) and `onFocus` (line 131), and **there is no `onClick`**.
+  `fireEvent.click` therefore leaves the tab where it was, and **every assertion
+  after it silently describes the previous tab** — the test still passes, it just
+  tests the wrong panel. Use `fireEvent.mouseDown`. The `selectTab` helper in
+  `FinancialPage.test.tsx` carries this reasoning.
+- **`TooltipProvider` is mounted app-wide at `app/providers.tsx:13`,** so any
+  page test that renders a component using a tooltip needs one too.
+  `TransactionTable` does. Without it the table throws
+  ``Tooltip` must be used within `TooltipProvider`` into its own `ErrorBoundary`,
+  which **catches it, so the test passes** while the tab it asserts is showing
+  the graph is in fact showing a caught error. It surfaces only as stderr noise.
+  `RouteBadge.test.tsx:43` and `GraphToolbar.test.tsx:9` already wrapped for
+  this reason.
+- **Vitest does not typecheck.** All ten new tests passed while
+  `makeGraphRow()` was missing two required fields of `Transaction`; only
+  `tsc -b --force` caught it. **Run `tsc` after writing test fixtures, not just
+  after writing product code**, and use `--force` when it matters, since `-b` is
+  incremental.
+- **A `Transaction` fixture needs six fields minimum.** `BaseFinancialRecord`
+  (`financial/api.ts:3–86`) requires `key`, `amount`, `from_entity`, `to_entity`,
+  `financial_record_kind`, `financial_view_mode` and `is_financial_event`;
+  `TransactionRecord` adds `is_evidence_backed_transaction`.
+- **`use-filtered-transactions.ts` is pure `useMemo` with no react-query,** so a
+  page test can leave it real and mock only `use-financial-data` and
+  `use-ledger-transactions`. Mocking the two hook modules is enough to control
+  the whole page.
+- **`FinancialToolbar`'s placeholder `"Search transactions..."` is a reliable
+  probe for whether the graph chrome is on screen.** Used in three of the page
+  tests.
 
 ### Carried forward, still true
 
@@ -254,14 +260,28 @@ Use **`VITE_CACHE_DIR=/tmp/vite-cache-$(id -un)`**. This is the same per-user ru
   `contradictory_period` and `already_ingested` are decided against rows already
   stored, not against the file. `would_ingest` is shorthand for one value of
   `outcome`, nothing more.
+- **`wouldStore` and `didStore` read the endpoint's flag, never the outcome
+  word.** A backend one version ahead sends a word this build has never seen, and
+  recomputing storability from the word would hide the store button on a file the
+  backend is willing to take.
+- **An unrecognised vocabulary member is named, never rendered blank,** because
+  an empty badge reads as an answer. **No outcome maps to the `default` badge
+  variant and the tests forbid it** — `Badge` falls through to `default` for an
+  unmapped key, and `default` is a loud filled primary, so a forgotten member
+  would arrive looking like the most important thing on screen.
+- **A held file is not necessarily a ledger file.** `blocksDocumentProcessing`
+  covers four outcomes; `belongsToLedger` covers one. Any future action attached
+  to a held row has to pick deliberately between them.
 - **A compound `cmd; echo "exit: $?"` inside a longer `&&` chain can report an
-  empty exit code.** Redirect to a per-user file and check separately.
+  empty exit code**, and `$?` after a pipe is the pipe's status, not the
+  command's. Redirect to a per-user file and check separately.
 - **The exports guard is automatic.** `tests/test_financial_exports.py` globs
   `*.py` in the package and asserts each module contributes at least one name to
   `__all__`. A new module needs **no manual list entry**, contrary to the note in
   `CLAUDE.md`.
 - **Every Bash command needs its own absolute `cd`.** Where a `cd` is awkward,
-  `PYTHONPATH=<abs>/backend` works for one-liners.
+  `PYTHONPATH=<abs>/backend` works for one-liners. This was nearly missed twice
+  this session; the working directory happened to be right, which is luck.
 - **Any scratch file in `/tmp` needs a per-user name,** including the git index.
 - **`GIT_INDEX_FILE` does not survive between Bash invocations.** Staging and
   `git write-tree` must happen in one command. `commit-tree` can be a second
@@ -275,23 +295,23 @@ Use **`VITE_CACHE_DIR=/tmp/vite-cache-$(id -un)`**. This is the same per-user ru
 - **Counting bare name occurrences does not tell you whether a component is
   mounted.** Grep for `import .*\bName\b` and list the files.
 - **The house component-test conventions** are `render`/`screen` from
-  `@testing-library/react`, `data-testid` for anything a test needs to find, and
-  `fireEvent` never `userEvent`.
+  `@testing-library/react`, `MemoryRouter`/`Routes`/`Route` for a routed page,
+  `vi.hoisted` for a mock that has to capture something, `data-testid` for
+  anything a test needs to find, and `fireEvent` never `userEvent`.
 - **Radix `DialogContent` renders a corner X carrying an `sr-only` "Close",** so
   a footer button named "Close" makes `getByRole` ambiguous. Tell them apart by
-  `data-slot="dialog-close"`, which radix sets and we do not. `footerButton()` in
-  `ProcessHoldDialog.test.tsx` is the helper.
+  `data-slot="dialog-close"`. Related: **`TooltipTrigger asChild` overwrites the
+  child's `data-slot`**, so a badge inside a tooltip is found by `data-variant`
+  instead (`RouteBadge.test.tsx`).
 - **`Badge` spreads `React.ComponentProps<"span">`.** Variants are `default`,
   `secondary`, `destructive`, `outline`, `success`, `danger`, `warning`, `info`,
-  `amber`, `slate`. An unmapped lookup falls through to `default`, a **loud filled
-  primary**, so a variant map must be explicit for every member.
+  `amber`, `slate`.
 - **`tsconfig` has `strict: true` but not `noUncheckedIndexedAccess`.**
 - **React Query is `^5.90.21`**, so `isPending`, not `isLoading`.
 - **Any new code touching `amount_minor` must use `formatLedgerAmount`,** whose
   `currency` parameter is a **required `string`** — a caller holding
   `string | null` must decide what an absent currency means rather than pass it
-  through. In `SendToLedgerDialog` the balance line is dropped entirely, because
-  an amount with no currency beside it is not a number anyone can read.
+  through.
 - **SQLAlchemy flush ordering does not follow raw ForeignKeys.** With no ORM
   `relationship()`, commit the parent row first, then the dependent row.
 - **The full engine pytest suite cannot run on 3.10** — pre-existing
@@ -304,7 +324,7 @@ Use **`VITE_CACHE_DIR=/tmp/vite-cache-$(id -un)`**. This is the same per-user ru
   degrades and warns; the warning is expected output.
 - **No live Postgres is needed for the financial suite.**
 
-### Kept from the ledger-screen unit, because the mount still needs it
+### The ledger screen's own rules, now that it is mounted
 
 - **The ledger read defaults to `admitted`** (`transaction_query.py`). Zero rows
   does not mean no financial material; quarantined, superseded and rejected rows
@@ -336,65 +356,22 @@ Sixteen units in four phases. One unit per session, finished, tested and committ
 before the next begins. **Do not reorder without a ruling.** If a unit turns out
 to depend on something later in the list, stop and ask.
 
-- **Phase 1, make rows exist** — precheck endpoint ✅ `a4eb3dc`, ingest endpoint
-  ✅ `43f8358`, the interface action on a held file ✅ `17d94ac`, mount the
-  ledger.
+- **Phase 1, make rows exist — COMPLETE.** Precheck endpoint ✅ `a4eb3dc`,
+  ingest endpoint ✅ `43f8358`, the interface action on a held file ✅ `17d94ac`,
+  mount the ledger ✅ `4324b24`.
 - **Phase 2, make the rows trustworthy** — runs, quarantine, reconciliation,
   adjudication and proof class, duplicates, suspect amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-**Next unit: Phase 1 item 4, mount the ledger screen.** It is now the only thing
-between a user and the rows they can already create, and that gap is new as of
-this session: **a bank file can be sent to the ledger from seven places in the
-interface, and there is no screen anywhere that shows what arrived.** Rows go in
-and vanish from view.
-
-**Neil has ruled: the ledger is a tab inside `FinancialPage`, and it is the
-primary view of that page.** The sibling route is dead. Do not reopen it, and do
-not add a ninth sidebar entry. The naming problem it carried — two
-financial-looking entries in a sidebar that could not say which store each read
-— is gone with it.
-
-**And a second ruling on top of it: within that page the ledger is far more
-important than the graph financial information.** This is a statement about
-priority, not only about which tab opens first, and it is what decides the
-chrome question below. The page is a ledger page that also holds graph views,
-not a graph page with a ledger tab added to it. Anything that forces a choice
-between serving the ledger well and preserving the existing graph screen's shape
-resolves toward the ledger.
-
-The rulings settle where and how much, not how. Three things in the page block
-the work, all verified against source on the day of the ruling:
-
-- **The page early-returns before the tabs exist.** Line 323 is
-  `if (!transactions.length)`, over the **Neo4j** read, with a loading return at
-  315 above it. So the tab strip renders only when the graph has rows, and a
-  nested ledger tab is unreachable exactly when a freshly ingested case has
-  ledger rows and no graph. That case is no longer hypothetical: it is what the
-  send-to-ledger work made producible from seven places in the interface.
-  `LedgerPanel` already owns its own no-case, loading, error and empty states,
-  so **the guard moves inside the graph tabs rather than wrapping the page.**
-- **Four pieces of chrome sit above the tab strip and describe the graph.**
-  `FinancialToolbar` (`filteredCount`, `totalCount`), the
-  `uses_legacy_financial_model` banner, `FinancialFilterPanel` (graph categories
-  and entities) and `FinancialSummaryCards` (totals over `filteredTransactions`).
-  With the ledger primary, the first thing on screen is a row of counts and
-  totals that do not describe the table beneath them — the exact failure the
-  standing rule about corrected values exists to prevent. **Answered by the
-  priority ruling: the chrome moves inside the graph tabs. It does not become
-  tab-aware.** Tab-awareness was only ever worth its cost to preserve the
-  existing page's shape, and that shape is the thing the ruling subordinates.
-  Moving it also leaves four components each describing one store, with no
-  component that has to be right about which store is on screen.
-- **`mainView` is persisted and has no migration.** `financial.store.ts` writes
-  it to `owl-financial-store` through `partialize`; the file contains zero
-  occurrences of `version` or `migrate`. Changing the default to the ledger
-  therefore moves new users only — anyone who has opened the page before
-  rehydrates a stored `"transactions"` and lands where they always did. Needs a
-  `version`/`migrate` pair or an explicit rehydration rule, or the ruling is
-  silently half-applied.
+**Next unit: Phase 2 item 5, ingestion runs.** `RunCounts`, run status,
+`reap_stale_runs`. What happened during an ingest, and what a run that died left
+half-done. The plan puts it first in this phase because it is the record of the
+thing Phase 1 just finished building, and **a failed ingest is otherwise
+invisible** — the send dialog reports what one call did and nothing anywhere
+reports a run that never completed. The plan's reading list for it:
+`runs.py`, plus whatever the frontend needs to show a run.
 
 ### Where the old numbering went
 
@@ -407,15 +384,18 @@ suspect-amount detection, `0910d9f`. 10 done, per-transaction source locator,
 11, correction storage, is **still blocked** on the correction-versus-re-ingestion
 question below. It maps onto Phase 2 item 10.
 
-12 is absorbed into Phase 1. Both halves of the "both stores" ruling were built
-(`de7ef21`, `a9e0d29`), the frontend data layer landed as `fd88318` and the screen
-as `94af112`; the mount is Phase 1 item 4 and the ingestion wiring is Phase 1
-items 1 to 3, **all three of which are now done**.
+12 is absorbed into Phase 1, which is now complete. Both halves of the "both
+stores" ruling were built (`de7ef21`, `a9e0d29`), the frontend data layer landed
+as `fd88318`, the screen as `94af112`, and the mount as `4324b24`.
 
 13, user-defined view tabs, is **not in the wiring plan** — new capability rather
 than connecting built capability, so it stays parked until the plan is worked
 through. Two things, not one: named persisted snapshots of filter state, and
-exposing source document type onto the transaction row.
+exposing source document type onto the transaction row. **Note that this now
+interacts with a decision taken today:** the financial page no longer persists
+which tab you were on, so if user-defined tabs are ever built, the question of
+what is remembered across visits has to be reopened deliberately rather than
+inherited.
 
 14 money movement over time, 15 follow the money: both still parked, both still
 new capability rather than wiring. 16 tracing and 17 exhibit tagging are **no
@@ -425,31 +405,22 @@ longer parked** — they are Phase 4 of the plan.
 
 ## Open questions, waiting on Neil
 
-**Where does the ledger screen mount?** **Answered.** A tab inside
-`FinancialPage`, and the primary view of it. No sibling route, no ninth sidebar
-entry. Detail and the three things that block it under Build order above.
+**Where does the ledger screen mount?** **Answered and now built.** A tab inside
+`FinancialPage`, the primary view of it, four peer tabs with Ledger first.
 
-**Does the graph chrome move or become tab-aware?** **Answered: it moves inside
-the graph tabs,** settled by the ruling that the ledger outranks the graph
-financial information within the page. Detail under Build order above.
+**Does the graph chrome move or become tab-aware?** **Answered and now built: it
+moved inside the graph tabs.**
 
-**Do the three graph tabs stay three peers of the ledger tab?** **Raised by the
-priority ruling and not yet answered.** A four-tab strip reading Ledger,
-Transactions, Counterparties, Trends presents four equal views, which is the one
-thing the ruling says the page is not. The alternative is that the graph views
-collapse behind a single entry, so the strip states the priority instead of
-flattening it. **This does not block item 4** — the ledger tab can be built
-first as a peer and the strip restructured after — but it should be answered
-before the graph chrome is moved, because where the chrome lands depends on
-whether there are three graph tabs to move it into or one.
+**Do the three graph tabs stay three peers of the ledger tab?** **Answered this
+session: yes, four peer tabs.**
 
-**Was removing `reingest` the right call?** Raised last session, still unruled.
-Short form: the override could not succeed for unchanged bytes, and where it
-could succeed it would leave two contradictory readings of one file in one case
-with nothing able to resolve them until `duplicates.py` is wired at Phase 2 item
-9. **Reversible — say the word and it comes back.** Note that the send dialog
-built this session has no override either, for the same reason: it reports
-`already_ingested` plainly and offers nothing to force past it.
+**Was removing `reingest` the right call?** Raised two sessions ago, still
+unruled. Short form: the override could not succeed for unchanged bytes, and
+where it could succeed it would leave two contradictory readings of one file in
+one case with nothing able to resolve them until `duplicates.py` is wired at
+Phase 2 item 9. **Reversible — say the word and it comes back.** The send dialog
+has no override either, for the same reason: it reports `already_ingested`
+plainly and offers nothing to force past it.
 
 **Correction versus re-ingestion.** Unchanged, still open, still blocking item 11.
 Proposal on the table (a correction triggers a genuine re-run of the balance
@@ -478,19 +449,19 @@ proposed build order, not a stated Owl requirement.
 
 ## Standing flags
 
-- **Rows can now be created from the interface and cannot be seen anywhere.**
-  Seven components render `ProcessHoldDialog`, every one of them now offers a
-  held bank file a route to the ledger, and `LedgerPanel` is still mounted
-  nowhere. `GET /api/financial/ledger` will start returning rows on real cases as
-  soon as anyone uses it. **This is the strongest argument for Phase 1 item 4 and
-  it did not exist before this session.**
+- **Phase 1 is closed: a bank file can be sent to the ledger from seven places
+  and the rows it creates are now visible.** The gap flagged here for the last
+  two sessions is gone.
 - **The Neo4j financial view is not a projection of the ledger.** `projection.py`
   has zero production callers. Whatever writes those graph nodes today writes them
   independently, so the two stores can disagree and nothing detects it. Phase 3
   item 12 closes this. **Do not describe the graph as derived from the ledger
-  until it is.**
-- **Nothing mounts `LedgerPanel` yet.** Two units of frontend work reachable only
-  from their tests.
+  until it is.** The financial page now shows both stores side by side in one tab
+  strip, which makes a disagreement visible to a reader for the first time, and
+  nothing in the interface explains it. Worth a ruling on whether the page should
+  say anything about that before Phase 3 lands.
+- **A failed or half-finished ingestion run is invisible everywhere.** This is
+  what Phase 2 item 5 exists to fix and it is the reason that item is next.
 - **No row in the corpus carries a running-balance column.** 30,570 rows across
   325 documents. So on real data **every** row will show "No running balance".
   That is the component working, not failing.
@@ -504,6 +475,9 @@ proposed build order, not a stated Owl requirement.
 - **The alembic migration `20260902_evidence_table_geometry` has not been applied
   to any real database from a session** — the sandbox has no Postgres. First
   deployment needs an `alembic upgrade head` on Neil's side.
+- **The sandbox disk is at 99%.** See Durable facts. It cost the browser gate this
+  session and it will cost the next session too unless `/tmp` is cleared from
+  outside.
 
 ---
 
@@ -541,3 +515,5 @@ Small, real, none blocking:
 - Recovered text-alignment chunks collapse empty cells in the `" | "` join and
   sweep footer prose into the table chunk. Geometry unaffected; full diagnosis in
   the `72d1b1a` revision of this file.
+- **`docs/loupe-wiring-plan.md` lines 117–123 are now superseded** by the work and
+  by two rulings. Left in place as history; do not act on them.
