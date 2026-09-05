@@ -563,6 +563,116 @@ function ingestWindowQuery(params: IngestWindowParams): URLSearchParams {
   return qs
 }
 
+/*
+ * Changing what a stored row counts as.
+ *
+ * The two sections above read the ledger and write to it from a file. This one
+ * is neither: it changes the standing of a row already stored, months after the
+ * file it came from was read. `backend/routers/financial_adjudication.py` is a
+ * separate router for the same reason this is a separate section.
+ *
+ * The important thing about this endpoint is that almost nothing it can say is
+ * an error. Only a missing row (404) and a failed write (500) leave the happy
+ * path; a refusal comes back 200 carrying the refusal, so it can be shown
+ * beside the row rather than thrown. `api.adjudication.test.ts` reads the
+ * router and holds this build to that.
+ */
+
+export const ROW_ADJUDICATION_OUTCOMES = [
+  "quarantined",
+  "released",
+  "unchanged",
+  "not_found",
+  "refused",
+  "write_failed",
+] as const
+export type RowAdjudicationOutcome = (typeof ROW_ADJUDICATION_OUTCOMES)[number]
+
+/**
+ * The shape of `RowAdjudication.as_dict()`.
+ *
+ * `outcome`, `ledger_status` and `quarantine_reason` are typed `string` rather
+ * than as the unions this file declares, for the reason `LedgerTransaction`
+ * gives: a backend one version ahead can send a member this build has never
+ * heard of, and a union type would let it through while claiming it had been
+ * checked. `adjudication-format.ts` narrows them.
+ */
+export interface RowAdjudication {
+  transaction_id: string
+  /** One of `ROW_ADJUDICATION_OUTCOMES`, narrowed rather than trusted. */
+  outcome: string
+  /** True only for `quarantined` and `released`. Derived on the backend. */
+  applied: boolean
+  /**
+   * Overloaded by outcome, and must not be presented as one thing.
+   *
+   * On `quarantined` it is the machine's own note about the rescue check, or
+   * null when there was nothing to say. On `refused` and `unchanged` it is why
+   * the writers would not act. On `not_found` and `write_failed` it never
+   * reaches here as a field at all, because the router turns those two into
+   * HTTP errors and this shape is what a 200 carries.
+   */
+  reason: string | null
+  /** The row's status after the attempt. Absent when the row was not found. */
+  ledger_status: string | null
+  quarantine_reason: string | null
+  /** Set only where a decision was actually appended to the log. */
+  adjudication_id: string | null
+  /**
+   * Whether setting this row aside made its statement period balance.
+   *
+   * Three-valued on purpose, and the three values are not two. `true` means
+   * the period was out and this row accounted for exactly the gap. `false`
+   * means no gap was closed, which covers a period that already balanced, one
+   * whose statement never printed the balances the check needs, and a row
+   * belonging to no period. `null` means the question was asked and could not
+   * be answered. Reporting that last case as `false` would claim something
+   * that was never established.
+   *
+   * Null on every outcome except `quarantined`, and this response is the only
+   * place the fact appears: it is deliberately not written to the log, because
+   * a machine's observation must not be recorded as a person's finding. A
+   * screen that drops it loses it.
+   */
+  rescues_period: boolean | null
+}
+
+/**
+ * Every field an adjudication response carries, as a value rather than a type.
+ *
+ * The same contract as the interface, in a form `api.adjudication.test.ts` can
+ * hold up against `RowAdjudication.as_dict()` in the Python. Typed
+ * `keyof RowAdjudication`, so a name here the interface does not declare fails
+ * to compile; the test closes the other direction.
+ */
+export const ROW_ADJUDICATION_FIELDS: readonly (keyof RowAdjudication)[] = [
+  "transaction_id",
+  "outcome",
+  "applied",
+  "reason",
+  "ledger_status",
+  "quarantine_reason",
+  "adjudication_id",
+  "rescues_period",
+]
+
+/**
+ * What both adjudication calls need.
+ *
+ * `reason` is not optional and has no default, matching the backend, which
+ * requires it on both routes. Setting a row aside takes it out of every sum,
+ * search and money flow the case reports; a row set aside with nothing on the
+ * record leaves a total lower than the evidence and no way to explain the
+ * difference. Releasing one needs it for a reason the row itself cannot hold:
+ * a released row must carry no quarantine reason, so the log is the only place
+ * that can say why it was let back in.
+ */
+export interface RowAdjudicationParams {
+  caseId: string
+  transactionId: string
+  reason: string
+}
+
 export const financialAPI = {
   getTransactions: (params: {
     caseId: string
@@ -806,4 +916,39 @@ export const financialAPI = {
     if (params.institutionName) qs.set("institution_name", params.institutionName)
     return fetchAPI<FileIngestion>(`/api/financial/ingest?${qs}`, { method: "POST" })
   },
+
+  /**
+   * Hold one stored row out of the ledger's totals, on a person's authority.
+   *
+   * The grounds recorded are always `adjudicated` and cannot be set from here.
+   * The other grounds this ledger knows are decided against a reconciled
+   * period rather than against a request, and are unreachable over HTTP by
+   * design: a class a person raised must not be able to pass for one the
+   * arithmetic proved.
+   *
+   * The answer is worth reading even when it succeeded. `rescues_period` on a
+   * `quarantined` outcome is the only place the ledger will ever say that this
+   * removal is what made the period balance.
+   */
+  quarantineRow: (params: RowAdjudicationParams) =>
+    fetchAPI<RowAdjudication>(
+      `/api/financial/transactions/${encodeURIComponent(params.transactionId)}` +
+        `/quarantine?${new URLSearchParams({ case_id: params.caseId })}`,
+      { method: "POST", body: { reason: params.reason } }
+    ),
+
+  /**
+   * Return one quarantined row to the ledger's totals.
+   *
+   * Not an undo. The backend appends the reversal after the quarantine rather
+   * than deleting it, so the log ends up holding the setting aside, its
+   * grounds, the reversal and the person who took each. Nothing here removes a
+   * record.
+   */
+  releaseRow: (params: RowAdjudicationParams) =>
+    fetchAPI<RowAdjudication>(
+      `/api/financial/transactions/${encodeURIComponent(params.transactionId)}` +
+        `/release?${new URLSearchParams({ case_id: params.caseId })}`,
+      { method: "POST", body: { reason: params.reason } }
+    ),
 }
