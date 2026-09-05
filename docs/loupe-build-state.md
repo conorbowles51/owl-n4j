@@ -3,19 +3,22 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the ledger screen, `94af112`)
+**Last updated:** 5 September 2026 (records the wiring plan, `c88533f`)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `94af112`
-  (`94af112e0ddd438fe971659c29ce5008454d01da`), "The ledger screen: relational
-  ledger rows as a table a reader can trust", parent `0581b3a`. **Confirm the
+- **Head when this was written:** `c88533f`
+  (`c88533fe3d6f03eeff751a2cf13d36d78362a8cd`), "The wiring plan: sixteen units
+  to connect a built subsystem to its interface", parent `ba69e7c`. **Confirm the
   real tip with `git log --oneline -5`** at the start of every session rather
   than trusting this line.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
+- **The build order now lives in `docs/loupe-wiring-plan.md`,** not in this file.
+  Read it before picking up work. It is an agreed plan and is not to be
+  resequenced without a ruling from Neil.
 
 ### Uncommitted
 
@@ -33,7 +36,7 @@ Still untracked and still un-removable from a session (workspace denies
 
 ### Scale
 
-77 commits since `c4246c0` (27 August), counting `94af112`.
+79 commits since `c4246c0` (27 August), counting `c88533f`.
 
 Backend unchanged for two sessions; these figures were measured then:
 `backend/services/financial/` **44 modules**, **32,452 lines**;
@@ -43,107 +46,94 @@ Backend unchanged for two sessions; these figures were measured then:
 
 ## What this session did
 
-One build item: **the ledger screen**, item 12's second remainder. Committed as
-`94af112`, 981 insertions across four files, no deletions.
+**No code.** Two read-only audits and an agreed plan, committed as `c88533f`
+(`docs/loupe-wiring-plan.md`, 200 lines, one file).
 
-The previous session built the data layer — the fetch, the money scaling, the
-vocabulary narrowing. This session builds the thing that puts it on a screen. It
-splits in two on purpose, so the drawing half can be tested against rows alone
-rather than staged through a query.
+The session began on the mount question left by the previous one and did not stay
+there. Neil pushed back twice — "explain the choice better", then "you're still not
+explaining the problem here" — and the second was right. The mount was not the
+problem. **Nothing writes to the ledger**, so the screen would have drawn its empty
+state wherever it was put.
 
-### What landed
+### The finding, traced not assumed
 
-- `frontend_v2/src/features/financial/components/LedgerTable.tsx` — **new, 367
-  lines.** Presentational. Takes `LedgerTransaction[]` and draws them. Knows
-  nothing about fetching.
-- `frontend_v2/src/features/financial/components/LedgerPanel.tsx` — **new, 125
-  lines.** The fetching half. Owns the four states a table cannot be in the
-  middle of: no case chosen, in flight, failed, returned empty.
-- `frontend_v2/src/features/financial/components/LedgerTable.test.tsx` — **new,
-  298 lines, 21 tests.**
-- `frontend_v2/src/features/financial/components/LedgerPanel.test.tsx` — **new,
-  191 lines, 10 tests.** Mocks the hook rather than the network, because what is
-  under test is the panel's reading of a query result, not the query.
+- `ingest_native_reading` (`services/financial/native_ingest.py:165`) is referenced
+  only by its own export lines. **Zero production callers.**
+- `record_transactions` is the only thing that constructs a `FinancialTransaction`
+  row (`transactions.py:661`). Its only production caller is `native_ingest.py:240`,
+  inside `ingest_native_reading`.
+- `routers/financial_ledger.py` registers exactly one route, `GET /ledger` at line
+  49. **There is no POST anywhere** that ingests.
+- `projection.py` — ledger rendered into Neo4j, the module that states Postgres
+  holds the ledger and the graph is a derived view of it — also has **zero
+  production callers**. So today's Neo4j financial view is not a projection of the
+  record. It is an independent write.
 
-### Two facts read out of the backend, not assumed
+### Why it was never cut, from the source that says so
 
-Both changed what got built. Recorded here because a later session looking at
-the panel will otherwise wonder why it is doing more than rendering.
+Two docstrings describe the missing path.
 
-**1. The ledger read defaults to `admitted`.** `list_transactions` in
-`backend/services/financial/transaction_query.py` does
-`status = ledger_status if ledger_status is not None else LedgerStatus.admitted`
-— it substitutes a filter, rather than returning every row regardless of status.
-So zero rows does **not** mean the case has no financial material. It means
-nothing holds that one status, and the quarantined, superseded and rejected rows
-are sitting outside the filter, uncounted and unshown. An empty state reading "no
-transactions" would state the opposite of what was checked. The one that shipped
-names the status it filtered on and says where the rest are.
+`evidence-engine/app/pipeline/financial_route.py` says its own detection stage "is
+a backstop, not the main road", that the routing that matters happens before upload
+where "the interface sends it to the ledger", and closes with "this stage decides;
+the ledger path ingests."
 
-**2. `total` is `len(transactions)` of the same response.** Verified in
-`backend/routers/financial_ledger.py`; there is no paging behind it. Reading a
-count from `total` would be reading a number that means "how many are in front of
-you" while implying "how many exist". So the count comes from `rows.length`, the
-two are compared, and a disagreement is surfaced — because the only way they can
-differ is a backend that has started paging without this screen knowing, at which
-point every figure derived from a page is a figure over a subset.
+`native_ingest.py` opens by explaining that its seam between reading and writing
+sits where it does so "a file can be read, described and shown to a reviewer before
+a single row is stored, **which is what the precheck dialog is for**."
 
-Also read rather than assumed: `list_transactions` orders by
-`ordering_date.asc(), row_index.asc()`. The second of those is what keeps a
-statement's own printed sequence intact where one day holds several movements. So
-the table draws rows in the order they arrive and does not sort. **Do not add
-client-side sorting without dealing with that.**
+Neither the ledger path nor the precheck dialog exists. Grep for `precheck` across
+the whole repo returns exactly one hit: that docstring line.
 
-### The three things in the table that are correctness, not presentation
+Everything else is there. Backend route-check (`routers/evidence.py:1318`), the
+frontend that calls it (`features/evidence/api.ts:123`, `use-route-checks.ts`,
+`use-guarded-process.ts`), the badge (`RouteBadge.tsx`), the gate, the four parsers,
+the writers, the read path. **A bank file is correctly identified, correctly held,
+and then has nowhere to go.** `ProcessHoldDialog.tsx` says exactly this about
+itself: the only choice it offers is send the others or send nothing.
 
-Each exists because the alternative misleads silently rather than loudly.
+### The two audits
 
-**An unscaled amount is marked.** `formatLedgerAmount` returns `scaled: false`
-when it could not turn a stored minor-unit count into a figure, and its own
-docstring is explicit that a caller which renders that without saying so shows
-123456 where 1,234.56 belongs. The marker is not decoration; dropping it turns a
-hundredfold error into a plausible number.
+**Backend export surface.** A script parsed `__all__` from
+`services/financial/__init__.py` via `ast`, then grepped each symbol across
+`backend/` excluding `venv/`, `__pycache__/` and `tests/`, discarding hits inside
+the package. **676 exported symbols. 37 matched outside. 639 did not.** Several of
+the 37 are false positives — `record`, `history`, `place`, `trace`, `normalise`,
+`capture`, `describes`, `attribute` are ordinary words matching unrelated code.
 
-**An absent running balance is stated in words.** `running_balance_minor` is
-nullable, and a blank cell reads as zero, or as a balance of nothing, neither of
-which is what null means. See the standing flag below: on the current corpus this
-is **every row**.
+There are **five production doors** into 41 modules and every one is a read or a
+render: `routers/financial.py:18`, `routers/financial_ledger.py:24`,
+`routers/evidence.py:37`, `routers/evidence.py:1347`,
+`services/financial_export_service.py:18`.
 
-**An unrecognised vocabulary member is shown, loudly.** Every closed vocabulary
-arrives as a bare string or int and is narrowed at runtime, so a backend one
-version ahead of this build can send a member this build has never heard of. Those
-rows still render, still show the raw value, and carry a reserved `warning` badge
-plus `data-unrecognised="true"` — because a blank badge on a financial row reads
-as an answer. The attribute exists so tests assert on the narrowing rather than on
-a class name.
+**Frontend components.** Of eighteen in `features/financial/components/`,
+seventeen are imported and reachable from `FinancialPage`. **`LedgerPanel` is
+imported by nothing.** Counting bare name occurrences gets this wrong — `LedgerPanel`
+has two, both docstring mentions inside `LedgerTable.tsx`. Grep for
+`import .*\bName\b` instead.
 
-### Verification, all run this session
+### Kept from the ledger-screen unit, because the mount still needs it
 
-- Frontend unit project: **58 files, 354 tests, pass** (was 56 / 323; +2 files
-  and +31 tests, exactly the new work).
-- Frontend browser project: **2 files, 4 tests, pass**.
-- `npx tsc -b`: 0. `npx eslint .`: 0.
-- Commit verified by `git diff --stat HEAD <tree>` before the ref was written:
-  exactly the four intended files, 981 insertions, no deletions. Tree
-  tracked-clean afterwards.
+- **The ledger read defaults to `admitted`** (`transaction_query.py`). Zero rows
+  does not mean no financial material; quarantined, superseded and rejected rows sit
+  outside the filter. The empty state names the status it filtered on.
+- **`total` is `len(transactions)` of the same response.** No paging behind it. The
+  panel takes its count from `rows.length` and surfaces a disagreement, because the
+  only way the two can differ is a backend that has started paging.
+- **Rows arrive ordered by `ordering_date.asc(), row_index.asc()`.** The second keeps
+  a statement's own printed sequence where one day holds several movements. The table
+  does not sort. **Do not add client-side sorting without dealing with that.**
+- Three things in the table are correctness, not presentation: an unscaled amount is
+  marked (`formatLedgerAmount` returning `scaled: false` shows 123456 where 1,234.56
+  belongs), an absent running balance is stated in words rather than left blank, and
+  an unrecognised vocabulary member renders loudly with `data-unrecognised="true"`.
 
-Backend was not re-run; nothing backend changed.
+### Verification
 
-**Mutation-tested in four rounds**, because a test that has never been seen to
-fail is not evidence of anything. Each round rewrote exactly one expression, with
-`assert s.count(old) == 1` so a missed match failed loudly rather than silently
-mutating nothing:
-
-- `data-unrecognised={unrecognised ? "true" : "false"}` pinned to `"false"` →
-  **2 failed / 19 passed**, exactly the two `TermBadge` tests. The date-source and
-  extraction-layer badges carry their own inline flags, so their tests correctly
-  still passed.
-- `{!amount.scaled && (` → `{false && (` → **1 failed / 20 passed**.
-- The string `No running balance` emptied → **1 failed / 20 passed**.
-- `{countDisagrees && (` → `{false && (` in the panel → **1 failed / 9 passed**.
-
-Both files were restored from per-user backups, `diff` confirmed byte-identical,
-and the suite re-run green at 31.
+Nothing to run. The session wrote one markdown file and touched no code. Every line
+number and module location in the plan was checked against source before the commit,
+including one that was wrong on first writing: `coverage_from_continuity` lives in
+`correlation.py:704`, not in `continuity.py`. The plan says so.
 
 ---
 
@@ -155,6 +145,21 @@ install, the storybook limitation and the git procedure all live in
 
 ### New this session
 
+- **Every Bash command needs its own absolute `cd`.** Already in `CLAUDE.md`;
+  repeated because it was broken twice this session. Once it worked by luck. The
+  second time it ran `grep` in the wrong directory and then **hung for the full two
+  minute timeout**, which does not look like a missing `cd` at all.
+- **`backend/venv/` poisons every repo-wide grep.** A search for `projection`
+  returned 53KB of unrelated networkx source. Always pass
+  `--exclude-dir=venv --exclude-dir=__pycache__`, and `--exclude-dir=tests` when the
+  question is whether something is wired in production.
+- **Counting bare name occurrences does not tell you whether a component is
+  mounted.** `LedgerPanel` has two occurrences outside its own file and both are
+  docstring mentions. Grep for `import .*\bName\b` and list the files.
+- **`ast` plus `grep` is a cheap and reliable wiring audit.** Parse `__all__` from a
+  package `__init__.py`, grep each symbol across the caller tree, discard hits inside
+  the package. Watch for symbols that are ordinary English words; they need reading
+  by eye.
 - **`GIT_INDEX_FILE` does not survive between Bash invocations.** The staging and
   the `commit-tree` have to happen in **one** command. Splitting them means the
   second call writes against the real index. The tree hash is the check: stage
@@ -215,54 +220,49 @@ install, the storybook limitation and the git procedure all live in
 
 ## Build order
 
-1–7. **Done.** Through the text-alignment tier and commit `3784dbe`.
+**Superseded. The order now lives in `docs/loupe-wiring-plan.md`,** committed as
+`c88533f`, on Neil's instruction: "I need you to build everything. Have a think
+about the best order and make this the plan and stick to it."
 
-8. **Done.** Financial subsystem description for Alex, delivered 1 September.
+Sixteen units in four phases. One unit per session, finished, tested and committed
+before the next begins. **Do not reorder without a ruling.** If a unit turns out to
+depend on something later in the list, stop and ask.
 
-9. **Done.** Suspect-amount detection, `0910d9f`.
+- **Phase 1, make rows exist** — precheck endpoint, ingest endpoint, the interface
+  action on a held file, mount the ledger. Nothing in the other three phases can be
+  verified against real data until this lands.
+- **Phase 2, make the rows trustworthy** — runs, quarantine, reconciliation,
+  adjudication and proof class, duplicates, suspect amounts, locators.
+- **Phase 3, make the ledger the source of the graph** — projection, continuity and
+  coverage, linkage and correlation and flow.
+- **Phase 4, get it out** — exhibit and export, tracing.
 
-10. **Done.** Per-transaction source locator through the writers, `0d6b399`.
+**Next unit: Phase 1 item 1, the precheck endpoint.**
 
-10a. **Done (1 September, no code).** Wiring investigation closed; triage out of
-    the build.
+### Where the old numbering went
 
-11. Correction storage. **Still blocked on the correction-versus-re-ingestion
-    question, below.**
+Items 1–10a and their commits are unchanged history and stay listed here.
 
-12. Both halves of the "both stores" ruling are built — Neo4j by `de7ef21`,
-    Postgres by `a9e0d29`. Remainders:
-    - ~~**Frontend data layer for `GET /api/financial/ledger`.**~~ **Done,
-      `fd88318`.**
-    - ~~**The ledger screen itself.**~~ **Done, `94af112`.**
-    - **Mounting it.** The small remaining piece, and the obvious next unit.
-      `LedgerPanel` has no caller outside its own test — verified by grep, not
-      assumed: its only other mentions are its own definition and a docstring
-      line in `LedgerTable.tsx`. Nothing in
-      `src/features/financial/components/FinancialPage.tsx` or any route renders
-      it, so the screen exists but is unreachable in the running app. Needs a
-      decision on where it sits — most
-      likely alongside the existing Neo4j-backed financial view rather than
-      replacing it, since the two read different stores and the distinction is
-      the point. **Ask Neil before choosing the placement.**
-    - **Wiring `ingest_native_reading` into production.** The larger piece.
-      Neil's ordering ruling was frontend first.
+1–7 done through `3784dbe`. 8 done, the Alex description, 1 September. 9 done,
+suspect-amount detection, `0910d9f`. 10 done, per-transaction source locator,
+`0d6b399`. 10a closed 1 September with no code; triage is out of the build.
 
-13. User-defined view tabs. Named snapshots of filter state, persisted,
-    creatable, renameable, deletable. Also expose source document type onto the
-    transaction row. (Two things, not one.)
+11, correction storage, is **still blocked** on the correction-versus-re-ingestion
+question below. It maps onto Phase 2 item 10.
 
-### Parked (agreed with Neil, 1 September)
+12 is absorbed into Phase 1. Both halves of the "both stores" ruling were built
+(`de7ef21`, `a9e0d29`), the frontend data layer landed as `fd88318` and the screen
+as `94af112`; the mount is Phase 1 item 4 and the ingestion wiring, which was
+always the larger piece, is Phase 1 items 1 to 3.
 
-14. **Money movement over time.** No period-by-period series; every row carries
-    `ordering_date`, so the data is there.
+13, user-defined view tabs, is **not in the wiring plan** — it is new capability
+rather than connecting built capability, so it stays parked here until the plan is
+worked through. Two things, not one: named persisted snapshots of filter state, and
+exposing source document type onto the transaction row.
 
-15. **Follow the money.** Chain across entities hop to hop. Distinct from
-    doctrine tracing.
-
-16. **Wire up tracing.** Built and tested, five doctrines, no caller, no route,
-    no screen.
-
-17. **Wire up exhibit tagging**, which needs an export path first.
+14 money movement over time, 15 follow the money: both still parked, both still new
+capability rather than wiring. 16 tracing and 17 exhibit tagging are **no longer
+parked** — they are Phase 4 of the plan.
 
 ---
 
@@ -277,31 +277,48 @@ identity; only a re-run that closes moves the class), not accepted.
 `record_transactions()` call but not across two separate calls to the same
 document.
 
-**Capability with no route to the user.** `exhibit.py` and `tracing.py` remain
-unrouted. Item 12's route-to-user gap is now nearly closed: the data layer and the
-screen both exist, and only the mount is missing.
+**Capability with no route to the user.** Now measured rather than estimated: **639
+of 676 exported symbols** are reached from nowhere outside the financial package.
+`exhibit.py` and `tracing.py` were only the two we had noticed. The wiring plan is
+the answer to this and it no longer needs a ruling.
 
 **Provenance of `exhibit.py`.** Unchanged: confirmed valuable, but it came from a
 proposed build order, not a stated Owl requirement.
 
 ### New this session
 
-**Where does the ledger screen mount?** Not a blocker for the unit that landed,
-but it is the first question the next unit has to answer, and it is a placement
-decision rather than a technical one. Noted under item 12 above.
+**Where does the ledger screen mount?** Still unanswered, but no longer urgent — it
+is Phase 1 item 4, after rows exist. When it comes up, two facts constrain it, both
+verified: `FinancialPage` early-returns at lines 315 and 323 on the **Neo4j** query,
+so a nested tab is unreachable exactly when a freshly ingested case has ledger rows
+and no graph; and the persisted `mainView` enum in `financial.store.ts` has no
+`version` and no `migrate`, so adding a tab value needs a migration or it reads a
+stale persisted value it does not recognise. A sibling route is the current
+recommendation. **Its one real cost is two financial-looking entries in the case
+sidebar,** where Financial is currently shortcut 5 of 8.
+
+**Should the precheck dialog be built as the design describes it?** The plan assumes
+yes, because `native_ingest.py` names it and the seam exists for it. Flagged rather
+than treated as settled, since it is the only part of Phase 1 that is inferred from
+a docstring rather than from an existing caller.
 
 ---
 
 ## Standing flags
 
-- **The Postgres ledger has no production writer.** `ingest_native_reading` has
-  no caller outside its own test file. The screen committed this session is
-  correct and tested, but against real data it will draw its empty state until
-  the wiring item lands. Neil was told this before the ordering ruling and ruled
-  frontend first anyway; do not reopen it, but **do not let the empty screen be
-  mistaken for a defect.**
-- **Nothing mounts `LedgerPanel` yet.** Two units of work are now reachable only
-  from their tests. This is the whole of what remains before item 12 closes.
+- **The Postgres ledger has no production writer**, and this is now the top of the
+  build order rather than a background fact. `ingest_native_reading` has no caller
+  outside its own test file, `record_transactions` is reachable only through it, and
+  `financial_ledger.py` exposes no POST. Until Phase 1 lands, `GET /api/financial/ledger`
+  returns zero rows on every real case and the ledger screen draws its empty state
+  wherever it is mounted. **Do not let that be mistaken for a defect in the screen.**
+- **The Neo4j financial view is not a projection of the ledger.** `projection.py`
+  has zero production callers. Whatever writes those graph nodes today writes them
+  independently, so the two stores can disagree and nothing detects it. Phase 3
+  item 12 closes this. **Do not describe the graph as derived from the ledger until
+  it is.**
+- **Nothing mounts `LedgerPanel` yet.** Two units of frontend work are reachable
+  only from their tests.
 - **No row in the corpus carries a running-balance column.** 30,570 rows across
   325 documents. So on real data **every** row will show "No running balance".
   That is the component working, not failing.
