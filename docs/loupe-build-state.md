@@ -3,26 +3,25 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records `0fa07d5`, the first frontend chunk
-of the decisions screen: the wire shape and the client call for
-`GET /api/financial/decisions`, plus a contract test that reads the Python source
-and pins what the wire depends on. **No screen yet** — this is the layer under
-it. **Item 8 is still in progress** and the standing flag about the log being
-readable-but-invisible is **still open**; it was not narrowed by this commit,
-because nothing a user can see changed. Read the disk note under Standing flags
-**before running anything**: the documented `CLAUDE.md` bootstrap still fails,
-and the working form needs one more environment variable than this file
-previously recorded.)
+**Last updated:** 6 September 2026 (records `71d859d`, the second frontend chunk
+of the decisions screen: `decision-format.ts`, which narrows `subject_type` and
+`decision` off the wire and gives every member of both vocabularies words, plus
+its unit test. **Still no screen** — this is the layer between the wire and the
+hook. **Item 8 is still in progress** and the standing flag about the log being
+readable-but-invisible is **still open**; nothing a user can see changed again
+this session. Read the disk note under Standing flags **before running
+anything**: the documented `CLAUDE.md` bootstrap still fails, and the working
+form needs one more environment variable than this file previously recorded.)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `0fa07d5`
-  (`0fa07d54203ea1a51d593ca95a35db7e9f7cfa86`), "Give the frontend a way to ask
-  what was decided in a case", parent `9971207` (which was the state-file commit
-  for `2eefc4d`). **Confirm the real tip with `git log --oneline -5`** at the
+- **Head when this was written:** `71d859d`
+  (`71d859d20bc97d55f25305e61c3deddf2e69f71a`), "Put the decision vocabulary into
+  words the screen can show", parent `f18e6eb` (which was the state-file commit
+  for `0fa07d5`). **Confirm the real tip with `git log --oneline -5`** at the
   start of every session rather than trusting this line — the state-file commit
   that follows this one will already have moved it.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
@@ -52,7 +51,7 @@ disk note under Standing flags.
 
 ### Scale
 
-**126 commits** since `c4246c0` (27 August), counting `0fa07d5`; 127 once the
+**128 commits** since `c4246c0` (27 August), counting `71d859d`; 129 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`, not incremented from the previous figure.
 
@@ -60,19 +59,19 @@ state-file commit lands on top of it. Counted with
 this commit is frontend only); `backend/tests/test_financial_*.py` **58 files**,
 **3,381 tests**.
 
-### Gate baselines as of `0fa07d5`
+### Gate baselines as of `71d859d`
 
-- **Frontend unit: 73 files, 658 tests, all passing.** Measured at this head over
-  the whole project. Up 1 file and 25 tests from `2eefc4d`'s 72/633, accounted
-  for exactly by the new `api.decisions.test.ts`. **Nothing else moved.**
+- **Frontend unit: 74 files, 686 tests, all passing.** Measured at this head over
+  the whole project. Up 1 file and 28 tests from `0fa07d5`'s 73/658, accounted
+  for exactly by the new `decision-format.test.ts`. **Nothing else moved.**
 - **`tsc -b --force` 0; `eslint .` 0.** Both measured at this head over the whole
   project.
 - **Backend financial suite: `Ran 3381 tests in 13.049s, OK (skipped=12)`.** NOT
   re-run at this head and it did not need to be: the commit is two TypeScript
   files and no Python. The figure carries forward from `2eefc4d`, where it was
-  measured in full. **The Python bootstrap was therefore not run this session
-  either**, which is why a fresh session picking up backend work must still do
-  it — see the disk note.
+  measured in full, through `0fa07d5`, which was likewise TypeScript only. **The
+  Python bootstrap has therefore not been run for three sessions**, which is why
+  a fresh session picking up backend work must still do it — see the disk note.
 - **Frontend browser: NOT RUN, and it could not be.** See the disk note. Last
   known-good figure is 2 files, 4 tests. **Do not carry "browser green" forward
   as though it were verified at this head.**
@@ -120,126 +119,163 @@ being exercised. A `logger.error` without a traceback is not a failure either.
 
 ## What this session did
 
-**The frontend can now ask what was decided in a case, as `0fa07d5`.** Two files,
-618 insertions, no deletions. **Frontend only; no Python was touched.**
+**The decision vocabulary now has words, as `71d859d`.** Two files, 784
+insertions, no deletions. **Frontend only; no Python was touched.**
 
-This is the first of several chunks that together make the decisions screen. It
-is the wire shape and the client call, not the screen. The quarantine screen was
-built the same way — chunks 1, 2, 3, 4, 4b and 5 — and this follows that
-precedent rather than trying to land a whole feature in one commit.
+This is chunk (a) of the three named as the next unit last session, taken in the
+order named. `0fa07d5` deliberately typed `subject_type` and `decision` as
+`string` on the record so a backend one version ahead could not smuggle an
+unrecognised member through a union claiming it could not exist. This is the edge
+where that narrowing happens, and both the hook and the panel sit on top of it.
 
 **Nothing a user can see changed, so the standing flag about the adjudication log
 being readable-but-invisible is still open.** It was narrowed at `2eefc4d` and
-has not moved since. It clears when a panel renders.
+has not moved since. It clears when a panel renders, which is chunk (c).
 
 ### What landed
 
-**`frontend_v2/src/features/financial/api.ts`** (+208) — a new section, "Reading
-back what was decided", placed after `RowAdjudicationParams` because this read
-reads back what those writes produce. It adds `ADJUDICATION_SUBJECTS` and
-`ADJUDICATION_DECISIONS` as `as const` arrays with derived member types, the
-`DecisionRecord` interface (15 fields), `DECISION_FIELDS`, `DecisionsResponse`
-(the page envelope: `case_id`, `decisions`, `total`, `limit`, `offset`,
-`truncated`) and `CaseDecisionsParams`. Then `getCaseDecisions` on
-`financialAPI`, after `releaseRow`.
+**`frontend_v2/src/features/financial/lib/decision-format.ts`** (new, 420 lines)
+— placed beside `ledger-format.ts`, `run-format.ts` and `adjudication-format.ts`,
+whose shape it follows. Exports `DECISION_SOURCE`,
+`DECISION_ORDER_IS_NOT_SEQUENCE`, `readDecisionSubject`, `DecisionReading` and
+`readDecision`, `DecidedBy` and `readDecidedBy`, `formatDecisionTime`, and
+`describeDecisionPage`. Internal: `SUBJECT_COPY` (5 members), `DECISION_COPY`
+(8), `DECISION_VARIANT`, `CHANGED_STORED_STATE`. Narrowing goes through `narrow`
+from `ledger-format.ts` rather than a second implementation, so an unrecognised
+word is handled the way it is handled on every other screen: named, marked, never
+blank.
 
-**`frontend_v2/src/features/financial/api.decisions.test.ts`** (new, 410 lines,
-**25 tests**) — modelled on `api.runs.test.ts`, which is the established pattern
-for these: read the Python source with `readFileSync` and assert that what the
-TypeScript believes about the wire is still true of the backend.
+**`frontend_v2/src/features/financial/lib/decision-format.test.ts`** (new, 364
+lines, **28 tests**) — modelled on `run-format.test.ts`.
 
-### The three calls that were decisions, not defaults
+### Every phrase was written from the writer, not from the member's name
 
-**The limit and offset bounds are not mirrored on the frontend.**
-`DEFAULT_DECISION_LIMIT` (100) and `MAX_DECISION_LIMIT` (500) live in
-`decision_log.py` and stay there. The service refuses a limit below one and caps
-a limit above the maximum — two different rules — and a bound written down twice
-drifts the moment one side moves. So the client sends no page size of its own
-when none was asked for, and sends a limit above the cap as asked rather than
-refusing it locally. The response reports the limit that was actually applied,
-which is the only figure a caller should trust.
+This is the reason the session spent as much of its window reading Python as
+writing TypeScript. **Two of the eight members read backwards from their own
+names**, and describing them from the name would have put a false statement on
+screen:
 
-**Zero is sent, not dropped.** `limit` and `offset` are guarded with
-`!== undefined`, not truthiness. A `if (params.limit)` would silently swallow
-`limit: 0` and `offset: 0`, turning an explicit request into a default. There are
-two named tests, one per parameter.
+- **`admit_financial_document` does not mean a document was admitted into the
+  ledger.** It means a file the router held back — because it recognised bank
+  data, and indexing a statement as prose turns its figures into searchable text
+  no total can be traced to — was sent out to that text pipeline anyway, by a
+  named person, against the router's finding. `financial` describes the document,
+  not the destination. Nothing enters the ledger by it, and it changes no stored
+  column: "held" was never a stored state, only the absence of a job.
+- **`explain_balance_failure` is not a disposition.** It records a finding about
+  why a statement's own figures do not add up, and changes no status and never
+  can. A well-corroborated explanation of a weakly-proved document leaves it
+  weakly proved.
 
-**`subject_type` and `decision` are typed `string` on the wire, not unions.** The
-`as const` vocabularies exist and are exported, and the *params* type uses them
-so a caller cannot ask for a member that does not exist. But the *record* type
-that comes back off the wire says `string`, so a backend one version ahead cannot
-smuggle an unrecognised member through a union type that claims it cannot exist.
-Narrowing happens at the edge, in a `decision-format.ts` that a later chunk adds.
-**This is the same treatment `LedgerTransaction.ledger_status` already gets** and
-was copied from it deliberately.
+Both senses are pinned by named tests, so an edit tidying the wording cannot
+reverse either one quietly. The source for both is the `AdjudicationDecision`
+docstring in `backend/postgres/models/enums.py`, corroborated against the actual
+writers.
 
-### What the 25 tests pin
+### The four calls that were decisions, not defaults
 
-Ten on what the client sends: it asks the decisions endpoint; it sends nothing
-but the case when nothing else was asked for; it sends no page size of its own;
-it sends every filter under the endpoint's own parameter names; it can send a
-subject id without a subject type; zero limit and zero offset survive; a limit
-above the cap is sent rather than refused here; values are escaped; and the page
-is handed back whole, `total` and `truncated` included.
+**`changedStoredState` is three-valued, not a boolean.** False means the entry
+recorded a view and moved nothing. **Null means this build cannot read the
+member**, and so cannot say which of the two it was. Collapsing null into false
+would report an unknown decision as having changed nothing, which is the
+reassuring answer and the one it has not earned. This is the same shape as
+`QuarantineGrounds.decidedByPerson` in `ledger-format.ts` and was copied from it
+deliberately. Six members change stored state; the two named above do not.
 
-Six on the endpoint contract, read out of `routers/financial_ledger.py`: the
-route is still mounted; it is still on the router that resolves every route to
-`("case", "view")` and still has no per-route `case_access_dependency`; it still
-reads every parameter the client sends; **it still leaves the page bounds to the
-service**; an unknown member still goes through `_parsed_member`; and it still
-returns `page.as_dict()`.
+**`by_machine` is read off the record and never re-derived.** The backend makes
+the comparison once, in `decision_log.to_record`, case-insensitively against
+`RECONCILIATION_ACTOR_EMAIL` (`reconciliation@loupe.invalid`, a reserved domain
+no person's account can hold). `api.ts` already says why it is not repeated: a
+reader that got the comparison wrong would show software moving a document as
+though an analyst had, which is the most misleading thing this log could be made
+to say. **A named test pins it** — a record carrying the reconciliation stage's
+own address with the flag false must read as a person.
 
-Three on the record shape and four on the page envelope, read out of
-`decision_log.py`: the emitted keys are set-equal to `DECISION_FIELDS` in both
-directions (the runtime comparison one way, and a compile-time
-`Exclude<keyof DecisionRecord, ...> extends [never]` assertion the other, so a
-field added to the interface and forgotten in the list is a type error); the
-`by_machine` derivation is intact; the envelope is still exactly those six keys;
-`_validated_limit` still ends `return min(limit, MAX_DECISION_LIMIT)`; the count
-still runs over the same filters as the page; and the four-column ordering clause
-is unchanged.
+**`describeDecisionPage` never claims "showing all" from `truncated` alone.**
+`DecisionPage.truncated` is `self.offset + len(self.decisions) < self.total`,
+which **looks forward only**: it is false on the last page even though pages came
+before it. So "Showing all N decisions" is claimed only when `offset === 0 &&
+!truncated`. This trap was found by reading `decision_log.py` rather than by
+inference, and there is a test for the last-page case specifically.
 
-Two on the vocabularies: subjects match, and decisions match **in the order that
-pairs them** — `supersede_duplicate`/`restore_document`,
-`quarantine_row`/`release_row` — because that pairing is the reason for the
-order and a reordering would be a real change, not a cosmetic one.
+**No `needsAttention`.** `run-format.ts` has one because a broken run is a fact
+about the ledger being short. Every record here is a decision somebody or
+something already took deliberately, and no member of the vocabulary is by itself
+a problem. Which of them matters is a question about the case, not about the
+word, so this module does not answer it.
 
-### Two traps in reading the Python, both hit and both fixed before running
+Three smaller ones, recorded because they are the kind of thing a later session
+would otherwise redo differently. `DECISION_SOURCE` is "the case's record of
+decisions", not "the ledger", because a decision is not a column on a
+transaction and outlives its subject — a purge writes its decision before
+deleting the row. `formatDecisionTime` delegates to `formatRunTime` rather than
+reimplementing it, so the two surfaces give one answer to a fixed locale, an
+unparseable value and a missing one. And `before`/`after` are **not**
+interpreted here: they are the writer's shape, differing per member (a purge has
+no `after` at all), so reading them belongs to whatever renders one decision in
+detail.
 
-**`decision_log.py` declares `as_dict` twice**, once on `DecisionRecord` and once
-on `DecisionPage`. The `pythonBlock(source, header)` idiom copied from
-`api.runs.test.ts` scopes from a header to the next column-0 line, so
-`indexOf("def as_dict")` would find the first one both times and the block would
-run past the end of the class. **The scan keys off the class first**
-(`class DecisionRecord:` / `class DecisionPage:`) and finds `as_dict` inside that
-body. Any future contract test over a file with two same-named methods needs the
-same care.
+### Colours
 
-**The route docstring contains the literal text `` le= ``**, in the sentence
-explaining why a `le=` is deliberately absent. So a naive
-`expect(body).not.toMatch(/le=/)` over the route fails on the prose that exists
-to justify the assertion. **The assertion is scoped to the `limit` parameter
-itself**, sliced between `limit: int = Query(` and `offset: int = Query(`.
+`DECISION_VARIANT` follows the ledger's so the same event reads the same on both
+screens: `quarantine_row` amber because a set-aside row badges amber there,
+`release_row` success. `warning` is used for **no** member, because `LedgerTable`
+and `adjudication-format.ts` both reserve it for "this build cannot read this
+value" — which is exactly the unrecognised case here. `purge_duplicate` takes the
+solid `destructive` rather than the softer `danger` because it is the only member
+in the vocabulary that cannot be undone.
 
-Also worth carrying forward: `api.runs.test.ts` extracts emitted keys with
-`/"([a-z_0-9]+)":\s*self\./g`, which does not match `DecisionPage`'s
-`"decisions": [record.as_dict() for record in self.decisions]`. This file uses
-the looser `/"([a-z_0-9]+)":/g`, scoped to the `as_dict` slice so the looseness
-cannot pick up strings from elsewhere in the module.
+`Badge` falls through to its loud `default` variant for a key a map does not
+carry, so a member missing from the table would render as the most important
+thing on the screen. `Record<AdjudicationDecision, BadgeVariant>` makes the
+compiler catch that instead, and the same applies to `CHANGED_STORED_STATE` and
+both copy tables.
+
+### What the 28 tests pin
+
+Three on subjects: every member gets a non-empty label and description that is
+not "unrecognised"; `evidence_file` is kept distinct from `source_document`,
+because it names the one subject the ledger has never held and a reader who
+conflated them would go looking for totals that were never going to exist; and an
+unrecognised subject names its raw value and cites `DECISION_SOURCE`.
+
+Eight on decisions: every member gets words; **labels are all distinct** (a
+shared label would show one phrase for two different things and nothing else on
+the row distinguishes them); no recognised member wears the unrecognised colour;
+`changedStoredState === false` is true of **exactly**
+`admit_financial_document` and `explain_balance_failure`, asserted as a sorted
+list so a third would fail; `destructive` is worn by exactly `purge_duplicate`;
+the two backwards-reading members are pinned to the sense the backend states; and
+an unrecognised decision returns `value: null`, `variant: "warning"`,
+`changedStoredState: null` and a non-empty effect.
+
+Six on who decided, including the two that matter: the machine's stored name
+(`Loupe reconciliation stage`) is **replaced**, not shown, because it reads like
+a person in a column of people; and the flag is never re-derived from the
+address. Then name-over-address-over-`"Not recorded"`, whitespace-only names
+falling through, and an entry with neither reading as *incomplete* rather than as
+nobody having decided.
+
+Three on time and seven on the page sentence, the latter covering every branch:
+empty log, singular "1 decision", start-of-record, **last page with
+`truncated: false` and `offset > 0`**, mid-record with more following, and an
+empty page past the end (which must not read as an empty log — the two call for
+opposite next moves). One on `DECISION_ORDER_IS_NOT_SEQUENCE`.
 
 ### Verification
 
-The new test file was run alone first — **25 tests, all passing** — and only then
-the whole unit project: **73 files, 658 tests, all passing**, `STATUS=0`. The
-delta was checked rather than eyeballed: 72 → 73 files and 633 → 658 tests is
-+1 and +25, which is this file exactly. **Nothing unaccounted for.**
+The new test file was run alone first — **28 tests, all passing** — and only then
+the whole unit project: **74 files, 686 tests, all passing**, `STATUS=0`. The
+delta was checked rather than eyeballed: 73 → 74 files and 658 → 686 tests is
++1 and +28, which is this file exactly. **Nothing unaccounted for.**
 
-`npx tsc -b --force` returned 0. `npx eslint .` returned 0, and its output file
-was read to confirm the only content was npm's version notice.
+`npx tsc -b --force` returned 0. `npx eslint .` returned 0, and both output files
+were read to confirm the only content was npm's version notice.
 
 **The vite cache was pointed at `/dev/shm`, never `/tmp`.** `/` is 99% full and a
 cache directory there is one of the three ways the gate reports a silent "no
-tests". The path carries `$(id -un)` for the usual reason.
+tests". The path carries `$(id -un)` for the usual reason, as do the three gate
+output files.
 
 Backend gates not run and **not claimed** — the commit is two TypeScript files
 and no Python. This is symmetric with `2eefc4d`, where the frontend gates were
@@ -248,31 +284,82 @@ not run and not claimed for a Python-only commit.
 **Every gate command was redirected to a file and its status read from `$?`,
 never through a pipe.**
 
-The staged tree (`816112cbda670d0b9902c0a07d1b852fb093088a`) was diffed against
-`HEAD` before committing and held exactly the two intended files, 618 insertions
+The staged tree (`634a464dc7b2a223fa78a5657ed734fd0e3c32d6`) was diffed against
+`HEAD` before committing and held exactly the two intended files, 784 insertions
 and no deletions, with the untracked `.bak` files, the probe test and all of
 Neil's case material correctly excluded. `git status --porcelain` showed no
 tracked modifications afterwards.
 
 ### What the next unit is
 
-**`decision-format.ts`, then the hook, then the panel.** In that order, and the
-order matters: the format module is what turns a `string` off the wire into
-something with words, and both the hook and the panel depend on it. Concretely,
-the remaining chunks are (a) a `decision-format.ts` that narrows `subject_type`
-and `decision` and gives every member a phrase an investigator would recognise,
-plus a reading for `by_machine`; (b) a `use-case-decisions` hook following
-`use-ingestion-runs`; (c) a `DecisionsPanel` and its tab on `FinancialPage`.
-**Only when (c) lands does the standing flag clear.**
+**The `use-case-decisions` hook, then the panel.** Chunk (a) landed this session,
+so what remains of the decisions screen is (b) a `use-case-decisions` hook
+following `use-ingestion-runs`, and (c) a `DecisionsPanel` and its tab on
+`FinancialPage`. **Only when (c) lands does the standing flag clear.**
+
+The hook is the small one and should be a single session's work. Read
+`use-ingestion-runs` first and follow it rather than inventing a second shape:
+this hook has one thing that one does not, which is paging, and `limit`/`offset`
+have to reach `getCaseDecisions` **without being coerced through truthiness** —
+`0fa07d5` guards them with `!== undefined` for exactly that reason and a hook
+that drops a zero would undo it one layer up.
 
 After the screen: the admission path, which is what finally gives
 `record_admission` a caller, and then proof class and `requires_adjudication`.
 The three-way split of item 8, and the reasoning for that order, is under the
 `a40bb61` entry in "The previous sessions, in brief" below.
 
+### One fact found this session that is not about this commit
+
+**`explain_balance_failure` has no production writer.**
+`grep -rn "explain_balance_failure" --include=*.py .` from the repo root returns
+the enum, the model, the migrations and tests — and nothing in
+`services/financial/` that records one. Every other member has a writer:
+`admission.py:150`, `documents.py:654`, `duplicates.py:577/643/783`,
+`quarantine.py:680/745`.
+
+This is **not** a defect and nothing was changed for it. The member is in the
+vocabulary, the database will accept it, and `decision-format.ts` gives it words
+because a screen must be able to read one if it ever appears. But a live case
+cannot currently produce one, so **the decisions panel will never show it against
+real data yet**, and a future session should not read its absence from a case as
+a bug in the panel. Whether a writer is wanted is a question for Neil when the
+balance-failure work comes up; it is not blocking anything now.
+
 ---
 
 ## The previous sessions, in brief
+
+**`0fa07d5`, the wire shape and the client call.** Two files, 618 insertions,
+frontend only. A new "Reading back what was decided" section in
+`features/financial/api.ts` (+208): `ADJUDICATION_SUBJECTS` and
+`ADJUDICATION_DECISIONS` as `as const` arrays, `DecisionRecord` (15 fields),
+`DECISION_FIELDS`, `DecisionsResponse`, `CaseDecisionsParams`, and
+`getCaseDecisions`. Plus `api.decisions.test.ts` (410 lines, 25 tests), which
+reads the Python with `readFileSync` and asserts the wire still is what the
+TypeScript believes.
+
+Three calls from that session that still bind: **the limit and offset bounds are
+not mirrored on the frontend** (`DEFAULT_DECISION_LIMIT` 100 and
+`MAX_DECISION_LIMIT` 500 stay in `decision_log.py`; a bound written down twice
+drifts the moment one side moves, so the client sends an over-cap limit as asked
+and trusts the limit the response reports); **zero is sent, not dropped**
+(`!== undefined`, never truthiness — a `if (params.limit)` would swallow
+`limit: 0` and `offset: 0` and turn an explicit request into a default); and
+**`subject_type` and `decision` are typed `string` on the record**, matching
+`LedgerTransaction.ledger_status`, with narrowing pushed to the edge — which is
+`decision-format.ts`, landed at `71d859d`.
+
+Two traps in writing contract tests over Python, both still live for anyone
+adding one: **`decision_log.py` declares `as_dict` twice** (on `DecisionRecord`
+and on `DecisionPage`), so the `pythonBlock(source, header)` idiom from
+`api.runs.test.ts` finds the first one both times — key the scan off the class
+first. And **the route docstring contains the literal `` le= ``** in the sentence
+explaining why a `le=` is absent, so a naive `not.toMatch(/le=/)` fails on the
+prose justifying the assertion; scope it to the `limit` parameter. Also:
+`api.runs.test.ts` extracts keys with `/"([a-z_0-9]+)":\s*self\./g`, which misses
+`DecisionPage`'s list comprehension; `api.decisions.test.ts` uses the looser
+`/"([a-z_0-9]+)":/g` scoped to the `as_dict` slice.
 
 **`2eefc4d`, the HTTP read over the adjudication log.** Two files, 309
 insertions, 5 deletions, backend only. `GET /api/financial/decisions` on
@@ -1420,18 +1507,19 @@ this session did":**
 1. **The decisions surface.** `services/financial/decision_log.py` ✅ `a40bb61`.
    `GET /api/financial/decisions` on the **ledger** router ✅ `2eefc4d`.
    `financialAPI.getCaseDecisions` and its contract test ✅ `0fa07d5`.
-   **Still to do, in this order: the format module, the hook, the panel.** The
-   log is readable over HTTP and callable from TypeScript, and no user can see
-   it. Nothing needs deciding about where the route lives or what the wire looks
-   like; both are settled and built. The remaining three are frontend units, so
-   the `/dev/shm` pip bootstrap is *not* needed for any of them — the vitest and
-   Chromium notes are. Specifically:
-   - **`decision-format.ts`.** Narrow `subject_type` and `decision` from the
-     `string` they arrive as, give every member of both vocabularies a phrase an
-     investigator would recognise, and give `by_machine` a reading. Follow
-     `ledger-format.ts`, which does exactly this for ledger status and proof
-     class and is the file to read first. The vocabularies are already exported
-     from `api.ts` as `ADJUDICATION_SUBJECTS` and `ADJUDICATION_DECISIONS`.
+   `lib/decision-format.ts` and its test ✅ `71d859d`.
+   **Still to do, in this order: the hook, then the panel.** The log is readable
+   over HTTP, callable from TypeScript, and now readable as English, and no user
+   can see it. Nothing needs deciding about where the route lives, what the wire
+   looks like, or what the vocabulary means; all three are settled and built. The
+   remaining two are frontend units, so the `/dev/shm` pip bootstrap is *not*
+   needed for either — the vitest and Chromium notes are. Specifically:
+   - ~~**`decision-format.ts`.**~~ Landed at `71d859d`. Exports
+     `readDecisionSubject`, `readDecision` (with `variant`, three-valued
+     `changedStoredState` and an always-safe `effect`), `readDecidedBy`,
+     `formatDecisionTime`, `describeDecisionPage`, `DECISION_SOURCE` and
+     `DECISION_ORDER_IS_NOT_SEQUENCE`. **The hook and the panel use these rather
+     than touching `subject_type` or `decision` as strings.**
    - **`use-case-decisions`.** Follow `use-ingestion-runs`. The page envelope
      carries `total` and `truncated`, and both have to reach the component —
      a hook that returns only `decisions` throws away the fact that the history
@@ -1874,19 +1962,20 @@ before item 12 lands.
 - **Whether ingestion should trigger a sweep at the end of a run is not
   decided and was not decided here.** It is the obvious next caller, and item 8
   (proof class) is the unit that will actually need one. Flagged, not parked.
-- **The adjudication log is readable over HTTP, the frontend has a call for it,
-  and no screen shows it.** Narrowed at `2eefc4d`, narrowed again at `0fa07d5`,
-  **not cleared.** `decision_log.list_case_decisions` landed at `a40bb61`,
-  `GET /api/financial/decisions` at `2eefc4d`, and `financialAPI.getCaseDecisions`
-  at `0fa07d5`, all tested, and the route is confirmed mounted. **The line this
-  flag used to carry — "nothing in `frontend_v2` calls that path" — is now
-  false and has been removed.** What is still missing is everything above the
-  client call: no format module, no hook, no panel, no tab. So on a live case the
-  history remains invisible to the person using the product, even though it is
-  now one function call away from a component that does not exist yet. **This
-  flag clears when a panel renders it, not before.** Until then, do not describe
-  the history as something anybody can see — "reachable", "callable" and
-  "visible" are three different claims and only the first two are true.
+- **The adjudication log is readable over HTTP, the frontend has a call for it
+  and words for it, and no screen shows it.** Narrowed at `2eefc4d`, at
+  `0fa07d5`, and again at `71d859d`, **not cleared.**
+  `decision_log.list_case_decisions` landed at `a40bb61`,
+  `GET /api/financial/decisions` at `2eefc4d`, `financialAPI.getCaseDecisions`
+  at `0fa07d5`, and `lib/decision-format.ts` at `71d859d`, all tested, and the
+  route is confirmed mounted. **Two lines this flag used to carry — "nothing in
+  `frontend_v2` calls that path" and "no format module" — are now false and have
+  been removed.** What is still missing is the hook, the panel and the tab. So on
+  a live case the history remains invisible to the person using the product, even
+  though every layer beneath the component now exists. **This flag clears when a
+  panel renders it, not before.** Until then, do not describe the history as
+  something anybody can see — "reachable", "callable", "readable" and "visible"
+  are four different claims and only the first three are true.
 - **The quarantine screen is reachable as of `e64c2ca`, and this flag is
   cleared.** It read, for four commits, that every part existed and none of it
   was reachable. That is no longer true: the "Held out" tab is in the tab strip,
