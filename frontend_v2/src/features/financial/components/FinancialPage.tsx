@@ -40,6 +40,7 @@ import { BulkActionsBar } from "./BulkActionsBar"
 import { TransactionTable } from "./TransactionTable"
 import { FinancialCharts } from "./FinancialCharts"
 import { LedgerPanel } from "./LedgerPanel"
+import { IngestionRunNotice } from "./IngestionRunNotice"
 import { BulkCategorizeDialog } from "./BulkCategorizeDialog"
 import { CategoryManagementDialog } from "./CategoryManagementDialog"
 import { SubTransactionDialog } from "./SubTransactionDialog"
@@ -457,7 +458,18 @@ export function FinancialPage() {
           so a case with ledger rows and no graph opens here and shows them.
         */}
         <TabsContent value="ledger" className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-auto p-4">
+          <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
+            {/*
+              A sibling of the panel and never a child of it. `LedgerPanel`
+              returns early for no case, for a read in flight, for a failed
+              read and for zero rows, so a notice nested inside it would
+              disappear exactly when the ledger is empty -- which is the
+              moment a broken attempt to load it is the explanation. This
+              stays silent unless an attempt did not finish.
+            */}
+            <ErrorBoundary level="section">
+              <IngestionRunNotice caseId={caseId} />
+            </ErrorBoundary>
             <ErrorBoundary level="section">
               <LedgerPanel caseId={caseId} />
             </ErrorBoundary>
