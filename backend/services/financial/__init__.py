@@ -494,6 +494,19 @@ from services.financial.native_ingest import (
     UnattributableRowError,
     ingest_native_reading,
 )
+from services.financial.native_precheck import (
+    MAX_PRECHECK_BYTES,
+    FilePrecheck,
+    PrecheckAccount,
+    PrecheckBalance,
+    PrecheckOutcome,
+    PrecheckPeriod,
+    SkippedRow,
+    precheck_bytes,
+    precheck_case_file,
+    precheck_path,
+    precheck_reading,
+)
 from services.financial.native_subjects import (
     AccountSubject,
     PeriodFacts,
@@ -1300,6 +1313,24 @@ __all__ = [
     "NativeIngestion",
     "UnattributableRowError",
     "ingest_native_reading",
+    # Reading a native file without storing it, so a reviewer can be shown what
+    # would land before anything does.  The two ingestion failures decidable
+    # from the file alone -- accounts that cannot be described, rows naming an
+    # account no subject covers -- are reported here from the same functions
+    # ingestion calls.  A ``readable`` verdict is therefore not a promise that
+    # the write succeeds, because a contradictory period is decided against
+    # rows already stored.
+    "MAX_PRECHECK_BYTES",
+    "FilePrecheck",
+    "PrecheckAccount",
+    "PrecheckBalance",
+    "PrecheckOutcome",
+    "PrecheckPeriod",
+    "SkippedRow",
+    "precheck_bytes",
+    "precheck_case_file",
+    "precheck_path",
+    "precheck_reading",
     # Rendering an evidence page as the image a stored rectangle refers to
     "PageRenderError",
     "render_page_png",

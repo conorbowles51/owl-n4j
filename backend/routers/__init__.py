@@ -30,6 +30,7 @@ from routers.admin_ai_costs import router as admin_ai_costs_router
 from routers.admin_update import router as admin_update_router
 from routers.financial import router as financial_router
 from routers.financial_ledger import router as financial_ledger_router
+from routers.financial_ingest import router as financial_ingest_router
 from routers.maintenance import router as maintenance_router
 from routers.case_deadlines import router as case_deadlines_router
 from routers.notebook import router as notebook_router
@@ -67,6 +68,7 @@ __all__ = [
     "admin_update_router",
     "financial_router",
     "financial_ledger_router",
+    "financial_ingest_router",
     "maintenance_router",
     "case_deadlines_router",
     "notebook_router",

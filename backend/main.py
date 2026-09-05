@@ -39,6 +39,7 @@ from routers import (
     admin_update_router,
     financial_router,
     financial_ledger_router,
+    financial_ingest_router,
     maintenance_router,
     case_deadlines_router,
     notebook_router,
@@ -158,6 +159,7 @@ app.include_router(admin_ai_costs_router)
 app.include_router(admin_update_router)
 app.include_router(financial_router)
 app.include_router(financial_ledger_router)
+app.include_router(financial_ingest_router)
 app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)
 app.include_router(notebook_router)
