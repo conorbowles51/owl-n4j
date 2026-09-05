@@ -648,6 +648,17 @@ from services.financial.reconcile import (
     reconcile_period,
     total_transactions,
 )
+from services.financial.reconcile_case import (
+    CaseOutcome,
+    CaseReconciliation,
+    PeriodOutcome,
+    PeriodReconciliation,
+    PeriodReconciliationView,
+    ReconciliationQueryError,
+    list_period_reconciliations,
+    reconcile_case,
+    to_reconciliation_view,
+)
 from services.financial.references import (
     REFERENCE_LENGTH,
     REFERENCE_PREFIX,
@@ -1516,6 +1527,16 @@ __all__ = [
     "evaluate_identity",
     "reconcile_period",
     "total_transactions",
+    # Running the identity across a case, and reading the recorded result
+    "CaseOutcome",
+    "CaseReconciliation",
+    "PeriodOutcome",
+    "PeriodReconciliation",
+    "PeriodReconciliationView",
+    "ReconciliationQueryError",
+    "list_period_reconciliations",
+    "reconcile_case",
+    "to_reconciliation_view",
     # What a row's reading is, and the reference a reader cites it by
     "MalformedReadingError",
     "MalformedReferenceError",
