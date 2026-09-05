@@ -9,10 +9,19 @@ read-only. Admitting, correcting, or quarantining a row stays with the
 ingestion and adjudication services that act with a run and an actor behind
 them.
 
-Two reads of the same store, at two levels. ``/ledger`` returns the rows.
+Three reads of the same store, at three levels. ``/ledger`` returns the rows.
 ``/runs`` returns the executions that produced them, including the ones that
-produced nothing because they failed. Both are ``case:view``, and neither
-writes, which is what keeps this router's claim about itself true.
+produced nothing because they failed. ``/decisions`` returns what was decided
+about any of it, by whom, and when. All three are ``case:view`` and none of
+them writes, which is what keeps this router's claim about itself true.
+
+``/decisions`` is here rather than on ``routers.financial_adjudication``, where
+the two routes that *write* those records live, and the reason is that router's
+own comment: it resolves every route to ``case:edit`` unconditionally so that
+anything added there inherits the write bar. A read dropped in would take a
+permission it does not need, and would make that comment false. Reading a
+history is ``case:view`` in the same sense that reading the rows is, so it
+belongs with the reads.
 """
 
 from datetime import date
@@ -22,13 +31,21 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from postgres.models.enums import IngestionRunStatus, LedgerStatus
+from postgres.models.enums import (
+    AdjudicationDecision,
+    AdjudicationSubject,
+    IngestionRunStatus,
+    LedgerStatus,
+)
 from postgres.session import get_db
 from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
 from services.financial import (
+    DEFAULT_DECISION_LIMIT,
+    DecisionLogError,
     LedgerQueryError,
     RunQueryError,
+    list_case_decisions,
     list_runs,
     list_transactions,
     to_run_view,
@@ -179,3 +196,108 @@ async def get_ingestion_runs(
         "runs": runs,
         "total": len(runs),
     }
+
+
+def _parsed_member(value: Optional[str], enum, field: str):
+    """One query string turned into a member of a closed vocabulary, or a 400.
+
+    The two routes above inline this. It is factored out here because this
+    route parses two vocabularies rather than one, and because the wording of
+    the refusal is the part that matters: naming the valid values in the detail
+    is what stops a caller having to guess which of three plausible spellings
+    of a decision this table uses. They are not rewritten to use it, because
+    changing a working route to save four lines is churn on a path with tests
+    already pinned to it.
+    """
+    if value is None:
+        return None
+    try:
+        return enum(value)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown {field} '{value}'. Valid values: "
+                f"{', '.join(member.value for member in enum)}"
+            ),
+        )
+
+
+@router.get("/decisions")
+async def get_case_decisions(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    subject_type: Optional[str] = Query(
+        None,
+        description=(
+            "Restrict to decisions about one kind of subject: transaction, "
+            "statement_period, source_document, account, or evidence_file."
+        ),
+    ),
+    subject_id: Optional[UUID] = Query(
+        None,
+        description=(
+            "Restrict to decisions about one subject. Scoped to the case "
+            "regardless: a subject in another matter returns nothing."
+        ),
+    ),
+    decision: Optional[str] = Query(
+        None, description="Restrict to one kind of decision"
+    ),
+    limit: int = Query(
+        DEFAULT_DECISION_LIMIT,
+        description=(
+            "Return at most this many decisions, newest first. A limit above "
+            "the cap is capped rather than refused, and the response says "
+            "which limit was applied."
+        ),
+    ),
+    offset: int = Query(0, description="Skip this many decisions"),
+    db: Session = Depends(get_db),
+):
+    """What has been decided in one case, newest first.
+
+    The adjudication log is append-only and has had writers since quarantine
+    landed. This is the first thing that reads it back at the level anyone
+    actually asks about it: not "what happened to this row", which
+    ``decisions.history`` already answered for one loaded subject, but what has
+    been done to the evidence in this matter, by whom, and when.
+
+    Every record says whether a person or the reconciliation stage decided it.
+    That distinction is derived from the actor's address by the service and is
+    not a filter here, because a caller who wants only one of the two can say
+    so with ``decision`` -- ``reclassify_document`` is the only member a
+    machine writes -- and a boolean query parameter over a derived field would
+    be a second definition of the same fact.
+
+    **The page is bounded and says so.** ``total`` counts every decision
+    matching the same filters, and ``truncated`` says whether any were left
+    off. A history that quietly stops is worse than no history, which is why
+    neither figure is optional.
+
+    ``limit`` and ``offset`` are validated by the service rather than by
+    ``Query``, and deliberately: a bound declared twice drifts, and the
+    service's rules are not the ones ``Query`` would express. A limit over the
+    cap is capped and answered, not refused, so a ``le=`` here would turn a
+    served request into a 422. A limit below 1 is refused, and comes back as a
+    400 carrying the service's own words for why.
+    """
+    subject = _parsed_member(subject_type, AdjudicationSubject, "subject_type")
+    kind = _parsed_member(decision, AdjudicationDecision, "decision")
+
+    try:
+        page = list_case_decisions(
+            db,
+            case_id,
+            subject_type=subject,
+            subject_id=subject_id,
+            decision=kind,
+            limit=limit,
+            offset=offset,
+        )
+    except DecisionLogError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to list decisions for case {case_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return page.as_dict()

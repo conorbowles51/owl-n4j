@@ -13,8 +13,18 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from postgres.models.enums import LedgerStatus
+from postgres.models.enums import (
+    AdjudicationDecision,
+    AdjudicationSubject,
+    LedgerStatus,
+)
 from routers import financial_ledger
+from services.financial.decision_log import (
+    DEFAULT_DECISION_LIMIT,
+    MAX_DECISION_LIMIT,
+    DecisionLogError,
+    DecisionPage,
+)
 from services.financial.transaction_query import LedgerQueryError
 
 
@@ -133,6 +143,178 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
                 )
 
         self.assertEqual(ctx.exception.status_code, 500)
+
+
+class GetCaseDecisionsTests(unittest.IsolatedAsyncioTestCase):
+    """The decision log's first reader over HTTP.
+
+    Same shape as the two classes above: the service is mocked and the handler
+    awaited directly, so what is under test is the router's own work --
+    turning two query strings into members of closed vocabularies, translating
+    the service's refusals, and handing the page back without reshaping it.
+    ``test_financial_decision_log`` covers the query itself.
+    """
+
+    async def _call(self, **overrides):
+        params = {
+            "case_id": uuid.uuid4(),
+            "subject_type": None,
+            "subject_id": None,
+            "decision": None,
+            "limit": DEFAULT_DECISION_LIMIT,
+            "offset": 0,
+            "db": "fake-session",
+        }
+        params.update(overrides)
+        return await financial_ledger.get_case_decisions(**params)
+
+    async def test_defaults_ask_the_service_for_the_whole_case(self):
+        case_id = uuid.uuid4()
+        page = DecisionPage(
+            case_id=str(case_id), decisions=(), total=0, limit=100, offset=0
+        )
+
+        with patch.object(
+            financial_ledger, "list_case_decisions", return_value=page
+        ) as service:
+            result = await self._call(case_id=case_id)
+
+        service.assert_called_once_with(
+            "fake-session",
+            case_id,
+            subject_type=None,
+            subject_id=None,
+            decision=None,
+            limit=DEFAULT_DECISION_LIMIT,
+            offset=0,
+        )
+        self.assertEqual(result["case_id"], str(case_id))
+        self.assertEqual(result["decisions"], [])
+        self.assertEqual(result["total"], 0)
+
+    async def test_both_vocabularies_are_parsed_before_the_service_sees_them(self):
+        case_id = uuid.uuid4()
+        subject_id = uuid.uuid4()
+        page = DecisionPage(
+            case_id=str(case_id), decisions=(), total=0, limit=25, offset=5
+        )
+
+        with patch.object(
+            financial_ledger, "list_case_decisions", return_value=page
+        ) as service:
+            await self._call(
+                case_id=case_id,
+                subject_type="transaction",
+                subject_id=subject_id,
+                decision="quarantine_row",
+                limit=25,
+                offset=5,
+            )
+
+        service.assert_called_once_with(
+            "fake-session",
+            case_id,
+            subject_type=AdjudicationSubject.transaction,
+            subject_id=subject_id,
+            decision=AdjudicationDecision.quarantine_row,
+            limit=25,
+            offset=5,
+        )
+
+    async def test_an_unknown_subject_type_is_a_400_naming_the_valid_values(self):
+        with patch.object(financial_ledger, "list_case_decisions") as service:
+            with self.assertRaises(HTTPException) as ctx:
+                await self._call(subject_type="transactions")
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("subject_type", ctx.exception.detail)
+        self.assertIn("statement_period", ctx.exception.detail)
+        # The refusal happens before the read, so a misspelled filter cannot
+        # come back as an unfiltered page.
+        service.assert_not_called()
+
+    async def test_an_unknown_decision_is_a_400_naming_the_valid_values(self):
+        with patch.object(financial_ledger, "list_case_decisions") as service:
+            with self.assertRaises(HTTPException) as ctx:
+                await self._call(decision="released")
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("decision", ctx.exception.detail)
+        self.assertIn("release_row", ctx.exception.detail)
+        service.assert_not_called()
+
+    async def test_a_decision_log_error_is_a_400_carrying_its_own_words(self):
+        with patch.object(
+            financial_ledger,
+            "list_case_decisions",
+            side_effect=DecisionLogError("offset cannot be negative, got -1"),
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await self._call(offset=-1)
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("offset cannot be negative", ctx.exception.detail)
+
+    async def test_an_unexpected_error_is_a_500(self):
+        with patch.object(
+            financial_ledger,
+            "list_case_decisions",
+            side_effect=RuntimeError("db exploded"),
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await self._call()
+
+        self.assertEqual(ctx.exception.status_code, 500)
+
+    async def test_a_limit_over_the_cap_reaches_the_service_rather_than_a_422(self):
+        """The cap is the service's rule and is applied there, not here.
+
+        Declaring ``le=MAX_DECISION_LIMIT`` on the query parameter would turn a
+        request the service serves -- capped, with the applied limit reported
+        back -- into a validation failure. This pins that the route does not
+        do that.
+        """
+        case_id = uuid.uuid4()
+        asked = MAX_DECISION_LIMIT * 10
+        page = DecisionPage(
+            case_id=str(case_id),
+            decisions=(),
+            total=0,
+            limit=MAX_DECISION_LIMIT,
+            offset=0,
+        )
+
+        with patch.object(
+            financial_ledger, "list_case_decisions", return_value=page
+        ) as service:
+            result = await self._call(case_id=case_id, limit=asked)
+
+        self.assertEqual(service.call_args.kwargs["limit"], asked)
+        # And what comes back reports the limit that was actually applied,
+        # not the one that was asked for.
+        self.assertEqual(result["limit"], MAX_DECISION_LIMIT)
+
+    async def test_the_page_is_handed_back_whole_including_truncation(self):
+        """The response is the page's own dict, not a shape rebuilt here.
+
+        A router that rebuilt the response would be free to drop ``truncated``,
+        and a history that stops without saying it stopped is the one failure
+        this read must not have.
+        """
+        case_id = uuid.uuid4()
+        page = DecisionPage(
+            case_id=str(case_id), decisions=(), total=40, limit=10, offset=0
+        )
+
+        with patch.object(
+            financial_ledger, "list_case_decisions", return_value=page
+        ):
+            result = await self._call(case_id=case_id, limit=10)
+
+        self.assertEqual(result, page.as_dict())
+        self.assertTrue(result["truncated"])
+        self.assertEqual(result["total"], 40)
+        self.assertEqual(result["offset"], 0)
 
 
 if __name__ == "__main__":
