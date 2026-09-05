@@ -3,24 +3,27 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records `a40bb61`, chunk 1 of item 8: a
-reader for the adjudication log, scoped to a case. **The log has had writers
-since `150084a` and until this had no reader at all.** Item 8 is in progress, not
-closed; chunks 2 and 3 are described under "What this session did". Read the disk
-note under Standing flags **before running anything** — the documented bootstrap
-no longer works and the replacement is recorded there.)
+**Last updated:** 5 September 2026 (records `2eefc4d`, the HTTP read over the
+adjudication log: `GET /api/financial/decisions`, placed on the **ledger** router
+and not the adjudication one, for the reason set out below. The service reader
+landed the commit before, at `a40bb61`; this is what lets anything outside the
+process reach it. **Item 8 is still in progress** — the decisions *screen* is
+next, then the admission path, then proof class. Read the disk note under
+Standing flags **before running anything**: the documented `CLAUDE.md` bootstrap
+still fails, and the working form needs one more environment variable than this
+file previously recorded.)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `a40bb61`
-  (`a40bb61df2087208fb0326a34ea75a1149ba6d59`), "Give the adjudication log a
-  reader scoped to a case", parent `755113c` (which was the state-file commit for
-  `e64c2ca`). **Confirm the real tip with `git log --oneline -5`** at the start of
-  every session rather than trusting this line — the state-file commit that
-  follows this one will already have moved it.
+- **Head when this was written:** `2eefc4d`
+  (`2eefc4d52510a4b8578f177502c5c24f03cae0e8`), "Let the adjudication log be read
+  over HTTP, scoped to a case", parent `dfb9715` (which was the state-file commit
+  for `a40bb61`). **Confirm the real tip with `git log --oneline -5`** at the
+  start of every session rather than trusting this line — the state-file commit
+  that follows this one will already have moved it.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 - **The build order lives in `docs/loupe-wiring-plan.md`,** not in this file. Read
   it before picking up work. It is an agreed plan and is not to be resequenced
@@ -48,229 +51,303 @@ disk note under Standing flags.
 
 ### Scale
 
-**122 commits** since `c4246c0` (27 August), counting `a40bb61`; 123 once the
+**124 commits** since `c4246c0` (27 August), counting `2eefc4d`; 125 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`, not incremented from the previous figure.
 
-`backend/services/financial/` **51 modules** excluding `__init__.py`;
-`backend/tests/test_financial_*.py` **58 files**, **3,373 tests**.
+`backend/services/financial/` **51 modules** excluding `__init__.py` (unchanged —
+this commit added a route, not a service); `backend/tests/test_financial_*.py`
+**58 files**, **3,381 tests**.
 
-### Gate baselines as of `a40bb61`
+### Gate baselines as of `2eefc4d`
 
-- **Backend financial suite: `Ran 3373 tests in 14.974s, OK (skipped=12)`.**
-  Re-run this session in full at this head. Up 37 from `e64c2ca`'s 3,336,
-  accounted for exactly by the one new file,
-  `tests/test_financial_decision_log.py`. **Nothing else moved, and there are no
+- **Backend financial suite: `Ran 3381 tests in 13.049s, OK (skipped=12)`.**
+  Re-run this session in full at this head. Up 8 from `a40bb61`'s 3,373,
+  accounted for exactly by the eight new tests added to the existing
+  `tests/test_financial_ledger_router.py`. **Nothing else moved, and there are no
   expected failures.**
 - **Frontend unit: 72 files, 633 tests; `tsc -b --force` 0; `eslint .` 0.** NOT
-  re-run at this head and they did not need to be: the commit is three Python
+  re-run at this head and they did not need to be: the commit is two Python
   files and no TypeScript. The figures carry forward from `e64c2ca`, where all
   three were measured over the whole project.
 - **Frontend browser: NOT RUN, and it could not be.** See the disk note. Last
   known-good figure is 2 files, 4 tests. **Do not carry "browser green" forward
   as though it were verified at this head.**
 
-**Six tracebacks on stderr during the backend run are expected and are not
-failures.** One `sqlite3.IntegrityError: UNIQUE constraint failed:
-financial_transactions.case_id, financial_transactions.ref_id` prints mid-run
-from `tests/test_financial_native_ingest_file.py`, which ingests the same file
-twice on purpose. **Three** come from `test_financial_quarantine_row.py`: two
-`SQLAlchemyError("connection lost")` injected into each writer to exercise the
-`write_failed` path, and — new at `35cc6be` — one
-`services.financial.money.MoneyError: currencies do not match` injected into the
-rescue check to prove an unanswerable question does not stop a quarantine.
-`quarantine_row.py` logs all three with `logger.exception`. The last two are the
-reconciliation pair from `dfcef2b`: `test_financial_reconcile_case.py` injects an
-`OperationalError ... locked` on a liveness `SELECT 1` and a disk-full failure on
-`COMMIT`. All six are the code working. **Do not spend a session chasing them.**
-Counted directly, not from memory:
-`python3 -m unittest tests.test_financial_quarantine_row 2>err; grep -c '^Traceback' err`.
+**Eight tracebacks on stderr during the backend run are expected and are not
+failures — this figure was wrong here for several sessions and read "six".** It
+was corrected at `2eefc4d` by counting the *baseline* tree at `dfb9715` as well
+as this head; both give eight, so the extra two are **not** a regression from any
+recent change. Eight `^Traceback` lines, **seven logged events**, because one
+event prints a chained pair. In run order:
+
+1. `RuntimeError: database gone`, logged by `routers/financial_ingest.py:214`
+   under "Failed to ingest file ...". A router test injects it through a mock
+   `side_effect` to exercise the route's error handler. **This is one of the two
+   the old "six" omitted.**
+2 and 3. One event, two tracebacks. `sqlite3.IntegrityError: UNIQUE constraint
+   failed: financial_transactions.case_id, financial_transactions.ref_id`,
+   followed by "The above exception was the direct cause of the following
+   exception" and the `sqlalchemy.exc.IntegrityError` wrapping it. Raised from
+   `native_ingest_file.py:331` and logged as "Writing evidence file ... failed";
+   `tests/test_financial_native_ingest_file.py` ingests the same file twice on
+   purpose. **The chaining is the other half of the old undercount** — one
+   failure, two `Traceback` headers.
+4, 5, 6. `test_financial_quarantine_row.py`: two
+   `SQLAlchemyError("connection lost")` injected into each writer to exercise the
+   `write_failed` path, and — since `35cc6be` — one
+   `services.financial.money.MoneyError: currencies do not match` injected into
+   the rescue check to prove an unanswerable question does not stop a quarantine.
+   `quarantine_row.py` logs all three with `logger.exception`.
+7, 8. The reconciliation pair from `dfcef2b`:
+   `test_financial_reconcile_case.py` injects an `OperationalError ... locked` on
+   a liveness `SELECT 1` and a disk-full failure on `COMMIT`.
+
+All eight are the code working. **Do not spend a session chasing them.** Count
+them directly rather than trusting this list:
+`grep -c '^Traceback' <run output>`.
+
+Separately, several **single-line** log messages with no traceback also print,
+and are equally expected: "Failed to precheck file ... : database gone",
+"Failed to list ledger transactions ... : db exploded", and — new at `2eefc4d` —
+"Failed to list decisions ... : db exploded", which is the new route's 500 path
+being exercised. A `logger.error` without a traceback is not a failure either.
 
 ---
 
 ## What this session did
 
-**Chunk 1 of Phase 2 item 8 landed as `a40bb61`.** Three files, 1,112
-insertions, no deletions. Backend only; no TypeScript was touched.
+**The HTTP read over the adjudication log landed as `2eefc4d`.** Two files, 309
+insertions, 5 deletions. Backend only; no TypeScript was touched.
 
-### Item 8 was split into three, and the reason is a fact about the repo
+This finishes the *service-and-route* half of chunk 1 of Phase 2 item 8.
+`a40bb61` gave the adjudication log a reader, `list_case_decisions`, and nothing
+outside the Python process could call it. `GET /api/financial/decisions` is what
+gives it reach. **The screen is still missing, so the log is still invisible to a
+user** — that is the next unit, and the standing flag below has been narrowed
+rather than cleared.
 
-The wiring plan gives item 8 as "`assign_proof_class`, `requires_adjudication`,
-`record_admission`, the decisions surface." That is three separable things, and
-the order they were put in was decided by reading the source rather than by
-preference:
+### Where the route went, and why it is not on the adjudication router
 
-1. **The decisions surface** (this commit, and the route and screen still to
-   come). `adjudications` has had production writers since `150084a` and **had
-   no reader at all**. Every quarantine, release, purge and machine
-   reclassification written since then was sitting in a table nothing could read
-   back. That is data that exists on disk today and is unreachable, so it is the
-   piece with the shortest path from nothing to something worth having, and it
-   is a read, so it cannot break a write path.
-2. **The admission path**, which is what gives `record_admission` a caller. It
-   has none today: `hooks/use-guarded-process.ts` offers `release` and `dismiss`
-   and has no "send the held file through anyway" action at all.
-3. **Proof class and `requires_adjudication`.** Deliberately last. Proof class is
-   already computed and already rendered; what is missing is the *explanation* of
-   what a class means and what an adjudication changed about it, which is easier
-   to write once the decisions surface exists to point at.
+The previous session parked this as the thing chunk 2 had to decide before
+writing a line, and named a preferred direction. It was confirmed by reading all
+three financial routers rather than inherited from that note.
 
-*What would reverse this order:* Neil wanting the admission override in front of
-a user sooner than a history nobody has asked to see yet.
+`routers/financial_adjudication.py` is the obvious home, because the two routes
+that **write** these records live there. It cannot take a read.
+`_adjudication_case_permission` resolves **every** route to `("case", "edit")`
+unconditionally, and its comment states the reason: a route added there inherits
+the write bar, which is the safe direction for a mistake to fall. A read dropped
+in would take a permission it does not need *and* would make that comment false.
+
+`routers/financial_ledger.py` resolves to `("case", "view")` unconditionally, on
+the stated grounds that none of its routes write — which stays true of a
+decisions read. `routers/financial_reconciliation.py` was read too, as the third
+pattern: it resolves by HTTP method. That is the right shape for a router serving
+both a read and a recompute, and the wrong shape for either of the other two,
+which are each uniformly one thing.
+
+So the read went on the ledger router. **Both comments stay true and neither had
+to change.** The ledger router's module docstring did have to change: it opened
+"Two reads of the same store" and now says three, with the router-choice
+reasoning written into it, because a docstring carrying a now-false count is the
+kind of small untruth that makes the rest of a file stop being trusted.
+
+*Reversed by:* the decisions read ever needing something from the adjudication
+router that the ledger router does not have. Nothing found suggests it will.
 
 ### What landed
 
-**`backend/services/financial/decision_log.py`** (new, 372 lines) —
-`list_case_decisions`, plus `DecisionRecord`, `DecisionPage`, `DecisionLogError`,
-`DEFAULT_DECISION_LIMIT` (100) and `MAX_DECISION_LIMIT` (500).
+**`backend/routers/financial_ledger.py`** — the module docstring rewritten from
+two reads to three, imports extended, a `_parsed_member` helper, and
+`get_case_decisions` on `GET /api/financial/decisions`. Query parameters:
+`case_id` (required), `subject_type`, `subject_id`, `decision`, `limit`
+(defaulting to `DEFAULT_DECISION_LIMIT`), `offset`.
 
-**`backend/services/financial/__init__.py`** (+18) — the six names above imported
-and added to `__all__`.
+**`backend/tests/test_financial_ledger_router.py`** — a new
+`GetCaseDecisionsTests` class, **8 tests**, awaiting the handler directly with
+`list_case_decisions` patched, matching how the two existing route classes in
+that file are written.
 
-**`backend/tests/test_financial_decision_log.py`** (new, 722 lines) — 37 tests in
-five classes: case scope, filters, order, paging, record shape.
+**No wiring change was needed and none was made.** `financial_ledger_router` is
+already registered in `routers/__init__.py` and `main.py`. That the new path is
+actually served was verified rather than assumed, by printing `router.routes`:
+`GET /api/financial/ledger`, `GET /api/financial/runs`,
+`GET /api/financial/decisions`.
 
-### Why `decisions.history()` could not be the reader
+### The three calls that were decisions, not defaults
 
-This is the fact the whole chunk turns on, and it is worth keeping because it is
-not obvious from the function's name. `history(session, subject, subject_type)`
-takes a **loaded subject object** and filters on `subject_type` and `subject_id`.
-**It never filters on `case_id`.** So it answers "what happened to this row" and
-structurally cannot answer "what has been decided in this matter". It also cannot
-bound a route: subject ids are unguessable, but a caller who has already seen one
-can name it against any case at all, and `history` would answer.
+**No `ge=1` or `le=MAX_DECISION_LIMIT` on the `limit` `Query`.** The service
+already validates, and it does not treat the two bounds the same way: a limit
+below 1 is **refused**, a limit above the cap is **capped and answered**. A
+`le=` in the route would turn a request the service is willing to serve into a
+422, and a bound declared in two places drifts the moment one moves. Validation
+stays in the service, which is the only place that knows the difference. There is
+a named test pinning this.
 
-`list_case_decisions` therefore puts the case **in the filter rather than
-checking it afterwards**, which is the pattern `quarantine_row.find_case_transaction`
-already uses and states the reason for: a subject in another matter is
-indistinguishable from one that does not exist.
+**The page is handed back whole, as `page.as_dict()`,** rather than rebuilt into
+a response dict field by field. `DecisionPage` carries `total`, `limit`, `offset`
+and `truncated` beside the records, and the point of `total` and `truncated` is
+that a history which does not say it was truncated is worse than no history. A
+hand-built response is one careless edit away from dropping one of them silently.
+There is a named test asserting the handler's return **equals** `as_dict()`,
+truncation included.
 
-### The three things that were decided, not assumed
+**The two existing routes were not refactored to use `_parsed_member`.** The
+helper turns one query string into a member of a closed vocabulary or raises a
+400 naming the valid values, and the existing routes each do that inline. Changing
+working routes with tests already pinned to them, to save four lines, is churn.
+The reason is recorded in the helper's own docstring so the next reader does not
+"tidy" it.
 
-Each is recorded at length in the module docstring as well, because each was a
-real fork.
+### What the eight tests pin
 
-**Ordering.** `subject_sequence` is per subject, so comparing one subject's 3
-with another subject's 1 means nothing. `created_at` is Postgres `now()`, which
-is **transaction start time**, so events written in one transaction share it
-exactly. The order chosen is `created_at DESC, subject_type, subject_id,
-subject_sequence DESC`: newest first at the resolution the timestamp actually
-has, authoritative within any one subject, and **total**, so paging is stable and
-a row cannot appear on two pages. The docstring explicitly refuses to claim that
-two events about *different* subjects sharing a timestamp happened in the order
-shown. `decisions.history` carries a docstring saying an earlier draft ordered by
-`created_at` with an `id` tiebreak and that "looked authoritative and was a coin
-toss" — this is the same trap, avoided the same way.
-
-**Bounding.** This **diverges from `transaction_query.list_transactions`, which
-is unbounded**, and the reason is specific rather than general caution:
-`reclassify_document` is written by the reconciliation stage on every pipeline
-run, so the log grows without any person deciding anything, and the cost of an
-unbounded read is set by how often the pipeline ran. `total` is reported beside
-the page, counted over the **same filters** so a filtered page describes its own
-population, because a truncated history that does not say it was truncated is
-worse than no history.
-
-**`by_machine`.** Derived from the actor address against
-`documents.RECONCILIATION_ACTOR_EMAIL` (`reconciliation@loupe.invalid`) rather
-than stored, because a second home for the same fact drifts. **Surfaced rather
-than left to callers**, because a reader that gets the comparison wrong shows a
-machine's reclassification as a person's judgement, which is the most misleading
-thing this log could be made to say. Matched case-insensitively and **on
-equality**, so an address merely *containing* the machine's is not the machine's
-— there is a test for exactly that. The import of
-`RECONCILIATION_ACTOR_EMAIL` is deferred into the function because
-`services.financial.documents` is heavy and pulls much of the package.
-
-### Two smaller calls, recorded so they are not re-litigated
-
-- **`to_record` is public in the module but deliberately not in the package
-  `__all__`.** At package level a bare `to_record` is vague — `transaction_query`
-  already contributes a `to_view` there — and `tests/test_financial_exports.py`
-  states in its own docstring that the guard is *module reachability*, at least
-  one name per module, and that public-looking names may be kept out of `__all__`.
-  Six names from this module are exported, so the guard is satisfied.
-- **The constants are `DEFAULT_DECISION_LIMIT` / `MAX_DECISION_LIMIT`, not
-  `DEFAULT_LIMIT` / `MAX_LIMIT`.** `services.financial.__init__` is a flat surface
-  shared by fifty-one modules, and a bare `DEFAULT_LIMIT` sitting on it would read
-  as the package's limit for anything paged.
-
-### What the 37 tests actually pin
-
-Grouped by the claim they defend rather than by the function they call:
-
-- **The case bounds the read.** Another case's decisions are absent; **naming
-  another case's subject id returns nothing**; an empty case is a page, not an
-  error; a read with no case is refused.
-- **The order says only what it can support.** Newest first. Events sharing a
-  timestamp on one subject come back with the reversal leading. Six events across
-  two subjects on a single shared timestamp, paged two at a time, yield six
-  **distinct** ids — which is the property that would break first if the order
-  were not total. The same read twice returns the same order.
-- **Paging cannot mislead.** `total` counts the population and not the page;
-  `truncated` is true and false in the right places; an offset past the end is
-  empty with a true total; a limit over the cap is **capped, not refused**; a
-  limit of `True` is refused, because `isinstance(True, int)` and a boolean
-  reaching a `LIMIT` clause is a silent 1.
-- **A machine's decision is not read as a person's.** Both directions, plus the
-  case-insensitive match and the substring near-miss.
-
-Two fixture routes were used on purpose. Most tests write through
-`decisions.record`, so what is read back is what the **real writer** writes.
-The ordering tests insert `AdjudicationEvent` rows directly, because `created_at`
-is a server default and those tests are precisely about which timestamps events
-carry.
+- **Defaults ask for the whole case.** No filters means no filters, not a
+  silently narrowed read.
+- **Both vocabularies are parsed before the service sees them.** The assertion is
+  that `AdjudicationSubject` and `AdjudicationDecision` **members** reach the
+  service, not the raw strings — a string arriving intact would filter on nothing
+  and look like an empty case.
+- **An unknown `subject_type`, and separately an unknown `decision`, is a 400
+  naming the valid values,** and `assert_not_called` on the service, so a typo
+  cannot reach the database. The decision test uses `"released"` against the real
+  member `"release_row"`, which is the near-miss a caller would actually type.
+- **A `DecisionLogError` is a 400 carrying its own words,** so the service's
+  message about what was wrong with a limit or offset survives to the caller.
+- **Anything else is a 500.**
+- **A limit over the cap reaches the service rather than a 422** — this is the
+  test that fails if someone adds `le=` later.
+- **The page is handed back whole, truncation included.**
 
 ### Verification
 
-The new file was run alone first — **37 tests, `OK`** — and only then the whole
-backend financial suite: **`Ran 3373 tests in 14.974s, OK (skipped=12)`**, `EXIT=0`.
-The delta was checked rather than eyeballed: 3,336 → 3,373 is +37, which is the
-new file exactly. **Nothing unaccounted for.** `tests/test_financial_exports.py`
-is the test most exposed to this change, since it parses every module in the
-package and asserts each contributes at least one name to `__all__`; it passed.
+The changed test file was run alone first — **13 tests, `OK`** (5 pre-existing
+plus the 8 new) — and only then the whole backend financial suite:
+**`Ran 3381 tests in 13.049s, OK (skipped=12)`**, `EXIT=0`. The delta was checked
+rather than eyeballed: 3,373 → 3,381 is +8, which is the eight new tests exactly.
+**Nothing unaccounted for.**
 
-Frontend gates not run and **not claimed** — the commit is three Python files and
-no TypeScript.
+The traceback count on stderr was **measured, not assumed**, and this is where the
+long-standing "six" in this file was found to be wrong. The run gave eight. Rather
+than treat that as a regression from this change, the **baseline tree at
+`dfb9715`** was run and counted as well: also eight. The corrected account is
+under Gate baselines above.
+
+Frontend gates not run and **not claimed** — the commit is two Python files and no
+TypeScript.
 
 **Every gate command was redirected to a file and its status read from `$?`,
 never through a pipe.**
 
-The staged tree (`be6029ae261050d129d181000d078483bf02b4c9`) was diffed against
-`HEAD` before committing and held exactly the three intended files, 1,112
-insertions and no deletions, with the untracked `.bak` files, the probe test and
-all of Neil's case material correctly excluded. `git status --porcelain |
-grep -v '^??'` was empty afterwards.
+The staged tree (`81a2fff3e773cb4fa2b90fa9c6e83248316021ec`) was diffed against
+`HEAD` before committing and held exactly the two intended files, 309 insertions
+and 5 deletions, with the untracked `.bak` files, the probe test and all of
+Neil's case material correctly excluded. `git status --porcelain | grep -v '^??'`
+was empty afterwards.
 
-The `warning: unable to unlink '.git/objects/../tmp_obj_...': Operation not
-permitted` lines during `write-tree` and `commit-tree` are the known workspace
-`unlink` denial. The objects were written and the hashes are valid. **Not a
-failure, do not chase them.**
+### What the next unit is
 
-### What chunk 2 has to decide before it writes a line
-
-The HTTP surface, a `GET` over `list_case_decisions`. The obvious home is
-`backend/routers/financial_adjudication.py`, and **it cannot simply be added
-there without a decision.** That router resolves every route to
-`("case", "edit")`, and its `_adjudication_case_permission` says so
-unconditionally with the reason stated in a comment: *"Every route on this router
-writes; none of them only read. Stated unconditionally rather than per path so
-that a route added here inherits the write bar, which is the safe direction for a
-mistake to fall."* A read route dropped in would inherit a **write** permission it
-does not need, and would make that comment false.
-
-Two defensible answers: make the permission per-path on that router (which the
-comment deliberately argued against), or put the read on
-`routers/financial_ledger.py`, which already declares itself read-only and
-resolves to `case:view` **on the stated grounds that none of its routes write** —
-which stays true of a decisions read. **The second is the direction to take
-unless reading turns something up**: it keeps both docstrings true and requires
-changing neither comment. *Reversed by:* the decisions read needing something
-from the adjudication router that the ledger router does not have.
+**The decisions screen.** The route exists and no user can reach it. Item 8 is
+not closed and should not be described as closed; what is done is the reader and
+its route. After the screen: the admission path, which is what finally gives
+`record_admission` a caller, and then proof class and `requires_adjudication`.
+The three-way split of item 8, and the reasoning for that order, is under the
+`a40bb61` entry in "The previous sessions, in brief" below.
 
 ---
 
 ## The previous sessions, in brief
+
+**`a40bb61`, the first half of chunk 1 of item 8: a reader for the adjudication
+log, scoped to a case.** Three files, 1,112 insertions, no deletions, backend
+only. `adjudications` had had production writers since `150084a` and **no reader
+at all**, so every quarantine, release, purge and machine reclassification
+written since then was sitting in a table nothing could read back.
+`decision_log.py` (new, 372 lines) added `list_case_decisions` plus
+`DecisionRecord`, `DecisionPage`, `DecisionLogError`, `DEFAULT_DECISION_LIMIT`
+(100) and `MAX_DECISION_LIMIT` (500), with 37 tests.
+
+**Item 8 was split into three there, and the order was decided by reading the
+source rather than by preference.** The wiring plan gives item 8 as
+"`assign_proof_class`, `requires_adjudication`, `record_admission`, the decisions
+surface", which is three separable things. (1) **The decisions surface** first,
+because it is data that exists on disk today and is unreachable, so it has the
+shortest path from nothing to something worth having, and it is a read, so it
+cannot break a write path. (2) **The admission path**, which is what gives
+`record_admission` a caller — it has none today, and
+`hooks/use-guarded-process.ts` offers `release` and `dismiss` with no "send the
+held file through anyway" action at all. (3) **Proof class and
+`requires_adjudication`** deliberately last: proof class is already computed and
+already rendered, and what is missing is the *explanation* of what a class means
+and what an adjudication changed about it, which is easier to write once the
+decisions surface exists to point at. *What would reverse this order:* Neil
+wanting the admission override in front of a user sooner than a history nobody
+has asked to see yet.
+
+**Why `decisions.history()` could not be the reader**, which is the fact the whole
+chunk turns on and is not obvious from the function's name.
+`history(session, subject, subject_type)` takes a **loaded subject object** and
+filters on `subject_type` and `subject_id`. **It never filters on `case_id`.** So
+it answers "what happened to this row" and structurally cannot answer "what has
+been decided in this matter". It also cannot bound a route: subject ids are
+unguessable, but a caller who has already seen one can name it against any case
+at all, and `history` would answer. `list_case_decisions` therefore puts the case
+**in the filter rather than checking it afterwards**, the pattern
+`quarantine_row.find_case_transaction` already uses and states the reason for: a
+subject in another matter is indistinguishable from one that does not exist.
+
+**Three things were decided there, not assumed,** each recorded at length in the
+module docstring too. *Ordering:* `subject_sequence` is per subject, so comparing
+one subject's 3 with another's 1 means nothing, and `created_at` is Postgres
+`now()`, which is **transaction start time**, so events written in one transaction
+share it exactly. The order is `created_at DESC, subject_type, subject_id,
+subject_sequence DESC` — newest first at the resolution the timestamp actually
+has, authoritative within any one subject, and **total**, so paging is stable and
+a row cannot appear on two pages. The docstring explicitly refuses to claim that
+two events about *different* subjects sharing a timestamp happened in the order
+shown. *Bounding:* this **diverges from `transaction_query.list_transactions`,
+which is unbounded**, for a specific reason — `reclassify_document` is written by
+the reconciliation stage on every pipeline run, so the log grows without any
+person deciding anything, and the cost of an unbounded read is set by how often
+the pipeline ran. `total` is counted over the **same filters**, so a filtered page
+describes its own population. *`by_machine`:* derived from the actor address
+against `documents.RECONCILIATION_ACTOR_EMAIL` (`reconciliation@loupe.invalid`)
+rather than stored, because a second home for the same fact drifts; **surfaced
+rather than left to callers**, because a reader that gets the comparison wrong
+shows a machine's reclassification as a person's judgement, which is the most
+misleading thing this log could be made to say; matched case-insensitively and
+**on equality**, so an address merely *containing* the machine's is not the
+machine's. The `RECONCILIATION_ACTOR_EMAIL` import is deferred into the function
+because `services.financial.documents` is heavy.
+
+**Two smaller calls, so they are not re-litigated.** `to_record` is public in the
+module but deliberately **not** in the package `__all__`: at package level a bare
+`to_record` is vague, `transaction_query` already contributes a `to_view` there,
+and `tests/test_financial_exports.py` states in its own docstring that the guard
+is *module reachability*, at least one name per module. And the constants are
+`DEFAULT_DECISION_LIMIT` / `MAX_DECISION_LIMIT`, not `DEFAULT_LIMIT` / `MAX_LIMIT`,
+because `services.financial.__init__` is a flat surface shared by fifty-one
+modules and a bare `DEFAULT_LIMIT` there would read as the package's limit for
+anything paged.
+
+**What the 37 tests pin,** grouped by the claim rather than the function. *The
+case bounds the read:* another case's decisions are absent, **naming another
+case's subject id returns nothing**, an empty case is a page and not an error, a
+read with no case is refused. *The order says only what it can support:* newest
+first; events sharing a timestamp on one subject come back with the reversal
+leading; six events across two subjects on a single shared timestamp, paged two at
+a time, yield six **distinct** ids, which is the property that would break first
+if the order were not total; the same read twice returns the same order. *Paging
+cannot mislead:* `total` counts the population and not the page, `truncated` is
+true and false in the right places, an offset past the end is empty with a true
+total, a limit over the cap is **capped not refused**, and a limit of `True` is
+refused because `isinstance(True, int)` and a boolean reaching a `LIMIT` clause is
+a silent 1. *A machine's decision is not read as a person's:* both directions,
+plus the case-insensitive match and the substring near-miss. Two fixture routes
+were used on purpose: most tests write through `decisions.record`, so what is read
+back is what the **real writer** writes, while the ordering tests insert
+`AdjudicationEvent` rows directly because `created_at` is a server default and
+those tests are precisely about which timestamps events carry.
 
 **`e64c2ca`, chunk 5 of the quarantine screen, which closed Phase 2 item 6.**
 Eleven files, 718 insertions, 39 deletions, frontend only. Chunks 1 to 4b built
@@ -476,6 +553,28 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
 These accumulate. The heading used to say "new this session", which stopped being
 true the first time a session added to the list instead of replacing it.
 
+- **`TMPDIR` must be moved to `/dev/shm` as well as `--target`, or pip fails
+  with `[Errno 28] No space left on device` even though the target has room.**
+  This file previously recorded only the `--target /dev/shm/pylibs-$(id -un)`
+  half, and that half alone still fails: pip builds and unpacks in `TMPDIR`,
+  which defaults to `/tmp` on the root filesystem, and the root filesystem is
+  99% full. The whole install aborts having written nothing, so the failure
+  looks like the package list being wrong rather than a disk problem. The
+  working form is the bootstrap line with
+  `TMPDIR=/dev/shm/tmp-$(id -un)` in front of it — and the directory has to
+  exist first. Note the error names `[Errno 28]` and **not** the path that ran
+  out, which is what makes it misleading.
+- **The expected-traceback count in the backend run was wrong in this file for
+  several sessions, and the way it was wrong is worth remembering.** It said six;
+  a `grep -c '^Traceback'` gives eight. Two causes, neither a regression. One
+  logged failure prints **two** `Traceback` headers because it is a chained
+  exception ("The above exception was the direct cause of the following
+  exception"), so counting headers and counting failures give different numbers.
+  And one traceback — the ingest router's injected `RuntimeError: database gone`
+  — was simply never listed. **The method that settled it is the reusable part:
+  when a count on stderr does not match this file, run the *baseline* tree at
+  the previous head and count there too before assuming your own change caused
+  it.** Both gave eight.
 - **In this feature a panel test mocks the hook, not the network.**
   `vi.mock("../hooks/use-ledger-transactions", ...)` with a `vi.hoisted` factory,
   which is what `LedgerPanel.test.tsx` already does. What is under test is the
@@ -592,12 +691,34 @@ true the first time a session added to the list instead of replacing it.
   `services/financial/__init__.py`, and `tests/test_financial_exports.py` checks
   the module contributes at least one name. Confirmed again here.
 - **The bootstrap in `CLAUDE.md` cannot complete: `/sessions` has zero bytes
-  free.** Install to `/dev/shm` instead and carry `PYTHONPATH`; the exact
-  commands are under "What this session did". **Check `df -h /sessions` and
-  `df -h /dev/shm` before assuming either.** Used for every run this session and
-  reliable.
+  free.** Install to `/dev/shm` instead and carry `PYTHONPATH`. **Check
+  `df -h /sessions` and `df -h /dev/shm` before assuming either.** The commands
+  are written out here rather than referenced, because the section they used to
+  be quoted from gets rewritten every session. Two steps, and **both** matter —
+  `--target` alone still fails, for the `TMPDIR` reason recorded at the top of
+  this list:
+
+  ```
+  mkdir -p /dev/shm/pylibs-$(id -un) /dev/shm/tmp-$(id -un)
+  TMPDIR=/dev/shm/tmp-$(id -un) pip install --break-system-packages --quiet \
+    --target /dev/shm/pylibs-$(id -un) <the seventeen packages from CLAUDE.md>
+  ```
+
+  Then every Python invocation carries:
+
+  ```
+  env PYTHONPATH=/dev/shm/pylibs-$(id -un) \
+      PYTHONPYCACHEPREFIX=/dev/shm/pyc-$(id -un) \
+      PYTHONDONTWRITEBYTECODE=1 PYTHONHASHSEED=0 python3 ...
+  ```
+
+  About twenty seconds and roughly 150M installed. Verify by importing
+  `sqlalchemy` and `fastapi` and printing their versions before trusting it —
+  a partial install fails later in a way that looks like a code error.
 - **`PYTHONPYCACHEPREFIX` must not point at `/tmp` either.** `/tmp` is on the
   root filesystem, which is at 99% with about 120M free. Send it to `/dev/shm`.
+  Same reasoning as `TMPDIR`: anything that defaults to `/tmp` in this sandbox
+  has to be moved by hand.
 - **A "no logs ... triggered" failure from a loop test is a scheduling race, not
   a broken loop.** Anything the reaper loop logs is written on the event loop
   after `asyncio.to_thread` returns, so a harness that releases from the worker
@@ -1221,13 +1342,14 @@ turns out to depend on something later in the list, stop and ask.
   reporting `35cc6be`, screen chunks 1 to 5 `1894fc4`, `19bffae`, `610df9b`,
   `66d1e67`, `519895e` and `e64c2ca`); reconciliation ✅ item 7 (`dfcef2b`).
   **Item 8, adjudication and proof class, is in progress** — chunk 1 of 3, the
-  case-scoped decision-log reader, landed as `a40bb61`. Then duplicates, suspect
+  decisions surface, has its case-scoped reader `a40bb61` and its route `2eefc4d`;
+  the screen is outstanding and is the next unit. Then duplicates, suspect
   amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-### Current unit: item 8, adjudication and proof class — chunk 1 of 3 done
+### Current unit: item 8, adjudication and proof class — the decisions screen
 
 **Start here.** The wiring plan's own words for it: *"`assign_proof_class`,
 `requires_adjudication`, `record_admission`, the decisions surface. Proof class
@@ -1238,11 +1360,12 @@ adjudication changed, and never offers a control that sets it."*
 this session did":**
 
 1. **The decisions surface.** `services/financial/decision_log.py` ✅ `a40bb61`.
-   **Still to do: the route, then the screen.** The route decision is written up
-   at the end of that section — the short version is that
-   `routers/financial_adjudication.py` resolves *every* route to `case:edit`
-   unconditionally and says so in a comment, so the read should go on
-   `routers/financial_ledger.py`, which is read-only and resolves to `case:view`.
+   `GET /api/financial/decisions` on the **ledger** router ✅ `2eefc4d`.
+   **Still to do: the screen — this is the next unit.** The log is now readable
+   over HTTP and no user can see it. Nothing needs deciding about where the route
+   lives; that was settled and built. What the screen has to decide is its own
+   question, and it is a frontend unit, so the `/dev/shm` pip bootstrap is *not*
+   needed for it — the vitest and Chromium notes are.
 2. **The admission path**, which gives `record_admission` its first caller.
 3. **Proof class and `requires_adjudication`**, last, because the class is
    already computed and already rendered; what is missing is the explanation of
@@ -1270,15 +1393,28 @@ re-derive them from scratch:
   router, its permission dependency `_adjudication_case_permission` and its
   `_respond` helper are already built and are the natural home.
 
-**Read before building:** `services/financial/proof_class.py`,
+**Read before building the screen:** `backend/routers/financial_ledger.py` for
+the contract the screen consumes — the route's parameters and the shape of
+`DecisionPage.as_dict()`, including `total` and `truncated`, which a history
+screen has to render rather than quietly drop —
+`frontend_v2/src/features/financial/api.ledger.ts` and its test for how a read
+is added to the API object, and the quarantine screen's own files as the nearest
+worked precedent for a tab on the financial page. The frontend conventions are
+under "And on the frontend, as of `e64c2ca`" above and they are not optional.
+
+**Read before building chunks 2 and 3:** `services/financial/proof_class.py`,
 `services/financial/admission.py`, `services/financial/adjudication.py` (which
 carries `AdjudicationError`, `UnpaidObligationError`, `MalformedVerdictError` and
 the `Adjudication` class at line 180), and `routers/financial_adjudication.py`.
-**Do not plan the chunking from this file** — plan it from those four.
+**Do not plan those chunks from this file** — plan them from those four.
 
-**This is backend work, so the `/dev/shm` pip bootstrap under "Carried forward"
-is the first thing the session has to do.** The documented `CLAUDE.md` bootstrap
-still fails on `ENOSPC`.
+**The screen is frontend work, so the `/dev/shm` pip bootstrap is not needed for
+it.** What *is* needed is the vitest cache path on `/tmp` carrying the current
+user and the per-session Chromium install, both in `CLAUDE.md`; all three of the
+frontend failure modes report a silent "no tests", so **never read "no tests" as
+green.** Chunks 2 and 3 are backend and do need the bootstrap — the documented
+`CLAUDE.md` one still fails on `ENOSPC`, and the working form is under "Carried
+forward", now including the `TMPDIR` flag that was missing from it.
 
 **The settled rule that constrains the whole unit** is already in `CLAUDE.md`:
 *proof class is computed, never set by hand, including by us. A class a person
@@ -1664,12 +1800,15 @@ before item 12 lands.
 - **Whether ingestion should trigger a sweep at the end of a run is not
   decided and was not decided here.** It is the obvious next caller, and item 8
   (proof class) is the unit that will actually need one. Flagged, not parked.
-- **The adjudication log now has a reader, and it is still not reachable over
-  HTTP.** `decision_log.list_case_decisions` landed at `a40bb61` and is tested,
-  but no route calls it and no screen shows it, so on a live case the log is
-  still write-only from every direction a user can approach it. **This flag
-  clears when chunk 1's route and screen land**, not when the service did. Until
-  then, do not describe the history as something anybody can see.
+- **The adjudication log is now readable over HTTP, and no screen shows it.**
+  Narrowed at `2eefc4d`, not cleared. `decision_log.list_case_decisions` landed
+  at `a40bb61` and `GET /api/financial/decisions` at `2eefc4d`, both tested, and
+  the route is confirmed mounted. What is still missing is the screen: nothing in
+  `frontend_v2` calls that path, so on a live case the history remains invisible
+  to the person using the product, even though it is now one HTTP request away.
+  **This flag clears when the decisions screen lands.** Until then, do not
+  describe the history as something anybody can see — "reachable" and "visible"
+  are different claims and only the first is true.
 - **The quarantine screen is reachable as of `e64c2ca`, and this flag is
   cleared.** It read, for four commits, that every part existed and none of it
   was reachable. That is no longer true: the "Held out" tab is in the tab strip,
@@ -1736,23 +1875,24 @@ before item 12 lands.
   applied to any real database from a session** — the sandbox has no Postgres.
   First deployment needs an `alembic upgrade head` on Neil's side.
 - **Disk: `/sessions` is completely full and this is the first thing to check
-  every session.** Measured again at `e64c2ca`: 9.8G of 9.8G, **zero bytes
-  available** — unchanged for eight sessions, against 129M nine sessions ago.
-  Root is at 99% with 120M free. `/dev/shm` is 2.0G with 1.8G free. Every one of
-  those figures came back identical to the previous session's again, so this is a
-  steady state rather than something still getting worse.
+  every session.** Measured again at `2eefc4d`: 9.8G of 9.8G, **zero bytes
+  available** — unchanged for ten sessions, against 129M eleven sessions ago.
+  Root is at 99% with 120M free. `/dev/shm` is 2.0G, showing 1.5G free *after*
+  this session's 463M of installed packages, so budget for roughly 1.5G of
+  genuinely free space at the start. This is a steady state rather than something
+  still getting worse.
   - **This does not block the repo, and an older wording implied it did.**
-    `df -h` on the repo path shows a **separate virtiofs mount with 36G free**
-    (37G at `19bffae`; it drifts a little and is nowhere near tight).
-    The working tree writes normally and the **frontend gates run normally**,
-    provided the vite cache goes to `/dev/shm` rather than `CLAUDE.md`'s `/tmp`,
-    which is on the 99%-full root. Unit, `tsc -b` and `eslint .` were all run in
-    full this session on that basis.
-  - **The backend suite is still runnable** via the `/dev/shm` bootstrap
-    recorded above. That is the workaround and it is reliable. **Not exercised at
-    this head, nor at the one before it** — both commits were frontend only. The
-    last session that actually ran it was `35cc6be`. A session that touches
-    Python must budget for the bootstrap rather than assuming a warm environment.
+    `df -h` on the repo path shows a **separate virtiofs mount with 35G free**
+    (36G at `e64c2ca`, 37G at `19bffae`; it drifts a little and is nowhere near
+    tight). The working tree writes normally and the **frontend gates run
+    normally**, provided the vite cache goes to `/dev/shm` rather than
+    `CLAUDE.md`'s `/tmp`, which is on the 99%-full root.
+  - **The backend suite is runnable** via the `/dev/shm` bootstrap recorded
+    above, and that workaround was exercised in full at this head: bootstrap,
+    baseline, and two complete suite runs, all clean. It is reliable. A session
+    that touches Python must still budget the twenty seconds for the bootstrap
+    rather than assuming a warm environment — **`/dev/shm` does not survive
+    between sessions**, so it is a fresh install every time.
   - **The browser gate is not runnable and will not become runnable.** Chromium
     needs roughly 700M to install and there is nowhere to put it: `/dev/shm` is
     2.0G but is RAM, and spending most of it on browser binaries to run four
