@@ -351,19 +351,39 @@ this session: **a bank file can be sent to the ledger from seven places in the
 interface, and there is no screen anywhere that shows what arrived.** Rows go in
 and vanish from view.
 
-Two verified facts constrain the mount, both still true:
+**Neil has ruled: the ledger is a tab inside `FinancialPage`, and it is the
+primary view of that page.** The sibling route is dead. Do not reopen it, and do
+not add a ninth sidebar entry. The naming problem it carried — two
+financial-looking entries in a sidebar that could not say which store each read
+— is gone with it.
 
-- `FinancialPage` early-returns at lines 315 and 323 on the **Neo4j** query, so a
-  nested tab is unreachable exactly when a freshly ingested case has ledger rows
-  and no graph. That case is no longer hypothetical — it is what this session
-  made producible from the interface.
-- The persisted `mainView` enum in `financial.store.ts` has no `version` and no
-  `migrate`, so adding a tab value needs a migration or it reads a stale
-  persisted value it does not recognise.
+The ruling settles where, not how. Three things in the page block it, all
+verified against source on the day of the ruling:
 
-A sibling route is the current recommendation. **Its one real cost is two
-financial-looking entries in the case sidebar,** where Financial is currently
-shortcut 5 of 8. **This needs a ruling from Neil before the unit starts.**
+- **The page early-returns before the tabs exist.** Line 323 is
+  `if (!transactions.length)`, over the **Neo4j** read, with a loading return at
+  315 above it. So the tab strip renders only when the graph has rows, and a
+  nested ledger tab is unreachable exactly when a freshly ingested case has
+  ledger rows and no graph. That case is no longer hypothetical: it is what the
+  send-to-ledger work made producible from seven places in the interface.
+  `LedgerPanel` already owns its own no-case, loading, error and empty states,
+  so **the guard moves inside the graph tabs rather than wrapping the page.**
+- **Four pieces of chrome sit above the tab strip and describe the graph.**
+  `FinancialToolbar` (`filteredCount`, `totalCount`), the
+  `uses_legacy_financial_model` banner, `FinancialFilterPanel` (graph categories
+  and entities) and `FinancialSummaryCards` (totals over `filteredTransactions`).
+  With the ledger primary, the first thing on screen is a row of counts and
+  totals that do not describe the table beneath them — the exact failure the
+  standing rule about corrected values exists to prevent. That chrome must move
+  inside the graph tabs or become tab-aware. **Which of those two is still
+  Neil's call and has not been made.**
+- **`mainView` is persisted and has no migration.** `financial.store.ts` writes
+  it to `owl-financial-store` through `partialize`; the file contains zero
+  occurrences of `version` or `migrate`. Changing the default to the ledger
+  therefore moves new users only — anyone who has opened the page before
+  rehydrates a stored `"transactions"` and lands where they always did. Needs a
+  `version`/`migrate` pair or an explicit rehydration rule, or the ruling is
+  silently half-applied.
 
 ### Where the old numbering went
 
@@ -394,9 +414,20 @@ longer parked** — they are Phase 4 of the plan.
 
 ## Open questions, waiting on Neil
 
-**Where does the ledger screen mount?** **Now the blocking question** — it is the
-next unit and it cannot start without an answer. Detail under Build order above.
-Sibling route recommended.
+**Where does the ledger screen mount?** **Answered.** A tab inside
+`FinancialPage`, and the primary view of it. No sibling route, no ninth sidebar
+entry. Detail and the three things that block it under Build order above.
+
+**Does the graph chrome move or become tab-aware?** **Raised by the mount ruling
+and not yet answered.** The toolbar, legacy banner, filter panel and summary
+cards all render above the tab strip and all read Neo4j. With the ledger primary
+they would head the screen with counts and totals belonging to the other store.
+Either they move inside the graph tabs, or they learn which tab is showing.
+Moving them is the smaller change and the more honest one; making them
+tab-aware keeps the page's shape but leaves four components that have to be
+right about a thing they currently never ask. **Item 4 can start without this
+answer only if the ledger tab is built first and the chrome is left untouched
+until the ruling lands.**
 
 **Was removing `reingest` the right call?** Raised last session, still unruled.
 Short form: the override could not succeed for unchanged bytes, and where it
