@@ -3,17 +3,17 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the quarantine write path, `150084a`,
-which closes the first half of Phase 2 item 6)
+**Last updated:** 5 September 2026 (records reconciliation, `dfcef2b`, which
+closes Phase 2 item 7)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `150084a`
-  (`150084ab154d6eb5adc624cda78a5f4f9a18010b`), "Financial: adjudicated
-  quarantine and release for one stored ledger row", parent `8aef23d`.
+- **Head when this was written:** `dfcef2b`
+  (`dfcef2bc936d4ddce3457847c2bf386f6bb5a442`), "Run the balance identity across
+  a case, and expose the recorded result", parent `53b13b7`.
   **Confirm the real tip with `git log --oneline -5`** at the start of every
   session rather than trusting this line — the state-file commit that follows
   this one will already have moved it.
@@ -32,7 +32,7 @@ Still untracked and still un-removable from a session (workspace denies
 - `backend/services/financial/export_manifest.py.bak`
 - `backend/services/financial_export_service.py.bak`
 - `frontend_v2/src/__probe.test.ts` — a diagnostic left by the vitest
-  investigation nine sessions ago. It is **counted in the frontend baseline
+  investigation ten sessions ago. It is **counted in the frontend baseline
   below** (it contributes 1 file and 1 test), so when it is deleted the unit
   numbers drop by one each and that is expected, not a regression.
 
@@ -44,137 +44,143 @@ disk note under Standing flags.
 
 ### Scale
 
-**102 commits** since `c4246c0` (27 August), counting `150084a`; 103 once the
+**104 commits** since `c4246c0` (27 August), counting `dfcef2b`; 105 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`.
 
-`backend/services/financial/` **48 modules** excluding `__init__.py`;
-`backend/tests/test_financial_*.py` **54 files**, **3,241 tests**.
+`backend/services/financial/` **49 modules** excluding `__init__.py`;
+`backend/tests/test_financial_*.py` **56 files**, **3,300 tests**.
 
-### Gate baselines as of `150084a`
+### Gate baselines as of `dfcef2b`
 
-- **Backend financial suite: `Ran 3241 tests, OK (skipped=12)`.** Up from 3201 by
-  exactly the 40 added this session (27 + 13). **There are no expected
+- **Backend financial suite: `Ran 3300 tests, OK (skipped=12)`.** Up from 3241 by
+  exactly the 59 added this session (45 + 14). **There are no expected
   failures.**
 - **Frontend unit: 67 files, 494 tests, all passing.** Unchanged; no frontend
   file was touched this session. 494 includes the stray probe test.
-- **`tsc -b --force` returns 0. `eslint .` returns 0.** Both re-run this session.
+- **`tsc -b` returns 0. `eslint .` returns 0.** Both re-run this session.
 - **Frontend browser: NOT RUN this session, and it could not be.** See the disk
   note below. The last known-good figure is 2 files, 4 tests. No frontend file
   changed, so the risk of skipping it here is nil, but **do not carry "browser
   green" forward as though it were verified at this head.**
 
-**One traceback on stderr during the backend run is expected and is not a
-failure.** A `sqlite3.IntegrityError: UNIQUE constraint failed:
+**Five tracebacks on stderr during the backend run are expected and are not
+failures.** One `sqlite3.IntegrityError: UNIQUE constraint failed:
 financial_transactions.case_id, financial_transactions.ref_id` prints mid-run
 from `tests/test_financial_native_ingest_file.py`, which ingests the same file
-twice on purpose. **This session adds two more of the same kind:**
-`test_financial_quarantine_row.py` injects a `SQLAlchemyError("connection
-lost")` into each writer to exercise the `write_failed` path, and
-`quarantine_row.py` logs it with `logger.exception`, so two more tracebacks now
-print. All three are the code working. **Do not spend a session chasing them.**
+twice on purpose. Two more come from `test_financial_quarantine_row.py`, which
+injects a `SQLAlchemyError("connection lost")` into each writer to exercise the
+`write_failed` path that `quarantine_row.py` logs with `logger.exception`.
+**This session adds the last two of the same kind:**
+`test_financial_reconcile_case.py` injects an `OperationalError ... locked` on a
+liveness `SELECT 1` and a disk-full failure on `COMMIT`, and
+`reconcile_case.py` logs both with `logger.exception`. All five are the code
+working. **Do not spend a session chasing them.**
 
 ---
 
 ## What this session did
 
-**Phase 2 item 6, quarantine — the write half, landed as `150084a`.** Seven
-files, 1,668 insertions, no deletions.
+**Phase 2 item 7, reconciliation, landed as `dfcef2b`.** Seven files, 2,126
+insertions, no deletions.
+
+Plan item 7 verbatim: "Whether the rows add up to what the statement printed.
+This is the check that says a document was read completely."
 
 ### The finding that decided the shape of the unit
 
-**The wiring plan's premise for item 6 is factually wrong, and the source says
-so plainly.** The plan says quarantined rows are written today and never shown,
-which implies the missing piece is a screen. It is not.
+**`reconcile_period` has never run in production, and the source says so
+plainly.** It is fully written and fully tested, and its only production caller
+is `duplicates.py:334` — which itself has no production caller, because
+duplicates is Phase 2 item 9 and is not wired. So every
+`FinancialStatementPeriod` was created at `not_attempted` (`periods.py:391`) and
+stayed there for the life of the case.
 
-**Nothing in production ever sets `ledger_status` to `'quarantined'`.**
-`quarantine_transaction` and `release_transaction` have existed in
-`services/financial/quarantine.py`, fully tested, since they were written, and
-**no caller anywhere reaches either of them.** So the population a quarantine
-screen would list is empty, and would have stayed empty however well the screen
-was built. The screen was not what was missing. A way for a person to put a row
-into that state was.
+Something weaker was standing in for it. `native_ingest.py:249` passes the
+**format parser's** verdict about the file to
+`documents.reclassify_after_reconciliation`. That is a claim about whether the
+file parsed coherently. It is **not** the balance identity over stored, admitted
+rows, and after row-level adjudication landed last session the two can diverge
+deliberately: quarantining a row changes the second and cannot change the first.
 
-That is why this session built the write path and not the screen, and it is not
-a resequencing of the plan: item 6 is still item 6, and its remaining half is
-described under Build order below.
+So this unit built the driver that runs the identity across a case's periods and
+writes the answer down, plus the read that reports what was written.
 
 ### What landed
 
-- **`backend/services/financial/quarantine_row.py`** (389 lines, new). The
-  driver those two writers never had. Resolves a row within a case, builds the
-  grounds from the person taking the decision, calls the writer, names the
-  decision that was appended, commits. Public surface: `RowAdjudicationOutcome`,
-  `RowAdjudication`, `ActorError`, `actor_from_user`, `find_case_transaction`,
-  `quarantine_case_row`, `release_case_row`.
-- **`backend/routers/financial_adjudication.py`** (156 lines, new). Two POST
-  routes, registered in `routers/__init__.py` and `main.py`.
-- **`backend/tests/test_financial_quarantine_row.py`** (717 lines, 27 tests,
-  new). Real SQLite on disk, real writers, real adjudication log.
-- **`backend/tests/test_financial_adjudication_router.py`** (385 lines, 13
+- **`backend/services/financial/reconcile_case.py`** (546 lines, new). The
+  driver `reconcile_period` never had, plus the read. Public surface:
+  `PeriodOutcome`, `CaseOutcome`, `PeriodReconciliation`, `CaseReconciliation`,
+  `PeriodReconciliationView`, `ReconciliationQueryError`, `reconcile_case`,
+  `list_period_reconciliations`, `to_reconciliation_view`.
+- **`backend/routers/financial_reconciliation.py`** (191 lines, new). One GET,
+  one POST, registered in `routers/__init__.py` and `main.py`.
+- **`backend/tests/test_financial_reconcile_case.py`** (1,021 lines, 45 tests,
+  new). Real SQLite on disk, real `reconcile_period`, real periods and rows.
+- **`backend/tests/test_financial_reconciliation_router.py`** (343 lines, 14
   tests, new). Handlers awaited directly, service mocked, mirroring
   `test_financial_ledger_router.py`.
-- **`backend/services/financial/__init__.py`** (+17). Import block and `__all__`
+- **`backend/services/financial/__init__.py`** (+21). Import block and `__all__`
   block for the new module.
 - **`backend/main.py`** (+2), **`backend/routers/__init__.py`** (+2).
 
-### The three things the driver has to get right
+### The four things the driver has to get right
 
-These are the reasons the driver exists at all rather than the router calling
-`quarantine.py` directly, and each has a named test.
+These are why the driver exists rather than the router calling `reconcile_period`
+directly, and each has a named test.
 
-- **A refusal is not an error.** A row already held on computed grounds, a
-  superseded row, a blank reason, a user the system cannot name: each is a fact
-  about the row's current standing, and the person asking needs to read it
-  beside the row rather than in the browser's error path. All of them come back
-  as an outcome word on a **200**. Only a row the caller may not see (404) and a
-  genuine database fault (500) become error statuses, and **the 404 is worded
-  identically for a row in another case and a row that does not exist**, so that
-  asking cannot be used to learn what a case the caller cannot see contains.
-  There is a test asserting the two routes word it the same.
-- **An unchanged row is reported separately from a changed one.**
-  `quarantine_transaction` is idempotent for identical grounds: asked twice it
-  appends nothing the second time and returns the row. Reporting that as
-  `quarantined` would hand back an `adjudication_id` naming **somebody else's
-  earlier decision** as though it were this request's. So the status is read
-  before the call, and that case is reported as `unchanged` carrying no id at
-  all.
-- **The person's name reaches the row twice on purpose,** once inside the
-  quarantine detail (`QuarantineBasis.from_adjudication` renders
-  `f"{actor}: {reason}"`) and once as the actor on the appended decision. The
-  row can hold only the first, because
-  `ck_financial_transactions_quarantine_coherent` requires a released row to
-  carry **no reason at all**. The log is therefore the only place a reversal can
-  be recorded, and the two paths have to agree about who took each step. **A
-  release is appended after the quarantine it reverses, never in place of it** —
-  asserted by comparing `subject_sequence`.
+- **A period in another case is not a period.** The sweep is scoped by case, and
+  optionally by account, through a join rather than by trusting a caller's id.
+- **One bad period cannot abandon the rest.** A period whose stored data will not
+  support the arithmetic is reported `refused` with the reason and the sweep
+  continues. Its previously recorded verdict is **left untouched rather than
+  reset**, because that verdict was a real result when it was taken and a failure
+  to re-derive it today is not evidence that it was wrong.
+- **A refusal must not leave a number behind.** `reconcile_period` assigns
+  `period.reconciliation_status` and only **then** calls `_fits(...)`, which can
+  raise `LedgerOverflowError`. So a refusal on that path arrives with a
+  half-written verdict already in the session. The driver discards it with
+  `session.expire(period)`. **`refresh()` would be wrong**: it autoflushes the bad
+  state first, committing the very number being discarded.
+- **A read does not recompute.** The GET reports the stored column and nothing
+  else, including when the column says `not_attempted`.
 
 ### The endpoints
 
-Both under the existing `/api/financial` prefix, both POST, both `case:edit`:
+Both under the existing `/api/financial` prefix. **Two routes and two
+permissions, which is why this is its own router and not folded into a
+neighbour:** `routers/financial_ledger` resolves everything to `case:view` on the
+stated grounds that none of its routes write, and the recompute here writes;
+`routers/financial_adjudication` resolves everything to `case:edit` on the stated
+grounds that all of its routes do, and the read here does not. Either merge would
+make an existing module's docstring false.
 
-- `POST /api/financial/transactions/{transaction_id}/quarantine`
-- `POST /api/financial/transactions/{transaction_id}/release`
+- `GET /api/financial/reconciliation` — `case:view`. Query: `case_id`
+  (required), `account_id`, `reconciliation_status`, `limit`. Response:
+  `case_id`, `periods`, `total`.
+- `POST /api/financial/reconciliation/run` — `case:edit`. Query: `case_id`
+  (required), `account_id`. Response is the sweep whole: `case_id`, `outcome`,
+  `applied`, `reason`, `counts`, `total`, `periods`.
 
-Query: `case_id` (required). Body: `reason` (required, embedded).
-Response: `transaction_id`, `outcome`, `applied`, `reason`, `ledger_status`,
-`quarantine_reason`, `adjudication_id`.
+**The permission is resolved from the HTTP method, not the path,** so a route
+added to this router later inherits the bar its verb implies. A safe method can
+only read; anything else is treated as a write whether or not it turns out to be
+one, which is the direction a mistake here should fall. Tested for `PUT`,
+`PATCH` and `DELETE`, which are not served today.
 
-**`outcome` is one of six words:** `quarantined`, `released`, `unchanged`,
-`not_found`, `refused`, `write_failed`. **`applied` is true for exactly two of
-them** and is the flag an interface should read, not the word — same rule as
-`wouldStore`/`didStore` on the ingest endpoints, and for the same reason: a
-backend one version ahead can send a word this build has never seen.
+**`applied` is the flag an interface reads, not the outcome word** — same rule as
+`wouldStore`/`didStore` on ingest and `applied` on adjudication, and for the same
+reason: a backend one version ahead can send a word this build has never seen.
 
 ### Verification
 
-Backend 3201 → 3241, accounted for exactly: 27 in the driver tests and 13 in the
-router tests. `tsc -b --force` 0, `eslint .` 0, unit 67/494 unchanged. Browser
-project could not run; see the disk note.
+Backend 3241 → 3300, accounted for exactly: 45 in the driver tests and 14 in the
+router tests. `tsc -b` 0, `eslint .` 0, unit 67/494 unchanged. Browser project
+could not run; see the disk note.
 
-The staged tree was diffed against `HEAD` before committing and held exactly the
-seven intended files, with the untracked `.bak` files, the probe test and all of
-Neil's case material correctly excluded.
+The staged tree (`f44988b8`) was diffed against `HEAD` before committing and held
+exactly the seven intended files, with the untracked `.bak` files, the probe test
+and all of Neil's case material correctly excluded.
 
 ---
 
@@ -185,17 +191,66 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
 
 ### New this session
 
+- **`services/financial/__init__.py` re-exports a *function* named
+  `reconcile_case`, which shadows the submodule of the same name.** This is a
+  live trap for any test that needs the module object:
+  `from services.financial import reconcile_case` binds the **function**, so
+  `patch.object(that, "reconcile_period")` fails with "does not have the
+  attribute". **And the obvious alternative fails identically** —
+  `patch("services.financial.reconcile_case.reconcile_period")` resolves a dotted
+  target with `getattr` before it falls back to importing, so it hits the same
+  function. The working form is
+  `import services.financial.reconcile_case` followed by
+  `module = sys.modules["services.financial.reconcile_case"]`. **Any future
+  module whose name matches one of its own exported callables has this problem.**
+- **Use `session.expire(obj)` and never `session.refresh(obj)` to throw away an
+  in-flight mutation.** `refresh` autoflushes first, which writes the thing you
+  are trying to discard. This matters wherever a service mutates an ORM object
+  and then hits a validation that can raise.
+- **`reconcile_period` mutates before it validates.** It assigns
+  `reconciliation_status` and then calls `_fits(...)`, which raises
+  `LedgerOverflowError`. **`MixedCurrencyError` is different** — it is raised
+  inside `evaluate_identity`, *before* any mutation. Any caller has to handle
+  both, and only one of them leaves state behind.
+- **Ordering a period list needs `nullslast()` and a secondary key on `id`.**
+  `period_start` is nullable, and NULL ordering differs between SQLite and
+  Postgres, so an ordering without it is not portable **and** not total. This is
+  the same class of bug as the runs list needing a secondary sort on `id`.
+- **`IdentityOutcome`'s field order is `status, totals, opening,
+  printed_closing, computed_closing, delta, independent, unavailable_reason`,**
+  with properties `is_balanced`, `was_attempted`, and `proves_completeness`
+  (balanced **and** independent **and** `totals.is_complete`). Constructing one
+  by hand in a test needs all eight.
+- **`PeriodBounds` has exactly three constructors:** `printed(start, end)`,
+  `derived(start, end)`, `absent()`. `supports_continuity` requires **both**
+  bounds be `printed`.
+- **`financial_statement_periods` has a second uniqueness rule for the undated
+  case.** Beyond
+  `uq_financial_statement_periods_document_account_period` on
+  `(source_document_id, account_id, period_start, period_end)`, nulls are
+  distinct inside a unique constraint, so there is a **partial** index
+  `uq_financial_statement_periods_document_account_undated` on
+  `(source_document_id, account_id)` `WHERE period_start IS NULL AND period_end
+  IS NULL`. A fixture that makes two undated periods for one document and account
+  will collide.
+- **Four coherence check constraints tie each balance to its source**, of the
+  form `(opening_balance_source = 'absent') = (opening_balance_minor IS NULL)`,
+  for opening and closing, start and end. A fixture cannot set a source of
+  `printed` and leave the amount null.
+
+### From earlier sessions, still true
+
 - **The `playwright install chromium` fix recorded here previously has stopped
   working, and the reason is different from the one it fixed.** The old failure
   was `os.tmpdir()` pointing at the full root filesystem, cured by
   `TMPDIR=/sessions/<session>/tmpdl`. The failure now is that **`/sessions`
-  itself is full**: 9.8G total, 291M free, against a 179.6M download that then
-  has to extract. It fails with `ENOSPC: no space left on device` **after**
-  downloading 100%, twice, once per mirror, so it looks like a network problem
-  and is not. **Check `df -h /sessions` before starting the install**; if free
-  space is under about 700M the browser gate cannot be run at all this session.
-  The session-local directory holds only 163M of that, so there is nothing of
-  mine to delete; the rest is not ours to remove.
+  itself is full**: 9.8G total, **129M free** this session, against a 179.6M
+  download that then has to extract. It fails with `ENOSPC: no space left on
+  device` **after** downloading 100%, twice, once per mirror, so it looks like a
+  network problem and is not. **Check `df -h /sessions` before starting the
+  install**; if free space is under about 700M the browser gate cannot be run at
+  all this session. **The figure is getting worse, not better** — it was 291M
+  last session — so assume the gate is unrunnable until measured otherwise.
 - **The repo mount is a different, much larger filesystem** —
   `/sessions/<session>/mnt/owl-n4j` is 461G with 39G free — but **do not stage
   the browser download there.** It is Neil's working repo, the workspace denies
@@ -209,13 +264,11 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
   because `decisions.record` ends in `session.flush()` and `history` orders by
   `subject_sequence`, which is assigned, rather than by `id`, which is a random
   uuid4, or `created_at`, which two rows can share.
-- **There was no helper for building a `decisions.Actor` from a logged-in
-  user,** and there is now: `quarantine_row.actor_from_user`. It uses `getattr`
-  rather than importing the auth model, the same way `runs.py` deliberately
-  does, so nothing under `services/financial/` gains a dependency on
-  `postgres.models.user`. It drops a non-UUID id so a bad value fails there with
-  a readable message instead of at a foreign key far away.
-- **`_current()` in the driver reads the row's attributes after
+- **`quarantine_row.actor_from_user` builds a `decisions.Actor` from a logged-in
+  user.** It uses `getattr` rather than importing the auth model, the same way
+  `runs.py` deliberately does, so nothing under `services/financial/` gains a
+  dependency on `postgres.models.user`.
+- **`_current()` in the quarantine driver reads the row's attributes after
   `session.commit()`.** With `expire_on_commit=True` that triggers a refresh
   round trip. It works and is tested, but it is worth knowing before anyone
   moves the commit.
@@ -225,9 +278,6 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
   and `evidence:delete` are referenced by existing routers and do not exist in
   the templates at all.** Do not assume a permission string is real because a
   router asks for it.
-
-### From earlier sessions, still true
-
 - **A component that throws for want of a provider does not fail a
   `FinancialPage` test — it vanishes.** Every panel on that page is wrapped in
   its own `ErrorBoundary`, which catches the throw and renders a fallback, so
@@ -297,7 +347,8 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
   `contradictory_period` and `already_ingested` are decided against rows already
   stored, not against the file.
 - **`wouldStore` and `didStore` read the endpoint's flag, never the outcome
-  word.** The same now applies to `applied` on the adjudication endpoints.
+  word.** The same applies to `applied` on the adjudication and reconciliation
+  endpoints.
 - **An unrecognised vocabulary member is named, never rendered blank,** and **no
   outcome maps to the `default` badge variant** — `Badge` falls through to
   `default` for an unmapped key, so a forgotten member would arrive looking like
@@ -305,7 +356,7 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
 - **The exports guard is automatic.** `tests/test_financial_exports.py` globs
   `*.py` in the package and asserts each module contributes at least one name to
   `__all__`. A new module needs **no manual list entry**, contrary to the note
-  in `CLAUDE.md`. Confirmed again this session: `quarantine_row` was picked up
+  in `CLAUDE.md`. Confirmed again this session: `reconcile_case` was picked up
   with no edit to that file.
 - **Every Bash command needs its own absolute `cd`.** Where a `cd` is awkward,
   `PYTHONPATH=<abs>/backend` works for one-liners.
@@ -324,7 +375,7 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
   the question is whether something is wired in production.
 - **Counting bare name occurrences does not tell you whether something is
   reached.** Grep for the import and list the files. **This is what found the
-  central fact of this session.**
+  central fact of this session and of the last one.**
 - **The house component-test conventions** are `render`/`screen` from
   `@testing-library/react`, `MemoryRouter`/`Routes`/`Route` for a routed page,
   `vi.hoisted` for a mock that has to capture something, `data-testid` for
@@ -352,9 +403,55 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
   degrades and warns; the warning is expected output.
 - **No live Postgres is needed for the financial suite.**
 
+### The reconciliation subsystem's own rules
+
+New section. Read it before touching item 6's remaining half or item 8.
+
+- **The identity is `opening + (credits - debits) = closing`, in exact integer
+  minor units.** The answer is yes or no, never a score. It is the **only** check
+  in the subsystem that can detect a transaction that is simply missing: a
+  dropped row does not arrive flagged as doubtful, it does not arrive at all, and
+  the printed closing balance is the only witness to it.
+- **It declines rather than assumes.** A missing balance gives `unavailable` with
+  a reason, never a zero. A zero would make the arithmetic close and would be a
+  lie.
+- **It counts only `admitted` rows,** and the excluded counts travel with the
+  result. This is what makes the identity live: quarantine a row and re-running
+  changes the answer.
+- **`independent` says whether it proved anything.** An identity computed against
+  a balance carried forward from the neighbouring period is arithmetic against
+  *that period's figure*, not against this document. Worth having, but not
+  evidence that this statement was read completely. `proves_completeness` is
+  balanced **and** independent **and** the totals complete.
+- **The recompute is a POST and the read is a GET, and the split is load
+  bearing.** The stored result is the one recorded against the run that produced
+  it, at the time it was produced. If a read recomputed, a figure an analyst
+  quoted would be a figure that no longer exists anywhere, and two people opening
+  the same case minutes apart could see different arithmetic with nothing to say
+  which was which.
+- **`not_attempted` is reported, not filtered.** It is the default of the read
+  and it is the point of the read: **a ledger nobody has reconciled must not be
+  able to present itself as a reconciled one.**
+- **A refusal leaves the previously stored verdict alone.** It is not reset to
+  `not_attempted`. That verdict was a real result when it was taken, and a
+  failure to re-derive it today is not evidence that it was wrong.
+- **Nothing here moves a proof class.** Deliberately. Moving a class on this
+  result is `assign_proof_class` and `record_admission`, which is Phase 2 item 8.
+  Two code paths writing that column on two definitions of the same word is how
+  it comes to mean neither.
+- **A sweep is safe to run repeatedly.** Re-running after nothing changed
+  rewrites the same numbers and a new timestamp.
+- **`no_periods` and an all-refused sweep are both `200`.** They are facts about
+  the case, and an interface has to render them beside the ledger rather than in
+  an error path. Only a failed write is a `500`.
+- **The parse-time verdict at `native_ingest.py:249` is a different claim from
+  this one** and the two can legitimately disagree. That one is about whether the
+  file parsed; this one is about whether the stored, admitted rows add up. **Do
+  not reconcile them.**
+
 ### The quarantine subsystem's own rules
 
-New section. Read it before touching anything in item 6's remaining half.
+Read it before touching anything in item 6's remaining half.
 
 - **Grounds are a proof or a person, and nothing else.** `QuarantineBasis` has
   three constructors and **none of them takes a `Candidate`**, by design. A
@@ -379,6 +476,13 @@ New section. Read it before touching anything in item 6's remaining half.
 - **`release_transaction` refuses a row that is not quarantined** with a message
   containing "nothing to release", and requires both a real `Actor` and a
   non-empty reason.
+- **An unchanged row is reported separately from a changed one.** Reporting an
+  idempotent no-op as `quarantined` would hand back an `adjudication_id` naming
+  **somebody else's earlier decision** as though it were this request's. The
+  status is read before the call and that case comes back `unchanged` with no id.
+- **The 404 is worded identically for a row in another case and a row that does
+  not exist,** so asking cannot be used to learn what a case the caller cannot
+  see contains. There is a test asserting the two routes word it the same.
 
 ### The ledger screen's own rules
 
@@ -406,19 +510,19 @@ New section. Read it before touching anything in item 6's remaining half.
   run is abandoned is the reaper's call and the reaper writes it down.
 - **The counts on a run are historical.** `documents_seen`,
   `transactions_admitted` and `transactions_quarantined` were true when the run
-  ended. **Adjudication moves rows afterwards** — and as of this session there
-  is finally a path that does — so they will legitimately disagree with a
-  `COUNT(*)` over the ledger today. **Do not reconcile them.**
+  ended. **Adjudication moves rows afterwards**, and **so does a reconciliation
+  sweep's effect on what those rows mean**, so they will legitimately disagree
+  with a `COUNT(*)` over the ledger today. **Do not reconcile them.**
 - **`started_by_email` outlives `started_by_user_id`.** The FK is
   `ON DELETE SET NULL`. Prefer the email.
 - **`reap_stale_runs` is global, not case-scoped.** This is why it is a lifespan
   loop and not an endpoint.
 - **Ordering runs needs the secondary sort on `id`.** `started_at` alone is not
-  a total order.
+  a total order. Same rule now applies to ordering periods.
 
-### And on the frontend, as of `150084a`
+### And on the frontend, as of `dfcef2b`
 
-Unchanged from `bc23570`; no frontend file was touched this session.
+Unchanged from `bc23570`; no frontend file has been touched for three sessions.
 
 - **`readRunStatus(raw).needsAttention`** is true for `pending`, `running`,
   `failed`, `aborted`, and **false for an unrecognised status**, deliberately,
@@ -466,33 +570,33 @@ turns out to depend on something later in the list, stop and ask.
   mount the ledger ✅ `4324b24`.
 - **Phase 2, make the rows trustworthy** — runs ✅ item 5 complete (backend
   `cde43c5`, notice `8924668`, attempts list `bc23570`); quarantine **half done**
-  (write path `150084a`). Then reconciliation, adjudication and proof class,
-  duplicates, suspect amounts, locators.
+  (write path `150084a`); reconciliation ✅ item 7 (`dfcef2b`). Then adjudication
+  and proof class, duplicates, suspect amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-### Item 6's remaining half, and why it is not next
+### Next unit: item 6's remaining half. Its blocker is now cleared.
 
-Two pieces are left, and **both of them need something from item 7**:
+The previous state file recorded that both remaining pieces of item 6 needed
+something item 7 produces. **Item 7 has landed, so that dependency is
+satisfied** and the work is unblocked:
 
 - **`would_rescue`** and **`QuarantineBasis.from_proof` reached through
-  `localise`** both take an `IdentityOutcome`, which is produced by `reconcile`.
-  Reconciliation **is** Phase 2 item 7. Building them now would mean building
-  item 7 first under item 6's name, which is the resequencing the working
-  agreement forbids.
-- **The quarantine screen.** It now has a population to draw, but it will draw a
-  much more useful one once computed quarantine exists, and its most important
-  column — why a row is held, and whether the arithmetic or a person held it —
-  only has two values to distinguish after item 7.
+  `localise`** both take an `IdentityOutcome`. `IdentityOutcome` is produced by
+  `reconcile.evaluate_identity`, which is now driven across a case by
+  `reconcile_case` and exposed on two endpoints. Nothing further is needed from a
+  later item.
+- **The quarantine screen.** It has had a population to draw since `150084a`, and
+  its most important column — why a row is held, and whether the arithmetic or a
+  person held it — now has two values to distinguish, because computed grounds
+  become reachable once `from_proof` is wired.
 
-**Next unit: Phase 2 item 7, reconciliation.** Item 6's remaining half follows it
-directly, and should be picked up as the session after, not folded into item 7.
+**Take `would_rescue` and `from_proof` first and the screen second,** in that
+order, and treat them as one unit unless the session runs short. The screen's
+column is only worth building once there is something in the second value.
 
 ### The screen question, settled by reading the source
-
-The previous state file asked whether quarantine should be its own tab or a
-filter on the ledger tab, and said the source could settle it. It does:
 
 - **The read is the same endpoint.** `GET /api/financial/ledger` already takes
   `ledger_status`, and `ledger_status=quarantined` returns exactly the
@@ -542,25 +646,55 @@ conversation. Each one also says exactly what evidence or instruction would
 reverse it. Raise one with Neil only when the unit in front of you actually
 turns on it, and then raise it oriented and with a recommendation.
 
-**New: the adjudication endpoints require `case:edit`, not `evidence:upload`.**
+**New: reconciliation is a fourth financial router rather than a route on an
+existing one.** Decided by reading the two neighbours' docstrings.
+`routers/financial_ledger` states that every route resolves to `case:view`
+because none of them writes; the recompute writes.
+`routers/financial_adjudication` states that every route resolves to `case:edit`
+because all of them do; the read does not. Either merge would make an existing
+module's stated rule false. **What would reverse it:** a decision to let a router
+carry mixed permissions and drop those docstring claims, which would be a
+readability judgement rather than a correctness one and is not worth making now.
+
+**New: the recompute requires `case:edit`, not `evidence:upload`.** Nothing is
+added to the case — rows already in the ledger are summed and the answer is
+written onto periods already in the ledger. That is the case's own content being
+edited, which is the bar the adjudication routes already apply for the same kind
+of change. **What would reverse it:** the same new adjudication permission
+category that would reverse the adjudication decision below; they should move
+together.
+
+**New: the read reports the stored column and never recomputes.** So a period
+that has never been checked comes back `not_attempted`, and re-running is an act
+a person takes. **What would reverse it:** a demonstrated case where a stale
+stored figure is worse than an unstable one. Note the asymmetry — the current
+choice is recoverable by pressing a button, and the reverse is not recoverable at
+all, because a figure that was quoted and then silently recomputed cannot be got
+back.
+
+**New: a refusal during a sweep leaves the stored verdict alone.** It is not
+reset to `not_attempted`. **What would reverse it:** evidence that a stale
+`balanced` on a period whose data has since become unreadable misleads someone in
+practice. The counter-argument, and why the current direction was taken, is that
+resetting throws away a real result on the strength of a transient failure.
+
+**The adjudication endpoints require `case:edit`, not `evidence:upload`.**
 Decided by reading `postgres/permissions.py`, which defines only
 `case:{view,edit,delete}`, `collaborators:{invite,remove}` and
 `evidence:upload`. Ingest asks for the evidence permission because it **adds
 evidence** to the case. Nothing is added by quarantine or release; an existing
 row is moved out of every total or moved back into them, which is the case's own
-content being edited. `case:edit` is denied to a viewer and granted to an editor
-and an owner, and `routers/financial.py` already requires it to write the graph.
-**What would reverse it:** a new permission category for adjudication, which
-would be reasonable if Owl ever wants a role that can load evidence but not
-change what counts. That is a schema and seeding change, not a one-line one, and
-nothing needs it today.
+content being edited. **What would reverse it:** a new permission category for
+adjudication, which would be reasonable if Owl ever wants a role that can load
+evidence but not change what counts. That is a schema and seeding change, not a
+one-line one, and nothing needs it today.
 
-**New: quarantine's write path was built before its screen.** Not a
-resequencing — item 6 is still item 6 — but a decision about which half of it
-comes first, taken because **nothing in production writes
-`ledger_status='quarantined'`**, so a screen built first would list an empty set
-forever. **What would reverse it:** nothing; the write path is landed. Recorded
-so the order is not later mistaken for an oversight.
+**Quarantine's write path was built before its screen.** Not a resequencing —
+item 6 is still item 6 — but a decision about which half of it comes first, taken
+because **nothing in production wrote `ledger_status='quarantined'`**, so a
+screen built first would have listed an empty set forever. **What would reverse
+it:** nothing; the write path is landed. Recorded so the order is not later
+mistaken for an oversight.
 
 **Correction storage: a correction inserts a replacement row, it does not edit
 the row.** This is the direction for Phase 2 item 10, and item 11 of the old
@@ -593,15 +727,17 @@ numbering is unblocked by it. Researched on 5 September by reading the source.
   genuinely cannot work across a supersession pair. The graph's edit-in-place
   path is not evidence against it — the graph is not the ledger.
 
-**Whether a correction re-runs the arithmetic: not yet decided, and it does not
-need to be yet.** The proposal is that a correction re-runs the balance identity
-and only a re-run that closes moves the proof class. It has support in the
-source: `adjudication.py`'s `restated_opening` (line 332) and
-`restatement_delta` (line 357). It is consistent with the settled rule that
-proof class is computed and never set by hand. **But it makes a correction an
-event that can change how much of a document is trusted, not a local edit.**
-Reconciliation (item 7) and proof class (item 8) both land before the correction
-unit. **Decide it then, from the built code, not now.**
+**Whether a correction re-runs the arithmetic: still not decided, and it is now
+one item away from being decidable.** The proposal is that a correction re-runs
+the balance identity and only a re-run that closes moves the proof class. It has
+support in the source: `adjudication.py`'s `restated_opening` (line 332) and
+`restatement_delta` (line 357). It is consistent with the settled rule that proof
+class is computed and never set by hand. **But it makes a correction an event
+that can change how much of a document is trusted, not a local edit.**
+Reconciliation is now built, so half the machinery exists and
+`reconcile_case(db, case_id, account_id=...)` is the call a correction would
+make. **Proof class (item 8) still lands before the correction unit. Decide it
+then, from the built code.**
 
 **Removing `reingest` stands.** The override could not succeed for unchanged
 bytes, and where it could succeed it would leave two contradictory readings of
@@ -635,18 +771,28 @@ before item 12 lands.
 
 - **Phase 1 is closed: a bank file can be sent to the ledger from seven places
   and the rows it creates are now visible.**
+- **The balance identity now runs, but only through the API.** Nothing in the
+  interface calls either reconciliation endpoint yet, and **nothing calls the
+  recompute automatically** — not ingestion, not adjudication. So on a live case
+  every period stays `not_attempted` until somebody POSTs to
+  `/api/financial/reconciliation/run`. **That is deliberate for this unit** (the
+  recompute is an act a person takes) **but it means the read will report
+  `not_attempted` everywhere until a caller exists.** Do not read that as a
+  defect in the arithmetic.
+- **Whether ingestion should trigger a sweep at the end of a run is not
+  decided and was not decided here.** It is the obvious next caller, and item 8
+  (proof class) is the unit that will actually need one. Flagged, not parked.
 - **A row can now be set aside and let back in, but only through the API.**
   Nothing in the interface calls either endpoint yet. Until the screen lands,
   the quarantine population is reachable only via
   `GET /api/financial/ledger?ledger_status=quarantined`, and **the ledger tab's
-  own totals silently exclude it**, which is the same behaviour as before —
-  except that from this commit the excluded set can actually be non-empty.
+  own totals silently exclude it**.
 - **The Neo4j financial view is not a projection of the ledger.**
   `projection.py` has zero production callers. The two stores can disagree and
   nothing detects it. Phase 3 item 12 closes this. **Do not describe the graph
-  as derived from the ledger until it is.** Note that quarantining a row changes
-  the ledger and **does not** touch the graph, so this gap just got one more way
-  to show itself.
+  as derived from the ledger until it is.** Note that quarantining a row and
+  reconciling a period both change the ledger and **do not** touch the graph, so
+  this gap now has two more ways to show itself.
 - **A run whose process died is now closed, but only by the loop.** Six hours
   stale, five minute interval. **Until it fires, a dead run and a live one are
   indistinguishable through the API**, deliberately: the read declines to guess.
@@ -658,7 +804,9 @@ before item 12 lands.
   and already ruled. Listed only so it is not rediscovered as an oversight.
 - **No row in the corpus carries a running-balance column.** 30,570 rows across
   325 documents. So on real data **every** row will show "No running balance".
-  That is the component working, not failing.
+  That is the component working, not failing. **This bears directly on
+  reconciliation:** a period whose balances are absent reconciles `unavailable`,
+  not `unbalanced`, and on the current corpus that will be the common answer.
 - **P0 is unreachable on the current corpus.** No document carries its own
   control totals in a form that qualifies.
 - **Half two has only ever run against synthetic ledgers.**
@@ -667,12 +815,12 @@ before item 12 lands.
 - **The alembic migration `20260902_evidence_table_geometry` has not been
   applied to any real database from a session** — the sandbox has no Postgres.
   First deployment needs an `alembic upgrade head` on Neil's side.
-- **Disk: the browser gate may simply be unrunnable in a given session.** Both
-  filesystems are near full — root at 99%, `/sessions` at 97% with 291M free —
-  and chromium needs roughly 700M to install. **Check `df -h /sessions` first
-  and say plainly if the gate cannot run**, rather than reporting a previous
-  session's figure. The repo mount has 39G free but is Neil's tree and must not
-  be used as scratch.
+- **Disk: the browser gate may simply be unrunnable in a given session, and it
+  is getting worse.** Both filesystems are near full — root at 99%, `/sessions`
+  at 99% with **129M free**, down from 291M one session ago — and chromium needs
+  roughly 700M to install. **Check `df -h /sessions` first and say plainly if the
+  gate cannot run**, rather than reporting a previous session's figure. The repo
+  mount has 39G free but is Neil's tree and must not be used as scratch.
 
 ---
 
@@ -680,12 +828,22 @@ before item 12 lands.
 
 Small, real, none blocking:
 
+- **`reconcile_period` mutates the period before it validates.** It assigns
+  `reconciliation_status` and then calls `_fits(...)`, which can raise
+  `LedgerOverflowError`, leaving a half-written verdict in the session.
+  `reconcile_case` defends against it with `session.expire(period)` and there is
+  a named test for the path, **so nothing is broken today** — but the ordering is
+  a trap for the next caller, and the next caller is item 8. **Direction: swap
+  the order inside `reconcile_period` when item 8 touches it**, rather than
+  making every caller remember to expire.
 - **`docs/loupe-wiring-plan.md`'s premise for item 6 is wrong.** It says
   quarantined rows are written today and never shown. Nothing in production ever
-  wrote one. Found and acted on this session; the plan text is left in place as
-  history. **Do not build from that sentence.** It is worth assuming other items
-  carry the same kind of error: the plan describes intent, and the source is
-  what is true.
+  wrote one. **And item 7's premise was wrong in the same way** — the plan
+  treats reconciliation as something that runs and needs surfacing, when
+  `reconcile_period` had no reachable production caller at all. The plan text is
+  left in place as history. **Do not build from those sentences.** Assume other
+  items carry the same kind of error: the plan describes intent, and the source
+  is what is true.
 - **The graph's correction path takes the new amount as a `float`.**
   `services/neo4j/financial_service.py:599`. The ledger side handles money
   exactly through `Money`, so a corrected figure entered on the graph and a
@@ -698,8 +856,7 @@ Small, real, none blocking:
   abandonment text in `run.error`.** **If the six-hour threshold is ever
   lowered, fix this first.**
 - **`evidence:process` and `evidence:delete` are asked for by routers and are
-  not defined in `postgres/permissions.py`.** Found this session while settling
-  the permission bar. Not investigated further; whether those routes are
+  not defined in `postgres/permissions.py`.** Whether those routes are
   therefore open, closed, or handled elsewhere was not established, and it
   should be before anyone relies on them.
 - `evidence-engine/tests/test_pdf_table_geometry.py::test_the_summary_agrees_with_the_payload_it_summarises`
