@@ -3,17 +3,19 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records reconciliation, `dfcef2b`, which
-closes Phase 2 item 7)
+**Last updated:** 5 September 2026 (records the run reaper test fix, `74d9bdf`.
+No build item moved. Read the disk note under Standing flags **before running
+anything** — the documented bootstrap no longer works and the replacement is
+recorded there.)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `dfcef2b`
-  (`dfcef2bc936d4ddce3457847c2bf386f6bb5a442`), "Run the balance identity across
-  a case, and expose the recorded result", parent `53b13b7`.
+- **Head when this was written:** `74d9bdf`
+  (`74d9bdf5762e16b8176203b5394c066ebbbb54a4`), "Stop the run reaper tests racing
+  the lines they assert on", parent `049a301`.
   **Confirm the real tip with `git log --oneline -5`** at the start of every
   session rather than trusting this line — the state-file commit that follows
   this one will already have moved it.
@@ -44,25 +46,26 @@ disk note under Standing flags.
 
 ### Scale
 
-**104 commits** since `c4246c0` (27 August), counting `dfcef2b`; 105 once the
+**106 commits** since `c4246c0` (27 August), counting `74d9bdf`; 107 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`.
 
 `backend/services/financial/` **49 modules** excluding `__init__.py`;
 `backend/tests/test_financial_*.py` **56 files**, **3,300 tests**.
 
-### Gate baselines as of `dfcef2b`
+### Gate baselines as of `74d9bdf`
 
-- **Backend financial suite: `Ran 3300 tests, OK (skipped=12)`.** Up from 3241 by
-  exactly the 59 added this session (45 + 14). **There are no expected
-  failures.**
-- **Frontend unit: 67 files, 494 tests, all passing.** Unchanged; no frontend
-  file was touched this session. 494 includes the stray probe test.
-- **`tsc -b` returns 0. `eslint .` returns 0.** Both re-run this session.
-- **Frontend browser: NOT RUN this session, and it could not be.** See the disk
-  note below. The last known-good figure is 2 files, 4 tests. No frontend file
-  changed, so the risk of skipping it here is nil, but **do not carry "browser
-  green" forward as though it were verified at this head.**
+- **Backend financial suite: `Ran 3300 tests, OK (skipped=12)`.** Unchanged in
+  count — this session fixed a test harness and neither added nor removed a
+  test. Run three times consecutively, clean each time. **There are no expected
+  failures**, and that promise is now actually true; see below.
+- **Frontend unit: 67 files, 494 tests.** NOT re-run this session and it did not
+  need to be: `git status --porcelain` showed one changed file and it was
+  backend. 494 includes the stray probe test.
+- **`tsc -b` 0, `eslint .` 0.** Also not re-run, for the same reason.
+- **Frontend browser: NOT RUN, and it could not be.** See the disk note. Last
+  known-good figure is 2 files, 4 tests. **Do not carry "browser green" forward
+  as though it were verified at this head.**
 
 **Five tracebacks on stderr during the backend run are expected and are not
 failures.** One `sqlite3.IntegrityError: UNIQUE constraint failed:
@@ -71,7 +74,7 @@ from `tests/test_financial_native_ingest_file.py`, which ingests the same file
 twice on purpose. Two more come from `test_financial_quarantine_row.py`, which
 injects a `SQLAlchemyError("connection lost")` into each writer to exercise the
 `write_failed` path that `quarantine_row.py` logs with `logger.exception`.
-**This session adds the last two of the same kind:**
+The last two arrived with the reconciliation unit, `dfcef2b`:
 `test_financial_reconcile_case.py` injects an `OperationalError ... locked` on a
 liveness `SELECT 1` and a disk-full failure on `COMMIT`, and
 `reconcile_case.py` logs both with `logger.exception`. All five are the code
@@ -80,6 +83,100 @@ working. **Do not spend a session chasing them.**
 ---
 
 ## What this session did
+
+**No build item moved. One file changed, `backend/tests/test_financial_run_reaper.py`,
+63 insertions and 1 deletion, landed as `74d9bdf`.** The session opened intending
+item 6's remaining half and stopped short of it for the two reasons below. Both
+are worth the next session's attention before it starts.
+
+### The environment has degraded, and the documented bootstrap now fails outright
+
+`/sessions` is **completely full — 9.8G of 9.8G, zero bytes free**, down from
+129M last session and 291M the session before. The `pip install` in `CLAUDE.md`
+dies with `ENOSPC: No space left on device` partway through, which leaves the
+backend suite unrunnable by the documented route. **This is not something a
+session can fix**; almost none of the used space belongs to this session (mine
+was ~130M, and the rest is other sessions' directories that are not readable or
+removable from here).
+
+**The workaround, which works and was used for every run below:** install into
+the `/dev/shm` tmpfs, which is 2.0G and starts empty, and put it on `PYTHONPATH`.
+The seventeen packages come to 151M, so there is ample room.
+
+```
+PYLIB=/dev/shm/pylibs-$(id -un); mkdir -p "$PYLIB" /dev/shm/tmp-$(id -un)
+TMPDIR=/dev/shm/tmp-$(id -un) pip install --break-system-packages --no-cache-dir \
+  --quiet --target "$PYLIB" <the same seventeen packages as CLAUDE.md>
+```
+
+Then every backend run needs the path, and the bytecode cache must also be sent
+somewhere with room, because `/tmp` is on the root filesystem which is at 99%:
+
+```
+cd <repo>/backend && env PYTHONPATH=/dev/shm/pylibs-$(id -un) \
+  PYTHONPYCACHEPREFIX=/dev/shm/pyc-$(id -un) PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONHASHSEED=0 python3 -m unittest discover -s tests -p 'test_financial_*.py' -t .
+```
+
+`--no-cache-dir` matters: pip's cache lives under `~/.cache`, which is on the
+full filesystem. `/dev/shm` is RAM-backed and does not survive the session, so
+this is a per-session step exactly like the old bootstrap was.
+
+### The suite was not actually green, and the state file said it was
+
+The first full run of the session failed:
+`AssertionError: no logs of level WARNING or higher triggered on
+services.financial.run_reaper`. It did not reproduce on the next run. That is
+the worst shape a failure can take here, because `CLAUDE.md` promises there are
+no expected failures and therefore instructs the next session to treat it as
+its own doing.
+
+**The cause, established by reading the source rather than by guessing.**
+`reap_stale_runs_forever` runs the sweep on a worker thread through
+`asyncio.to_thread` (`run_reaper.py:83`). Everything the loop *says* about a
+sweep is written afterwards, back on the event loop: the warning `_report`
+emits when it closed a run (`:88`, `:109`) and the traceback the error handler
+logs when a sweep raised (`:96`). The harness released the waiting test from
+inside the spy's `finally`, on the worker thread, which runs **before** that
+thread's future resolves. So the test could wake, reach its own `finally`, and
+cancel the loop before the line it was asserting on had been logged.
+
+**Measured before and after rather than reasoned about.** The original harness,
+extracted from `HEAD` to `/dev/shm` and run as a module so nothing untracked was
+left in the tree, **failed 5 runs in 30**. The fixed harness passed **30 in 30**,
+and the full suite passed three times consecutively.
+
+**Four assertions rode on that race** —
+`test_a_run_that_goes_stale_later_is_caught_by_a_later_sweep`,
+`test_a_failing_sweep_is_logged_with_its_traceback`,
+`test_a_sweep_that_closes_a_run_names_it` and
+`test_the_message_gives_the_threshold_that_was_applied`. A fifth,
+`test_a_sweep_that_closes_nothing_says_nothing`, uses `assertNoLogs`, so the
+race never failed it; it just meant the test could pass without having observed
+anything. That one is the reason to care: a racing negative assertion is not a
+flaky test, it is a test that quietly stops testing.
+
+**The fix is in the harness only. No production code was touched**, deliberately
+— the race is in how the test observes the loop, not in the loop. `sweep()` now
+releases in two parts: the spy still reports that a sweep ran, and then the
+loop-side tail of that same iteration is waited for as well. **Every iteration
+ends in exactly one of `_report` or `logger.exception`**, which is what lets the
+second wait finish on an event instead of padding with a sleep — the file's own
+docstring claims the tests "neither race nor pad" and it is now true.
+`run_reaper.logger` is stood in for by `_TailWatchingLogger`, which forwards
+every call to the real logger object, so `assertLogs` and `assertNoLogs` still
+see every record.
+
+### Why item 6 was not then started
+
+Starting a unit of that size after this would have meant ending the session
+mid-item with a dirty tree, which the working agreement rules out. **Item 6's
+remaining half is untouched and is still the next unit.** Nothing about it
+changed this session; the section below stands as written.
+
+---
+
+## The previous session: reconciliation, `dfcef2b`
 
 **Phase 2 item 7, reconciliation, landed as `dfcef2b`.** Seven files, 2,126
 insertions, no deletions.
@@ -100,7 +197,7 @@ Something weaker was standing in for it. `native_ingest.py:249` passes the
 **format parser's** verdict about the file to
 `documents.reclassify_after_reconciliation`. That is a claim about whether the
 file parsed coherently. It is **not** the balance identity over stored, admitted
-rows, and after row-level adjudication landed last session the two can diverge
+rows, and now that row-level adjudication has landed the two can diverge
 deliberately: quarantining a row changes the second and cannot change the first.
 
 So this unit built the driver that runs the identity across a case's periods and
@@ -191,6 +288,30 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
 
 ### New this session
 
+- **The bootstrap in `CLAUDE.md` cannot complete: `/sessions` has zero bytes
+  free.** Install to `/dev/shm` instead and carry `PYTHONPATH`; the exact
+  commands are under "What this session did". **Check `df -h /sessions` and
+  `df -h /dev/shm` before assuming either.**
+- **`PYTHONPYCACHEPREFIX` must not point at `/tmp` either.** `/tmp` is on the
+  root filesystem, which is at 99% with about 120M free. Send it to `/dev/shm`.
+- **A "no logs ... triggered" failure from a loop test is a scheduling race, not
+  a broken loop.** Anything the reaper loop logs is written on the event loop
+  after `asyncio.to_thread` returns, so a harness that releases from the worker
+  thread can cancel the task first. Fixed for `run_reaper`; **the same shape
+  would appear in any future test of a loop built the same way.**
+- **A racing `assertNoLogs` does not fail, it stops testing.** Worth checking
+  for wherever a negative log assertion sits over a thread hand-off.
+- **To compare against an original file without dirtying the tree,** write
+  `git show HEAD:<path>` into `/dev/shm`, add `/dev/shm` to `PYTHONPATH`, and
+  run it by module name from `backend/`. The workspace denies `unlink`, so a
+  scratch copy placed in the repo could not have been removed afterwards.
+- **`unittest discover` needs the current working directory to be `backend/`,**
+  and the bash cwd resets between invocations, so a run that reports a
+  plausible-looking test count may still not be the suite you meant. Put the
+  absolute `cd` in the same command every time.
+
+### From the reconciliation session
+
 - **`services/financial/__init__.py` re-exports a *function* named
   `reconcile_case`, which shadows the submodule of the same name.** This is a
   live trap for any test that needs the module object:
@@ -244,13 +365,12 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
   working, and the reason is different from the one it fixed.** The old failure
   was `os.tmpdir()` pointing at the full root filesystem, cured by
   `TMPDIR=/sessions/<session>/tmpdl`. The failure now is that **`/sessions`
-  itself is full**: 9.8G total, **129M free** this session, against a 179.6M
-  download that then has to extract. It fails with `ENOSPC: no space left on
-  device` **after** downloading 100%, twice, once per mirror, so it looks like a
-  network problem and is not. **Check `df -h /sessions` before starting the
-  install**; if free space is under about 700M the browser gate cannot be run at
-  all this session. **The figure is getting worse, not better** — it was 291M
-  last session — so assume the gate is unrunnable until measured otherwise.
+  itself is full**, against a 179.6M download that then has to extract. It fails
+  with `ENOSPC: no space left on device` **after** downloading 100%, twice, once
+  per mirror, so it looks like a network problem and is not. **The free-space
+  figure in this bullet was going stale every session, so it now lives in one
+  place only: the disk note under Standing flags.** As of `74d9bdf` it is zero,
+  and the browser gate is unrunnable. Assume that until measured otherwise.
 - **The repo mount is a different, much larger filesystem** —
   `/sessions/<session>/mnt/owl-n4j` is 461G with 39G free — but **do not stage
   the browser download there.** It is Neil's working repo, the workspace denies
@@ -356,8 +476,8 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
 - **The exports guard is automatic.** `tests/test_financial_exports.py` globs
   `*.py` in the package and asserts each module contributes at least one name to
   `__all__`. A new module needs **no manual list entry**, contrary to the note
-  in `CLAUDE.md`. Confirmed again this session: `reconcile_case` was picked up
-  with no edit to that file.
+  in `CLAUDE.md`. Confirmed at `dfcef2b`: `reconcile_case` was picked up with no
+  edit to that file.
 - **Every Bash command needs its own absolute `cd`.** Where a `cd` is awkward,
   `PYTHONPATH=<abs>/backend` works for one-liners.
 - **Any scratch file in `/tmp` needs a per-user name,** including the git index,
@@ -375,7 +495,7 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
   the question is whether something is wired in production.
 - **Counting bare name occurrences does not tell you whether something is
   reached.** Grep for the import and list the files. **This is what found the
-  central fact of this session and of the last one.**
+  central fact of both the reconciliation unit and the one before it.**
 - **The house component-test conventions** are `render`/`screen` from
   `@testing-library/react`, `MemoryRouter`/`Routes`/`Route` for a routed page,
   `vi.hoisted` for a mock that has to capture something, `data-testid` for
@@ -815,12 +935,24 @@ before item 12 lands.
 - **The alembic migration `20260902_evidence_table_geometry` has not been
   applied to any real database from a session** — the sandbox has no Postgres.
   First deployment needs an `alembic upgrade head` on Neil's side.
-- **Disk: the browser gate may simply be unrunnable in a given session, and it
-  is getting worse.** Both filesystems are near full — root at 99%, `/sessions`
-  at 99% with **129M free**, down from 291M one session ago — and chromium needs
-  roughly 700M to install. **Check `df -h /sessions` first and say plainly if the
-  gate cannot run**, rather than reporting a previous session's figure. The repo
-  mount has 39G free but is Neil's tree and must not be used as scratch.
+- **Disk: `/sessions` is now completely full and this is the first thing to
+  check every session.** 9.8G of 9.8G, **zero bytes free**, against 129M last
+  session and 291M the one before. Root is at 99% with about 120M free. The
+  trend has been one direction for three sessions.
+  - **The backend suite is still runnable** via the `/dev/shm` bootstrap
+    recorded above. That is the workaround and it is reliable.
+  - **The browser gate is not runnable and will not become runnable.** Chromium
+    needs roughly 700M to install and there is nowhere to put it: `/dev/shm` is
+    2.0G but is RAM, and spending most of it on browser binaries to run four
+    tests is not a good trade. **Say plainly that the gate could not run** rather
+    than repeating a previous session's figure.
+  - **None of this is Loupe's doing and no session can clear it.** The space is
+    held by other session directories that are not readable or removable from
+    inside a session. **This needs Neil to reclaim space on his side**, and
+    until he does, every session starts by working around it.
+  - The repo mount has 39G free but is Neil's tree, and the workspace denies
+    `unlink`, so anything staged there could not be removed. **Do not use it as
+    scratch.** Use `/dev/shm`.
 
 ---
 
