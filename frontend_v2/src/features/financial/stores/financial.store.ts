@@ -10,13 +10,21 @@ export interface SortColumn {
 /**
  * The tab in front of you on the financial page, and nothing wider than that.
  *
- * `ledger` reads the relational ledger in Postgres. The other three read the
- * Neo4j graph. The two stores are written independently and can disagree, so
- * which one is on screen is a fact about what you are looking at, not a
- * presentation choice.
+ * `ledger` and `runs` read Postgres: the first the relational ledger itself,
+ * the second the record of every attempt to load evidence into it. The other
+ * three read the Neo4j graph. The two stores are written independently and can
+ * disagree, so which one is on screen is a fact about what you are looking at,
+ * not a presentation choice. The two Postgres tabs are kept next to each other
+ * in the strip for that reason.
+ *
+ * `runs` is the word the backend model, the endpoint, the hook and the query
+ * key all use, so it is the word kept here. The tab is labelled "Attempts" on
+ * screen, which is the word the notice and the run copy already use in front of
+ * a reader.
  */
 export type FinancialMainView =
   | "ledger"
+  | "runs"
   | "transactions"
   | "counterparties"
   | "trends"

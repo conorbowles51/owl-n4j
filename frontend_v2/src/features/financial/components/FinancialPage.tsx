@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom"
 import {
   BarChart3,
   DollarSign,
+  History,
   Rows3,
   ScrollText,
   Users,
@@ -41,6 +42,7 @@ import { TransactionTable } from "./TransactionTable"
 import { FinancialCharts } from "./FinancialCharts"
 import { LedgerPanel } from "./LedgerPanel"
 import { IngestionRunNotice } from "./IngestionRunNotice"
+import { IngestionRunsPanel } from "./IngestionRunsPanel"
 import { BulkCategorizeDialog } from "./BulkCategorizeDialog"
 import { CategoryManagementDialog } from "./CategoryManagementDialog"
 import { SubTransactionDialog } from "./SubTransactionDialog"
@@ -436,6 +438,17 @@ export function FinancialPage() {
               <ScrollText className="size-3.5" />
               Ledger
             </TabsTrigger>
+            {/*
+              Kept beside the ledger, and before the three graph tabs, because
+              it reads the same store the ledger does: it is the record of what
+              put the rows there. "Attempts" is the word the notice above the
+              ledger already uses in front of a reader; "runs" is the word the
+              endpoint, the hook and the store member use.
+            */}
+            <TabsTrigger value="runs" data-testid="financial-tab-runs">
+              <History className="size-3.5" />
+              Attempts
+            </TabsTrigger>
             <TabsTrigger value="transactions">
               <Rows3 className="size-3.5" />
               Transactions
@@ -472,6 +485,21 @@ export function FinancialPage() {
             </ErrorBoundary>
             <ErrorBoundary level="section">
               <LedgerPanel caseId={caseId} />
+            </ErrorBoundary>
+          </div>
+        </TabsContent>
+
+        {/*
+          The attempts tab takes no graph chrome either, for the same reason
+          the ledger tab does not: it reads Postgres, and gating it on the
+          graph query would hide the record of what was loaded from a case
+          whose graph is empty -- which is a case whose loading may well be
+          what went wrong.
+        */}
+        <TabsContent value="runs" className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-auto p-4">
+            <ErrorBoundary level="section">
+              <IngestionRunsPanel caseId={caseId} />
             </ErrorBoundary>
           </div>
         </TabsContent>

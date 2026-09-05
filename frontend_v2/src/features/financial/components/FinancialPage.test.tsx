@@ -25,6 +25,7 @@ import { FinancialPage } from "./FinancialPage"
 
 const graph = vi.hoisted(() => ({ useTransactions: vi.fn() }))
 const ledger = vi.hoisted(() => ({ useLedgerTransactions: vi.fn() }))
+const runs = vi.hoisted(() => ({ useIngestionRuns: vi.fn() }))
 
 const idleMutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }
 
@@ -46,6 +47,17 @@ vi.mock("../hooks/use-financial-data", () => ({
 
 vi.mock("../hooks/use-ledger-transactions", () => ({
   useLedgerTransactions: ledger.useLedgerTransactions,
+}))
+
+/*
+ * Two components on this page read the run history: the notice above the
+ * ledger and the attempts tab. Both call this hook, and unmocked it reaches
+ * for a `QueryClientProvider` that this render does not supply and throws.
+ * Each is wrapped in its own `ErrorBoundary`, which catches the throw, so
+ * without this mock the page renders green while both are dead.
+ */
+vi.mock("../hooks/use-ingestion-runs", () => ({
+  useIngestionRuns: runs.useIngestionRuns,
 }))
 
 function makeGraphRow(): Transaction {
@@ -93,6 +105,16 @@ function ledgerEmpty() {
   })
 }
 
+/** No attempt recorded: the notice stays silent, the attempts tab says so. */
+function runsEmpty() {
+  runs.useIngestionRuns.mockReturnValue({
+    data: { case_id: "case-1", runs: [], total: 0 },
+    isPending: false,
+    isError: false,
+    error: null,
+  })
+}
+
 /**
  * `TooltipProvider` is mounted app-wide in `app/providers.tsx`, so the page
  * always has one in production. Without it here the transaction table throws
@@ -130,16 +152,24 @@ describe("FinancialPage", () => {
     useFinancialStore.getState().reset()
     graph.useTransactions.mockReset()
     ledger.useLedgerTransactions.mockReset()
+    runs.useIngestionRuns.mockReset()
     ledgerEmpty()
+    runsEmpty()
   })
 
-  it("opens on the ledger, with the ledger first in the strip", () => {
+  /**
+   * The order is load bearing. The first two tabs read Postgres and the last
+   * three read the graph, and the two stores are written independently, so
+   * which one is on screen is a fact about what you are looking at.
+   */
+  it("opens on the ledger, with the two ledger tabs first in the strip", () => {
     graphWithRows()
     renderPage()
 
     const tabs = screen.getAllByRole("tab")
     expect(tabs.map((t) => t.textContent)).toEqual([
       "Ledger",
+      "Attempts",
       "Transactions",
       "Counterparties",
       "Trends",
@@ -174,7 +204,7 @@ describe("FinancialPage", () => {
     graphEmpty()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(4)
+    expect(screen.getAllByRole("tab")).toHaveLength(5)
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 
@@ -182,7 +212,7 @@ describe("FinancialPage", () => {
     graphLoading()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(4)
+    expect(screen.getAllByRole("tab")).toHaveLength(5)
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 
@@ -195,5 +225,75 @@ describe("FinancialPage", () => {
     selectTab("Transactions")
     expect(screen.getByText("No documentary transactions")).toBeInTheDocument()
     expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * The attempts tab is the record of what was loaded into the ledger. Its own
+ * behaviour is covered in `IngestionRunsPanel.test.tsx`; what is asserted here
+ * is only that the page reaches it, and reaches it without the graph.
+ */
+describe("FinancialPage, the attempts tab", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useFinancialStore.getState().reset()
+    graph.useTransactions.mockReset()
+    ledger.useLedgerTransactions.mockReset()
+    runs.useIngestionRuns.mockReset()
+    ledgerEmpty()
+    runsEmpty()
+  })
+
+  it("mounts the attempts panel when the tab is selected", () => {
+    graphWithRows()
+    renderPage()
+
+    expect(
+      screen.queryByText("No attempts recorded against this case")
+    ).not.toBeInTheDocument()
+
+    selectTab("Attempts")
+    expect(
+      screen.getByText("No attempts recorded against this case")
+    ).toBeInTheDocument()
+  })
+
+  /**
+   * The counts and filters in the graph chrome describe graph rows. Drawn above
+   * the record of ingestion attempts they would read as a description of it.
+   */
+  it("keeps the graph chrome out of the attempts tab", () => {
+    graphWithRows()
+    renderPage()
+
+    selectTab("Attempts")
+    expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
+  })
+
+  /** Ledger rows and no graph: the record of what put them there is reachable. */
+  it("reaches the attempts tab when the graph has no rows", () => {
+    graphEmpty()
+    renderPage()
+
+    selectTab("Attempts")
+    expect(
+      screen.getByText("No attempts recorded against this case")
+    ).toBeInTheDocument()
+    expect(screen.queryByText("No documentary transactions")).not.toBeInTheDocument()
+  })
+
+  /**
+   * The notice above the ledger and the attempts tab must share one fetch. That
+   * holds only while every caller passes the case id and nothing else, so the
+   * page is checked for a stray second argument here as well as in the panel.
+   */
+  it("reads the attempts with no window and no status filter", () => {
+    graphWithRows()
+    renderPage()
+
+    selectTab("Attempts")
+    for (const call of runs.useIngestionRuns.mock.calls) {
+      expect(call).toEqual(["case-1"])
+    }
   })
 })
