@@ -3,19 +3,18 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the sandbox/baseline infrastructure
-unit, `0cdd3f4` — no product code changed)
+**Last updated:** 5 September 2026 (records the ledger data layer, `fd88318`)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `0cdd3f4`
-  (`0cdd3f4517105c505a965349f9c4df5efa72d4c7`), "Make the sandbox able to run the
-  suites, and correct the baselines", parent `0ce3fdd`. **Confirm the real tip
-  with `git log --oneline -5`** at the start of every session rather than
-  trusting this line.
+- **Head when this was written:** `fd88318`
+  (`fd8831809428f505a1d4f541ff1eb65f81865854`), "Frontend read path for the
+  relational ledger", parent `2a4c12d`. **Confirm the real tip with
+  `git log --oneline -5`** at the start of every session rather than trusting
+  this line.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 
 ### Uncommitted
@@ -23,156 +22,162 @@ unit, `0cdd3f4` — no product code changed)
 Nothing tracked. The tree is clean.
 
 Still untracked and still un-removable from a session (workspace denies
-`unlink`), unchanged for three sessions now — Neil has to delete these from his
-side:
+`unlink`) — Neil has to delete these from his side:
 
 - `backend/services/financial/export_manifest.py.bak`
 - `backend/services/financial_export_service.py.bak`
-- `frontend_v2/src/__probe.test.ts`
+- `frontend_v2/src/__probe.test.ts` — a diagnostic left by the vitest
+  investigation two sessions ago. It is **counted in the frontend baseline
+  below** (it contributes 1 file and 1 test), so when it is deleted the unit
+  numbers drop by one each and that is expected, not a regression.
 
-### Scale, measured from git this session
+### Scale
 
-73 commits since `c4246c0` (27 August), counting `0cdd3f4`.
-`backend/services/financial/`: **44 modules**, **32,452 lines** by `wc -l`.
-`backend/tests/test_financial_*.py`: **47 files**, **3,057 tests** by the
-discover run. All three unchanged from last session in file terms; the test
-count rose from 3,053 because two files that previously contributed a single
-import-failure placeholder each now contribute their real bodies.
+75 commits since `c4246c0` (27 August), counting `fd88318`.
+
+Backend unchanged this session and these figures were measured last session:
+`backend/services/financial/` **44 modules**, **32,452 lines**;
+`backend/tests/test_financial_*.py` **47 files**, **3,057 tests**.
 
 ---
 
 ## What this session did
 
-Two things, in order. The first was not a build item and was not planned.
+One build item: **the frontend read path for the relational ledger**, item 12's
+first remainder. Committed as `fd88318`, 1,103 insertions across five files, no
+deletions.
 
-### 1. Answered a scoping question (no code)
+This is the **data layer only**. It is deliberately a unit on its own, because
+the decisions in it are the ones that are expensive to get wrong, and the screen
+that consumes it is a separate and much more mechanical piece of work.
 
-Neil asked how much work is left on the financial piece. Reported, and re-checked
-against source rather than memory:
+### What landed
 
-- Item 12 has two remainders. The frontend read path is one unit. Wiring
-  `ingest_native_reading` is the substantial one.
-- **`ingest_native_reading` has no caller anywhere outside its own test file.**
-  Re-verified this session by grep across `backend/` excluding `tests/`: the only
-  hits are its own `def`, and its import and `__all__` entry in
-  `services/financial/__init__.py`. So the Postgres ledger has a tested writer
-  and a tested reader and **no production writer at all**. Any screen built
-  against `GET /api/financial/ledger` today reads a table nothing fills.
-- Both financial routers **are** wired into `routers/__init__.py` and `main.py`.
-  Verified, not assumed.
-- `tracing.py` and `exhibit.py` are exported from the package but have no caller
-  in `routers/` or `services/`. Unchanged.
-- Item 11 stays blocked on the correction-versus-re-ingestion ruling.
-- Items 14–17 stay parked.
+- `frontend_v2/src/features/financial/api.ts` — **+185 lines, purely
+  additive.** The existing Neo4j-backed `Transaction` types are untouched above;
+  the ledger block sits below a section comment saying plainly that these are
+  two different stores. Adds the five closed-vocabulary arrays,
+  `LedgerTransaction` (27 fields), `LEDGER_TRANSACTION_FIELDS`,
+  `LedgerResponse`, and `financialAPI.getLedgerTransactions`.
+- `frontend_v2/src/features/financial/lib/ledger-format.ts` — **new, 369
+  lines.** Money scaling and vocabulary narrowing. The only module that knows
+  how to turn a stored row into something a person reads.
+- `frontend_v2/src/features/financial/hooks/use-ledger-transactions.ts` —
+  **new, 47 lines.** The React Query read.
+- `frontend_v2/src/features/financial/api.ledger.test.ts` — **new, 280 lines,
+  16 tests.**
+- `frontend_v2/src/features/financial/lib/ledger-format.test.ts` — **new, 222
+  lines, 22 tests.**
 
-An estimate of roughly seven to eight sessions for everything currently
-unblocked was given to Neil and labelled as an estimate.
+### The three decisions, and why
 
-### 2. The infrastructure unit (`0cdd3f4`)
+Recorded here as well as in the commit message, because these are the ones a
+later session is most likely to undo by accident.
 
-Neil's instruction was "I want you to be able to work through this now. What
-blockers do we need to solve?", then, on the findings, "commit as one infra
-unit" and "clean, no expected failures".
+**1. Money is scaled by cutting the digit string, never by dividing.**
+`amount_minor` is an integer count of minor units, and how many minor units make
+a major unit depends on the currency: none for yen, two for most, three for
+Bahraini and Kuwaiti dinar. A blanket division by a hundred would report every
+yen figure as a hundredth of itself and every dinar figure as ten times itself.
+Separately, near the top of the safe integer range the gap between representable
+floating-point numbers is wider than a cent, so dividing there silently loses the
+last one; `9007199254740991` is a tested case. Cutting a digit string cannot
+round anything.
 
-Two files changed. **No product code, no test code, no behaviour.**
+The scale itself comes from `Intl.NumberFormat(...).resolvedOptions()
+.maximumFractionDigits` — the runtime's own currency data — rather than a
+hardcoded table that would go stale. When the code cannot be scaled at all, the
+result carries `scaled: false` and the raw digits, so a caller has been told it
+is not a real figure rather than being handed one that is a hundred times too
+small.
 
-- `CLAUDE.md` — Environment, Tests and Git sections.
-- `frontend_v2/vitest.config.ts` — one line:
-  `cacheDir: process.env.VITE_CACHE_DIR || undefined`. Env-gated, so with the
-  variable unset the config behaves exactly as before. Nothing outside this
-  sandbox changes.
+Thousands grouping is **fixed en-US, not locale-derived**, so two people reading
+the same case see the same figure.
 
-#### What was actually wrong
+**2. Closed vocabularies are typed `string` on the wire and narrowed at
+runtime.** A backend one version ahead of the deployed bundle can legitimately
+send a `ledger_status` this build has never heard of. A union type would let that
+value through while claiming it had been checked, and it would arrive on screen
+as an empty badge — which reads as *an answer* ("this row has no status") rather
+than as this build being out of date. So `LedgerTransaction` types those fields
+loosely on purpose, and `ledger-format.ts` narrows every one of them, returning
+either the member's meaning or an explicit statement that we do not recognise it.
+This follows the precedent already set by `use-route-checks.ts` for route-check
+outcomes.
 
-**The backend suite could not run at all.** The sandbox starts with *no* backend
-dependencies — not `sqlalchemy`, not `fastapi`, not `pydantic`. The repo `venv/`
-is a stale Python 3.14 with nothing installed and is not what the suite runs on.
-`backend/requirements.txt` is the wrong instrument because it pulls
-`openai-whisper` and therefore torch, for no benefit to this suite. Seventeen
-pinned packages are sufficient and install in about twenty seconds. The exact
-one-line command is now in `CLAUDE.md` under Tests; it is not repeated here,
-because a command in two places drifts.
+Each vocabulary also refuses members belonging to a *different* vocabulary:
+`readProofClass("admitted")` narrows to null. Tested.
 
-**The recorded backend baseline was wrong, and the way it was wrong was hiding
-two dead test files.** `2933, FAILED (errors=1)` treated a `jose`
-ModuleNotFoundError as permanent. It was never permanent, only a missing package.
-Because it was accepted as expected, nobody noticed that `test_financial_router`
-and `test_financial_ledger_router` were failing at *import* and never executing a
-single test body. With the packages present:
+**3. The hook sits under the query key `["financial-ledger", ...]`, outside the
+`["financial", ...]` prefix.** Verified by grep, not assumed: every mutation in
+`use-financial-data.ts` invalidates `["financial", caseId]`. Those write to the
+**Neo4j graph** and cannot change a Postgres ledger row — categorising a graph
+transaction or correcting its amount there leaves the ledger exactly as it was.
+Sharing the prefix would refetch the ledger on every graph edit, and worse, would
+imply a relationship between the two stores that the write paths do not have.
 
-- Suite: **Ran 3057 tests, OK (skipped=12). Zero errors, zero failures.**
-- `test_financial_ledger_router.py` runs its **5 tests for the first time; all
-  pass.** That is the router the frontend unit targets, so this matters directly
-  to the next item.
+### Cross-language guards, and proof that they bite
 
-The `services.agent` → `langchain_openai` gap raised as an open question last
-session is **closed**: it was three more packages (`langchain-core`,
-`langchain-openai`, then `langgraph` and `langgraph-checkpoint`), all now in the
-bootstrap line.
+Four guards read backend Python source and fail if the two languages drift:
 
-**The vitest browser project was silently running zero tests.** The workspace
-`unlink` denial was recorded as a cosmetic git warning. It is not only that: it
-aborts the browser project during Vite dependency optimisation, before
-collection, in about 150ms — and `passWithNoTests: true` then reports a clean
-"no tests" result, so the failure looked like success. Pointing `cacheDir` at
-`/tmp` fixes it. The browser project now runs **2 files, 4 tests**.
+- the emitted field set against `TransactionView.to_json` in
+  `backend/services/financial/transaction_query.py`;
+- each of the five vocabularies against `backend/postgres/models/enums.py`;
+- the extraction-layer range against the `extraction_layer BETWEEN 0 AND 3`
+  CHECK in `backend/postgres/models/financial.py`;
+- the endpoint's own parameter list and response envelope in
+  `backend/routers/financial_ledger.py`.
 
-**Two git-procedure defects, both now fixed in `CLAUDE.md`.**
+Each Python block is located and **scoped to its own body** rather than searched
+for anywhere in the file, following the note in `use-route-checks.test.tsx` that
+a whole-file search once passed on a copy of a guard living elsewhere.
 
-- `user.name` and `user.email` are unset in the sandbox and git's guess
-  (`<session-user>@claude.(none)`) is unusable, so setting only `GIT_AUTHOR_*`
-  leaves `commit-tree` failing with `fatal: unable to auto-detect email address`.
-  The `GIT_COMMITTER_*` pair is now part of the documented command. This had been
-  carried as an open question for at least two sessions.
-- The fixed `/tmp/loupe.index` path does not survive a session change. `/tmp` is
-  sticky and the sandbox user is different every session, so the file left by an
-  earlier session (`nifty-ecstatic-gauss`, 1 September) is owned by another uid
-  and can be neither removed nor written. The procedure failed on its very first
-  line with `Operation not permitted`. The path is now derived:
-  `/tmp/loupe-$(id -un).index`.
+**These were mutation-tested this session, not just asserted.** Removing
+`"bank_reference"` from `LEDGER_TRANSACTION_FIELDS` and `"superseded"` from
+`LEDGER_STATUSES` produced exactly two failures with the right messages; the file
+was then restored byte-identically from a backup and re-run green. A guard that
+has never been seen to fail is not evidence of anything.
 
-#### Verified baselines, all run this session
+### Verification, all run this session
 
-- Backend financial suite: **3057 tests, OK (skipped=12)**.
-- `test_financial_ledger_router.py` alone: **5/5 pass**.
-- Frontend unit project: **54 files, 285 tests, pass**.
+- Frontend unit project: **56 files, 323 tests, pass** (was 54 / 285; +2 files
+  and +38 tests, exactly the new work).
 - Frontend browser project: **2 files, 4 tests, pass**.
 - `npx tsc -b`: 0. `npx eslint .`: 0.
-- Commit verified by diffstat against HEAD before writing the ref: exactly the
-  two intended files. Tree tracked-clean after the ref update.
+- Commit verified by `git diff --stat HEAD <tree>` before the ref was written:
+  exactly the five intended files, 1,103 insertions, no deletions. Tree
+  tracked-clean afterwards.
 
-The old `CLAUDE.md` frontend line ("50 files, 246 tests") was stale; it is now
-54 and 285.
+Backend was not re-run; nothing backend changed.
 
 ---
 
 ## Durable facts, kept so no one rediscovers them
 
-Everything about the bootstrap, the baselines, the `VITE_CACHE_DIR` requirement,
-the playwright install, the storybook limitation and the git procedure now lives
-in **`CLAUDE.md`**, because it does not change week to week. It is deliberately
-not duplicated here. What follows is only what is still in flux.
+The bootstrap, the baselines, the `VITE_CACHE_DIR` requirement, the playwright
+install, the storybook limitation and the git procedure all live in
+**`CLAUDE.md`**. Deliberately not duplicated here.
 
 ### New this session
 
-- **`chromadb` is deliberately absent from the bootstrap.** `VectorDBService`
-  degrades gracefully and prints a warning that vector search is disabled. That
-  warning is expected output, not a failure.
-- **No live Postgres is needed for the financial suite.**
-  `test_financial_transaction_query` builds SQLite in a temp directory. Verified
-  by reading the test, not assumed.
-- **`npx playwright install chromium` works; `--with-deps` does not**, because it
-  needs sudo and the sandbox sets the no-new-privileges flag. The browser binary
-  is about 106 MiB and installs in roughly a minute.
-- **The storybook vitest project cannot run here.** Its iframe orchestrator fails
-  against `localhost` (`Received URL: unknown`) and it completes 3 of 36 files.
-  A bare `npx vitest run` with no `--project` will attempt it and hang past ten
-  minutes. **No story covers financial code**, so this does not block the
-  financial build, but it means "vitest is green" only ever refers to the unit
-  and browser projects. **Not investigated further and should not be without a
-  ruling from Neil** — it is off the critical path.
-- **`--reporter=basic` is not a valid vitest v4 reporter** and fails with
-  "Failed to load custom Reporter from basic". Use the default reporter.
+- **Any scratch file in `/tmp` needs a per-user name, not just the git index.**
+  `/tmp` is sticky and the sandbox user changes every session, so a plain
+  `/tmp/tsc.out` left by an earlier session is owned by another uid and a
+  redirect into it fails with `Permission denied`. This cost a few minutes
+  looking like a typecheck failure when the typecheck was fine. Use
+  `/tmp/<name>-$(id -un).<ext>` for everything, the same way `CLAUDE.md` already
+  requires for the index.
+- **The house pattern for API tests** is in `src/features/cases/api.test.ts`:
+  swap `globalThis.fetch` for a `vi.fn()`, resolve a hand-built `Response`,
+  assert with `toHaveBeenCalledWith(url, expect.objectContaining({...}))`, and
+  restore in `afterEach`.
+- **No shared money formatter existed before this unit.** Every financial
+  component reaches for `toLocaleString("en-US", ...)` on a float. Those are the
+  Neo4j-backed `Transaction` rows, which carry floats, so they are not wrong
+  today — but any new code touching `amount_minor` must use
+  `formatLedgerAmount` and nothing else.
+- **`backend/routers/financial_ledger.py` is reachable and tested.** Its five
+  router tests ran for the first time last session and pass.
 
 ### Carried forward, still true
 
@@ -184,11 +189,14 @@ not duplicated here. What follows is only what is still in flux.
   `evidence-engine/app/services/pipeline_run_state.py` is 3.11+ only.
 - **The exports guard needs no edit for a new module**, as long as the module
   contributes names through `__init__.py` and has no module-level `__all__`.
-- A bare module-name grep against `requirements.txt` installs the wrong package
-  for `jose`: the line is `python-jose` and plain `jose` is an unrelated
-  Python-2-era package that fails to import. Now moot, since the bootstrap line
-  names packages explicitly, but recorded in case a resolver script is ever
-  written.
+- **The storybook vitest project cannot run here** and no story covers financial
+  code. "vitest is green" only ever means the unit and browser projects. Off the
+  critical path; do not investigate without a ruling from Neil.
+- **`--reporter=basic` is not a valid vitest v4 reporter.** Use the default.
+- **`chromadb` is deliberately absent from the bootstrap.** `VectorDBService`
+  degrades and warns; the warning is expected output.
+- **No live Postgres is needed for the financial suite.**
+  `test_financial_transaction_query` builds SQLite in a temp directory.
 
 ---
 
@@ -209,15 +217,20 @@ not duplicated here. What follows is only what is still in flux.
     question, below.**
 
 12. Both halves of the "both stores" ruling are built — Neo4j by `de7ef21`,
-    Postgres by `a9e0d29`. Two remainders:
-    - **Frontend consumption of `GET /api/financial/ledger`.** Ruled by Neil as
-      the next unit. **This is what the next session picks up.** Nothing on the
-      frontend calls the endpoint yet. Note the sequencing risk recorded above:
-      the ledger has no production writer, so this screen will read an empty
-      table until the next item lands.
-    - **Wiring `ingest_native_reading` into production.** The larger of the two.
-      Order relative to the frontend unit was ruled this session: frontend
-      first.
+    Postgres by `a9e0d29`. Remainders:
+    - ~~**Frontend data layer for `GET /api/financial/ledger`.**~~ **Done,
+      `fd88318`.**
+    - **The ledger screen itself.** The next unit, and the obvious one to pick
+      up. Nothing renders ledger rows yet: `getLedgerTransactions` and
+      `useLedgerTransactions` have no caller outside their tests. Needs a
+      component that lists rows and shows, per row, the amount through
+      `formatLedgerAmount` and the narrowed status, proof class, direction,
+      date source and extraction layer through the `read*` functions —
+      including the "unrecognised" path, which must be visible rather than
+      blank. Note the sequencing risk below: on real data it reads an empty
+      table.
+    - **Wiring `ingest_native_reading` into production.** The larger piece.
+      Neil's ordering ruling was frontend first.
 
 13. User-defined view tabs. Named snapshots of filter state, persisted,
     creatable, renameable, deletable. Also expose source document type onto the
@@ -244,30 +257,32 @@ not duplicated here. What follows is only what is still in flux.
 11. Proposal on the table (a correction triggers a genuine re-run of the balance
 identity; only a re-run that closes moves the class), not accepted.
 
-**Is content-hash de-duplication meant to be call-scoped only?** Raised last
-session, still unruled. `document_content_hashes` disambiguates duplicate content
-within one `record_transactions()` call but not across two separate calls to the
-same document. Not a blocker for the frontend unit.
+**Is content-hash de-duplication meant to be call-scoped only?** Still unruled.
+`document_content_hashes` disambiguates duplicate content within one
+`record_transactions()` call but not across two separate calls to the same
+document.
 
 **Capability with no route to the user.** `exhibit.py` and `tracing.py` remain
-unrouted. Item 12's route-to-user gap is purely frontend and is the next unit.
+unrouted. Item 12's route-to-user gap is now half closed: the data layer exists,
+the screen does not.
 
 **Provenance of `exhibit.py`.** Unchanged: confirmed valuable, but it came from a
 proposed build order, not a stated Owl requirement.
 
-### Closed this session
+### Nothing new raised this session
 
-- ~~Should CLAUDE.md's commit procedure gain the committer-identity line?~~ Yes.
-  Done in `0cdd3f4`.
-- ~~The `services.agent` → `langchain_openai` import gap: fix or leave
-  undocumented?~~ Fixed. Four packages, now in the bootstrap.
-- ~~Should the `jose` error stay an expected baseline failure?~~ No. Ruled
-  "clean, no expected failures". The baseline is 3057, OK.
+No question arose during this unit that Neil has not already ruled on.
 
 ---
 
 ## Standing flags
 
+- **The Postgres ledger has no production writer.** `ingest_native_reading` has
+  no caller outside its own test file. The data layer committed this session is
+  correct and tested, but against real data it will read an empty table until
+  the wiring item lands. Neil was told this before the ordering ruling and ruled
+  frontend first anyway; do not reopen it, but **do not let the empty screen be
+  mistaken for a defect.**
 - **P0 is unreachable on the current corpus.** No document carries its own
   control totals in a form that qualifies.
 - **Half two has only ever run against synthetic ledgers.**
@@ -275,11 +290,11 @@ proposed build order, not a stated Owl requirement.
   evidence-engine layer, verified end to end 1 September. Triage is out of the
   build by ruling; do not reopen without a new ruling.
 - **No row in the corpus carries a running-balance column.** 30,570 rows across
-  325 documents.
+  325 documents. Worth remembering for the screen: `running_balance_minor` is
+  nullable and on this corpus will be null everywhere.
 - **The alembic migration `20260902_evidence_table_geometry` has not been applied
   to any real database from a session** — the sandbox has no Postgres. First
   deployment needs an `alembic upgrade head` on Neil's side.
-- **The Postgres ledger has no production writer.** See item 12.
 
 ---
 

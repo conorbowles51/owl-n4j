@@ -90,6 +90,13 @@ Resolve it once at the start; do not hardcode a path from a previous session.
 - The workspace denies `unlink`. This produces harmless `tmp_obj_*` warnings from
   git, but it is **not** always cosmetic: it also aborts the vitest browser
   project before collection. `/tmp` allows `rm`.
+- **Every scratch path in `/tmp` must carry the current user in its name**, e.g.
+  `/tmp/tsc-$(id -un).out`. `/tmp` is sticky and the sandbox user changes every
+  session, so a fixed name left behind by an earlier session is owned by another
+  uid: redirecting into it fails with `Permission denied` and `rm` fails with
+  `Operation not permitted`. This applies to the git index (see Git) and to
+  anything else, including a file used only to capture a command's output — where
+  the failure looks exactly like the command itself having failed.
 - Case material and evidence files are **never committed**.
 
 ---
