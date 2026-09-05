@@ -3,20 +3,20 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records `610df9b`, the third chunk of the
-quarantine screen: the mutation hook that asks for a row to be set aside or let
-back in, and invalidates the ledger when one moves. Read the disk note under
-Standing flags **before running anything** — the documented bootstrap no longer
-works and the replacement is recorded there.)
+**Last updated:** 5 September 2026 (records `66d1e67`, the fourth chunk of the
+quarantine screen: the dialog a person uses to set one ledger row aside or let it
+back in. **This is the first thing in the five that a person can see.** Read the
+disk note under Standing flags **before running anything** — the documented
+bootstrap no longer works and the replacement is recorded there.)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `610df9b`
-  (`610df9bd0bad48a8faec93580cf5061cd18f391f`), "Add the hook that sets a ledger
-  row aside or lets it back in", parent `eff1bca`.
+- **Head when this was written:** `66d1e67`
+  (`66d1e67affd2c3f706c537fdee34573a1991c621`), "Give a person a screen for
+  setting one ledger row aside, or letting it back in", parent `ae19950`.
   **Confirm the real tip with `git log --oneline -5`** at the start of every
   session rather than trusting this line — the state-file commit that follows
   this one will already have moved it.
@@ -47,18 +47,18 @@ disk note under Standing flags.
 
 ### Scale
 
-**114 commits** since `c4246c0` (27 August), counting `610df9b`; 115 once the
+**116 commits** since `c4246c0` (27 August), counting `66d1e67`; 117 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`, not incremented from the previous figure.
 
 `backend/services/financial/` **50 modules** excluding `__init__.py`;
 `backend/tests/test_financial_*.py` **57 files**, **3,336 tests**.
 
-### Gate baselines as of `610df9b`
+### Gate baselines as of `66d1e67`
 
-- **Frontend unit: 70 files, 558 tests.** Re-run this session, green. Up one
-  file and 17 tests from `eff1bca`'s 69/541, accounted for exactly by the new
-  `use-row-adjudication.test.tsx`. 558 includes the stray probe test.
+- **Frontend unit: 71 files, 586 tests.** Re-run this session, green. Up one
+  file and 28 tests from `610df9b`'s 70/558, accounted for exactly by the new
+  `RowAdjudicationDialog.test.tsx`. 586 includes the stray probe test.
 - **`tsc -b --force` 0, `eslint .` 0.** Both actually re-run this session over
   the whole project, not just the touched files. `--force` was used deliberately
   so the result could not come from a cached build info file.
@@ -90,122 +90,136 @@ Counted directly, not from memory:
 
 ## What this session did
 
-**The third chunk of the quarantine screen landed as `610df9b`.** Two files, 644
-insertions, no deletions. Frontend only; no Python was touched.
+**The fourth chunk of the quarantine screen landed as `66d1e67`.** Two files,
+1,103 insertions, no deletions. Frontend only; no Python was touched.
 
-**Chunk 3 of 5 is done.** Chunk 1 gave the screen the call to make and the shape
-of the answer. Chunk 2 gave it the reader that turns one of those answers into
-words. Chunk 3 is the thing that actually makes the call and keeps the cache
-honest afterwards. **Still nothing on screen** — chunk 4 is the first commit that
-produces a surface a person can see.
+**This is the first thing in the five that a person can see and use.** Chunks 1
+to 3 built the call, the reader that turns one answer into words, and the
+mutation that makes the call. All of it was reachable only from a test. This is
+the surface.
 
 ### What landed
 
-- **`frontend_v2/src/features/financial/hooks/use-row-adjudication.ts`** (119
-  lines, new). One exported hook, `useRowAdjudication(caseId)`, plus
-  `AdjudicationAction` and `RowAdjudicationVariables`.
-- **`frontend_v2/src/features/financial/hooks/use-row-adjudication.test.tsx`**
-  (525 lines, 17 tests, new).
+- **`frontend_v2/src/features/financial/components/RowAdjudicationDialog.tsx`**
+  (523 lines, new). One exported component, `RowAdjudicationDialog`, plus
+  `RowAdjudicationDialogProps`.
+- **`frontend_v2/src/features/financial/components/RowAdjudicationDialog.test.tsx`**
+  (580 lines, 28 tests, new).
 
-### The shape of the hook, and why
+### The deviation from the chunk plan, and what would reverse it
 
-- **One mutation, not two.** `quarantineRow` and `releaseRow` take the same three
-  parameters and answer with the same shape, so the verb travels in the mutation
-  variables (`action: "quarantine" | "release"`) rather than in the hook name.
-  Two hooks would hand one button two `isPending` flags and two `data` objects,
-  and the bug that follows is a screen reading the answer to the call it did not
-  make. *What would reverse it:* a screen that needs a quarantine and a release
-  in flight at once, which no screen in the plan does.
-- **A refusal is a resolved promise.** The router turns only `not_found` and
-  `write_failed` into HTTP errors; `refused` and `unchanged` arrive with a 200
-  and mean the ledger declined. So `isSuccess` means the question was answered,
-  not that anything changed. **The fact a caller wants is `data.applied`.** The
-  tests assert `applied` on every outcome rather than leaning on the mutation's
-  own success flag.
-- **The answer is read whole before it is handed back.** `mutationFn` maps the
-  wire object through `readRowAdjudication`, so both `data` and the promise from
-  `mutateAsync` are a `RowAdjudicationReading`. `rescues_period` is said in this
-  response and in no other place, and a caller handed the raw object can render
-  the outcome and lose it without noticing. Safe to compose inside `mutationFn`
-  because the readers cannot throw — an unrecognised vocabulary member comes back
-  labelled unrecognised rather than raising — so a mapping cannot masquerade as a
-  request that failed.
-- **`reason` is passed through unexamined.** Settled by reading
-  `routers/financial_adjudication.py` (`reason: str = Body(..., embed=True)`,
-  required, **no `min_length`**) and `services/financial/quarantine_row.py`,
-  which does not check it either. A client-side non-empty rule here would be a
-  rule the ledger does not have. **The empty-`reason` guard belongs in the chunk
-  4 dialog**, where the field is filled in.
-- **A missing `caseId` rejects rather than asserting.** The sibling
-  `use-ledger-ingest.ts` writes `caseId!`, which is tolerable on a path that only
-  reads a file. This one changes what a case's totals count, and a write
-  addressed to `case_id=undefined` is not a request worth making.
-  `use-ledger-ingest.ts` was **not** changed here; that is not this unit.
+**Chunk 4 as agreed was the dialog, the quarantine table and the quarantine
+panel in one commit. I landed the dialog on its own and the table with its panel
+becomes chunk 4b.** Announced at the start of the session, before any code.
 
-### The one deviation from the chunk plan, and what would reverse it
+The reason is size, measured rather than guessed. The three chunks before this
+one were 496, 765 and 644 insertions. The dialog alone is 1,103, already larger
+than any of them, and a table with a panel and their tests on top would have made
+a single commit roughly three times the size of the largest thing in the sequence
+so far. A commit that large is not reviewable and is not a stopping point.
 
-**The plan said to invalidate on `applied` alone. This invalidates when `applied`
-is true *or* when this build's own reading of the outcome word says the row
-moved** (`outcome.changedTheRow === true`). The two cannot disagree on a backend
-of the same version, and `readRowAdjudication` already raises
-`appliedDisagreesWithOutcome` when they do. What a disagreement must **not** do
-is get settled here by picking one. Refetching when nothing moved costs a
-request. Not refetching when something did leaves a row on screen in a list it
-has left, and a person then reads that stale screen as the ledger's answer. The
-costs are not symmetrical.
+*What would reverse it:* the table turning out not to compile without the dialog.
+It will not — nothing in the table imports it, and the dialog is opened by the
+ledger row action in chunk 5.
 
-**What is reported to a person about whether the row moved still comes from
-`applied` alone**, which is the standing rule and is unchanged. *What would
-reverse the widening:* the disagreement turning out to be reachable in normal
-operation rather than only across versions, at which point it needs handling
-rather than absorbing.
+### The shape of the dialog, and why
 
-### Two testing decisions worth not relearning
+- **Which of the two changes it offers is read off the row, not passed in.**
+  `ledger_status === "quarantined"` means the only change available is letting
+  the row back in; anything else means setting it aside. The row already carries
+  the status, so a verb prop would be a second copy of a fact the row states, and
+  the two can disagree: a caller passing "set aside" for a row already held would
+  ask the ledger to do what it has already done, get `unchanged` back, and have
+  told the person a question was being asked that was not. *What would reverse
+  it:* a screen that needs to offer a verb the row does not imply, which none in
+  the plan does.
+- **A status this build cannot read gets neither verb.** Not a refusal on the
+  ledger's behalf. The change to offer is *derived* from the status, so a status
+  that cannot be read leaves nothing to derive it from, and a guess would send a
+  write nobody asked for. The row is still drawn and the raw value still shown,
+  loudly, per the unrecognised rule.
+- **Non-admitted rows are not screened out.** A superseded row is offered "set
+  aside", the ledger refuses, and the refusal is shown as **the ledger's own
+  answer** rather than pre-empted in the browser. A second copy of the ledger's
+  rules in the browser is a second thing to keep in step, and the copy is what
+  drifts.
+- **The empty-`reason` guard deferred from chunk 3 landed here, and it is not a
+  rule invented in the browser.** Settled by reading the writers: every one of
+  them refuses a blank reason, in four separate places — `QuarantineBasis.from_adjudication`,
+  the release path, the code that appends the decision, and the
+  `ck_adjudications_reason_not_blank` check constraint on the table. The first
+  three answer with an **ordinary refusal**, so a blank reason sent anyway comes
+  back as a 200 saying it was not done. Disabling the button spares a person a
+  round trip whose only possible answer is no.
+- **The guard is at least as strict as the database's own and never looser.** The
+  stored check treats tabs, carriage returns and newlines as blank; JavaScript
+  `trim` treats those and several more besides as blank. So a string this dialog
+  rejects might have been accepted, but **nothing it accepts can hit a constraint
+  the person cannot see or act on**, which is the direction that matters. The
+  asymmetry is deliberate; do not "fix" it into an exact match.
+- **What is sent is the trimmed text,** which is also what would be stored
+  regardless: the writer builds its detail as `"<actor>: <reason.strip()>"`. So
+  the words that go on the record are the words the guard checked.
+- **Whether the row moved is reported from `applied` alone.** The mutation
+  resolving is not success — only a missing row and a failed write throw. Where
+  `applied` and this build's reading of the outcome word contradict each other,
+  **the contradiction is shown rather than settled** by preferring one.
+- **The statement-balance fact is said here or nowhere.** `rescues_period` is in
+  this answer and in no other place, deliberately not on the record, because an
+  observation the system made must not be filed as a person's finding. So it is
+  rendered whenever the reading has anything to say, and **suppressed only for
+  the case that carries no fact about a statement at all** — nothing came out of
+  the ledger, so no removal was checked against one. In practice that is the
+  release path. If the dialog drops it, it is not anywhere.
+- **`ADJUDICATION_REASON_IS_NEVER_THE_PERSONS` is rendered beside `reason`
+  whenever `reason` is shown,** so nobody reads the system's wording back as
+  somebody's stated grounds.
 
-**The tests stub `globalThis.fetch` rather than `vi.mock("../api")`**, following
-`api.adjudication.test.ts`. This is not stylistic. Mocking that module would also
-replace the closed vocabularies (`ROW_ADJUDICATION_OUTCOMES`, `LEDGER_STATUSES`,
-`QUARANTINE_REASONS`) that the format readers import from it, so every value
-would narrow against an empty list and **every outcome in every test would
-silently become "unrecognised"** while the tests still looked like they were
-exercising the real thing. There is no `importOriginal` precedent anywhere in
-`src`; the fetch stub is the feature's convention.
+### The hazard chunk 5 has to respect
 
-**Invalidation is checked by seeding a real ledger query and a real graph query
-into a real `QueryClient` and asking which one the hook disturbed**
-(`getQueryState(key)?.isInvalidated`), rather than by spying on
-`invalidateQueries` and trusting the argument. A spy would go on passing after
-somebody changed the key the ledger reads under. Two further source-walking tests
-read `use-ledger-transactions.ts`, `use-row-adjudication.ts` and
-`use-financial-data.ts` off disk and require the write key and the read key to
-still name the same prefix, and `"financial"` and `"financial-ledger"` to stay
-separate.
+**A successful change invalidates the ledger lists, so the row moves between them
+and the list this dialog was opened from refetches without it. The answer lives
+in the mutation, which lives in the dialog.** A caller that unmounts the dialog
+when its row leaves the list therefore destroys the answer before it has been
+read, and the statement-balance fact with it — the one place that fact exists.
+**Keep the dialog mounted until the person closes it.** This is written into the
+component's own docstring as well, because it is the kind of thing that gets
+tidied away by somebody reading only the call site.
 
-### A React Query detail that cost three test failures
+### Two test traps found the hard way
 
-`result.current.data` is **not** flushed at the point
-`await act(async () => { await mutateAsync(...) })` returns, even though
-`onSuccess` has already run. Three tests failed with `expected undefined to be
-...` and the ones that passed did so only because they happened to have a
-`waitFor` in front. **Assertions on `result.current.data` must be inside
-`await waitFor(...)`.** Where it matters, assert on the value `mutateAsync`
-resolves to as well, because either path being the raw wire object would let
-`rescues_period` be dropped.
+- **A defaulted parameter cannot express "no case is open".** `renderDialog(row,
+  undefined)` against a signature of `caseId: string | undefined = CASE_ID`
+  **takes the default**, so the test for the missing-case rejection ran with a
+  case open, the hook did not reject, and the un-spied API called through to a
+  real `fetch` — failing with `Failed to parse URL from
+  /api/financial/transactions/txn-1/quarantine?case_id=case-1`, which reads like
+  a broken test harness rather than a test asserting the wrong thing. Fixed by
+  taking an options object and reading it with `"caseId" in options`. **Any test
+  helper that has to distinguish "not supplied" from "supplied as undefined"
+  needs an options key, not a default.**
+- **`isPending` is not true synchronously after the click.** The mutation reaches
+  it a microtask later, so a straight read of `cancel.disabled` after
+  `fireEvent.click` sees the button still enabled and the assertion fails with
+  `expected false to be true`. Wrap it in `await waitFor`. A synchronous read
+  that happens to pass is passing for the wrong reason.
 
 ### Carried forward: the environment, unchanged and still broken
 
 **Nothing improved and nothing is going to without Neil.** `/sessions` is still
-completely full — 9.8G of 9.8G, zero bytes free, measured again at the end of
-this session. The `pip install` in `CLAUDE.md` dies with `ENOSPC: No space left
-on device` partway through, which leaves the backend suite unrunnable by the
-documented route. **This is not something a session can fix**; almost none of the
-used space belongs to this session, and the rest is other sessions' directories
-that are not readable or removable from here.
+completely full — 9.8G of 9.8G, **zero bytes available, re-measured with
+`df -h /sessions` at the end of this session.** The root filesystem is at 99%
+with 120M free, so `/tmp` is no use either. The `pip install` in `CLAUDE.md` dies
+with `ENOSPC: No space left on device` partway through, which leaves the backend
+suite unrunnable by the documented route. **This is not something a session can
+fix**; almost none of the used space belongs to this session, and the rest is
+other sessions' directories that are not readable or removable from here.
 
-**The workaround, which works and was used for every run this session:** install
-into
-the `/dev/shm` tmpfs, which is 2.0G and starts empty, and put it on `PYTHONPATH`.
-The seventeen packages come to 151M, so there is ample room.
+**The workaround, which worked in the previous session and was not needed in this
+one** — nothing backend was touched, so the suite was correctly not run: install
+into the `/dev/shm` tmpfs, which is 2.0G and starts empty, and put it on
+`PYTHONPATH`. The seventeen packages come to 151M, so there is ample room.
+`/dev/shm` was measured this session at 1.8G available.
 
 ```
 PYLIB=/dev/shm/pylibs-$(id -un); mkdir -p "$PYLIB" /dev/shm/tmp-$(id -un)
@@ -240,33 +254,79 @@ cd <repo>/frontend_v2 && VITE_CACHE_DIR=/dev/shm/vite-cache-$(id -un) \
   npx vitest run --project unit
 ```
 
-Both `tsc -b` and `eslint .` ran clean over the whole project with no
-redirection needed. The **browser** project is still not runnable: it additionally
-wants a per-session Chromium download, and the documented staging directory is on
-the full filesystem.
+That form was used for the unit gate this session and worked. Both `tsc -b` and
+`eslint .` ran clean over the whole project with no redirection needed. The
+**browser** project is still not runnable: it additionally wants a per-session
+Chromium download, and the documented staging directory is on the full
+filesystem.
+
+**The temporary git index can go to `/dev/shm` as well,** and did for the
+state-file commit here: `IDX=/dev/shm/loupe-$(id -un).index`. `CLAUDE.md` says
+`/tmp`, which is on the 99%-full root filesystem; a git index is a few megabytes
+against 120M free, so it fits today, but it is the kind of thing that fails at
+exactly the wrong moment. Everything else in `CLAUDE.md`'s commit procedure is
+unchanged and correct, including that the index name must carry the current user.
 
 ### Verification
 
-Frontend unit re-run in full and green, 70 files / 558 tests, up exactly the
-17 tests in the new file. `eslint .` 0 and `tsc -b --force` 0, both over the
-whole project; `--force` deliberately, so a clean result could not be coming from
-a stale build info file. Backend not run and not claimed — the commit is two
-TypeScript files and no Python.
+Frontend unit re-run in full and green, **71 files / 586 tests**, up exactly the
+28 tests in the new file from `610df9b`'s 70/558. `eslint .` 0 and
+`tsc -b --force` 0, both over the whole project; `--force` deliberately, so a
+clean result could not be coming from a stale build info file. Backend not run
+and not claimed — the commit is two TypeScript files and no Python.
 
-The staged tree (`f9640cb7d81cab92e0164000432c6ee81c873bb0`) was diffed against
-`HEAD` before committing and held exactly the two intended files, 644 insertions
-and no deletions, with the untracked `.bak` files, the probe test and all of
-Neil's case material correctly excluded. `git status --porcelain | grep -v '^??'`
-was empty afterwards.
+The new file was run on its own first, which is where the two failures above
+showed up, and only then was the whole project run. 26 of 28 passed on the first
+attempt; both failures were the test being wrong, not the component.
+
+The staged tree (`178d0119cbc1014026693e1fae275ade55037d92`) was diffed against
+`HEAD` before committing and held exactly the two intended files, 1,103
+insertions and no deletions, with the untracked `.bak` files, the probe test and
+all of Neil's case material correctly excluded. `git status --porcelain | grep -v
+'^??'` was empty afterwards, and `git log --oneline` confirms `66d1e67` sitting
+on `ae19950`.
 
 The `warning: unable to unlink '.git/objects/../tmp_obj_...': Operation not
 permitted` lines during `write-tree` and `commit-tree` are the known workspace
-`unlink` denial. The objects were written and the hashes are valid; `git log`
-confirms the commit. **Not a failure, do not chase them.**
+`unlink` denial. The objects were written and the hashes are valid. **Not a
+failure, do not chase them.**
 
 ---
 
 ## The previous sessions, in brief
+
+**`610df9b`, chunk 3 of the quarantine screen.** Two files, 644 insertions,
+frontend only. Added `hooks/use-row-adjudication.ts` (119 lines) plus 17 tests.
+**One mutation over both routes, not two hooks:** `quarantineRow` and
+`releaseRow` take the same three parameters and answer with the same shape, so
+the verb travels in `variables.action`; two hooks would hand one button two
+`isPending` flags and two `data` objects, and the bug that follows is a screen
+reading the answer to the call it did not make (*reversed by* a screen needing a
+quarantine and a release in flight at once, which none in the plan does). **A
+refusal is a resolved promise,** so `isSuccess` means the question was answered
+and `data.applied` is the fact a caller wants. **The answer is read whole before
+it is handed back** — `mutationFn` maps through `readRowAdjudication`, so `data`
+and the promise from `mutateAsync` are both a `RowAdjudicationReading`, which
+matters because `rescues_period` is said in that response and nowhere else and a
+caller handed the raw object can render the outcome and lose it. Safe to compose
+inside `mutationFn` because the readers cannot throw. **`reason` is passed
+through unexamined,** settled by reading `routers/financial_adjudication.py`
+(`reason: str = Body(..., embed=True)`, required, no `min_length`) and
+`quarantine_row.py`, which does not check it either; the guard was left for the
+dialog, where the field is filled in, and landed at `66d1e67`. **A missing
+`caseId` rejects rather than asserting,** differing from `use-ledger-ingest.ts`
+on purpose because this path changes what a case's totals count. One deviation:
+the plan said invalidate on `applied` alone, and it invalidates on `applied ||
+outcome.changedTheRow === true`, because refetching when nothing moved costs a
+request while not refetching when something did leaves a row on screen in a list
+it has left, and the costs are not symmetrical (*reversed by* the disagreement
+turning out to be reachable in normal operation rather than only across
+versions). What a person is told about whether the row moved still comes from
+`applied` alone. Two testing decisions worth keeping: the tests stub
+`globalThis.fetch` rather than `vi.mock("../api")`, and invalidation is checked
+by seeding a real `QueryClient` and reading `getQueryState(key)?.isInvalidated`
+rather than by spying on `invalidateQueries`, because a spy goes on passing after
+somebody changes the key the reading side uses.
 
 **`19bffae`, chunk 2 of the quarantine screen.** Two files, 765 insertions,
 frontend only. Added `lib/adjudication-format.ts` (414 lines) —
@@ -367,8 +427,35 @@ not repeated here.
 The bootstrap, the baselines, the storybook limitation and the git procedure all
 live in **`CLAUDE.md`**. Deliberately not duplicated here.
 
-### New this session
+### Learned recently, newest first
 
+These accumulate. The heading used to say "new this session", which stopped being
+true the first time a session added to the list instead of replacing it.
+
+- **A test helper cannot express "not supplied" with a defaulted parameter.**
+  Passing `undefined` to `caseId: string | undefined = CASE_ID` **takes the
+  default**, so a test written to prove the no-case rejection ran with a case
+  open and failed on a real `fetch` instead — which reads like a broken harness,
+  not like the test asserting the wrong thing. Take an options object and read it
+  with `"caseId" in options`. This applies to every fixture that has an
+  "absent" case to test.
+- **`isPending` on a mutation is not true synchronously after the click that
+  starts it.** It arrives a microtask later. Reading a disabled state straight
+  after `fireEvent.click` fails with `expected false to be true`; wrap it in
+  `await waitFor`. The same shape as the `result.current.data` trap below, and
+  worth assuming for anything React Query sets.
+- **`vi.spyOn(financialAPI, "quarantineRow")` works because the hook calls it as
+  a property of the exported object,** confirmed by reading
+  `use-row-adjudication.ts` before writing the test rather than by trying it.
+  This is the right stub for a **component** test in this feature, because it
+  lets the trimmed reason and the chosen verb be asserted directly
+  (`toHaveBeenCalledWith({ caseId, transactionId, reason })`). The `fetch` stub
+  stays the right one for **api and hook** tests. Both precedents exist; neither
+  is `vi.mock("../api")`, which is still forbidden here for the reason below.
+- **A `new Promise(() => {})` used to hold a mutation in flight must be typed.**
+  `mockReturnValue(new Promise(() => {}))` infers `Promise<unknown>` and fails
+  `tsc` against a `Promise<RowAdjudication>` return. Write
+  `new Promise<RowAdjudication>(() => {})`.
 - **`result.current.data` on a mutation is not flushed when
   `await act(async () => { await mutateAsync(...) })` returns**, even though
   `onSuccess` has already run. Three tests failed with `expected undefined to
@@ -836,9 +923,43 @@ Read it before touching anything in item 6's remaining half.
 - **Ordering runs needs the secondary sort on `id`.** `started_at` alone is not
   a total order. Same rule now applies to ordering periods.
 
-### And on the frontend, as of `610df9b`
+### And on the frontend, as of `66d1e67`
 
-Rules from the three quarantine-screen chunks so far:
+Rules from the four quarantine-screen chunks so far.
+
+From the dialog, `RowAdjudicationDialog.tsx`:
+
+- **`RowAdjudicationDialog` must be kept mounted until the person closes it.** A
+  successful change invalidates the ledger lists, so the row leaves the list the
+  dialog was opened from. The mutation, and therefore the answer, lives in the
+  dialog: unmounting it when the row disappears destroys the answer before it has
+  been read, **and the statement-balance fact with it**, which exists nowhere
+  else. Its `open` and `onClose` are what the caller drives, not conditional
+  rendering on the row still being present.
+- **It takes `row`, not a verb.** Which change it offers is derived from
+  `row.ledger_status`. Do not add an `action` prop; two copies of that fact can
+  disagree, and the disagreement asks the ledger to do something already done
+  while telling the person otherwise.
+- **A status it cannot read offers no change at all,** deliberately, and still
+  draws the row and the raw value. Not a client-side refusal — there is simply
+  nothing to derive the verb from.
+- **It does not screen out rows the ledger will refuse.** A superseded row is
+  offered "set aside" and the refusal is displayed as the ledger's answer. **Do
+  not add a client-side status check;** it is a second copy of the ledger's rules
+  and it is the copy that drifts.
+- **The non-empty `reason` guard lives here and nowhere else,** and it is
+  `trim()`-based, which is **stricter than** the database's own blank check on
+  purpose. The asymmetry is the safe direction: nothing the dialog accepts can
+  hit a constraint the person cannot see. Do not "fix" it into an exact match.
+  What is sent is the trimmed text, which is what the writer would store anyway.
+- **The sentence about whether the row moved comes from `applied` only.** Where
+  `applied` and the read outcome word contradict, the contradiction is rendered,
+  not resolved.
+- **`rescues_period` is rendered whenever the reading has anything to say and
+  suppressed only where no statement was checked** — in practice the release
+  path. It is in this answer and on no record. A screen that drops it loses it.
+
+From the hook and the layers below it:
 
 - **`useRowAdjudication(caseId)` is the only way a component asks for a row to be
   set aside or let back in.** One mutation for both routes; the verb is
@@ -950,19 +1071,20 @@ turns out to depend on something later in the list, stop and ask.
 - **Phase 2, make the rows trustworthy** — runs ✅ item 5 complete (backend
   `cde43c5`, notice `8924668`, attempts list `bc23570`); quarantine item 6
   **backend complete, screen in progress** (write path `150084a`, localisation
-  reader and rescue reporting `35cc6be`, screen chunks 1 to 3 of 5 `1894fc4`,
-  `19bffae` and `610df9b`);
+  reader and rescue reporting `35cc6be`, screen chunks 1 to 4a of 5 `1894fc4`,
+  `19bffae`, `610df9b` and `66d1e67`);
   reconciliation ✅ item 7 (`dfcef2b`).
   Then adjudication and proof class, duplicates, suspect amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-### Next unit: the quarantine screen, chunks 4 and 5
+### Next unit: the quarantine screen, chunks 4b and 5
 
-**Chunks 1, 2 and 3 landed, as `1894fc4`, `19bffae` and `610df9b`.** The screen is
-being built in five commits and the plan below is the agreed sequence. **Pick up
-at chunk 4.**
+**Chunks 1 to 4a landed, as `1894fc4`, `19bffae`, `610df9b` and `66d1e67`.** The
+screen was planned in five commits; chunk 4 was split in two because the dialog
+alone came to 1,103 insertions. **Pick up at chunk 4b: the quarantine table and
+its panel.**
 
 - **Chunk 1 ✅ `1894fc4`.** `api.ts`: the two calls, the `RowAdjudication` shape,
   `ROW_ADJUDICATION_OUTCOMES`, `ROW_ADJUDICATION_FIELDS`, `RowAdjudicationParams`,
@@ -986,16 +1108,30 @@ at chunk 4.**
   either. The plan's "invalidate on `applied` only" was widened to `applied ||
   outcome.changedTheRow === true`; the reasoning and what would reverse it are in
   the session notes above and in the commit message.
-- **Chunk 4 — dialog, quarantine table, quarantine panel, plus tests, then
-  commit.** The dialog takes the reason, which is required and has no default,
-  and **the empty-`reason` guard deferred from chunk 3 lands here** — it is the
-  layer where the field is filled in. The table is where the
-  conditional-column-versus-second-table question below gets answered against
-  `LedgerTable.tsx`. This is the first commit of the five that produces anything
-  a person can see.
+- **Chunk 4a ✅ `66d1e67`.** `components/RowAdjudicationDialog.tsx` plus its
+  tests. The first surface a person can see. **The empty-`reason` guard deferred
+  from chunk 3 landed here.** What 4b and 5 need to know: it takes `row`, not a
+  verb, and derives the change from `row.ledger_status`; it must be **kept
+  mounted until the person closes it**, because the answer lives in its mutation
+  and the row will leave the list underneath it; and it reports movement from
+  `applied` alone. Its rules are under "And on the frontend" above.
+- **Chunk 4b — the quarantine table and its panel, plus tests, then commit.**
+  This is where the conditional-column-versus-second-table question below gets
+  answered **against `LedgerTable.tsx`**, by reading it rather than by
+  reasoning from the plan. The read is `GET /api/financial/ledger` with
+  `ledger_status=quarantined`; no new endpoint is needed. `quarantine_reason` is
+  the column that matters, and it must keep a computed proof and a person's
+  opinion visibly apart. **Nothing in the table imports the dialog** — wiring the
+  two together is chunk 5, not this one.
 - **Chunk 5 — wire the tab into the store and `FinancialPage`, and the set-aside
   action on the ledger, then commit.** `FinancialMainView` gains its sixth
-  member; the ledger row gets the action that opens the dialog.
+  member; the ledger row gets the action that opens the dialog. **This is the
+  chunk that has to respect the keep-mounted rule.** The row identity the dialog
+  sends is `row.key`, which the backend sets at
+  `services/financial/transaction_query.py:184` as `key=str(row.id)` — read
+  there, not remembered. If a guard proving the adjudication route and the
+  ledger read still name the same identity is wanted, it belongs here, walking
+  the source the way `api.runs.test.ts` does.
 
 What the screen has to show, and why each thing is on the list:
 
@@ -1251,26 +1387,26 @@ before item 12 lands.
 - **Whether ingestion should trigger a sweep at the end of a run is not
   decided and was not decided here.** It is the obvious next caller, and item 8
   (proof class) is the unit that will actually need one. Flagged, not parked.
-- **A row can now be set aside and let back in, but still nothing on screen does
-  it.** As of `610df9b` the frontend has the two calls
-  (`financialAPI.quarantineRow`, `.releaseRow`), a reader for the answer, and a
-  hook that makes the call and invalidates the ledger — and **no component calls
-  any of it.** Chunks 4 and 5 add the callers. Until they land, the quarantine
+- **A row can be set aside and let back in, and as of `66d1e67` there is a
+  working screen that does it — but nothing opens that screen yet.** The frontend
+  now has the two calls (`financialAPI.quarantineRow`, `.releaseRow`), a reader
+  for the answer, a hook that makes the call and invalidates the ledger, and
+  `RowAdjudicationDialog`, which is complete and tested. **No route, tab or row
+  action reaches it.** Chunk 5 adds that. Until it lands, the quarantined
   population is reachable only via
   `GET /api/financial/ledger?ledger_status=quarantined`, and **the ledger tab's
   own totals silently exclude it**.
-- **The write path now reports when a quarantine is what makes a statement
-  balance, and nothing displays it.** `rescues_period` and its sentence come back
-  on the quarantine response and are dropped on the floor, because no caller
-  exists. **This is the strongest single reason the screen is the next unit:**
-  the fact is deliberately not stored in the log, so if it is not on screen at
-  the moment of the decision it is not anywhere. **Two thirds closed at
-  `610df9b`:** `readRescueOutcome` gives all four readings words,
+- **The write path reports when a quarantine is what makes a statement balance,
+  and as of `66d1e67` something finally renders it.** The fact is deliberately
+  not stored in the log, so if it is not on screen at the moment of the decision
+  it is not anywhere. `readRescueOutcome` gives all four readings words,
   `readRowAdjudication` composes it in so a caller cannot read the outcome and
-  quietly drop the rescue, and `useRowAdjudication` now hands the composed
-  reading back on both `data` and the `mutateAsync` promise so there is no raw
-  wire object left for a screen to read past it. Nothing renders it yet; **chunk
-  4 is what puts it in front of a person.**
+  quietly drop it, `useRowAdjudication` hands the composed reading back on both
+  `data` and the `mutateAsync` promise, and `RowAdjudicationDialog` renders it
+  whenever the reading has anything to say. **This is closed as a gap, and it
+  converts into the keep-mounted rule:** the only copy of the fact lives in the
+  dialog's mutation, so a caller that unmounts the dialog when the row leaves the
+  list destroys it. Chunk 5 is where that can go wrong.
 - **`QuarantineBasis.from_proof` is still unreachable from HTTP,** by design —
   computed grounds must not be settable by a person. So on a live case every
   quarantined row's reason reads `adjudicated`, and the second value in that
@@ -1308,11 +1444,11 @@ before item 12 lands.
   applied to any real database from a session** — the sandbox has no Postgres.
   First deployment needs an `alembic upgrade head` on Neil's side.
 - **Disk: `/sessions` is completely full and this is the first thing to check
-  every session.** Measured again at `610df9b`: 9.8G of 9.8G, **zero bytes
-  free** — unchanged for five sessions, against 129M six sessions ago. Root is
-  at 99%. `/dev/shm` is 2.0G with 1.8G free. Every one of those figures came back
-  identical to the previous session's, so this is a steady state rather than
-  something still getting worse.
+  every session.** Measured again at `66d1e67`: 9.8G of 9.8G, **zero bytes
+  available** — unchanged for six sessions, against 129M seven sessions ago. Root
+  is at 99% with 120M free. `/dev/shm` is 2.0G with 1.8G free. Every one of those
+  figures came back identical to the previous session's, so this is a steady
+  state rather than something still getting worse.
   - **This does not block the repo, and an older wording implied it did.**
     `df -h` on the repo path shows a **separate virtiofs mount with 36G free**
     (37G at `19bffae`; it drifts a little and is nowhere near tight).
