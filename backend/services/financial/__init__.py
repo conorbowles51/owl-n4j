@@ -682,6 +682,9 @@ from services.financial.runs import (
     open_ingestion_run,
     reap_stale_runs,
 )
+from services.financial.run_reaper import (
+    reap_stale_runs_forever,
+)
 from services.financial.statement_totals import (
     CANDIDATE_CONVENTIONS,
     FIELD_ALIASES,
@@ -1532,6 +1535,13 @@ __all__ = [
     "ingestion_run",
     "open_ingestion_run",
     "reap_stale_runs",
+    # The schedule that safety net runs on. Separate from `reap_stale_runs`
+    # because the judgement of what is abandoned and the decision of how often
+    # to look are different things, and because keeping the loop out of `runs`
+    # keeps that module synchronous. Neither the threshold nor the interval is
+    # defaulted here; both come from `config` by way of the caller, so this
+    # package goes on importing no configuration at all.
+    "reap_stale_runs_forever",
     # Reading those runs back out.  Unlike the ledger read below, this one
     # defaults to every status rather than to the population that counts: a
     # failed or aborted run is the thing a reader most needs to see, so it

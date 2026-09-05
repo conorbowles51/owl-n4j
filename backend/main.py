@@ -6,10 +6,17 @@ Main entry point for the API server.
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import API_HOST, API_PORT, CORS_ORIGINS
+from config import (
+    API_HOST,
+    API_PORT,
+    CORS_ORIGINS,
+    FINANCIAL_RUN_REAP_INTERVAL_SECONDS,
+    FINANCIAL_RUN_STALE_AFTER_HOURS,
+)
 from routers import (
     graph_router,
     chat_router,
@@ -56,6 +63,7 @@ from routers.evidence_ws import router as evidence_ws_router, close_redis
 from services.job_status_subscriber import get_subscriber
 from services.neo4j.driver import driver
 from services.platform_update_service import platform_update_service
+from services.financial.run_reaper import reap_stale_runs_forever
 
 
 @asynccontextmanager
@@ -80,6 +88,21 @@ async def lifespan(app: FastAPI):
         else None
     )
 
+    # Background task: close financial ingestion runs abandoned by a process
+    # that was killed before it could record a terminal status. Nothing else
+    # can close those: every in-process path already writes its own status, and
+    # the case for this one is that there was no process left to run a handler.
+    # Started here rather than exposed as an endpoint because the sweep is
+    # global, not case-scoped, so behind a case-gated route a caller would be
+    # terminating runs in cases they cannot see.
+    run_reaper_task = asyncio.create_task(
+        reap_stale_runs_forever(
+            older_than=timedelta(hours=FINANCIAL_RUN_STALE_AFTER_HOURS),
+            every=timedelta(seconds=FINANCIAL_RUN_REAP_INTERVAL_SECONDS),
+        ),
+        name="financial-run-reaper",
+    )
+
     # Start Redis subscriber for evidence engine job status sync
     job_subscriber = get_subscriber()
     try:
@@ -90,6 +113,7 @@ async def lifespan(app: FastAPI):
     yield
 
     cleanup_task.cancel()
+    run_reaper_task.cancel()
     if platform_update_task:
         platform_update_task.cancel()
 
