@@ -28,6 +28,16 @@
  * marked as unread rather than left blank, because a blank badge on a
  * financial row reads as an answer.
  *
+ * **The grounds for a quarantine are a column only when the list is about
+ * them.** `showQuarantineGrounds` promotes `quarantine_reason` out of the
+ * status cell into a column of its own, which is what a list filtered to
+ * quarantined rows needs and what a mixed list does not. It is a flag on this
+ * component rather than a second component because the five cells to its left
+ * are where the three rules above live: a second table would be a second copy
+ * of them, and the copy is what drifts. The status column stays either way,
+ * since a row that is somehow not quarantined in a quarantined list is exactly
+ * the thing a reader must be able to see.
+ *
  * Rows are drawn in the order they arrive. The ledger read orders by
  * `ordering_date` then `row_index` — the second of those is what keeps a
  * statement's own printed sequence intact where a day holds several movements
@@ -59,7 +69,7 @@ import {
   readExtractionLayer,
   readLedgerStatus,
   readProofClass,
-  readQuarantineReason,
+  readQuarantineGrounds,
   type NarrowedTerm,
 } from "../lib/ledger-format"
 
@@ -99,8 +109,12 @@ const DIRECTION_VARIANTS: Record<string, BadgeVariant> = {
 }
 
 /**
- * Outline throughout: the reason sits beside the status badge that already
- * carries the colour, and a second filled badge would read as a second status.
+ * Outline throughout, in both positions. Stacked under the status badge, a
+ * second filled badge would read as a second status. Promoted to its own
+ * column, the list is filtered to one status anyway, so colouring the reason
+ * would rank the five against each other — and they are five different things
+ * that happened, not a scale. The distinction that does matter, a person
+ * against a check, is carried in words beside the badge rather than in a hue.
  */
 const QUARANTINE_REASON_VARIANTS: Record<string, BadgeVariant> = {
   balance_break: "outline",
@@ -139,7 +153,71 @@ function TermBadge({
   )
 }
 
-function LedgerRow({ transaction }: { transaction: LedgerTransaction }) {
+/**
+ * The grounds cell, drawn only when the table was told to show it.
+ *
+ * A quarantined row without grounds says so rather than leaving the cell
+ * empty, on the same rule as the absent running balance: an empty cell in a
+ * column headed "Grounds" reads as "none needed".
+ *
+ * `data-decided-by-person` is three-valued and carries the distinction the
+ * sentence also makes, so a test asserts on the classification rather than on
+ * prose that may be reworded.
+ */
+function GroundsCell({ transaction }: { transaction: LedgerTransaction }) {
+  if (transaction.quarantine_reason === null) {
+    return (
+      <TableCell className="align-top">
+        <span
+          className="text-xs text-muted-foreground italic"
+          data-testid="ledger-no-grounds"
+          title="The ledger records no quarantine reason for this row."
+        >
+          No grounds recorded
+        </span>
+      </TableCell>
+    )
+  }
+
+  const grounds = readQuarantineGrounds(transaction.quarantine_reason)
+  return (
+    <TableCell className="align-top">
+      <div className="flex flex-col items-start gap-1">
+        <TermBadge
+          term={grounds}
+          variants={QUARANTINE_REASON_VARIANTS}
+          testId="ledger-quarantine-reason"
+        />
+        <span
+          className="text-xs text-muted-foreground"
+          data-testid="ledger-grounds-origin"
+          data-decided-by-person={
+            grounds.decidedByPerson === null
+              ? "unknown"
+              : grounds.decidedByPerson
+                ? "true"
+                : "false"
+          }
+          title={grounds.origin}
+        >
+          {grounds.decidedByPerson === null
+            ? "Established by something this build cannot name"
+            : grounds.decidedByPerson
+              ? "Decided by a person"
+              : "Established by a check"}
+        </span>
+      </div>
+    </TableCell>
+  )
+}
+
+function LedgerRow({
+  transaction,
+  showQuarantineGrounds,
+}: {
+  transaction: LedgerTransaction
+  showQuarantineGrounds: boolean
+}) {
   const amount = formatLedgerAmount(transaction.amount_minor, transaction.currency)
   const direction = readDirection(transaction.direction)
   const status = readLedgerStatus(transaction.ledger_status)
@@ -147,9 +225,9 @@ function LedgerRow({ transaction }: { transaction: LedgerTransaction }) {
   const layer = readExtractionLayer(transaction.extraction_layer)
   const dateSource = readDateSource(transaction.ordering_date_source)
   const quarantineReason =
-    transaction.quarantine_reason === null
+    transaction.quarantine_reason === null || showQuarantineGrounds
       ? null
-      : readQuarantineReason(transaction.quarantine_reason)
+      : readQuarantineGrounds(transaction.quarantine_reason)
 
   const balance =
     transaction.running_balance_minor === null
@@ -321,17 +399,24 @@ function LedgerRow({ transaction }: { transaction: LedgerTransaction }) {
           )}
         </div>
       </TableCell>
+
+      {showQuarantineGrounds && <GroundsCell transaction={transaction} />}
     </TableRow>
   )
 }
 
-const COLUMN_COUNT = 7
+/** Date, description, direction, amount, balance, how it was read, status. */
+const BASE_COLUMN_COUNT = 7
 
 export function LedgerTable({
   transactions,
+  showQuarantineGrounds = false,
 }: {
   transactions: LedgerTransaction[]
+  showQuarantineGrounds?: boolean
 }) {
+  const columnCount = BASE_COLUMN_COUNT + (showQuarantineGrounds ? 1 : 0)
+
   return (
     <Table data-testid="ledger-table">
       <TableHeader>
@@ -343,13 +428,14 @@ export function LedgerTable({
           <TableHead className="text-right">Running balance</TableHead>
           <TableHead>How it was read</TableHead>
           <TableHead>Status</TableHead>
+          {showQuarantineGrounds && <TableHead>Grounds</TableHead>}
         </TableRow>
       </TableHeader>
       <TableBody>
         {transactions.length === 0 ? (
           <TableRow>
             <TableCell
-              colSpan={COLUMN_COUNT}
+              colSpan={columnCount}
               className="text-center text-sm text-muted-foreground"
               data-testid="ledger-table-empty"
             >
@@ -358,7 +444,11 @@ export function LedgerTable({
           </TableRow>
         ) : (
           transactions.map((transaction) => (
-            <LedgerRow key={transaction.key} transaction={transaction} />
+            <LedgerRow
+              key={transaction.key}
+              transaction={transaction}
+              showQuarantineGrounds={showQuarantineGrounds}
+            />
           ))
         )}
       </TableBody>

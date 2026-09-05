@@ -296,3 +296,119 @@ describe("LedgerTable ordering and emptiness", () => {
     expect(screen.queryAllByTestId("ledger-row")).toHaveLength(0)
   })
 })
+
+describe("LedgerTable grounds column", () => {
+  it("does not draw the column unless asked", () => {
+    // A mixed list is not about quarantine, and a mostly-empty column headed
+    // "Grounds" beside a list of admitted rows suggests the question was asked
+    // of each of them.
+    render(
+      <LedgerTable
+        transactions={[
+          makeRow({ ledger_status: "quarantined", quarantine_reason: "balance_break" }),
+        ]}
+      />
+    )
+    expect(screen.queryByText("Grounds")).toBeNull()
+    expect(screen.queryByTestId("ledger-grounds-origin")).toBeNull()
+  })
+
+  it("moves the reason out of the status cell rather than showing it twice", () => {
+    // Same badge, one position or the other. Two copies of it would be two
+    // things to keep in step within a single row.
+    render(
+      <LedgerTable
+        showQuarantineGrounds
+        transactions={[
+          makeRow({ ledger_status: "quarantined", quarantine_reason: "balance_break" }),
+        ]}
+      />
+    )
+    expect(screen.getAllByTestId("ledger-quarantine-reason")).toHaveLength(1)
+    const status = screen.getByTestId("ledger-status")
+    expect(status.parentElement?.textContent).not.toContain("Balance break")
+  })
+
+  it("keeps the status column, so a row that is not quarantined still shows", () => {
+    // The list is filtered to quarantined rows, so the status badge is
+    // constant and looks redundant. It is not: a row arriving with some other
+    // status is the thing a reader most needs to see, and replacing the column
+    // with the grounds would hide exactly that.
+    render(
+      <LedgerTable
+        showQuarantineGrounds
+        transactions={[
+          makeRow({ ledger_status: "superseded", quarantine_reason: "adjudicated" }),
+        ]}
+      />
+    )
+    expect(screen.getByTestId("ledger-status").textContent).toContain("Superseded")
+    expect(screen.getByTestId("ledger-quarantine-reason").textContent).toContain(
+      "Set aside by a person"
+    )
+  })
+
+  it("separates a person's decision from the ledger's own checks", () => {
+    render(
+      <LedgerTable
+        showQuarantineGrounds
+        transactions={[
+          makeRow({ key: "a", quarantine_reason: "adjudicated" }),
+          makeRow({ key: "b", quarantine_reason: "balance_break" }),
+        ]}
+      />
+    )
+    const [person, check] = screen.getAllByTestId("ledger-grounds-origin")
+    expect(person.getAttribute("data-decided-by-person")).toBe("true")
+    expect(person.textContent).toContain("Decided by a person")
+    expect(check.getAttribute("data-decided-by-person")).toBe("false")
+    expect(check.textContent).toContain("Established by a check")
+  })
+
+  it("will not call an unreadable reason a machine check", () => {
+    // Three-valued on the screen as well as in the reader. "false" here would
+    // tell a reader the arithmetic established grounds this build cannot even
+    // name.
+    render(
+      <LedgerTable
+        showQuarantineGrounds
+        transactions={[makeRow({ quarantine_reason: "embargoed" })]}
+      />
+    )
+    expect(
+      screen.getByTestId("ledger-grounds-origin").getAttribute("data-decided-by-person")
+    ).toBe("unknown")
+    expect(
+      screen.getByTestId("ledger-quarantine-reason").getAttribute("data-unrecognised")
+    ).toBe("true")
+  })
+
+  it("states an absent reason rather than leaving the cell empty", () => {
+    // An empty cell under "Grounds" reads as "none needed", which is the
+    // opposite of what a quarantined row with no recorded reason means.
+    render(
+      <LedgerTable
+        showQuarantineGrounds
+        transactions={[
+          makeRow({ ledger_status: "quarantined", quarantine_reason: null }),
+        ]}
+      />
+    )
+    expect(screen.getByTestId("ledger-no-grounds").textContent).toBe(
+      "No grounds recorded"
+    )
+    expect(screen.queryByTestId("ledger-quarantine-reason")).toBeNull()
+  })
+
+  it("spans the empty sentence across the column it added", () => {
+    // The colSpan is computed rather than fixed. Left at seven it would leave
+    // a stray cell beside the sentence.
+    render(<LedgerTable showQuarantineGrounds transactions={[]} />)
+    expect(screen.getByTestId("ledger-table-empty").getAttribute("colspan")).toBe("8")
+
+    render(<LedgerTable transactions={[]} />)
+    expect(
+      screen.getAllByTestId("ledger-table-empty")[1].getAttribute("colspan")
+    ).toBe("7")
+  })
+})

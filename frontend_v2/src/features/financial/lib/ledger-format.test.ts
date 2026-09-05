@@ -16,6 +16,7 @@
 
 import { describe, expect, it } from "vitest"
 
+import { QUARANTINE_REASONS } from "../api"
 import {
   currencyMinorUnits,
   formatLedgerAmount,
@@ -24,6 +25,7 @@ import {
   readExtractionLayer,
   readLedgerStatus,
   readProofClass,
+  readQuarantineGrounds,
   readQuarantineReason,
 } from "./ledger-format"
 
@@ -218,5 +220,64 @@ describe("readExtractionLayer", () => {
     expect(unknown.value).toBeNull()
     expect(unknown.label).toContain("4")
     expect(unknown.isFallback).toBe(false)
+  })
+})
+
+describe("readQuarantineGrounds", () => {
+  it("keeps everything readQuarantineReason already said", () => {
+    // It wraps rather than replaces, so a caller that needs the badge and the
+    // classification does not have to call two readers and hope they agree.
+    const grounds = readQuarantineGrounds("balance_break")
+    const term = readQuarantineReason("balance_break")
+    expect(grounds.value).toBe(term.value)
+    expect(grounds.label).toBe(term.label)
+    expect(grounds.description).toBe(term.description)
+  })
+
+  it("calls only the adjudicated member a person's decision", () => {
+    // `QuarantineBasis.from_adjudication` is the only constructor that
+    // produces `adjudicated`, and `quarantine_case_row` refuses to let a
+    // person type any of the others. A screen that blurred the two would let
+    // a class a person raised be read as one the arithmetic proved.
+    expect(readQuarantineGrounds("adjudicated").decidedByPerson).toBe(true)
+    expect(readQuarantineGrounds("balance_break").decidedByPerson).toBe(false)
+    expect(readQuarantineGrounds("unreadable_row").decidedByPerson).toBe(false)
+    expect(readQuarantineGrounds("currency_mismatch").decidedByPerson).toBe(false)
+    expect(readQuarantineGrounds("unexplained_delta").decidedByPerson).toBe(false)
+  })
+
+  it("classifies every member the build knows", () => {
+    // The backend enum is guarded against this list in api.ledger.test.ts, so
+    // a sixth member fires there. This is the other half: a member that is in
+    // the list and has no classification would report as unknown grounds
+    // while being perfectly recognised.
+    for (const reason of QUARANTINE_REASONS) {
+      expect(readQuarantineGrounds(reason).decidedByPerson).not.toBeNull()
+    }
+  })
+
+  it("says it cannot classify a member it cannot read, rather than guessing", () => {
+    // Null, not false. False is "the ledger's own checks established this",
+    // which is the more trusted of the two answers, and an unreadable member
+    // has not earned it.
+    const unknown = readQuarantineGrounds("embargoed")
+    expect(unknown.value).toBeNull()
+    expect(unknown.decidedByPerson).toBeNull()
+    expect(unknown.label).toContain("embargoed")
+  })
+
+  it("says of every member where the grounds came from", () => {
+    for (const reason of [...QUARANTINE_REASONS, "embargoed"]) {
+      expect(readQuarantineGrounds(reason).origin.length).toBeGreaterThan(20)
+    }
+  })
+
+  it("points at the adjudication record rather than implying the row carries it", () => {
+    // The ledger read has no detail field: the actor-and-reason text lives in
+    // the adjudications table. Saying "a person decided" and stopping would
+    // leave a reader to conclude no reason was given.
+    const grounds = readQuarantineGrounds("adjudicated")
+    expect(grounds.origin).toContain("adjudication record")
+    expect(grounds.origin).toContain("not carried on the row")
   })
 })

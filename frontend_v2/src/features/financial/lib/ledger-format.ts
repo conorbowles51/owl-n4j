@@ -319,6 +319,77 @@ export function readQuarantineReason(
 }
 
 /* ------------------------------------------------------------------ *
+ * Quarantine grounds
+ * ------------------------------------------------------------------ */
+
+/**
+ * Which of the two things established the grounds.
+ *
+ * `QuarantineBasis` on the backend puts it plainly: grounds are a proof or a
+ * person, and nothing else. `from_proof` and the three failure constructors
+ * produce the four computed members; `from_adjudication` is the only path to
+ * `adjudicated`, and `quarantine_case_row` is explicit that a person cannot
+ * type any of the others, because a class a person raised must not be mistaken
+ * for one the arithmetic proved.
+ *
+ * That distinction is the whole reason this screen exists, so it is carried
+ * here rather than left to be inferred from a label at each call site.
+ */
+const DECIDED_BY_PERSON: Record<QuarantineReason, boolean> = {
+  balance_break: false,
+  unreadable_row: false,
+  currency_mismatch: false,
+  unexplained_delta: false,
+  adjudicated: true,
+}
+
+export interface QuarantineGrounds extends NarrowedTerm<QuarantineReason> {
+  /**
+   * Three-valued, and deliberately not a boolean. False means the ledger's own
+   * checks established these grounds; null means this build cannot read the
+   * member at all and so cannot say which of the two it was. Collapsing null
+   * into false would report an unknown member as machine-established, which is
+   * the more trusted of the two answers and the one it has not earned.
+   */
+  decidedByPerson: boolean | null
+  /** Always safe to render. Says what kind of grounds these are, in words. */
+  origin: string
+}
+
+/**
+ * A quarantine reason, read together with what established it.
+ *
+ * The words a person gave are not here and cannot be: the ledger read carries
+ * `quarantine_reason` and no detail field, and the actor-and-reason text built
+ * by `QuarantineBasis.from_adjudication` is written to the `adjudications`
+ * table, which this screen does not read. So the most this can say about an
+ * adjudicated row is that a person decided it and that their reasoning is
+ * recorded elsewhere. Saying more would be inventing it.
+ */
+export function readQuarantineGrounds(raw: string): QuarantineGrounds {
+  const term = readQuarantineReason(raw)
+  if (term.value === null) {
+    return {
+      ...term,
+      decidedByPerson: null,
+      origin:
+        "This build cannot tell whether a person or one of the ledger's own " +
+        "checks established these grounds, because it does not recognise them.",
+    }
+  }
+  const decidedByPerson = DECIDED_BY_PERSON[term.value]
+  return {
+    ...term,
+    decidedByPerson,
+    origin: decidedByPerson
+      ? "A person decided this. What they gave as their reason is on the " +
+        "adjudication record and is not carried on the row."
+      : "Established by the ledger's own checks against the source document, " +
+        "not by anyone's judgement.",
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Extraction layer
  * ------------------------------------------------------------------ */
 
