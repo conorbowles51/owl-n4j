@@ -283,6 +283,100 @@ export interface LedgerResponse {
 }
 
 /*
+ * What produced the ledger, and what failed trying.
+ *
+ * Every row above carries a non-null `ingestion_run_id`, so the ledger has
+ * always been able to say which attempt produced a transaction. `/runs` is the
+ * opposite direction: what one attempt did, whether it finished, and what
+ * stopped it if it did not.
+ *
+ * **The default population is the reverse of the ledger's.** `/ledger` defaults
+ * to `admitted`, because that is the population every total is filtered to.
+ * `/runs` defaults to *every* status, `failed` and `aborted` included, because
+ * the failures are the reason to look. A list that hid them would answer "what
+ * worked" while appearing to answer "what happened".
+ */
+
+/** Mirrors `IngestionRunStatus` in `backend/postgres/models/enums.py`. */
+export const INGESTION_RUN_STATUSES = [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "aborted",
+] as const
+export type IngestionRunStatus = (typeof INGESTION_RUN_STATUSES)[number]
+
+/**
+ * One ingestion run, exactly as `RunView.to_json` in
+ * `backend/services/financial/run_query.py` emits it.
+ *
+ * `status` is typed `string` rather than the union above for the same reason
+ * the ledger's vocabulary fields are: a backend one version ahead can send a
+ * member this build has never heard of, and a union would let it through while
+ * claiming it had been checked. `run-format.ts` narrows it at runtime.
+ */
+export interface IngestionRun {
+  key: string
+  case_id: string
+  /** One of `INGESTION_RUN_STATUSES`, narrowed rather than trusted. */
+  status: string
+  code_version: string | null
+  ruleset_version: string | null
+  /** Whatever the run was configured with. Shape is the run's, not this file's. */
+  config: Record<string, unknown>
+  /**
+   * Nulls when the account is deleted. `started_by_email` is recorded beside it
+   * precisely so that who started a run survives that, so prefer the email.
+   */
+  started_by_user_id: string | null
+  started_by_email: string | null
+  started_at: string | null
+  /** Null while the run is still open, and on a run that never closed. */
+  completed_at: string | null
+  /**
+   * What the run recorded about itself when it ended. These three are never
+   * recomputed against the ledger as it stands now, and must not be reconciled
+   * against it on this side either: adjudication moves rows after a run ends,
+   * so a later count answers a different question than the one asked here.
+   */
+  documents_seen: number
+  transactions_admitted: number
+  transactions_quarantined: number
+  error: string | null
+  notes: string | null
+}
+
+/**
+ * Every field the runs read emits, as a value rather than a type, for the same
+ * reason `LEDGER_TRANSACTION_FIELDS` exists: `api.runs.test.ts` holds this list
+ * up against `RunView.to_json` and requires the two to be the same set.
+ */
+export const INGESTION_RUN_FIELDS: readonly (keyof IngestionRun)[] = [
+  "key",
+  "case_id",
+  "status",
+  "code_version",
+  "ruleset_version",
+  "config",
+  "started_by_user_id",
+  "started_by_email",
+  "started_at",
+  "completed_at",
+  "documents_seen",
+  "transactions_admitted",
+  "transactions_quarantined",
+  "error",
+  "notes",
+]
+
+export interface IngestionRunsResponse {
+  case_id: string
+  runs: IngestionRun[]
+  total: number
+}
+
+/*
  * Getting rows into the ledger.
  *
  * Two endpoints reading the same file: `/precheck` says what it holds and
@@ -652,6 +746,28 @@ export const financialAPI = {
     if (params.startDate) qs.set("start_date", params.startDate)
     if (params.endDate) qs.set("end_date", params.endDate)
     return fetchAPI<LedgerResponse>(`/api/financial/ledger?${qs}`)
+  },
+
+  /**
+   * The ingestion runs for a case, newest first.
+   *
+   * `status` left unset is every status, which is the endpoint's own default
+   * and the opposite of the ledger's. This function therefore sends no default
+   * of its own: a default here could drift from the backend's and quietly start
+   * hiding the failed runs this read exists to surface.
+   *
+   * `limit` is refused by the backend below 1, because a limit of zero returns
+   * nothing while looking like a request for something.
+   */
+  getIngestionRuns: (params: {
+    caseId: string
+    status?: IngestionRunStatus
+    limit?: number
+  }) => {
+    const qs = new URLSearchParams({ case_id: params.caseId })
+    if (params.status) qs.set("status", params.status)
+    if (params.limit !== undefined) qs.set("limit", String(params.limit))
+    return fetchAPI<IngestionRunsResponse>(`/api/financial/runs?${qs}`)
   },
 
   /**

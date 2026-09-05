@@ -49,6 +49,17 @@ These are standing instructions from Neil. They are not preferences.
 - **Check before defending.** When Neil challenges something as wrong, verify it
   against the source and report what is actually there, including when the answer
   is that he is right.
+- **Orient Neil before asking him anything.** `docs/loupe-build-state.md` is
+  written for the next session to resume from. It is not a briefing for Neil and
+  he has not read it. So a continued session does not open in that register.
+  Before the first question, and before any request for a ruling, say in plain
+  language what the thing under discussion is, where it stands, and what is
+  actually missing. No internal vocabulary until it has been defined in the same
+  message: not item numbers, not module names, not words like "runs", "reaper",
+  "precheck" or "proof class" used as if they were already shared. **A question
+  Neil cannot answer without opening a file is a badly asked question.** This
+  rule exists because it was broken repeatedly, in the same way, at the start of
+  session after session.
 
 ### Design rules already settled
 
