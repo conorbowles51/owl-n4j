@@ -357,8 +357,16 @@ not add a ninth sidebar entry. The naming problem it carried — two
 financial-looking entries in a sidebar that could not say which store each read
 — is gone with it.
 
-The ruling settles where, not how. Three things in the page block it, all
-verified against source on the day of the ruling:
+**And a second ruling on top of it: within that page the ledger is far more
+important than the graph financial information.** This is a statement about
+priority, not only about which tab opens first, and it is what decides the
+chrome question below. The page is a ledger page that also holds graph views,
+not a graph page with a ledger tab added to it. Anything that forces a choice
+between serving the ledger well and preserving the existing graph screen's shape
+resolves toward the ledger.
+
+The rulings settle where and how much, not how. Three things in the page block
+the work, all verified against source on the day of the ruling:
 
 - **The page early-returns before the tabs exist.** Line 323 is
   `if (!transactions.length)`, over the **Neo4j** read, with a loading return at
@@ -374,9 +382,12 @@ verified against source on the day of the ruling:
   and entities) and `FinancialSummaryCards` (totals over `filteredTransactions`).
   With the ledger primary, the first thing on screen is a row of counts and
   totals that do not describe the table beneath them — the exact failure the
-  standing rule about corrected values exists to prevent. That chrome must move
-  inside the graph tabs or become tab-aware. **Which of those two is still
-  Neil's call and has not been made.**
+  standing rule about corrected values exists to prevent. **Answered by the
+  priority ruling: the chrome moves inside the graph tabs. It does not become
+  tab-aware.** Tab-awareness was only ever worth its cost to preserve the
+  existing page's shape, and that shape is the thing the ruling subordinates.
+  Moving it also leaves four components each describing one store, with no
+  component that has to be right about which store is on screen.
 - **`mainView` is persisted and has no migration.** `financial.store.ts` writes
   it to `owl-financial-store` through `partialize`; the file contains zero
   occurrences of `version` or `migrate`. Changing the default to the ledger
@@ -418,16 +429,19 @@ longer parked** — they are Phase 4 of the plan.
 `FinancialPage`, and the primary view of it. No sibling route, no ninth sidebar
 entry. Detail and the three things that block it under Build order above.
 
-**Does the graph chrome move or become tab-aware?** **Raised by the mount ruling
-and not yet answered.** The toolbar, legacy banner, filter panel and summary
-cards all render above the tab strip and all read Neo4j. With the ledger primary
-they would head the screen with counts and totals belonging to the other store.
-Either they move inside the graph tabs, or they learn which tab is showing.
-Moving them is the smaller change and the more honest one; making them
-tab-aware keeps the page's shape but leaves four components that have to be
-right about a thing they currently never ask. **Item 4 can start without this
-answer only if the ledger tab is built first and the chrome is left untouched
-until the ruling lands.**
+**Does the graph chrome move or become tab-aware?** **Answered: it moves inside
+the graph tabs,** settled by the ruling that the ledger outranks the graph
+financial information within the page. Detail under Build order above.
+
+**Do the three graph tabs stay three peers of the ledger tab?** **Raised by the
+priority ruling and not yet answered.** A four-tab strip reading Ledger,
+Transactions, Counterparties, Trends presents four equal views, which is the one
+thing the ruling says the page is not. The alternative is that the graph views
+collapse behind a single entry, so the strip states the priority instead of
+flattening it. **This does not block item 4** — the ledger tab can be built
+first as a peer and the strip restructured after — but it should be answered
+before the graph chrome is moved, because where the chrome lands depends on
+whether there are three graph tabs to move it into or one.
 
 **Was removing `reingest` the right call?** Raised last session, still unruled.
 Short form: the override could not succeed for unchanged bytes, and where it
