@@ -8,6 +8,11 @@ nothing before this router could read back out through the API. It is
 read-only. Admitting, correcting, or quarantining a row stays with the
 ingestion and adjudication services that act with a run and an actor behind
 them.
+
+Two reads of the same store, at two levels. ``/ledger`` returns the rows.
+``/runs`` returns the executions that produced them, including the ones that
+produced nothing because they failed. Both are ``case:view``, and neither
+writes, which is what keeps this router's claim about itself true.
 """
 
 from datetime import date
@@ -17,11 +22,18 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from postgres.models.enums import LedgerStatus
+from postgres.models.enums import IngestionRunStatus, LedgerStatus
 from postgres.session import get_db
 from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
-from services.financial import LedgerQueryError, list_transactions, to_view
+from services.financial import (
+    LedgerQueryError,
+    RunQueryError,
+    list_runs,
+    list_transactions,
+    to_run_view,
+    to_view,
+)
 
 import logging
 
@@ -108,4 +120,62 @@ async def get_ledger_transactions(
         "case_id": str(case_id),
         "transactions": transactions,
         "total": len(transactions),
+    }
+
+
+@router.get("/runs")
+async def get_ingestion_runs(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    status: Optional[str] = Query(
+        None,
+        description=(
+            "Run status to filter on: pending, running, completed, failed, "
+            "or aborted. Defaults to every status, because a failed run is "
+            "the thing this read exists to surface."
+        ),
+    ),
+    limit: Optional[int] = Query(
+        None, description="Return at most this many runs, newest first"
+    ),
+    db: Session = Depends(get_db),
+):
+    """Ingestion runs for one case, newest first, every status by default.
+
+    Unlike ``/ledger``, which defaults to the admitted population because that
+    is what totals are filtered to, this defaults to everything. A run that
+    failed or was aborted is precisely what someone asking about a case's
+    ledger needs to see, and putting it behind a query parameter would let a
+    half-finished ingest stay invisible to anyone who did not already suspect
+    it.
+
+    A ``running`` run is reported as running, with the time it started and
+    nothing else claimed about it. Whether such a run has in fact been
+    abandoned is decided and recorded by the reaper, not guessed at here.
+    """
+    run_status: Optional[IngestionRunStatus] = None
+    if status is not None:
+        try:
+            run_status = IngestionRunStatus(status)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown status '{status}'. Valid values: "
+                    f"{', '.join(s.value for s in IngestionRunStatus)}"
+                ),
+            )
+
+    try:
+        rows = list_runs(db, case_id, status=run_status, limit=limit)
+    except RunQueryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to list ingestion runs for case {case_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    runs = [to_run_view(row).to_json() for row in rows]
+    return {
+        "case_id": str(case_id),
+        "runs": runs,
+        "total": len(runs),
     }

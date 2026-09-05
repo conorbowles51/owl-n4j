@@ -666,6 +666,12 @@ from services.financial.route_check import (
 # scope a bare ``summarise`` says nothing about what is being summarised, and
 # this namespace is flat and already large.
 from services.financial.route_check import summarise as summarise_route_checks
+from services.financial.run_query import (
+    RunQueryError,
+    RunView,
+    list_runs,
+    to_run_view,
+)
 from services.financial.runs import (
     IngestionRunHandle,
     RunAborted,
@@ -1526,6 +1532,15 @@ __all__ = [
     "ingestion_run",
     "open_ingestion_run",
     "reap_stale_runs",
+    # Reading those runs back out.  Unlike the ledger read below, this one
+    # defaults to every status rather than to the population that counts: a
+    # failed or aborted run is the thing a reader most needs to see, so it
+    # cannot sit behind an opt-in.  Nothing here decides a run is stale; that
+    # judgement belongs to `reap_stale_runs`, which writes it down.
+    "RunQueryError",
+    "RunView",
+    "list_runs",
+    "to_run_view",
     # The statement's own printed control totals, and which dialect they are in
     "CANDIDATE_CONVENTIONS",
     "FIELD_ALIASES",
