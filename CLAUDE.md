@@ -76,32 +76,93 @@ Resolve it once at the start; do not hardcode a path from a previous session.
   command.
 - `Edit` requires a full prior `Read` of the file in the same session.
 - **Do not read exit codes through a pipe.** The code you get back is the pipe's.
-- Python is **3.10.12** only. No newer syntax.
+- Python is **3.10.12** only. No newer syntax. Use system `python3`.
+- **Ignore the repo `venv/`.** It is stale: Python 3.14 and no packages installed.
+  It is not what the suite runs on and activating it will waste a session.
+- **The sandbox starts with no backend dependencies at all** — not `sqlalchemy`,
+  not `fastapi`, not `pydantic`. The backend suite cannot run until they are
+  installed. See Tests for the one-line bootstrap. `pip` has network access.
+- `pip` needs `--break-system-packages`. Keep the whole install on **one line**;
+  a trailing space after a `\` continuation makes pip fail with
+  `Invalid requirement: ''`.
 - Avoid `!r` inside f-strings in `python3 -c` one-liners; quoting breaks.
 - `-t` is a `unittest discover` flag only.
-- The workspace denies `unlink`, which produces harmless `tmp_obj_*` warnings from
-  git. `/tmp` allows `rm`.
+- The workspace denies `unlink`. This produces harmless `tmp_obj_*` warnings from
+  git, but it is **not** always cosmetic: it also aborts the vitest browser
+  project before collection. `/tmp` allows `rm`.
 - Case material and evidence files are **never committed**.
 
 ---
 
 ## Tests
 
-Backend financial suite, from the repo root:
+### Backend bootstrap, once per session, before anything else
+
+Nothing backend runs until this is done. It takes about twenty seconds. The full
+`backend/requirements.txt` is **not** needed and should not be used: it pulls
+`openai-whisper` and therefore torch, for no benefit to this suite.
+
+```
+pip install --break-system-packages --quiet "SQLAlchemy==2.0.46" "pydantic==2.12.5" "fastapi==0.123.9" "psycopg[binary]==3.2.13" "python-dateutil==2.9.0.post0" "lxml==6.0.2" "openpyxl==3.1.5" "neo4j==5.28.2" "alembic==1.14.0" "email-validator==2.2.0" "python-multipart==0.0.20" "openai==2.9.0" "python-jose==3.5.0" "langchain-core==1.5.0" "langchain-openai==1.1.7" "langgraph==1.0.6" "langgraph-checkpoint==4.0.0"
+```
+
+Seventeen packages. `pypdf` and `numpy` arrive transitively. `chromadb` is
+deliberately absent: `VectorDBService` degrades gracefully and prints a warning
+about vector search being disabled, which is expected and not a failure.
+
+The import chain that forces most of this is `routers/__init__.py`, which imports
+every router, so `routers.graph` pulls `openai` and `routers.agent` pulls
+`langgraph`. Any router-level test drags the whole chain in.
+
+### Backend financial suite, from the repo root
 
 ```
 cd backend && env PYTHONPYCACHEPREFIX=/tmp/pyc_st PYTHONDONTWRITEBYTECODE=1 \
   PYTHONHASHSEED=0 python3 -m unittest discover -s tests -p 'test_financial_*.py' -t .
 ```
 
-Baseline: **Ran 2933 tests, FAILED (errors=1)**. The single error is a long-standing
-`jose` ModuleNotFoundError and is expected. Any other failure is yours.
+Baseline after the bootstrap: **Ran 3057 tests, OK (skipped=12)**. There are **no
+expected failures**. Any failure is yours.
+
+The old baseline recorded here was `2933, FAILED (errors=1)` with a `jose`
+ModuleNotFoundError treated as permanent. It was never permanent, only a missing
+package, and it was masking the fact that `test_financial_router` and
+`test_financial_ledger_router` were failing at import and never executing a single
+test body.
+
+No live Postgres is needed. `test_financial_transaction_query` builds SQLite in a
+temp directory.
 
 The package surface is guarded by `backend/tests/test_financial_exports.py`. A new
 module exported from `services/financial/__init__.py` must be added there.
 
-Frontend baseline: 50 files, 246 tests, `tsc -b` returns 0, eslint returns 0. Use
-`fireEvent`, not `userEvent`.
+### Frontend, from `frontend_v2/`
+
+Always set the Vite cache to `/tmp`, or the workspace `unlink` denial aborts the
+browser project before it collects anything, and `passWithNoTests: true` then
+reports a clean "no tests" so the failure is silent:
+
+```
+VITE_CACHE_DIR=/tmp/vite-cache npx vitest run --project unit
+VITE_CACHE_DIR=/tmp/vite-cache npx vitest run --project browser
+npx tsc -b
+npx eslint .
+```
+
+Baseline: unit **54 files, 285 tests**; browser **2 files, 4 tests**; `tsc -b`
+returns 0; eslint returns 0. Use `fireEvent`, not `userEvent`.
+
+The browser project needs Chromium: `npx playwright install chromium`. Do **not**
+pass `--with-deps`, which requires root and fails.
+
+**The `storybook` project cannot run in this sandbox.** Its iframe orchestrator
+fails against `localhost` and it completes 3 of 36 files. No story covers financial
+code, so this does not block financial work, but "vitest is green" means the unit
+and browser projects only. Do not spend a session trying to fix it without a
+ruling from Neil.
+
+`npx vitest run` with no `--project` will try storybook and hang for over ten
+minutes. Always name the project.
 
 ---
 
@@ -111,26 +172,41 @@ Frontend baseline: 50 files, 246 tests, `tsc -b` returns 0, eslint returns 0. Us
 
 **Push is blocked. Neil pushes.** Never attempt it.
 
-**Never modify git config.** The write procedure below sets author identity per
+**Never modify git config.** The write procedure below sets both identities per
 commit instead.
+
+**`user.name` and `user.email` are unset in the sandbox**, and git's guess
+(`beautiful-awesome-franklin@claude.(none)`) is not usable. Setting only the
+`GIT_AUTHOR_*` pair is therefore not enough: `commit-tree` still fails with
+`fatal: unable to auto-detect email address`. The `GIT_COMMITTER_*` pair must be
+set on the same command.
+
+**The index path must be unique per session.** `/tmp` is sticky and the sandbox
+user changes every session, so a fixed `/tmp/loupe.index` left behind by an earlier
+session is owned by a different uid: it cannot be removed or written, and the
+procedure fails at the first line with `Operation not permitted`. Derive the name
+from the current user instead.
 
 Commits are written through a temporary index so the real index is never disturbed:
 
 ```
-export GIT_INDEX_FILE=/tmp/loupe.index
-rm -f /tmp/loupe.index
+IDX=/tmp/loupe-$(id -un).index
+rm -f "$IDX"
+export GIT_INDEX_FILE="$IDX"
 git read-tree HEAD
 git add <explicit paths, never -A and never .>
 git write-tree
 git diff --stat HEAD <tree>          # verify before committing
 GIT_AUTHOR_NAME="Neil Byrne" GIT_AUTHOR_EMAIL="thenofisamizdat@gmail.com" \
+  GIT_COMMITTER_NAME="Neil Byrne" GIT_COMMITTER_EMAIL="thenofisamizdat@gmail.com" \
   git commit-tree <tree> -p HEAD -m "<message>"
 ```
 
 Then `Read` the ref file, `Write` the new sha to
 `.git/refs/heads/integration/evidence-main-reunion`, restore the index with
-`cat /tmp/loupe.index > .git/index`, and verify `git status --porcelain | grep -v '^??'`
-is empty.
+`cat "$IDX" > .git/index`, and verify `git status --porcelain | grep -v '^??'`
+is empty. The `cat` redirect truncates rather than unlinks, so it is not affected
+by the workspace `unlink` denial.
 
 Commit messages describe what changed and why in plain language. They are load
 bearing: they are the only durable record of reasoning that survives between
