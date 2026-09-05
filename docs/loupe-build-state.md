@@ -3,24 +3,24 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records `e64c2ca`, chunk 5 of the quarantine
-screen: the "Held out" tab wired into the page, and a per-row button that asks
-for the one change the row admits of. **The quarantine screen is complete and
-Phase 2 item 6 is closed. The next unit is item 8, adjudication and proof
-class.** Read the disk note under Standing flags **before running anything** —
-the documented bootstrap no longer works and the replacement is recorded there.)
+**Last updated:** 5 September 2026 (records `a40bb61`, chunk 1 of item 8: a
+reader for the adjudication log, scoped to a case. **The log has had writers
+since `150084a` and until this had no reader at all.** Item 8 is in progress, not
+closed; chunks 2 and 3 are described under "What this session did". Read the disk
+note under Standing flags **before running anything** — the documented bootstrap
+no longer works and the replacement is recorded there.)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `e64c2ca`
-  (`e64c2ca9ea5bf12f398a6e935ac192b121a44c0b`), "Put the held-out rows on screen
-  and let a person change one", parent `73f828a` (which was the state-file commit
-  for `519895e`). **Confirm the real tip with `git log --oneline -5`** at the
-  start of every session rather than trusting this line — the state-file commit
-  that follows this one will already have moved it.
+- **Head when this was written:** `a40bb61`
+  (`a40bb61df2087208fb0326a34ea75a1149ba6d59`), "Give the adjudication log a
+  reader scoped to a case", parent `755113c` (which was the state-file commit for
+  `e64c2ca`). **Confirm the real tip with `git log --oneline -5`** at the start of
+  every session rather than trusting this line — the state-file commit that
+  follows this one will already have moved it.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 - **The build order lives in `docs/loupe-wiring-plan.md`,** not in this file. Read
   it before picking up work. It is an agreed plan and is not to be resequenced
@@ -48,27 +48,24 @@ disk note under Standing flags.
 
 ### Scale
 
-**120 commits** since `c4246c0` (27 August), counting `e64c2ca`; 121 once the
+**122 commits** since `c4246c0` (27 August), counting `a40bb61`; 123 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`, not incremented from the previous figure.
 
-`backend/services/financial/` **50 modules** excluding `__init__.py`;
-`backend/tests/test_financial_*.py` **57 files**, **3,336 tests**.
+`backend/services/financial/` **51 modules** excluding `__init__.py`;
+`backend/tests/test_financial_*.py` **58 files**, **3,373 tests**.
 
-### Gate baselines as of `e64c2ca`
+### Gate baselines as of `a40bb61`
 
-- **Frontend unit: 72 files, 633 tests.** Re-run this session in full, green. No
-  new file; up 21 tests from `519895e`'s 72/612, accounted for exactly by three
-  existing files: `FinancialPage.test.tsx` (+9 — four for the held-out tab, five
-  for the dialog), `LedgerTable.test.tsx` (+7) and `ledger-format.test.ts` (+5).
-  633 includes the stray probe test.
-- **`tsc -b --force` 0, `eslint .` 0.** Both re-run this session over the whole
-  project, not just the touched files. `--force` was used deliberately so the
-  result could not come from a cached build info file.
-- **Backend financial suite: `Ran 3336 tests, OK (skipped=12)`.** NOT re-run at
-  this head and it did not need to be: the commit touched eleven frontend files
-  and no Python. The figure carries forward from `35cc6be`, where it was
-  measured. **There are no expected failures.**
+- **Backend financial suite: `Ran 3373 tests in 14.974s, OK (skipped=12)`.**
+  Re-run this session in full at this head. Up 37 from `e64c2ca`'s 3,336,
+  accounted for exactly by the one new file,
+  `tests/test_financial_decision_log.py`. **Nothing else moved, and there are no
+  expected failures.**
+- **Frontend unit: 72 files, 633 tests; `tsc -b --force` 0; `eslint .` 0.** NOT
+  re-run at this head and they did not need to be: the commit is three Python
+  files and no TypeScript. The figures carry forward from `e64c2ca`, where all
+  three were measured over the whole project.
 - **Frontend browser: NOT RUN, and it could not be.** See the disk note. Last
   known-good figure is 2 files, 4 tests. **Do not carry "browser green" forward
   as though it were verified at this head.**
@@ -93,222 +90,199 @@ Counted directly, not from memory:
 
 ## What this session did
 
-**Chunk 5 of the quarantine screen landed as `e64c2ca`, and with it the screen is
-finished.** Eleven files, 718 insertions, 39 deletions. Frontend only; no Python
-was touched.
+**Chunk 1 of Phase 2 item 8 landed as `a40bb61`.** Three files, 1,112
+insertions, no deletions. Backend only; no TypeScript was touched.
 
-Chunks 1 to 4b built the pieces and wired none of them to anything: the dialog
-existed and no screen opened it, the quarantined list existed and no tab showed
-it. This is the commit that connects them. The financial page gains a **"Held
-out"** tab, and **every ledger row gains a button** that asks for the one change
-that row admits of.
+### Item 8 was split into three, and the reason is a fact about the repo
 
-**Phase 2 item 6, quarantine, is now complete end to end** — write path,
-localisation reader, and screen.
+The wiring plan gives item 8 as "`assign_proof_class`, `requires_adjudication`,
+`record_admission`, the decisions surface." That is three separable things, and
+the order they were put in was decided by reading the source rather than by
+preference:
+
+1. **The decisions surface** (this commit, and the route and screen still to
+   come). `adjudications` has had production writers since `150084a` and **had
+   no reader at all**. Every quarantine, release, purge and machine
+   reclassification written since then was sitting in a table nothing could read
+   back. That is data that exists on disk today and is unreachable, so it is the
+   piece with the shortest path from nothing to something worth having, and it
+   is a read, so it cannot break a write path.
+2. **The admission path**, which is what gives `record_admission` a caller. It
+   has none today: `hooks/use-guarded-process.ts` offers `release` and `dismiss`
+   and has no "send the held file through anyway" action at all.
+3. **Proof class and `requires_adjudication`.** Deliberately last. Proof class is
+   already computed and already rendered; what is missing is the *explanation* of
+   what a class means and what an adjudication changed about it, which is easier
+   to write once the decisions surface exists to point at.
+
+*What would reverse this order:* Neil wanting the admission override in front of
+a user sooner than a history nobody has asked to see yet.
 
 ### What landed
 
-- **`lib/ledger-format.ts`** (+40). `RowChange`, `ROW_CHANGE_LABELS` and
-  `changeAvailableFor`. The single reading of which change a row admits of.
-- **`components/LedgerTable.tsx`** (+97, −8). The action column, drawn only when
-  `onAdjudicate` is given, plus the eighth and ninth column arithmetic.
-- **`components/FinancialPage.tsx`** (+74, −6). The sixth tab, the dialog's mount
-  point, and the page state that drives it.
-- **`stores/financial.store.ts`** (+23, −3). `"quarantine"` added to
-  `FinancialMainView`.
-- **`components/LedgerPanel.tsx`** (+12, −1) and
-  **`components/QuarantinePanel.tsx`** (+17, −1): `onAdjudicate` threaded
-  through, plus the docstrings explaining why neither of them owns the dialog.
-- **`components/RowAdjudicationDialog.tsx`** (+20, −1) and
-  **`hooks/use-row-adjudication.ts`** (+12, −1): docstring only, recording the
-  mount point that was decided here.
-- **`components/FinancialPage.test.tsx`** (+301, 9 tests),
-  **`components/LedgerTable.test.tsx`** (+114, 7 tests),
-  **`lib/ledger-format.test.ts`** (+47, 5 tests).
+**`backend/services/financial/decision_log.py`** (new, 372 lines) —
+`list_case_decisions`, plus `DecisionRecord`, `DecisionPage`, `DecisionLogError`,
+`DEFAULT_DECISION_LIMIT` (100) and `MAX_DECISION_LIMIT` (500).
 
-### Where the dialog is mounted, and why it is not anywhere more obvious
+**`backend/services/financial/__init__.py`** (+18) — the six names above imported
+and added to `__all__`.
 
-**The dialog is mounted by `FinancialPage`, on the page's own state, outside the
-`Tabs` element and outside both panels.** This is the keep-mounted rule from
-chunk 4a, and chunk 5 is where it stops being a note and starts constraining
-code.
+**`backend/tests/test_financial_decision_log.py`** (new, 722 lines) — 37 tests in
+five classes: case scope, filters, order, paging, record shape.
 
-The mechanism, stated exactly: a change that succeeds invalidates
-`["financial-ledger", caseId]`, which is a prefix of both the admitted list and
-the quarantined list. So the row **leaves the list it was clicked in**. Both
-panels return an early empty state before rendering anything below them, so a
-dialog owned by a panel is unmounted at the moment its answer arrives — and that
-answer, including whether the change rescued a reconciled period, **is said in
-that one mutation response and on no record anywhere**. Mounting it outside the
-tab strip covers the same failure one level up: Radix `Tabs` mounts only the
-active tab's content, so a dialog inside a tab dies on a tab change too.
+### Why `decisions.history()` could not be the reader
 
-**Two tests pin it, one per panel:** the row goes on being passed to the dialog
-after it has left every list on screen.
+This is the fact the whole chunk turns on, and it is worth keeping because it is
+not obvious from the function's name. `history(session, subject, subject_type)`
+takes a **loaded subject object** and filters on `subject_type` and `subject_id`.
+**It never filters on `case_id`.** So it answers "what happened to this row" and
+structurally cannot answer "what has been decided in this matter". It also cannot
+bound a route: subject ids are unguessable, but a caller who has already seen one
+can name it against any case at all, and `history` would answer.
 
-**There is no companion test for changing tab while the dialog is open, and this
-is a fact about Radix, not an omission.** The dialog is modal, so Radix marks the
-rest of the document `aria-hidden` and the tab strip cannot be reached by role.
-The test is unreachable by construction. The mount point is outside `Tabs`
-anyway, which is what the code guarantees; the two panel tests are what can
-actually be asserted.
+`list_case_decisions` therefore puts the case **in the filter rather than
+checking it afterwards**, which is the pattern `quarantine_row.find_case_transaction`
+already uses and states the reason for: a subject in another matter is
+indistinguishable from one that does not exist.
 
-### The store question, settled by reading `financial.store.ts`
+### The three things that were decided, not assumed
 
-`FinancialMainView` gained a sixth member, `"quarantine"`. The question that had
-to be settled before adding it was whether a persisted store needed a migration,
-because a browser holding `mainView: "trends"` from an older build must not be
-able to put the page into a state the new build cannot render.
+Each is recorded at length in the module docstring as well, because each was a
+real fork.
 
-**No migration is needed, and this was read rather than assumed.** `mainView` is
-**omitted from `partialize`**, so it is never written to storage in the first
-place, and `merge` **deletes it** from any incoming persisted object before the
-merge. A value stored by an older build is discarded on read. There is nothing to
-migrate because there is nothing persisted.
+**Ordering.** `subject_sequence` is per subject, so comparing one subject's 3
+with another subject's 1 means nothing. `created_at` is Postgres `now()`, which
+is **transaction start time**, so events written in one transaction share it
+exactly. The order chosen is `created_at DESC, subject_type, subject_id,
+subject_sequence DESC`: newest first at the resolution the timestamp actually
+has, authoritative within any one subject, and **total**, so paging is stable and
+a row cannot appear on two pages. The docstring explicitly refuses to claim that
+two events about *different* subjects sharing a timestamp happened in the order
+shown. `decisions.history` carries a docstring saying an earlier draft ordered by
+`created_at` with an `id` tiebreak and that "looked authoritative and was a coin
+toss" — this is the same trap, avoided the same way.
 
-*What would reverse it:* `mainView` being added to `partialize`. At that moment
-the store needs a version bump and a migration, and the sixth member is the
-reason.
+**Bounding.** This **diverges from `transaction_query.list_transactions`, which
+is unbounded**, and the reason is specific rather than general caution:
+`reclassify_document` is written by the reconciliation stage on every pipeline
+run, so the log grows without any person deciding anything, and the cost of an
+unbounded read is set by how often the pipeline ran. `total` is reported beside
+the page, counted over the **same filters** so a filtered page describes its own
+population, because a truncated history that does not say it was truncated is
+worse than no history.
 
-### The action column, and the row it refuses to guess about
+**`by_machine`.** Derived from the actor address against
+`documents.RECONCILIATION_ACTOR_EMAIL` (`reconciliation@loupe.invalid`) rather
+than stored, because a second home for the same fact drifts. **Surfaced rather
+than left to callers**, because a reader that gets the comparison wrong shows a
+machine's reclassification as a person's judgement, which is the most misleading
+thing this log could be made to say. Matched case-insensitively and **on
+equality**, so an address merely *containing* the machine's is not the machine's
+— there is a test for exactly that. The import of
+`RECONCILIATION_ACTOR_EMAIL` is deferred into the function because
+`services.financial.documents` is heavy and pulls much of the package.
 
-**Which change a row admits of is one reading, `changeAvailableFor`, in
-`lib/ledger-format.ts`.** It lives in `lib/` and not in a hook because `lib/`
-must not import from `hooks/`, and both the table and the dialog need it. The
-word on the row and the word on the button that commits the change come from
-`ROW_CHANGE_LABELS`, one definition. A person who presses one word and is asked
-to confirm a different one has been handed something to reconcile while deciding
-whether a figure counts.
+### Two smaller calls, recorded so they are not re-litigated
 
-- **Quarantined offers a release; every other readable status offers a setting
-  aside** — including `superseded` and `rejected`, which the ledger may well
-  refuse. **The refusal is deliberately not pre-empted in the browser.** It is an
-  answer a person is entitled to see and it arrives in the response to the ask; a
-  button withheld here replaces that answer with silence. This is the same rule
-  as chunk 4a's "does not screen out rows the ledger will refuse", now applied a
-  layer up.
-- **A status this build cannot read gets no button, and the cell says so.**
-  `changeAvailableFor` returns `null`, and the cell renders "Status unread, no
-  change offered" rather than going blank. An empty cell in a column of buttons
-  reads as *nothing can be done to this row*, when what is true is that this
-  build cannot tell **whether the row is counting toward the totals at all**.
-  That is the one row on the screen that most needs explaining.
-- **The column is drawn only when `onAdjudicate` is given.** A column of buttons
-  that do nothing would say a change can be asked for from a screen that cannot
-  ask for one. The general ledger list and the quarantined list both pass it; a
-  caller that does not gets the seven-column table unchanged.
-- **The table hands the row back and stops.** No mutation, no dialog, no state.
-  This is what keeps every case in `LedgerTable.test.tsx` testable against rows
-  alone.
+- **`to_record` is public in the module but deliberately not in the package
+  `__all__`.** At package level a bare `to_record` is vague — `transaction_query`
+  already contributes a `to_view` there — and `tests/test_financial_exports.py`
+  states in its own docstring that the guard is *module reachability*, at least
+  one name per module, and that public-looking names may be kept out of `__all__`.
+  Six names from this module are exported, so the guard is satisfied.
+- **The constants are `DEFAULT_DECISION_LIMIT` / `MAX_DECISION_LIMIT`, not
+  `DEFAULT_LIMIT` / `MAX_LIMIT`.** `services.financial.__init__` is a flat surface
+  shared by fifty-one modules, and a bare `DEFAULT_LIMIT` sitting on it would read
+  as the package's limit for anything paged.
 
-### Two guards written so a later change cannot go quiet
+### What the 37 tests actually pin
 
-- **`changeAvailableFor` is tested by looping over `LEDGER_STATUSES`,** not
-  against a hand-written list. A fifth member added to the backend enum and not
-  thought about here would otherwise fall through to `"quarantine"` by default
-  rather than being decided on; the loop asserts every known status classifies
-  non-null.
-- **The table tests assert `data-change`, not the button text.** The two labels
-  can be reworded without the rule going quiet, which is the point: the rule is
-  *which change was offered on which row*, and that must not be pinned to
-  wording somebody will improve.
+Grouped by the claim they defend rather than by the function they call:
 
-### Carried forward: the environment, unchanged and still broken
+- **The case bounds the read.** Another case's decisions are absent; **naming
+  another case's subject id returns nothing**; an empty case is a page, not an
+  error; a read with no case is refused.
+- **The order says only what it can support.** Newest first. Events sharing a
+  timestamp on one subject come back with the reversal leading. Six events across
+  two subjects on a single shared timestamp, paged two at a time, yield six
+  **distinct** ids — which is the property that would break first if the order
+  were not total. The same read twice returns the same order.
+- **Paging cannot mislead.** `total` counts the population and not the page;
+  `truncated` is true and false in the right places; an offset past the end is
+  empty with a true total; a limit over the cap is **capped, not refused**; a
+  limit of `True` is refused, because `isinstance(True, int)` and a boolean
+  reaching a `LIMIT` clause is a silent 1.
+- **A machine's decision is not read as a person's.** Both directions, plus the
+  case-insensitive match and the substring near-miss.
 
-**Nothing improved and nothing is going to without Neil.** `/sessions` is still
-completely full — 9.8G of 9.8G, **zero bytes available, re-measured with
-`df -h /sessions` at the end of this session.** The root filesystem is at 99%
-with 120M free, so `/tmp` is no use either. The `pip install` in `CLAUDE.md` dies
-with `ENOSPC: No space left on device` partway through, which leaves the backend
-suite unrunnable by the documented route. **This is not something a session can
-fix**; almost none of the used space belongs to this session, and the rest is
-other sessions' directories that are not readable or removable from here.
-
-**The workaround, which worked two sessions ago and has not been needed since** —
-neither `519895e` nor `e64c2ca` touched Python, so the backend suite was
-correctly not run at either: install into the `/dev/shm` tmpfs, which is 2.0G,
-and put it on `PYTHONPATH`. The seventeen packages come to 151M, so there is
-ample room. `/dev/shm` was re-measured at the end of this session at **1.8G
-available**. **The next unit is item 8, which is backend work, so this is the
-first thing the next session will need.**
-
-```
-PYLIB=/dev/shm/pylibs-$(id -un); mkdir -p "$PYLIB" /dev/shm/tmp-$(id -un)
-TMPDIR=/dev/shm/tmp-$(id -un) pip install --break-system-packages --no-cache-dir \
-  --quiet --target "$PYLIB" <the same seventeen packages as CLAUDE.md>
-```
-
-Then every backend run needs the path, and the bytecode cache must also be sent
-somewhere with room, because `/tmp` is on the root filesystem which is at 99%:
-
-```
-cd <repo>/backend && env PYTHONPATH=/dev/shm/pylibs-$(id -un) \
-  PYTHONPYCACHEPREFIX=/dev/shm/pyc-$(id -un) PYTHONDONTWRITEBYTECODE=1 \
-  PYTHONHASHSEED=0 python3 -m unittest discover -s tests -p 'test_financial_*.py' -t .
-```
-
-`--no-cache-dir` matters: pip's cache lives under `~/.cache`, which is on the
-full filesystem. `/dev/shm` is RAM-backed and does not survive the session, so
-this is a per-session step exactly like the old bootstrap was.
-
-**The repo is not on the full filesystem, which is what makes the frontend gates
-runnable.** `df -h` on the repo path shows a separate virtiofs mount
-(`/mnt/.virtiofs-root/shared/Documents/Owl/owl-n4j`), 461G with **36G free**. So
-`/sessions` reporting zero bytes does **not** mean the working tree cannot be
-written to, and it does not mean the frontend gates cannot run. What it does mean
-is that anything the tooling wants to put outside the repo has to be redirected.
-The vite cache is the one that matters, and `CLAUDE.md`'s `/tmp` path is on the
-99%-full root filesystem, so send it to `/dev/shm` instead:
-
-```
-cd <repo>/frontend_v2 && VITE_CACHE_DIR=/dev/shm/vite-cache-$(id -un) \
-  npx vitest run --project unit
-```
-
-That form was used for the unit gate this session and worked. Both `tsc -b` and
-`eslint .` ran clean over the whole project with no redirection needed. The
-**browser** project is still not runnable: it additionally wants a per-session
-Chromium download, and the documented staging directory is on the full
-filesystem.
-
-**The temporary git index can go to `/dev/shm` as well,** and did for the
-state-file commit here: `IDX=/dev/shm/loupe-$(id -un).index`. `CLAUDE.md` says
-`/tmp`, which is on the 99%-full root filesystem; a git index is a few megabytes
-against 120M free, so it fits today, but it is the kind of thing that fails at
-exactly the wrong moment. Everything else in `CLAUDE.md`'s commit procedure is
-unchanged and correct, including that the index name must carry the current user.
+Two fixture routes were used on purpose. Most tests write through
+`decisions.record`, so what is read back is what the **real writer** writes.
+The ordering tests insert `AdjudicationEvent` rows directly, because `created_at`
+is a server default and those tests are precisely about which timestamps events
+carry.
 
 ### Verification
 
-The affected test files were run on their own first — **68 tests across
-`ledger-format.test.ts` and `LedgerTable.test.tsx`, green** — and only then was
-the whole project run. Frontend unit in full and green, **72 files / 633 tests**.
-The delta was checked rather than eyeballed: 612 → 633 is +21, which is
-`ledger-format` +5, `LedgerTable` +7 and `FinancialPage` +9. **Nothing
-unaccounted for.** `eslint .` 0 and `tsc -b --force` 0, both over the whole
-project; `--force` deliberately, so a clean result could not be coming from a
-stale build info file. Backend not run and not claimed — the commit is eleven
-TypeScript files and no Python.
+The new file was run alone first — **37 tests, `OK`** — and only then the whole
+backend financial suite: **`Ran 3373 tests in 14.974s, OK (skipped=12)`**, `EXIT=0`.
+The delta was checked rather than eyeballed: 3,336 → 3,373 is +37, which is the
+new file exactly. **Nothing unaccounted for.** `tests/test_financial_exports.py`
+is the test most exposed to this change, since it parses every module in the
+package and asserts each contributes at least one name to `__all__`; it passed.
+
+Frontend gates not run and **not claimed** — the commit is three Python files and
+no TypeScript.
 
 **Every gate command was redirected to a file and its status read from `$?`,
-never through a pipe.** `CLAUDE.md` warns about this and it is the trap that
-turns a failing gate into a passing one.
+never through a pipe.**
 
-The staged tree (`fbedc1c356ad32b29f21e9756340da58ab9a763a`) was diffed against
-`HEAD` before committing and held exactly the eleven intended files, 718
-insertions and 39 deletions, with the untracked `.bak` files, the probe test and
+The staged tree (`be6029ae261050d129d181000d078483bf02b4c9`) was diffed against
+`HEAD` before committing and held exactly the three intended files, 1,112
+insertions and no deletions, with the untracked `.bak` files, the probe test and
 all of Neil's case material correctly excluded. `git status --porcelain |
-grep -v '^??'` was empty afterwards, and `git log --oneline` confirms `e64c2ca`
-sitting on `73f828a` sitting on `519895e`.
+grep -v '^??'` was empty afterwards.
 
 The `warning: unable to unlink '.git/objects/../tmp_obj_...': Operation not
 permitted` lines during `write-tree` and `commit-tree` are the known workspace
 `unlink` denial. The objects were written and the hashes are valid. **Not a
 failure, do not chase them.**
 
+### What chunk 2 has to decide before it writes a line
+
+The HTTP surface, a `GET` over `list_case_decisions`. The obvious home is
+`backend/routers/financial_adjudication.py`, and **it cannot simply be added
+there without a decision.** That router resolves every route to
+`("case", "edit")`, and its `_adjudication_case_permission` says so
+unconditionally with the reason stated in a comment: *"Every route on this router
+writes; none of them only read. Stated unconditionally rather than per path so
+that a route added here inherits the write bar, which is the safe direction for a
+mistake to fall."* A read route dropped in would inherit a **write** permission it
+does not need, and would make that comment false.
+
+Two defensible answers: make the permission per-path on that router (which the
+comment deliberately argued against), or put the read on
+`routers/financial_ledger.py`, which already declares itself read-only and
+resolves to `case:view` **on the stated grounds that none of its routes write** —
+which stays true of a decisions read. **The second is the direction to take
+unless reading turns something up**: it keeps both docstrings true and requires
+changing neither comment. *Reversed by:* the decisions read needing something
+from the adjudication router that the ledger router does not have.
+
 ---
 
 ## The previous sessions, in brief
+
+**`e64c2ca`, chunk 5 of the quarantine screen, which closed Phase 2 item 6.**
+Eleven files, 718 insertions, 39 deletions, frontend only. Chunks 1 to 4b built
+pieces and wired none of them: the dialog existed and no screen opened it, the
+quarantined list existed and no tab showed it. This is the commit that connected
+them. The financial page gained a **"Held out"** tab and **every ledger row
+gained a button** offering the one change that row admits of, read from a single
+place — `changeAvailableFor` in `lib/ledger-format.ts`, with `RowChange` and
+`ROW_CHANGE_LABELS`. The action column on `LedgerTable.tsx` is drawn only when
+`onAdjudicate` is given, so the general ledger and the held-out list share one
+table without the general list growing a control it has no use for. Quarantine is
+complete end to end: write path, localisation reader, and screen.
 
 **`519895e`, chunk 4b of the quarantine screen.** Six files, 747 insertions, 9
 deletions, frontend only. The list of rows a case is holding out of its own
@@ -1246,18 +1220,33 @@ turns out to depend on something later in the list, stop and ask.
   **complete end to end** (write path `150084a`, localisation reader and rescue
   reporting `35cc6be`, screen chunks 1 to 5 `1894fc4`, `19bffae`, `610df9b`,
   `66d1e67`, `519895e` and `e64c2ca`); reconciliation ✅ item 7 (`dfcef2b`).
-  **Next is item 8, adjudication and proof class**, then duplicates, suspect
+  **Item 8, adjudication and proof class, is in progress** — chunk 1 of 3, the
+  case-scoped decision-log reader, landed as `a40bb61`. Then duplicates, suspect
   amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-### Next unit: item 8, adjudication and proof class
+### Current unit: item 8, adjudication and proof class — chunk 1 of 3 done
 
 **Start here.** The wiring plan's own words for it: *"`assign_proof_class`,
 `requires_adjudication`, `record_admission`, the decisions surface. Proof class
 is computed and never set by hand; the interface shows it and shows what an
 adjudication changed, and never offers a control that sets it."*
+
+**The chunking, decided at `a40bb61` and reasoned about at length under "What
+this session did":**
+
+1. **The decisions surface.** `services/financial/decision_log.py` ✅ `a40bb61`.
+   **Still to do: the route, then the screen.** The route decision is written up
+   at the end of that section — the short version is that
+   `routers/financial_adjudication.py` resolves *every* route to `case:edit`
+   unconditionally and says so in a comment, so the read should go on
+   `routers/financial_ledger.py`, which is read-only and resolves to `case:view`.
+2. **The admission path**, which gives `record_admission` its first caller.
+3. **Proof class and `requires_adjudication`**, last, because the class is
+   already computed and already rendered; what is missing is the explanation of
+   what it means and what an adjudication changed about it.
 
 **Four facts established by grepping the source at `e64c2ca`, not remembered.**
 They change the shape of the unit, so check them again before building but do not
@@ -1422,6 +1411,46 @@ the direction the build takes by default, so a session can proceed without a
 conversation. Each one also says exactly what evidence or instruction would
 reverse it. Raise one with Neil only when the unit in front of you actually
 turns on it, and then raise it oriented and with a recommendation.
+
+**New: a read whose cost is set by a machine writer is bounded and reports its
+own total; a read whose cost is set by the evidence is not.**
+`transaction_query.list_transactions` is unbounded, and stays unbounded, because
+its size is the size of the bank statements someone actually produced.
+`decision_log.list_case_decisions` is bounded at 100 by default and 500 at the
+cap, because `reclassify_document` is written by the reconciliation stage on
+every pipeline run, so the log grows without any person deciding anything and the
+cost of an unbounded read is set by how often the pipeline ran. Wherever a read
+is bounded, `total` is returned beside the page and counted over the **same**
+filters, because a truncated history that does not say it was truncated is worse
+than no history. **What would reverse it:** a decision log that stops taking
+machine writes, at which point its growth is bounded by human effort like the
+ledger's is.
+
+**New: a fact that can be derived from a stored field is derived, but it is
+derived once, in the service, not by each caller.** `by_machine` on a decision
+record is the actor address compared with `RECONCILIATION_ACTOR_EMAIL`. It is not
+stored, because a second home for the same fact drifts. It is also not left to
+callers, because a caller that gets the comparison wrong shows a machine's
+reclassification as a person's judgement, which is the most misleading thing that
+log can be made to say. The comparison is case-insensitive and **on equality**,
+never `in` — an address that merely contains the machine's is not the machine's.
+**What would reverse it:** more than one machine writer, at which point the
+service needs a set of addresses rather than one, but still one place that knows
+them.
+
+**New: an ordering across subjects claims only what its columns can support.**
+`subject_sequence` is per subject, so one subject's 3 is not comparable with
+another's 1; Postgres `created_at` is transaction-start time, so events written
+together share it exactly. So a cross-subject read orders by `created_at DESC`
+then by subject then by `subject_sequence DESC`: newest first at the resolution
+the timestamp actually has, authoritative within any one subject, and **total**,
+so paging cannot show a row twice. The docstring states plainly that two events
+about different subjects sharing a timestamp are **not** claimed to have happened
+in the order shown. `decisions.history` carries the same warning from its own
+history: an earlier draft ordered by `created_at` with an `id` tiebreak, and that
+"looked authoritative and was a coin toss." **What would reverse it:** a
+monotonic per-case sequence being added to the log, which would make a true
+cross-subject order available for the first time.
 
 **New: a list that differs from the ledger list by one column is a flag on
 `LedgerTable`, not a table of its own.** Three of that table's seven cells are
@@ -1635,6 +1664,12 @@ before item 12 lands.
 - **Whether ingestion should trigger a sweep at the end of a run is not
   decided and was not decided here.** It is the obvious next caller, and item 8
   (proof class) is the unit that will actually need one. Flagged, not parked.
+- **The adjudication log now has a reader, and it is still not reachable over
+  HTTP.** `decision_log.list_case_decisions` landed at `a40bb61` and is tested,
+  but no route calls it and no screen shows it, so on a live case the log is
+  still write-only from every direction a user can approach it. **This flag
+  clears when chunk 1's route and screen land**, not when the service did. Until
+  then, do not describe the history as something anybody can see.
 - **The quarantine screen is reachable as of `e64c2ca`, and this flag is
   cleared.** It read, for four commits, that every part existed and none of it
   was reachable. That is no longer true: the "Held out" tab is in the tab strip,
