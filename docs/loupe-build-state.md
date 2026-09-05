@@ -3,19 +3,20 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the run reaper test fix, `74d9bdf`.
-No build item moved. Read the disk note under Standing flags **before running
-anything** — the documented bootstrap no longer works and the replacement is
-recorded there.)
+**Last updated:** 5 September 2026 (records `35cc6be`, the arithmetic half of
+Phase 2 item 6: the localisation reader, and the write path now reporting when a
+quarantine is what makes a statement balance. Read the disk note under Standing
+flags **before running anything** — the documented bootstrap no longer works and
+the replacement is recorded there.)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `74d9bdf`
-  (`74d9bdf5762e16b8176203b5394c066ebbbb54a4`), "Stop the run reaper tests racing
-  the lines they assert on", parent `049a301`.
+- **Head when this was written:** `35cc6be`
+  (`35cc6be0c36a091e7f9bef3191cd3c8d3448f0a2`), "Give the localisation arithmetic
+  a reader, and say when a quarantine balances the statement", parent `37f5c8d`.
   **Confirm the real tip with `git log --oneline -5`** at the start of every
   session rather than trusting this line — the state-file commit that follows
   this one will already have moved it.
@@ -46,60 +47,156 @@ disk note under Standing flags.
 
 ### Scale
 
-**106 commits** since `c4246c0` (27 August), counting `74d9bdf`; 107 once the
+**108 commits** since `c4246c0` (27 August), counting `35cc6be`; 109 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`.
 
-`backend/services/financial/` **49 modules** excluding `__init__.py`;
-`backend/tests/test_financial_*.py` **56 files**, **3,300 tests**.
+`backend/services/financial/` **50 modules** excluding `__init__.py`;
+`backend/tests/test_financial_*.py` **57 files**, **3,336 tests**.
 
-### Gate baselines as of `74d9bdf`
+### Gate baselines as of `35cc6be`
 
-- **Backend financial suite: `Ran 3300 tests, OK (skipped=12)`.** Unchanged in
-  count — this session fixed a test harness and neither added nor removed a
-  test. Run three times consecutively, clean each time. **There are no expected
-  failures**, and that promise is now actually true; see below.
-- **Frontend unit: 67 files, 494 tests.** NOT re-run this session and it did not
-  need to be: `git status --porcelain` showed one changed file and it was
-  backend. 494 includes the stray probe test.
+- **Backend financial suite: `Ran 3336 tests, OK (skipped=12)`.** Up 36 from
+  3,300, accounted for exactly: 27 in the new localisation tests, 8 in the new
+  rescue-wiring class, and 1 added to the existing quarantine driver tests.
+  **There are no expected failures.**
+- **Frontend unit: 67 files, 494 tests.** NOT re-run and it did not need to be:
+  `git status --porcelain` showed six changed files and every one was backend.
+  494 includes the stray probe test.
 - **`tsc -b` 0, `eslint .` 0.** Also not re-run, for the same reason.
 - **Frontend browser: NOT RUN, and it could not be.** See the disk note. Last
   known-good figure is 2 files, 4 tests. **Do not carry "browser green" forward
   as though it were verified at this head.**
 
-**Five tracebacks on stderr during the backend run are expected and are not
+**Six tracebacks on stderr during the backend run are expected and are not
 failures.** One `sqlite3.IntegrityError: UNIQUE constraint failed:
 financial_transactions.case_id, financial_transactions.ref_id` prints mid-run
 from `tests/test_financial_native_ingest_file.py`, which ingests the same file
-twice on purpose. Two more come from `test_financial_quarantine_row.py`, which
-injects a `SQLAlchemyError("connection lost")` into each writer to exercise the
-`write_failed` path that `quarantine_row.py` logs with `logger.exception`.
-The last two arrived with the reconciliation unit, `dfcef2b`:
-`test_financial_reconcile_case.py` injects an `OperationalError ... locked` on a
-liveness `SELECT 1` and a disk-full failure on `COMMIT`, and
-`reconcile_case.py` logs both with `logger.exception`. All five are the code
-working. **Do not spend a session chasing them.**
+twice on purpose. **Three** come from `test_financial_quarantine_row.py`: two
+`SQLAlchemyError("connection lost")` injected into each writer to exercise the
+`write_failed` path, and — new at `35cc6be` — one
+`services.financial.money.MoneyError: currencies do not match` injected into the
+rescue check to prove an unanswerable question does not stop a quarantine.
+`quarantine_row.py` logs all three with `logger.exception`. The last two are the
+reconciliation pair from `dfcef2b`: `test_financial_reconcile_case.py` injects an
+`OperationalError ... locked` on a liveness `SELECT 1` and a disk-full failure on
+`COMMIT`. All six are the code working. **Do not spend a session chasing them.**
+Counted directly, not from memory:
+`python3 -m unittest tests.test_financial_quarantine_row 2>err; grep -c '^Traceback' err`.
 
 ---
 
 ## What this session did
 
-**No build item moved. One file changed, `backend/tests/test_financial_run_reaper.py`,
-63 insertions and 1 deletion, landed as `74d9bdf`.** The session opened intending
-item 6's remaining half and stopped short of it for the two reasons below. Both
-are worth the next session's attention before it starts.
+**The arithmetic half of Phase 2 item 6 landed as `35cc6be`.** Six files, 1,211
+insertions, no deletions.
 
-### The environment has degraded, and the documented bootstrap now fails outright
+Item 6 had two remaining pieces: wire `would_rescue` and
+`QuarantineBasis.from_proof` into production, and build the quarantine screen.
+This session did the first and left the second. **The screen is the next unit**
+and nothing now blocks it.
 
-`/sessions` is **completely full — 9.8G of 9.8G, zero bytes free**, down from
-129M last session and 291M the session before. The `pip install` in `CLAUDE.md`
-dies with `ENOSPC: No space left on device` partway through, which leaves the
-backend suite unrunnable by the documented route. **This is not something a
-session can fix**; almost none of the used space belongs to this session (mine
-was ~130M, and the rest is other sessions' directories that are not readable or
-removable from here).
+### The gap that had to be closed first
 
-**The workaround, which works and was used for every run below:** install into
+`would_rescue` and `localise` are arithmetic. They take a live `IdentityOutcome`
+and a sequence of `RowObservation`s and answer questions about a residual.
+**Nothing in the codebase could produce either of those from a stored period**,
+so both functions were fully written, fully tested, and unreachable — the same
+shape of finding as the previous two units, and found the same way, by grepping
+for the import and listing the files rather than counting name occurrences.
+
+So the unit is a reader: the thing that turns rows and periods already in the
+database into the inputs the arithmetic wants.
+
+### What landed
+
+- **`backend/services/financial/localisation.py`** (228 lines, new). Public
+  surface, all five re-exported from the package: `observe_transaction`,
+  `observe_period_rows`, `current_identity`, `localise_period`,
+  `rescue_if_removed`. Plus the private `_page_of`.
+- **`backend/services/financial/quarantine_row.py`** (+91). `_rescue`, and its
+  call from `quarantine_case_row`; `RowAdjudication` gains `rescues_period`.
+- **`backend/services/financial/__init__.py`** (+13).
+- **`backend/tests/test_financial_localisation.py`** (624 lines, 27 tests, new).
+- **`backend/tests/test_financial_quarantine_row.py`** (+244). A new
+  `QuarantineRescueTests` class, 8 tests, against real SQLite.
+- **`backend/tests/test_financial_adjudication_router.py`** (+11). Two exact-dict
+  assertions had to learn the new key; see below.
+
+### The two decisions inside the reader, and why each went the way it did
+
+Both are load bearing and neither is obvious from outside.
+
+- **The chain is walked over `admitted` rows only.** Not over every row on the
+  period. The `proved` strength rests on a residual taken from
+  `total_transactions`, which sums admitted rows, so walking a different
+  population than the residual was computed from would let the arithmetic prove
+  something about a set nobody is looking at. **What this means in practice:**
+  quarantine a row and the localisation answer legitimately changes, exactly as
+  the reconciliation answer does.
+- **The identity is recomputed, never read off the period.** The stored
+  `reconciliation_status` column holds whatever the last sweep wrote, which may
+  be `not_attempted` and on a live case usually is. A rescue check reading that
+  column would report against arithmetic that was true at some earlier moment, or
+  against no arithmetic at all.
+
+### The hazard the reporting exists for
+
+**Quarantining the row whose amount equals the residual makes the period balance
+by arithmetic necessity, whatever the row was.** That is true of a row proved
+wrong by the statement's own chain and equally true of a row removed for a bad
+reason. The balance is therefore not evidence of anything on its own.
+
+The system **refuses nothing and warns about nothing**. It records the fact, so
+that a reviewer reading the decision later can weigh the grounds against the
+effect rather than finding a clean statement with no way to know it was cleaned.
+There is a named test holding the write path to not refusing.
+
+### `rescues_period` is three-valued, and the third value is not a bug
+
+`True` and `False` are both findings; **`None` is the absence of one.** It arrives
+by four distinct routes and each has a test: the row belongs to no period, the
+check raised something unanswerable, the quarantine was refused so nothing was
+removed, or the request was a release. Anything rendering this field has to
+distinguish "we checked and it does not balance" from "we did not get an answer".
+
+### Authorship: the machine's sentence must not be written into the person's
+
+`QuarantineBasis.from_adjudication` builds its detail as `"<actor>: <reason>"`,
+and that string is what the adjudication log stores. Appending the rescue
+sentence to the reason would leave a record in which **the person appears to have
+written words nobody wrote.** So the sentence travels in the response and not in
+the log. There is a test asserting the stored reason is exactly
+`"Alex: <what she typed>"`.
+
+**This is a real gap, recorded honestly:** the fact is on screen at the moment of
+the decision and is not durable. Giving it a home in the log needs somewhere to
+put it that is neither the person's reason nor the row's before/after columns,
+which is a change to `quarantine_transaction`. See Standing decisions.
+
+### The router needed no schema work, and this was checked rather than assumed
+
+`routers/financial_adjudication._respond` ends in `return result.as_dict()` and
+the routes declare no response model, so the new key reaches the interface by
+itself. **Two router tests failed on the new field** — both named
+`test_the_service_is_called_with_the_row_case_actor_and_reason`, both asserting an
+exact response dict. That is the tests working. Fixed by threading the field
+through the `_result` helper, and the quarantine case now asserts `True` end to
+end rather than merely tolerating the key, so the route is held to carrying the
+finding out.
+
+### Carried forward: the environment, unchanged and still broken
+
+**Nothing improved and nothing is going to without Neil.** `/sessions` is still
+completely full — 9.8G of 9.8G, zero bytes free, measured again at the end of
+this session. The `pip install` in `CLAUDE.md` dies with `ENOSPC: No space left
+on device` partway through, which leaves the backend suite unrunnable by the
+documented route. **This is not something a session can fix**; almost none of the
+used space belongs to this session, and the rest is other sessions' directories
+that are not readable or removable from here.
+
+**The workaround, which works and was used for every run this session:** install
+into
 the `/dev/shm` tmpfs, which is 2.0G and starts empty, and put it on `PYTHONPATH`.
 The seventeen packages come to 151M, so there is ample room.
 
@@ -122,162 +219,41 @@ cd <repo>/backend && env PYTHONPATH=/dev/shm/pylibs-$(id -un) \
 full filesystem. `/dev/shm` is RAM-backed and does not survive the session, so
 this is a per-session step exactly like the old bootstrap was.
 
-### The suite was not actually green, and the state file said it was
+### Verification
 
-The first full run of the session failed:
-`AssertionError: no logs of level WARNING or higher triggered on
-services.financial.run_reaper`. It did not reproduce on the next run. That is
-the worst shape a failure can take here, because `CLAUDE.md` promises there are
-no expected failures and therefore instructs the next session to treat it as
-its own doing.
+Backend 3,300 → 3,336, accounted for exactly. The staged tree
+(`dfb02bac85e173d34bd5f642f9fb56dabec0d72f`) was diffed against `HEAD` before
+committing and held exactly the six intended files, with the untracked `.bak`
+files, the probe test and all of Neil's case material correctly excluded.
 
-**The cause, established by reading the source rather than by guessing.**
-`reap_stale_runs_forever` runs the sweep on a worker thread through
-`asyncio.to_thread` (`run_reaper.py:83`). Everything the loop *says* about a
-sweep is written afterwards, back on the event loop: the warning `_report`
-emits when it closed a run (`:88`, `:109`) and the traceback the error handler
-logs when a sweep raised (`:96`). The harness released the waiting test from
-inside the spy's `finally`, on the worker thread, which runs **before** that
-thread's future resolves. So the test could wake, reach its own `finally`, and
-cancel the loop before the line it was asserting on had been logged.
-
-**Measured before and after rather than reasoned about.** The original harness,
-extracted from `HEAD` to `/dev/shm` and run as a module so nothing untracked was
-left in the tree, **failed 5 runs in 30**. The fixed harness passed **30 in 30**,
-and the full suite passed three times consecutively.
-
-**Four assertions rode on that race** —
-`test_a_run_that_goes_stale_later_is_caught_by_a_later_sweep`,
-`test_a_failing_sweep_is_logged_with_its_traceback`,
-`test_a_sweep_that_closes_a_run_names_it` and
-`test_the_message_gives_the_threshold_that_was_applied`. A fifth,
-`test_a_sweep_that_closes_nothing_says_nothing`, uses `assertNoLogs`, so the
-race never failed it; it just meant the test could pass without having observed
-anything. That one is the reason to care: a racing negative assertion is not a
-flaky test, it is a test that quietly stops testing.
-
-**The fix is in the harness only. No production code was touched**, deliberately
-— the race is in how the test observes the loop, not in the loop. `sweep()` now
-releases in two parts: the spy still reports that a sweep ran, and then the
-loop-side tail of that same iteration is waited for as well. **Every iteration
-ends in exactly one of `_report` or `logger.exception`**, which is what lets the
-second wait finish on an event instead of padding with a sleep — the file's own
-docstring claims the tests "neither race nor pad" and it is now true.
-`run_reaper.logger` is stood in for by `_TailWatchingLogger`, which forwards
-every call to the real logger object, so `assertLogs` and `assertNoLogs` still
-see every record.
-
-### Why item 6 was not then started
-
-Starting a unit of that size after this would have meant ending the session
-mid-item with a dirty tree, which the working agreement rules out. **Item 6's
-remaining half is untouched and is still the next unit.** Nothing about it
-changed this session; the section below stands as written.
+Frontend untouched, confirmed by `git status --porcelain`, so no frontend gate
+was run and none is claimed.
 
 ---
 
-## The previous session: reconciliation, `dfcef2b`
+## The two previous sessions, in brief
 
-**Phase 2 item 7, reconciliation, landed as `dfcef2b`.** Seven files, 2,126
-insertions, no deletions.
+**`74d9bdf`, the run reaper test race.** No build item moved; one test file
+changed. The suite was intermittently failing with `no logs of level WARNING or
+higher triggered on services.financial.run_reaper` and the state file was
+claiming green. Cause: `reap_stale_runs_forever` runs its sweep on a worker
+thread via `asyncio.to_thread`, and **everything the loop says about a sweep is
+logged afterwards, back on the event loop.** The harness released the waiting
+test from the worker thread, so the test could cancel the loop before the line it
+asserted on was written. Measured, not reasoned about: the old harness failed
+**5 runs in 30**, the fixed one passed **30 in 30**. Four assertions rode on the
+race; a fifth used `assertNoLogs` and so never failed — it had simply stopped
+testing. Fix is in the harness only; no production code was touched. The general
+lesson is in Durable facts.
 
-Plan item 7 verbatim: "Whether the rows add up to what the statement printed.
-This is the check that says a document was read completely."
-
-### The finding that decided the shape of the unit
-
-**`reconcile_period` has never run in production, and the source says so
-plainly.** It is fully written and fully tested, and its only production caller
-is `duplicates.py:334` — which itself has no production caller, because
-duplicates is Phase 2 item 9 and is not wired. So every
-`FinancialStatementPeriod` was created at `not_attempted` (`periods.py:391`) and
-stayed there for the life of the case.
-
-Something weaker was standing in for it. `native_ingest.py:249` passes the
-**format parser's** verdict about the file to
-`documents.reclassify_after_reconciliation`. That is a claim about whether the
-file parsed coherently. It is **not** the balance identity over stored, admitted
-rows, and now that row-level adjudication has landed the two can diverge
-deliberately: quarantining a row changes the second and cannot change the first.
-
-So this unit built the driver that runs the identity across a case's periods and
-writes the answer down, plus the read that reports what was written.
-
-### What landed
-
-- **`backend/services/financial/reconcile_case.py`** (546 lines, new). The
-  driver `reconcile_period` never had, plus the read. Public surface:
-  `PeriodOutcome`, `CaseOutcome`, `PeriodReconciliation`, `CaseReconciliation`,
-  `PeriodReconciliationView`, `ReconciliationQueryError`, `reconcile_case`,
-  `list_period_reconciliations`, `to_reconciliation_view`.
-- **`backend/routers/financial_reconciliation.py`** (191 lines, new). One GET,
-  one POST, registered in `routers/__init__.py` and `main.py`.
-- **`backend/tests/test_financial_reconcile_case.py`** (1,021 lines, 45 tests,
-  new). Real SQLite on disk, real `reconcile_period`, real periods and rows.
-- **`backend/tests/test_financial_reconciliation_router.py`** (343 lines, 14
-  tests, new). Handlers awaited directly, service mocked, mirroring
-  `test_financial_ledger_router.py`.
-- **`backend/services/financial/__init__.py`** (+21). Import block and `__all__`
-  block for the new module.
-- **`backend/main.py`** (+2), **`backend/routers/__init__.py`** (+2).
-
-### The four things the driver has to get right
-
-These are why the driver exists rather than the router calling `reconcile_period`
-directly, and each has a named test.
-
-- **A period in another case is not a period.** The sweep is scoped by case, and
-  optionally by account, through a join rather than by trusting a caller's id.
-- **One bad period cannot abandon the rest.** A period whose stored data will not
-  support the arithmetic is reported `refused` with the reason and the sweep
-  continues. Its previously recorded verdict is **left untouched rather than
-  reset**, because that verdict was a real result when it was taken and a failure
-  to re-derive it today is not evidence that it was wrong.
-- **A refusal must not leave a number behind.** `reconcile_period` assigns
-  `period.reconciliation_status` and only **then** calls `_fits(...)`, which can
-  raise `LedgerOverflowError`. So a refusal on that path arrives with a
-  half-written verdict already in the session. The driver discards it with
-  `session.expire(period)`. **`refresh()` would be wrong**: it autoflushes the bad
-  state first, committing the very number being discarded.
-- **A read does not recompute.** The GET reports the stored column and nothing
-  else, including when the column says `not_attempted`.
-
-### The endpoints
-
-Both under the existing `/api/financial` prefix. **Two routes and two
-permissions, which is why this is its own router and not folded into a
-neighbour:** `routers/financial_ledger` resolves everything to `case:view` on the
-stated grounds that none of its routes write, and the recompute here writes;
-`routers/financial_adjudication` resolves everything to `case:edit` on the stated
-grounds that all of its routes do, and the read here does not. Either merge would
-make an existing module's docstring false.
-
-- `GET /api/financial/reconciliation` — `case:view`. Query: `case_id`
-  (required), `account_id`, `reconciliation_status`, `limit`. Response:
-  `case_id`, `periods`, `total`.
-- `POST /api/financial/reconciliation/run` — `case:edit`. Query: `case_id`
-  (required), `account_id`. Response is the sweep whole: `case_id`, `outcome`,
-  `applied`, `reason`, `counts`, `total`, `periods`.
-
-**The permission is resolved from the HTTP method, not the path,** so a route
-added to this router later inherits the bar its verb implies. A safe method can
-only read; anything else is treated as a write whether or not it turns out to be
-one, which is the direction a mistake here should fall. Tested for `PUT`,
-`PATCH` and `DELETE`, which are not served today.
-
-**`applied` is the flag an interface reads, not the outcome word** — same rule as
-`wouldStore`/`didStore` on ingest and `applied` on adjudication, and for the same
-reason: a backend one version ahead can send a word this build has never seen.
-
-### Verification
-
-Backend 3241 → 3300, accounted for exactly: 45 in the driver tests and 14 in the
-router tests. `tsc -b` 0, `eslint .` 0, unit 67/494 unchanged. Browser project
-could not run; see the disk note.
-
-The staged tree (`f44988b8`) was diffed against `HEAD` before committing and held
-exactly the seven intended files, with the untracked `.bak` files, the probe test
-and all of Neil's case material correctly excluded.
+**`dfcef2b`, Phase 2 item 7, reconciliation.** Seven files, 2,126 insertions.
+Built `services/financial/reconcile_case.py` (the driver `reconcile_period` never
+had, plus the read) and `routers/financial_reconciliation.py` (GET reports the
+stored column, POST recomputes). The finding that shaped it: **`reconcile_period`
+had never run in production**, its only caller being an unwired module, so every
+period sat at `not_attempted` for the life of a case. **All the durable rules
+from that unit are in "The reconciliation subsystem's own rules" below** and are
+not repeated here.
 
 ---
 
@@ -288,10 +264,40 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
 
 ### New this session
 
+- **Two rows identical in amount, date and direction inside one document collide
+  on the content hash.** `uq` is `(source_document_id, content_hash)` and the
+  hash is computed from the reading, so a fixture making several rows on one
+  period must vary something real — `description=f"row {i}"` is what the
+  localisation and rescue fixtures use. Real statements tell such rows apart by
+  narrative, so this is the schema being right, not the fixture being awkward.
+- **A fixture making several periods for one document and account must vary the
+  dates,** for the same reason: the uniqueness rule is
+  `(source_document_id, account_id, period_start, period_end)`. A month counter
+  is enough. And **a `closing=None` that means "the statement printed none" needs
+  a sentinel default**, not `None` as the default, or the helper cannot tell "not
+  supplied" from "deliberately absent".
+- **`rescue_if_removed` is imported by name into `quarantine_row`'s namespace**
+  (`quarantine_row.py:65`), so `patch.object(quarantine_row, "rescue_if_removed",
+  ...)` is the working patch target. Checked by reading the import before writing
+  the test rather than by trying and debugging.
+- **`_UNANSWERABLE` in `quarantine_row.py` is
+  `(QuarantineError, ReconciliationError, PeriodError, MoneyError)`.** Anything
+  outside that tuple propagates and stops the quarantine.
+- **`routers/financial_adjudication._respond` returns `result.as_dict()` with no
+  response model,** so a new field on `RowAdjudication` reaches the interface with
+  no schema work — **and breaks any router test asserting an exact response
+  dict.** There are two, both named
+  `test_the_service_is_called_with_the_row_case_actor_and_reason`. Expect to
+  update them whenever that dataclass grows a field.
+- **`services/financial/localisation.py` has no `__all__`.** The package surface
+  comes from the import block and `__all__` in
+  `services/financial/__init__.py`, and `tests/test_financial_exports.py` checks
+  the module contributes at least one name. Confirmed again here.
 - **The bootstrap in `CLAUDE.md` cannot complete: `/sessions` has zero bytes
   free.** Install to `/dev/shm` instead and carry `PYTHONPATH`; the exact
   commands are under "What this session did". **Check `df -h /sessions` and
-  `df -h /dev/shm` before assuming either.**
+  `df -h /dev/shm` before assuming either.** Used for every run this session and
+  reliable.
 - **`PYTHONPYCACHEPREFIX` must not point at `/tmp` either.** `/tmp` is on the
   root filesystem, which is at 99% with about 120M free. Send it to `/dev/shm`.
 - **A "no logs ... triggered" failure from a loop test is a scheduling race, not
@@ -369,7 +375,7 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
   with `ENOSPC: no space left on device` **after** downloading 100%, twice, once
   per mirror, so it looks like a network problem and is not. **The free-space
   figure in this bullet was going stale every session, so it now lives in one
-  place only: the disk note under Standing flags.** As of `74d9bdf` it is zero,
+  place only: the disk note under Standing flags.** As of `35cc6be` it is zero,
   and the browser gate is unrunnable. Assume that until measured otherwise.
 - **The repo mount is a different, much larger filesystem** —
   `/sessions/<session>/mnt/owl-n4j` is 461G with 39G free — but **do not stage
@@ -569,9 +575,53 @@ New section. Read it before touching item 6's remaining half or item 8.
   file parsed; this one is about whether the stored, admitted rows add up. **Do
   not reconcile them.**
 
+### The localisation reader's own rules
+
+New at `35cc6be`. Read before anything touches `localisation.py` or the rescue
+report.
+
+- **`localisation.py` is a reader and nothing else.** It writes no column and
+  takes no decision. It turns stored rows and periods into the inputs
+  `localise` and `would_rescue` already wanted. **Do not give it a write path**;
+  anything that records a verdict belongs with the thing that owns the column.
+- **The chain is walked over `admitted` rows only,** because the residual it is
+  measured against comes from `total_transactions`, which sums admitted rows.
+  Walking a wider population would prove something about a set nobody is looking
+  at. **Consequence: the localisation answer moves when a row is quarantined,
+  and that is correct.**
+- **The identity is recomputed on every call, never read off
+  `period.reconciliation_status`.** That column holds whatever the last sweep
+  wrote, and on a live case it is usually `not_attempted`, because nothing calls
+  the sweep automatically. A reader that trusted it would report against
+  arithmetic from another moment or against none at all.
+- **Removing the row whose amount equals the residual makes the period balance by
+  arithmetic necessity.** This is true whatever the row was and whatever the
+  grounds were, so **the balance is not evidence.** Never build anything that
+  treats a post-quarantine balance as confirmation that the quarantine was right.
+- **The report refuses nothing and warns about nothing.** It states what happened
+  so the grounds and the effect can be weighed together. There is a named test
+  holding the write path to not refusing a quarantine that rescues a period.
+- **`rescues_period` is three-valued and `None` is meaningful.** `True`/`False`
+  are findings; `None` means no finding was reached, by one of four routes: no
+  period on the row, an unanswerable check, a refused quarantine, or a release.
+  **Anything rendering it must distinguish "does not balance" from "no answer".**
+- **An unanswerable check never blocks the write.** `_rescue` catches
+  `_UNANSWERABLE`, logs with `logger.exception` and returns `(None, None)`. The
+  quarantine still happens; the question is recorded as unanswered.
+- **The rescue sentence is returned, not logged.** See the authorship rule in the
+  quarantine section immediately below — this is the same rule and it is the one
+  most likely to be broken by a well-meaning change.
+
 ### The quarantine subsystem's own rules
 
 Read it before touching anything in item 6's remaining half.
+
+- **A machine observation must never be merged into a string attributed to a
+  person.** `QuarantineBasis.from_adjudication` stores its detail as
+  `"<actor>: <reason>"`. Appending the rescue sentence to `reason` would produce
+  a log entry in which the person appears to have written words nobody wrote.
+  **An evidence log cannot do that.** There is a test asserting the stored reason
+  is exactly what the person typed, prefixed only by their name.
 
 - **Grounds are a proof or a person, and nothing else.** `QuarantineBasis` has
   three constructors and **none of them takes a `Candidate`**, by design. A
@@ -640,9 +690,10 @@ Read it before touching anything in item 6's remaining half.
 - **Ordering runs needs the secondary sort on `id`.** `started_at` alone is not
   a total order. Same rule now applies to ordering periods.
 
-### And on the frontend, as of `dfcef2b`
+### And on the frontend, as of `35cc6be`
 
-Unchanged from `bc23570`; no frontend file has been touched for three sessions.
+Unchanged from `bc23570`; no frontend file has been touched for four sessions.
+The next unit changes that: the quarantine screen is frontend work.
 
 - **`readRunStatus(raw).needsAttention`** is true for `pending`, `running`,
   `failed`, `aborted`, and **false for an unrecognised status**, deliberately,
@@ -689,32 +740,38 @@ turns out to depend on something later in the list, stop and ask.
   ingest endpoint ✅ `43f8358`, the interface action on a held file ✅ `17d94ac`,
   mount the ledger ✅ `4324b24`.
 - **Phase 2, make the rows trustworthy** — runs ✅ item 5 complete (backend
-  `cde43c5`, notice `8924668`, attempts list `bc23570`); quarantine **half done**
-  (write path `150084a`); reconciliation ✅ item 7 (`dfcef2b`). Then adjudication
-  and proof class, duplicates, suspect amounts, locators.
+  `cde43c5`, notice `8924668`, attempts list `bc23570`); quarantine item 6
+  **backend complete, screen remaining** (write path `150084a`, localisation
+  reader and rescue reporting `35cc6be`); reconciliation ✅ item 7 (`dfcef2b`).
+  Then adjudication and proof class, duplicates, suspect amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-### Next unit: item 6's remaining half. Its blocker is now cleared.
+### Next unit: the quarantine screen, item 6's last piece
 
-The previous state file recorded that both remaining pieces of item 6 needed
-something item 7 produces. **Item 7 has landed, so that dependency is
-satisfied** and the work is unblocked:
+**The backend is done and nothing blocks the screen.** Start it directly.
 
-- **`would_rescue`** and **`QuarantineBasis.from_proof` reached through
-  `localise`** both take an `IdentityOutcome`. `IdentityOutcome` is produced by
-  `reconcile.evaluate_identity`, which is now driven across a case by
-  `reconcile_case` and exposed on two endpoints. Nothing further is needed from a
-  later item.
-- **The quarantine screen.** It has had a population to draw since `150084a`, and
-  its most important column — why a row is held, and whether the arithmetic or a
-  person held it — now has two values to distinguish, because computed grounds
-  become reachable once `from_proof` is wired.
+What it has to show, and why each thing is on the list:
 
-**Take `would_rescue` and `from_proof` first and the screen second,** in that
-order, and treat them as one unit unless the session runs short. The screen's
-column is only worth building once there is something in the second value.
+- **The quarantined population**, which has existed since `150084a` and is still
+  reachable only through the API. **The ledger tab's own totals silently exclude
+  it,** so today a row can be set aside and leave no trace on screen.
+- **Why a row is held.** `quarantine_reason` distinguishes computed grounds from
+  `adjudicated`, and this is the column that matters most: an arithmetic proof
+  and a person's opinion must not look alike.
+- **`rescues_period`, three-valued.** See the localisation rules above. The
+  interface has to distinguish `False` from `None`, and this is the **only**
+  place the rescue fact currently surfaces, because it is deliberately not in the
+  log. If the screen drops it, the fact is lost entirely.
+
+**One open question the screen unit should settle first, and it is a small one.**
+`from_proof` is reachable from the reader now, but **no production path calls
+it** — computed grounds are still unreachable from HTTP by design, so on a live
+case every quarantined row reads `adjudicated`. Decide whether the screen ships
+the two-value column anyway (recommended: yes, it is correct and costs nothing,
+and the second value arrives with item 8) or waits. **Do not raise this with
+Neil**; it is settled by the recommendation unless something contradicts it.
 
 ### The screen question, settled by reading the source
 
@@ -765,6 +822,32 @@ the direction the build takes by default, so a session can proceed without a
 conversation. Each one also says exactly what evidence or instruction would
 reverse it. Raise one with Neil only when the unit in front of you actually
 turns on it, and then raise it oriented and with a recommendation.
+
+**New: the rescue sentence travels in the response and is not written into the
+adjudication log.** `QuarantineBasis.from_adjudication` stores its detail as
+`"<actor>: <reason>"`, so anything appended to the reason is read afterwards as
+words the person wrote. A machine observation attributed to a person is the one
+thing an evidence log must not contain, and that outweighs durability here.
+**The cost is stated plainly: the fact is on screen at the moment of the decision
+and does not survive in the record.** **What would reverse it:** a durable home
+for the observation that is neither the person's reason nor the row's
+`before`/`after` columns — a third field on the adjudication event, which is a
+change to `quarantine_transaction` and a schema change, not a change to this call
+site. Worth doing when item 8 touches the adjudication log anyway.
+
+**New: the rescue check is asked of every quarantine, not only suspicious ones.**
+Whether a removal is legitimate is not visible in the arithmetic — a row proved
+wrong by the statement's own chain *should* come out and the period *should* then
+balance. So the check cannot be used as a filter and is not one. **What would
+reverse it:** nothing short of a demonstrated performance problem, and the check
+is one pass over a period's admitted rows.
+
+**New: the check runs before the write, inside the same `try`.** Afterwards the
+residual has already moved, and recovering it would mean adding the row's own
+effect back onto the new figure — a reconstruction rather than an observation,
+and wrong the moment anything else about the period changed in between. Being
+inside the same block means a database fault reading the period is handled by the
+same clause as a fault writing the row. **What would reverse it:** nothing.
 
 **New: reconciliation is a fourth financial router rather than a route on an
 existing one.** Decided by reading the two neighbours' docstrings.
@@ -907,6 +990,20 @@ before item 12 lands.
   the quarantine population is reachable only via
   `GET /api/financial/ledger?ledger_status=quarantined`, and **the ledger tab's
   own totals silently exclude it**.
+- **The write path now reports when a quarantine is what makes a statement
+  balance, and nothing displays it.** `rescues_period` and its sentence come back
+  on the quarantine response and are dropped on the floor, because no caller
+  exists. **This is the strongest single reason the screen is the next unit:**
+  the fact is deliberately not stored in the log, so if it is not on screen at
+  the moment of the decision it is not anywhere.
+- **`QuarantineBasis.from_proof` is still unreachable from HTTP,** by design —
+  computed grounds must not be settable by a person. So on a live case every
+  quarantined row's reason reads `adjudicated`, and the second value in that
+  column arrives with item 8. **Do not read the single value as evidence the
+  distinction is not implemented.**
+- **`localisation.py` has no production caller except `_rescue`.**
+  `localise_period` and `current_identity` are reachable and tested but nothing
+  in the product asks them anything yet. Item 8 is the expected first caller.
 - **The Neo4j financial view is not a projection of the ledger.**
   `projection.py` has zero production callers. The two stores can disagree and
   nothing detects it. Phase 3 item 12 closes this. **Do not describe the graph
@@ -935,12 +1032,13 @@ before item 12 lands.
 - **The alembic migration `20260902_evidence_table_geometry` has not been
   applied to any real database from a session** — the sandbox has no Postgres.
   First deployment needs an `alembic upgrade head` on Neil's side.
-- **Disk: `/sessions` is now completely full and this is the first thing to
-  check every session.** 9.8G of 9.8G, **zero bytes free**, against 129M last
-  session and 291M the one before. Root is at 99% with about 120M free. The
-  trend has been one direction for three sessions.
+- **Disk: `/sessions` is completely full and this is the first thing to check
+  every session.** Measured again at `35cc6be`: 9.8G of 9.8G, **zero bytes
+  free** — unchanged from last session, against 129M two sessions ago and 291M
+  three. Root is at 99% with 121M free. `/dev/shm` is 2.0G with 1.8G free.
   - **The backend suite is still runnable** via the `/dev/shm` bootstrap
-    recorded above. That is the workaround and it is reliable.
+    recorded above. That is the workaround, it is reliable, and it was used for
+    every run of this session, including the full-suite runs.
   - **The browser gate is not runnable and will not become runnable.** Chromium
     needs roughly 700M to install and there is nowhere to put it: `/dev/shm` is
     2.0G but is RAM, and spending most of it on browser binaries to run four
