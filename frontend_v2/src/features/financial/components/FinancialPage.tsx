@@ -1,16 +1,20 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { useParams } from "react-router-dom"
 import {
   BarChart3,
   DollarSign,
   Rows3,
+  ScrollText,
   Users,
 } from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useFinancialStore } from "../stores/financial.store"
+import {
+  useFinancialStore,
+  type FinancialMainView,
+} from "../stores/financial.store"
 import {
   useTransactions,
   useFinancialEntities,
@@ -35,6 +39,7 @@ import { EntityFlowTables } from "./EntityFlowTables"
 import { BulkActionsBar } from "./BulkActionsBar"
 import { TransactionTable } from "./TransactionTable"
 import { FinancialCharts } from "./FinancialCharts"
+import { LedgerPanel } from "./LedgerPanel"
 import { BulkCategorizeDialog } from "./BulkCategorizeDialog"
 import { CategoryManagementDialog } from "./CategoryManagementDialog"
 import { SubTransactionDialog } from "./SubTransactionDialog"
@@ -312,38 +317,30 @@ export function FinancialPage() {
     selectedBeneficiaries,
   ])
 
-  if (isLoading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
-  }
-
-  if (!transactions.length) {
-    return (
-      <EmptyState
-        icon={DollarSign}
-        title={
-          isTransactionsMode
-            ? "No documentary transactions"
-            : "No financial intelligence"
-        }
-        description={
-          isTransactionsMode
-            ? "Process evidence with documentary financial records to populate this view"
-            : "Process evidence with financial signals, valuations, or alleged totals to populate this view"
-        }
-      />
-    )
-  }
-
   const subTransactions = subTxParent
     ? transactions.filter((t) => t.parent_transaction_key === subTxParent.key)
     : []
 
-  return (
-    <div className="flex h-full flex-col bg-background">
+  /**
+   * Four pieces of chrome, all of which describe the Neo4j graph and only the
+   * graph. The toolbar counts graph rows against graph rows, the banner is
+   * about the graph dataset model, the filter panel offers graph categories
+   * and graph entities, and the summary cards total graph transactions.
+   *
+   * They used to sit above the tab strip, where they would now also sit above
+   * the ledger table. A row of counts and totals that does not describe the
+   * table underneath it is the same failure the standing rule about corrected
+   * values exists to prevent: a number on screen that looks like it is about
+   * what you are reading and is not. So they render inside the graph tabs and
+   * nowhere else, which also leaves each of the four describing exactly one
+   * store, with none of them having to know which store is on screen.
+   *
+   * Reusing one element in three places creates three instances in the tree,
+   * and Radix mounts only the active tab's content, so exactly one is ever
+   * live.
+   */
+  const graphChrome = (
+    <>
       <FinancialToolbar
         mode={store.mode}
         filteredCount={filteredCount}
@@ -372,16 +369,72 @@ export function FinancialPage() {
         transactions={filteredTransactions}
         mode={store.mode}
       />
+    </>
+  )
 
+  /**
+   * The in-flight and no-rows states belong to the graph query, and they used
+   * to return from the whole page — which put them above the tab strip and
+   * meant the tab strip did not exist until the graph had rows.
+   *
+   * A case that has just had a bank file sent to the ledger is in exactly that
+   * position: ledger rows, no graph. The old arrangement hid the ledger tab
+   * precisely when the ledger had something to show. Both states guard the
+   * graph tabs' own content now, and the ledger tab is reachable regardless of
+   * what the graph query returned. `LedgerPanel` owns its own no-case,
+   * in-flight, failed and empty states, so nothing here has to stand in for
+   * them.
+   */
+  const graphTab = (content: ReactNode) => {
+    if (isLoading) {
+      return (
+        <div className="flex flex-1 items-center justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
+      )
+    }
+
+    if (!transactions.length) {
+      return (
+        <div className="flex flex-1 items-center justify-center p-4">
+          <EmptyState
+            icon={DollarSign}
+            title={
+              isTransactionsMode
+                ? "No documentary transactions"
+                : "No financial intelligence"
+            }
+            description={
+              isTransactionsMode
+                ? "Process evidence with documentary financial records to populate this view"
+                : "Process evidence with financial signals, valuations, or alleged totals to populate this view"
+            }
+          />
+        </div>
+      )
+    }
+
+    return (
+      <>
+        {graphChrome}
+        {content}
+      </>
+    )
+  }
+
+  return (
+    <div className="flex h-full flex-col bg-background">
       <Tabs
         value={store.mainView}
-        onValueChange={(value) =>
-          store.setMainView(value as "transactions" | "counterparties" | "trends")
-        }
+        onValueChange={(value) => store.setMainView(value as FinancialMainView)}
         className="flex min-h-0 flex-1 flex-col"
       >
         <div className="border-b border-border bg-card px-4">
           <TabsList variant="line" className="h-10">
+            <TabsTrigger value="ledger" data-testid="financial-tab-ledger">
+              <ScrollText className="size-3.5" />
+              Ledger
+            </TabsTrigger>
             <TabsTrigger value="transactions">
               <Rows3 className="size-3.5" />
               Transactions
@@ -397,123 +450,150 @@ export function FinancialPage() {
           </TabsList>
         </div>
 
-        <TabsContent value="transactions" className="flex min-h-0 flex-1 flex-col">
-          {isTransactionsMode && (
-            <BulkActionsBar
-              onBulkCategorize={() => setBulkCategorizeOpen(true)}
-              onBulkSetFrom={handleBulkSetFrom}
-              onBulkSetTo={handleBulkSetTo}
-            />
-          )}
-
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex-1 overflow-auto">
-              <ErrorBoundary level="section">
-                <TransactionTable
-                  mode={store.mode}
-                  transactions={pageTransactions}
-                  allTransactions={filteredTransactions}
-                  categories={categories}
-                  sortColumns={store.sortColumns}
-                  onCategorize={handleCategorize}
-                  onAmountClick={handleAmountClick}
-                  onEntityEdit={handleEntityEdit}
-                  onGroupSubTransactions={handleGroupSubTransactions}
-                  onRemoveFromGroup={handleRemoveFromGroup}
-                  onSaveDetails={handleSaveDetails}
-                />
-              </ErrorBoundary>
-            </div>
-
-            <TablePagination
-              currentPage={store.currentPage}
-              pageCount={pageCount}
-              pageSize={store.pageSize}
-              filteredCount={filteredCount}
-              onPageChange={store.setCurrentPage}
-              onPageSizeChange={store.setPageSize}
-            />
+        {/*
+          The ledger tab reads Postgres and shares nothing with the three graph
+          tabs: not the query, not the filters, not the counts. It deliberately
+          takes none of the graph chrome and is not gated on the graph query,
+          so a case with ledger rows and no graph opens here and shows them.
+        */}
+        <TabsContent value="ledger" className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-auto p-4">
+            <ErrorBoundary level="section">
+              <LedgerPanel caseId={caseId} />
+            </ErrorBoundary>
           </div>
         </TabsContent>
 
+        <TabsContent value="transactions" className="flex min-h-0 flex-1 flex-col">
+          {graphTab(
+            <>
+              {isTransactionsMode && (
+                <BulkActionsBar
+                  onBulkCategorize={() => setBulkCategorizeOpen(true)}
+                  onBulkSetFrom={handleBulkSetFrom}
+                  onBulkSetTo={handleBulkSetTo}
+                />
+              )}
+
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="flex-1 overflow-auto">
+                  <ErrorBoundary level="section">
+                    <TransactionTable
+                      mode={store.mode}
+                      transactions={pageTransactions}
+                      allTransactions={filteredTransactions}
+                      categories={categories}
+                      sortColumns={store.sortColumns}
+                      onCategorize={handleCategorize}
+                      onAmountClick={handleAmountClick}
+                      onEntityEdit={handleEntityEdit}
+                      onGroupSubTransactions={handleGroupSubTransactions}
+                      onRemoveFromGroup={handleRemoveFromGroup}
+                      onSaveDetails={handleSaveDetails}
+                    />
+                  </ErrorBoundary>
+                </div>
+
+                <TablePagination
+                  currentPage={store.currentPage}
+                  pageCount={pageCount}
+                  pageSize={store.pageSize}
+                  filteredCount={filteredCount}
+                  onPageChange={store.setCurrentPage}
+                  onPageSizeChange={store.setPageSize}
+                />
+              </div>
+            </>
+          )}
+        </TabsContent>
+
         <TabsContent value="counterparties" className="flex min-h-0 flex-1 flex-col">
-          {!isTransactionsMode ? (
-            <div className="flex flex-1 items-center justify-center p-4">
-              <EmptyState
-                icon={Users}
-                title="Counterparty analysis is only available for transactions"
-                description="Switch to documentary transactions mode to explore sender and beneficiary relationships."
-              />
-            </div>
-          ) : baseFilteredTransactions.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center p-4">
-              <EmptyState
-                icon={Users}
-                title="No counterparties match the current filters"
-                description="Adjust the active search, category, date, entity, or amount filters to populate the sender and beneficiary analysis."
-              />
-            </div>
-          ) : (
-            <div className="min-h-0 flex-1 overflow-hidden p-4">
-              <EntityFlowTables
-                className="h-full"
-                senders={senderRows}
-                beneficiaries={beneficiaryRows}
-                selectedSenders={selectedSenders}
-                selectedBeneficiaries={selectedBeneficiaries}
-                onSelectedSendersChange={handleSelectedSendersChange}
-                onSelectedBeneficiariesChange={handleSelectedBeneficiariesChange}
-              />
-            </div>
+          {graphTab(
+            !isTransactionsMode ? (
+              <div className="flex flex-1 items-center justify-center p-4">
+                <EmptyState
+                  icon={Users}
+                  title="Counterparty analysis is only available for transactions"
+                  description="Switch to documentary transactions mode to explore sender and beneficiary relationships."
+                />
+              </div>
+            ) : baseFilteredTransactions.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center p-4">
+                <EmptyState
+                  icon={Users}
+                  title="No counterparties match the current filters"
+                  description="Adjust the active search, category, date, entity, or amount filters to populate the sender and beneficiary analysis."
+                />
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-hidden p-4">
+                <EntityFlowTables
+                  className="h-full"
+                  senders={senderRows}
+                  beneficiaries={beneficiaryRows}
+                  selectedSenders={selectedSenders}
+                  selectedBeneficiaries={selectedBeneficiaries}
+                  onSelectedSendersChange={handleSelectedSendersChange}
+                  onSelectedBeneficiariesChange={handleSelectedBeneficiariesChange}
+                />
+              </div>
+            )
           )}
         </TabsContent>
 
         <TabsContent value="trends" className="flex min-h-0 flex-1 flex-col">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold">Trends</h2>
-              <p className="text-xs text-muted-foreground">
-                Full-width volume and category views for the current filtered set.
-              </p>
-            </div>
-            <div className="flex items-center rounded-md border border-border p-0.5">
-              {(["auto", "daily", "weekly", "monthly"] as const).map((grouping) => (
-                <button
-                  key={grouping}
-                  className={`rounded px-2 py-1 text-xs transition ${
-                    store.chartGrouping === grouping
-                      ? "bg-secondary text-secondary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  onClick={() => store.setChartGrouping(grouping)}
-                >
-                  {grouping === "auto"
-                    ? "Auto"
-                    : grouping.charAt(0).toUpperCase() + grouping.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-auto p-4">
-            {filteredTransactions.length === 0 ? (
-              <div className="flex h-full items-center justify-center">
-                <EmptyState
-                  icon={BarChart3}
-                  title="No trend data matches the current filters"
-                  description="Adjust the active filters to restore chart data."
-                />
+          {graphTab(
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Trends</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Full-width volume and category views for the current filtered
+                    set.
+                  </p>
+                </div>
+                <div className="flex items-center rounded-md border border-border p-0.5">
+                  {(["auto", "daily", "weekly", "monthly"] as const).map(
+                    (grouping) => (
+                      <button
+                        key={grouping}
+                        className={`rounded px-2 py-1 text-xs transition ${
+                          store.chartGrouping === grouping
+                            ? "bg-secondary text-secondary-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                        onClick={() => store.setChartGrouping(grouping)}
+                      >
+                        {grouping === "auto"
+                          ? "Auto"
+                          : grouping.charAt(0).toUpperCase() + grouping.slice(1)}
+                      </button>
+                    )
+                  )}
+                </div>
               </div>
-            ) : (
-              <ErrorBoundary level="section">
-                <FinancialCharts
-                  transactions={filteredTransactions}
-                  categories={categories}
-                  groupingOverride={store.chartGrouping}
-                />
-              </ErrorBoundary>
-            )}
-          </div>
+
+              <div className="min-h-0 flex-1 overflow-auto p-4">
+                {filteredTransactions.length === 0 ? (
+                  <div className="flex h-full items-center justify-center">
+                    <EmptyState
+                      icon={BarChart3}
+                      title="No trend data matches the current filters"
+                      description="Adjust the active filters to restore chart data."
+                    />
+                  </div>
+                ) : (
+                  <ErrorBoundary level="section">
+                    <FinancialCharts
+                      transactions={filteredTransactions}
+                      categories={categories}
+                      groupingOverride={store.chartGrouping}
+                    />
+                  </ErrorBoundary>
+                )}
+              </div>
+            </>
+          )}
         </TabsContent>
       </Tabs>
 

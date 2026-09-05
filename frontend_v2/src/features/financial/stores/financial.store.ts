@@ -7,7 +7,19 @@ export interface SortColumn {
   asc: boolean
 }
 
-export type FinancialMainView = "transactions" | "counterparties" | "trends"
+/**
+ * The tab in front of you on the financial page, and nothing wider than that.
+ *
+ * `ledger` reads the relational ledger in Postgres. The other three read the
+ * Neo4j graph. The two stores are written independently and can disagree, so
+ * which one is on screen is a fact about what you are looking at, not a
+ * presentation choice.
+ */
+export type FinancialMainView =
+  | "ledger"
+  | "transactions"
+  | "counterparties"
+  | "trends"
 export type ChartGroupingOption = "auto" | "daily" | "weekly" | "monthly"
 
 interface FinancialStoreState {
@@ -99,7 +111,7 @@ const initialState: FinancialStoreState = {
   checkedKeys: new Set<string>(),
   lastClickedKey: null,
   filterPanelOpen: true,
-  mainView: "transactions",
+  mainView: "ledger",
   chartGrouping: "auto",
   expandedRowKeys: new Set<string>(),
 }
@@ -220,14 +232,37 @@ export const useFinancialStore = create<FinancialStore>()(
     }),
     {
       name: "owl-financial-store",
+      /**
+       * `mainView` is deliberately not written. The financial page opens on
+       * the ledger every time, so which tab you were last on is not carried
+       * between visits.
+       */
       partialize: (state) => ({
         mode: state.mode,
         sortColumns: state.sortColumns,
         pageSize: state.pageSize,
         filterPanelOpen: state.filterPanelOpen,
-        mainView: state.mainView,
         chartGrouping: state.chartGrouping,
       }),
+      /**
+       * Leaving `mainView` out of `partialize` stops it being written but not
+       * being read. Any browser that opened this page before the ledger tab
+       * existed still has `"transactions"` sitting in `owl-financial-store`,
+       * and the default merge lays the stored object over the initial state —
+       * so without this, every existing user would keep landing on the graph
+       * and the ledger would be the opening view for nobody who already uses
+       * the system.
+       *
+       * The stored value is discarded on read rather than migrated away once,
+       * because a discard holds for a blob of any age and cannot be undone by
+       * one an older build writes later. There is no version to keep in step
+       * and no migration that can be skipped.
+       */
+      merge: (persisted, current) => {
+        const stored = { ...(persisted as Partial<FinancialStoreState> | null) }
+        delete stored.mainView
+        return { ...current, ...stored }
+      },
       storage: {
         getItem: (name) => {
           const str = localStorage.getItem(name)
