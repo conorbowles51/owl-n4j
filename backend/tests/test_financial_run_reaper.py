@@ -58,6 +58,30 @@ LONG_INTERVAL = timedelta(seconds=30)
 TIGHT_INTERVAL = timedelta(milliseconds=1)
 
 
+class _TailWatchingLogger:
+    """The module logger, plus a signal when the error handler has spoken.
+
+    Stands in for ``run_reaper.logger`` for the duration of a harnessed sweep.
+    Every call is forwarded to the real logger object rather than to a
+    look-alike, so ``assertLogs`` and ``assertNoLogs`` — which install their
+    handler on the logger of that name — still see every record.  The one
+    addition is that ``exception`` reports back, because that call is how an
+    iteration ends when the sweep raised, and the harness has to know an
+    iteration ended before it cancels the loop.
+    """
+
+    def __init__(self, wrapped, on_exception):
+        self._wrapped = wrapped
+        self._on_exception = on_exception
+
+    def __getattr__(self, name):
+        return getattr(self._wrapped, name)
+
+    def exception(self, *args, **kwargs):
+        self._wrapped.exception(*args, **kwargs)
+        self._on_exception()
+
+
 class ReaperLoopTestCase(unittest.IsolatedAsyncioTestCase):
     """A database on disk, and a way to watch the loop sweep it.
 
@@ -181,13 +205,41 @@ class ReaperLoopTestCase(unittest.IsolatedAsyncioTestCase):
 
         The spy executes on a worker thread, so the event that releases the test
         is set through the loop rather than directly.
+
+        Counting sweeps is not on its own enough to know an iteration is over.
+        The sweep runs through ``asyncio.to_thread``, and everything the loop
+        says about it — the warning ``_report`` writes, the traceback the error
+        handler logs — happens back on the event loop *after* the worker thread
+        has returned.  Releasing the test when the spy returns therefore races
+        the very lines these tests assert on, and cancelling the task wins that
+        race often enough to fail.  So the release is in two parts: the spy says
+        a sweep ran, and then the loop-side tail of that iteration is waited for
+        as well.  Every iteration ends in exactly one of those two calls, which
+        is what makes the second wait terminate rather than pad.
         """
         loop = asyncio.get_running_loop()
         real = run_reaper.reap_stale_runs
+        real_report = run_reaper._report
+        real_logger = run_reaper.logger
+
         calls: list[dict] = []
         enough = asyncio.Event()
+        finished = asyncio.Event()
+        completed = 0
+        wanted: int | None = None
+
+        def iteration_finished():
+            """Called on the event loop at the end of one pass of the loop."""
+            nonlocal completed
+            completed += 1
+            finished.set()
+
+        def report_spy(reaped, older_than_):
+            real_report(reaped, older_than_)
+            iteration_finished()
 
         def spy(**kwargs):
+            nonlocal wanted
             index = len(calls)
             calls.append({**kwargs, "thread": threading.current_thread()})
             try:
@@ -195,10 +247,15 @@ class ReaperLoopTestCase(unittest.IsolatedAsyncioTestCase):
                     return behaviour(index, kwargs)
                 return real(**kwargs)
             finally:
-                if len(calls) >= times:
+                if len(calls) >= times and wanted is None:
+                    # Read back on the event loop; the hand-off below is what
+                    # publishes it there.
+                    wanted = len(calls)
                     loop.call_soon_threadsafe(enough.set)
 
         run_reaper.reap_stale_runs = spy
+        run_reaper._report = report_spy
+        run_reaper.logger = _TailWatchingLogger(real_logger, iteration_finished)
         task = asyncio.create_task(
             reap_stale_runs_forever(
                 older_than=older_than,
@@ -208,8 +265,13 @@ class ReaperLoopTestCase(unittest.IsolatedAsyncioTestCase):
         )
         try:
             await asyncio.wait_for(enough.wait(), timeout=10)
+            while completed < wanted:
+                finished.clear()
+                await asyncio.wait_for(finished.wait(), timeout=10)
         finally:
             run_reaper.reap_stale_runs = real
+            run_reaper._report = real_report
+            run_reaper.logger = real_logger
             task.cancel()
             with self.assertRaises(asyncio.CancelledError):
                 await task
