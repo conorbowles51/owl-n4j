@@ -192,6 +192,14 @@ from services.financial.dates import (
     read_row_date,
     survey_row_dates,
 )
+from services.financial.decision_log import (
+    DEFAULT_DECISION_LIMIT,
+    MAX_DECISION_LIMIT,
+    DecisionLogError,
+    DecisionPage,
+    DecisionRecord,
+    list_case_decisions,
+)
 from services.financial.decisions import (
     Actor,
     DecisionError,
@@ -1011,6 +1019,16 @@ __all__ = [
     "check_row_date",
     "read_row_date",
     "survey_row_dates",
+    # Reading the log back out, scoped to one matter.  The writer below has
+    # existed since the log stopped recording only dispositions; until this
+    # there was no reader at all, and `history` cannot be one because it
+    # filters on a subject and never on a case.
+    "DEFAULT_DECISION_LIMIT",
+    "MAX_DECISION_LIMIT",
+    "DecisionLogError",
+    "DecisionPage",
+    "DecisionRecord",
+    "list_case_decisions",
     # Decisions, appended before the state they describe changes
     "Actor",
     "DecisionError",
