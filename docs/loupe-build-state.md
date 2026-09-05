@@ -3,17 +3,17 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 5 September 2026 (records the attempts list, `bc23570`, which
-closes Phase 2 item 5)
+**Last updated:** 5 September 2026 (records the quarantine write path, `150084a`,
+which closes the first half of Phase 2 item 6)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `bc23570`
-  (`bc2357067b5667316f9ec9c090e457947e6c9f2f`), "Show every attempt to load the
-  ledger, not only the ones that broke", parent `801b928`.
+- **Head when this was written:** `150084a`
+  (`150084ab154d6eb5adc624cda78a5f4f9a18010b`), "Financial: adjudicated
+  quarantine and release for one stored ledger row", parent `8aef23d`.
   **Confirm the real tip with `git log --oneline -5`** at the start of every
   session rather than trusting this line — the state-file commit that follows
   this one will already have moved it.
@@ -32,265 +32,237 @@ Still untracked and still un-removable from a session (workspace denies
 - `backend/services/financial/export_manifest.py.bak`
 - `backend/services/financial_export_service.py.bak`
 - `frontend_v2/src/__probe.test.ts` — a diagnostic left by the vitest
-  investigation eight sessions ago. It is **counted in the frontend baseline
+  investigation nine sessions ago. It is **counted in the frontend baseline
   below** (it contributes 1 file and 1 test), so when it is deleted the unit
   numbers drop by one each and that is expected, not a regression.
 
-Also untracked, and **not** mine — Neil's own documents, left alone:
-`docs/IP_Protection_Strategy.docx`, `docs/ip-protection-strategy.md`,
-`docs/owl-project-brief.md`.
+Also untracked, and **not** mine — Neil's own documents and case material, left
+alone. `docs/IP_Protection_Strategy.docx`, `docs/ip-protection-strategy.md`,
+`docs/owl-project-brief.md`, and a large amount of Cellebrite and bundle
+material at the repo root. **Do not delete any of it to free disk;** see the
+disk note under Standing flags.
 
 ### Scale
 
-**100 commits** since `c4246c0` (27 August), counting `bc23570`; 101 once the
+**102 commits** since `c4246c0` (27 August), counting `150084a`; 103 once the
 state-file commit lands on top of it. Counted with
-`git rev-list --count c4246c0..HEAD`, not estimated — the figure carried here
-before this session was three low.
+`git rev-list --count c4246c0..HEAD`.
 
-`backend/services/financial/` **48 modules**;
-`backend/tests/test_financial_*.py` **52 files**, **3,201 tests**.
+`backend/services/financial/` **48 modules** excluding `__init__.py`;
+`backend/tests/test_financial_*.py` **54 files**, **3,241 tests**.
 
-### Gate baselines as of `bc23570`
+### Gate baselines as of `150084a`
 
-- **Backend financial suite: `Ran 3201 tests, OK (skipped=12)`.** Unchanged and
-  **not re-run this session** — no backend file was touched. **There are no
-  expected failures.**
-- **Frontend unit: 67 files, 494 tests, all passing.** Up from 65/457. The delta
-  is two new test files and four new tests in an existing one: 20 in
-  `components/IngestionRunsTable.test.tsx`, 13 in
-  `components/IngestionRunsPanel.test.tsx`, 4 added to
-  `components/FinancialPage.test.tsx`. 494 includes the stray probe test.
-- **Frontend browser: 2 files, 4 tests — run and green,** after installing
-  chromium, which is a per-session step. **`CLAUDE.md` now carries the corrected
-  frontend gate commands**; use them as written.
-- **`tsc -b --force` returns 0. `eslint .` returns 0.**
+- **Backend financial suite: `Ran 3241 tests, OK (skipped=12)`.** Up from 3201 by
+  exactly the 40 added this session (27 + 13). **There are no expected
+  failures.**
+- **Frontend unit: 67 files, 494 tests, all passing.** Unchanged; no frontend
+  file was touched this session. 494 includes the stray probe test.
+- **`tsc -b --force` returns 0. `eslint .` returns 0.** Both re-run this session.
+- **Frontend browser: NOT RUN this session, and it could not be.** See the disk
+  note below. The last known-good figure is 2 files, 4 tests. No frontend file
+  changed, so the risk of skipping it here is nil, but **do not carry "browser
+  green" forward as though it were verified at this head.**
 
 **One traceback on stderr during the backend run is expected and is not a
 failure.** A `sqlite3.IntegrityError: UNIQUE constraint failed:
-financial_transactions.case_id, financial_transactions.ref_id` prints mid-run.
-`tests/test_financial_native_ingest_file.py` ingests the same file twice on
-purpose; `native_ingest_file.py:376` catches `SQLAlchemyError`, logs it with
-`logger.exception` — which is what puts the traceback on screen — and returns
-`write_failed`. **Do not spend a session chasing it.**
+financial_transactions.case_id, financial_transactions.ref_id` prints mid-run
+from `tests/test_financial_native_ingest_file.py`, which ingests the same file
+twice on purpose. **This session adds two more of the same kind:**
+`test_financial_quarantine_row.py` injects a `SQLAlchemyError("connection
+lost")` into each writer to exercise the `write_failed` path, and
+`quarantine_row.py` logs it with `logger.exception`, so two more tracebacks now
+print. All three are the code working. **Do not spend a session chasing them.**
 
 ---
 
 ## What this session did
 
-**Phase 2 item 5 is now closed.** Neil's ruling two sessions ago was **"Both, in
-two commits"** — a short notice, then the full history of attempts, one commit
-each.
+**Phase 2 item 6, quarantine — the write half, landed as `150084a`.** Seven
+files, 1,668 insertions, no deletions.
 
-- `8924668` — the notice. Landed last session.
-- `bc23570` — **the attempts list.** Seven files, 996 insertions, 7 deletions.
-  Landed. **Item 5 is complete.**
+### The finding that decided the shape of the unit
 
-### What landed this commit
+**The wiring plan's premise for item 6 is factually wrong, and the source says
+so plainly.** The plan says quarantined rows are written today and never shown,
+which implies the missing piece is a screen. It is not.
 
-- **`components/IngestionRunsTable.tsx`** (203 lines, new). Presentational only,
-  fetches nothing. Six columns: Attempt, Started, Ended, Documents seen, Rows
-  admitted, Rows set aside.
-- **`components/IngestionRunsTable.test.tsx`** (283 lines, 20 tests, new).
-  Nothing mocked; the formatters are left real so the words asserted are the
-  words a reader sees.
-- **`components/IngestionRunsPanel.tsx`** (118 lines, new). The fetching half.
-  Four states before a table can be drawn, then the summary line, then the
-  table.
-- **`components/IngestionRunsPanel.test.tsx`** (249 lines, 13 tests, new). Mocks
-  the hook rather than the network, because what is under test is the panel's
-  reading of a query result. `IngestionRunsTable` is left real, so a state that
-  should not reach the table can be shown not to.
-- **`stores/financial.store.ts`** (+9). `"runs"` added to `FinancialMainView`,
-  second in the union, with the reason recorded in a docstring.
-- **`components/FinancialPage.tsx`** (+28). The import, the trigger and the
-  content, each with a comment saying why it sits where it does.
-- **`components/FinancialPage.test.tsx`** (+106, −7). Four new tests, the tab
-  strip assertions widened from four to five, and a missing mock added — see the
-  defect below.
+**Nothing in production ever sets `ledger_status` to `'quarantined'`.**
+`quarantine_transaction` and `release_transaction` have existed in
+`services/financial/quarantine.py`, fully tested, since they were written, and
+**no caller anywhere reaches either of them.** So the population a quarantine
+screen would list is empty, and would have stayed empty however well the screen
+was built. The screen was not what was missing. A way for a person to put a row
+into that state was.
 
-### What the attempts list does and refuses to do
+That is why this session built the write path and not the screen, and it is not
+a resequencing of the plan: item 6 is still item 6, and its remaining half is
+described under Build order below.
 
-The notice above the ledger is a warning and stays quiet by default. This screen
-is the opposite: its job is to show everything, so every silence the notice keeps
-had to be broken deliberately here.
+### What landed
 
-- **It draws every attempt it is handed, the ones that finished included.** The
-  read is not narrowed to failures and must not become so. A test hands the panel
-  a mixed `completed`/`failed`/`running` list and asserts all three rows come
-  out, in the order given.
-- **A status this build cannot read renders loudly,** not silently. The row is
-  kept, the raw value is named as `Unrecognised (reconciling)`, and the badge
-  carries `data-unrecognised="true"` with `data-variant="warning"`. The notice
-  ignores an unknown status because it is a warning; a list of everything cannot.
-- **The table owns `RUN_COUNTS_ARE_HISTORY` itself** rather than taking it from a
-  caller, so no future caller can draw the three count columns without the
-  sentence that qualifies them. Without it they read as a count of the ledger as
-  it stands, which they are not.
-- **The two reasons a duration is unknown are different messages.** No
-  `completed_at` gives "No end recorded"; two timestamps that disagree give
-  "Length not known". A blank cell would read as an attempt that took no time,
-  and collapsing the two would hide a clock problem behind an open run.
-- **It calls `useIngestionRuns(caseId)` with the case id alone,** sharing the
-  notice's cache entry and its single fetch. Asserted twice: in the panel test,
-  and in the page test by iterating every recorded call.
-- **It carries the total-versus-length check** the notice deliberately does not.
-  `total` is the length of the same list, so a disagreement means the backend has
-  started paging and a history that looks complete is a window onto part of one.
-- **Nothing is truncated and nothing is re-sorted.** The backend orders by
-  `started_at.desc(), id.asc()`, which is why the summary line can say "newest
-  first"; the table keeps the order it is given.
-- **A failed read says so.** Drawing nothing where the history should be reads as
-  a case nothing was ever loaded into.
-- **The empty state claims nothing about the ledger** in either direction: "If
-  the ledger holds rows, this screen has no record of what put them there."
-- Singular and plural are separate strings — "1 attempt", "2 attempts". Both
-  tested.
+- **`backend/services/financial/quarantine_row.py`** (389 lines, new). The
+  driver those two writers never had. Resolves a row within a case, builds the
+  grounds from the person taking the decision, calls the writer, names the
+  decision that was appended, commits. Public surface: `RowAdjudicationOutcome`,
+  `RowAdjudication`, `ActorError`, `actor_from_user`, `find_case_transaction`,
+  `quarantine_case_row`, `release_case_row`.
+- **`backend/routers/financial_adjudication.py`** (156 lines, new). Two POST
+  routes, registered in `routers/__init__.py` and `main.py`.
+- **`backend/tests/test_financial_quarantine_row.py`** (717 lines, 27 tests,
+  new). Real SQLite on disk, real writers, real adjudication log.
+- **`backend/tests/test_financial_adjudication_router.py`** (385 lines, 13
+  tests, new). Handlers awaited directly, service mocked, mirroring
+  `test_financial_ledger_router.py`.
+- **`backend/services/financial/__init__.py`** (+17). Import block and `__all__`
+  block for the new module.
+- **`backend/main.py`** (+2), **`backend/routers/__init__.py`** (+2).
 
-### Where it is mounted, and why there
+### The three things the driver has to get right
 
-The attempts tab is **second in the strip**, between Ledger and Transactions, and
-that order is load bearing rather than cosmetic: **the first two tabs read
-Postgres and the last three read the graph.** Which store is on screen is a fact
-about what a reader is looking at, and the strip now says it.
+These are the reasons the driver exists at all rather than the router calling
+`quarantine.py` directly, and each has a named test.
 
-It takes **no graph chrome**, for the same reason the ledger tab does not. Gating
-it on the graph query would hide the record of what was loaded from a case whose
-graph is empty — and a case whose graph is empty is very often a case whose
-loading is what went wrong. There is a test for exactly that.
+- **A refusal is not an error.** A row already held on computed grounds, a
+  superseded row, a blank reason, a user the system cannot name: each is a fact
+  about the row's current standing, and the person asking needs to read it
+  beside the row rather than in the browser's error path. All of them come back
+  as an outcome word on a **200**. Only a row the caller may not see (404) and a
+  genuine database fault (500) become error statuses, and **the 404 is worded
+  identically for a row in another case and a row that does not exist**, so that
+  asking cannot be used to learn what a case the caller cannot see contains.
+  There is a test asserting the two routes word it the same.
+- **An unchanged row is reported separately from a changed one.**
+  `quarantine_transaction` is idempotent for identical grounds: asked twice it
+  appends nothing the second time and returns the row. Reporting that as
+  `quarantined` would hand back an `adjudication_id` naming **somebody else's
+  earlier decision** as though it were this request's. So the status is read
+  before the call, and that case is reported as `unchanged` carrying no id at
+  all.
+- **The person's name reaches the row twice on purpose,** once inside the
+  quarantine detail (`QuarantineBasis.from_adjudication` renders
+  `f"{actor}: {reason}"`) and once as the actor on the appended decision. The
+  row can hold only the first, because
+  `ck_financial_transactions_quarantine_coherent` requires a released row to
+  carry **no reason at all**. The log is therefore the only place a reversal can
+  be recorded, and the two paths have to agree about who took each step. **A
+  release is appended after the quarantine it reverses, never in place of it** —
+  asserted by comparing `subject_sequence`.
 
-The screen word is **"Attempts"**, which is what the notice already says in front
-of a reader. The code word is `runs`, which is what the endpoint, the hook and
-the store member use. Both are correct in their own register; do not unify them.
+### The endpoints
 
-### A defect found and fixed on the way
+Both under the existing `/api/financial` prefix, both POST, both `case:edit`:
 
-`FinancialPage.test.tsx` did not mock `../hooks/use-ingestion-runs`. So
-`IngestionRunNotice` was reaching for a `QueryClientProvider` the test render does
-not supply and throwing, its own `ErrorBoundary` was catching the throw, and **the
-page tests were green with a dead component on screen.** This is the same trap
-that the missing `TooltipProvider` set earlier in the build, in the same file.
+- `POST /api/financial/transactions/{transaction_id}/quarantine`
+- `POST /api/financial/transactions/{transaction_id}/release`
 
-Fixed in this commit, and called out in the commit message. **The general shape is
-worth remembering: on this page a component that throws for want of a provider
-does not fail a test, it disappears.** When adding anything to `FinancialPage`,
-mock every hook it reaches for, and assert the thing is actually on screen rather
-than assuming a passing render proves it.
+Query: `case_id` (required). Body: `reason` (required, embedded).
+Response: `transaction_id`, `outcome`, `applied`, `reason`, `ledger_status`,
+`quarantine_reason`, `adjudication_id`.
+
+**`outcome` is one of six words:** `quarantined`, `released`, `unchanged`,
+`not_found`, `refused`, `write_failed`. **`applied` is true for exactly two of
+them** and is the flag an interface should read, not the word — same rule as
+`wouldStore`/`didStore` on the ingest endpoints, and for the same reason: a
+backend one version ahead can send a word this build has never seen.
 
 ### Verification
 
-Unit 457 → 494, accounted for exactly: 20 + 13 in the two new files and 4 added
-to the page tests. Browser 2/4 green after the per-session chromium install.
-`tsc -b --force` 0, `eslint .` 0. Backend not re-run: no backend file touched.
+Backend 3201 → 3241, accounted for exactly: 27 in the driver tests and 13 in the
+router tests. `tsc -b --force` 0, `eslint .` 0, unit 67/494 unchanged. Browser
+project could not run; see the disk note.
 
 The staged tree was diffed against `HEAD` before committing and held exactly the
-seven intended files, with the untracked `.bak` files and the probe test correctly
-excluded.
-
-### Carried forward from the sessions before
-
-- **The notice** (`IngestionRunNotice`, `8924668`) speaks only when an attempt did
-  not finish. Silence is its normal output. It carries no counts, gives no
-  denominator, is not truncated, and sends no limit. An unrecognised status raises
-  no alarm there, deliberately, with a named test.
-- **Two sessions in a row opened by putting questions to Neil that the source
-  could have answered**, and both openings were rejected in his words. The rules
-  that came out of it now live in `CLAUDE.md` and in **Standing decisions** below.
-  **The test for a question is whether Neil can answer it without opening a file.**
-  This file holds no queue of questions and is not to grow one.
-- **The reaper** (`run_reaper.py`, lifespan loop, six hours stale / five minute
-  interval) closes a run whose process died. It copies
-  `platform_update_service.poll_forever`, **not** `_cleanup_stale_chunks`, which
-  the wiring plan wrongly named and which has no error handling at all.
-- **No module under `services/financial/` imports `config`.** That is why the
-  financial tests need no environment. A new module takes its knobs as
-  arguments.
-- The ledger screen is mounted as the first of the peer tabs on `FinancialPage`
-  (four until this session, five now), and the page always opens on it.
-- **Stopping tab persistence took two mechanisms.** Dropping `mainView` from
-  `partialize` stops a choice being written; it does not stop one already
-  written being read. An explicit `merge` deletes `mainView` from the persisted
-  object and keeps the rest.
-- The graph's two early returns moved inside the graph tabs, so a case with
-  ledger rows and no graph no longer renders a full-page empty state with no
-  tabs.
+seven intended files, with the untracked `.bak` files, the probe test and all of
+Neil's case material correctly excluded.
 
 ---
 
 ## Durable facts, kept so no one rediscovers them
 
-The bootstrap, the baselines, the playwright install, the storybook limitation and
-the git procedure all live in **`CLAUDE.md`**. Deliberately not duplicated here.
-
-### The `CLAUDE.md` frontend section was wrong; it is fixed
-
-It hardcoded `VITE_CACHE_DIR=/tmp/vite-cache` (no user suffix), carried a unit
-baseline three sessions stale (54/285), and treated `npx playwright install
-chromium` as a one-off rather than a per-session step. **All three produce the
-identical symptom: a clean-looking "no tests".** Corrected in the same commit as
-this file, along with a line saying never to read "no tests" as green. **The
-frontend gate commands in `CLAUDE.md` can now be copied as written.**
-
-Note the unit project tolerates a shared cache path and only the browser project
-fails on it, so a green unit run says nothing about the cache being usable.
+The bootstrap, the baselines, the storybook limitation and the git procedure all
+live in **`CLAUDE.md`**. Deliberately not duplicated here.
 
 ### New this session
 
-- **A component that throws for want of a provider does not fail a
-  `FinancialPage` test — it vanishes.** Every panel on that page is wrapped in its
-  own `ErrorBoundary`, which catches the throw and renders a fallback, so the
-  suite stays green while the thing under test is dead. Mock every hook the page
-  reaches for, and assert presence explicitly.
-- **`tsc -b` alone is not enough after writing test fixtures.** Vitest does not
-  typecheck, so a green unit run says nothing about the types in a `.test.tsx`.
-  Use `--force`; the incremental build will otherwise skip a project it thinks is
-  current.
-- **The git ref file must be `Read` before it can be `Write`n.** The last step
-  of the commit procedure updates
-  `.git/refs/heads/integration/evidence-main-reunion` by writing the new sha
-  into it. `Write` refuses with "File has not been read yet" unless that exact
-  path was `Read` earlier in the same session. Read it first; its contents are
-  the old head, which is worth seeing anyway.
-- **`Edit`'s read precondition is inconsistent about slices, so do not plan
-  around it.** Reading `api.ts` with `offset`/`limit` did **not** satisfy it last
-  session; reading `FinancialPage.tsx` (655 lines) at `offset 440, limit 30` did
-  satisfy it this session, and two edits went through, one of them at line 42,
-  far outside the slice. The refusal does not say why when it comes. Try the
-  slice on a large file — it may be enough — and fall back to a full read rather
-  than assuming either way.
-- **The vitest unit project takes about 80 seconds** at 67 files. Not a hang.
+- **The `playwright install chromium` fix recorded here previously has stopped
+  working, and the reason is different from the one it fixed.** The old failure
+  was `os.tmpdir()` pointing at the full root filesystem, cured by
+  `TMPDIR=/sessions/<session>/tmpdl`. The failure now is that **`/sessions`
+  itself is full**: 9.8G total, 291M free, against a 179.6M download that then
+  has to extract. It fails with `ENOSPC: no space left on device` **after**
+  downloading 100%, twice, once per mirror, so it looks like a network problem
+  and is not. **Check `df -h /sessions` before starting the install**; if free
+  space is under about 700M the browser gate cannot be run at all this session.
+  The session-local directory holds only 163M of that, so there is nothing of
+  mine to delete; the rest is not ours to remove.
+- **The repo mount is a different, much larger filesystem** —
+  `/sessions/<session>/mnt/owl-n4j` is 461G with 39G free — but **do not stage
+  the browser download there.** It is Neil's working repo, the workspace denies
+  `unlink`, and 350M of undeletable browser binaries would be left in his tree.
+- **When only backend files change, say so and skip the browser project rather
+  than reporting a stale figure as fresh.** Check with
+  `git status --porcelain` before deciding.
+- **`quarantine.py`'s two writers return the transaction, not the event.** So
+  naming the adjudication that was just appended means reading it back:
+  `history(session, transaction, AdjudicationSubject.transaction)[-1]`. Safe
+  because `decisions.record` ends in `session.flush()` and `history` orders by
+  `subject_sequence`, which is assigned, rather than by `id`, which is a random
+  uuid4, or `created_at`, which two rows can share.
+- **There was no helper for building a `decisions.Actor` from a logged-in
+  user,** and there is now: `quarantine_row.actor_from_user`. It uses `getattr`
+  rather than importing the auth model, the same way `runs.py` deliberately
+  does, so nothing under `services/financial/` gains a dependency on
+  `postgres.models.user`. It drops a non-UUID id so a bad value fails there with
+  a readable message instead of at a foreign key far away.
+- **`_current()` in the driver reads the row's attributes after
+  `session.commit()`.** With `expire_on_commit=True` that triggers a refresh
+  round trip. It works and is tested, but it is worth knowing before anyone
+  moves the commit.
+- **The permission templates define far less than the routers use.**
+  `postgres/permissions.py` defines only `case:{view,edit,delete}`,
+  `collaborators:{invite,remove}` and `evidence:upload`. **`evidence:process`
+  and `evidence:delete` are referenced by existing routers and do not exist in
+  the templates at all.** Do not assume a permission string is real because a
+  router asks for it.
 
 ### From earlier sessions, still true
 
-- **The `ENOSPC` that once blocked the browser gate is fixable,** by staging the
-  playwright download on `/sessions`. **The command now lives in `CLAUDE.md`**
-  and is not repeated here. The reason it is needed: `os.tmpdir()` is `/tmp` on
-  the **root** filesystem, which is 99% full, while the browsers path is on
-  `/sessions`. Check both with `df -h /sessions` and `df -h /tmp` before
-  concluding anything about space.
-- **Radix tab triggers activate on `mousedown`, not `click`.** `activationMode`
-  defaults to `"automatic"`, the trigger carries `onMouseDown` and `onFocus`,
-  and **there is no `onClick`**. `fireEvent.click` leaves the tab where it was,
-  and **every assertion after it silently describes the previous tab** — the
-  test still passes, it just tests the wrong panel. Use `fireEvent.mouseDown`.
+- **A component that throws for want of a provider does not fail a
+  `FinancialPage` test — it vanishes.** Every panel on that page is wrapped in
+  its own `ErrorBoundary`, which catches the throw and renders a fallback, so
+  the suite stays green while the thing under test is dead. Mock every hook the
+  page reaches for, and assert presence explicitly.
+- **`tsc -b` alone is not enough after writing test fixtures.** Vitest does not
+  typecheck. Use `--force`; the incremental build will otherwise skip a project
+  it thinks is current.
+- **The git ref file must be `Read` before it can be `Write`n.** `Write` refuses
+  with "File has not been read yet" unless that exact path was `Read` earlier in
+  the same session. Read it first; its contents are the old head.
+- **`Edit`'s read precondition is inconsistent about slices, so do not plan
+  around it.** Try a slice on a large file — it may be enough — and fall back to
+  a full read rather than assuming either way.
+- **The vitest unit project takes about 80 seconds** at 67 files. Not a hang.
+- **Never read a "no tests" result as green.** A stale vite cache path, a
+  missing chromium and the `unlink` denial all produce it.
+- **Radix tab triggers activate on `mousedown`, not `click`.** `fireEvent.click`
+  leaves the tab where it was, and **every assertion after it silently describes
+  the previous tab** — the test still passes, it just tests the wrong panel.
 - **`TooltipProvider` is mounted app-wide at `app/providers.tsx:13`,** so any
-  page test rendering a component that uses a tooltip needs one too. Without it
-  the component throws into its own `ErrorBoundary`, **which catches it, so the
-  test passes** while asserting against a caught error.
-- **Vitest does not typecheck.** Run `tsc -b --force` after writing test
-  fixtures, not just after writing product code.
+  page test rendering a component that uses a tooltip needs one too.
 - **A `Transaction` fixture needs six fields minimum.** `BaseFinancialRecord`
   (`financial/api.ts:3–86`) requires `key`, `amount`, `from_entity`,
   `to_entity`, `financial_record_kind`, `financial_view_mode` and
   `is_financial_event`; `TransactionRecord` adds
   `is_evidence_backed_transaction`.
 - **A bare account number does not identify an account.** `AccountDraft.observed`
-  (`accounts.py:400`) requires an IBAN, a routing number, or an identifier **plus
-  an institution name**; otherwise `_account_draft` (`native_subjects.py:202`)
-  falls back to `AccountDraft.unidentified` with
+  (`accounts.py:400`) requires an IBAN, a routing number, or an identifier
+  **plus an institution name**; otherwise `_account_draft`
+  (`native_subjects.py:202`) falls back to `AccountDraft.unidentified` with
   `distinguisher = f"{sha256}:{ordinal}"`. So a BAI2 or MT940 statement that
-  prints an account number and names no bank lands **unidentified with the number
-  still visible**. **Do not describe the flag as "no account number found"
-  anywhere in the interface.**
+  prints an account number and names no bank lands **unidentified with the
+  number still visible**. **Do not describe the flag as "no account number
+  found" anywhere in the interface.**
 - **The `distinguisher` is the file's own sha256,** stable across re-reads, so a
   precheck account key equals the key that gets written.
 - **The ledger cannot silently double, and it is the schema that guarantees it.**
@@ -307,50 +279,52 @@ fails on it, so a green unit run says nothing about the cache being usable.
   `DateTime(timezone=True)`: Postgres returns it with its offset, SQLite returns
   it naive. Assert against the row's own value plus a prefix check.
 - **DB-backed financial tests need file-on-disk SQLite, not `:memory:`** — and
-  doubly so for anything that runs on a worker thread, which an in-memory
-  connection refuses outright.
+  doubly so for anything that runs on a worker thread.
 - **`financial_source_documents` is unique on
   `(ingestion_run_id, evidence_file_id)`** — one row per file per run.
 - **`evidence_files.stored_path` is `NOT NULL`.** The pathless file that
   production can actually hold is the **empty string**, not `None`.
 - **Prefer `ingestion_run` (the context manager) over `open_ingestion_run`.**
-- **NACHA yields accounts and no periods.** It is not a statement. camt 3/3 rows
-  and a period, BAI2 3/3 and a period, MT940 2/2 and a period, NACHA 1/1 and
-  **no** period. Junk bytes give `unrecognised`.
+- **No module under `services/financial/` imports `config`.** That is why the
+  financial tests need no environment. A new module takes its knobs as
+  arguments.
+- **NACHA yields accounts and no periods.** camt 3/3 rows and a period, BAI2 3/3
+  and a period, MT940 2/2 and a period, NACHA 1/1 and **no** period. Junk bytes
+  give `unrecognised`.
 - **The century window is required and never defaulted.** Max span
   `CENTURY_WINDOW_MAX_SPAN_YEARS = 99`; wider, or backwards, is a 400.
 - **A precheck verdict is not a promise the write will succeed.**
   `contradictory_period` and `already_ingested` are decided against rows already
   stored, not against the file.
 - **`wouldStore` and `didStore` read the endpoint's flag, never the outcome
-  word.** A backend one version ahead sends a word this build has never seen.
+  word.** The same now applies to `applied` on the adjudication endpoints.
 - **An unrecognised vocabulary member is named, never rendered blank,** and **no
   outcome maps to the `default` badge variant** — `Badge` falls through to
   `default` for an unmapped key, so a forgotten member would arrive looking like
   the most important thing on screen.
-- **A held file is not necessarily a ledger file.** `blocksDocumentProcessing`
-  covers four outcomes; `belongsToLedger` covers one.
 - **The exports guard is automatic.** `tests/test_financial_exports.py` globs
   `*.py` in the package and asserts each module contributes at least one name to
-  `__all__`. A new module needs **no manual list entry**, contrary to the note in
-  `CLAUDE.md`.
+  `__all__`. A new module needs **no manual list entry**, contrary to the note
+  in `CLAUDE.md`. Confirmed again this session: `quarantine_row` was picked up
+  with no edit to that file.
 - **Every Bash command needs its own absolute `cd`.** Where a `cd` is awkward,
   `PYTHONPATH=<abs>/backend` works for one-liners.
-- **Any scratch file in `/tmp` needs a per-user name,** including the git index
-  and the vite cache.
+- **Any scratch file in `/tmp` needs a per-user name,** including the git index,
+  the vite cache, and any file used only to capture output.
 - **`GIT_INDEX_FILE` does not survive between Bash invocations.** Staging and
   `git write-tree` must happen in one command. `commit-tree` can be a second
-  command **provided it passes the tree hash you already verified.**
+  command **provided it passes the tree hash you already verified.** A commit
+  message with awkward punctuation is safest passed with `-F <file>`.
 - **A compound `cmd; echo "exit: $?"` inside a longer `&&` chain can report an
-  empty exit code**, and `$?` after a pipe is the pipe's status. Redirect to a
-  per-user file and check separately.
+  empty exit code**, and `$?` after a pipe is the pipe's status.
 - **`&&`-chaining a `grep` that finds nothing silently kills the rest of the
   line.** Use `;` between verification steps.
 - **`backend/venv/` poisons every repo-wide grep.** Always pass
   `--exclude-dir=venv --exclude-dir=__pycache__`, and `--exclude-dir=tests` when
   the question is whether something is wired in production.
-- **Counting bare name occurrences does not tell you whether a component is
-  mounted.** Grep for `import .*\bName\b` and list the files.
+- **Counting bare name occurrences does not tell you whether something is
+  reached.** Grep for the import and list the files. **This is what found the
+  central fact of this session.**
 - **The house component-test conventions** are `render`/`screen` from
   `@testing-library/react`, `MemoryRouter`/`Routes`/`Route` for a routed page,
   `vi.hoisted` for a mock that has to capture something, `data-testid` for
@@ -378,115 +352,102 @@ fails on it, so a green unit run says nothing about the cache being usable.
   degrades and warns; the warning is expected output.
 - **No live Postgres is needed for the financial suite.**
 
+### The quarantine subsystem's own rules
+
+New section. Read it before touching anything in item 6's remaining half.
+
+- **Grounds are a proof or a person, and nothing else.** `QuarantineBasis` has
+  three constructors and **none of them takes a `Candidate`**, by design. A
+  class a person can raise must not be able to pass for one the arithmetic
+  proved, which is the settled rule that proof class is computed and never set
+  by hand. The endpoints therefore always record `QuarantineReason.adjudicated`
+  and the computed grounds are unreachable from HTTP.
+- **`ck_financial_transactions_quarantine_coherent` is
+  `(quarantine_reason IS NOT NULL) = (ledger_status = 'quarantined')`.** A
+  released row **must** have its reason nulled, so a row that was quarantined
+  and let back in is, on the row alone, indistinguishable from one that was
+  never held. **The adjudication log is the only place that history exists.**
+  Anything reporting on quarantine has to read the log, not the row.
+- **`quarantine_transaction` refuses a row that is not `admitted`.** So a
+  superseded or rejected row cannot be quarantined, and the driver reports that
+  as `refused` with the writer's own words.
+- **`quarantine_transaction` is idempotent for identical grounds and refuses
+  different ones.** Same grounds: returns the row, appends nothing. Different
+  grounds: raises `UngroundedQuarantineError` containing "already quarantined".
+  The refusal is deliberate — it stops a person's opinion overwriting a computed
+  class.
+- **`release_transaction` refuses a row that is not quarantined** with a message
+  containing "nothing to release", and requires both a real `Actor` and a
+  non-empty reason.
+
 ### The ledger screen's own rules
 
 - **The ledger read defaults to `admitted`** (`transaction_query.py`). Zero rows
   does not mean no financial material; quarantined, superseded and rejected rows
   sit outside the filter. The empty state names the status it filtered on.
 - **`total` is `len(transactions)` of the same response.** No paging behind it.
-  The panel takes its count from `rows.length` and surfaces a disagreement,
-  because the only way the two can differ is a backend that has started paging.
-- **Rows arrive ordered by `ordering_date.asc(), row_index.asc()`.** The second
-  keeps a statement's own printed sequence where one day holds several movements.
-  The table does not sort. **Do not add client-side sorting without dealing with
-  that.**
-- Three things in the table are correctness, not presentation: an unscaled amount
-  is marked, an absent running balance is stated in words rather than left blank,
-  and an unrecognised vocabulary member renders loudly with
+  The panel takes its count from `rows.length` and surfaces a disagreement.
+- **Rows arrive ordered by `ordering_date.asc(), row_index.asc()`.** The table
+  does not sort. **Do not add client-side sorting without dealing with that.**
+- Three things in the table are correctness, not presentation: an unscaled
+  amount is marked, an absent running balance is stated in words rather than
+  left blank, and an unrecognised vocabulary member renders loudly with
   `data-unrecognised="true"`.
 - **The ledger query key is `["financial-ledger", caseId, ...]`,** deliberately
-  outside `["financial", caseId, ...]`, because a graph mutation cannot change a
-  relational ledger row. `useIngestFile` invalidates the former only.
+  outside `["financial", caseId, ...]`. `useIngestFile` invalidates the former
+  only.
 
 ### The runs subsystem's own rules
 
 - **`GET /api/financial/runs` returns every status by default,** the opposite of
   the ledger read. Anything built on top must not "helpfully" filter to
   completed runs; the failures are the payload.
-- **The run read makes no staleness judgement, and must not start.** A `running`
-  row is reported as `running` with the time it started. Deciding a run is
-  abandoned is the reaper's call and the reaper writes it down; a reader forming
-  the same opinion independently would have no record behind it and the two
-  would diverge the moment either threshold moved. **An interface showing a
-  running run has to say what it actually knows** — when it started, not that it
-  is currently working.
+- **The run read makes no staleness judgement, and must not start.** Deciding a
+  run is abandoned is the reaper's call and the reaper writes it down.
 - **The counts on a run are historical.** `documents_seen`,
   `transactions_admitted` and `transactions_quarantined` were true when the run
-  ended. Adjudication moves rows afterwards, so they will legitimately disagree
-  with a `COUNT(*)` over the ledger today. **Do not reconcile them.**
+  ended. **Adjudication moves rows afterwards** — and as of this session there
+  is finally a path that does — so they will legitimately disagree with a
+  `COUNT(*)` over the ledger today. **Do not reconcile them.**
 - **`started_by_email` outlives `started_by_user_id`.** The FK is
-  `ON DELETE SET NULL`; the email column is plain. Anything displaying an actor
-  should prefer the email.
-- **`reap_stale_runs` is global, not case-scoped.** `runs.py:422` selects every
-  `running` row across every case with no case filter. **This is why it is a
-  lifespan loop and not an endpoint.**
-- **Ordering runs needs the secondary sort on `id`.** `started_at` alone is not a
-  total order and a case can hold two runs opened within one recorded moment.
-  Without the tiebreak the same query answers differently on two calls.
+  `ON DELETE SET NULL`. Prefer the email.
+- **`reap_stale_runs` is global, not case-scoped.** This is why it is a lifespan
+  loop and not an endpoint.
+- **Ordering runs needs the secondary sort on `id`.** `started_at` alone is not
+  a total order.
 
-### And on the frontend, as of `bc23570`
+### And on the frontend, as of `150084a`
 
-- **`readRunStatus(raw).needsAttention` is the one signal that puts a run in
-  front of a reader who did not ask for it.** True for `pending`, `running`,
-  `failed`, `aborted`. **False for an unrecognised status** — deliberately, and
-  there is a named test. Anything deciding whether to speak up should read this
-  rather than test the status word itself.
-- **`RUN_COUNTS_ARE_HISTORY` is the sentence that must accompany the three
-  counts** wherever they are shown. It is exported from `lib/run-format.ts` so
-  the screen and the test cannot drift.
+Unchanged from `bc23570`; no frontend file was touched this session.
+
+- **`readRunStatus(raw).needsAttention`** is true for `pending`, `running`,
+  `failed`, `aborted`, and **false for an unrecognised status**, deliberately,
+  with a named test.
+- **`RUN_COUNTS_ARE_HISTORY` must accompany the three counts** wherever they are
+  shown; `IngestionRunsTable` renders it itself so a caller cannot separate them.
 - **`readRunStarter` prefers the email**, falls back to `User <id>`, and says
-  "Not recorded" rather than rendering an empty cell, which would read as nobody
-  having started the run.
-- **`formatRunTime` is fixed to `en-GB`, not the browser's locale**, matching
-  `formatLedgerAmount`, so two people reading the same case see the same run. An
-  unparseable value is shown **as it arrived**, not as "Invalid Date", which
-  keeps the fault attributable to the record.
-- **`runDuration` returns `null` rather than `0`** for a run that has not ended,
-  for timestamps that disagree, and for a time it cannot parse. Zero would read
-  as a run that did nothing instantly.
-- **The runs query key is `["financial-runs", caseId, params]`**, outside both
-  `["financial-ledger", ...]` and `["financial", ...]`. **Nothing invalidates it
-  and nothing is going to.** `useIngestFile` invalidates the ledger key only, and
-  Neil has ruled that re-fetching the attempts list has no purpose. Closed.
+  "Not recorded" rather than rendering an empty cell.
+- **`formatRunTime` is fixed to `en-GB`,** matching `formatLedgerAmount`. An
+  unparseable value is shown as it arrived, not as "Invalid Date".
+- **`runDuration` returns `null` rather than `0`,** with two distinct
+  presentations keyed `run-no-end` and `run-no-duration`. Do not collapse them.
 - **`IngestionRunNotice` calls `useIngestionRuns(caseId)` with no params,** so
   its cache entry is `["financial-runs", caseId, null]`. **Anything else wanting
-  every attempt on the case must call it the same way** — with no argument, not
-  with `{}` or an explicit `undefined` field — or it opens a second cache entry
-  and a second request for identical data. This is how the attempts list is meant
-  to share the notice's fetch.
-- **The notice is mounted as a sibling of `LedgerPanel`, not inside it,** in the
-  ledger `TabsContent` of `FinancialPage.tsx`, each in its own `ErrorBoundary`.
-  `LedgerPanel`'s four early returns would otherwise hide it exactly when the
-  ledger is empty. **Do not "tidy" this by nesting them.**
-- **`api.runs.test.ts` reads the Python source** to prove the two languages still
-  agree: the route decorator and prefix, the three parameter names, the
-  every-status default, the envelope keys, `RunView.to_json`'s field set against
-  `INGESTION_RUN_FIELDS`, the `IngestionRunStatus` members, and the
-  `started_at.desc(), id.asc()` ordering clause. **A backend change to any of
-  those fails a frontend test**, which is the intended alarm.
-- **`IngestionRunsTable` overrides `readRunStatus`'s variant for an unrecognised
-  status,** forcing `warning` rather than the `outline` the formatter returns.
-  `UNRECOGNISED_VARIANT = "warning"` is reserved in `LedgerTable` for "this build
-  cannot read this value" and is used for nothing else; the attempts table keeps
-  that colour and that meaning paired. **No outcome anywhere maps to the `default`
-  Badge variant.**
-- **`IngestionRunsTable` renders `RUN_COUNTS_ARE_HISTORY` itself,** rather than
-  accepting it or leaving it to the caller. The three count columns and the
-  sentence cannot be separated by anyone reusing the component.
-- **`runDuration` returning `null` has two distinct presentations**, keyed
-  `run-no-end` and `run-no-duration`. Do not collapse them: the first is an
-  attempt that has not ended, the second is two recorded times that disagree, and
-  showing a clock problem as an open run hides it.
-- **`FinancialMainView` now has five members**, `"ledger" | "runs" |
-  "transactions" | "counterparties" | "trends"`. **The order is load bearing:**
-  the first two read Postgres, the last three read the graph. Anything added
-  should be placed by which store it reads.
-- **The attempts tab takes no graph chrome**, like the ledger tab and unlike the
-  other three. A case with an empty graph must still reach the record of what was
-  loaded into it.
-- **Radix tab triggers activate on `mousedown`, not `click`.** `fireEvent.click`
-  leaves the tab where it was and every assertion after it silently describes the
-  previous tab. The page tests use `fireEvent.mouseDown` throughout.
+  every attempt on the case must call it the same way** or it opens a second
+  cache entry and a second request for identical data.
+- **The runs query key is outside both other keys, and nothing invalidates it.**
+  Ruled closed by Neil.
+- **The notice is a sibling of `LedgerPanel`, not inside it.** `LedgerPanel`'s
+  four early returns would otherwise hide it exactly when the ledger is empty.
+  **Do not "tidy" this by nesting them.**
+- **`FinancialMainView` has five members**, `"ledger" | "runs" | "transactions"
+  | "counterparties" | "trends"`. **The order is load bearing:** the first two
+  read Postgres, the last three read the graph.
+- **The ledger and attempts tabs take no graph chrome.** A case with an empty
+  graph must still reach both.
+- **`api.runs.test.ts` reads the Python source** to prove the two languages
+  still agree. A backend change to the route, the parameters, the envelope keys
+  or the ordering clause fails a frontend test. That is the intended alarm.
 
 ---
 
@@ -496,43 +457,56 @@ The order lives in **`docs/loupe-wiring-plan.md`**, committed as `c88533f`, on
 Neil's instruction: "I need you to build everything. Have a think about the best
 order and make this the plan and stick to it."
 
-Sixteen units in four phases. One unit per session, finished, tested and committed
-before the next begins. **Do not reorder without a ruling.** If a unit turns out
-to depend on something later in the list, stop and ask.
+Sixteen units in four phases. One unit per session, finished, tested and
+committed before the next begins. **Do not reorder without a ruling.** If a unit
+turns out to depend on something later in the list, stop and ask.
 
 - **Phase 1, make rows exist — COMPLETE.** Precheck endpoint ✅ `a4eb3dc`,
   ingest endpoint ✅ `43f8358`, the interface action on a held file ✅ `17d94ac`,
   mount the ledger ✅ `4324b24`.
-- **Phase 2, make the rows trustworthy** — runs ✅ **item 5 complete**, backend
-  `cde43c5`, notice `8924668`, attempts list `bc23570`. Then quarantine,
-  reconciliation, adjudication and proof class, duplicates, suspect amounts,
-  locators.
+- **Phase 2, make the rows trustworthy** — runs ✅ item 5 complete (backend
+  `cde43c5`, notice `8924668`, attempts list `bc23570`); quarantine **half done**
+  (write path `150084a`). Then reconciliation, adjudication and proof class,
+  duplicates, suspect amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-**Next unit: item 6, quarantine.**
+### Item 6's remaining half, and why it is not next
 
-Nothing has been read for it yet, so the shape below is what the plan says and
-not yet what the source says. **Read `docs/loupe-wiring-plan.md` and the backend
-quarantine modules before deciding anything.**
+Two pieces are left, and **both of them need something from item 7**:
 
-What is known without reading:
+- **`would_rescue`** and **`QuarantineBasis.from_proof` reached through
+  `localise`** both take an `IdentityOutcome`, which is produced by `reconcile`.
+  Reconciliation **is** Phase 2 item 7. Building them now would mean building
+  item 7 first under item 6's name, which is the resequencing the working
+  agreement forbids.
+- **The quarantine screen.** It now has a population to draw, but it will draw a
+  much more useful one once computed quarantine exists, and its most important
+  column — why a row is held, and whether the arithmetic or a person held it —
+  only has two values to distinguish after item 7.
 
-- **Quarantine is where the ledger read already points.** `GET
-  /api/financial/transactions` defaults to `admitted`, so every ledger figure on
-  screen today is a figure over admitted rows only. The rows held back exist and
-  nothing renders them.
-- **The pattern to follow is the one item 5 just established:** a panel that
-  fetches and states its four pre-table conditions, a table that only draws, both
-  tested separately, mounted as a tab whose position says which store it reads.
-  Quarantine reads Postgres, so it belongs with the first two tabs, not after
-  them.
-- **`FinancialMainView` will need a sixth member** if it becomes its own tab.
-  Whether it should be a tab or a filter on the ledger tab is the first thing to
-  settle, and the source can settle it: look at what the quarantine endpoints
-  actually return and whether a quarantined row carries fields a ledger row does
-  not.
+**Next unit: Phase 2 item 7, reconciliation.** Item 6's remaining half follows it
+directly, and should be picked up as the session after, not folded into item 7.
+
+### The screen question, settled by reading the source
+
+The previous state file asked whether quarantine should be its own tab or a
+filter on the ledger tab, and said the source could settle it. It does:
+
+- **The read is the same endpoint.** `GET /api/financial/ledger` already takes
+  `ledger_status`, and `ledger_status=quarantined` returns exactly the
+  quarantined population. **No new read endpoint is needed and none was built.**
+- **But a quarantined row carries a field an admitted row structurally cannot.**
+  `quarantine_reason` is non-null for exactly the quarantined rows and null for
+  everything else, guaranteed by the check constraint. A column that is
+  meaningful for one status and structurally empty for every other is a column
+  that does not belong in the shared table.
+- **So: a filter on the read, a distinct presentation on the screen.**
+  `FinancialMainView` gaining a sixth member is the likely shape, placed with the
+  first two because it reads Postgres. **This is a recommendation, not a
+  commitment** — the unit that builds it should confirm against
+  `LedgerTable.tsx` whether a conditional column is cheaper than a second table.
 
 ### Where the old numbering went
 
@@ -543,22 +517,15 @@ suspect-amount detection, `0910d9f`. 10 done, per-transaction source locator,
 `0d6b399`. 10a closed 1 September with no code; triage is out of the build.
 
 11, correction storage, **is no longer blocked.** It maps onto Phase 2 item 10,
-and the direction is settled in Standing decisions below: a correction inserts a
-replacement row and supersedes the old one. The separate question of whether a
-correction re-runs the balance identity is deliberately left until items 7 and 8
-are built, and does not block the storage design.
+and the direction is settled in Standing decisions below.
 
-12 is absorbed into Phase 1, which is now complete. Both halves of the "both
-stores" ruling were built (`de7ef21`, `a9e0d29`), the frontend data layer landed
-as `fd88318`, the screen as `94af112`, and the mount as `4324b24`.
+12 is absorbed into Phase 1, which is now complete.
 
-13, user-defined view tabs, is **not in the wiring plan** — new capability rather
-than connecting built capability, so it stays parked until the plan is worked
-through. Two things, not one: named persisted snapshots of filter state, and
-exposing source document type onto the transaction row. **This interacts with a
-decision already taken:** the financial page no longer persists which tab you
-were on, so if user-defined tabs are ever built, the question of what is
-remembered across visits has to be reopened deliberately rather than inherited.
+13, user-defined view tabs, is **not in the wiring plan** — new capability
+rather than connecting built capability, so it stays parked. Two things, not
+one: named persisted snapshots of filter state, and exposing source document
+type onto the transaction row. **This interacts with a decision already
+taken:** the financial page no longer persists which tab you were on.
 
 14 money movement over time, 15 follow the money: both still parked, both still
 new capability rather than wiring. 16 tracing and 17 exhibit tagging are **no
@@ -572,98 +539,95 @@ longer parked** — they are Phase 4 of the plan.
 session does not open by asking him to rule on things. Every entry below states
 the direction the build takes by default, so a session can proceed without a
 conversation. Each one also says exactly what evidence or instruction would
-reverse it, so a decision taken on thin grounds is visible as such rather than
-hidden. Raise one with Neil only when the unit in front of you actually turns on
-it, and then raise it oriented and with a recommendation, never as an open
-question.
+reverse it. Raise one with Neil only when the unit in front of you actually
+turns on it, and then raise it oriented and with a recommendation.
+
+**New: the adjudication endpoints require `case:edit`, not `evidence:upload`.**
+Decided by reading `postgres/permissions.py`, which defines only
+`case:{view,edit,delete}`, `collaborators:{invite,remove}` and
+`evidence:upload`. Ingest asks for the evidence permission because it **adds
+evidence** to the case. Nothing is added by quarantine or release; an existing
+row is moved out of every total or moved back into them, which is the case's own
+content being edited. `case:edit` is denied to a viewer and granted to an editor
+and an owner, and `routers/financial.py` already requires it to write the graph.
+**What would reverse it:** a new permission category for adjudication, which
+would be reasonable if Owl ever wants a role that can load evidence but not
+change what counts. That is a schema and seeding change, not a one-line one, and
+nothing needs it today.
+
+**New: quarantine's write path was built before its screen.** Not a
+resequencing — item 6 is still item 6 — but a decision about which half of it
+comes first, taken because **nothing in production writes
+`ledger_status='quarantined'`**, so a screen built first would list an empty set
+forever. **What would reverse it:** nothing; the write path is landed. Recorded
+so the order is not later mistaken for an oversight.
 
 **Correction storage: a correction inserts a replacement row, it does not edit
 the row.** This is the direction for Phase 2 item 10, and item 11 of the old
-numbering is unblocked by it. It was researched on 5 September by reading the
-source rather than the plan, and the findings are these.
+numbering is unblocked by it. Researched on 5 September by reading the source.
 
 - **The relational ledger has no correction columns at all.** Verified against
   `postgres/models/financial.py`: no `amount_corrected`, no `original_amount`,
-  no `correction_reason`. What it does have is supersession —
+  no `correction_reason`. What it has is supersession —
   `ledger_status IN ('admitted', 'quarantined', 'superseded', 'rejected')` with
   `superseded_by_id` on `FinancialTransaction` (line 807) and the same pair on
-  `FinancialSourceDocument` (line 321). The model docstring at line 21 states the
-  intended behaviour outright: a row found to be wrong keeps its row, gains
-  `superseded_by_id`, and moves to `superseded` while its replacement is
-  inserted.
+  `FinancialSourceDocument` (line 321). The model docstring at line 21 states
+  the intended behaviour outright.
 - **Corrections today happen only on the graph side**, in
-  `services/neo4j/financial_service.py:599`, `update_transaction_amount`. It
-  stashes `original_amount` on first touch, overwrites `amount`, sets
-  `amount_corrected = true` and stores a reason. That is edit-in-place, and it is
-  the competing design. It is not wrong for the graph; `projection.py` lists all
-  three of those properties in `USER_OWNED_PROPERTIES` and refuses to write them,
-  precisely so a projection run cannot undo a person's work.
-- **The citation reference decides it.** `references.py` (see the module docstring
-  from line 25) computes the reference a report cites a row by from the row's
-  content, deliberately, so that a row re-read the same way keeps its name and a
-  row whose figure changed gets a new one. Under supersession that falls out for
-  free. Under edit-in-place the reference either changes underneath a report that
-  already cited it, or is frozen and then names a figure it was not computed from.
-  `ref_id` also carries `UniqueConstraint("case_id", "ref_id")`, so the two
-  designs are not merely different, they collide.
-- **The cost of the chosen direction, stated honestly:** two rows exist for one
-  corrected transaction, and every reader of the ledger has to be status-aware.
-  The ledger endpoint already defaults to `admitted`, so the existing readers are
-  correct by default; new ones are the risk.
+  `services/neo4j/financial_service.py:599`, `update_transaction_amount`. That
+  is edit-in-place, and it is the competing design. It is not wrong for the
+  graph; `projection.py` lists those properties in `USER_OWNED_PROPERTIES` and
+  refuses to write them, so a projection run cannot undo a person's work.
+- **The citation reference decides it.** `references.py` computes the reference a
+  report cites a row by from the row's content, deliberately, so a row whose
+  figure changed gets a new one. Under supersession that falls out for free.
+  Under edit-in-place the reference either changes underneath a report that
+  already cited it, or is frozen and then names a figure it was not computed
+  from. `ref_id` also carries `UniqueConstraint("case_id", "ref_id")`, so the
+  two designs collide rather than merely differ.
+- **The cost, stated honestly:** two rows exist for one corrected transaction,
+  and every reader of the ledger has to be status-aware. The ledger endpoint
+  already defaults to `admitted`, so existing readers are correct by default;
+  new ones are the risk.
 - **What would reverse it:** an instruction from Neil, or a downstream unit that
-  genuinely cannot work across a supersession pair. The graph's edit-in-place path
-  is not evidence against it — the graph is not the ledger.
+  genuinely cannot work across a supersession pair. The graph's edit-in-place
+  path is not evidence against it — the graph is not the ledger.
 
 **Whether a correction re-runs the arithmetic: not yet decided, and it does not
 need to be yet.** The proposal is that a correction re-runs the balance identity
-and only a re-run that closes moves the proof class. It has support in the source:
-`adjudication.py`'s `restated_opening` (line 332) says the figure it computes is
-what a re-extraction ought to produce and that comparing the two after a reader
-fix is how a verdict is confirmed or refuted mechanically, and `restatement_delta`
-(line 357) says a verdict that closes the identity is one whose correction is
-exactly the amount by which it missed. It is consistent with the settled rule that
+and only a re-run that closes moves the proof class. It has support in the
+source: `adjudication.py`'s `restated_opening` (line 332) and
+`restatement_delta` (line 357). It is consistent with the settled rule that
 proof class is computed and never set by hand. **But it makes a correction an
-event that can change how much of a document is trusted, not a local edit, and
-that is a bigger claim than the storage question.** Reconciliation (Phase 2 item
-7) and proof class (item 8) both land before the correction unit, so by the time
-this matters the machinery it depends on will exist and can be read rather than
-imagined. **Decide it then, from the built code, not now.**
+event that can change how much of a document is trusted, not a local edit.**
+Reconciliation (item 7) and proof class (item 8) both land before the correction
+unit. **Decide it then, from the built code, not now.**
 
 **Removing `reingest` stands.** The override could not succeed for unchanged
-bytes, and where it could succeed it would leave two contradictory readings of one
-file in one case with nothing able to resolve them until `duplicates.py` is wired
-at Phase 2 item 9. The send dialog has no override either, for the same reason: it
-reports `already_ingested` plainly and offers nothing to force past it.
-**Reversible at any time and cheap to reverse** — it comes back if Neil says so,
-and item 9 is the natural moment to revisit it, because that is when the thing
-that would resolve the contradiction exists.
+bytes, and where it could succeed it would leave two contradictory readings of
+one file in one case with nothing able to resolve them until `duplicates.py` is
+wired at Phase 2 item 9. **Reversible at any time and cheap to reverse** — item
+9 is the natural moment to revisit it.
 
 **Content-hash de-duplication stays call-scoped.** `document_content_hashes`
 disambiguates duplicate content within one `record_transactions()` call and not
-across two calls to the same document. Nothing depends on the wider behaviour
-today, because the early `already_ingested` refusal means a second call for the
-same file does not happen. **What would reverse it:** an override existing. If
-`reingest` comes back, this has to be answered in the same session, not after.
+across two calls. **What would reverse it:** an override existing. If `reingest`
+comes back, this has to be answered in the same session, not after.
 
-**The engagement period stays off the case.** The dialog asks for the window every
-time, because the alternative is new schema for no present benefit. If a case ever
-grows a date range, the dialog **defaults from it and keeps asking** rather than
-stopping, because a file can legitimately fall outside the engagement period and
-the reader has to be able to say so.
+**The engagement period stays off the case.** The dialog asks for the window
+every time. If a case ever grows a date range, the dialog **defaults from it and
+keeps asking** rather than stopping, because a file can legitimately fall
+outside the engagement period and the reader has to be able to say so.
 
 **`exhibit.py` stays in the plan at Phase 4 item 15.** Its provenance is a
-proposed build order rather than a stated Owl requirement, and that is recorded so
-nobody later mistakes it for a requirement Neil gave. It is not a reason to defer
-it; it is a reason to confirm the shape with Neil when the unit is picked up
-rather than inferring it from the module.
+proposed build order rather than a stated Owl requirement, and that is recorded
+so nobody later mistakes it for a requirement Neil gave.
 
 **The financial page will say nothing about the two stores disagreeing until
-Phase 3 item 12.** Explaining a disagreement to a reader before the thing that
-removes it is built means shipping an explanation with a short life, and the
-honest version of that text is an admission that the interface cannot say which
-store is right. Item 12 makes the graph a projection of the ledger and the
-question dissolves. **What would reverse it:** a real case where the two visibly
-disagree in front of an investigator before item 12 lands.
+Phase 3 item 12.** Explaining a disagreement before the thing that removes it is
+built means shipping an explanation with a short life. **What would reverse
+it:** a real case where the two visibly disagree in front of an investigator
+before item 12 lands.
 
 ---
 
@@ -671,49 +635,44 @@ disagree in front of an investigator before item 12 lands.
 
 - **Phase 1 is closed: a bank file can be sent to the ledger from seven places
   and the rows it creates are now visible.**
-- **The Neo4j financial view is not a projection of the ledger.** `projection.py`
-  has zero production callers. Whatever writes those graph nodes today writes them
-  independently, so the two stores can disagree and nothing detects it. Phase 3
-  item 12 closes this. **Do not describe the graph as derived from the ledger
-  until it is.** The financial page now shows both stores side by side in one tab
-  strip, which makes a disagreement visible to a reader for the first time, and
-  nothing in the interface explains it.
-- **A run whose process died is now closed, but only by the loop.** The reaper
-  runs every five minutes and closes anything `running` for more than six hours.
-  **Until it fires, a dead run and a live one are still indistinguishable
-  through the API**, and that is deliberate: the read declines to guess. Six
-  hours is a long time to look wrong, and the number is a knob
-  (`FINANCIAL_RUN_STALE_AFTER_HOURS`) precisely so it can be lowered once real
-  run durations are known.
-- **What the ledger was built from is now visible, and this flag is closed.** A
-  broken attempt warns above the ledger (`8924668`); every attempt, finished ones
-  included, is listed on its own tab (`bc23570`).
-- **The notice is only on the ledger tab, and the attempts list only on its own.**
-  A reader on the transactions, counterparties or trends tab sees nothing about a
-  broken attempt. That is deliberate for now — those three tabs read the graph,
-  which the ledger does not feed — but it stops being defensible at Phase 3 item
-  12, when the graph becomes a projection of the ledger. **Revisit the mounting
-  then.**
-- **Nothing on screen explains that the tab strip spans two stores.** The order
-  now encodes it (Postgres, Postgres, graph, graph, graph) and the code comments
-  record it, but a reader is told nothing. **This is deliberate and already
-  ruled** — see the standing decision below on saying nothing until Phase 3 item
-  12. Listed here only so it is not rediscovered as an oversight.
+- **A row can now be set aside and let back in, but only through the API.**
+  Nothing in the interface calls either endpoint yet. Until the screen lands,
+  the quarantine population is reachable only via
+  `GET /api/financial/ledger?ledger_status=quarantined`, and **the ledger tab's
+  own totals silently exclude it**, which is the same behaviour as before —
+  except that from this commit the excluded set can actually be non-empty.
+- **The Neo4j financial view is not a projection of the ledger.**
+  `projection.py` has zero production callers. The two stores can disagree and
+  nothing detects it. Phase 3 item 12 closes this. **Do not describe the graph
+  as derived from the ledger until it is.** Note that quarantining a row changes
+  the ledger and **does not** touch the graph, so this gap just got one more way
+  to show itself.
+- **A run whose process died is now closed, but only by the loop.** Six hours
+  stale, five minute interval. **Until it fires, a dead run and a live one are
+  indistinguishable through the API**, deliberately: the read declines to guess.
+  The threshold is a knob (`FINANCIAL_RUN_STALE_AFTER_HOURS`).
+- **The notice is only on the ledger tab, and the attempts list only on its
+  own.** Deliberate for now, because the other three tabs read the graph, but it
+  stops being defensible at Phase 3 item 12. **Revisit the mounting then.**
+- **Nothing on screen explains that the tab strip spans two stores.** Deliberate
+  and already ruled. Listed only so it is not rediscovered as an oversight.
 - **No row in the corpus carries a running-balance column.** 30,570 rows across
   325 documents. So on real data **every** row will show "No running balance".
   That is the component working, not failing.
-- **P0 is unreachable on the current corpus.** No document carries its own control
-  totals in a form that qualifies, so the proof-class badge will never show P0 on
-  real material today.
+- **P0 is unreachable on the current corpus.** No document carries its own
+  control totals in a form that qualifies.
 - **Half two has only ever run against synthetic ledgers.**
 - **The item-1 geometry machinery IS reached in production** at the
-  evidence-engine layer, verified end to end 1 September. Triage is out of the
-  build by ruling; do not reopen without a new ruling.
-- **The alembic migration `20260902_evidence_table_geometry` has not been applied
-  to any real database from a session** — the sandbox has no Postgres. First
-  deployment needs an `alembic upgrade head` on Neil's side.
-- **The root filesystem is at 99% but `/sessions` is not, and the browser gate
-  runs fine.** See Durable facts for the `TMPDIR` fix for `playwright install`.
+  evidence-engine layer, verified end to end 1 September.
+- **The alembic migration `20260902_evidence_table_geometry` has not been
+  applied to any real database from a session** — the sandbox has no Postgres.
+  First deployment needs an `alembic upgrade head` on Neil's side.
+- **Disk: the browser gate may simply be unrunnable in a given session.** Both
+  filesystems are near full — root at 99%, `/sessions` at 97% with 291M free —
+  and chromium needs roughly 700M to install. **Check `df -h /sessions` first
+  and say plainly if the gate cannot run**, rather than reporting a previous
+  session's figure. The repo mount has 39G free but is Neil's tree and must not
+  be used as scratch.
 
 ---
 
@@ -721,31 +680,31 @@ disagree in front of an investigator before item 12 lands.
 
 Small, real, none blocking:
 
+- **`docs/loupe-wiring-plan.md`'s premise for item 6 is wrong.** It says
+  quarantined rows are written today and never shown. Nothing in production ever
+  wrote one. Found and acted on this session; the plan text is left in place as
+  history. **Do not build from that sentence.** It is worth assuming other items
+  carry the same kind of error: the plan describes intent, and the source is
+  what is true.
 - **The graph's correction path takes the new amount as a `float`.**
-  `services/neo4j/financial_service.py:599`, `update_transaction_amount(..., new_amount: float, ...)`.
-  Found 5 September while researching correction storage. The ledger side handles
-  money exactly through `Money`, so a corrected figure entered on the graph and a
-  total computed from the ledger can disagree at the cent, and the settled rule
-  that only the corrected value feeds sums makes that disagreement load bearing.
-  **Direction: fix it as part of Phase 2 item 10**, when the correction path is
-  built properly against the ledger, rather than patching the graph call in
-  isolation — item 10 is where the two paths have to be reconciled anyway. **If
-  anything starts relying on graph corrections before then, fix it immediately
-  instead.**
-- **`IngestionRunHandle.terminate()` does not check the row's stored status.**
-  Found while reading `runs.py` for item 5. It guards only on the in-process
-  `self._closed` flag, then unconditionally assigns `run.status`. So a run the
-  reaper closed as `failed` — because its process looked dead — that then turns
-  out to be alive and finishes will overwrite the status with `completed`
-  **while leaving the reaper's "Abandoned: no terminal status was recorded
-  within ..." text sitting in `run.error`.** The result is a row that says it
-  completed and carries an abandonment message. Not fixed: it is outside the
-  wiring plan's item 5 and the six-hour threshold makes it very unlikely. **If
-  the threshold is ever lowered, fix this first.**
+  `services/neo4j/financial_service.py:599`. The ledger side handles money
+  exactly through `Money`, so a corrected figure entered on the graph and a
+  total computed from the ledger can disagree at the cent. **Direction: fix it
+  as part of Phase 2 item 10.** If anything starts relying on graph corrections
+  before then, fix it immediately instead.
+- **`IngestionRunHandle.terminate()` does not check the row's stored status.** A
+  run the reaper closed as `failed` that then turns out to be alive and finishes
+  will overwrite the status with `completed` **while leaving the reaper's
+  abandonment text in `run.error`.** **If the six-hour threshold is ever
+  lowered, fix this first.**
+- **`evidence:process` and `evidence:delete` are asked for by routers and are
+  not defined in `postgres/permissions.py`.** Found this session while settling
+  the permission bar. Not investigated further; whether those routes are
+  therefore open, closed, or handled elsewhere was not established, and it
+  should be before anyone relies on them.
 - `evidence-engine/tests/test_pdf_table_geometry.py::test_the_summary_agrees_with_the_payload_it_summarises`
   fails against current code: it asserts the summary's exact key set without
-  `by_table_source`, which `geometry_summary` has emitted since `3784dbe`. A stale
-  test, pre-existing.
+  `by_table_source`, which `geometry_summary` has emitted since `3784dbe`.
 - Model class is named `AdjudicationEvent`, not `Adjudication` (`ef9e33d`).
 - Bulk processing above 50 files cannot work: `MAX_BATCH_SIZE = 50` against list
   paging at 250.
@@ -770,10 +729,9 @@ Small, real, none blocking:
   table text is byte-identical to the pre-geometry path; false whenever the
   recovery pass replaces a `table_rectangle_only` reading.
 - Recovered text-alignment chunks collapse empty cells in the `" | "` join and
-  sweep footer prose into the table chunk. Geometry unaffected; full diagnosis in
-  the `72d1b1a` revision of this file.
-- **`docs/loupe-wiring-plan.md` lines 117–123 are now superseded** by the work and
-  by two rulings. Left in place as history; do not act on them.
+  sweep footer prose into the table chunk. Geometry unaffected; full diagnosis
+  in the `72d1b1a` revision of this file.
+- **`docs/loupe-wiring-plan.md` lines 117–123 are superseded** by the work and by
+  two rulings. Left in place as history; do not act on them.
 - **The wiring plan names `_cleanup_stale_chunks` as the loop shape to copy.**
   It is the wrong precedent (no error handling); `poll_forever` is the right one.
-  Superseded by this session's work.
