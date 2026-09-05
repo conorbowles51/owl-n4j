@@ -628,6 +628,15 @@ from services.financial.quarantine import (
     release_transaction,
     would_rescue,
 )
+from services.financial.quarantine_row import (
+    ActorError,
+    RowAdjudication,
+    RowAdjudicationOutcome,
+    actor_from_user,
+    find_case_transaction,
+    quarantine_case_row,
+    release_case_row,
+)
 from services.financial.reconcile import (
     IdentityOutcome,
     LedgerOverflowError,
@@ -1489,6 +1498,14 @@ __all__ = [
     "quarantined_row_ids",
     "release_transaction",
     "would_rescue",
+    # Setting one stored row aside, and letting it back in
+    "ActorError",
+    "RowAdjudication",
+    "RowAdjudicationOutcome",
+    "actor_from_user",
+    "find_case_transaction",
+    "quarantine_case_row",
+    "release_case_row",
     # The balance identity
     "IdentityOutcome",
     "LedgerOverflowError",
