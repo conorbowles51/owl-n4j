@@ -62,12 +62,27 @@ from sqlalchemy.exc import SQLAlchemyError
 from postgres.models.enums import AdjudicationSubject, LedgerStatus, QuarantineReason
 from postgres.models.financial import FinancialTransaction
 from services.financial.decisions import Actor, DecisionError, history
+from services.financial.localisation import rescue_if_removed
+from services.financial.money import MoneyError
+from services.financial.periods import PeriodError
 from services.financial.quarantine import (
     QuarantineBasis,
+    QuarantineError,
     UngroundedQuarantineError,
     quarantine_transaction,
     release_transaction,
 )
+from services.financial.reconcile import ReconciliationError
+
+#: What can go wrong while asking whether a removal would rescue the period, as
+#: opposed to while performing the removal.  Every one of them is a statement
+#: about the period the row sits in: a currency it cannot be summed in, a
+#: balance stored in a code that is not ISO 4217, a direction that is neither
+#: word, a figure too large for the column.  None is a reason to refuse the
+#: quarantine, because a person setting a row aside in a period this incoherent
+#: is doing the right thing; what it costs is the answer, which is then recorded
+#: as unknown rather than as no.
+_UNANSWERABLE = (QuarantineError, ReconciliationError, PeriodError, MoneyError)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.orm import Session
@@ -108,6 +123,21 @@ class RowAdjudication:
     quarantine_reason: Optional[str] = None
     #: Set only when a decision was actually appended.
     adjudication_id: Optional[str] = None
+    #: Whether setting this row aside made its statement period balance.
+    #: Three-valued on purpose.  ``True`` means the identity was failing and
+    #: this row accounted for exactly the gap, so the period now balances by
+    #: subtraction and a reviewer has to be able to see that.  ``False`` means
+    #: no period was made to balance by this removal, which covers a period
+    #: that was already balancing, one whose statement never printed the
+    #: balances the identity needs, and a row belonging to no period at all:
+    #: in each of those there is no gap, so no gap was closed.  ``None`` means
+    #: the question was asked and could not be answered, because computing the
+    #: identity over the period raised.  Only that last case is unknown, and
+    #: reporting it as ``False`` would claim something never established.
+    #:
+    #: Absent on every outcome except ``quarantined``.  A refusal changed
+    #: nothing, so there is no removal to describe.
+    rescues_period: Optional[bool] = None
 
     @property
     def applied(self) -> bool:
@@ -126,6 +156,7 @@ class RowAdjudication:
             "ledger_status": self.ledger_status,
             "quarantine_reason": self.quarantine_reason,
             "adjudication_id": self.adjudication_id,
+            "rescues_period": self.rescues_period,
         }
 
 
@@ -213,6 +244,7 @@ def _current(
     *,
     reason: Optional[str] = None,
     adjudication_id: Optional[str] = None,
+    rescues_period: Optional[bool] = None,
 ) -> RowAdjudication:
     return RowAdjudication(
         transaction_id=str(transaction.id),
@@ -221,6 +253,57 @@ def _current(
         ledger_status=transaction.ledger_status,
         quarantine_reason=transaction.quarantine_reason,
         adjudication_id=adjudication_id,
+        rescues_period=rescues_period,
+    )
+
+
+def _rescue(
+    session: "Session", transaction: FinancialTransaction
+) -> tuple[Optional[bool], Optional[str]]:
+    """Ask whether removing this row would balance its period, before removing it.
+
+    Returns the answer and, when the answer is yes, the sentence that has to go
+    into the record.  Asked here rather than after the write because afterwards
+    the residual has already moved: the only way back to it would be to add the
+    row's own effect onto the new figure, which is a reconstruction rather than
+    an observation, and it would be wrong the moment anything else about the
+    period changed in between.
+
+    The question is asked of every quarantine, not only of ones that look
+    suspicious, because whether a removal is legitimate is not visible in the
+    arithmetic.  A row proved wrong by the statement's own chain *should* come
+    out and the period *should* then balance.  What a reviewer needs is not a
+    verdict but the fact that the balance was reached by subtraction, next to
+    the grounds, so the two can be weighed together.
+
+    The sentence is returned to the caller rather than folded into the reason
+    handed to :meth:`~services.financial.quarantine.QuarantineBasis.from_adjudication`.
+    That method builds its detail as ``"<actor>: <reason>"`` and that detail is
+    what the adjudication log stores, so anything appended to the reason is
+    read afterwards as words the person wrote.  This sentence is an
+    observation the system made about the period, and the two must not be
+    merged into one attributed string.  Giving the fact a durable home of its
+    own in the log needs somewhere to put it that is neither the person's
+    reason nor the row's ``before``/``after`` columns, which is a change to
+    ``quarantine_transaction`` rather than to this call site.
+    """
+    try:
+        warning = rescue_if_removed(session, transaction)
+    except _UNANSWERABLE:
+        # Logged rather than raised: the quarantine is still the right thing to
+        # do, and an unanswered question is recorded as unanswered.
+        logger.exception(
+            "Could not determine whether quarantining transaction %s would "
+            "balance its period",
+            transaction.id,
+        )
+        return None, None
+    if warning is None:
+        return False, None
+    return True, (
+        "Setting this row aside makes the period balance: the identity was out "
+        f"by {warning.residual_before} beforehand, and this row accounts for "
+        "exactly that."
     )
 
 
@@ -283,6 +366,12 @@ def quarantine_case_row(
         )
 
     try:
+        # Before the mutation, and inside this block so that a database fault
+        # while reading the period is handled by the same clause as a fault
+        # while writing the row.  The row is still admitted at this point, so
+        # the period's totals still contain it and the question is the real
+        # one: what happens if it comes out.
+        rescues, rescue_note = _rescue(session, transaction)
         quarantine_transaction(
             session,
             transaction,
@@ -316,7 +405,9 @@ def quarantine_case_row(
     return _current(
         transaction,
         RowAdjudicationOutcome.quarantined,
+        reason=rescue_note,
         adjudication_id=adjudication_id,
+        rescues_period=rescues,
     )
 
 

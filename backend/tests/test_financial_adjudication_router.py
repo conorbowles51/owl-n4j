@@ -36,6 +36,7 @@ def _result(
     ledger_status=None,
     quarantine_reason=None,
     adjudication_id=None,
+    rescues_period=None,
 ):
     return RowAdjudication(
         transaction_id=str(transaction_id),
@@ -44,6 +45,7 @@ def _result(
         ledger_status=ledger_status,
         quarantine_reason=quarantine_reason,
         adjudication_id=adjudication_id,
+        rescues_period=rescues_period,
     )
 
 
@@ -90,6 +92,11 @@ class QuarantineTransactionRowTests(unittest.IsolatedAsyncioTestCase):
                 ledger_status="quarantined",
                 quarantine_reason="adjudicated",
                 adjudication_id="event-1",
+                # Set here so this test also holds the route to carrying the
+                # finding out to the interface.  A response that dropped it
+                # would leave a statement that balances only because this row
+                # left it, with nothing on screen saying so.
+                rescues_period=True,
             ),
         ) as call:
             result = await financial_adjudication.quarantine_transaction_row(
@@ -117,6 +124,7 @@ class QuarantineTransactionRowTests(unittest.IsolatedAsyncioTestCase):
                 "ledger_status": "quarantined",
                 "quarantine_reason": "adjudicated",
                 "adjudication_id": "event-1",
+                "rescues_period": True,
             },
         )
 
@@ -267,6 +275,9 @@ class ReleaseTransactionRowTests(unittest.IsolatedAsyncioTestCase):
                 "ledger_status": "admitted",
                 "quarantine_reason": None,
                 "adjudication_id": "event-2",
+                # A release puts a row back; nothing was removed, so there is
+                # no effect on a period to report.
+                "rescues_period": None,
             },
         )
 

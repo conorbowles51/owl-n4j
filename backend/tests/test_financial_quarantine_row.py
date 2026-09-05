@@ -70,6 +70,13 @@ from services.financial import quarantine_row
 from services.financial.decisions import Actor, history
 from services.financial.documents import SourceDocumentDraft, record_source_document
 from services.financial.locators import Locator
+from services.financial.money import Money, MoneyError
+from services.financial.periods import (
+    BalanceObservation,
+    PeriodBounds,
+    StatementPeriodDraft,
+    record_statement_period,
+)
 from services.financial.proof_class import SourceShape
 from services.financial.quarantine import QuarantineBasis, quarantine_transaction
 from services.financial.quarantine_row import (
@@ -184,6 +191,7 @@ class RowAdjudicationTests(unittest.TestCase):
             ledger_status="quarantined",
             quarantine_reason="adjudicated",
             adjudication_id="a-1",
+            rescues_period=False,
         )
 
         self.assertEqual(
@@ -196,8 +204,20 @@ class RowAdjudicationTests(unittest.TestCase):
                 "ledger_status": "quarantined",
                 "quarantine_reason": "adjudicated",
                 "adjudication_id": "a-1",
+                "rescues_period": False,
             },
         )
+
+    def test_an_unanswered_rescue_check_is_absent_rather_than_false(self):
+        # False is a finding: nothing was made to balance by the removal.
+        # None is the absence of one.  A serialiser that flattened the two
+        # would let a period whose identity could not be computed read as a
+        # period that was checked and found safe.
+        result = RowAdjudication(
+            transaction_id="t-1", outcome=RowAdjudicationOutcome.quarantined
+        )
+
+        self.assertIsNone(result.as_dict()["rescues_period"])
 
 
 class QuarantineRowTestCase(unittest.TestCase):
@@ -560,6 +580,230 @@ class QuarantineCaseRowTests(QuarantineRowTestCase):
         self.assertEqual(result.outcome, RowAdjudicationOutcome.write_failed)
         self.db.refresh(written)
         self.assertEqual(written.ledger_status, LedgerStatus.admitted.value)
+
+
+class QuarantineRescueTests(QuarantineRowTestCase):
+    """What the write path reports about the period the row is leaving.
+
+    Removing a row from a failing statement moves that statement's arithmetic,
+    and a row whose amount happens to equal the gap makes the statement balance
+    the moment it comes out.  That is true whether the row was set aside for a
+    good reason or a bad one, so the balance is not evidence of anything on its
+    own and the system does not treat it as such.  It refuses nothing and it
+    warns about nothing.  What it does is say, on the record, that this is what
+    happened, so that whoever reads the decision later can weigh the grounds
+    against the effect instead of finding a clean statement and no way to know
+    it was cleaned.
+    """
+
+    OPENING = 100_00
+
+    def period(self, *, closing_minor, month=1):
+        return record_statement_period(
+            self.db,
+            self.run,
+            StatementPeriodDraft(
+                account_id=self.acct.id,
+                source_document_id=self.document.id,
+                currency=GBP,
+                bounds=PeriodBounds.printed(
+                    date(2024, month, 1), date(2024, month, 28)
+                ),
+                opening=BalanceObservation.printed(
+                    Money.from_minor_units(self.OPENING, GBP)
+                ),
+                closing=BalanceObservation.printed(
+                    Money.from_minor_units(closing_minor, GBP)
+                ),
+            ),
+        )
+
+    def period_row(
+        self,
+        *,
+        period,
+        row_index=0,
+        amount_minor=25_00,
+        direction=TransactionDirection.credit,
+    ) -> FinancialTransaction:
+        (written,) = record_transactions(
+            self.db,
+            self.run,
+            self.document,
+            [
+                TransactionDraft(
+                    reading=reading(
+                        amount_minor=amount_minor,
+                        direction=direction,
+                        # Rows identical in amount, date and direction hash the
+                        # same inside one document and collide on the content
+                        # hash.  Real statements tell them apart by narrative.
+                        description=f"row {row_index}",
+                    ),
+                    row_index=row_index,
+                    account_id=self.acct.id,
+                    locator=UNLOCATED,
+                    statement_period_id=period.id,
+                )
+            ],
+        )
+        self.db.commit()
+        return written
+
+    def test_a_quarantine_that_makes_the_period_balance_says_so(self):
+        # The statement prints an unchanged closing balance and carries one
+        # 25.00 credit, so it is out by 25.00.  Setting that row aside closes
+        # the gap exactly, which is the case the whole check exists for.
+        period = self.period(closing_minor=self.OPENING)
+        written = self.period_row(period=period)
+
+        result = quarantine_case_row(
+            self.db,
+            case_id=self.case.id,
+            transaction_id=written.id,
+            actor=self.user,
+            reason="the amount is illegible on the page",
+        )
+
+        self.assertEqual(result.outcome, RowAdjudicationOutcome.quarantined)
+        self.assertIs(result.rescues_period, True)
+        self.assertIn("makes the period balance", result.reason)
+        self.assertIn("25.00", result.reason)
+
+    def test_the_rescue_is_reported_without_refusing_the_quarantine(self):
+        # Stated separately from the sentence because it is the more important
+        # half.  A person's grounds are grounds; the arithmetic does not get a
+        # veto over them, and a row proved wrong by its own statement is
+        # supposed to come out and leave the statement balancing.
+        period = self.period(closing_minor=self.OPENING)
+        written = self.period_row(period=period)
+
+        quarantine_case_row(
+            self.db,
+            case_id=self.case.id,
+            transaction_id=written.id,
+            actor=self.user,
+            reason="the amount is illegible on the page",
+        )
+
+        self.db.refresh(written)
+        self.assertEqual(written.ledger_status, LedgerStatus.quarantined.value)
+        self.assertEqual(
+            written.quarantine_reason, QuarantineReason.adjudicated.value
+        )
+
+    def test_the_sentence_is_not_written_into_the_reason_the_person_gave(self):
+        # The adjudication log stores "<person>: <their reason>".  Appending a
+        # machine observation to that string would leave a record in which the
+        # person appears to have written words nobody wrote, which is the one
+        # thing an evidence log cannot do.
+        period = self.period(closing_minor=self.OPENING)
+        written = self.period_row(period=period)
+
+        quarantine_case_row(
+            self.db,
+            case_id=self.case.id,
+            transaction_id=written.id,
+            actor=self.user,
+            reason="the amount is illegible on the page",
+        )
+
+        (event,) = self.events(written)
+        self.assertEqual(event.reason, "Alex: the amount is illegible on the page")
+
+    def test_a_quarantine_that_leaves_the_period_out_reports_no_rescue(self):
+        # Two credits against an unchanged closing balance: the statement is
+        # out by 30.00 and the row coming out is 5.00, so it explains part of
+        # the gap and closes none of it.
+        period = self.period(closing_minor=self.OPENING)
+        self.period_row(period=period, row_index=0, amount_minor=25_00)
+        written = self.period_row(period=period, row_index=1, amount_minor=5_00)
+
+        result = quarantine_case_row(
+            self.db,
+            case_id=self.case.id,
+            transaction_id=written.id,
+            actor=self.user,
+            reason="duplicated from the previous page",
+        )
+
+        self.assertEqual(result.outcome, RowAdjudicationOutcome.quarantined)
+        self.assertIs(result.rescues_period, False)
+        self.assertIsNone(result.reason)
+
+    def test_a_period_that_already_balances_has_no_gap_to_close(self):
+        # Nothing was made to balance by this removal, because it balanced
+        # before it.  False rather than None: the question was answered.
+        period = self.period(closing_minor=self.OPENING + 25_00)
+        written = self.period_row(period=period)
+
+        result = quarantine_case_row(
+            self.db,
+            case_id=self.case.id,
+            transaction_id=written.id,
+            actor=self.user,
+            reason="the amount is illegible on the page",
+        )
+
+        self.assertIs(result.rescues_period, False)
+
+    def test_a_row_belonging_to_no_period_is_answered_not_left_unknown(self):
+        # Where there is no identity there is no gap, so no gap was closed.
+        # Every row in this file's other tests is one of these, which is why
+        # they all read False and none of them reads None.
+        written = self.row()
+
+        result = quarantine_case_row(
+            self.db,
+            case_id=self.case.id,
+            transaction_id=written.id,
+            actor=self.user,
+            reason="the amount is illegible on the page",
+        )
+
+        self.assertIs(result.rescues_period, False)
+
+    def test_a_check_that_cannot_be_answered_does_not_stop_the_quarantine(self):
+        # The person's decision does not depend on the arithmetic being
+        # available.  The row goes out and the unanswered question is recorded
+        # as unanswered rather than as a clean bill of health.
+        period = self.period(closing_minor=self.OPENING)
+        written = self.period_row(period=period)
+
+        with patch.object(
+            quarantine_row,
+            "rescue_if_removed",
+            side_effect=MoneyError("currencies do not match"),
+        ):
+            result = quarantine_case_row(
+                self.db,
+                case_id=self.case.id,
+                transaction_id=written.id,
+                actor=self.user,
+                reason="the amount is illegible on the page",
+            )
+
+        self.assertEqual(result.outcome, RowAdjudicationOutcome.quarantined)
+        self.assertIsNone(result.rescues_period)
+        self.db.refresh(written)
+        self.assertEqual(written.ledger_status, LedgerStatus.quarantined.value)
+
+    def test_a_refusal_reports_no_finding_because_nothing_was_removed(self):
+        # An empty reason never reaches the write, so there is no removal to
+        # describe and nothing to say about the period.
+        period = self.period(closing_minor=self.OPENING)
+        written = self.period_row(period=period)
+
+        result = quarantine_case_row(
+            self.db,
+            case_id=self.case.id,
+            transaction_id=written.id,
+            actor=self.user,
+            reason="   ",
+        )
+
+        self.assertEqual(result.outcome, RowAdjudicationOutcome.refused)
+        self.assertIsNone(result.rescues_period)
 
 
 class ReleaseCaseRowTests(QuarantineRowTestCase):

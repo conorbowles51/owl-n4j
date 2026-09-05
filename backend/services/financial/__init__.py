@@ -363,6 +363,13 @@ from services.financial.linkage import (
     references_from_bank_reference,
     tolerance_for_rail,
 )
+from services.financial.localisation import (
+    current_identity,
+    localise_period,
+    observe_period_rows,
+    observe_transaction,
+    rescue_if_removed,
+)
 from services.financial.locators import (
     MILLIPOINTS_PER_POINT,
     Locator,
@@ -1203,6 +1210,12 @@ __all__ = [
     "link_transactions",
     "references_from_bank_reference",
     "tolerance_for_rail",
+    # Reading a stored period into the form the localisation arithmetic needs
+    "current_identity",
+    "localise_period",
+    "observe_period_rows",
+    "observe_transaction",
+    "rescue_if_removed",
     # Where on a page a value was read from, in one declared coordinate space
     "MILLIPOINTS_PER_POINT",
     "Locator",
