@@ -6,6 +6,7 @@ import {
   History,
   Rows3,
   ScrollText,
+  ShieldAlert,
   Users,
 } from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
@@ -41,6 +42,8 @@ import { BulkActionsBar } from "./BulkActionsBar"
 import { TransactionTable } from "./TransactionTable"
 import { FinancialCharts } from "./FinancialCharts"
 import { LedgerPanel } from "./LedgerPanel"
+import { QuarantinePanel } from "./QuarantinePanel"
+import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
 import { IngestionRunNotice } from "./IngestionRunNotice"
 import { IngestionRunsPanel } from "./IngestionRunsPanel"
 import { BulkCategorizeDialog } from "./BulkCategorizeDialog"
@@ -50,7 +53,11 @@ import { AmountEditDialog } from "./AmountEditDialog"
 import { EntityEditDialog } from "./EntityEditDialog"
 import { BulkImportDialog } from "./BulkImportDialog"
 import { TablePagination } from "@/features/table/components/TablePagination"
-import type { FinancialDatasetMode, Transaction } from "../api"
+import type {
+  FinancialDatasetMode,
+  LedgerTransaction,
+  Transaction,
+} from "../api"
 
 export function FinancialPage() {
   const { id: caseId } = useParams()
@@ -121,6 +128,23 @@ export function FinancialPage() {
   const [entityEditField, setEntityEditField] = useState<"from" | "to">("from")
   const [entityEditKeys, setEntityEditKeys] = useState<string[]>([])
   const [bulkImportOpen, setBulkImportOpen] = useState(false)
+
+  /**
+   * The row a person asked to change, held by the page rather than by the panel
+   * the row was in.
+   *
+   * A change that succeeds invalidates the ledger reads, so the row leaves the
+   * list it was clicked in: setting a row aside drops it out of the ledger, and
+   * letting one back in drops it out of the held-back list. Both panels return
+   * an empty state before rendering anything below it, so a dialog owned by a
+   * panel would be unmounted at the moment the change landed -- and the answer
+   * to the change is said in that one response and nowhere else. Held here, the
+   * dialog outlives the row's disappearance and closes only when the person
+   * closes it.
+   */
+  const [adjudicationRow, setAdjudicationRow] = useState<LedgerTransaction | null>(
+    null
+  )
 
   const handleCategorize = useCallback(
     (nodeKey: string, category: string) => {
@@ -439,6 +463,16 @@ export function FinancialPage() {
               Ledger
             </TabsTrigger>
             {/*
+              Directly after the ledger because the two are one read against
+              two populations: what this case's totals count, and what they
+              leave out. A person who has just read a total is one tab away
+              from what the total excludes.
+            */}
+            <TabsTrigger value="quarantine" data-testid="financial-tab-quarantine">
+              <ShieldAlert className="size-3.5" />
+              Held out
+            </TabsTrigger>
+            {/*
               Kept beside the ledger, and before the three graph tabs, because
               it reads the same store the ledger does: it is the record of what
               put the rows there. "Attempts" is the word the notice above the
@@ -484,7 +518,22 @@ export function FinancialPage() {
               <IngestionRunNotice caseId={caseId} />
             </ErrorBoundary>
             <ErrorBoundary level="section">
-              <LedgerPanel caseId={caseId} />
+              <LedgerPanel caseId={caseId} onAdjudicate={setAdjudicationRow} />
+            </ErrorBoundary>
+          </div>
+        </TabsContent>
+
+        {/*
+          Reads Postgres like the ledger tab, takes no graph chrome and is not
+          gated on the graph query, for the same reasons. The notice above the
+          ledger is not repeated here: it explains why a ledger might be short,
+          and nothing about a failed attempt to load evidence bears on whether
+          the rows that did arrive are being held out of the totals.
+        */}
+        <TabsContent value="quarantine" className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-auto p-4">
+            <ErrorBoundary level="section">
+              <QuarantinePanel caseId={caseId} onAdjudicate={setAdjudicationRow} />
             </ErrorBoundary>
           </div>
         </TabsContent>
@@ -690,6 +739,27 @@ export function FinancialPage() {
         onSubmit={handleBulkImport}
         isPending={bulkCorrect.isPending}
       />
+
+      {/*
+        Outside the tab strip, like every other dialog here, and for a reason
+        that bites harder in this one case: only the active tab's content is
+        mounted, so a dialog rendered inside a tab is destroyed by a change of
+        tab. It is also outside the panel that owns the row, because a change
+        that succeeds takes the row out of that panel's list.
+
+        Mounted on this page's own state and nothing else. The row goes on
+        being passed to the dialog after it has left every list on screen,
+        which is what keeps the answer readable; `null` here means the person
+        closed the dialog, and only that.
+      */}
+      {adjudicationRow !== null && (
+        <RowAdjudicationDialog
+          caseId={caseId}
+          row={adjudicationRow}
+          open
+          onClose={() => setAdjudicationRow(null)}
+        />
+      )}
     </div>
   )
 }

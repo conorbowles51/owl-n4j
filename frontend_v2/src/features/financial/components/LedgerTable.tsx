@@ -38,6 +38,17 @@
  * since a row that is somehow not quarantined in a quarantined list is exactly
  * the thing a reader must be able to see.
  *
+ * **The action column offers a change and never makes one.** Passing
+ * `onAdjudicate` draws a button per row that hands the row back to the caller;
+ * this component neither calls the ledger nor knows what the caller does with
+ * it, so the table stays testable against rows alone. Which of the two changes
+ * a row admits of comes from `changeAvailableFor`, the same reading the
+ * confirming dialog uses, so the word on the row and the word on the button
+ * that commits it cannot drift apart. Where the status cannot be read the cell
+ * says so rather than going blank: an empty cell in a column of buttons reads
+ * as "nothing can be done to this row", when what is true is that this build
+ * cannot tell which change it would be.
+ *
  * Rows are drawn in the order they arrive. The ledger read orders by
  * `ordering_date` then `row_index` — the second of those is what keeps a
  * statement's own printed sequence intact where a day holds several movements
@@ -52,6 +63,7 @@
 import { CircleHelp, TriangleAlert } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -61,8 +73,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import type { LedgerTransaction } from "../api"
+import type { LedgerStatus, LedgerTransaction } from "../api"
 import {
+  changeAvailableFor,
   formatLedgerAmount,
   readDateSource,
   readDirection,
@@ -70,6 +83,7 @@ import {
   readLedgerStatus,
   readProofClass,
   readQuarantineGrounds,
+  ROW_CHANGE_LABELS,
   type NarrowedTerm,
 } from "../lib/ledger-format"
 
@@ -211,12 +225,72 @@ function GroundsCell({ transaction }: { transaction: LedgerTransaction }) {
   )
 }
 
+/**
+ * The one change this row admits of, offered rather than made.
+ *
+ * The button carries `data-change` as well as its words, so a test pins which
+ * change was offered rather than the wording of it, and the two can be
+ * reworded without the guard on the rule going quiet.
+ *
+ * The unreadable-status case is a stated sentence, not an absent button. See
+ * the module docstring.
+ */
+function ActionCell({
+  transaction,
+  status,
+  onAdjudicate,
+}: {
+  transaction: LedgerTransaction
+  status: NarrowedTerm<LedgerStatus>
+  onAdjudicate: (transaction: LedgerTransaction) => void
+}) {
+  const change = changeAvailableFor(status)
+
+  if (change === null) {
+    return (
+      <TableCell className="align-top">
+        <span
+          className="text-xs text-muted-foreground italic"
+          data-testid="ledger-no-action"
+          title={
+            "This build cannot read this row's status, so it cannot say " +
+            "whether the row counts toward totals or what changing it would do."
+          }
+        >
+          Status unread, no change offered
+        </span>
+      </TableCell>
+    )
+  }
+
+  return (
+    <TableCell className="align-top">
+      <Button
+        variant="outline"
+        size="sm"
+        data-testid="ledger-row-action"
+        data-change={change}
+        title={
+          change === "quarantine"
+            ? "Ask that this row be held out of every total this case reports."
+            : "Ask that this row count toward this case's totals again."
+        }
+        onClick={() => onAdjudicate(transaction)}
+      >
+        {ROW_CHANGE_LABELS[change]}
+      </Button>
+    </TableCell>
+  )
+}
+
 function LedgerRow({
   transaction,
   showQuarantineGrounds,
+  onAdjudicate,
 }: {
   transaction: LedgerTransaction
   showQuarantineGrounds: boolean
+  onAdjudicate?: (transaction: LedgerTransaction) => void
 }) {
   const amount = formatLedgerAmount(transaction.amount_minor, transaction.currency)
   const direction = readDirection(transaction.direction)
@@ -401,6 +475,14 @@ function LedgerRow({
       </TableCell>
 
       {showQuarantineGrounds && <GroundsCell transaction={transaction} />}
+
+      {onAdjudicate !== undefined && (
+        <ActionCell
+          transaction={transaction}
+          status={status}
+          onAdjudicate={onAdjudicate}
+        />
+      )}
     </TableRow>
   )
 }
@@ -411,11 +493,20 @@ const BASE_COLUMN_COUNT = 7
 export function LedgerTable({
   transactions,
   showQuarantineGrounds = false,
+  onAdjudicate,
 }: {
   transactions: LedgerTransaction[]
   showQuarantineGrounds?: boolean
+  /**
+   * Called with the row a person chose to change. Supplying this is what draws
+   * the action column; the table does nothing else with it.
+   */
+  onAdjudicate?: (transaction: LedgerTransaction) => void
 }) {
-  const columnCount = BASE_COLUMN_COUNT + (showQuarantineGrounds ? 1 : 0)
+  const columnCount =
+    BASE_COLUMN_COUNT +
+    (showQuarantineGrounds ? 1 : 0) +
+    (onAdjudicate !== undefined ? 1 : 0)
 
   return (
     <Table data-testid="ledger-table">
@@ -429,6 +520,7 @@ export function LedgerTable({
           <TableHead>How it was read</TableHead>
           <TableHead>Status</TableHead>
           {showQuarantineGrounds && <TableHead>Grounds</TableHead>}
+          {onAdjudicate !== undefined && <TableHead>Decision</TableHead>}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -448,6 +540,7 @@ export function LedgerTable({
               key={transaction.key}
               transaction={transaction}
               showQuarantineGrounds={showQuarantineGrounds}
+              onAdjudicate={onAdjudicate}
             />
           ))
         )}

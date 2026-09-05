@@ -30,6 +30,7 @@ import { CircleAlert, Loader2, ScrollText } from "lucide-react"
 
 import { EmptyState } from "@/components/ui/empty-state"
 
+import type { LedgerTransaction } from "../api"
 import { useLedgerTransactions, type LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { readLedgerStatus } from "../lib/ledger-format"
 import { LedgerTable } from "./LedgerTable"
@@ -40,9 +41,18 @@ const DEFAULT_LEDGER_STATUS = "admitted"
 export function LedgerPanel({
   caseId,
   params,
+  onAdjudicate,
 }: {
   caseId: string | undefined
   params?: LedgerQueryParams
+  /**
+   * Passed straight to the table, which draws the action column when it is
+   * given. This panel does not hold the dialog: a successful change empties
+   * the list this panel is reading, and the empty state above returns before
+   * anything below it renders, so a dialog owned here would be torn down at
+   * the moment its answer arrived.
+   */
+  onAdjudicate?: (transaction: LedgerTransaction) => void
 }) {
   const { data, isPending, isError, error } = useLedgerTransactions(caseId, params)
 
@@ -119,7 +129,7 @@ export function LedgerPanel({
         </p>
       )}
 
-      <LedgerTable transactions={rows} />
+      <LedgerTable transactions={rows} onAdjudicate={onAdjudicate} />
     </div>
   )
 }

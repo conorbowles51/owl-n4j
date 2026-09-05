@@ -212,6 +212,46 @@ export function readLedgerStatus(raw: string): NarrowedTerm<LedgerStatus> {
   return narrow(raw, LEDGER_STATUSES, LEDGER_STATUS_COPY)
 }
 
+/**
+ * The two changes a person can ask for against a stored row.
+ *
+ * Defined here rather than beside the mutation that sends it because two
+ * separate screens name the change: the button on the row, and the button that
+ * confirms it. A person who presses "Set aside" on a row and is then asked to
+ * confirm something worded differently has been given two things to reconcile
+ * at the moment they are deciding whether a figure counts.
+ */
+export type RowChange = "quarantine" | "release"
+
+/**
+ * The verb, in the words a person reads. One definition, used on the row and
+ * on the dialog's submit button.
+ */
+export const ROW_CHANGE_LABELS: Record<RowChange, string> = {
+  quarantine: "Set aside",
+  release: "Let back in",
+}
+
+/**
+ * Which change this row admits of, or null when the status cannot be read.
+ *
+ * `quarantined` is the only status with a release available; every other
+ * readable one has a setting aside available, whether or not the ledger will
+ * grant it when asked. That last part is deliberate: this says what may be
+ * asked, not what will be allowed, and the ledger's refusal is an answer a
+ * person is entitled to see rather than a button they were never offered.
+ *
+ * Null is not "no change is possible". It is "this build cannot read the
+ * status, so it cannot say which change this is", and a screen must not turn
+ * that into a silently absent button.
+ */
+export function changeAvailableFor(
+  status: NarrowedTerm<LedgerStatus>
+): RowChange | null {
+  if (status.value === null) return null
+  return status.value === "quarantined" ? "release" : "quarantine"
+}
+
 const PROOF_CLASS_COPY: Record<ProofClass, TermCopy> = {
   p0: {
     label: "P0",

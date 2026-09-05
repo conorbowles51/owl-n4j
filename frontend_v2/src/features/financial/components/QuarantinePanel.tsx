@@ -34,6 +34,7 @@ import { CircleAlert, Loader2, ShieldCheck } from "lucide-react"
 
 import { EmptyState } from "@/components/ui/empty-state"
 
+import type { LedgerTransaction } from "../api"
 import {
   useLedgerTransactions,
   type LedgerQueryParams,
@@ -46,9 +47,19 @@ const QUARANTINED = "quarantined" as const
 export function QuarantinePanel({
   caseId,
   params,
+  onAdjudicate,
 }: {
   caseId: string | undefined
   params?: Omit<LedgerQueryParams, "ledgerStatus">
+  /**
+   * Passed straight to the table, which draws the action column when it is
+   * given. This panel does not hold the dialog, and here the reason is at its
+   * sharpest: letting the last held row back in empties this list, so the
+   * "nothing is being held out" state above returns and everything below it
+   * is unmounted. A dialog owned here would go with it, taking the answer to
+   * the change, which is said in that one response and nowhere else.
+   */
+  onAdjudicate?: (transaction: LedgerTransaction) => void
 }) {
   const { data, isPending, isError, error } = useLedgerTransactions(caseId, {
     ...params,
@@ -138,7 +149,11 @@ export function QuarantinePanel({
         </p>
       )}
 
-      <LedgerTable transactions={rows} showQuarantineGrounds />
+      <LedgerTable
+        transactions={rows}
+        showQuarantineGrounds
+        onAdjudicate={onAdjudicate}
+      />
     </div>
   )
 }

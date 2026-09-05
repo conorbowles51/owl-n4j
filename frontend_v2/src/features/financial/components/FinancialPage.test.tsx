@@ -19,13 +19,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { TooltipProvider } from "@/components/ui/tooltip"
 
-import type { Transaction } from "../api"
+import type { LedgerTransaction, Transaction } from "../api"
 import { useFinancialStore } from "../stores/financial.store"
 import { FinancialPage } from "./FinancialPage"
 
 const graph = vi.hoisted(() => ({ useTransactions: vi.fn() }))
 const ledger = vi.hoisted(() => ({ useLedgerTransactions: vi.fn() }))
 const runs = vi.hoisted(() => ({ useIngestionRuns: vi.fn() }))
+const adjudication = vi.hoisted(() => ({ useRowAdjudication: vi.fn() }))
 
 const idleMutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }
 
@@ -58,6 +59,17 @@ vi.mock("../hooks/use-ledger-transactions", () => ({
  */
 vi.mock("../hooks/use-ingestion-runs", () => ({
   useIngestionRuns: runs.useIngestionRuns,
+}))
+
+/*
+ * The adjudication dialog is mounted by the page, deliberately outside every
+ * error boundary on it, so unmocked this hook's reach for a
+ * `QueryClientProvider` would take the whole page down rather than one panel.
+ * Nothing here sends anything: what these tests are about is which component
+ * is on screen and for how long, not what the ledger answers.
+ */
+vi.mock("../hooks/use-row-adjudication", () => ({
+  useRowAdjudication: adjudication.useRowAdjudication,
 }))
 
 function makeGraphRow(): Transaction {
@@ -96,11 +108,70 @@ function graphWithRows() {
   })
 }
 
+function makeLedgerRow(
+  overrides: Partial<LedgerTransaction> = {}
+): LedgerTransaction {
+  return {
+    key: "txn-1",
+    case_id: "case-1",
+    account_id: "acct-1",
+    source_document_id: "doc-1",
+    ingestion_run_id: "run-1",
+    statement_period_id: null,
+    ref_id: "ref-1",
+    row_index: 0,
+    amount_minor: 123456,
+    currency: "USD",
+    direction: "debit",
+    running_balance_minor: null,
+    transaction_date: "2024-03-01",
+    posted_date: null,
+    value_date: null,
+    effective_date: null,
+    ordering_date: "2024-03-01",
+    ordering_date_source: "transaction",
+    description: "CARD PAYMENT",
+    counterparty_raw: null,
+    transaction_type: null,
+    bank_reference: null,
+    proof_class: "p2",
+    extraction_layer: 1,
+    ledger_status: "admitted",
+    quarantine_reason: null,
+    superseded_by_id: null,
+    ...overrides,
+  }
+}
+
 function ledgerEmpty() {
   ledger.useLedgerTransactions.mockReturnValue({
     data: { transactions: [], total: 0 },
     isPending: false,
     isError: false,
+    error: null,
+  })
+}
+
+/**
+ * One mock serves both ledger panels, and only one of them is mounted at a
+ * time, so what this returns is whatever the tab on screen is reading.
+ */
+function ledgerWithRows(rows: LedgerTransaction[]) {
+  ledger.useLedgerTransactions.mockReturnValue({
+    data: { transactions: rows, total: rows.length },
+    isPending: false,
+    isError: false,
+    error: null,
+  })
+}
+
+/** Idle, and never asked to do anything. See the mock's comment. */
+function adjudicationIdle() {
+  adjudication.useRowAdjudication.mockReturnValue({
+    mutate: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    data: undefined,
     error: null,
   })
 }
@@ -121,8 +192,8 @@ function runsEmpty() {
  * into its error boundary, and a tab asserted to be showing the graph would in
  * fact be showing a caught error.
  */
-function renderPage() {
-  return render(
+function pageTree() {
+  return (
     <TooltipProvider>
       <MemoryRouter initialEntries={["/cases/case-1/financial"]}>
         <Routes>
@@ -131,6 +202,10 @@ function renderPage() {
       </MemoryRouter>
     </TooltipProvider>
   )
+}
+
+function renderPage() {
+  return render(pageTree())
 }
 
 /** The toolbar's search box. Present only where the graph chrome is drawn. */
@@ -153,22 +228,29 @@ describe("FinancialPage", () => {
     graph.useTransactions.mockReset()
     ledger.useLedgerTransactions.mockReset()
     runs.useIngestionRuns.mockReset()
+    adjudication.useRowAdjudication.mockReset()
     ledgerEmpty()
     runsEmpty()
+    adjudicationIdle()
   })
 
   /**
-   * The order is load bearing. The first two tabs read Postgres and the last
+   * The order is load bearing. The first three tabs read Postgres and the last
    * three read the graph, and the two stores are written independently, so
    * which one is on screen is a fact about what you are looking at.
+   *
+   * "Held out" sits directly after "Ledger" because the two are one read
+   * against two populations: what this case's totals count, and what they
+   * leave out.
    */
-  it("opens on the ledger, with the two ledger tabs first in the strip", () => {
+  it("opens on the ledger, with the three ledger tabs first in the strip", () => {
     graphWithRows()
     renderPage()
 
     const tabs = screen.getAllByRole("tab")
     expect(tabs.map((t) => t.textContent)).toEqual([
       "Ledger",
+      "Held out",
       "Attempts",
       "Transactions",
       "Counterparties",
@@ -204,7 +286,7 @@ describe("FinancialPage", () => {
     graphEmpty()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(5)
+    expect(screen.getAllByRole("tab")).toHaveLength(6)
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 
@@ -212,7 +294,7 @@ describe("FinancialPage", () => {
     graphLoading()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(5)
+    expect(screen.getAllByRole("tab")).toHaveLength(6)
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 
@@ -240,8 +322,10 @@ describe("FinancialPage, the attempts tab", () => {
     graph.useTransactions.mockReset()
     ledger.useLedgerTransactions.mockReset()
     runs.useIngestionRuns.mockReset()
+    adjudication.useRowAdjudication.mockReset()
     ledgerEmpty()
     runsEmpty()
+    adjudicationIdle()
   })
 
   it("mounts the attempts panel when the tab is selected", () => {
@@ -295,5 +379,208 @@ describe("FinancialPage, the attempts tab", () => {
     for (const call of runs.useIngestionRuns.mock.calls) {
       expect(call).toEqual(["case-1"])
     }
+  })
+})
+
+/**
+ * The held-out tab shows the rows a case's totals leave out. Its own behaviour
+ * is covered in `QuarantinePanel.test.tsx`; what is asserted here is that the
+ * page reaches it, that it reaches it without the graph, and that it asks for
+ * the quarantined population rather than the ledger's default one.
+ */
+describe("FinancialPage, the held-out tab", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useFinancialStore.getState().reset()
+    graph.useTransactions.mockReset()
+    ledger.useLedgerTransactions.mockReset()
+    runs.useIngestionRuns.mockReset()
+    adjudication.useRowAdjudication.mockReset()
+    ledgerEmpty()
+    runsEmpty()
+    adjudicationIdle()
+  })
+
+  it("mounts the quarantine panel when the tab is selected", () => {
+    graphWithRows()
+    renderPage()
+
+    expect(
+      screen.queryByText(/Nothing is being held out of this case's totals/i)
+    ).not.toBeInTheDocument()
+
+    selectTab("Held out")
+    expect(
+      screen.getByText(/Nothing is being held out of this case's totals/i)
+    ).toBeInTheDocument()
+  })
+
+  /**
+   * The one claim this tab cannot get wrong. Every sentence on it is about
+   * quarantine, and the ledger read defaults to `admitted` when no status is
+   * sent, so a missing status here would put admitted rows under copy saying
+   * they are being held out of the totals.
+   */
+  it("asks the ledger for the quarantined rows", () => {
+    graphWithRows()
+    renderPage()
+
+    selectTab("Held out")
+    expect(ledger.useLedgerTransactions).toHaveBeenCalledWith("case-1", {
+      ledgerStatus: "quarantined",
+    })
+  })
+
+  /** The counts and filters in the graph chrome describe graph rows. */
+  it("keeps the graph chrome out of the held-out tab", () => {
+    graphWithRows()
+    renderPage()
+
+    selectTab("Held out")
+    expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
+  })
+
+  /** Ledger rows and no graph: what the totals exclude is still reachable. */
+  it("reaches the held-out tab when the graph has no rows", () => {
+    graphEmpty()
+    renderPage()
+
+    selectTab("Held out")
+    expect(
+      screen.getByText(/Nothing is being held out of this case's totals/i)
+    ).toBeInTheDocument()
+    expect(screen.queryByText("No documentary transactions")).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Where the dialog is mounted, and why it has to be there.
+ *
+ * The change a person asks for on a row is answered once, in the response to
+ * that one write, and the answer includes whether the change rescued a
+ * reconciled period. Nothing else on this screen says it. So the dialog has to
+ * outlive two things that happen the moment a change succeeds: the row leaving
+ * the list it was clicked in, and the person moving off the tab that list was
+ * on. Both are tested below by taking the row away underneath an open dialog,
+ * which is what the ledger invalidation does in production.
+ *
+ * A dialog owned by either panel fails the first of these, because both panels
+ * return an empty state before rendering anything below it. A dialog rendered
+ * inside `TabsContent` fails the second, because only the active tab's content
+ * is mounted.
+ */
+describe("FinancialPage, the row adjudication dialog", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useFinancialStore.getState().reset()
+    graph.useTransactions.mockReset()
+    ledger.useLedgerTransactions.mockReset()
+    runs.useIngestionRuns.mockReset()
+    adjudication.useRowAdjudication.mockReset()
+    runsEmpty()
+    adjudicationIdle()
+  })
+
+  it("opens on the row whose action was pressed, from the ledger tab", () => {
+    graphWithRows()
+    ledgerWithRows([makeLedgerRow({ key: "txn-9" })])
+    renderPage()
+
+    fireEvent.click(screen.getByTestId("ledger-row-action"))
+
+    expect(screen.getByTestId("adjudication-row")).toHaveAttribute(
+      "data-row-key",
+      "txn-9"
+    )
+  })
+
+  it("opens on the row whose action was pressed, from the held-out tab", () => {
+    graphWithRows()
+    ledgerWithRows([
+      makeLedgerRow({
+        key: "txn-4",
+        ledger_status: "quarantined",
+        quarantine_reason: "balance_break",
+      }),
+    ])
+    renderPage()
+
+    selectTab("Held out")
+    fireEvent.click(screen.getByTestId("ledger-row-action"))
+
+    expect(screen.getByTestId("adjudication-row")).toHaveAttribute(
+      "data-row-key",
+      "txn-4"
+    )
+  })
+
+  /**
+   * The list going empty is what a successful release looks like from this
+   * page: the ledger reads are invalidated and the row is no longer in the
+   * quarantined population. The panel is correct to show its empty state. The
+   * dialog holding the only statement of what the change did must not go with
+   * it.
+   */
+  it("stays open after its row leaves the list underneath it", () => {
+    graphWithRows()
+    ledgerWithRows([
+      makeLedgerRow({ key: "txn-4", ledger_status: "quarantined" }),
+    ])
+    const { rerender } = renderPage()
+
+    selectTab("Held out")
+    fireEvent.click(screen.getByTestId("ledger-row-action"))
+    expect(screen.getByTestId("adjudication-row")).toBeInTheDocument()
+
+    ledgerEmpty()
+    rerender(pageTree())
+
+    expect(
+      screen.getByText(/Nothing is being held out of this case's totals/i)
+    ).toBeInTheDocument()
+    expect(screen.getByTestId("adjudication-row")).toHaveAttribute(
+      "data-row-key",
+      "txn-4"
+    )
+  })
+
+  /**
+   * The same guard on the other side. Setting a row aside takes it out of the
+   * admitted population, so the ledger tab empties underneath the dialog in
+   * exactly the way the held-out tab does.
+   *
+   * There is no companion test for a change of tab while the dialog is open,
+   * because there is no such thing: the dialog is modal, so Radix hides the
+   * rest of the document from the accessibility tree and the tab strip cannot
+   * be reached behind it. Mounting outside `Tabs` is still what the other six
+   * dialogs on this page do, and it costs nothing to match them.
+   */
+  it("stays open after its row leaves the ledger underneath it", () => {
+    graphWithRows()
+    ledgerWithRows([makeLedgerRow({ key: "txn-9" })])
+    const { rerender } = renderPage()
+
+    fireEvent.click(screen.getByTestId("ledger-row-action"))
+    expect(screen.getByTestId("adjudication-row")).toBeInTheDocument()
+
+    ledgerEmpty()
+    rerender(pageTree())
+
+    expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
+    expect(screen.getByTestId("adjudication-row")).toHaveAttribute(
+      "data-row-key",
+      "txn-9"
+    )
+  })
+
+  it("closes only when the person closes it", () => {
+    graphWithRows()
+    ledgerWithRows([makeLedgerRow({ key: "txn-9" })])
+    renderPage()
+
+    fireEvent.click(screen.getByTestId("ledger-row-action"))
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+
+    expect(screen.queryByTestId("adjudication-row")).not.toBeInTheDocument()
   })
 })

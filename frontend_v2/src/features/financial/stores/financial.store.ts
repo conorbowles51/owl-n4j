@@ -10,20 +10,31 @@ export interface SortColumn {
 /**
  * The tab in front of you on the financial page, and nothing wider than that.
  *
- * `ledger` and `runs` read Postgres: the first the relational ledger itself,
- * the second the record of every attempt to load evidence into it. The other
- * three read the Neo4j graph. The two stores are written independently and can
- * disagree, so which one is on screen is a fact about what you are looking at,
- * not a presentation choice. The two Postgres tabs are kept next to each other
- * in the strip for that reason.
+ * `ledger`, `quarantine` and `runs` read Postgres: the ledger itself, the rows
+ * held out of its totals, and the record of every attempt to load evidence into
+ * it. The other three read the Neo4j graph. The two stores are written
+ * independently and can disagree, so which one is on screen is a fact about
+ * what you are looking at, not a presentation choice. The three Postgres tabs
+ * are kept next to each other in the strip for that reason, and the order below
+ * is the order they appear in.
+ *
+ * `quarantine` sits directly after `ledger` because the two are one read
+ * against two populations: what a case's totals count, and what they leave out.
+ * A person who has just read a total is one tab away from what the total
+ * excludes.
  *
  * `runs` is the word the backend model, the endpoint, the hook and the query
  * key all use, so it is the word kept here. The tab is labelled "Attempts" on
  * screen, which is the word the notice and the run copy already use in front of
  * a reader.
+ *
+ * Nothing here is persisted: `partialize` omits `mainView` and `merge` deletes
+ * any stored value, so a member can be added or removed without a migration and
+ * a page always opens on the ledger.
  */
 export type FinancialMainView =
   | "ledger"
+  | "quarantine"
   | "runs"
   | "transactions"
   | "counterparties"

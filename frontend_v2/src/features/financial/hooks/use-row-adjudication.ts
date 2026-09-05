@@ -48,9 +48,17 @@ import {
   readRowAdjudication,
   type RowAdjudicationReading,
 } from "../lib/adjudication-format"
+import type { RowChange } from "../lib/ledger-format"
 
-/** Which of the two routes to call. */
-export type AdjudicationAction = "quarantine" | "release"
+/**
+ * Which of the two routes to call.
+ *
+ * An alias rather than a second declaration of the same two words. The change
+ * a person can ask for is decided from the row's status by
+ * `changeAvailableFor`, and if that vocabulary and this one were written out
+ * separately they could be edited apart without anything failing.
+ */
+export type AdjudicationAction = RowChange
 
 export interface RowAdjudicationVariables {
   transactionId: string

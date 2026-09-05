@@ -13,8 +13,8 @@
  * markup.
  */
 
-import { render, screen, within } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import { fireEvent, render, screen, within } from "@testing-library/react"
+import { describe, expect, it, vi } from "vitest"
 
 import type { LedgerTransaction } from "../api"
 import { LedgerTable } from "./LedgerTable"
@@ -410,5 +410,115 @@ describe("LedgerTable grounds column", () => {
     expect(
       screen.getAllByTestId("ledger-table-empty")[1].getAttribute("colspan")
     ).toBe("7")
+  })
+})
+
+/**
+ * The action column: what it offers, and the one case where it offers nothing
+ * and has to say so.
+ *
+ * Nothing here changes a row. The table hands the row back and stops, which is
+ * what keeps every case above testable against rows alone, so what these pin is
+ * which change was offered on which row and that the row handed back is the one
+ * whose button was pressed.
+ */
+describe("LedgerTable action column", () => {
+  it("does not draw the column unless a caller can act on it", () => {
+    // A column of buttons that do nothing is worse than no column: it says a
+    // change can be asked for from a screen that cannot ask for one.
+    render(<LedgerTable transactions={[makeRow()]} />)
+    expect(screen.queryByText("Decision")).toBeNull()
+    expect(screen.queryByTestId("ledger-row-action")).toBeNull()
+    expect(screen.queryByTestId("ledger-no-action")).toBeNull()
+  })
+
+  it("offers a setting aside on a row that is counting toward totals", () => {
+    render(
+      <LedgerTable
+        transactions={[makeRow({ ledger_status: "admitted" })]}
+        onAdjudicate={vi.fn()}
+      />
+    )
+    const button = screen.getByTestId("ledger-row-action")
+    expect(button.getAttribute("data-change")).toBe("quarantine")
+    expect(button.textContent).toBe("Set aside")
+  })
+
+  it("offers a release on a row that is being held out", () => {
+    render(
+      <LedgerTable
+        showQuarantineGrounds
+        transactions={[
+          makeRow({ ledger_status: "quarantined", quarantine_reason: "balance_break" }),
+        ]}
+        onAdjudicate={vi.fn()}
+      />
+    )
+    const button = screen.getByTestId("ledger-row-action")
+    expect(button.getAttribute("data-change")).toBe("release")
+    expect(button.textContent).toBe("Let back in")
+  })
+
+  it("offers a change per row, decided by that row's own status", () => {
+    // Two rows in one list, and the list being filtered to one status is not
+    // something this component may assume: `QuarantinePanel` reads a filter the
+    // backend applied, and a row arriving with another status is exactly the
+    // case the status column is kept for.
+    render(
+      <LedgerTable
+        transactions={[
+          makeRow({ key: "a", ledger_status: "admitted" }),
+          makeRow({ key: "b", ledger_status: "quarantined" }),
+        ]}
+        onAdjudicate={vi.fn()}
+      />
+    )
+    expect(
+      screen.getAllByTestId("ledger-row-action").map((b) => b.getAttribute("data-change"))
+    ).toEqual(["quarantine", "release"])
+  })
+
+  it("hands back the row whose button was pressed, and does nothing else", () => {
+    const onAdjudicate = vi.fn()
+    render(
+      <LedgerTable
+        transactions={[makeRow({ key: "a" }), makeRow({ key: "b" })]}
+        onAdjudicate={onAdjudicate}
+      />
+    )
+
+    fireEvent.click(screen.getAllByTestId("ledger-row-action")[1])
+
+    expect(onAdjudicate).toHaveBeenCalledTimes(1)
+    expect(onAdjudicate.mock.calls[0][0].key).toBe("b")
+  })
+
+  it("says it cannot read the status rather than leaving the cell blank", () => {
+    // The one row on the screen that most needs explaining. An empty cell in a
+    // column of buttons reads as "nothing can be done to this row", when what
+    // is true is that this build cannot tell which change it would be -- and
+    // therefore cannot tell whether the row is counting toward the totals.
+    render(
+      <LedgerTable
+        transactions={[makeRow({ ledger_status: "escheated" })]}
+        onAdjudicate={vi.fn()}
+      />
+    )
+    expect(screen.queryByTestId("ledger-row-action")).toBeNull()
+    expect(screen.getByTestId("ledger-no-action").textContent).toBe(
+      "Status unread, no change offered"
+    )
+  })
+
+  it("spans the empty sentence across this column too", () => {
+    render(<LedgerTable transactions={[]} onAdjudicate={vi.fn()} />)
+    expect(screen.getByTestId("ledger-table-empty").getAttribute("colspan")).toBe("8")
+
+    render(
+      <LedgerTable showQuarantineGrounds transactions={[]} onAdjudicate={vi.fn()} />
+    )
+    expect(
+      screen.getAllByTestId("ledger-table-empty")[1].getAttribute("colspan")
+    ).toBe("9")
   })
 })

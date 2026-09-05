@@ -117,9 +117,11 @@ import {
   type RowAdjudicationReading,
 } from "../lib/adjudication-format"
 import {
+  changeAvailableFor,
   formatLedgerAmount,
   readDirection,
   readLedgerStatus,
+  ROW_CHANGE_LABELS,
   type NarrowedTerm,
 } from "../lib/ledger-format"
 import type { LedgerTransaction } from "../api"
@@ -144,7 +146,7 @@ const ACTION_COPY: Record<AdjudicationAction, ActionCopy> = {
     reasonLabel: "Why this row should not be counted",
     reasonHelp:
       "Required. This goes on the record against your name and stays readable for as long as the case does, so write it for someone reading it later without you there.",
-    submit: "Set aside",
+    submit: ROW_CHANGE_LABELS.quarantine,
   },
   release: {
     title: "Let this row back in",
@@ -153,20 +155,8 @@ const ACTION_COPY: Record<AdjudicationAction, ActionCopy> = {
     reasonLabel: "Why this row should count again",
     reasonHelp:
       "Required. A row let back in carries no trace of having been held, so the record is the only place this will be explained.",
-    submit: "Let back in",
+    submit: ROW_CHANGE_LABELS.release,
   },
-}
-
-/**
- * Which change this row admits of, or null when the status cannot be read.
- *
- * `quarantined` is the only status that has a release available; every other
- * readable one has a setting aside available, whether or not the ledger will
- * grant it.
- */
-function actionFor(status: NarrowedTerm<string>): AdjudicationAction | null {
-  if (status.value === null) return null
-  return status.value === "quarantined" ? "release" : "quarantine"
 }
 
 /** One narrowed value as a badge, on the same rule as `LedgerTable`. */
@@ -429,7 +419,7 @@ export function RowAdjudicationDialog({
   const adjudication = useRowAdjudication(caseId)
 
   const status = readLedgerStatus(row.ledger_status)
-  const action = actionFor(status)
+  const action = changeAvailableFor(status)
   const copy = action === null ? null : ACTION_COPY[action]
 
   const busy = adjudication.isPending

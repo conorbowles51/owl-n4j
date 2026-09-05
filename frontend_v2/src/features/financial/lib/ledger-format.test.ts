@@ -16,8 +16,9 @@
 
 import { describe, expect, it } from "vitest"
 
-import { QUARANTINE_REASONS } from "../api"
+import { LEDGER_STATUSES, QUARANTINE_REASONS } from "../api"
 import {
+  changeAvailableFor,
   currencyMinorUnits,
   formatLedgerAmount,
   readDateSource,
@@ -27,6 +28,7 @@ import {
   readProofClass,
   readQuarantineGrounds,
   readQuarantineReason,
+  ROW_CHANGE_LABELS,
 } from "./ledger-format"
 
 describe("currencyMinorUnits", () => {
@@ -279,5 +281,48 @@ describe("readQuarantineGrounds", () => {
     const grounds = readQuarantineGrounds("adjudicated")
     expect(grounds.origin).toContain("adjudication record")
     expect(grounds.origin).toContain("not carried on the row")
+  })
+})
+
+describe("changeAvailableFor", () => {
+  it("offers a release on the one status that is being held out", () => {
+    expect(changeAvailableFor(readLedgerStatus("quarantined"))).toBe("release")
+  })
+
+  it("offers a setting aside on every other status it can read", () => {
+    // Including `superseded` and `rejected`, which the ledger may well refuse
+    // to quarantine. That refusal is an answer a person is entitled to see,
+    // and it arrives in the response to the ask. A button withheld here would
+    // replace an answer with silence.
+    for (const status of LEDGER_STATUSES) {
+      if (status === "quarantined") continue
+      expect(changeAvailableFor(readLedgerStatus(status))).toBe("quarantine")
+    }
+  })
+
+  it("classifies every status the build knows", () => {
+    // The other half of the guard above: a fifth member added to
+    // LEDGER_STATUSES and not thought about here would fall through to
+    // "quarantine" by default rather than being decided on.
+    for (const status of LEDGER_STATUSES) {
+      expect(changeAvailableFor(readLedgerStatus(status))).not.toBeNull()
+    }
+  })
+
+  it("says it cannot tell, rather than that nothing can be done", () => {
+    // Null here means "this build cannot read the status, so it cannot say
+    // which change this would be". A caller that read it as "no change is
+    // possible" would draw no button and tell a person nothing about why --
+    // which is the one row on the screen that most needs explaining.
+    expect(changeAvailableFor(readLedgerStatus("embargoed"))).toBeNull()
+    expect(changeAvailableFor(readLedgerStatus(""))).toBeNull()
+  })
+
+  it("gives both changes words a person reads", () => {
+    // One definition, used on the row and on the button that commits it. A
+    // person who presses one word and is asked to confirm another has been
+    // given something to reconcile while deciding whether a figure counts.
+    expect(ROW_CHANGE_LABELS.quarantine).toBe("Set aside")
+    expect(ROW_CHANGE_LABELS.release).toBe("Let back in")
   })
 })
