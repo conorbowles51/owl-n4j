@@ -33,6 +33,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict, Field
+from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount
 
 from postgres.models.enums import (
     AdjudicationDecision,
@@ -81,6 +83,33 @@ router = APIRouter(
         Depends(_require_ledger_case_access),
     ],
 )
+
+
+class AmountAssessmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    start_char: int = Field(ge=0, strict=True)
+    end_char: int = Field(gt=0, strict=True)
+    expected_text: str = Field(min_length=1, max_length=128, strict=True)
+    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+
+
+@router.post("/source-files/{evidence_file_id}/amount-assessment")
+async def assess_evidence_amount(
+    evidence_file_id: UUID,
+    body: AmountAssessmentRequest,
+    case_id: UUID = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Read-only review; origin comes from stored provenance, never the caller."""
+    try:
+        return assess_source_amount(db, case_id=case_id, evidence_file_id=evidence_file_id,
+                                    **body.model_dump())
+    except AmountAssessmentError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Source amount assessment failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Source amount assessment failed.")
 
 
 @router.get("/ledger")
