@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `e756fbf`, “Append audited ledger corrections
-  with verification invalidation”, parent `87c916d`. A documentation commit follows it;
+- **Latest implementation commit:** `b7e1342`, “Preview correction verification
+  consequences before recording”, parent `4183d25`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -34,6 +34,31 @@ completed-item claims and environment recipes in that history are not current.
   comparison scaling/coverage work outstanding. The legacy bulk resolver is not
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete; correction UI and broader revalidation are still outstanding.
+
+### Verification consequences now available before confirmation
+
+`b7e1342` supplies `verification` on correction previews: whether recording is
+possible, current/proposed class, reservations, class eligibility for default
+totals, and document-wide scope. Unknown source shape, malformed reservations or
+inconsistent classes produce `can_record: false`, never an invented classification.
+All document periods are evaluated freshly, with the proposed amount substituted
+only in the affected period; no persisted reconciliation is used as current.
+
+The preview and writer share `correction_verification`. Recording uses the reviewed
+reservations and rolls back if its actual reclassification differs from the preview.
+Document revisions now include source shape and admissibility reservations, closing
+a stale-review gap if those change while the form is open. Quarantine still controls
+row inclusion independently of class eligibility; the UI must not say every row
+counts merely because the class is eligible.
+
+Full financial suite: **3,528 tests pass, 12 skipped**, Python 3.10 syntax and diff
+checks pass. Four new tests cover preview/writer agreement, no preview metadata
+writes, source-metadata revision invalidation, unknown source refusal and rollback
+on verification disagreement. Log: `/tmp/loupe-neilbyrne-correction-verification-full.out`.
+No schema or frontend change. Restart the local backend before UI integration to
+load this response field. Next segment is the correction dialog and history display;
+the prerequisite verification disclosure is now available. Unattended continuation
+is authorized through 20:00 Europe/Dublin today; preserve the tested segment commits.
 
 ### Append-only amount correction writer
 
@@ -73,8 +98,8 @@ Logs: `/tmp/loupe-neilbyrne-corrections{,-full,-migrate}.out`.
 
 Next: correction review/record UI plus reading/history display. Include exact money,
 separate preview/confirmation, durable success vs uncertain response, original-case
-cache invalidation, and the verification limitations above. Preview output does not
-yet project the writer's proof-class changes; add that disclosure before exposing
+cache invalidation, and the verification limitations above. The later preview
+verification segment supplies the projected class; display it before exposing
 the final action. No frontend changes in this unit. No push or merge.
 
 ### Ledger correction preview foundation
