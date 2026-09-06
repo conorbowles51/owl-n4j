@@ -3,36 +3,35 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 6 September 2026 (records `e655a0a`, the decisions screen
-itself: `DecisionsTable`, `DecisionsPanel`, a seventh tab on `FinancialPage`,
-and the invalidation that keeps the log current after a row is adjudicated.
-**The record of decisions is now on screen** — two standing flags close with
-this commit, and **chunk 1 of item 8, the decisions surface, is complete**. The
-next unit is chunk 2, the admission path, which is backend work. Read the disk
-note under Standing flags **before running anything**: the documented
-`CLAUDE.md` bootstrap still fails, and the working form needs one more
-environment variable than this file previously recorded. **The browser-gate
-entry in that section was wrong and has been corrected — the gate ran green
-this session.**
+**Last updated:** 6 September 2026 (records `5fa71a2`, the admission path:
+`services/financial/admit_file.py`, its 20 tests, the package export, and
+`POST /api/financial/files/{file_id}/admit`. **`record_admission` finally has a
+production caller** — the override existed as a function and not as anything a
+person could do, and now it does. **Backend only; no TypeScript was touched.**
+This is **chunk 2a of item 8**. It records the decision; it does **not** stop a
+held file being sent without one. **Chunk 2b, the gate on the processing route,
+is the next unit**, and it is what turns `admission.py`'s "written before sent"
+from a convention into a guarantee. Read the disk note under Standing flags
+**before running anything**: the documented `CLAUDE.md` bootstrap still fails,
+and `/dev/shm` is tighter than this file used to say — 398M free, not 1.5G.)
 
-**Neil raised two things this session that outrank the build order.** He asked
-whether assertion-driven work would hold up "when we get to the real piece",
-and whether the passing suites were a happy path. The honest answer given, and
-recorded here so it is not softened next session: **every frontend test stubs
-the network, so none of them demonstrates the product working against a running
-backend.** He accepted this and said he will test a full working version when
-the system is ready. That is a commitment this build now owes him. See
-**Verification debt** below.)
+**Standing, from the session before last, and not to be softened.** Neil asked
+whether assertion-driven work would hold up "when we get to the real piece", and
+whether the passing suites were a happy path. The honest answer: **every
+frontend test stubs the network, so none of them demonstrates the product
+working against a running backend.** He accepted this and said he will test a
+full working version when the system is ready. That is a commitment this build
+owes him. See **Verification debt** below.
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `e655a0a`
-  (`e655a0acb9cd291e31b154aa27ce545f72e0b02b`), "feat(financial): show the
-  record of decisions taken on a case", parent `5316e95` (which was the
-  state-file commit for `62ff2de`). **Confirm the real tip with
+- **Head when this was written:** `5fa71a2`
+  (`5fa71a215d4fecfcafdbd72ffeb7b57742109e74`), "financial: give
+  record_admission a caller, and a route to reach it", parent `46f06af` (which
+  was the state-file commit for `e655a0a`). **Confirm the real tip with
   `git log --oneline -5`** at the start of every session rather than trusting
   this line — the state-file commit that follows this one will already have
   moved it.
@@ -63,13 +62,14 @@ disk note under Standing flags.
 
 ### Scale
 
-**132 commits** since `c4246c0` (27 August), counting `e655a0a`; 133 once the
+**134 commits** since `c4246c0` (27 August), counting `5fa71a2`; 135 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`, not incremented from the previous figure.
 
-`backend/services/financial/` **51 modules** excluding `__init__.py` (unchanged —
-this commit is frontend only); `backend/tests/test_financial_*.py` **58 files**,
-**3,381 tests**.
+`backend/services/financial/` **52 modules** excluding `__init__.py` (up one:
+`admit_file.py`); `backend/tests/test_financial_*.py` **59 files**, **3,409
+tests**. All three counted at this head with `ls | wc -l` and a full suite run,
+not carried forward.
 
 **Measured this session, for the record, because Neil asked what the time had
 gone on.** Across `c4246c0..HEAD`: 220 files changed, ~112,000 insertions. 90 of
@@ -80,35 +80,54 @@ self-justifying, and it was **spent almost entirely on internal consistency**
 rather than on whether the pieces work together when running. Do not quote the
 test count to Neil as evidence the system works.
 
-### Gate baselines as of `e655a0a`
+### Gate baselines as of `5fa71a2`
 
-- **Frontend unit: 77 files, 734 tests, all passing.** Measured at this head over
-  the whole project. Up 2 files and 34 tests from `62ff2de`'s 75/700: 30 from the
-  two new financial test files (`DecisionsTable.test.tsx` 16,
-  `DecisionsPanel.test.tsx` 14) and 4 from the new decisions block in
-  `FinancialPage.test.tsx`. **Nothing else moved.**
-- **`tsc -b --force` 0; `eslint .` 0.** Both measured at this head over the whole
-  project, **from `frontend_v2/` with an absolute `cd` and the local binaries.**
-  See the working-directory trap below; the first attempt at `62ff2de` ran both
-  in the session root and returned a meaningless clean.
-- **Frontend browser: 2 files, 4 tests, all passing — actually run this session,
-  at this head.** The previous entry here said the gate could not be run and
-  never would be. That was wrong; see **How to run the browser gate** below. It
-  needs a per-session Chromium install and `--fileParallelism=false`.
-- **Backend financial suite: `Ran 3381 tests in 13.049s, OK (skipped=12)`.** NOT
-  re-run at this head and it did not need to be: the commit is nine TypeScript
-  files and no Python. The figure carries forward from `2eefc4d`, where it was
-  measured in full, through `0fa07d5` and `62ff2de`, both likewise TypeScript
-  only. **The Python bootstrap has therefore not been run for four sessions**,
-  which is why a fresh session picking up backend work must still do it — see the
-  disk note. **The next unit is backend, so the next session will need it.**
+- **Backend financial suite: `Ran 3409 tests in 13.316s, OK (skipped=12)`.**
+  Measured in full at this head. Up **28** from `e655a0a`'s 3,381: 20 in the new
+  `test_financial_admit_file.py` and 8 added to
+  `test_financial_adjudication_router.py` (13 → 21). The arithmetic is exact,
+  which is the check that nothing else moved. **There are no expected failures.**
+- **`tests.test_financial_exports` alone: 5 tests, OK.** Run separately as well
+  as inside the suite, because it is the guard a new module is most likely to
+  trip. It is **fully automatic** — see the durable fact below; there is no list
+  in it to update.
+- **Frontend unit: 77 files, 734 tests. NOT re-run at this head, and it did not
+  need to be:** the commit is five Python files and no TypeScript. The figure
+  carries forward from `e655a0a`, where it was measured in full.
+- **`tsc -b --force` 0; `eslint .` 0.** Likewise carried forward from `e655a0a`,
+  unmeasured here, for the same reason. When they are next run it must be **from
+  `frontend_v2/` with an absolute `cd` and the local binaries** — see the
+  working-directory trap below.
+- **Frontend browser: 2 files, 4 tests.** Carried forward from `e655a0a`, where
+  it was actually run. It needs a per-session Chromium install and
+  `--fileParallelism=false`; see **How to run the browser gate** below. **Check
+  `/dev/shm` has room before attempting it** — 398M free at this head, not the
+  1.5G this file used to claim.
 
 ### How to run the browser gate
 
 This is the correction to a claim that stood in this file for several sessions.
 The gate is runnable. The Chromium headless shell is **106.4 MiB**, not the
-"roughly 700M" recorded previously, and `/dev/shm` has room for it (2.0G total,
-~1.5G free at session start; it dropped to ~562M free after the install).
+"roughly 700M" recorded previously.
+
+**Check the free space first, and do not trust a figure in this file for it.**
+The "~1.5G free at session start" recorded here at `e655a0a` did not hold.
+Measured at `5fa71a2` with `df -h /dev/shm` and `du -sh /dev/shm/*`, so these are
+real numbers and not estimates:
+
+- 2.0G total, **1.6G used, 398M free** — *after* this session's own bootstrap.
+- **`/dev/shm` does not start empty.** It carries every previous session's
+  leftovers, and the sandbox user changes each time so they cannot be removed
+  from inside a session. Present at this head: a **928M** Playwright browser
+  directory (`pw-inspiring-peaceful-brown`), **four** `pylibs-*` directories at
+  **151M each**, a 14M vite cache and an 8M pycache.
+- **The pip bootstrap is 151M, not the ~463M this file used to claim.** The
+  Chromium headless shell is 106.4 MiB. Both fit in 398M together, with room.
+- **It shrinks by ~151M per backend session,** because each one leaves its own
+  `pylibs-*` behind. That is the trend to watch. At the current rate `/dev/shm`
+  has roughly two more backend sessions of slack before a bootstrap stops
+  fitting, and the only lever from inside a session is not creating more.
+  **If it does run out, that is a thing for Neil to clear, not a build problem.**
 
 ```
 cd <repo>/frontend_v2 && PLAYWRIGHT_BROWSERS_PATH=/dev/shm/pw-$(id -un) \
@@ -179,81 +198,118 @@ being exercised. A `logger.error` without a traceback is not a failure either.
 
 ## What this session did
 
-**The record of decisions taken on a case is now on screen, as `e655a0a`.** Nine
-files, 1,099 insertions, 18 deletions. **Frontend only; no Python was touched.**
+**A person can now overrule the router about one file, on the record, as
+`5fa71a2`.** Five files, 1,115 insertions, 15 deletions. **Backend only; no
+TypeScript was touched.**
 
-This is chunk (c) of the three named three sessions ago, taken in order, and it
-completes **chunk 1 of item 8**. Four files are new and five were edited:
+This is **chunk 2a of item 8**. Two files are new and three were edited:
 
-- `components/DecisionsTable.tsx` (234 lines) — presentational, one row per
-  decision, and it draws nothing the record does not say.
-- `components/DecisionsPanel.tsx` (117 lines) — owns the four states a table
-  cannot be in the middle of (no case, in flight, failed, empty) and the two
-  claims made about the page that did arrive.
-- `components/DecisionsTable.test.tsx` (274 lines, **16 tests**) and
-  `components/DecisionsPanel.test.tsx` (257 lines, **14 tests**).
-- `components/FinancialPage.tsx` (+32) — the `Gavel` trigger and the tab body.
-- `stores/financial.store.ts` (+16) — `"decisions"` added to the `mainView`
-  union. **No migration was needed and none was written:** `mainView` is
-  deliberately excluded from the persisted slice, so a new member cannot
-  invalidate a stored value. That exclusion is now the reason it is documented.
-- `hooks/use-row-adjudication.ts` (+49) — the invalidation, below.
-- `hooks/use-case-decisions.ts` (+15) — the docstring paragraph on what
-  invalidates this key was written when nothing did; it now records what does.
-- `components/FinancialPage.test.tsx` (+4 tests, 3 assertions corrected).
+- `services/financial/admit_file.py` (309 lines) — `admit_case_file`,
+  `find_case_file`, `FileAdmission`, `FileAdmissionOutcome`.
+- `tests/test_financial_admit_file.py` (453 lines, **20 tests**).
+- `services/financial/__init__.py` (+13) — the four names exported.
+- `routers/financial_adjudication.py` (112 changed lines, of the 15 deletions) —
+  `POST /api/financial/files/{file_id}/admit`, a `_respond_admission` helper, and
+  a rewritten module docstring.
+- `tests/test_financial_adjudication_router.py` (243 changed, 13 tests → **21**).
 
-### The four things the panel had to get right, and how each was settled
+**What it does.** `admit_case_file` finds the file in the case, re-reads the
+router's finding from the file itself, and appends an
+`AdjudicationDecision.admit_financial_document` event carrying the person's name,
+their stated grounds, and what the router had found at the moment they overruled
+it. Five outcomes: `admitted`, `not_found`, `nothing_to_override`, `refused`,
+`write_failed`.
 
-1. **The heading comes from `describeDecisionPage(page)`, never from the row
-   count.** A sentence composed from `decisions.length` says "12 decisions" over
-   the first twelve of two hundred. Pinned by a test that feeds a page of 2 with
-   `total: 200` and asserts the summary reads "Showing 1 to 2 of 200 decisions."
-   plus "More come after this page."
-2. **A page with nothing on it is not a record with nothing in it.** A page past
-   the end (`total: 200, offset: 400, decisions: []`) must not render the empty
-   state, because "nothing has been decided" and "you have paged past the
-   decisions there are" call for opposite next moves. Its own test.
-3. **The panel does not warn on a count disagreement the way its siblings do.**
-   This endpoint pages by design, so `total` exceeding the page length is the
-   ordinary case; the sibling panels' `count-disagreement` warning would fire on
-   every case with a history. Pinned negatively —
-   `queryByTestId("decisions-count-disagreement")` must be null.
-4. **`changedStoredState` is three-valued and null renders as "not recorded",
-   never as "no".** Null means this build cannot read the member, so it cannot
-   say whether anything moved.
+### The four things that had to be decided, and how each was settled from source
 
-### The invalidation gap is closed
+1. **The check is re-run inside the service, not accepted from the request.**
+   `record_admission` copies the `FileRouteCheck` into the event verbatim — which
+   is right, because the finding has to be the one the decision was taken
+   against, and a finding re-derived later would describe a different question.
+   But it means **whoever supplies the check decides what the record says was
+   found**, and a check arriving over the wire could say anything. So the route
+   takes no description of the file and no statement of the finding, and this is
+   asserted **against the handler's signature**, not against a response: a
+   parameter that is merely ignored today is one a later edit can start
+   honouring. Cost: one prefix read.
+2. **Every blocking outcome is overridable, including `native`.** Admitting a
+   native file means its figures get inferred from text rather than parsed, which
+   is the failure the whole subsystem exists to prevent — so this needed a reason,
+   and `AdjudicationDecision`'s own prose is it: the member is described there as
+   being for "a bank statement that arrived on the evidence list ... admitted
+   *out* to that pipeline anyway, by a named person who was shown what the router
+   found and chose to proceed." That is the native case by name. The detector
+   reads a prefix and matches a signature, so it can be wrong, and a file it
+   wrongly claims would otherwise have **no path at all**: the ledger cannot parse
+   it and the pipeline will not take it. The answer to a fallible detector is a
+   person who can say so on the record, not a refusal nobody can get past.
+3. **`nothing_to_override` is a 200, not a 4xx.** It means the router was not
+   holding the file, so it can be processed with no decision recorded at all —
+   something the caller can act on, not something that went wrong. A 4xx would
+   send it down the browser's failure path.
+4. **`_respond_admission` is written out separately rather than folded into
+   `_respond`.** The two outcome enums happen to share `not_found` and
+   `write_failed` today, so a shared helper would have to compare
+   `outcome.value` as a string and would **go on passing** if one were later
+   renamed on only one side. Comparing by identity against the enum the result
+   actually carries fails loudly instead, which is the right direction here: the
+   branch decides whether a refusal reaches the interface or the error path.
 
-`use-row-adjudication.ts` now invalidates `["financial-decisions", caseId]`
-alongside the ledger's key. A quarantine and a release each append to the log,
-so without this the panel showed a page one decision short of the one the person
-had just taken, with no indication anything was missing. **That is the whole
-failure this surface exists to prevent, so it was a blocking item and it is
-done.** It is gated on a `decisionWasRecorded` predicate rather than on mutation
-success alone, so a response that reports no decision does not evict a good page.
+### What this deliberately does not do — and it is the next unit
 
-**It is the only writer wired to this key today.** Supersession, restore, purge
-and reclassification all append to the same log server-side and none has a
-mutation hook in this build yet. Nothing is missing so much as not yet written;
-each closes its own half when it lands. This is recorded in the hook's docstring
-too, so it does not depend on this file surviving.
+**It records the override. It does not send the file, and it does not stop a
+held file being sent without one.** `admission.py` states the rule as *"the event
+is written before the file is sent, or it is not sent"*; this is the first half.
+The second half is **a gate on the processing route that refuses a blocking file
+with no admission behind it**, and that is what turns "written first" from a
+convention into a guarantee. Until it lands, **this records an override the
+processing route does not consult.** Both the service docstring and the route
+docstring say so in as many words, so it does not depend on this file surviving.
 
-### One trap found this session
+### Known gap, and it is in the other service
 
-**The browser gate's "unrunnable" entry in this file was false, and cost
-nothing to disprove.** See **How to run the browser gate** above. The lesson is
-narrower than it looks: the claim was recorded with a specific number in it
-("roughly 700M") that was never measured, and it then stood unchallenged for
-several sessions and was carried forward each time as though verified. **A
-figure in this file that was estimated rather than measured must say so.**
+The engine runs its own pre-stage, `evidence-engine/app/pipeline/orchestrator.py`,
+which **fails any job whose file it detects as native**, and it has **no channel
+by which an admission recorded here could reach it**. So an admitted native file
+is recorded here, sent, and then refused there with a message naming the format.
+Nothing is lost and nothing is silent, but **the override does not yet take
+effect for that one outcome**. Closing it is an engine change and was not this
+unit. It is recorded in `admit_file.py`'s own docstring under a heading, not just
+here.
+
+### Three traps found this session
+
+**A test premise can be impossible and the error will not say so plainly.** A
+test built an `EvidenceFile` with `stored_path=None` to exercise the pathless
+case and died with `sqlite3.IntegrityError: NOT NULL constraint failed`. Reading
+`postgres/models/evidence.py:128` settled it: `stored_path` is
+`mapped_column(Text, nullable=False)`, so **a pathless evidence row cannot
+exist**. The real condition is a **resolver** that returns `None` — what happens
+in a container whose mount differs from the one that took the upload. The test
+was replaced with `resolve_path=lambda stored: None`, which is the production
+case, and the fixture's now-dead `None` branch was removed.
+
+**The router's route-set test failed, by design, and that is the point.**
+`test_both_routes_are_posts_under_a_transaction` compares the **whole** route
+dict exhaustively, so adding a third route broke it. It was renamed to
+`test_every_route_is_a_post_against_the_thing_it_adjudicates` and its docstring
+now says why the comparison is exhaustive: a route added to this module inherits
+`case:edit` unconditionally from `_adjudication_case_permission`, so a new route
+must fail here, where whoever added it has to say what it is.
+
+**Dead drafting code survived into the committed-to-be file.** An
+`absent = FileAdmission(...)` / `del absent` pair was left in a test. Removing it
+orphaned the `FileAdmission` import, which was then given a real use —
+`assertIsInstance(result, FileAdmission)` — rather than deleted. **Grep the new
+file for its own imports before committing.**
 
 ---
 
 ## Verification debt — read this before quoting any test count
 
-Neil asked this session whether building to assertions would hold up "when we
-get to the real piece", and whether the passing suites were a happy path. He was
-right to ask. The answer given, which is not to be softened:
+Neil asked, two sessions before this one, whether building to assertions would
+hold up "when we get to the real piece", and whether the passing suites were a
+happy path. He was right to ask. The answer given, which is not to be softened:
 
 - **Every one of the 734 frontend tests stubs `globalThis.fetch`.** They prove
   the reading, narrowing and caching logic is internally consistent, and they
@@ -271,7 +327,17 @@ right to ask. The answer given, which is not to be softened:
   — half two has only ever run against synthetic ledgers, and the alembic
   migration has never been applied to a real database — this is the largest open
   risk in the project and it is not a code defect. (The third item that used to
-  be listed here, the browser gate, is no longer one: it ran green this session.)
+  be listed here, the browser gate, is no longer one: it ran green at `e655a0a`.)
+- **NEW at `5fa71a2`, and a different kind of debt.**
+  `POST /api/financial/files/{file_id}/admit` has **no TypeScript caller at
+  all** — no `financialAPI` method, no contract test, no hook, no control. The
+  service under it has 20 Python tests and the route itself 6, but it is
+  reachable in practice only with a hand-made HTTP request.
+  So it is not in the frontend debt above, because there is no frontend for it
+  to be stubbed against. **A person cannot yet actually overrule the router**;
+  the capability exists and the way to it does not. Chunk 2b is backend and will
+  not change that, so the interface for it is still owed and should be named as
+  such when the item is described as done.
 
 **Neil's ruling: he will test a full working version himself when the system is
 ready, and the build continues in the meantime.** So do not re-litigate this. Do
@@ -298,79 +364,87 @@ entry point for data is on the evidence side: `ProcessHoldDialog` renders
 
 *Compress this into "The previous sessions, in brief" next session.*
 
-**The decision log can now be fetched and cached, as `62ff2de`.** Two files, 505
-insertions, no deletions. **Frontend only; no Python was touched.**
+**The record of decisions taken on a case went on screen, as `e655a0a`.** Nine
+files, 1,099 insertions, 18 deletions. **Frontend only.** `DecisionsTable.tsx`
+(234 lines, 16 tests), `DecisionsPanel.tsx` (117 lines, 14 tests), a seventh tab
+on `FinancialPage`, `"decisions"` added to the `mainView` union, and the
+invalidation in `use-row-adjudication.ts`. It completed **chunk 1 of item 8**.
 
-Chunk (b) of the three. `use-case-decisions.ts` (110 lines) follows
-`use-ingestion-runs.ts`; its test file is 395 lines, **14 tests**.
+### The four things the panel had to get right
 
-### The four calls in the hook that were decisions, not defaults
+1. **The heading comes from `describeDecisionPage(page)`, never from the row
+   count.** A sentence composed from `decisions.length` says "12 decisions" over
+   the first twelve of two hundred.
+2. **A page with nothing on it is not a record with nothing in it.** A page past
+   the end must not render the empty state; "nothing has been decided" and "you
+   have paged past the decisions there are" call for opposite next moves.
+3. **The panel does not warn on a count disagreement the way its siblings do.**
+   This endpoint pages by design, so the sibling `count-disagreement` warning
+   would fire on every case with a history. Pinned negatively.
+4. **`changedStoredState` is three-valued and null renders as "not recorded",
+   never as "no".**
 
-Each is recorded in the module's own header docstring as well as here.
+### The invalidation gap closed there
 
-1. **It caches under `["financial-decisions", caseId, params ?? null]`, not
-   under the ledger's prefix.** The log is append-only and outlives its
-   subjects: a purge writes its decision and then deletes the row, and the log
-   also covers subjects that were never ledger rows, such as `evidence_file`.
-   Filing it under the ledger would tie the life of the record to the life of
-   the thing it describes.
-2. **The page envelope is handed back whole, not unpacked.** `total` and
-   `truncated` are fields on the envelope, not on the rows, and
-   `describeDecisionPage` takes the page whole. A hook returning only
-   `decisions` would throw away the fact that a history was cut short, which is
-   the one thing this surface exists to be honest about.
-3. **No `placeholderData` and no polling.** Holding the previous page's rows on
-   screen under the new page's heading ("Showing 101 to 200" over rows 1-100) is
-   exactly the quiet misstatement this part of the product exists to prevent.
-4. **`limit` and `offset` are passed through, and `getCaseDecisions` guards them
-   with `!== undefined`,** so `limit: 0` and `offset: 0` reach the wire instead
-   of being dropped by truthiness. Two tests pin this directly.
+`use-row-adjudication.ts` invalidates `["financial-decisions", caseId]` alongside
+the ledger's key, gated on a `decisionWasRecorded` predicate so a response
+reporting no decision does not evict a good page. **It is still the only writer
+wired to this key** — supersession, restore, purge and reclassification all append
+to the same log server-side and none has a mutation hook in this build yet. And
+now, from this session, **neither does admission**: `admit_case_file` appends to
+the same log and has no TypeScript caller at all. Each closes its own half when
+it lands; the hook's docstring records this.
 
-### Two traps found that session, both worth more than the commit
+### The trap found there
 
-**A query with a live observer clears `isInvalidated` as soon as the refetch it
-triggered succeeds.** A test written the way `use-row-adjudication.test.tsx`
-writes them, reading `getQueryState(key)?.isInvalidated`, therefore fails
-against a mounted hook. That file gets away with it because the keys it seeds
-have **no observer**, so nothing refetches and the flag stays set. **Assert the
-observable refetch (fetch call count 1 to 2) instead of the flag.**
-
-**The bash working directory resets to the session root, and `npx` will then
-silently do the wrong thing.** `npx tsc -b --force` and `npx eslint .` were run
-without an absolute `cd`, executed against an almost-empty directory, returned
-clean, and **were reported to Neil as passing gates.** They were worthless. It
-surfaced only when the unit run failed with
-`npm error code ENOSPC ... mkdir '/sessions/<session>/.npm'`: `npx` was trying
-to *download* vitest, because there is no `node_modules` in the session root.
-Three rules follow, and none is optional:
-
-- **`cd` with an absolute path in the same invocation, every time**, and confirm
-  with `pwd` in the same command when the result is going to be reported.
-- **Run the local binaries directly**, `./node_modules/.bin/vitest`,
-  `./node_modules/.bin/tsc`, `./node_modules/.bin/eslint`, never `npx`.
-- **`TSC_EXIT=${PIPESTATUS[0]}` came back empty.** Do not read an exit code
-  through a pipe; redirect to a file and read `$?`.
-
-### One fact found then that is not about that commit
-
-**`explain_balance_failure` has no production writer.**
-`grep -rn "explain_balance_failure" --include=*.py .` from the repo root returns
-the enum, the model, the migrations and tests, and nothing in
-`services/financial/` that records one. Every other member has a writer:
-`admission.py:150`, `documents.py:654`, `duplicates.py:577/643/783`,
-`quarantine.py:680/745`.
-
-This is **not** a defect and nothing was changed for it. The member is in the
-vocabulary, the database will accept it, and `decision-format.ts` gives it words
-because a screen must be able to read one if it ever appears. But a live case
-cannot currently produce one, so **the decisions panel will never show it against
-real data yet**, and a future session should not read its absence from a case as
-a bug in the panel. Whether a writer is wanted is a question for Neil when the
-balance-failure work comes up; it is not blocking anything now.
+**The browser gate's "unrunnable" entry in this file was false, and cost nothing
+to disprove.** The lesson is narrower than it looks: the claim carried a specific
+number ("roughly 700M") that was never measured, and it then stood unchallenged
+for several sessions, carried forward each time as though verified. **A figure in
+this file that was estimated rather than measured must say so.** This session
+found the replacement figure was wrong too — see the disk note.
 
 ---
 
 ## The previous sessions, in brief
+
+**`62ff2de`, the decisions hook.** Two files, 505 insertions, frontend only.
+`use-case-decisions.ts` (110 lines) plus 395 lines and **14 tests**. Four calls
+in it were decisions, not defaults, each recorded in its own docstring: it caches
+under `["financial-decisions", caseId, params ?? null]` and **not** under the
+ledger's prefix, because the log is append-only and outlives its subjects (a
+purge writes its decision then deletes the row, and the log covers subjects that
+were never ledger rows, such as `evidence_file`); the page envelope is handed
+back **whole**, because `total` and `truncated` are on the envelope and a hook
+returning only `decisions` would throw away the fact that a history was cut
+short; **no `placeholderData` and no polling**, because holding the previous
+page's rows under the new page's heading is exactly the quiet misstatement this
+part of the product exists to prevent; and `limit`/`offset` are guarded with
+`!== undefined` so `0` reaches the wire instead of being dropped by truthiness.
+
+Two traps found then, both worth more than the commit. **A query with a live
+observer clears `isInvalidated` as soon as the refetch it triggered succeeds**,
+so a test reading `getQueryState(key)?.isInvalidated` fails against a mounted
+hook; `use-row-adjudication.test.tsx` gets away with it only because the keys it
+seeds have no observer. **Assert the observable refetch (fetch call count 1 to 2)
+instead of the flag.** And **the bash working directory resets to the session
+root, and `npx` then silently does the wrong thing**: `npx tsc -b --force` and
+`npx eslint .` ran against an almost-empty directory, returned clean, and were
+reported to Neil as passing gates. Three rules follow: `cd` with an absolute path
+in the same invocation every time; run `./node_modules/.bin/...` directly, never
+`npx`; and never read an exit code through a pipe (`${PIPESTATUS[0]}` came back
+empty) — redirect to a file and read `$?`.
+
+**One fact established then that is not about that commit.**
+`explain_balance_failure` **has no production writer.** The enum, the model, the
+migrations and the tests all name it; nothing in `services/financial/` records
+one. Every other member has a writer: `admission.py:150`, `documents.py:654`,
+`duplicates.py:577/643/783`, `quarantine.py:680/745`. This is **not** a defect —
+the member is in the vocabulary, the database accepts it, and
+`decision-format.ts` gives it words because a screen must be able to read one if
+it appears — but a live case cannot currently produce one, so **its absence from
+a case is not a bug in the panel.** Whether a writer is wanted is a question for
+Neil when the balance-failure work comes up.
 
 **`71d859d`, the words for the decision vocabulary.** Two files, 784 insertions,
 frontend only. `lib/decision-format.ts` (420 lines) beside `ledger-format.ts`
@@ -784,6 +858,47 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
 These accumulate. The heading used to say "new this session", which stopped being
 true the first time a session added to the list instead of replacing it.
 
+- **`test_financial_exports.py` is fully automatic. There is no list in it to
+  update.** This file said for several sessions that "a new module exported from
+  `__init__.py` must be added there", and `CLAUDE.md` still says it. Reading the
+  source settles it: the guard walks the package with the `ast` module and
+  asserts that every module contributes at least one name to `__all__`, that
+  every name in `__all__` resolves, that no name is exported twice, that no name
+  is imported twice, and that no submodule declares its own `__all__`. Adding a
+  module means editing **`__init__.py` only** — both the import block and
+  `__all__` — and the guard then either passes or tells you exactly what is
+  missing. 5 tests.
+- **`evidence_files.stored_path` is `NOT NULL`** (`postgres/models/evidence.py:128`,
+  `mapped_column(Text, nullable=False)`). So **there is no such thing as a
+  pathless evidence row**, and a test that builds one dies at the insert with a
+  constraint error rather than at the assertion. The condition that actually
+  exists in production is a **resolver that cannot place the path** and returns
+  `None` — a container whose mount differs from the one that took the upload.
+  Test that instead.
+- **`routers/evidence._resolve_stored_path` is already imported across routers,
+  so importing it again is not a circular-import risk.**
+  `routers/financial_ingest.py:33` does exactly that. It reconciles a stored DB
+  path against host and Docker evidence-engine layouts, trying the markers
+  `evidence-data/`, `data/evidence/` and `ingestion/data/` against
+  `EVIDENCE_ROOT_DIR`, and **returns `None`** when it cannot. It is the right
+  `resolve_path` to hand a service, and the reason such a service must never
+  default that argument to "use the path as written": that works in development
+  and fails quietly in a container.
+- **`/dev/shm` does not start empty, and 1.5G free is not a safe assumption.**
+  **398M free of 2.0G** at this head, because it carries other users' leftovers,
+  which cannot be removed from inside a session: a **928M Chromium directory**
+  (recorded elsewhere in this file as 106.4 MiB, because that is the size of the
+  *shell*, not the installed tree) and **four `pylibs-*` directories at 151M
+  each**, one per previous backend session. **So the pip bootstrap is 151M, not
+  the ~463M this file claimed, and free space falls by 151M with every backend
+  session that runs it.** Run `df -h /dev/shm` and `du -sh /dev/shm/*` before the bootstrap and
+  before any Chromium install, and do not trust a free-space figure in this file.
+- **The evidence-engine suite cannot be run in this sandbox at all.** Its
+  `pyproject.toml` declares `requires-python = ">=3.12"` and the sandbox is
+  Python **3.10.12**; `pytest` is also not installed and is not in the documented
+  bootstrap. So a finding about engine behaviour — such as the native-file
+  pre-stage above — is established **by reading the source**, and must be
+  recorded as such rather than as something a gate confirmed.
 - **The browser gate runs. Chromium is 106.4 MiB, not the 700M this file
   asserted.** With `PLAYWRIGHT_BROWSERS_PATH` and `TMPDIR` both on `/dev/shm`,
   and `--fileParallelism=false` on the run. Commands under **How to run the
@@ -1660,16 +1775,75 @@ turns out to depend on something later in the list, stop and ask.
   `66d1e67`, `519895e` and `e64c2ca`); reconciliation ✅ item 7 (`dfcef2b`).
   **Item 8, adjudication and proof class, is in progress** — **chunk 1 of 3, the
   decisions surface, is complete** (reader `a40bb61`, route `2eefc4d`, wire
-  `0fa07d5`, words `71d859d`, hook `62ff2de`, screen `e655a0a`). **Chunk 2, the
-  admission path, is the next unit.** Then duplicates, suspect amounts,
-  locators.
+  `0fa07d5`, words `71d859d`, hook `62ff2de`, screen `e655a0a`); **chunk 2a, the
+  admission record, is complete** (`5fa71a2`). **Chunk 2b, the gate on the
+  processing route, is the next unit.** Then chunk 3, proof class. Then
+  duplicates, suspect amounts, locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-### Current unit: item 8, adjudication and proof class — the admission path
+### Current unit: item 8, chunk 2b — the gate on the processing route
 
-**Start here.** The wiring plan's own words for the whole item:
+**Start here.** This is the second half of the rule `admission.py` states in its
+own words: *"the event is written before the file is sent, or it is not sent."*
+`5fa71a2` landed the first half — a person can record an override. **Nothing yet
+enforces the second half**, so today a held file can be sent to the document
+pipeline with no decision behind it, and the recorded override is an entry
+nothing consults. The unit is the enforcement.
+
+**Where it goes, read from the source this session, not remembered.**
+
+- **`POST /api/evidence/process/background`**, `routers/evidence.py:1254`,
+  `process_evidence_background`. This is what actually enqueues work.
+  `POST /api/evidence/route-check` at `routers/evidence.py:1318` sits in the gap
+  before it and already answers "which of these are bank files?" — its own
+  docstring names `/process/background` as the thing the caller passes to next.
+  **So the classification the gate needs is already computed at the right
+  moment by the right function; what is missing is a refusal.**
+- **`services/financial/route_check.check_case_files(db, *, case_id, file_ids,
+  resolve_path)`** returns a `FileRouteCheck` per id, in caller order, with
+  `not_found` for ids outside the case rather than dropping them. That is the
+  batch shape the gate wants. `resolve_path` is
+  `routers.evidence._resolve_stored_path`.
+- **There is no reader that answers "has an admission been recorded for this
+  file?" and the gate will need one.** `services/financial/admission.py` exports
+  only `record_admission`, the two `ROUTED_*` constants and its errors;
+  `decision_log.py` exports `list_case_decisions`, which pages a whole case's log
+  and is not a per-subject lookup. **Writing that reader is probably the first
+  half of this unit** — a query over `AdjudicationEvent` for
+  `subject=evidence_file`, `subject_id=<file>`,
+  `decision=admit_financial_document`, scoped to the case.
+
+**Three things to settle from source before building, not from this file.**
+First, whether the gate refuses the whole batch or drops the blocked files and
+processes the rest — `/process/background` already returns a `messages` list and
+partial `job_ids`, so partial success is its existing idiom, but a silent drop is
+the failure mode this subsystem exists to prevent, so whatever it does must be
+*said* in the response. Second, whether an admission authorises exactly one send
+— `AdjudicationDecision` and `admit_case_file`'s docstring both say an admission
+authorises **one** send and nothing is deduplicated, which implies the gate
+should consume one, not treat the file as permanently cleared. Third, whether the
+gate belongs in the router or in a service the router calls; every other rule of
+this kind in this subsystem lives in `services/financial/`.
+
+**Known gap this unit does not close.** The engine's own pre-stage,
+`evidence-engine/app/pipeline/orchestrator.py`, independently fails any job whose
+file it detects as native, and no admission recorded on this side can reach it.
+So even after the gate lands, an admitted **native** file is recorded, passed by
+the gate, sent, and then refused by the engine by name. **Do not treat this as an
+open question and do not add it to the plan.** The position, taken here so it is
+not re-argued: the backend half is correct as built, the refusal is loud rather
+than silent, and closing it is a change to a service whose suite **cannot be run
+in this sandbox at all** (see Durable facts). It is recorded as a standing flag.
+What would reverse it: Neil saying an admitted native file must actually reach
+the pipeline, at which point it becomes an engine unit he runs the gates for.
+
+---
+
+### The whole item, and what chunk 3 still needs
+
+The wiring plan's own words for the item:
 *"`assign_proof_class`, `requires_adjudication`, `record_admission`, the
 decisions surface. Proof class is computed and never set by hand; the interface
 shows it and shows what an adjudication changed, and never offers a control that
@@ -1686,11 +1860,20 @@ sets it."*
    `DecisionsTable`, `DecisionsPanel`, the seventh tab and the invalidation
    `e655a0a`. **A user can now read the record of what was decided about a case
    and on what grounds.**
-2. **The admission path, which gives `record_admission` its first caller —
-   THIS IS THE NEXT UNIT.** It is **backend** work, so it needs the `/dev/shm`
-   pip bootstrap under "Carried forward", including the `TMPDIR` flag the
-   documented `CLAUDE.md` form is missing. Plan it from the four source files
-   named below, **not from this file**.
+2. **The admission path**, split in two once it was planned from the source,
+   because `admission.py` states its rule in two halves:
+   *"the event is written before the file is sent, or it is not sent."*
+   - ✅ **Chunk 2a, the writing — complete, `5fa71a2`.**
+     `services/financial/admit_file.py` gives `record_admission` its first
+     production caller; `POST /api/financial/files/{file_id}/admit` on the
+     adjudication router lets a person reach it. **A named person can now
+     overrule the router about one file, on the record.**
+   - **Chunk 2b, the enforcement — THIS IS THE NEXT UNIT.** Nothing yet stops a
+     held file being sent to the document pipeline with no admission behind it,
+     so the override recorded by 2a is an entry nothing consults. Its own
+     section is above, under "Current unit". It is **backend** work, so it needs
+     the `/dev/shm` pip bootstrap under "Carried forward", including the
+     `TMPDIR` flag the documented `CLAUDE.md` form is missing.
 3. **Proof class and `requires_adjudication`**, last, because the class is
    already computed and already rendered; what is missing is the explanation of
    what it means and what an adjudication changed about it.
@@ -1707,15 +1890,20 @@ re-derive them from scratch:
 - **`requires_adjudication` has zero production callers.** It is defined at
   `proof_class.py:206` and exported from `__init__.py`, and nothing else calls
   it. That is the gap.
-- **`record_admission` has zero production callers.** Defined at
-  `admission.py:104`, exported, and referenced only in docstrings —
-  `reconcile_case.py:28` and `routers/financial_reconciliation.py:33` both say in
-  so many words that it is *"a later unit"*. **This unit is that later unit.**
-- **`routers/financial_adjudication.py` exists but has only two routes,** both
-  from item 6: `POST /transactions/{id}/quarantine` and
-  `.../release`. There is **no admission route and no proof-class route.** The
-  router, its permission dependency `_adjudication_case_permission` and its
-  `_respond` helper are already built and are the natural home.
+- **`record_admission` had zero production callers — no longer true as of
+  `5fa71a2`.** It was defined at `admission.py:104`, exported, and referenced
+  only in docstrings; `reconcile_case.py:28` and
+  `routers/financial_reconciliation.py:33` both said in so many words that it was
+  *"a later unit"*. Chunk 2a was that later unit. Its one caller is
+  `services/financial/admit_file.py:admit_case_file`. **Left here as written
+  because the two docstrings still say "a later unit" and will read as stale to
+  the next person; they were not touched by `5fa71a2` and correcting them is a
+  loose end, not a unit.**
+- **`routers/financial_adjudication.py` had only two routes, both from item 6**
+  (`POST /transactions/{id}/quarantine` and `.../release`); `5fa71a2` added a
+  third, `POST /files/{file_id}/admit`. There is still **no proof-class route.**
+  The router, its permission dependency `_adjudication_case_permission` and its
+  `_respond` helper were already built and were the natural home, as predicted.
 
 **Read before building chunks 2 and 3, and plan from these rather than from this
 file:** `services/financial/proof_class.py`,
@@ -1724,11 +1912,12 @@ carries `AdjudicationError`, `UnpaidObligationError`, `MalformedVerdictError` an
 the `Adjudication` class at line 180), and `routers/financial_adjudication.py`.
 **Do not plan those chunks from this file** — plan them from those four.
 
-**Chunks 2 and 3 are backend and need the pip bootstrap.** The documented
+**Chunks 2b and 3 are backend and need the pip bootstrap.** The documented
 `CLAUDE.md` one still fails on `ENOSPC`; the working form is under "Carried
-forward", including the `TMPDIR` flag that was missing from it. The Python
-bootstrap has not been run for four sessions, so budget the twenty seconds and
-re-measure the backend baseline rather than carrying `3381` forward again.
+forward", including the `TMPDIR` flag that was missing from it. It was run and
+re-measured at `5fa71a2`, so the backend baseline above is real and not carried:
+**3,409**. Re-measure it again anyway rather than trusting this line, and check
+the arithmetic against the number of tests the unit adds.
 
 **When a chunk touches the frontend**, the vitest cache must go on `/dev/shm`
 carrying the current user, and the browser gate needs the Chromium install and
@@ -2134,6 +2323,25 @@ before item 12 lands.
 - **Whether ingestion should trigger a sweep at the end of a run is not
   decided and was not decided here.** It is the obvious next caller, and item 8
   (proof class) is the unit that will actually need one. Flagged, not parked.
+- **NEW at `5fa71a2`: an admission can be recorded, and nothing consults it.**
+  A named person can now overrule the router about one file and have that
+  override written to the adjudication log with their name, their grounds and
+  what the router had found. But the processing route does not check for one, so
+  **a held file can still be sent to the document pipeline with no decision
+  behind it**, and a recorded admission changes nothing about what happens to the
+  file. `admit_file.py` says so in its own docstring rather than implying
+  otherwise. Chunk 2b is the unit that closes it, and until it lands **do not
+  describe the admission path as enforcing anything.** It records.
+- **NEW at `5fa71a2`: the engine has its own native-file refusal and no override
+  channel.** `evidence-engine/app/pipeline/orchestrator.py` fails any job whose
+  file it detects as native, and an admission recorded on the backend cannot
+  reach it. So a file admitted on the `native` outcome specifically is recorded,
+  sent, and then refused by the engine with a message naming the format. Nothing
+  is lost and nothing is silent, but **for that one outcome the override does not
+  yet take effect.** Closing it is an engine change, the engine requires Python
+  3.12 and this sandbox has 3.10, so it **cannot be built or tested from a
+  session** and needs Neil. Not parked as a question: the backend half is correct
+  as built and the gap is in the other service.
 - **CLEARED at `e655a0a`: the adjudication log is on screen.** This flag stood
   for five commits and read that the log was readable over HTTP, callable from
   TypeScript, readable as English, and visible to nobody. It said it would clear
@@ -2177,11 +2385,13 @@ before item 12 lands.
   distinction is not implemented** — the grounds column, its `decidedByPerson`
   classification and the tests over all five members are all built and, as of
   `e64c2ca`, on screen; there is simply only one member a live case can currently
-  produce. **Item 8 is what will produce the second one**, which is one reason it
-  is the next unit.
+  produce. **Item 8 chunk 3 is what will produce the second one.** Chunk 2a
+  (`5fa71a2`) did not: an admission is a decision about a file, not about a row,
+  so it cannot put a second value in that column.
 - **`localisation.py` has no production caller except `_rescue`.**
   `localise_period` and `current_identity` are reachable and tested but nothing
-  in the product asks them anything yet. Item 8 is the expected first caller.
+  in the product asks them anything yet. Item 8 chunk 3 is the expected first
+  caller; chunk 2a came and went without touching it.
 - **The Neo4j financial view is not a projection of the ledger.**
   `projection.py` has zero production callers. The two stores can disagree and
   nothing detects it. Phase 3 item 12 closes this. **Do not describe the graph
@@ -2213,10 +2423,13 @@ before item 12 lands.
 - **Disk: `/sessions` is completely full and this is the first thing to check
   every session.** Measured again at `2eefc4d`: 9.8G of 9.8G, **zero bytes
   available** — unchanged for ten sessions, against 129M eleven sessions ago.
-  Root is at 99% with 120M free. `/dev/shm` is 2.0G, showing 1.5G free *after*
-  this session's 463M of installed packages, so budget for roughly 1.5G of
-  genuinely free space at the start. This is a steady state rather than something
-  still getting worse.
+  Root is at 99% with 120M free. **`/dev/shm` does not start empty and 1.5G free
+  is not a safe assumption** — an older wording here said it was. Measured at
+  `5fa71a2`: 2.0G total, **1.6G used, 398M free**, and it does not start empty.
+  Full breakdown, including what is leaving the leftovers behind and how fast, is
+  under **How to run the browser gate** above. Measure it with `df -h /dev/shm`
+  at the start of any session that needs room rather than trusting a figure in
+  this file.
   - **This does not block the repo, and an older wording implied it did.**
     `df -h` on the repo path shows a **separate virtiofs mount with 35G free**
     (36G at `e64c2ca`, 37G at `19bffae`; it drifts a little and is nowhere near
