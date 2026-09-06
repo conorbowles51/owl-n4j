@@ -7,22 +7,61 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `8ac2455`, “Connect held-file admissions to
-  evidence processing”, parent `cb1cd13`. A documentation commit follows it;
+- **Latest implementation commit:** `b8aeb5b`, “Show case-wide evidence classification
+  above the ledger”, parent `b968348`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
   to complete the admission control and the case-wide proof-class display,
   then continue the agreed sequence. The older demand for a ruling on the
   admission control is resolved. Do not ask for that approval again.
-- **Completed this session:** the admission control, including the previously
-  parked API contract. The nine implementation/test files are committed.
+- **Completed on takeover:** admission control at `8ac2455`, then the case-wide
+  evidence-classification display at `b8aeb5b`. **Item 8's planned wiring is now
+  complete**, subject to the explicitly preserved backend limitations below.
 - **Uncommitted implementation work:** none. Existing unrelated documents,
   evidence, backups and `src/__probe.test.ts` were left untouched and untracked.
-- **Next unit:** the case-wide proof-standing display. **Item 8 is not complete.**
-  `getCaseProofStanding` still has no production consumer. Read
-  `proof_standing.py`, the ledger route, its API contract, `FinancialPage`, and
-  the existing ledger/decisions readers before designing its placement.
+- **Next unit:** Phase 2 item 9, duplicates. Start from the actual `duplicates.py`
+  implementation and its existing tests, then identify the necessary case-scoped
+  endpoints, review controls and cache invalidations. Do not treat the old plan's
+  descriptions as verified source facts. This will touch Python; establish an
+  appropriate local runtime before claiming a backend gate.
+
+### What the classification display now does
+
+`ProofStandingPanel` is mounted on the ledger tab above `LedgerPanel`, in its own
+error boundary. It remains reachable when the graph is empty/loading and when the
+admitted ledger is empty. No new tab or persisted store value was needed.
+
+- The visible summary reports financial source-document and ledger-row counts,
+  plus counts in classes requiring a human decision. **Those are class counts,
+  not outstanding-review counts.** It explicitly includes held-out, superseded
+  and rejected records. A zero census does not claim the case has no financial
+  evidence.
+- Expand **View all classes and their rules** to see every class, including zeroes,
+  with its document/row counts and all four backend-supplied permissions.
+  Eligibility for totals is distinguished from a row actually being counted.
+  The component offers no classification editor and derives no permissions from
+  class labels. Unknown future classes remain visible as unrecognised values.
+- `readProofStanding` validates the case, row shape, safe nonnegative integer
+  counts, complete known-class set, unique classes, aggregate consistency and
+  agreement between `counted_classes` and the reported flags. Incomplete data is
+  an error, not a partial census silently presented as complete.
+- `useProofStanding` uses `["financial-proof-standing", caseId]`, takes no graph
+  filters, and has no cross-case placeholder. Refresh is explicit; background
+  refresh labels the retained reading, and a failed refresh hides stale counts.
+- `useIngestFile` invalidates the census after `stored: true`. Its mutation
+  context preserves the case that started ingestion for cache invalidation,
+  even when navigation occurs before the response. A no-op ingest does not
+  refetch. Quarantine and file admission do not change this class-only census.
+  Future duplicate purge, correction and reclassification writers must refresh
+  it when they change the counted records or their classes.
+- Shared descriptions now correctly say P0's control totals were checked
+  successfully, and that P3 can include native files whose arithmetic failed or
+  could not be checked. Both follow `assign_proof_class` in the existing backend.
+
+This is frontend-only. No backend, engine, schema, migration or test-runtime
+configuration changed. The classification endpoint and its contract were already
+built; they now have a production hook and a rendered consumer.
 
 ### What the admission control now does
 
@@ -67,17 +106,17 @@ lockfile's dependencies restored using `npm ci --ignore-scripts`:
 
 | Gate | Result |
 | --- | --- |
-| `vitest run --project unit` | **81 files, 809 tests passed** |
-| `vitest run --project browser` | **3 files, 5 tests passed** |
+| `vitest run --project unit` | **84 files, 845 tests passed** |
+| `vitest run --project browser` | **4 files, 6 tests passed** |
 | `tsc -b --force` | **exit 0** |
 | `eslint .` | **exit 0** |
 
-The new Chromium test mounts the real dialog and processing hook and uses the
-real API clients. It exercises a preliminary clearance followed by a server 409,
-recording a reason, and a separate processing click. **Service responses are
-fixtures. This is not a live backend or real-case end-to-end run.** The 20 parked
-API contract tests are included; 40 unit tests and one browser test were added.
-The unrelated `__probe.test.ts` still contributes one file and one unit test.
+Two financial Chromium tests now exercise the connected UI: admission from a
+server refusal through recorded decision to a separate processing click, and the
+classification census through loading, expanding the rules and refreshing.
+**Service responses are fixtures. These are not live backend or real-case
+end-to-end runs.** The classification unit added 36 unit tests and one Chromium
+test. The unrelated `__probe.test.ts` still contributes one file and one unit test.
 
 Backend tests were not rerun: this unit changes only frontend code. The previous
 reported financial baseline remains 3,466 tests with 12 skipped, not newly verified.
@@ -100,7 +139,9 @@ lockfile changed. npm needed network approval. Cache:
 The Chromium test server was blocked by sandbox localhost restrictions (`listen
 EPERM`), then all browser tests passed outside the sandbox with the installed Mac
 Chromium. “No tests” after that failure was not counted as a passing gate. Logs
-for this session are `/tmp/loupe-neilbyrne-{unit,browser,tsc,lint}.out`.
+for the latest classification unit are `/tmp/loupe-neilbyrne-proof-{unit,tsc,lint}.out`
+and `/tmp/loupe-neilbyrne-browser.out`. Earlier admission logs are
+`/tmp/loupe-neilbyrne-{unit,tsc,lint}.out`.
 
 Git writes need sandbox approval. The implementation used a temporary index,
 explicit paths, `commit-tree`, and an atomic `update-ref` with the expected parent;
@@ -110,8 +151,8 @@ changed, no unrelated files were staged, and nothing was pushed.
 ### Remaining sequence and risks
 
 Phase 1 is connected. In Phase 2, runs, quarantine and decisions have interfaces;
-reconciliation remains API-only. Finish item 8's case-wide classification display,
-then items 9–11: duplicates, ledger corrections, source locators. Phase 3 remains
+reconciliation remains API-only. Item 8's admission and classification interfaces
+are connected. Next are items 9–11: duplicates, ledger corrections, source locators. Phase 3 remains
 projection, continuity/coverage, linkage/correlation/flow; Phase 4 remains
 exhibit/export and tracing. The original plan's sequence stands.
 
