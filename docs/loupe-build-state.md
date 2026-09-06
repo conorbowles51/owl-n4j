@@ -3,27 +3,36 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 6 September 2026 (records `71d859d`, the second frontend chunk
-of the decisions screen: `decision-format.ts`, which narrows `subject_type` and
-`decision` off the wire and gives every member of both vocabularies words, plus
-its unit test. **Still no screen** — this is the layer between the wire and the
-hook. **Item 8 is still in progress** and the standing flag about the log being
-readable-but-invisible is **still open**; nothing a user can see changed again
-this session. Read the disk note under Standing flags **before running
-anything**: the documented `CLAUDE.md` bootstrap still fails, and the working
-form needs one more environment variable than this file previously recorded.)
+**Last updated:** 6 September 2026 (records `62ff2de`, the third frontend chunk
+of the decisions screen: `use-case-decisions.ts`, the hook that fetches and
+caches a page of the decision log, plus its 14-test unit file. **Still no
+screen** — the next chunk, `DecisionsPanel` plus its tab, is the one that
+closes the standing flag. **Item 8 is still in progress.** Read the disk note
+under Standing flags **before running anything**: the documented `CLAUDE.md`
+bootstrap still fails, and the working form needs one more environment variable
+than this file previously recorded.
+
+**Neil raised two things this session that outrank the build order.** He asked
+whether assertion-driven work would hold up "when we get to the real piece",
+and whether the passing suites were a happy path. The honest answer given, and
+recorded here so it is not softened next session: **every frontend test stubs
+the network, so none of them demonstrates the product working against a running
+backend.** He accepted this and said he will test a full working version when
+the system is ready. That is a commitment this build now owes him. See
+**Verification debt** below.)
 
 ---
 
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `71d859d`
-  (`71d859d20bc97d55f25305e61c3deddf2e69f71a`), "Put the decision vocabulary into
-  words the screen can show", parent `f18e6eb` (which was the state-file commit
-  for `0fa07d5`). **Confirm the real tip with `git log --oneline -5`** at the
-  start of every session rather than trusting this line — the state-file commit
-  that follows this one will already have moved it.
+- **Head when this was written:** `62ff2de`
+  (`62ff2de84308d4af9bb7cf33037dc14da61aeb7e`), "Read a case's decision history
+  without flattening the page it came in", parent `e3978eb` (which was the
+  state-file commit for `71d859d`). **Confirm the real tip with
+  `git log --oneline -5`** at the start of every session rather than trusting
+  this line — the state-file commit that follows this one will already have
+  moved it.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 - **The build order lives in `docs/loupe-wiring-plan.md`,** not in this file. Read
   it before picking up work. It is an agreed plan and is not to be resequenced
@@ -51,7 +60,7 @@ disk note under Standing flags.
 
 ### Scale
 
-**128 commits** since `c4246c0` (27 August), counting `71d859d`; 129 once the
+**130 commits** since `c4246c0` (27 August), counting `62ff2de`; 131 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`, not incremented from the previous figure.
 
@@ -59,13 +68,24 @@ state-file commit lands on top of it. Counted with
 this commit is frontend only); `backend/tests/test_financial_*.py` **58 files**,
 **3,381 tests**.
 
-### Gate baselines as of `71d859d`
+**Measured this session, for the record, because Neil asked what the time had
+gone on.** Across `c4246c0..HEAD`: 220 files changed, ~112,000 insertions. 90 of
+the 220 files are test files. Roughly **60,000 lines of test code against 52,000
+lines of everything else**, of which ~3,000 is docs. So a little over half the
+output is tests. That ratio is defensible for forensic software, but it is not
+self-justifying, and it was **spent almost entirely on internal consistency**
+rather than on whether the pieces work together when running. Do not quote the
+test count to Neil as evidence the system works.
 
-- **Frontend unit: 74 files, 686 tests, all passing.** Measured at this head over
-  the whole project. Up 1 file and 28 tests from `0fa07d5`'s 73/658, accounted
-  for exactly by the new `decision-format.test.ts`. **Nothing else moved.**
+### Gate baselines as of `62ff2de`
+
+- **Frontend unit: 75 files, 700 tests, all passing.** Measured at this head over
+  the whole project. Up 1 file and 14 tests from `71d859d`'s 74/686, accounted
+  for exactly by the new `use-case-decisions.test.tsx`. **Nothing else moved.**
 - **`tsc -b --force` 0; `eslint .` 0.** Both measured at this head over the whole
-  project.
+  project, **from `frontend_v2/` with an absolute `cd` and the local binaries.**
+  See the working-directory trap below; the first attempt this session ran both
+  in the session root and returned a meaningless clean.
 - **Backend financial suite: `Ran 3381 tests in 13.049s, OK (skipped=12)`.** NOT
   re-run at this head and it did not need to be: the commit is two TypeScript
   files and no Python. The figure carries forward from `2eefc4d`, where it was
@@ -118,6 +138,120 @@ being exercised. A `logger.error` without a traceback is not a failure either.
 ---
 
 ## What this session did
+
+**The decision log can now be fetched and cached, as `62ff2de`.** Two files, 505
+insertions, no deletions. **Frontend only; no Python was touched.**
+
+This is chunk (b) of the three named two sessions ago, taken in order.
+`use-case-decisions.ts` (110 lines) follows `use-ingestion-runs.ts`, and its
+test file (395 lines, **14 tests**) follows `use-row-adjudication.test.tsx`.
+
+**Nothing a user can see changed, so the standing flag about the adjudication
+log being readable-but-invisible is still open.** It clears at chunk (c),
+`DecisionsPanel` plus its tab, which is the next unit.
+
+### The four calls in the hook that were decisions, not defaults
+
+Each is recorded in the module's own header docstring as well as here.
+
+1. **It caches under `["financial-decisions", caseId, params ?? null]`, not
+   under the ledger's prefix.** The log is append-only and outlives its
+   subjects: a purge writes its decision and then deletes the row, and the log
+   also covers subjects that were never ledger rows, such as `evidence_file`.
+   Filing it under the ledger would tie the life of the record to the life of
+   the thing it describes.
+2. **The page envelope is handed back whole, not unpacked.** `total` and
+   `truncated` are fields on the envelope, not on the rows, and
+   `describeDecisionPage` takes the page whole. A hook returning only
+   `decisions` would throw away the fact that a history was cut short — which is
+   the one thing this surface exists to be honest about.
+3. **No `placeholderData` and no polling.** Holding the previous page's rows on
+   screen under the new page's heading ("Showing 101 to 200" over rows 1-100) is
+   exactly the quiet misstatement this part of the product exists to prevent.
+4. **`limit` and `offset` are passed through, and `getCaseDecisions` guards them
+   with `!== undefined`,** so `limit: 0` and `offset: 0` reach the wire instead
+   of being dropped by truthiness. Two tests pin this directly.
+
+### Two traps found this session, both worth more than the commit
+
+**A query with a live observer clears `isInvalidated` as soon as the refetch it
+triggered succeeds.** A test written the way `use-row-adjudication.test.tsx`
+writes them — reading `getQueryState(key)?.isInvalidated` — therefore fails
+against a mounted hook. That file gets away with it because the keys it seeds
+have **no observer**, so nothing refetches and the flag stays set. **Assert the
+observable refetch (fetch call count 1 → 2) instead of the flag.** The sibling
+"not swept by a ledger invalidation" test was strengthened the same way, to
+assert fetch was *not* called again.
+
+**The bash working directory resets to the session root, and `npx` will then
+silently do the wrong thing.** `CLAUDE.md` says this; this session proved the
+cost. `npx tsc -b --force` and `npx eslint .` were run without an absolute `cd`,
+executed against an almost-empty directory, returned clean, and **were reported
+to Neil as passing gates.** They were worthless. It surfaced only when the unit
+run failed with `npm error code ENOSPC ... mkdir '/sessions/<session>/.npm'` —
+`npx` was trying to *download* vitest, because there is no `node_modules` in the
+session root. Two rules follow, and neither is optional:
+
+- **`cd` with an absolute path in the same invocation, every time**, and confirm
+  with `pwd` in the same command when the result is going to be reported.
+- **Run the local binaries directly** — `./node_modules/.bin/vitest`,
+  `./node_modules/.bin/tsc`, `./node_modules/.bin/eslint` — never `npx`. With
+  `/sessions` full, `npx` cannot fall back to a download, so a wrong directory
+  produces a disk error rather than a wrong answer only by luck.
+- Also re-learned: **`TSC_EXIT=${PIPESTATUS[0]}` came back empty.** Do not read
+  an exit code through a pipe.
+
+---
+
+## Verification debt — read this before quoting any test count
+
+Neil asked this session whether building to assertions would hold up "when we
+get to the real piece", and whether the passing suites were a happy path. He was
+right to ask. The answer given, which is not to be softened:
+
+- **Every one of the 700 frontend tests stubs `globalThis.fetch`.** They prove
+  the reading, narrowing and caching logic is internally consistent, and they
+  catch regressions in it. **Not one of them demonstrates the product working
+  against a running backend.**
+- **The only genuine bridge is the four `api.*.test.ts` contract files**
+  (`api.decisions.test.ts` and its siblings), which `readFileSync` the Python
+  source off disk and assert the wire field names still match. That catches
+  drift in *names*, not in *behaviour*.
+- The backend suite is the stronger half, because it runs the real Python
+  against a real SQLite database. But SQLite is not Postgres and synthetic rows
+  are not evidence.
+- **No session has ever started the backend, pointed the frontend at it, and
+  opened a real case.** Combined with the three standing flags already recorded
+  below — half two has only ever run against synthetic ledgers, the alembic
+  migration has never been applied to a real database, the browser gate cannot
+  run — this is the largest open risk in the project and it is not a code
+  defect.
+
+**Neil's ruling: he will test a full working version himself when the system is
+ready, and the build continues in the meantime.** So do not re-litigate this. Do
+**not** report green gates to him as though they settled whether something
+works. When a unit lands, say what was verified and by what means.
+
+**Confirmed by reading the source this session: the ingest-to-ledger path exists
+end to end, so that test is possible when he wants it.** `docker-compose.yml`
+brings up Postgres 16 on 5434, Neo4j, Redis, ChromaDB, and the evidence engine
+with its own migration step. The backend exposes `POST /api/financial/precheck`
+and `POST /api/financial/ingest` (`routers/financial_ingest.py`) and `GET
+/ledger`, `/runs`, `/decisions` (`routers/financial_ledger.py`). The frontend
+routes `FinancialPage` at `/financial` (`app/routes.tsx:162`) with six tabs
+wired — ledger, quarantine, runs, transactions, counterparties, trends. The
+entry point for data is on the evidence side: `ProcessHoldDialog` renders
+`SendToLedgerDialog`, which calls `usePrecheckFile` then `useIngestFile` from
+`hooks/use-ledger-ingest.ts`. **The one known gap for a first real run is
+`alembic upgrade head`,** which has never been applied from a session.
+
+---
+
+## The session before this one, in detail
+
+*Compress this into "The previous sessions, in brief" next session; it is kept
+in full here only because the reasoning below has not yet been summarised
+without loss.*
 
 **The decision vocabulary now has words, as `71d859d`.** Two files, 784
 insertions, no deletions. **Frontend only; no Python was touched.**
@@ -292,17 +426,30 @@ tracked modifications afterwards.
 
 ### What the next unit is
 
-**The `use-case-decisions` hook, then the panel.** Chunk (a) landed this session,
-so what remains of the decisions screen is (b) a `use-case-decisions` hook
-following `use-ingestion-runs`, and (c) a `DecisionsPanel` and its tab on
-`FinancialPage`. **Only when (c) lands does the standing flag clear.**
+**`DecisionsPanel` and its tab on `FinancialPage` — chunk (c), the one that
+clears the standing flag.** Chunks (a) and (b) have both landed, so every layer
+below the screen now exists: the wire types and client call (`0fa07d5`), the
+reader that turns a stored row into words (`71d859d`), and the hook that fetches
+and caches a page (`62ff2de`). Nothing further is needed before the panel.
 
-The hook is the small one and should be a single session's work. Read
-`use-ingestion-runs` first and follow it rather than inventing a second shape:
-this hook has one thing that one does not, which is paging, and `limit`/`offset`
-have to reach `getCaseDecisions` **without being coerced through truthiness** —
-`0fa07d5` guards them with `!== undefined` for exactly that reason and a hook
-that drops a zero would undo it one layer up.
+Read `QuarantinePanel.tsx` and `IngestionRunsPanel.tsx` first and follow them
+rather than inventing a third shape. Four things this panel must get right, all
+of them already decided and none of them open questions:
+
+- **Use `describeDecisionPage(page)` for the heading** rather than composing one
+  from the row count. It only claims "Showing all" when `offset === 0` and
+  `truncated` is false, which is the whole point of handing the envelope back
+  whole.
+- **`changedStoredState` is three-valued.** Null means this build cannot read
+  the member and so cannot say whether anything moved. It must not render as
+  "no".
+- **Honour the keep-mounted rule for `RowAdjudicationDialog`** — see the ledger
+  screen's own rules below.
+- **Nothing currently invalidates `["financial-decisions", ...]`.** See the new
+  standing flag; closing it belongs with this unit.
+
+After the screen: the admission path, which is what finally gives
+`record_admission` a caller, and then proof class and `requires_adjudication`.
 
 After the screen: the admission path, which is what finally gives
 `record_admission` a caller, and then proof class and `requires_adjudication`.
@@ -1949,6 +2096,19 @@ before item 12 lands.
 
 ## Standing flags
 
+- **NEW at `62ff2de`: nothing invalidates `["financial-decisions", ...]`.**
+  `use-row-adjudication.ts` invalidates only `["financial-ledger", caseId]`, and
+  the decisions hook deliberately caches outside that prefix. But quarantining
+  or releasing a row **appends to the decision log**, so with the panel open a
+  user would adjudicate a row and see the log fail to grow. **This is a blocking
+  item for chunk (c)**, not a defect in the hook: the invalidation belongs with
+  the mutation that has a panel to refresh. Two tests in
+  `use-case-decisions.test.tsx` pin the current behaviour in both directions —
+  a ledger invalidation does not sweep this key, and its own prefix does.
+- **NEW at `62ff2de`: no live end-to-end run has ever been done.** See
+  **Verification debt** near the top of this file. Neil has ruled that he will
+  test a full working version himself when the system is ready; do not
+  re-litigate it, and do not present green gates as evidence the system works.
 - **Phase 1 is closed: a bank file can be sent to the ledger from seven places
   and the rows it creates are now visible.**
 - **The balance identity now runs, but only through the API.** Nothing in the
