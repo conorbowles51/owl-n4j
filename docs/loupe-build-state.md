@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `b0086d3`, “Assess selected source amounts
-  against stored text and provenance”, parent `657d1ff`. A documentation commit follows it;
+- **Latest implementation commit:** `6953895`, “Review selected source amounts
+  with exact text offsets in the evidence UI”, parent `d104980`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,40 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Source amount review is connected to evidence text search
+
+`6953895` adds “Assess an amount in source text” to each document result in
+Evidence text search. The panel reads canonical extracted text in bounded windows,
+lets the user select up to 128 code points and supply an ISO currency, then calls
+the read-only assessment endpoint. It displays stored origin, explanations and
+exact readings/proposals; it never writes corrections or admits amounts.
+
+The new authenticated case:view GET `/api/financial/source-files/{id}/text`
+returns content, digest, Unicode code-point offsets and pagination metadata.
+It reuses the case-scoped source query and recomputed digest check from assessment.
+Windows default to 12,000 code points, maximum 20,000. Wrong-case sources return
+404; stale or inconsistent source digests return 409. The UI validates response
+identity, offsets and selected text before displaying results. Selection conversion
+accounts for textarea CRLF normalization and UTF-16 positions after emoji; raw
+canonical text is preserved. Currency or selection changes clear the prior result.
+
+Validation: **3,541 financial tests pass, 12 skipped; 877 frontend unit tests in
+89 files and 9 Chromium tests in 7 files pass. TypeScript and ESLint pass.**
+New unit tests cover exact selection conversion, the full panel request/result
+with currency reset, and wrong-case response refusal. New backend tests cover
+bounded windows and scope/size/range refusal. Existing Chromium checks passed;
+the new panel has not yet had its own Chromium or live HTTP smoke test. Logs:
+`/tmp/loupe-neilbyrne-source-ui-{backend,full,browser}.out` and
+`/tmp/loupe-neilbyrne-source-amount-ui-tests.out`.
+
+Next: restart the isolated backend to load both source endpoints, and validate the
+panel with a synthetic canonical source through HTTP and Chromium. The existing
+correction fixture does not have an EvidenceFile/canonical-text record, so prepare
+a separate synthetic fixture in the isolated local database. Engine/worker still
+need restarting for the prior text_origin extraction change. Automatic amount and
+column identification, review admission, broader revalidation and projection remain
+outstanding. No real evidence/database writes occurred in this segment.
 
 ### Source-grounded amount assessment endpoint
 
