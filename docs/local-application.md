@@ -63,6 +63,22 @@ target is configurable, and the check does not erase data.
 Stop the four native processes with Ctrl-C in their terminals. Stop Docker
 services with `docker compose -f docker-compose.local.yml stop`; data is retained.
 
+Check read-only source amount assessment through HTTP and PostgreSQL:
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_source_amounts.py
+```
+
+Run the duplicate check first on a fresh installation to create the local tester.
+The source check leaves a labelled synthetic case and three generated text files
+with digital, recognized and unknown provenance. It verifies exact readings,
+wrong-case and stale-source refusal, and absence of ledger/adjudication writes.
+Its case/file IDs are saved in `data/local-runtime/source-amount-check.json`.
+In that case's Evidence view, switch Search scope to “Text in case”, search for
+“Synthetic amount review”, and open “Assess an amount in source text”. Select
+1234 and enter USD. Digital text returns 1234.00; the other sources offer 12.34
+and 1234.00. These are synthetic provenance fixtures, not an extraction test.
+
 Verified 6 September 2026: migrations from an empty PostgreSQL database to head,
 all service connections and OCR, native PDF rendering, both venvs' `pip check`,
 3,497 financial tests (12 skipped), and the real duplicate/lock-contention check.
