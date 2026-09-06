@@ -9,12 +9,13 @@ read-only. Admitting, correcting, or quarantining a row stays with the
 ingestion and adjudication services that act with a run and an actor behind
 them.
 
-Four reads of the same store, at four levels. ``/ledger`` returns the rows.
+Reads of the same store at several levels. ``/ledger`` returns the rows.
 ``/runs`` returns the executions that produced them, including the ones that
 produced nothing because they failed. ``/decisions`` returns what was decided
 about any of it, by whom, and when. ``/proof-standing`` returns how much of the
 case's evidence sits in each proof class and what each of those classes is
-allowed to do. All four are ``case:view`` and none of them writes, which is
+allowed to do. ``/duplicates`` compares current stored readings and reports
+actual document dispositions. All reads are ``case:view`` and none writes, which is
 what keeps this router's claim about itself true.
 
 ``/decisions`` is here rather than on ``routers.financial_adjudication``, where
@@ -53,6 +54,10 @@ from services.financial import (
     list_transactions,
     to_run_view,
     to_view,
+)
+
+from services.financial.duplicate_query import (
+    DuplicateQueryLimitError, list_duplicate_candidates,
 )
 
 import logging
@@ -349,3 +354,18 @@ async def get_case_proof_standing(
         raise HTTPException(status_code=500, detail=str(e))
 
     return standing.as_dict()
+
+
+@router.get("/duplicates")
+async def get_duplicate_candidates(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    db: Session = Depends(get_db),
+):
+    """Fresh candidates and actual dispositions; viewing never changes totals."""
+    try:
+        return list_duplicate_candidates(db, case_id)
+    except DuplicateQueryLimitError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception:
+        logger.exception("Failed to compare financial documents for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Duplicate comparison could not be completed.")

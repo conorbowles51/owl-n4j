@@ -251,6 +251,11 @@ from services.financial.transactions import (
     normalise_sign,
     record_transactions,
 )
+from services.financial.duplicate_query import (
+    MAX_COMPARISON_DOCUMENTS,
+    DuplicateQueryLimitError,
+    list_duplicate_candidates,
+)
 from services.financial.duplicates import (
     CrossCaseError,
     CrossMatterSighting,
@@ -1095,6 +1100,9 @@ __all__ = [
     "DocumentFingerprint",
     "DuplicateError",
     "DuplicateGroup",
+    "MAX_COMPARISON_DOCUMENTS",
+    "DuplicateQueryLimitError",
+    "list_duplicate_candidates",
     "GroupMember",
     "cross_matter_sightings",
     "find_groups",

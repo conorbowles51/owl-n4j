@@ -17,18 +17,17 @@ individual check passes will not announce itself, so it has to be looked for.
 The cascade
 -----------
 
-Documents are compared at three strengths, and the rungs are nested: identical
-bytes imply an identical reading, and an identical reading implies the same
-accounts over the same dates.  A match therefore holds at every rung weaker
-than the strongest one that held, which is why one group key is enough to
-gather a whole group while ``duplicate_match_rung`` records per member how
-strongly it actually matched.
+The legacy resolver below compares persisted fingerprints within account/period
+coverage groups. The HTTP candidate reader in ``duplicate_query`` instead
+recomputes fingerprints without saving them. Identical bytes need not imply
+identical readings: parser versions and corrections can disagree. That reader
+reports the conflict explicitly and makes no exclusion decision.
 
 ``identical_bytes`` is the same sha256 over the file.  Cheap, certain, and the
 narrowest: it catches a re-upload and nothing else.
 
 ``identical_reading`` is the same ``content_fingerprint`` — accounts, period
-bounds, currency, and the transaction rows.  This is the rung that earns the
+bounds, currency, balance observations, and all transaction rows.  This is the rung that earns the
 module, because it is the one that survives a re-scan.  Two disclosures of the
 same statement are two different files; only their content matches.
 
@@ -79,6 +78,7 @@ filters on it, and the one function that looks across matters
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Iterable, Mapping, Optional, Sequence
@@ -108,10 +108,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.orm import Session
 
 
-# Unit separator.  Chosen because it cannot occur in an account identity key,
-# an ISO date or a hex digest, so no combination of field values can be made to
-# collide with a different combination by embedding the separator in a field.
-_SEP = "\x1f"
 _RECORD = "\x1e"
 
 
@@ -132,9 +128,9 @@ class DocumentFingerprint:
     """The two fingerprints of one document, coarse and fine."""
 
     # Accounts, bounds and currency.  Groups candidates.
-    group_key: str
-    # The above plus the transaction rows.  Establishes an identical reading.
-    content_fingerprint: str
+    group_key: Optional[str]
+    # Includes all rows and balance observations. None means no comparison data.
+    content_fingerprint: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -184,30 +180,6 @@ def _digest(parts: Iterable[str]) -> str:
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
 
-def _period_signature(
-    period: FinancialStatementPeriod, account_identity_key: str
-) -> str:
-    """One period reduced to what identifies it across copies.
-
-    The account's identity key is used rather than its id.  The id is a
-    per-case surrogate, so hashing it would make every fingerprint case-bound
-    and the cross-matter question unanswerable.  The identity key is derived
-    from the identifiers the document printed, so two copies of one statement
-    produce the same signature wherever they are filed.
-
-    Absent dates are written as an empty field rather than skipped, so that a
-    period with no start and one with no end cannot produce the same string.
-    """
-    return _SEP.join(
-        (
-            account_identity_key,
-            period.period_start.isoformat() if period.period_start else "",
-            period.period_end.isoformat() if period.period_end else "",
-            period.currency or "",
-        )
-    )
-
-
 def fingerprint_document(
     session: "Session", document: FinancialSourceDocument
 ) -> DocumentFingerprint:
@@ -216,7 +188,8 @@ def fingerprint_document(
     Periods and rows are sorted before hashing, so two readings that differ
     only in the order rows came back from the database are recognised as the
     same reading.  Sorting is on the content itself, not on any surrogate id,
-    for the same reason the account identity key is preferred above.
+    Account identity keys are used instead of per-case account IDs.
+    Empty documents return no keys; absent data is not an identical reading.
     """
     periods = list(
         session.scalars(
@@ -226,28 +199,65 @@ def fingerprint_document(
         ).all()
     )
 
+    rows = list(session.scalars(
+        select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == document.id
+        )
+    ))
     identity_keys = _account_identity_keys(
-        session, {p.account_id for p in periods}
+        session, {p.account_id for p in periods} | {r.account_id for r in rows}
     )
+    if not periods and not rows:
+        return DocumentFingerprint(None, None)
+
+    # Versioned, unambiguous encoding. Accounts can contain arbitrary text;
+    # delimiter concatenation must not let a field masquerade as two fields.
+    def encoded(value) -> str:
+        return json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+
+    by_period: dict[uuid.UUID, list[str]] = {}
+    unlinked: list[str] = []
+    period_ids = {p.id for p in periods}
+    for row in rows:
+        value = encoded([identity_keys[row.account_id], row.currency, row.content_hash])
+        if row.statement_period_id is None:
+            unlinked.append(value)
+        elif row.statement_period_id not in period_ids:
+            raise DuplicateError("a transaction links to another document's period")
+        else:
+            by_period.setdefault(row.statement_period_id, []).append(value)
 
     coarse: list[str] = []
     fine: list[str] = []
     for period in periods:
-        signature = _period_signature(period, identity_keys[period.account_id])
-        coarse.append(signature)
+        signature = [
+            identity_keys[period.account_id],
+            period.period_start.isoformat() if period.period_start else None,
+            period.period_end.isoformat() if period.period_end else None,
+            period.currency,
+        ]
+        coarse.append(encoded(["period", signature]))
+        fine.append(encoded([
+            "period", signature,
+            period.period_start_source, period.period_end_source,
+            period.opening_balance_minor, period.opening_balance_source,
+            period.closing_balance_minor, period.closing_balance_source,
+            sorted(by_period.get(period.id, [])),
+        ]))
 
-        row_hashes = sorted(
-            session.scalars(
-                select(FinancialTransaction.content_hash).where(
-                    FinancialTransaction.statement_period_id == period.id
-                )
-            ).all()
-        )
-        fine.append(_SEP.join((signature, *row_hashes)))
+    # Payment files and ambiguous multi-period readings have unlinked rows.
+    # These rows must participate even if the document also has periods.
+    if unlinked:
+        accounts = sorted({
+            (identity_keys[r.account_id], r.currency)
+            for r in rows if r.statement_period_id is None
+        })
+        coarse.append(encoded(["unlinked", accounts]))
+        fine.append(encoded(["unlinked", sorted(unlinked)]))
 
     return DocumentFingerprint(
-        group_key=_digest(sorted(coarse)),
-        content_fingerprint=_digest(sorted(fine)),
+        group_key=_digest(["v2", *sorted(coarse)]),
+        content_fingerprint=_digest(["v2", *sorted(fine)]),
     )
 
 

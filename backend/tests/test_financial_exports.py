@@ -67,6 +67,12 @@ def _public_definitions(path: pathlib.Path) -> list[str]:
 
 
 class PackageSurfaceTests(unittest.TestCase):
+    def test_duplicate_query_surface_is_exported(self):
+        for name in ("MAX_COMPARISON_DOCUMENTS", "DuplicateQueryLimitError",
+                     "list_duplicate_candidates"):
+            self.assertIn(name, package.__all__)
+            self.assertTrue(hasattr(package, name))
+
     def test_every_module_is_reachable_from_the_package(self):
         """No module may be invisible from ``services.financial``.
 

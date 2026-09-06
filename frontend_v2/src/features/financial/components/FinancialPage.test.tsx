@@ -716,4 +716,10 @@ it("shows the classification census even when both the graph and admitted ledger
   expect(screen.getByTestId("proof-standing-totals")).toHaveTextContent("5 financial source documents")
   expect(standing.useProofStanding).toHaveBeenCalledWith("case-1")
   expect(screen.getByTestId("proof-standing-panel")).toBeInTheDocument()
+  expect(screen.getByRole("region", { name: "Duplicate candidates" })).toBeInTheDocument()
 })
+
+
+vi.mock("../hooks/use-duplicate-candidates", () => ({
+  useDuplicateCandidates: () => ({ isPending: true, isFetching: false, refetch: vi.fn() }),
+}))
