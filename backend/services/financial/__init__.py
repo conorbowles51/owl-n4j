@@ -9,6 +9,7 @@ Nothing in this package may represent a monetary value as a float.
 """
 
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
+from services.financial.corrections import correct_transaction
 from services.financial.accounts import (
     IDENTITY_TIERS,
     NON_VALUES,
@@ -886,6 +887,7 @@ from services.financial.version import (
 )
 
 __all__ = [
+    "correct_transaction",
     "CorrectionPreviewError",
     "preview_amount_correction",
     # Account identity.  The one writer whose failures are silent: merging two

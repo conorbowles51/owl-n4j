@@ -219,6 +219,7 @@ class AdjudicationDecision(str, Enum):
     reclassify_document = "reclassify_document"
 
     admit_financial_document = "admit_financial_document"
+    correct_transaction = "correct_transaction"
 
 
 class IngestionRunStatus(str, Enum):

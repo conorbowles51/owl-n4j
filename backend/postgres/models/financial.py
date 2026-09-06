@@ -103,7 +103,7 @@ _ADJUDICATION_SUBJECTS = (
 _ADJUDICATION_DECISIONS = (
     "('supersede_duplicate', 'restore_document', 'purge_duplicate', "
     "'quarantine_row', 'release_row', 'explain_balance_failure', "
-    "'reclassify_document', 'admit_financial_document')"
+    "'reclassify_document', 'admit_financial_document', 'correct_transaction')"
 )
 _QUARANTINE_REASONS = (
     "('balance_break', 'unreadable_row', 'currency_mismatch', "

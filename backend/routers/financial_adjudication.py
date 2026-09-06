@@ -44,6 +44,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from services.financial.duplicate_decisions import DuplicateDecisionError, decide_duplicate
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
+from services.financial.corrections import correct_transaction
 from services.financial.quarantine_row import actor_from_user, ActorError
 
 from postgres.session import get_db
@@ -257,6 +258,29 @@ class AmountCorrectionPreviewRequest(BaseModel):
     # A decimal string avoids rounding BIGINT money in browser JSON numbers.
     amount_minor: str = Field(strict=True, pattern=r"^(0|[1-9][0-9]{0,18})$")
     direction: Literal["credit", "debit"]
+
+
+class AmountCorrectionRequest(AmountCorrectionPreviewRequest):
+    reason: str = Field(min_length=1, max_length=4000)
+    expected_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+@router.post("/transactions/{transaction_id}/correction")
+async def record_amount_correction(
+    transaction_id: UUID, payload: AmountCorrectionRequest,
+    case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return correct_transaction(db, case_id=case_id, transaction_id=transaction_id,
+                                   amount_minor=int(payload.amount_minor), direction=payload.direction,
+                                   expected_revision=payload.expected_revision, reason=payload.reason,
+                                   actor=actor_from_user(current_user))
+    except (CorrectionPreviewError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 422), detail=str(exc))
+    except Exception:
+        logger.exception("Correction failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The correction could not be confirmed. Refresh before trying again.")
 
 
 @router.post("/transactions/{transaction_id}/correction-preview")
