@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `8bdd848`, “Connect fresh duplicate comparisons
-  to the financial ledger”, parent `6d0716c`. A documentation commit follows it;
+- **Latest implementation commit:** `bf73450`, “Connect reversible duplicate
+  decisions with exact row provenance”, parent `bdf3dbd`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -23,10 +23,15 @@ completed-item claims and environment recipes in that history are not current.
 - **Session convention:** Neil explicitly said the session-delimitation rule was
   for Claude and authorized continuing in this same session. Keep tested commits
   and the disk handoff; do not require a new session after each unit.
-- **Next unit:** Continue Phase 2 item 9 with explicit exclusion/restoration and
-  recorded reasons. Fresh comparison and its case-view API/UI are connected.
-  Item 9 is **not complete**. Do not expose the legacy resolver unchanged;
-  remaining mutation risks are recorded below.
+- **Next integration milestone:** Neil said, “At some point I want to get the
+  whole application running locally in a venv so we can test, keep that in mind.”
+  Prepare a reproducible local application environment and verify the real
+  duplicate round trip and PostgreSQL concurrency before further ledger writers.
+  The existing `/tmp` venv runs tests only; it is not a complete app installation.
+- **Duplicate status:** comparison plus explicit exclusion/restoration are connected
+  for one case. The broader item 9 still has authorized cross-matter sightings and
+  comparison scaling/coverage work outstanding. The legacy bulk resolver is not
+  exposed. After integration verification, item 10 is ledger corrections.
 
 ### Duplicate comparison is connected
 
@@ -88,22 +93,93 @@ The first backend attempt failed the package-export guard; the new public symbol
 were then exported and the complete final suite passed. No schema, evidence-engine,
 Neo4j or live-evidence writes occurred. No dependency manifests changed.
 
-### Next: reversible duplicate decisions
+### Reversible duplicate decisions are connected
 
-Do not connect `resolve_duplicates` as a blind bulk POST. Before enabling writes:
+`DuplicateDecisionForm` lets a reviewer select which matching admitted document
+will remain, then enter a reason and separately **Record decision**. Excluded
+documents also appear in their own list, so restoration stays reachable even if
+a document no longer belongs to a candidate group. The form survives comparison
+refreshes and shows confirmed success, definite refusal or an uncertain response.
+It requires a new review after an error instead of automatically retrying.
 
-- Recheck the current compared pair, case permissions and disposition at write time;
-  reject stale requests and weak/shared-coverage or conflicting-reading matches.
-- Preserve an admitted primary and prevent supersession cycles/chains or all copies
-  disappearing. Legacy nomination scores only admitted rows while grouping already
-  superseded documents, so its simple rerun tests are insufficient.
-- Audit restoration against row corrections. Legacy `restore_document` readmits
-  **all** rows with superseded status, while that status also represents corrected
-  rows. Record exactly which rows an exclusion changed and restore only those,
-  preserving quarantine/rejection and later correction decisions.
-- Require the authenticated actor and stated reason, atomic decision/state commit,
-  concurrent-write checks and explicit success/refusal/uncertain UI. No automatic
-  exclusion on import and no purge action is needed for the reversible interface.
+`POST /api/financial/documents/{document_id}/duplicate-decision` inherits
+**authentication and case:edit**. It takes an action, reason, reviewed document
+revision, and (for exclusion) retained document/revision. The actor is constructed
+from the authenticated user, never supplied by the request. Reasons are required
+and retained verbatim; the HTTP body limits them to 4,000 characters.
+
+- `duplicate_decisions.decide_duplicate` owns commit/rollback. It locks documents
+  in ID order, then their periods and rows, and refreshes ORM state before checking
+  revisions. The revision includes the fingerprint, disposition, row status and
+  correction links, proof classes and latest document decision sequence.
+- Exclusion requires two distinct admitted documents with equal fresh fingerprints.
+  A primary with held/corrected rows, ineligible proof classes, an existing
+  supersession or dependent exclusions cannot be displaced. This refuses weak or
+  conflicting readings and avoids chains/cycles/all copies disappearing.
+- The event records the authenticated actor, reason, reviewed revision digests,
+  retained document, and **exact changed row IDs with before/after statuses**.
+  Only admitted rows are superseded. Preexisting quarantine, rejection and row
+  corrections remain untouched. The event and state commit atomically.
+- Restoration requires the latest document decision to be a version-1 exclusion
+  from this path with coherent row provenance. It restores only those recorded
+  rows if they remain superseded and have no correction replacement. Missing or
+  subsequently changed rows cause a refusal, not a partial restoration. Legacy
+  exclusions without row provenance are explicitly refused.
+- `quarantine_row` now locks the source document before the transaction and refreshes
+  both. Quarantine/release refuse a non-admitted source document, preventing release
+  of a held row from silently bypassing the document's exclusion. Future correction
+  writers must follow the same document -> periods -> rows lock ordering.
+- The query returns reviewed revisions, reading fingerprints and a separate list
+  of excluded documents. UI choices require matching reading fingerprints; the
+  backend remains authoritative and rechecks everything. A viewer attempting a
+  write is refused by the endpoint's edit permission.
+- A synchronous form lock prevents duplicate submission. Mutation variables capture
+  the original case and reviewed documents; settlement invalidates that case's
+  ledger (including comparisons) and decision history, including uncertain replies.
+  No graph mutation or automatic reconciliation is implied.
+
+Verification at this implementation:
+
+| Gate | Result |
+| --- | --- |
+| Financial backend suite, Python 3.12 | **3,497 tests passed, 12 skipped** |
+| Frontend unit | **87 files, 859 tests passed** |
+| Chromium | **6 files, 8 tests passed** |
+| TypeScript / eslint | **exit 0 / exit 0** |
+| Python 3.10 syntax parsing | passed for changed service/router/test files |
+
+The new backend tests cover round-trip audit provenance, preexisting corrections,
+quarantine interaction, stale and repeated requests, weak/conflicting readings,
+primary eligibility/dependencies, cross-case access, reason/self-exclusion refusal,
+legacy restoration refusal, later corrections and rollback on commit failure.
+Router tests cover authenticated actor forwarding, edit permission and error
+translation. The existing exhaustive route-list test was updated for this POST.
+Frontend tests cover one submission, reviewed revisions, original-case invalidation,
+refusal/uncertainty and restoration payloads. Chromium exercises exclusion followed
+by restoration through the connected panel and form.
+
+**Limits of verification:** database tests use SQLite, whose FOR UPDATE does not
+exercise PostgreSQL locking. Browser responses are fixtures. Run real PostgreSQL
+concurrent requests and the full local app workflow before calling this integration
+verified. Stored reconciliation results are not automatically refreshed by these
+operations; the existing graph remains independent of the ledger. No migrations,
+real-case writes, engine changes or dependency-manifest changes occurred.
+
+Logs: `/tmp/loupe-neilbyrne-duplicate-decisions-{backend,unit,browser,tsc,lint}.out`;
+focused provenance regressions: `/tmp/loupe-neilbyrne-duplicate-decisions-focused.out`.
+The full backend gate was rerun after the final audit-snapshot change and passed.
+
+### Whole-application local test milestone
+
+Neil wants the whole application running locally with the Python backend in a
+venv, not just isolated financial tests. This is recorded as the next integration
+milestone, not as completed. Establish the actual launch/dependency configuration
+from repository source, keep the environment reproducible and separate from global
+Python, and start the frontend and required services together. Test with synthetic
+case data, including real HTTP permission failures and concurrent duplicate actions.
+The temporary test environment and its optional-dependency warnings do not establish
+that every application feature can start. Do not reuse historical Linux sandbox
+assumptions or claim the app is running from passing unit tests.
 
 ### Duplicate detection prerequisite completed
 
