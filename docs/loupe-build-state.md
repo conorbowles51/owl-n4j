@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `f42c8e5`, “Preserve measured PDF text origin
-  alongside canonical source text”, parent `848948c`. A documentation commit follows it;
+- **Latest implementation commit:** `b0086d3`, “Assess selected source amounts
+  against stored text and provenance”, parent `657d1ff`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,38 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Source-grounded amount assessment endpoint
+
+`b0086d3` adds authenticated case:view POST
+`/api/financial/source-files/{evidence_file_id}/amount-assessment?case_id=...`.
+It is read-only. Body: start_char/end_char (Unicode code points), expected_text
+(1–128 characters), content_sha256 and uppercase currency. Extra fields are
+forbidden; the caller cannot supply origin, a proof class or admission.
+
+One case-scoped query loads canonical text and provenance. The service recomputes
+the text digest, refuses a stale/corrupt digest or mismatched offsets with 409,
+and returns 404 for missing or wrong-case source text. Only one unambiguous covering
+page can establish stored text_origin; missing, malformed, overlapping or historical
+provenance stays unknown. It calls the existing suspect_amounts.read_amount on the
+actual substring. All returned minor-unit figures/proposals are decimal strings.
+Currency is explicitly caller-supplied context. The response says applied:false
+and limits the assessment to selected text; it does not identify a transaction or
+admit any figure to totals. No correction or graph write occurs.
+
+Validation: **3,539 financial tests pass, 12 skipped**, including ten focused
+service/router tests plus package export coverage. Real SQLite case isolation,
+Unicode offsets (including a preceding emoji), stale/mismatched source refusal,
+unknown/overlapping provenance and exact proposal strings are tested. Python 3.10
+syntax and diff checks pass. Logs: `/tmp/loupe-neilbyrne-amount-assessment-{tests,full}.out`.
+No frontend change; baseline remains 874 unit/9 Chromium tests. No real evidence
+or database writes. Backend needs restarting before a live endpoint test.
+
+Next: connect this read-only assessment to an explicit source-text selection in
+the UI. Inspect the existing canonical-text read API first; ensure it exposes
+the digest and uses the same Unicode code-point offsets. Never derive the raw
+reading from a formatted ledger integer. Automatic amount/column identification,
+review admission of unresolved source readings and projection remain outstanding.
 
 ### PDF text-origin provenance now survives extraction
 
