@@ -45,7 +45,6 @@ import { FinancialCharts } from "./FinancialCharts"
 import { DuplicateCandidatesPanel } from "./DuplicateCandidatesPanel"
 import { ProofStandingPanel } from "./ProofStandingPanel"
 import { CorrectableLedger } from "./CorrectableLedger"
-import { QuarantinePanel } from "./QuarantinePanel"
 import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
 import { IngestionRunNotice } from "./IngestionRunNotice"
 import { IngestionRunsPanel } from "./IngestionRunsPanel"
@@ -554,7 +553,7 @@ export function FinancialPage() {
         <TabsContent value="quarantine" className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-auto p-4">
             <ErrorBoundary level="section">
-              <QuarantinePanel caseId={caseId} onAdjudicate={setAdjudicationRow} />
+              <CorrectableLedger key={caseId} caseId={caseId} heldOut onAdjudicate={setAdjudicationRow} />
             </ErrorBoundary>
           </div>
         </TabsContent>

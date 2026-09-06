@@ -10,8 +10,8 @@
  * reader that quarantined, superseded and rejected rows are sitting outside
  * the filter, uncounted. Pointed at a quarantined list that sentence states
  * the reverse of what was checked: quarantined rows are not outside this
- * filter, they are the whole of it. Zero rows here means nothing in the case
- * is currently held out of the totals, which is a good result and reads as one.
+ * filter, they are the whole of it. Zero rows here means no rows are currently
+ * quarantined; classification and document status can still exclude evidence.
  *
  * **The status is not the caller's to choose.** It is fixed rather than
  * defaulted, so no caller can pass `admitted` into a panel whose every
@@ -48,6 +48,7 @@ export function QuarantinePanel({
   caseId,
   params,
   onAdjudicate,
+  onCorrect,
 }: {
   caseId: string | undefined
   params?: Omit<LedgerQueryParams, "ledgerStatus">
@@ -55,11 +56,12 @@ export function QuarantinePanel({
    * Passed straight to the table, which draws the action column when it is
    * given. This panel does not hold the dialog, and here the reason is at its
    * sharpest: letting the last held row back in empties this list, so the
-   * "nothing is being held out" state above returns and everything below it
+   * "no rows are currently quarantined" state above returns and everything below it
    * is unmounted. A dialog owned here would go with it, taking the answer to
    * the change, which is said in that one response and nowhere else.
    */
   onAdjudicate?: (transaction: LedgerTransaction) => void
+  onCorrect?: (transaction: LedgerTransaction) => void
 }) {
   const { data, isPending, isError, error } = useLedgerTransactions(caseId, {
     ...params,
@@ -68,7 +70,10 @@ export function QuarantinePanel({
 
   if (!caseId) {
     return (
-      <p className="text-sm text-muted-foreground" data-testid="quarantine-no-case">
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid="quarantine-no-case"
+      >
         Choose a case to see what is being held out of its totals.
       </p>
     )
@@ -109,10 +114,10 @@ export function QuarantinePanel({
     return (
       <EmptyState
         icon={ShieldCheck}
-        title="Nothing is being held out of this case's totals"
+        title="No rows are currently quarantined"
         description={
           "No row in this case's relational ledger is currently quarantined, " +
-          "so every row that was read into the ledger is counted. Rows that " +
+          "but evidence classification and document status still determine inclusion in totals. Rows that " +
           "were superseded or rejected are a separate matter and are not " +
           "shown here."
         }
@@ -122,7 +127,10 @@ export function QuarantinePanel({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground" data-testid="quarantine-summary">
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="quarantine-summary"
+      >
         {rows.length} {rows.length === 1 ? "row" : "rows"} held out of every
         total in this case.
       </p>
@@ -153,6 +161,7 @@ export function QuarantinePanel({
         transactions={rows}
         showQuarantineGrounds
         onAdjudicate={onAdjudicate}
+        onCorrect={onCorrect}
       />
     </div>
   )

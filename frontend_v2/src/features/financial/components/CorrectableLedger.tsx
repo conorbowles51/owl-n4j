@@ -2,15 +2,19 @@ import { useState } from "react"
 import type { LedgerTransaction } from "../api"
 import { CorrectionForm } from "./CorrectionForm"
 import { LedgerPanel } from "./LedgerPanel"
+import { QuarantinePanel } from "./QuarantinePanel"
 
 export function CorrectableLedger({
   caseId,
   onAdjudicate,
+  heldOut = false,
 }: {
   caseId: string | undefined
   onAdjudicate: (row: LedgerTransaction) => void
+  heldOut?: boolean
 }) {
   const [selected, setSelected] = useState<LedgerTransaction | null>(null)
+  const Panel = heldOut ? QuarantinePanel : LedgerPanel
   return (
     <div className="space-y-3">
       {selected && caseId && (
@@ -23,7 +27,7 @@ export function CorrectableLedger({
           onClose={() => setSelected(null)}
         />
       )}
-      <LedgerPanel
+      <Panel
         caseId={caseId}
         onAdjudicate={onAdjudicate}
         onCorrect={selected ? undefined : setSelected}
