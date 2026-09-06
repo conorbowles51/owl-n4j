@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `c7d3a88`, “Resolve ledger citations to same-case
-  evidence files and stored locators”, parent `88f4bfc`. A documentation commit follows it;
+- **Latest implementation commit:** `65be755`, “Open stored source pages and
+  highlights from relational ledger rows”, parent `0d3f90f`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,39 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Source navigation connected on Ledger and Held out
+
+`65be755` adds View source through CorrectableLedger, both ledger panels and
+LedgerTable. Selection captures the original case and is hidden on a case switch.
+LedgerSourceDialog fetches the new citation endpoint, validates case/transaction,
+recorded digest agreement and locator-state coherence, then passes the resolved
+**evidence-file ID**, never the relational document ID, to the existing source
+highlight renderer and DocumentViewer. It uses the stored page when available.
+No guessed page or highlight is supplied for missing/invalid locations.
+
+The dialog explains missing/invalid locations and historical superseded readings.
+Its Open source file action opens the authenticated original file viewer; PDFs
+also use the existing page image/highlight path. Non-PDF sources do not request
+the PDF rendering endpoint. Server errors, digest refusal or inconsistent metadata
+block navigation. A failed background citation refetch returns to the error dialog.
+No correction/admission/graph write occurs.
+
+Validation: **886 frontend unit tests in 90 files, 10 Chromium tests in 8 files
+pass; TypeScript and ESLint pass.** Nine new dialog tests cover resolved evidence
+identity, stored page, historical labels, missing/invalid locator disclosure,
+wrong-case/row, digest and contradictory locator refusal. Existing Chromium gates
+passed; this new dialog still needs its own real PDF integration smoke test.
+Logs: `/tmp/loupe-neilbyrne-ledger-source-ui-{focused,full,browser}.out`.
+Backend unchanged; financial baseline remains 3,549 (12 skipped).
+
+Next: restart isolated backend for the citation route, build a labelled synthetic
+relational fixture tied to an actual generated PDF with a stored page rectangle,
+and verify source navigation/highlight in the running app on Ledger and Held out.
+Existing correction fixtures have synthetic absent source files; do not pretend
+those files exist. Also add a dedicated Chromium source-navigation regression.
+Automatic suspect reading ingestion/admission, native/running-balance revalidation
+and graph projection remain outstanding; this segment does not complete them.
 
 ### Relational ledger citation endpoint
 
