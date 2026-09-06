@@ -8,7 +8,7 @@
  * view. Cached under a query key it would go stale against a window the reader
  * has since changed, which is the one thing about it that must not happen.
  *
- * Invalidation is `["financial-ledger", caseId]` and nothing wider. The Neo4j
+ * A stored ingest refreshes the ledger and its whole-case classification census. The Neo4j
  * hooks in `use-financial-data.ts` sit under `["financial", caseId, ...]` and
  * are a different store; an ingest writes relational rows and cannot change a
  * graph node, so refetching the graph here would imply a relationship the
@@ -59,12 +59,16 @@ export function usePrecheckFile(caseId: string | undefined) {
 export function useIngestFile(caseId: string | undefined) {
   const queryClient = useQueryClient()
 
-  return useMutation<FileIngestion, Error, IngestVariables>({
+  return useMutation<FileIngestion, Error, IngestVariables, string | undefined>({
+    // Keep cache invalidation attached to the case that started this ingest,
+    // even if the user navigates before the response arrives.
+    onMutate: () => caseId,
     mutationFn: (variables) =>
       financialAPI.ingestFile({ caseId: caseId!, ...variables }),
-    onSuccess: (result) => {
-      if (!result.stored) return
-      queryClient.invalidateQueries({ queryKey: ["financial-ledger", caseId] })
+    onSuccess: (result, _variables, ingestedCaseId) => {
+      if (!result.stored || !ingestedCaseId) return
+      queryClient.invalidateQueries({ queryKey: ["financial-ledger", ingestedCaseId] })
+      queryClient.invalidateQueries({ queryKey: ["financial-proof-standing", ingestedCaseId] })
     },
   })
 }

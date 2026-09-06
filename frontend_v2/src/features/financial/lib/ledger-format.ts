@@ -256,7 +256,7 @@ const PROOF_CLASS_COPY: Record<ProofClass, TermCopy> = {
   p0: {
     label: "P0",
     description:
-      "Structured file that carries its own control totals, so the figures can be checked against what the bank published.",
+      "Structured file whose own control totals were checked successfully.",
   },
   p1: {
     label: "P1",
@@ -271,7 +271,7 @@ const PROOF_CLASS_COPY: Record<ProofClass, TermCopy> = {
   p3: {
     label: "P3",
     description:
-      "Statement document whose arithmetic does not close, or could not be tried.",
+      "Financial source whose arithmetic did not close or could not be checked. This can include a native bank file as well as a statement document.",
   },
   p4: {
     label: "P4",

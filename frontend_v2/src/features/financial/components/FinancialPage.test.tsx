@@ -17,6 +17,7 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { proofStanding } from "@/test/proof-standing-fixture"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
 import type { LedgerTransaction, Transaction } from "../api"
@@ -27,6 +28,7 @@ const graph = vi.hoisted(() => ({ useTransactions: vi.fn() }))
 const ledger = vi.hoisted(() => ({ useLedgerTransactions: vi.fn() }))
 const runs = vi.hoisted(() => ({ useIngestionRuns: vi.fn() }))
 const adjudication = vi.hoisted(() => ({ useRowAdjudication: vi.fn() }))
+const standing = vi.hoisted(() => ({ useProofStanding: vi.fn() }))
 const decisions = vi.hoisted(() => ({ useCaseDecisions: vi.fn() }))
 
 const idleMutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }
@@ -83,6 +85,12 @@ vi.mock("../hooks/use-row-adjudication", () => ({
 vi.mock("../hooks/use-case-decisions", () => ({
   useCaseDecisions: decisions.useCaseDecisions,
 }))
+
+vi.mock("../hooks/use-proof-standing", () => ({ useProofStanding: standing.useProofStanding }))
+
+beforeEach(() => {
+  standing.useProofStanding.mockReturnValue({ data: proofStanding(), isPending: false, isError: false, isFetching: false, refetch: vi.fn() })
+})
 
 function makeGraphRow(): Transaction {
   return {
@@ -698,4 +706,14 @@ describe("FinancialPage, the row adjudication dialog", () => {
 
     expect(screen.queryByTestId("adjudication-row")).not.toBeInTheDocument()
   })
+})
+
+
+it("shows the classification census even when both the graph and admitted ledger are empty", () => {
+  useFinancialStore.getState().reset()
+  graphEmpty(); ledgerEmpty(); runsEmpty(); adjudicationIdle()
+  renderPage()
+  expect(screen.getByTestId("proof-standing-totals")).toHaveTextContent("5 financial source documents")
+  expect(standing.useProofStanding).toHaveBeenCalledWith("case-1")
+  expect(screen.getByTestId("proof-standing-panel")).toBeInTheDocument()
 })

@@ -42,6 +42,7 @@ import { EntityFlowTables } from "./EntityFlowTables"
 import { BulkActionsBar } from "./BulkActionsBar"
 import { TransactionTable } from "./TransactionTable"
 import { FinancialCharts } from "./FinancialCharts"
+import { ProofStandingPanel } from "./ProofStandingPanel"
 import { LedgerPanel } from "./LedgerPanel"
 import { QuarantinePanel } from "./QuarantinePanel"
 import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
@@ -529,6 +530,9 @@ export function FinancialPage() {
             */}
             <ErrorBoundary level="section">
               <IngestionRunNotice caseId={caseId} />
+            </ErrorBoundary>
+            <ErrorBoundary level="section">
+              <ProofStandingPanel caseId={caseId} />
             </ErrorBoundary>
             <ErrorBoundary level="section">
               <LedgerPanel caseId={caseId} onAdjudicate={setAdjudicationRow} />
