@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom"
 import {
   BarChart3,
   DollarSign,
+  Gavel,
   History,
   Rows3,
   ScrollText,
@@ -46,6 +47,7 @@ import { QuarantinePanel } from "./QuarantinePanel"
 import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
 import { IngestionRunNotice } from "./IngestionRunNotice"
 import { IngestionRunsPanel } from "./IngestionRunsPanel"
+import { DecisionsPanel } from "./DecisionsPanel"
 import { BulkCategorizeDialog } from "./BulkCategorizeDialog"
 import { CategoryManagementDialog } from "./CategoryManagementDialog"
 import { SubTransactionDialog } from "./SubTransactionDialog"
@@ -483,6 +485,17 @@ export function FinancialPage() {
               <History className="size-3.5" />
               Attempts
             </TabsTrigger>
+            {/*
+              Last of the four Postgres tabs, and still before the graph tabs.
+              The three before it are views of what the ledger holds now; this
+              one is the record of who moved any of it and on what grounds, so
+              it is a tab away from the totals it explains rather than the
+              other side of the strip.
+            */}
+            <TabsTrigger value="decisions" data-testid="financial-tab-decisions">
+              <Gavel className="size-3.5" />
+              Decisions
+            </TabsTrigger>
             <TabsTrigger value="transactions">
               <Rows3 className="size-3.5" />
               Transactions
@@ -549,6 +562,25 @@ export function FinancialPage() {
           <div className="min-h-0 flex-1 overflow-auto p-4">
             <ErrorBoundary level="section">
               <IngestionRunsPanel caseId={caseId} />
+            </ErrorBoundary>
+          </div>
+        </TabsContent>
+
+        {/*
+          Reads Postgres, takes no graph chrome, is not gated on the graph
+          query, for the same reasons as the three tabs above.
+
+          It takes no `onAdjudicate` either, and that is the point of the
+          separation rather than an omission: this is the record of decisions
+          already taken, and the place a decision is taken is the dialog
+          mounted below, outside this strip. Only the active tab's content is
+          mounted, so a dialog opened from the ledger and living inside the
+          ledger tab would be unmounted the moment anyone switched here.
+        */}
+        <TabsContent value="decisions" className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-auto p-4">
+            <ErrorBoundary level="section">
+              <DecisionsPanel caseId={caseId} />
             </ErrorBoundary>
           </div>
         </TabsContent>

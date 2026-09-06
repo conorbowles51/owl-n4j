@@ -41,12 +41,15 @@
  * the rows it is showing belong to, at which point the trade is only about
  * flicker.
  *
- * **Nothing invalidates this key yet.** `use-row-adjudication.ts` invalidates
- * `["financial-ledger", caseId]` and nothing else, but a quarantine and a
- * release each append to this log, so after one the cached page here is a
- * decision short. That cannot be observed today because no component reads this
- * hook; it becomes a visible defect the moment a panel does, so closing it
- * belongs with the panel and not before.
+ * **What invalidates this key, and what deliberately does not.**
+ * `use-row-adjudication.ts` invalidates `["financial-decisions", caseId]`
+ * alongside the ledger's key, because a quarantine and a release each append
+ * to this log and the cached page would otherwise be a decision short of the
+ * one the person just took. That is the only writer wired to it today. Every
+ * other route that appends here -- a supersession, a restore, a purge, a
+ * reclassification -- has no mutation hook in this build yet, so nothing is
+ * missing from this list so much as not written; each of them closes its own
+ * half when it lands, the way this one did.
  */
 
 import { useQuery } from "@tanstack/react-query"

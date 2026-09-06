@@ -10,11 +10,12 @@ export interface SortColumn {
 /**
  * The tab in front of you on the financial page, and nothing wider than that.
  *
- * `ledger`, `quarantine` and `runs` read Postgres: the ledger itself, the rows
- * held out of its totals, and the record of every attempt to load evidence into
- * it. The other three read the Neo4j graph. The two stores are written
+ * `ledger`, `quarantine`, `runs` and `decisions` read Postgres: the ledger
+ * itself, the rows held out of its totals, the record of every attempt to load
+ * evidence into it, and the record of what people decided about that evidence
+ * afterwards. The other three read the Neo4j graph. The two stores are written
  * independently and can disagree, so which one is on screen is a fact about
- * what you are looking at, not a presentation choice. The three Postgres tabs
+ * what you are looking at, not a presentation choice. The four Postgres tabs
  * are kept next to each other in the strip for that reason, and the order below
  * is the order they appear in.
  *
@@ -28,6 +29,12 @@ export interface SortColumn {
  * screen, which is the word the notice and the run copy already use in front of
  * a reader.
  *
+ * `decisions` sits last of the four because it is the only one that is not a
+ * view of the ledger's current contents. The first three each answer "what does
+ * the case hold now, and what was left out"; this one answers "who moved it,
+ * and on what grounds", and it outlives its subjects -- a decision to delete a
+ * duplicate is recorded before the thing it is about stops existing.
+ *
  * Nothing here is persisted: `partialize` omits `mainView` and `merge` deletes
  * any stored value, so a member can be added or removed without a migration and
  * a page always opens on the ledger.
@@ -36,6 +43,7 @@ export type FinancialMainView =
   | "ledger"
   | "quarantine"
   | "runs"
+  | "decisions"
   | "transactions"
   | "counterparties"
   | "trends"

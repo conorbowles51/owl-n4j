@@ -27,6 +27,7 @@ const graph = vi.hoisted(() => ({ useTransactions: vi.fn() }))
 const ledger = vi.hoisted(() => ({ useLedgerTransactions: vi.fn() }))
 const runs = vi.hoisted(() => ({ useIngestionRuns: vi.fn() }))
 const adjudication = vi.hoisted(() => ({ useRowAdjudication: vi.fn() }))
+const decisions = vi.hoisted(() => ({ useCaseDecisions: vi.fn() }))
 
 const idleMutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }
 
@@ -70,6 +71,17 @@ vi.mock("../hooks/use-ingestion-runs", () => ({
  */
 vi.mock("../hooks/use-row-adjudication", () => ({
   useRowAdjudication: adjudication.useRowAdjudication,
+}))
+
+/*
+ * Mocked for the reason the run history is: unmocked it reaches for a
+ * `QueryClientProvider` this render does not supply and throws, and the panel's
+ * own `ErrorBoundary` catches the throw, so the page would render green with a
+ * dead tab behind it. What is asserted below is that the page mounts this
+ * panel, not what the log answers; that is `DecisionsPanel.test.tsx`.
+ */
+vi.mock("../hooks/use-case-decisions", () => ({
+  useCaseDecisions: decisions.useCaseDecisions,
 }))
 
 function makeGraphRow(): Transaction {
@@ -176,6 +188,23 @@ function adjudicationIdle() {
   })
 }
 
+/** Nothing decided: the decisions tab says so rather than drawing a table. */
+function decisionsEmpty() {
+  decisions.useCaseDecisions.mockReturnValue({
+    data: {
+      case_id: "case-1",
+      decisions: [],
+      total: 0,
+      limit: 100,
+      offset: 0,
+      truncated: false,
+    },
+    isPending: false,
+    isError: false,
+    error: null,
+  })
+}
+
 /** No attempt recorded: the notice stays silent, the attempts tab says so. */
 function runsEmpty() {
   runs.useIngestionRuns.mockReturnValue({
@@ -235,15 +264,20 @@ describe("FinancialPage", () => {
   })
 
   /**
-   * The order is load bearing. The first three tabs read Postgres and the last
+   * The order is load bearing. The first four tabs read Postgres and the last
    * three read the graph, and the two stores are written independently, so
    * which one is on screen is a fact about what you are looking at.
    *
    * "Held out" sits directly after "Ledger" because the two are one read
    * against two populations: what this case's totals count, and what they
    * leave out.
+   *
+   * "Decisions" is last of the four because it is the only one that is not a
+   * view of the ledger's present contents. The three before it answer what the
+   * case holds now; it answers who moved any of it and on what grounds, and it
+   * outlives its subjects.
    */
-  it("opens on the ledger, with the three ledger tabs first in the strip", () => {
+  it("opens on the ledger, with the four Postgres tabs first in the strip", () => {
     graphWithRows()
     renderPage()
 
@@ -252,6 +286,7 @@ describe("FinancialPage", () => {
       "Ledger",
       "Held out",
       "Attempts",
+      "Decisions",
       "Transactions",
       "Counterparties",
       "Trends",
@@ -286,7 +321,7 @@ describe("FinancialPage", () => {
     graphEmpty()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(6)
+    expect(screen.getAllByRole("tab")).toHaveLength(7)
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 
@@ -294,7 +329,7 @@ describe("FinancialPage", () => {
     graphLoading()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(6)
+    expect(screen.getAllByRole("tab")).toHaveLength(7)
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 
@@ -377,6 +412,86 @@ describe("FinancialPage, the attempts tab", () => {
 
     selectTab("Attempts")
     for (const call of runs.useIngestionRuns.mock.calls) {
+      expect(call).toEqual(["case-1"])
+    }
+  })
+})
+
+/**
+ * The decisions tab shows the record of what was decided about this case's
+ * evidence and on what grounds. Its own behaviour is covered in
+ * `DecisionsPanel.test.tsx`; what is asserted here is that the page reaches it,
+ * that it reaches it without the graph, and that the panel is mounted only when
+ * the tab is on screen.
+ */
+describe("FinancialPage, the decisions tab", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useFinancialStore.getState().reset()
+    graph.useTransactions.mockReset()
+    ledger.useLedgerTransactions.mockReset()
+    runs.useIngestionRuns.mockReset()
+    adjudication.useRowAdjudication.mockReset()
+    decisions.useCaseDecisions.mockReset()
+    ledgerEmpty()
+    runsEmpty()
+    decisionsEmpty()
+    adjudicationIdle()
+  })
+
+  it("mounts the decisions panel when the tab is selected", () => {
+    graphWithRows()
+    renderPage()
+
+    expect(
+      screen.queryByText("Nothing has been decided about this case")
+    ).not.toBeInTheDocument()
+
+    selectTab("Decisions")
+    expect(
+      screen.getByText("Nothing has been decided about this case")
+    ).toBeInTheDocument()
+  })
+
+  /**
+   * The counts and filters in the graph chrome describe graph rows. Drawn above
+   * the record of decisions they would read as a description of it.
+   */
+  it("keeps the graph chrome out of the decisions tab", () => {
+    graphWithRows()
+    renderPage()
+
+    selectTab("Decisions")
+    expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
+  })
+
+  /**
+   * Ledger rows and no graph. This is the case a decision is most likely to
+   * have been taken on, because quarantining a row is one of the things that
+   * keeps it out of the graph in the first place.
+   */
+  it("reaches the decisions tab when the graph has no rows", () => {
+    graphEmpty()
+    renderPage()
+
+    selectTab("Decisions")
+    expect(
+      screen.getByText("Nothing has been decided about this case")
+    ).toBeInTheDocument()
+    expect(screen.queryByText("No documentary transactions")).not.toBeInTheDocument()
+  })
+
+  /**
+   * The panel is handed the case and nothing else. A second argument, even
+   * `{}`, would open a second cache entry against the same page, for the reason
+   * `use-case-decisions.ts` records.
+   */
+  it("reads the decisions with no filters and no window", () => {
+    graphWithRows()
+    renderPage()
+
+    selectTab("Decisions")
+    for (const call of decisions.useCaseDecisions.mock.calls) {
       expect(call).toEqual(["case-1"])
     }
   })

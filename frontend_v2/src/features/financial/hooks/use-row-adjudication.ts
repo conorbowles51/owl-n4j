@@ -28,13 +28,24 @@
  * vocabulary member comes back labelled as unrecognised rather than raising —
  * so a mapping cannot masquerade as a request that failed.
  *
- * Invalidation is `["financial-ledger", caseId]` and nothing wider, matching
- * `use-ledger-ingest.ts`. The key is a prefix of every ledger list, the
+ * Invalidation is two keys, `["financial-ledger", caseId]` and
+ * `["financial-decisions", caseId]`, and nothing wider than either. The first
+ * matches `use-ledger-ingest.ts` and is a prefix of every ledger list, the
  * admitted one and the quarantined one alike, which is exactly right here: an
  * adjudication does not add or remove a row, it moves one from one of those
  * lists to the other, so both are wrong afterwards. The Neo4j hooks under
  * `["financial", caseId, ...]` are a different store and are not touched; a
  * status change on a relational row does not change a graph node.
+ *
+ * The second key is separate from the first and has to be, for the reason
+ * `use-case-decisions.ts` gives for keeping them apart: the log is appended to
+ * and outlives the rows it is about, so a decisions read is not a ledger read
+ * under another name. It is invalidated here because both routes append to that
+ * log -- `quarantine_row.py` writes the decision on `quarantined` and the
+ * reversal on `released`, and nothing at all on `unchanged`, `refused`,
+ * `not_found` or `write_failed`. Without this, a person who sets a row aside
+ * with the decisions screen open watches the record fail to grow by the entry
+ * they just made, and reads that as the record's answer.
  *
  * `reason` is passed through unexamined. The backend requires the field and
  * does not require it to say anything, and this is not the layer to invent a
@@ -91,6 +102,30 @@ function ledgerContentsMoved(reading: RowAdjudicationReading): boolean {
 }
 
 /**
+ * True when this answer means the case's record of decisions grew.
+ *
+ * Three sources, and any one is enough, for the same asymmetry
+ * `ledgerContentsMoved` is built on. The two outcomes that move the row,
+ * `quarantined` and `released`, are exactly the two that append to the log --
+ * that is read off `quarantine_row.py`, where every other outcome states that
+ * nothing was appended -- so `ledgerContentsMoved` already covers both cases
+ * that matter. `adjudicationId` is the identifier of the entry that was
+ * written, null on every outcome that wrote none, and it is the backend saying
+ * directly what the other two say by implication.
+ *
+ * Kept as a separate predicate rather than reusing the ledger one, even though
+ * today they answer alike on every outcome the vocabulary has. They are two
+ * different questions about two different stores, and a future member of the
+ * vocabulary that records a finding without moving a row -- which is what
+ * `explain_balance_failure` already is elsewhere in the log -- would make them
+ * diverge. One predicate serving both would then be silently wrong for
+ * whichever store it was not written for.
+ */
+function decisionWasRecorded(reading: RowAdjudicationReading): boolean {
+  return ledgerContentsMoved(reading) || reading.adjudicationId !== null
+}
+
+/**
  * Set a row aside, or let one back in.
  *
  * Rejects rather than calling when there is no case. The sibling ingest hook
@@ -120,8 +155,14 @@ export function useRowAdjudication(caseId: string | undefined) {
       return readRowAdjudication(result)
     },
     onSuccess: (reading) => {
-      if (!ledgerContentsMoved(reading)) return
-      queryClient.invalidateQueries({ queryKey: ["financial-ledger", caseId] })
+      if (ledgerContentsMoved(reading)) {
+        queryClient.invalidateQueries({ queryKey: ["financial-ledger", caseId] })
+      }
+      if (decisionWasRecorded(reading)) {
+        queryClient.invalidateQueries({
+          queryKey: ["financial-decisions", caseId],
+        })
+      }
     },
   })
 }
