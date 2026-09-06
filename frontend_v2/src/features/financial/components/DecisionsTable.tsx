@@ -112,7 +112,7 @@ function DecisionRow({ record }: { record: DecisionRecord }) {
             {decision.effect}
           </p>
 
-          {record.decision === "correct_transaction" && <CorrectionHistory before={record.before} after={record.after} />}
+          {record.decision === "correct_transaction" && <CorrectionHistory before={record.before} after={record.after} caseId={record.case_id} />}
           {reason === "" ? (
             <p
               className="text-xs text-muted-foreground italic"
