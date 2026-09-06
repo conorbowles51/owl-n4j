@@ -30,7 +30,7 @@
  * known — kind and page — instead of rendering nothing.
  */
 
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 
 import { readLocator, normalised } from "../lib/locator"
 
@@ -61,6 +61,7 @@ function Sentence({ children, testId }: { children: ReactNode; testId: string })
 }
 
 export function SourceHighlight({ payload, pageImageUrl, valueLabel }: SourceHighlightProps) {
+  const [failedImage, setFailedImage] = useState<string | null>(null)
   const reading = readLocator(payload)
 
   if (!reading.ok) {
@@ -74,6 +75,13 @@ export function SourceHighlight({ payload, pageImageUrl, valueLabel }: SourceHig
   }
 
   const locator = reading.locator
+
+  if (pageImageUrl && failedImage === pageImageUrl &&
+      (locator.kind === "page_only" || locator.kind === "page_rectangle")) {
+    return <p role="alert" className="text-xs text-destructive">
+      Source page {locator.page} could not be displayed. No source highlight is shown. Close and reopen the source to retry.
+    </p>
+  }
 
   if (locator.kind === "not_positional") {
     return (
@@ -98,11 +106,12 @@ export function SourceHighlight({ payload, pageImageUrl, valueLabel }: SourceHig
       <div className="space-y-1">
         <Sentence testId="locator-page-only">
           Read from page {locator.page}. The position on the page was not captured for
-          this row, so the page is shown without a highlight.
+          this row.{pageImageUrl ? " The page is shown without a highlight." : " No rendering of the page is available."}
         </Sentence>
         {pageImageUrl ? (
           <img
             src={pageImageUrl}
+            onError={() => setFailedImage(pageImageUrl)}
             alt={`Page ${locator.page} of the source document`}
             className="w-full rounded-md border border-border"
           />
@@ -126,6 +135,7 @@ export function SourceHighlight({ payload, pageImageUrl, valueLabel }: SourceHig
     <div data-testid="locator-highlight" className="relative w-full">
       <img
         src={pageImageUrl}
+        onError={() => setFailedImage(pageImageUrl)}
         alt={`Page ${locator.page} of the source document`}
         className="block w-full rounded-md border border-border"
       />

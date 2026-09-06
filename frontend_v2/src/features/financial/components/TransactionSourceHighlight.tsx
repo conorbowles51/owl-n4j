@@ -58,7 +58,13 @@ export function TransactionSourceHighlight({
       ? evidenceAPI.getPageImageUrl(sourceDocumentId, page)
       : null
 
-  const { objectUrl, loading } = useProtectedObjectUrl(imageUrl, imageUrl !== null)
+  const { objectUrl, loading, error } = useProtectedObjectUrl(imageUrl, imageUrl !== null)
+
+  if (error) {
+    return <p role="alert" className="text-xs text-destructive">
+      Source page {page} could not be loaded. No source highlight is shown. Close and reopen the source to retry.
+    </p>
+  }
 
   if (imageUrl !== null && loading) {
     return (

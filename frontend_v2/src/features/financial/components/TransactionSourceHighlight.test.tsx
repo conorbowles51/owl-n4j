@@ -139,7 +139,7 @@ describe("TransactionSourceHighlight", () => {
       ).toBeTruthy()
     })
 
-    it("falls back to the no-image sentence if the fetch fails", async () => {
+    it("reports the failed page request without drawing a highlight", async () => {
       vi.mocked(globalThis.fetch).mockResolvedValue(new Response(null, { status: 404 }))
 
       render(
@@ -149,8 +149,8 @@ describe("TransactionSourceHighlight", () => {
         />,
       )
 
-      const sentence = await screen.findByTestId("locator-no-page-image")
-      expect(sentence.textContent).toContain("page 3 is recorded")
+      const sentence = await screen.findByRole("alert")
+      expect(sentence.textContent).toContain("Source page 3 could not be loaded")
       expect(screen.queryByTestId("locator-highlight")).toBeNull()
     })
   })

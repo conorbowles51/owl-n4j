@@ -37,7 +37,17 @@ it("fetches the resolved evidence page, draws its stored rectangle and opens the
         )
       if (String(url).includes("/page/"))
         return new Response(
-          new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" })
+          new Blob(
+            [
+              Uint8Array.from(
+                atob(
+                  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1cAAAAASUVORK5CYII="
+                ),
+                (c) => c.charCodeAt(0)
+              ),
+            ],
+            { type: "image/png" }
+          )
         )
       return new Response(
         new Blob(["%PDF-1.4\n%%EOF"], { type: "application/pdf" })
