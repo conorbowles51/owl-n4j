@@ -37,6 +37,12 @@ from services.financial.admission import (
     WrongFileError,
     record_admission,
 )
+from services.financial.admit_file import (
+    FileAdmission,
+    FileAdmissionOutcome,
+    admit_case_file,
+    find_case_file,
+)
 from services.financial.adjudication import (
     Adjudication,
     AdjudicationError,
@@ -1595,6 +1601,13 @@ __all__ = [
     "ROUTED_DOCUMENT_PIPELINE",
     "ROUTED_HELD",
     "record_admission",
+    # Overruling that hold: reading the file again, then writing the decision
+    # and committing it, so the log's account of what the router found is the
+    # file's own rather than whatever the caller said it was.
+    "FileAdmission",
+    "FileAdmissionOutcome",
+    "admit_case_file",
+    "find_case_file",
     # Run identity
     "IngestionRunHandle",
     "RunAborted",
