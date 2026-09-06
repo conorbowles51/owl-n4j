@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `bf73450`, “Connect reversible duplicate
-  decisions with exact row provenance”, parent `bdf3dbd`. A documentation commit follows it;
+- **Latest implementation commit:** `0442f17`, “Establish isolated local application
+  and verify PostgreSQL duplicate decisions”, parent `52f373a`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -25,13 +25,57 @@ completed-item claims and environment recipes in that history are not current.
   and the disk handoff; do not require a new session after each unit.
 - **Next integration milestone:** Neil said, “At some point I want to get the
   whole application running locally in a venv so we can test, keep that in mind.”
-  Prepare a reproducible local application environment and verify the real
-  duplicate round trip and PostgreSQL concurrency before further ledger writers.
-  The existing `/tmp` venv runs tests only; it is not a complete app installation.
+  The local application is now running with separate persistent Python 3.12 venvs,
+  isolated Docker services, real HTTP duplicate round trips and verified PostgreSQL
+  lock contention. See the local application section below. The old `/tmp` venv
+  remains test-only. AI processing and full application acceptance remain untested.
 - **Duplicate status:** comparison plus explicit exclusion/restoration are connected
   for one case. The broader item 9 still has authorized cross-matter sightings and
   comparison scaling/coverage work outstanding. The legacy bulk resolver is not
   exposed. After integration verification, item 10 is ledger corrections.
+
+### Local application is running
+
+Startup instructions: `docs/local-application.md`. UI at
+`http://127.0.0.1:55174`, backend 58002, evidence API 58003, worker active.
+Native venvs: `data/local-runtime/backend-venv` and `engine-venv`; launcher
+`scripts/local_app.py`. Separate `loupe-local` Docker volumes/loopback ports are
+defined in `docker-compose.local.yml`. Existing `owl-pg` and `owl-n4j` containers,
+real database storage, repository `.env`, and case evidence were not changed.
+
+The launcher disables dotenv and clears provider credentials, uses a deliberately
+invalid OpenAI key and development auth secrets, and confines evidence paths to
+the ignored runtime directory. **Synthetic testing only.** The engine's OpenAI
+health result only checks key presence and does not prove AI provider access.
+
+Two real startup defects repaired in `0442f17`:
+
+- Evidence engine editable installation failed due to ambiguous package discovery
+  (`app`, `evals`, `alembic`). Packaging now explicitly includes `app` and children.
+- PostgreSQL rejected the 33-character admission migration ID in Alembic's
+  VARCHAR(32). That migration now widens the tracking column to 128 before its
+  revision is recorded, preserving existing revision identity. Downgrade leaves
+  the wider tracking column in place. Full empty-database migration to head passes.
+
+Verification: both venvs pass `pip check`; backend financial suite **3,497 tests,
+12 skipped** passes in the full venv; API health connects to Neo4j/evidence engine;
+engine readiness checks PostgreSQL/schema, Neo4j, Chroma, Redis, OCR and storage;
+worker connected to Redis; native PDF rendering passes using Homebrew libraries.
+Browser login succeeded and synthetic cases are visible under **All Cases**.
+
+`scripts/check_local_duplicates.py` creates labelled synthetic cases and checks
+real authenticated HTTP exclusion/repeated request (200/409), restoration and
+exact audit/row counts. It also proves **two separate PostgreSQL writers both wait
+on held row locks**, then exactly one applies and one gets 409, followed by HTTP
+restoration. Last passing case: `37d0fe31-2dad-409e-ab59-946b0fe5dc46`.
+The local administrator is `loupe-local@example.com` / `Loupe-local-test-2026`.
+Fixtures bypass normal case membership creation, so use **All Cases** to see them.
+
+Logs: `/tmp/loupe-neilbyrne-local-{backend,engine,worker,frontend,migrate,duplicates,financial}.out`.
+Services were left running for Neil. No production evidence was ingested; AI,
+full UI acceptance, and financial-to-graph projection remain outside this check.
+Continue with ledger corrections, following document-first locking and exact
+Money/provenance rules. No push or merge was performed.
 
 ### Duplicate comparison is connected
 
