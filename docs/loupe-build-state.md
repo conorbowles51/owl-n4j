@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `b7e1342`, “Preview correction verification
-  consequences before recording”, parent `4183d25`. A documentation commit follows it;
+- **Latest implementation commit:** `cf89bbb`, “Review and record exact ledger
+  corrections with reading history”, parent `05760d5`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -33,7 +33,45 @@ completed-item claims and environment recipes in that history are not current.
   for one case. The broader item 9 still has authorized cross-matter sightings and
   comparison scaling/coverage work outstanding. The legacy bulk resolver is not
   exposed. Item 10 is underway: correction preview and replacement writer are
-  complete; correction UI and broader revalidation are still outstanding.
+  complete, and correction UI/history are now connected on the Ledger tab.
+  Held-out correction entry and broader revalidation are still outstanding.
+
+### Correction review and reading history connected
+
+`cf89bbb` adds an exact-decimal correction form to each current Ledger row.
+Preview and recording are separate actions, with required reason, preserved debit
+direction, revision checking, response validation, no automatic write retry and
+explicit uncertain-response handling. Editing the proposal discards its preview.
+The review shows original citation and amount, proposed amount/direction, statement
+difference, document-wide verification consequence, reservations and quarantine.
+Unknown source classification withholds confirmation. Recorded corrections show
+both citations; Decisions expands the original and replacement reading snapshots.
+Proof class remains computed by the backend. No graph writes were added.
+
+All three original-case caches (ledger, decisions and classification) are invalidated
+even after a refused or uncertain write. A live browser check caught the missing
+classification invalidation; it was fixed and the next synthetic correction verified
+the classification counts refreshed immediately alongside both current ledger rows.
+
+Validation: **867 unit tests in 88 files**, **8 Chromium tests in 6 files**,
+TypeScript and ESLint pass. The focused eight correction tests passed again after
+the cache fix. Logs: `/tmp/loupe-neilbyrne-correction-ui-{unit,browser}.out`.
+No backend change this segment; last financial baseline remains 3,528 tests,
+12 skipped. The local backend was restarted to load verification previews.
+
+Live browser testing used only synthetic case
+`c1da9946-1dfd-413a-a4e9-1828e1c76b72`: 410.00 GBP was corrected back to 400.00
+(p3 to p2), history verified, then to 410.00 again (p2 to p3) to confirm refresh.
+Current replacement citation is `TX-MQTR-A4PT-J68M`; five stored rows include
+historical readings, while two are current. The fixture's ingestion attempt remains
+open and its source ID has no real file, so source-file navigation was not tested.
+
+Next bounded segment: expose the same correction flow for held-out rows and add
+targeted coverage for that integration, preserving quarantine and independent
+class eligibility. Then continue the agreed wiring plan. The temporary unattended
+automation remains active every 15 minutes until the 20:00 Dublin cutoff;
+finish a safe checkpoint and pause it then. Neil has left and authorized continued
+work without per-segment confirmation. Unrelated untracked files remain untouched.
 
 ### Verification consequences now available before confirmation
 
