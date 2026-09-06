@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `cf89bbb`, “Review and record exact ledger
-  corrections with reading history”, parent `05760d5`. A documentation commit follows it;
+- **Latest implementation commit:** `5cd7d94`, “Allow held-out amount corrections
+  while preserving quarantine”, parent `08609d0`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -33,8 +33,33 @@ completed-item claims and environment recipes in that history are not current.
   for one case. The broader item 9 still has authorized cross-matter sightings and
   comparison scaling/coverage work outstanding. The legacy bulk resolver is not
   exposed. Item 10 is underway: correction preview and replacement writer are
-  complete, and correction UI/history are now connected on the Ledger tab.
-  Held-out correction entry and broader revalidation are still outstanding.
+  complete, and correction UI/history are now connected on both Ledger and Held out.
+  Broader revalidation remains outstanding.
+
+### Held-out correction entry connected
+
+`5cd7d94` reuses the correction owner/form for the Held out tab and threads its
+action through QuarantinePanel. The panel still fixes its query to quarantined
+rows. Correcting a held row does not release it: the preview explicitly says the
+replacement remains excluded, even when the proposed document class is eligible.
+Confirmation remains mounted if the list refreshes or becomes empty.
+
+The empty quarantine message previously claimed every row counted when none were
+quarantined. It now says only that no rows are quarantined and explains that
+classification/document status still determine inclusion. Superseded/rejected
+rows remain separately excluded.
+
+Validation: **868 unit tests in 88 files**, **8 Chromium tests in 6 files**,
+TypeScript and ESLint pass. New integration coverage exercises a held debit's
+preview and record request, independent class eligibility, quarantine disclosure,
+and confirmation surviving an empty list refresh. Existing backend correction
+coverage preserves the quarantine reason on replacement; no backend code changed.
+Logs: `/tmp/loupe-neilbyrne-held-correction-{unit,browser}.out`.
+No real evidence or database writes in this segment. The synthetic app remains
+available. Next: live synthetic held-out round trip, then review the agreed item 10
+revalidation scope and implement the next bounded missing piece. Native controls,
+running-balance revalidation, source-file navigation and graph synchronization
+remain explicitly incomplete. Continue automatically until the 20:00 Dublin cutoff.
 
 ### Correction review and reading history connected
 
@@ -66,9 +91,8 @@ Current replacement citation is `TX-MQTR-A4PT-J68M`; five stored rows include
 historical readings, while two are current. The fixture's ingestion attempt remains
 open and its source ID has no real file, so source-file navigation was not tested.
 
-Next bounded segment: expose the same correction flow for held-out rows and add
-targeted coverage for that integration, preserving quarantine and independent
-class eligibility. Then continue the agreed wiring plan. The temporary unattended
+The held-out integration requested after this segment is now complete above.
+Continue the agreed wiring plan. The temporary unattended
 automation remains active every 15 minutes until the 20:00 Dublin cutoff;
 finish a safe checkpoint and pause it then. Neil has left and authorized continued
 work without per-segment confirmation. Unrelated untracked files remain untouched.
