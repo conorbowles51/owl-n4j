@@ -46,6 +46,7 @@ export function LedgerPanel({
   params,
   onAdjudicate,
   onCorrect,
+  onSource,
 }: {
   caseId: string | undefined
   params?: LedgerQueryParams
@@ -58,6 +59,7 @@ export function LedgerPanel({
    */
   onAdjudicate?: (transaction: LedgerTransaction) => void
   onCorrect?: (transaction: LedgerTransaction) => void
+  onSource?: (transaction: LedgerTransaction) => void
 }) {
   const { data, isPending, isError, error } = useLedgerTransactions(
     caseId,
@@ -142,6 +144,7 @@ export function LedgerPanel({
         transactions={rows}
         onAdjudicate={onAdjudicate}
         onCorrect={onCorrect}
+        onSource={onSource}
       />
     </div>
   )

@@ -49,6 +49,7 @@ export function QuarantinePanel({
   params,
   onAdjudicate,
   onCorrect,
+  onSource,
 }: {
   caseId: string | undefined
   params?: Omit<LedgerQueryParams, "ledgerStatus">
@@ -62,6 +63,7 @@ export function QuarantinePanel({
    */
   onAdjudicate?: (transaction: LedgerTransaction) => void
   onCorrect?: (transaction: LedgerTransaction) => void
+  onSource?: (transaction: LedgerTransaction) => void
 }) {
   const { data, isPending, isError, error } = useLedgerTransactions(caseId, {
     ...params,
@@ -162,6 +164,7 @@ export function QuarantinePanel({
         showQuarantineGrounds
         onAdjudicate={onAdjudicate}
         onCorrect={onCorrect}
+        onSource={onSource}
       />
     </div>
   )

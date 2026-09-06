@@ -3,6 +3,7 @@ import type { LedgerTransaction } from "../api"
 import { CorrectionForm } from "./CorrectionForm"
 import { LedgerPanel } from "./LedgerPanel"
 import { QuarantinePanel } from "./QuarantinePanel"
+import { LedgerSourceDialog } from "./LedgerSourceDialog"
 
 export function CorrectableLedger({
   caseId,
@@ -14,9 +15,21 @@ export function CorrectableLedger({
   heldOut?: boolean
 }) {
   const [selected, setSelected] = useState<LedgerTransaction | null>(null)
+  const [source, setSource] = useState<{
+    caseId: string
+    transactionId: string
+  } | null>(null)
   const Panel = heldOut ? QuarantinePanel : LedgerPanel
   return (
     <div className="space-y-3">
+      {source && source.caseId === caseId && (
+        <LedgerSourceDialog
+          key={`${source.caseId}:${source.transactionId}`}
+          caseId={source.caseId}
+          transactionId={source.transactionId}
+          onClose={() => setSource(null)}
+        />
+      )}
       {selected && caseId && (
         <CorrectionForm
           key={`${caseId}:${selected.key}`}
@@ -31,6 +44,9 @@ export function CorrectableLedger({
         caseId={caseId}
         onAdjudicate={onAdjudicate}
         onCorrect={selected ? undefined : setSelected}
+        onSource={(row) =>
+          caseId && setSource({ caseId, transactionId: row.key })
+        }
       />
     </div>
   )

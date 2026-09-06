@@ -288,11 +288,13 @@ function LedgerRow({
   showQuarantineGrounds,
   onAdjudicate,
   onCorrect,
+  onSource,
 }: {
   transaction: LedgerTransaction
   showQuarantineGrounds: boolean
   onAdjudicate?: (transaction: LedgerTransaction) => void
   onCorrect?: (transaction: LedgerTransaction) => void
+  onSource?: (transaction: LedgerTransaction) => void
 }) {
   const amount = formatLedgerAmount(
     transaction.amount_minor,
@@ -487,6 +489,13 @@ function LedgerRow({
 
       {showQuarantineGrounds && <GroundsCell transaction={transaction} />}
 
+      {onSource && (
+        <TableCell>
+          <Button variant="outline" size="sm" onClick={() => onSource(transaction)}>
+            View source
+          </Button>
+        </TableCell>
+      )}
       {onCorrect && (
         <TableCell>
           <Button
@@ -522,6 +531,7 @@ export function LedgerTable({
   showQuarantineGrounds = false,
   onAdjudicate,
   onCorrect,
+  onSource,
 }: {
   transactions: LedgerTransaction[]
   showQuarantineGrounds?: boolean
@@ -531,12 +541,14 @@ export function LedgerTable({
    */
   onAdjudicate?: (transaction: LedgerTransaction) => void
   onCorrect?: (transaction: LedgerTransaction) => void
+  onSource?: (transaction: LedgerTransaction) => void
 }) {
   const columnCount =
     BASE_COLUMN_COUNT +
     (showQuarantineGrounds ? 1 : 0) +
     (onAdjudicate !== undefined ? 1 : 0) +
-    (onCorrect ? 1 : 0)
+    (onCorrect ? 1 : 0) +
+    (onSource ? 1 : 0)
 
   return (
     <Table data-testid="ledger-table">
@@ -550,6 +562,7 @@ export function LedgerTable({
           <TableHead>How it was read</TableHead>
           <TableHead>Status</TableHead>
           {showQuarantineGrounds && <TableHead>Grounds</TableHead>}
+          {onSource && <TableHead>Source</TableHead>}
           {onCorrect && <TableHead>Correction</TableHead>}
           {onAdjudicate !== undefined && <TableHead>Decision</TableHead>}
         </TableRow>
@@ -573,6 +586,7 @@ export function LedgerTable({
               showQuarantineGrounds={showQuarantineGrounds}
               onAdjudicate={onAdjudicate}
               onCorrect={onCorrect}
+              onSource={onSource}
             />
           ))
         )}
