@@ -25,6 +25,11 @@ from services.financial.decision_log import (
     DecisionLogError,
     DecisionPage,
 )
+from services.financial.proof_standing import (
+    ClassStanding,
+    ProofStanding,
+    ProofStandingError,
+)
 from services.financial.transaction_query import LedgerQueryError
 
 
@@ -315,6 +320,113 @@ class GetCaseDecisionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["truncated"])
         self.assertEqual(result["total"], 40)
         self.assertEqual(result["offset"], 0)
+
+
+def _standing(case_id) -> ProofStanding:
+    """A census with one class in it, enough to check the route's own work."""
+    return ProofStanding(
+        case_id=str(case_id),
+        classes=(
+            ClassStanding(
+                proof_class="p3",
+                documents=2,
+                transactions=7,
+                admits_automatically=False,
+                requires_adjudication=True,
+                may_produce_ledger_rows=True,
+                counts_toward_totals=False,
+            ),
+        ),
+        documents=2,
+        transactions=7,
+        documents_requiring_adjudication=2,
+        transactions_requiring_adjudication=7,
+        counted_classes=("p0", "p1", "p2"),
+    )
+
+
+class GetCaseProofStandingTests(unittest.IsolatedAsyncioTestCase):
+    """The first reader of ``requires_adjudication`` over HTTP.
+
+    Same shape as the three classes above. What is under test is that the
+    route asks for the case and nothing else, hands the census back whole,
+    and does not turn a stored-data failure into a caller's error.
+    ``test_financial_proof_standing`` covers the counting itself.
+    """
+
+    async def test_it_asks_the_service_for_the_case_and_nothing_else(self):
+        case_id = uuid.uuid4()
+        standing = _standing(case_id)
+
+        with patch.object(
+            financial_ledger, "case_proof_standing", return_value=standing
+        ) as service:
+            result = await financial_ledger.get_case_proof_standing(
+                case_id=case_id, db="fake-session"
+            )
+
+        # Positionally, with no keyword arguments at all: the counted set is
+        # the ledger's own and is not selectable from a request.
+        service.assert_called_once_with("fake-session", case_id)
+        self.assertEqual(result["case_id"], str(case_id))
+
+    async def test_the_census_is_handed_back_whole(self):
+        """The response is the census's own dict, not a shape rebuilt here.
+
+        A router that rebuilt it would be free to drop the per-class
+        permissions, leaving counts against two-character labels that a reader
+        cannot interpret -- which is the failure this read exists to prevent.
+        """
+        case_id = uuid.uuid4()
+        standing = _standing(case_id)
+
+        with patch.object(
+            financial_ledger, "case_proof_standing", return_value=standing
+        ):
+            result = await financial_ledger.get_case_proof_standing(
+                case_id=case_id, db="fake-session"
+            )
+
+        self.assertEqual(result, standing.as_dict())
+        self.assertEqual(result["documents_requiring_adjudication"], 2)
+        self.assertEqual(result["transactions_requiring_adjudication"], 7)
+        self.assertEqual(result["counted_classes"], ["p0", "p1", "p2"])
+        self.assertTrue(result["classes"][0]["requires_adjudication"])
+
+    async def test_a_proof_standing_error_is_a_500_and_not_a_400(self):
+        """Pins the difference this route's docstring turns on.
+
+        The route sends the service nothing but a case, so the only refusal it
+        can provoke is a stored class outside the vocabulary. No request caused
+        that and no request can fix it, so answering 400 would tell the caller
+        to change something it did not do.
+        """
+        with patch.object(
+            financial_ledger,
+            "case_proof_standing",
+            side_effect=ProofStandingError(
+                "financial_transactions holds proof_class 'p9'"
+            ),
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await financial_ledger.get_case_proof_standing(
+                    case_id=uuid.uuid4(), db="fake-session"
+                )
+
+        self.assertEqual(ctx.exception.status_code, 500)
+
+    async def test_an_unexpected_error_is_a_500(self):
+        with patch.object(
+            financial_ledger,
+            "case_proof_standing",
+            side_effect=RuntimeError("db exploded"),
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await financial_ledger.get_case_proof_standing(
+                    case_id=uuid.uuid4(), db="fake-session"
+                )
+
+        self.assertEqual(ctx.exception.status_code, 500)
 
 
 if __name__ == "__main__":

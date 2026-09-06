@@ -848,6 +848,119 @@ export interface CaseDecisionsParams {
   offset?: number
 }
 
+/*
+ * Where a case's evidence stands by proof class.
+ *
+ * Proof class is computed from what the evidence is and whether its arithmetic
+ * held. It is never set by hand, and nothing in this file or anywhere else in
+ * the interface may offer a control that sets one: a class a person can raise
+ * is an opinion, and the whole value of the label is that it is not.
+ *
+ * The counts and the permissions arrive together, and they must stay together
+ * on the way to a screen. `p3` is a two-character string that says nothing on
+ * its own, and the fact it names -- that this is the one class no ingestion run
+ * admits by itself, so the material sits outside the verified ledger until a
+ * person rules on it and that ruling is recorded -- is not recoverable from the
+ * label. A count shown without its permissions invites the reader to assume the
+ * material is in, which is the one wrong conclusion this read exists to stop.
+ *
+ * `counted_classes` is the coverage of the ledger's own aggregates, reported so
+ * that any figure derived from this census can say what it covers. It is not
+ * selectable: the backend takes no parameter for it, deliberately, so that a
+ * screen cannot show a coverage the totals beside it were never computed
+ * against.
+ */
+
+/**
+ * One proof class in one case, exactly as `ClassStanding.as_dict` in
+ * `backend/services/financial/proof_standing.py` emits it.
+ *
+ * `proof_class` is typed `string` rather than `ProofClass`, for the reason
+ * `LedgerTransaction` gives: a backend one version ahead can send a member this
+ * build has never heard of, and a union would let it through while claiming it
+ * had been checked. Narrowing is a runtime job.
+ *
+ * The four booleans are the backend's answers, not restatements of a rule this
+ * file knows. Nothing here may derive them from `proof_class` instead: a reader
+ * that got `requires_adjudication` wrong would show unadjudicated material as
+ * though it had been verified.
+ */
+export interface ClassStanding {
+  /** One of `PROOF_CLASSES`, narrowed rather than trusted. */
+  proof_class: string
+  /** Source documents carrying this class, whatever their status. */
+  documents: number
+  /** Ledger rows carrying this class, whatever their status. */
+  transactions: number
+  /** Enters the verified ledger with no human act. */
+  admits_automatically: boolean
+  /** A recorded human verdict is the only route into the ledger. */
+  requires_adjudication: boolean
+  /** May yield ledger rows at all. False only for `p4`. */
+  may_produce_ledger_rows: boolean
+  /** Participates in an aggregate under `counted_classes` below. */
+  counts_toward_totals: boolean
+}
+
+/**
+ * A whole case's evidence, arranged by the class computed for it.
+ *
+ * Every class is present, including the ones holding nothing. A class with no
+ * documents reports zero rather than being absent, because "this case has no
+ * p3 documents" and "nothing here looked at p3" are different facts and a
+ * missing key spells them the same way. Anything rendering this should show the
+ * zeroes for the same reason.
+ *
+ * `documents` and `transactions` are the case's totals across every class, so
+ * the breakdown can be checked against them. They are summed from the same
+ * per-class figures on the backend, which is why they cannot disagree.
+ */
+export interface ProofStandingResponse {
+  case_id: string
+  /** Every class, in the backend enum's own order, present or not. */
+  classes: ClassStanding[]
+  documents: number
+  transactions: number
+  /**
+   * The population sitting outside the verified ledger until someone rules on
+   * it. Named for what it means rather than for the class, because the label is
+   * the part a reader cannot interpret unaided.
+   */
+  documents_requiring_adjudication: number
+  transactions_requiring_adjudication: number
+  /** The classes the ledger's aggregates cover. Reported, not chosen. */
+  counted_classes: string[]
+}
+
+/**
+ * Every field a class standing carries, as a value rather than a type.
+ *
+ * The same device `DECISION_FIELDS` uses, and here it guards something
+ * narrower: a permission dropped from this list is a permission that stops
+ * reaching a screen while the counts beside it keep arriving, which looks like
+ * nothing at all going wrong.
+ */
+export const CLASS_STANDING_FIELDS: readonly (keyof ClassStanding)[] = [
+  "proof_class",
+  "documents",
+  "transactions",
+  "admits_automatically",
+  "requires_adjudication",
+  "may_produce_ledger_rows",
+  "counts_toward_totals",
+]
+
+/** Every field the census envelope carries. See `CLASS_STANDING_FIELDS`. */
+export const PROOF_STANDING_FIELDS: readonly (keyof ProofStandingResponse)[] = [
+  "case_id",
+  "classes",
+  "documents",
+  "transactions",
+  "documents_requiring_adjudication",
+  "transactions_requiring_adjudication",
+  "counted_classes",
+]
+
 export const financialAPI = {
   getTransactions: (params: {
     caseId: string
@@ -1159,4 +1272,23 @@ export const financialAPI = {
     if (params.offset !== undefined) qs.set("offset", String(params.offset))
     return fetchAPI<DecisionsResponse>(`/api/financial/decisions?${qs}`)
   },
+
+  /**
+   * How this case's evidence stands by proof class, and what each class lets
+   * the case do with it.
+   *
+   * **Takes the case and nothing else.** No status filter, no date range, no
+   * choice of which classes count toward totals. It is a census, so the
+   * per-class figures add up to the case's documents and rows, and that is the
+   * property that makes the breakdown checkable at a glance. A filter would
+   * quietly break it while the response looked identical.
+   *
+   * Hand the response on whole. The permissions travel with the counts on
+   * purpose, and a shape rebuilt field by field is one careless edit away from
+   * dropping them and leaving numbers against labels nobody can read.
+   */
+  getCaseProofStanding: (caseId: string) =>
+    fetchAPI<ProofStandingResponse>(
+      `/api/financial/proof-standing?${new URLSearchParams({ case_id: caseId })}`
+    ),
 }

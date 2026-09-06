@@ -593,6 +593,12 @@ from services.financial.proof_class import (
     may_produce_ledger_rows,
     requires_adjudication,
 )
+from services.financial.proof_standing import (
+    ClassStanding,
+    ProofStanding,
+    ProofStandingError,
+    case_proof_standing,
+)
 from services.financial.projection import (
     DEFAULT_BATCH_SIZE,
     DIGEST_PROPERTY,
@@ -1486,6 +1492,14 @@ __all__ = [
     "from_legacy_strength",
     "may_produce_ledger_rows",
     "requires_adjudication",
+    # Where a case's evidence stands by class, and what each class licenses.
+    # The counts and the licences are returned together because a count of p3
+    # documents means nothing to a reader who cannot tell that p3 is the class
+    # no run admits on its own.
+    "ClassStanding",
+    "ProofStanding",
+    "ProofStandingError",
+    "case_proof_standing",
     # Drawing the ledger as a graph.  The projection is a derived view and not a
     # system of record: Postgres holds the ledger, Neo4j renders it, and the same
     # ledger state must produce byte-identical Cypher every time or the graph

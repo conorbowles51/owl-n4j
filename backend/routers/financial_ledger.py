@@ -9,11 +9,13 @@ read-only. Admitting, correcting, or quarantining a row stays with the
 ingestion and adjudication services that act with a run and an actor behind
 them.
 
-Three reads of the same store, at three levels. ``/ledger`` returns the rows.
+Four reads of the same store, at four levels. ``/ledger`` returns the rows.
 ``/runs`` returns the executions that produced them, including the ones that
 produced nothing because they failed. ``/decisions`` returns what was decided
-about any of it, by whom, and when. All three are ``case:view`` and none of
-them writes, which is what keeps this router's claim about itself true.
+about any of it, by whom, and when. ``/proof-standing`` returns how much of the
+case's evidence sits in each proof class and what each of those classes is
+allowed to do. All four are ``case:view`` and none of them writes, which is
+what keeps this router's claim about itself true.
 
 ``/decisions`` is here rather than on ``routers.financial_adjudication``, where
 the two routes that *write* those records live, and the reason is that router's
@@ -45,6 +47,7 @@ from services.financial import (
     DecisionLogError,
     LedgerQueryError,
     RunQueryError,
+    case_proof_standing,
     list_case_decisions,
     list_runs,
     list_transactions,
@@ -301,3 +304,48 @@ async def get_case_decisions(
         raise HTTPException(status_code=500, detail=str(e))
 
     return page.as_dict()
+
+
+@router.get("/proof-standing")
+async def get_case_proof_standing(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    db: Session = Depends(get_db),
+):
+    """How this case's evidence stands by proof class, and what each licenses.
+
+    Every class is returned, including the ones holding nothing, with the
+    document and row counts carrying that class and the four things
+    ``services.financial.proof_class`` says the class permits. The counts and
+    the permissions travel together because a figure against ``p3`` tells a
+    reader nothing on its own: the label does not say that p3 is the one class
+    no run admits by itself, and a reader who guesses wrong shows unadjudicated
+    material as though it were verified.
+
+    **No filters.** The other three reads here narrow by status, date or
+    subject; this one deliberately takes nothing but the case. It is a census,
+    so a filtered census would be a different and smaller claim wearing the
+    same name, and the per-class figures would stop adding up to the case's
+    documents and rows -- which is the one property that makes the breakdown
+    checkable.
+
+    The set of classes counted toward totals is not a query parameter either.
+    It is the set the ledger's own aggregates use, and it is reported back in
+    ``counted_classes`` so any figure derived from this census can state its
+    coverage. Letting a caller choose a different set would let the interface
+    display a coverage the totals beside it were never computed against.
+
+    A ``ProofStandingError`` is not translated to a 400 here, unlike
+    ``DecisionLogError`` above, and the difference is who can act on it. The
+    decision log refuses things a caller sent -- a negative offset, an unknown
+    filter -- and the caller can send something else. This route sends the
+    service nothing but a case, so the only way it can refuse is a stored
+    ``proof_class`` outside the vocabulary, which no request caused and no
+    request can fix. That belongs in the logs as a 500.
+    """
+    try:
+        standing = case_proof_standing(db, case_id)
+    except Exception as e:
+        logger.error(f"Failed to read proof standing for case {case_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return standing.as_dict()
