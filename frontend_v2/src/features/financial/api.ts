@@ -961,6 +961,184 @@ export const PROOF_STANDING_FIELDS: readonly (keyof ProofStandingResponse)[] = [
   "counted_classes",
 ]
 
+/*
+ * Overruling a hold on a file, and reading the refusal that asks for it.
+ *
+ * A file whose format the router cannot vouch for is held back from the
+ * document pipeline rather than processed. Three routes enforce that -- two on
+ * evidence, one on evidence folders -- and each refuses the whole request with
+ * a 409 naming every held file it found. A named person may overrule the hold
+ * on the record, and `POST /files/{id}/admit` is the only way to do it.
+ *
+ * The two shapes below are two halves of one exchange, which is why they are
+ * declared together. The refusal carries everything the admission needs: the
+ * file, what the router found in it, and who claims the format. That is
+ * deliberate on the backend -- route-check is a separate request whose answer
+ * may by then differ from the one the refusal was based on -- so an interface
+ * that goes back to ask is not merely doing extra work, it is acting on a
+ * second reading nobody refused anything over.
+ *
+ * `api.admission.test.ts` reads all three backend files and holds this build
+ * to them.
+ */
+
+export const FILE_ADMISSION_OUTCOMES = [
+  "admitted",
+  "not_found",
+  "nothing_to_override",
+  "refused",
+  "write_failed",
+] as const
+export type FileAdmissionOutcome = (typeof FILE_ADMISSION_OUTCOMES)[number]
+
+/**
+ * The router's finding, for the four findings that hold a file back.
+ *
+ * The route-check vocabulary is larger than this: `not_found` and `not_native`
+ * are outcomes too, and neither holds anything back. Only these four ever
+ * reach a refusal, so only these four ever need a reading.
+ */
+export const HELD_ROUTE_OUTCOMES = [
+  "native",
+  "ambiguous",
+  "unreadable",
+  "undetermined",
+] as const
+export type HeldRouteOutcome = (typeof HELD_ROUTE_OUTCOMES)[number]
+
+/**
+ * The shape of `FileAdmission.as_dict()`.
+ *
+ * `outcome` and `route_outcome` are typed `string` rather than as the unions
+ * above, for the reason `RowAdjudication` gives: a backend one version ahead
+ * can send a member this build has never heard of, and a union type would let
+ * it through while claiming it had been checked.
+ */
+export interface FileAdmission {
+  file_id: string
+  /** One of `FILE_ADMISSION_OUTCOMES`, narrowed rather than trusted. */
+  outcome: string
+  /** True only for `admitted`. Derived on the backend. */
+  admitted: boolean
+  /**
+   * `document_pipeline` when admitted, `held` otherwise. Derived from
+   * `admitted` on the backend, so it cannot disagree with it.
+   */
+  routed_to: string
+  /**
+   * Overloaded by outcome, and must not be presented as one thing. On
+   * `admitted` it is the grounds the person gave. On `nothing_to_override` and
+   * `refused` it is why no decision was recorded.
+   */
+  reason: string | null
+  file_name: string | null
+  /**
+   * What the router found at the moment the hold was overruled, re-read from
+   * the file by the backend rather than taken from the request. A caller
+   * cannot put a chosen finding into the permanent record.
+   */
+  route_outcome: string | null
+  detected_format: string | null
+  claimants: string[]
+  /** Set only where a decision was actually appended to the log. */
+  adjudication_id: string | null
+}
+
+/**
+ * Every field an admission response carries, as a value rather than a type.
+ *
+ * The same device `ROW_ADJUDICATION_FIELDS` uses. Typed `keyof FileAdmission`,
+ * so a name here the interface does not declare fails to compile; the contract
+ * test closes the other direction against the Python.
+ */
+export const FILE_ADMISSION_FIELDS: readonly (keyof FileAdmission)[] = [
+  "file_id",
+  "outcome",
+  "admitted",
+  "routed_to",
+  "reason",
+  "file_name",
+  "route_outcome",
+  "detected_format",
+  "claimants",
+  "adjudication_id",
+]
+
+/**
+ * One file named in a refusal: `HeldFile.as_dict()` on the backend.
+ *
+ * Every field here is needed to offer the admission. `claimants` is the list
+ * of readers that claim the detected format, and it is the field that
+ * distinguishes an `ambiguous` finding from the rest: more than one reader
+ * claiming a file is why nothing could vouch for it.
+ */
+export interface HeldFile {
+  file_id: string
+  file_name: string | null
+  /** One of `HELD_ROUTE_OUTCOMES`, narrowed rather than trusted. */
+  route_outcome: string
+  detected_format: string | null
+  claimants: string[]
+}
+
+/** Every field a held file carries. See `FILE_ADMISSION_FIELDS`. */
+export const HELD_FILE_FIELDS: readonly (keyof HeldFile)[] = [
+  "file_id",
+  "file_name",
+  "route_outcome",
+  "detected_format",
+  "claimants",
+]
+
+/**
+ * The body of a 409 from any route that sends files to the document pipeline.
+ *
+ * FastAPI wraps this under `detail`, and `ApiError.data` on this side holds the
+ * whole parsed body, so the path to it is `data.detail`. Reading it is
+ * `lib/admission-format.ts`'s job, not a caller's.
+ *
+ * `error` is the literal `unadmitted_files` and is how this refusal is told
+ * apart from every other 409 the API can return. `held` names every offending
+ * file rather than the first, so one refusal says everything that must be
+ * decided; a reader that shows only the first turns a five-file batch into
+ * five rounds of the same surprise.
+ */
+export interface UnadmittedFilesRefusal {
+  error: string
+  message: string
+  held: HeldFile[]
+}
+
+/** Every field the refusal envelope carries. See `HELD_FILE_FIELDS`. */
+export const UNADMITTED_FILES_REFUSAL_FIELDS: readonly (keyof UnadmittedFilesRefusal)[] =
+  ["error", "message", "held"]
+
+/**
+ * The value of `error` on the refusal body, and the only thing that identifies
+ * it. Exported so the reader and its tests name the same constant rather than
+ * two copies of a string that only drift apart.
+ */
+export const UNADMITTED_FILES_ERROR = "unadmitted_files"
+
+/**
+ * What admitting one file needs.
+ *
+ * `reason` is not optional and has no default, matching the backend, which
+ * requires it. It is the whole point of the route: the hold exists because
+ * nothing could vouch for the file, and overruling it puts a named person's
+ * judgement in its place. An admission with nothing on the record leaves
+ * material in the pipeline that no reader passed and no one accounted for.
+ *
+ * There is deliberately no field for what the router found. The backend
+ * re-reads that from the file, so a request cannot put a chosen finding into
+ * the permanent record.
+ */
+export interface AdmitFileParams {
+  caseId: string
+  fileId: string
+  reason: string
+}
+
 export const financialAPI = {
   getTransactions: (params: {
     caseId: string
@@ -1290,5 +1468,34 @@ export const financialAPI = {
   getCaseProofStanding: (caseId: string) =>
     fetchAPI<ProofStandingResponse>(
       `/api/financial/proof-standing?${new URLSearchParams({ case_id: caseId })}`
+    ),
+
+  /**
+   * Overrule the hold on one file, on a person's authority.
+   *
+   * **This records an authority. It processes nothing.** A 200 here means the
+   * override is on the record, not that the file has moved; the caller must
+   * still send the request that was refused. Treating the answer as though the
+   * work were done would leave a file admitted and never processed, which
+   * looks from every screen exactly like a file that was processed.
+   *
+   * Almost nothing this route can say is an error, and the two that are do not
+   * come back as answers: a missing file is a 404 and a failed write is a 500.
+   * Everything else is a 200 carrying its own outcome, including `refused` and
+   * `nothing_to_override`. That last one is a fact rather than a fault -- the
+   * router is not holding this file, so there is no no to overrule and nothing
+   * stops it being processed. Reporting it as a failure would send someone
+   * looking for a problem that does not exist.
+   *
+   * **Nothing is deduplicated, here or on the backend.** Calling this twice
+   * writes two decisions. The backend currently checks for the existence of a
+   * decision, not its consumption; retries of processing must not automatically
+   * call this method again.
+   */
+  admitFile: (params: AdmitFileParams) =>
+    fetchAPI<FileAdmission>(
+      `/api/financial/files/${encodeURIComponent(params.fileId)}` +
+        `/admit?${new URLSearchParams({ case_id: params.caseId })}`,
+      { method: "POST", body: { reason: params.reason } }
     ),
 }

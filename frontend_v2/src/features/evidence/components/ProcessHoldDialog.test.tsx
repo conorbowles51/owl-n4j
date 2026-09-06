@@ -121,6 +121,9 @@ function stubGate(held: HeldRequest | null, overrides: Partial<ProcessGate> = {}
     dismiss: vi.fn(),
     held,
     isChecking: false,
+    isBusy: false,
+    recordAdmission: vi.fn(),
+    processAdmitted: vi.fn().mockResolvedValue("started"),
     isProcessing: false,
     ...overrides,
   }
@@ -573,5 +576,52 @@ describe("sending a held file to the ledger", () => {
     expect(screen.queryByTestId("send-dialog")).not.toBeInTheDocument()
     expect(screen.getByRole("heading")).toHaveTextContent("1 file was held back")
     expect(gate.dismiss).not.toHaveBeenCalled()
+  })
+})
+
+
+describe("recording an admission in the hold dialog", () => {
+  it("requires a reason and records it without starting processing", async () => {
+    const gate = stubGate(heldRequest())
+    render(<ProcessHoldDialog gate={gate} />)
+    const button = screen.getByRole("button", { name: "Record decision" })
+    expect(button).toBeDisabled()
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "  Checked the source  " } })
+    await act(async () => { fireEvent.click(button) })
+    expect(gate.recordAdmission).toHaveBeenCalledWith("a", "  Checked the source  ")
+    expect(gate.processAdmitted).not.toHaveBeenCalled()
+  })
+
+  it("shows the recorded reason and makes processing a separate action", async () => {
+    const gate = stubGate(heldRequest({ admissions: { a: {
+      canProcess: true, decisionRecorded: true, message: "Decision recorded. Nothing sent.",
+      reason: "Checked the source", reasonLabel: "Your recorded reason", routeOutcome: "ambiguous", detectedFormat: null, claimants: ["bai2", "mt940"],
+    } } }))
+    render(<ProcessHoldDialog gate={gate} />)
+    expect(screen.getByText("Your recorded reason: Checked the source")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Record decision" })).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Process this file" })) })
+    expect(gate.processAdmitted).toHaveBeenCalledWith("a")
+    expect(gate.recordAdmission).not.toHaveBeenCalled()
+  })
+
+  it("explains the native-file limitation before a decision is recorded", () => {
+    render(<ProcessHoldDialog gate={stubGate(heldRequest())} />)
+    expect(screen.getByText(/processing service still refuses/)).toBeInTheDocument()
+  })
+
+  it("displays an uncertain decision and disables actions while a request is pending", () => {
+    render(<ProcessHoldDialog gate={stubGate(heldRequest({ admissionErrors: { a: "Could not confirm. Check decision history." } }), { isBusy: true })} />)
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not confirm")
+    expect(screen.getByRole("textbox")).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Record decision" })).toBeDisabled()
+    expect(screen.getByTestId("send-to-ledger-a")).toBeDisabled()
+  })
+
+  it("reports a processing request without offering to send the same file again", () => {
+    render(<ProcessHoldDialog gate={stubGate(heldRequest({ sent: ["a"] }))} />)
+    expect(screen.getByRole("status")).toHaveTextContent("Processing requested for this file")
+    expect(screen.queryByRole("button", { name: "Process this file" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Record decision" })).toBeNull()
   })
 })

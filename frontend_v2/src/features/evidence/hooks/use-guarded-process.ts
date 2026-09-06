@@ -7,15 +7,9 @@
  * here, and a button wired straight to `evidenceAPI.processBackground` is a
  * door around it.  There were seven such doors before this hook existed.
  *
- * Why the interface is the gate at all
- * -----------------------------------
- *
- * `POST /api/evidence/process/background` does not consult the route check.
- * The evidence engine has a backstop in `run_pipeline`, but it refuses only
- * files exactly one native format claims -- an ambiguous file passes it -- and
- * it refuses by failing the job after the upload has already happened.  So this
- * is the only place that can turn a bank file away before the work is paid for
- * and offer the person a choice about it.
+ * The backend enforces recorded admissions immediately before processing.
+ * This hook explains both the initial route check and a later server refusal,
+ * and keeps recording a decision separate from requesting processing.
  *
  * Failing closed
  * --------------
@@ -33,12 +27,22 @@
  * files the check cleared can still be sent on with {@link release}.
  */
 
-import { useCallback, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+import { financialAPI } from "@/features/financial/api"
+import {
+  readAdmissionRefusal,
+  readFileAdmission,
+  type AdmissionReading,
+} from "@/features/financial/lib/admission-format"
 import { evidenceAPI } from "../api"
-import { blocksDocumentProcessing, coerceOutcome, type RouteOutcome } from "../utils/financial-route"
+import {
+  blocksDocumentProcessing,
+  coerceOutcome,
+  type RouteOutcome,
+} from "../utils/financial-route"
 import type { FileRouteCheck, RouteCheckSummary } from "@/types/evidence.types"
 
 export interface ProcessRequest {
@@ -74,6 +78,11 @@ export interface HeldRequest {
    * and `cleared` are both empty rather than the request being split.
    */
   checkError: string | null
+  /** Decisions are scoped to this exact held request, never reused for a new one. */
+  admissions?: Record<string, AdmissionReading>
+  admissionErrors?: Record<string, string>
+  processingErrors?: Record<string, string>
+  sent?: string[]
 }
 
 /**
@@ -100,6 +109,19 @@ export type StartOutcome = "started" | "held" | "empty" | "failed"
  * nothing happening and most of it happening is the thing a person needs.
  */
 export function describeHold(held: HeldRequest): string {
+  if (held.sent?.length) {
+    const sent = new Set(held.sent)
+    const remaining = {
+      ...held,
+      sent: [],
+      held: held.held.filter((file) => !sent.has(file.file_id)),
+    }
+    const next =
+      remaining.held.length || remaining.cleared.length || remaining.checkError
+        ? describeHold(remaining)
+        : ""
+    return `Processing was requested for ${sent.size} file${sent.size === 1 ? "" : "s"}. ${next}`.trim()
+  }
   // `checkError` alone does not mean nothing is known: it is also set when the
   // check answered for only some of the files, and in that case the rest were
   // still sorted. Only an empty result on both sides means the check itself
@@ -133,27 +155,60 @@ const QUERY_KEYS_TO_REFRESH = [
 
 export function useGuardedProcess(caseId: string) {
   const queryClient = useQueryClient()
-  const [held, setHeld] = useState<HeldRequest | null>(null)
+  const [heldState, setHeldState] = useState<{
+    caseId: string
+    value: HeldRequest
+  } | null>(null)
+  const held = heldState?.caseId === caseId ? heldState.value : null
+  const setHeld = useCallback(
+    (value: HeldRequest | null) => {
+      setHeldState(value ? { caseId, value } : null)
+    },
+    [caseId]
+  )
+  // Synchronous lock: two clicks in one render must not append two decisions.
+  const busy = useRef(false)
+  const [isBusy, setIsBusy] = useState(false)
+  const begin = useCallback(() => {
+    if (busy.current) return false
+    busy.current = true
+    setIsBusy(true)
+    return true
+  }, [])
+  const finish = useCallback(() => {
+    busy.current = false
+    setIsBusy(false)
+  }, [])
   const [isChecking, setIsChecking] = useState(false)
 
   const processMutation = useMutation({
-    mutationFn: (request: ProcessRequest) =>
+    retry: false,
+    mutationFn: ({
+      request,
+      requestCaseId,
+    }: {
+      request: ProcessRequest
+      requestCaseId: string
+    }) =>
       evidenceAPI.processBackground(
-        caseId,
+        requestCaseId,
         request.fileIds,
         request.profile,
         request.maxWorkers,
         request.imageProvider
       ),
-    onSuccess: async () => {
+    onSuccess: async (_data, { requestCaseId }) => {
       // The four keys every previous copy of this mutation invalidated, plus
       // the background-tasks key the detail hook also invalidated. Collected
       // here so that a screen added later cannot forget one of them.
       queryClient.invalidateQueries({ queryKey: ["background-tasks"] })
       for (const key of QUERY_KEYS_TO_REFRESH) {
-        queryClient.invalidateQueries({ queryKey: [key, caseId] })
+        queryClient.invalidateQueries({ queryKey: [key, requestCaseId] })
       }
-      await queryClient.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
+      await queryClient.refetchQueries({
+        queryKey: ["evidence-jobs", requestCaseId],
+        type: "active",
+      })
     },
   })
 
@@ -172,10 +227,13 @@ export function useGuardedProcess(caseId: string) {
    * `use-guarded-process.test.tsx` fails if any module calling this hook does
    * not also render the dialog.
    */
-  const hold = useCallback((request: HeldRequest): StartOutcome => {
-    setHeld(request)
-    return "held"
-  }, [])
+  const hold = useCallback(
+    (request: HeldRequest): StartOutcome => {
+      setHeld(request)
+      return "held"
+    },
+    [setHeld]
+  )
 
   /**
    * Send the request on, reporting a failure rather than throwing one.
@@ -185,14 +243,65 @@ export function useGuardedProcess(caseId: string) {
   const send = useCallback(
     async (request: ProcessRequest): Promise<StartOutcome> => {
       try {
-        await processMutation.mutateAsync(request)
+        await processMutation.mutateAsync({ request, requestCaseId: caseId })
         return "started"
       } catch (error) {
+        const refusal = readAdmissionRefusal(error)
+        // A response naming an unrequested file cannot authorise acting on that file.
+        if (
+          refusal &&
+          refusal.held.every((file) => request.fileIds.includes(file.file_id))
+        ) {
+          const heldIds = new Set(refusal.held.map((file) => file.file_id))
+          const files = refusal.held.map((file) => ({
+            file_id: file.file_id,
+            file_name: file.file_name,
+            outcome: coerceOutcome(file.route_outcome),
+            detected_format: file.detected_format,
+            claimants: file.claimants,
+            blocks_document_processing: true,
+            reason: `Processing was refused: ${file.route_outcome}`,
+          }))
+          setHeldState((previous) => {
+            // A single-file retry must not erase the other files awaiting a decision.
+            const prior = previous?.caseId === caseId ? previous.value : null
+            if (
+              prior &&
+              request.fileIds.every((id) => prior.request.fileIds.includes(id))
+            ) {
+              const admissions = { ...prior.admissions }
+              for (const id of heldIds) delete admissions[id]
+              return {
+                caseId,
+                value: {
+                  ...prior,
+                  admissions,
+                  held: [
+                    ...prior.held.filter((file) => !heldIds.has(file.file_id)),
+                    ...files,
+                  ],
+                  cleared: prior.cleared.filter((id) => !heldIds.has(id)),
+                },
+              }
+            }
+            return {
+              caseId,
+              value: {
+                request,
+                held: files,
+                cleared: request.fileIds.filter((id) => !heldIds.has(id)),
+                summary: null,
+                checkError: null,
+              },
+            }
+          })
+          return "held"
+        }
         toast.error(error instanceof Error ? error.message : String(error))
         return "failed"
       }
     },
-    [processMutation]
+    [processMutation, caseId]
   )
 
   /**
@@ -204,59 +313,79 @@ export function useGuardedProcess(caseId: string) {
   const start = useCallback(
     async (request: ProcessRequest): Promise<StartOutcome> => {
       if (request.fileIds.length === 0) return "empty"
-
-      setIsChecking(true)
-      let response
+      if (!begin()) return "failed"
       try {
-        response = await evidenceAPI.routeCheck(caseId, request.fileIds)
-      } catch (error) {
+        setHeld(null)
+        setIsChecking(true)
+        let response
+        try {
+          response = await evidenceAPI.routeCheck(caseId, request.fileIds)
+        } catch (error) {
+          return hold({
+            request,
+            held: [],
+            cleared: [],
+            summary: null,
+            checkError: error instanceof Error ? error.message : String(error),
+          })
+        } finally {
+          setIsChecking(false)
+        }
+
+        const answeredIds = response.files.map((file) => file.file_id)
+        if (new Set(answeredIds).size !== answeredIds.length) {
+          return hold({
+            request,
+            held: [],
+            cleared: [],
+            summary: null,
+            checkError:
+              "The file check repeated an identifier. Nothing was sent; check the files again.",
+          })
+        }
+        const heldFiles: HeldFile[] = []
+        const cleared: string[] = []
+        for (const file of response.files) {
+          if (!request.fileIds.includes(file.file_id)) continue
+          const outcome = coerceOutcome(file.outcome)
+          // The server's own verdict is not trusted over the local rule. An
+          // older service computed `blocks_document_processing` without knowing
+          // about outcomes added since, and the two disagreeing must resolve
+          // towards holding rather than towards processing.
+          if (
+            blocksDocumentProcessing(outcome) ||
+            file.blocks_document_processing
+          ) {
+            heldFiles.push({ ...file, outcome })
+          } else {
+            cleared.push(file.file_id)
+          }
+        }
+
+        // A file id the check did not answer for is not a file this build can say
+        // anything about, so it is not quietly added to the cleared list.
+        const answered = new Set(response.files.map((file) => file.file_id))
+        const unanswered = request.fileIds.filter((id) => !answered.has(id))
+
+        if (heldFiles.length === 0 && unanswered.length === 0) {
+          return await send(request)
+        }
+
         return hold({
           request,
-          held: [],
-          cleared: [],
-          summary: null,
-          checkError: error instanceof Error ? error.message : String(error),
+          held: heldFiles,
+          cleared,
+          summary: response.summary,
+          checkError:
+            unanswered.length > 0
+              ? `The check returned no answer for ${unanswered.length} of ${request.fileIds.length} files.`
+              : null,
         })
       } finally {
-        setIsChecking(false)
+        finish()
       }
-
-      const heldFiles: HeldFile[] = []
-      const cleared: string[] = []
-      for (const file of response.files) {
-        const outcome = coerceOutcome(file.outcome)
-        // The server's own verdict is not trusted over the local rule. An
-        // older service computed `blocks_document_processing` without knowing
-        // about outcomes added since, and the two disagreeing must resolve
-        // towards holding rather than towards processing.
-        if (blocksDocumentProcessing(outcome) || file.blocks_document_processing) {
-          heldFiles.push({ ...file, outcome })
-        } else {
-          cleared.push(file.file_id)
-        }
-      }
-
-      // A file id the check did not answer for is not a file this build can say
-      // anything about, so it is not quietly added to the cleared list.
-      const answered = new Set(response.files.map((file) => file.file_id))
-      const unanswered = request.fileIds.filter((id) => !answered.has(id))
-
-      if (heldFiles.length === 0 && unanswered.length === 0) {
-        return send(request)
-      }
-
-      return hold({
-        request,
-        held: heldFiles,
-        cleared,
-        summary: response.summary,
-        checkError:
-          unanswered.length > 0
-            ? `The check returned no answer for ${unanswered.length} of ${request.fileIds.length} files.`
-            : null,
-      })
     },
-    [caseId, hold, send]
+    [caseId, hold, send, begin, finish, setHeld]
   )
 
   /**
@@ -268,17 +397,152 @@ export function useGuardedProcess(caseId: string) {
    * {@link start} this reports rather than throws.
    */
   const release = useCallback(async (): Promise<number> => {
-    if (!held || held.cleared.length === 0) {
-      setHeld(null)
-      return 0
+    if (!begin()) return 0
+    try {
+      if (!held || held.cleared.length === 0) {
+        setHeld(null)
+        return 0
+      }
+      const count = held.cleared.length
+      const outcome = await send({ ...held.request, fileIds: held.cleared })
+      // A new 409 is a new hold, not a dialog to immediately close.
+      if (outcome === "started") setHeld(null)
+      return outcome === "started" ? count : 0
+    } finally {
+      finish()
     }
-    const count = held.cleared.length
-    const outcome = await send({ ...held.request, fileIds: held.cleared })
-    setHeld(null)
-    return outcome === "started" ? count : 0
-  }, [held, send])
+  }, [held, send, begin, finish, setHeld])
 
-  const dismiss = useCallback(() => setHeld(null), [])
+  const recordAdmission = useCallback(
+    async (fileId: string, reason: string) => {
+      if (
+        !held ||
+        !held.held.some((file) => file.file_id === fileId) ||
+        !reason.trim() ||
+        held.admissions?.[fileId]?.canProcess ||
+        held.sent?.includes(fileId) ||
+        !begin()
+      )
+        return
+      const snapshot = heldState
+      try {
+        const answer = await financialAPI.admitFile({ caseId, fileId, reason })
+        const reading = readFileAdmission(answer, fileId)
+        if (reading.decisionRecorded) {
+          void queryClient.invalidateQueries({
+            queryKey: ["financial-decisions", caseId],
+          })
+        }
+        setHeldState((current) =>
+          current !== snapshot || !current
+            ? current
+            : {
+                ...current,
+                value: {
+                  ...current.value,
+                  held: current.value.held.map((file) =>
+                    file.file_id === fileId && reading.routeOutcome
+                      ? {
+                          ...file,
+                          outcome: coerceOutcome(reading.routeOutcome),
+                          detected_format: reading.detectedFormat,
+                          claimants: reading.claimants,
+                          reason: null,
+                        }
+                      : file
+                  ),
+                  admissions: {
+                    ...current.value.admissions,
+                    [fileId]: reading,
+                  },
+                  admissionErrors: {
+                    ...current.value.admissionErrors,
+                    [fileId]: "",
+                  },
+                },
+              }
+        )
+      } catch (error) {
+        // The server may have committed before the connection failed. Do not automatically retry.
+        void queryClient.invalidateQueries({
+          queryKey: ["financial-decisions", caseId],
+        })
+        const message = error instanceof Error ? error.message : String(error)
+        setHeldState((current) =>
+          current !== snapshot || !current
+            ? current
+            : {
+                ...current,
+                value: {
+                  ...current.value,
+                  admissionErrors: {
+                    ...current.value.admissionErrors,
+                    [fileId]: `Could not confirm the decision: ${message}. Nothing was sent. Check the decision history before recording it again.`,
+                  },
+                },
+              }
+        )
+      } finally {
+        finish()
+      }
+    },
+    [held, heldState, caseId, begin, finish, queryClient]
+  )
+
+  const processAdmitted = useCallback(
+    async (fileId: string): Promise<StartOutcome> => {
+      if (
+        !held ||
+        !held.held.some((file) => file.file_id === fileId) ||
+        !held.admissions?.[fileId]?.canProcess ||
+        held.sent?.includes(fileId) ||
+        !begin()
+      )
+        return "failed"
+      const snapshot = heldState
+      try {
+        const outcome = await send({ ...held.request, fileIds: [fileId] })
+        if (outcome === "started") {
+          setHeldState((current) =>
+            current !== snapshot || !current
+              ? current
+              : {
+                  ...current,
+                  value: {
+                    ...current.value,
+                    sent: [...(current.value.sent ?? []), fileId],
+                  },
+                }
+          )
+        }
+        if (outcome === "failed") {
+          setHeldState((current) =>
+            current !== snapshot || !current
+              ? current
+              : {
+                  ...current,
+                  value: {
+                    ...current.value,
+                    processingErrors: {
+                      ...current.value.processingErrors,
+                      [fileId]:
+                        "Could not confirm processing. Check the evidence list before retrying. The recorded decision has been kept.",
+                    },
+                  },
+                }
+          )
+        }
+        return outcome
+      } finally {
+        finish()
+      }
+    },
+    [held, heldState, send, begin, finish]
+  )
+
+  const dismiss = useCallback(() => {
+    if (!busy.current) setHeld(null)
+  }, [setHeld])
 
   return {
     // Returned rather than left in the closure because the hold dialog has to
@@ -289,6 +553,9 @@ export function useGuardedProcess(caseId: string) {
     // is the argument {@link ProcessGate} already makes about `held`,
     // `release` and `dismiss`.
     caseId,
+    isBusy,
+    recordAdmission,
+    processAdmitted,
     start,
     release,
     dismiss,

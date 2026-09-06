@@ -1,28 +1,7 @@
 /**
- * What the gate held, and the only choice it can currently offer about it.
- *
- * `useGuardedProcess` refuses to send certain files to the document pipeline
- * and records why.  Nothing consumed that record until this component existed,
- * so a held request was a toast and then nothing -- the person was told a file
- * had been held and given no way to act on it except to try again and be
- * refused again.
- *
- * The choice on offer is deliberately narrow: send the files that were
- * cleared, or send nothing.  There is no "process it anyway" here yet, because
- * admitting a bank file to prose processing is a decision somebody has to own,
- * and there is nowhere in the schema to record who owned it -- `decisions.record`
- * files adjudications against financial subjects, and an evidence file admitted
- * to the document pipeline never becomes one.  A button that discarded the
- * reason would be worse than no button: it would look like an audit trail.
- *
- * Not a safety control
- * --------------------
- *
- * The gate decides.  This explains.  If this component were missing from a
- * screen the file would still be held -- the failure would be a button that
- * appears to do nothing, which is why `no unannounced hold` in
- * `use-guarded-process.test.tsx` names any module that calls the hook without
- * rendering this.
+ * Explain held files and record a person's decision before offering processing.
+ * Sending to the ledger remains separate from admitting to document processing.
+ * The backend rechecks the file and enforces the decision before any send.
  *
  * Why it does not reuse RouteBadge
  * --------------------------------
@@ -40,6 +19,7 @@ import { AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -55,9 +35,14 @@ import {
   ROUTE_OUTCOME_VARIANT,
   belongsToLedger,
   routeDetailLines,
+  formatLabel,
 } from "../utils/financial-route"
 import { describeHold } from "../hooks/use-guarded-process"
-import type { HeldFile, HeldRequest, ProcessGate } from "../hooks/use-guarded-process"
+import type {
+  HeldFile,
+  HeldRequest,
+  ProcessGate,
+} from "../hooks/use-guarded-process"
 import { SendToLedgerDialog } from "@/features/financial/components/SendToLedgerDialog"
 
 interface ProcessHoldDialogProps {
@@ -86,9 +71,13 @@ interface ProcessHoldDialogProps {
  * not a style rule.
  */
 function holdTitle(held: HeldRequest): string {
-  if (held.held.length === 0 && held.cleared.length === 0) return "Nothing was sent"
+  if (held.sent?.length) return "Processing requested"
+  if (held.held.length === 0 && held.cleared.length === 0)
+    return "Nothing was sent"
   if (held.held.length === 0) return "Some files could not be checked"
-  return held.held.length === 1 ? "1 file was held back" : `${held.held.length} files were held back`
+  return held.held.length === 1
+    ? "1 file was held back"
+    : `${held.held.length} files were held back`
 }
 
 export function ProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
@@ -101,6 +90,7 @@ export function ProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
   // reader to answer that question twice with no sign the answers differed.
   const [sending, setSending] = useState<HeldFile | null>(null)
   const held = gate.held
+  const busy = isReleasing || gate.isBusy
 
   if (!held) return null
 
@@ -118,112 +108,230 @@ export function ProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
     // true, the next hold would open showing a spinner over a button nobody
     // had pressed.
     setIsReleasing(false)
-    if (sent > 0) toast.success(`Processing ${sent} file${sent === 1 ? "" : "s"}`)
+    if (sent > 0)
+      toast.success(`Processing ${sent} file${sent === 1 ? "" : "s"}`)
   }
 
   return (
     <>
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        // Escape and the overlay dismiss, they do not release. Losing a
-        // modal by accident must not send anything anywhere.
-        if (!open && !isReleasing) gate.dismiss()
-      }}
-    >
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="size-4 text-amber-500" />
-            {holdTitle(held)}
-          </DialogTitle>
-          <DialogDescription>{describeHold(held)}</DialogDescription>
-        </DialogHeader>
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          // Escape and the overlay dismiss, they do not release. Losing a
+          // modal by accident must not send anything anywhere.
+          if (!open && !busy) gate.dismiss()
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-amber-500" />
+              {holdTitle(held)}
+            </DialogTitle>
+            <DialogDescription>{describeHold(held)}</DialogDescription>
+          </DialogHeader>
 
-        {heldFiles.length > 0 && (
-          <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
-            {heldFiles.map((file) => (
-              <div
-                key={file.file_id}
-                className="rounded-md border border-border/70 bg-muted/30 p-3"
-              >
-                <div className="flex items-start gap-2">
-                  <Badge
-                    variant={ROUTE_OUTCOME_VARIANT[file.outcome]}
-                    className="shrink-0 text-[10px]"
-                  >
-                    {ROUTE_OUTCOME_LABEL[file.outcome]}
-                  </Badge>
-                  {/* The id is the fallback because a file with no name still
+          {heldFiles.length > 0 && (
+            <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
+              {heldFiles.map((file) => (
+                <div
+                  key={file.file_id}
+                  className="rounded-md border border-border/70 bg-muted/30 p-3"
+                >
+                  <div className="flex items-start gap-2">
+                    <Badge
+                      variant={ROUTE_OUTCOME_VARIANT[file.outcome]}
+                      className="shrink-0 text-[10px]"
+                    >
+                      {ROUTE_OUTCOME_LABEL[file.outcome]}
+                    </Badge>
+                    {/* The id is the fallback because a file with no name still
                       has to be findable on the list behind this dialog. */}
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                    {file.file_name ?? file.file_id}
-                  </span>
-                </div>
-                {routeDetailLines(file).map((line) => (
-                  <p key={line} className="mt-1.5 text-xs text-muted-foreground">
-                    {line}
-                  </p>
-                ))}
-                {/* Offered only for `native`, which is narrower than the set
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {file.file_name ?? file.file_id}
+                    </span>
+                  </div>
+                  {routeDetailLines(file).map((line) => (
+                    <p
+                      key={line}
+                      className="mt-1.5 text-xs text-muted-foreground"
+                    >
+                      {line}
+                    </p>
+                  ))}
+                  {/* Offered only for `native`, which is narrower than the set
                     of files held here and deliberately so. `belongsToLedger`
                     is not `blocksDocumentProcessing`: an `ambiguous` file is
                     also held, but sending it to the ledger would fail there
                     too, because the reading requires exactly one format to
                     claim the bytes. A button that could only be refused is
                     worse than no button. */}
-                {belongsToLedger(file.outcome) && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2.5"
-                    data-testid={`send-to-ledger-${file.file_id}`}
-                    onClick={() => setSending(file)}
-                  >
-                    Send to ledger
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Shown on its own only when there is no file list to attach it to.
-            Alongside a list it would repeat the description above it. */}
-        {held.checkError && heldFiles.length === 0 && (
-          <p className="rounded-md border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
-            {held.checkError}
-          </p>
-        )}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={gate.dismiss} disabled={isReleasing}>
-            {clearedCount > 0 ? "Cancel" : "Close"}
-          </Button>
-          {clearedCount > 0 && (
-            <Button onClick={handleRelease} disabled={isReleasing}>
-              {isReleasing && <LoadingSpinner className="mr-1.5 size-3.5" />}
-              Process {clearedCount} other file{clearedCount === 1 ? "" : "s"}
-            </Button>
+                  {belongsToLedger(file.outcome) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2.5"
+                      data-testid={`send-to-ledger-${file.file_id}`}
+                      disabled={busy || held.sent?.includes(file.file_id)}
+                      onClick={() => setSending(file)}
+                    >
+                      Send to ledger
+                    </Button>
+                  )}
+                  <FileAdmissionControl
+                    key={`${gate.caseId}:${file.file_id}`}
+                    gate={gate}
+                    file={file}
+                    busy={busy}
+                  />
+                </div>
+              ))}
+            </div>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
 
-    {/* A sibling rather than a child, so it is not unmounted by the hold
+          {/* Shown on its own only when there is no file list to attach it to.
+            Alongside a list it would repeat the description above it. */}
+          {held.checkError && heldFiles.length === 0 && (
+            <p className="rounded-md border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
+              {held.checkError}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={gate.dismiss} disabled={busy}>
+              {clearedCount > 0 ? "Cancel" : "Close"}
+            </Button>
+            {clearedCount > 0 && (
+              <Button onClick={handleRelease} disabled={busy}>
+                {isReleasing && <LoadingSpinner className="mr-1.5 size-3.5" />}
+                Process {clearedCount} other file{clearedCount === 1 ? "" : "s"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* A sibling rather than a child, so it is not unmounted by the hold
         dialog closing underneath it, and so neither one's escape handling has
         to know about the other. The hold stays open behind it: sending one
         bank file to the ledger says nothing about the rest of the request,
         and the reader still has the cleared files to decide about. */}
-    {sending && (
-      <SendToLedgerDialog
-        caseId={gate.caseId}
-        fileId={sending.file_id}
-        fileName={sending.file_name ?? null}
-        open
-        onClose={() => setSending(null)}
-      />
-    )}
+      {sending && (
+        <SendToLedgerDialog
+          caseId={gate.caseId}
+          fileId={sending.file_id}
+          fileName={sending.file_name ?? null}
+          open
+          onClose={() => setSending(null)}
+        />
+      )}
     </>
+  )
+}
+
+/** A separate form per file: one person's reason must not silently cover a batch. */
+function FileAdmissionControl({
+  gate,
+  file,
+  busy,
+}: {
+  gate: ProcessGate
+  file: HeldFile
+  busy: boolean
+}) {
+  const [reason, setReason] = useState("")
+  const reading = gate.held?.admissions?.[file.file_id]
+  const error = gate.held?.admissionErrors?.[file.file_id]
+  const processingError = gate.held?.processingErrors?.[file.file_id]
+  const sent = gate.held?.sent?.includes(file.file_id)
+  const inputId = `admission-reason-${file.file_id}`
+  if (sent)
+    return (
+      <p role="status" className="mt-3 text-sm">
+        Processing requested for this file. Follow its progress in the evidence
+        list.
+      </p>
+    )
+  if (file.outcome === "not_found") return null
+  return (
+    <div className="mt-3 space-y-2 border-t pt-3">
+      <p className="text-sm font-medium">Process as a document</p>
+      <p className="text-xs text-muted-foreground">
+        Your name, reason and the file check will be recorded in the case
+        decision history. This does not add verified transactions to the ledger.
+      </p>
+      {(file.outcome === "native" || reading?.routeOutcome === "native") && (
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          The processing service still refuses files it identifies as native
+          bank records, even after a decision is recorded. Use Send to ledger
+          for a supported bank file.
+        </p>
+      )}
+      {reading && (
+        <div role="status" className="space-y-1 text-xs">
+          <p>{processingError ? "Decision retained." : reading.message}</p>
+          {reading.reason && (
+            <p>
+              {reading.reasonLabel}: {reading.reason}
+            </p>
+          )}
+          {reading.routeOutcome && (
+            <p>Latest file check: {reading.routeOutcome}</p>
+          )}
+          {reading.detectedFormat && (
+            <p>Format: {formatLabel(reading.detectedFormat)}</p>
+          )}
+          {reading.claimants.length > 0 && (
+            <p>Claimed by: {reading.claimants.map(formatLabel).join(", ")}</p>
+          )}
+        </div>
+      )}
+      {processingError && (
+        <p role="alert" className="text-xs text-destructive">
+          {processingError}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+      {reading?.canProcess ? (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void gate.processAdmitted(file.file_id)}
+        >
+          {processingError ? "Retry processing this file" : "Process this file"}
+        </Button>
+      ) : (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            void gate.recordAdmission(file.file_id, reason)
+          }}
+          className="space-y-2"
+        >
+          <label htmlFor={inputId} className="block text-xs">
+            Reason for proceeding with {file.file_name ?? file.file_id}
+          </label>
+          <Textarea
+            id={inputId}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            disabled={busy}
+          />
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            disabled={busy || !reason.trim()}
+          >
+            Record decision
+          </Button>
+        </form>
+      )}
+    </div>
   )
 }
