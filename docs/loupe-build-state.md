@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `9c64b15`, “Refuse inconsistent correction
-  verification and malformed magnitudes”, parent `46015bb`. A documentation commit follows it;
+- **Latest implementation commit:** `f42c8e5`, “Preserve measured PDF text origin
+  alongside canonical source text”, parent `848948c`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,39 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### PDF text-origin provenance now survives extraction
+
+`f42c8e5` connects the existing financial `page_text_origin` measurement to the
+engine's PDF extraction. An embedded text layer is no longer implicitly treated
+as digital: full-page raster overlays are labeled recognised_glyphs even when the
+engine correctly keeps their usable existing text. Fresh successful Tesseract
+output is recognised_glyphs; unavailable reader or failed measurement is unknown.
+This is the existing conservative page-level heuristic, not a per-cell certainty
+claim. No amount or column is inferred, and extracted content remains unchanged.
+
+`text_origin` travels with each page span and is copied to canonical source_locations
+in the existing evidence text storage path. No schema change or backfill. Existing
+stored texts without this field must be treated as unknown. The shared backend
+reader is loaded lazily like table geometry; standalone engine deployments without
+it still start and explicitly record unknown origin.
+
+Validation: **45 PDF extraction/dispatch/geometry tests pass**, including five new
+provenance tests and real rotated-page Tesseract checks; **11 canonical-text and
+pipeline-state tests pass**. Installed the engine's declared dev dependencies
+pytest 8.x and pytest-asyncio <1 into its persistent isolated venv. A pre-existing
+table summary test omitted the backend's existing by_table_source field; updated
+that expected contract. Logs: `/tmp/loupe-neilbyrne-pdf-origin-{tests,storage}.out`.
+Backend financial/frontend code is unchanged; baselines remain 3,528 (12 skipped),
+874 unit and 9 Chromium tests. The full engine suite was not run. No real evidence
+or database writes. Restart the local engine/worker before testing new extraction
+through the app; the running processes still load their previous code.
+
+Next bounded segment: consume stored source text, its page/offset provenance and
+text_origin in a source-grounded amount assessment. Identify an explicit amount
+span rather than guessing every number is money; missing historical origin remains
+unknown. Automatic suspect detection/admission is still not wired. The correction
+UI remains complete for current ledger rows, and graph projection is still item 12.
 
 ### Correction response consistency and ingestion seam audit
 
