@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `5cd7d94`, “Allow held-out amount corrections
-  while preserving quarantine”, parent `08609d0`. A documentation commit follows it;
+- **Latest implementation commit:** `7566305`, “Guard exact held-out correction
+  and reading history in Chromium”, parent `0efa9d8`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,35 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Live held-out round trip and Chromium regression verified
+
+The synthetic case `c1da9946-1dfd-413a-a4e9-1828e1c76b72` was exercised through
+the running browser: set aside its current 410.00 GBP row with a synthetic reason,
+open Held out, preview 400.00 GBP, and record. The replacement is
+`TX-44B9-JZ29-DXR4`, remains quarantined with the human-set grounds, and appears
+as 400.00 GBP in Held out. The statement difference stayed -400.00 GBP before and
+after because the row does not count. The other 20.00 GBP row remains admitted.
+No real evidence or database was touched. The live fixture is intentionally left
+with one quarantined row for further testing.
+
+Added a repeatable Chromium test for exact amounts beyond JavaScript safe integers,
+separate preview/confirmation, repeated-click protection, quarantine disclosure
+despite class eligibility, and expanding the original/replacement history.
+**9 Chromium tests in 7 files pass**, TypeScript and ESLint pass. Existing unit
+baseline remains **868 in 88 files** (no production/unit code changed). The full
+backend financial suite was rerun: **3,528 tests, 12 skipped**.
+Logs: `/tmp/loupe-neilbyrne-correction-browser-{regression,backend}.out`.
+
+Plan review: item 10 includes suspect-amount detection as well as corrections.
+`suspect_amounts.read_amount` requires original amount text plus explicit TextOrigin;
+do not apply it to a formatted stored integer or invent OCR provenance. Its module
+explicitly leaves column identification to its caller. Next bounded work should
+trace the ingestion provenance/raw reading seam and wire suspect readings only
+where those inputs are known. Correction revalidation still deliberately withholds
+automatic class eligibility for native-control/running-balance reservations.
+Item 11 supplies relational source locators; item 12 supplies graph projection.
+Do not silently claim either is completed by the correction writer.
 
 ### Held-out correction entry connected
 
