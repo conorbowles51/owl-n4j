@@ -3,17 +3,17 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 6 September 2026 (records `5fa71a2`, the admission path:
-`services/financial/admit_file.py`, its 20 tests, the package export, and
-`POST /api/financial/files/{file_id}/admit`. **`record_admission` finally has a
-production caller** — the override existed as a function and not as anything a
-person could do, and now it does. **Backend only; no TypeScript was touched.**
-This is **chunk 2a of item 8**. It records the decision; it does **not** stop a
-held file being sent without one. **Chunk 2b, the gate on the processing route,
-is the next unit**, and it is what turns `admission.py`'s "written before sent"
-from a convention into a guarantee. Read the disk note under Standing flags
-**before running anything**: the documented `CLAUDE.md` bootstrap still fails,
-and `/dev/shm` is tighter than this file used to say — 398M free, not 1.5G.)
+**Last updated:** 6 September 2026 (records `4e13821`, the gate:
+`services/financial/admission_gate.py`, its 25 tests, the package export, the
+call site in `services/evidence_processing_service.py`, and a 409 on all three
+routes that reach it. **`admission.py`'s "the event is written before the file is
+sent, or it is not sent" is now a property of the system rather than a habit of
+the one path that recorded.** **Backend only; no TypeScript was touched.** This
+completes **chunk 2b of item 8**, so the admission path is whole: 2a writes the
+decision, 2b refuses without one. **Chunk 3, proof class and
+`requires_adjudication`, is the next unit.** Read the disk note under Standing
+flags **before running anything**: the documented `CLAUDE.md` bootstrap still
+fails, and `/dev/shm` is tighter again — **244M free**, not 398M and not 1.5G.)
 
 **Standing, from the session before last, and not to be softened.** Neil asked
 whether assertion-driven work would hold up "when we get to the real piece", and
@@ -28,13 +28,12 @@ owes him. See **Verification debt** below.
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `5fa71a2`
-  (`5fa71a215d4fecfcafdbd72ffeb7b57742109e74`), "financial: give
-  record_admission a caller, and a route to reach it", parent `46f06af` (which
-  was the state-file commit for `e655a0a`). **Confirm the real tip with
-  `git log --oneline -5`** at the start of every session rather than trusting
-  this line — the state-file commit that follows this one will already have
-  moved it.
+- **Head when this was written:** `4e13821`
+  (`4e13821005d3b76d2c5abf19ca51a5d9c6f29c51`), "Refuse to send a held file that
+  no one has decided to send", parent `ec97007` (which was the state-file commit
+  for `5fa71a2`). **Confirm the real tip with `git log --oneline -5`** at the
+  start of every session rather than trusting this line — the state-file commit
+  that follows this one will already have moved it.
 - **Nothing is pushed.** Push is blocked; Neil pushes.
 - **The build order lives in `docs/loupe-wiring-plan.md`,** not in this file. Read
   it before picking up work. It is an agreed plan and is not to be resequenced
@@ -53,6 +52,11 @@ Still untracked and still un-removable from a session (workspace denies
   investigation ten sessions ago. It is **counted in the frontend baseline
   below** (it contributes 1 file and 1 test), so when it is deleted the unit
   numbers drop by one each and that is expected, not a regression.
+- **NEW at `4e13821`: `backend/pytest-cache-files-7jhqubws`.** Left by a pytest
+  run that was not given `-p no:cacheprovider`; see the pytest note under
+  "Learned recently". It is an **empty directory**, so `git status` does not list
+  it at all and it cannot get into a commit — but `rm -rf` on it fails with
+  `Operation not permitted`, so it stays until Neil removes it.
 
 Also untracked, and **not** mine — Neil's own documents and case material, left
 alone. `docs/IP_Protection_Strategy.docx`, `docs/ip-protection-strategy.md`,
@@ -62,12 +66,13 @@ disk note under Standing flags.
 
 ### Scale
 
-**134 commits** since `c4246c0` (27 August), counting `5fa71a2`; 135 once the
-state-file commit lands on top of it. Counted with
-`git rev-list --count c4246c0..HEAD`, not incremented from the previous figure.
+**136 commits** since `c4246c0` (27 August), counting `4e13821` and the state
+commit for `5fa71a2` that preceded it; 137 once this state-file commit lands on
+top. Counted with `git rev-list --count c4246c0..HEAD`, not incremented from the
+previous figure.
 
-`backend/services/financial/` **52 modules** excluding `__init__.py` (up one:
-`admit_file.py`); `backend/tests/test_financial_*.py` **59 files**, **3,409
+`backend/services/financial/` **53 modules** excluding `__init__.py` (up one:
+`admission_gate.py`); `backend/tests/test_financial_*.py` **60 files**, **3,434
 tests**. All three counted at this head with `ls | wc -l` and a full suite run,
 not carried forward.
 
@@ -80,20 +85,32 @@ self-justifying, and it was **spent almost entirely on internal consistency**
 rather than on whether the pieces work together when running. Do not quote the
 test count to Neil as evidence the system works.
 
-### Gate baselines as of `5fa71a2`
+### Gate baselines as of `4e13821`
 
-- **Backend financial suite: `Ran 3409 tests in 13.316s, OK (skipped=12)`.**
-  Measured in full at this head. Up **28** from `e655a0a`'s 3,381: 20 in the new
-  `test_financial_admit_file.py` and 8 added to
-  `test_financial_adjudication_router.py` (13 → 21). The arithmetic is exact,
-  which is the check that nothing else moved. **There are no expected failures.**
+- **Backend financial suite: `Ran 3434 tests in 13.821s, OK (skipped=12)`.**
+  Measured in full at this head. Up **25** from `5fa71a2`'s 3,409, all of them in
+  the new `test_financial_admission_gate.py`, which is exactly the file's own
+  count. The arithmetic is exact, which is the check that nothing else moved.
+  **There are no expected failures.**
+- **`grep -c '^Traceback'` on the run output: 8, unchanged.** Worth recording
+  because the suite deliberately exercises logged failure paths, so a rising
+  count is a signal a green run will not give you.
 - **`tests.test_financial_exports` alone: 5 tests, OK.** Run separately as well
   as inside the suite, because it is the guard a new module is most likely to
   trip. It is **fully automatic** — see the durable fact below; there is no list
   in it to update.
+- **The evidence side was run too, and had to be: `59 passed`** from
+  `python3 -m pytest tests/ -k "evidence or cellebrite"`, exit 0. The gate is
+  called from `services/evidence_processing_service.py`, which is **not** covered
+  by `test_financial_*`, so the financial suite alone would not have noticed the
+  call site breaking a caller. `tests/test_evidence_processing_recovery.py` is
+  the one that matters most: it drives `process_db_files` with a fake session
+  that has `commit()` and nothing else, which is the concrete caller the gate's
+  "do not query when nothing blocks" short-circuit exists to protect.
 - **Frontend unit: 77 files, 734 tests. NOT re-run at this head, and it did not
-  need to be:** the commit is five Python files and no TypeScript. The figure
-  carries forward from `e655a0a`, where it was measured in full.
+  need to be:** the commit is six Python files and no TypeScript, confirmed
+  against `git status` rather than assumed. The figure carries forward from
+  `e655a0a`, where it was measured in full.
 - **`tsc -b --force` 0; `eslint .` 0.** Likewise carried forward from `e655a0a`,
   unmeasured here, for the same reason. When they are next run it must be **from
   `frontend_v2/` with an absolute `cd` and the local binaries** — see the
@@ -101,8 +118,11 @@ test count to Neil as evidence the system works.
 - **Frontend browser: 2 files, 4 tests.** Carried forward from `e655a0a`, where
   it was actually run. It needs a per-session Chromium install and
   `--fileParallelism=false`; see **How to run the browser gate** below. **Check
-  `/dev/shm` has room before attempting it** — 398M free at this head, not the
-  1.5G this file used to claim.
+  `/dev/shm` has room before attempting it** — **244M free** at this head, not
+  the 398M recorded last session and not the 1.5G before that. It still fits: the
+  headless shell is 106.4 MiB. Measure it yourself; the figure moves by a few M
+  within a single session as scratch files accumulate, and it fell by 154M over
+  this one.
 
 ### How to run the browser gate
 
@@ -112,22 +132,27 @@ The gate is runnable. The Chromium headless shell is **106.4 MiB**, not the
 
 **Check the free space first, and do not trust a figure in this file for it.**
 The "~1.5G free at session start" recorded here at `e655a0a` did not hold.
-Measured at `5fa71a2` with `df -h /dev/shm` and `du -sh /dev/shm/*`, so these are
-real numbers and not estimates:
+Measured again at `4e13821` with `df -h /dev/shm` and `du -sh /dev/shm/*`, so
+these are real numbers and not estimates:
 
-- 2.0G total, **1.6G used, 398M free** — *after* this session's own bootstrap.
+- 2.0G total, **1.7G used, 244M free** — *after* this session's own bootstrap.
+  It was 398M at `5fa71a2`, one session ago.
 - **`/dev/shm` does not start empty.** It carries every previous session's
   leftovers, and the sandbox user changes each time so they cannot be removed
   from inside a session. Present at this head: a **928M** Playwright browser
-  directory (`pw-inspiring-peaceful-brown`), **four** `pylibs-*` directories at
-  **151M each**, a 14M vite cache and an 8M pycache.
+  directory (`pw-inspiring-peaceful-brown`), **five** `pylibs-*` directories at
+  **151M each** (this session's is 154M), a 14M vite cache and an 8M pycache.
 - **The pip bootstrap is 151M, not the ~463M this file used to claim.** The
-  Chromium headless shell is 106.4 MiB. Both fit in 398M together, with room.
+  Chromium headless shell is 106.4 MiB. Both still fit in 244M, but only just,
+  and the shell alone will not fit alongside one more bootstrap.
 - **It shrinks by ~151M per backend session,** because each one leaves its own
-  `pylibs-*` behind. That is the trend to watch. At the current rate `/dev/shm`
-  has roughly two more backend sessions of slack before a bootstrap stops
-  fitting, and the only lever from inside a session is not creating more.
+  `pylibs-*` behind. That is the trend to watch, and it is now the near one: at
+  244M there is **roughly one more backend session** of slack before a bootstrap
+  stops fitting, down from the two forecast at `5fa71a2`. The only lever from
+  inside a session is not creating more.
   **If it does run out, that is a thing for Neil to clear, not a build problem.**
+  The 928M Playwright directory is the single biggest item and the cheapest to
+  clear: removing it alone would more than restore a year of slack.
 
 ```
 cd <repo>/frontend_v2 && PLAYWRIGHT_BROWSERS_PATH=/dev/shm/pw-$(id -un) \
@@ -198,11 +223,123 @@ being exercised. A `logger.error` without a traceback is not a failure either.
 
 ## What this session did
 
-**A person can now overrule the router about one file, on the record, as
-`5fa71a2`.** Five files, 1,115 insertions, 15 deletions. **Backend only; no
-TypeScript was touched.**
+**A file the router holds back can no longer reach the document pipeline unless a
+named person has said on the record that it should, as `4e13821`.** Six files,
+1,054 insertions, 3 deletions. **Backend only; no TypeScript was touched.**
 
-This is **chunk 2a of item 8**. Two files are new and three were edited:
+This is **chunk 2b of item 8**, and it completes the admission path. `5fa71a2`
+wrote the decision; this refuses without one. Two files are new and four were
+edited:
+
+- `services/financial/admission_gate.py` (254 lines) —
+  `gate_document_processing`, `held_without_admission`, `admitted_file_ids`,
+  `HeldFile`, `UnadmittedFileError`.
+- `tests/test_financial_admission_gate.py` (704 lines, **25 tests**).
+- `services/financial/__init__.py` — the five names exported.
+- `services/evidence_processing_service.py` — the call site, plus a `_stored_path`
+  helper that is now the one place a file's path is resolved.
+- `routers/evidence.py` and `routers/evidence_folders.py` — a 409 on each of the
+  three routes that reach `process_db_files`.
+
+**What it does.** Immediately before the files are marked as processing and handed
+to the engine, the gate re-reads each one's leading bytes, keeps the ones the
+router holds back, asks the adjudication log whether an
+`admit_financial_document` decision exists for each in this case, and raises
+`UnadmittedFileError` if any is unaccounted for. The error carries every held
+file with the router's finding — the outcome, the detected format, and who claims
+it — so one refusal tells the caller everything they have to decide about.
+
+### The eight things that had to be decided, and how each was settled
+
+1. **The gate is called from `process_db_files`, not from a router.** All three
+   ways into the pipeline — `POST /api/evidence/process`,
+   `POST /api/evidence/process/background` and the folder route — go through that
+   one function. A gate on two of the three would be a door with a lock beside
+   it. The routers do only the thing routers should do, which is turn the refusal
+   into a status code.
+2. **It gates `valid_files`, not the requested ids.** By the time the gate is
+   reached, files already processing, already processed, or missing from disk
+   have been dropped. Gating the request rather than the send would turn today's
+   quiet "that one was missing, we skipped it" into a refusal of the whole batch
+   over a file nobody was about to process. A file that will not be sent needs no
+   decision behind it.
+3. **It is the last thing asked before the first thing is written.** So a refusal
+   leaves the files exactly as it found them: not marked processing, no snapshot
+   stored, nothing sent. This is a fact about *where the call sits*, not about the
+   gate, so it is tested through `process_db_files` itself rather than through the
+   gate alone.
+4. **Nothing blocking means the database is not touched.** `admitted_file_ids`
+   returns an empty set for an empty input without querying, and
+   `held_without_admission` only reaches it when at least one file blocks. This is
+   not an optimisation: `process_db_files` is called in at least one existing test
+   with an object that has `commit()` and nothing else, so a gate that queried
+   unconditionally would break a caller that never had a held file. The test for
+   it uses a session that raises on **every** attribute, so a query written later
+   through some other method is caught by the same object.
+5. **Path resolution is shared by construction, not by agreement.** `_stored_path`
+   is the path the module opens and the one the gate is handed. A gate that
+   resolved a path differently from its caller would clear one file and send
+   another.
+6. **The finding is re-read from the file, never accepted from the caller.** Same
+   reason `admit_file` re-reads: a caller that could tell the gate "nothing here
+   blocks" is a gate anyone can walk past. Asserted by rewriting the bytes on disk
+   under a row that still describes a letter and checking that the gate refuses.
+7. **The whole request is refused; the offending files are not silently dropped.**
+   A caller who asked for five and got four jobs back, with nothing naming the
+   fifth, would reasonably read that as success. The handler above already refuses
+   a whole batch over one unknown file id, so this is the behaviour that was
+   already there. And the direction a mistake should fall is that nothing happens:
+   an unwanted refusal costs a round trip, an unnoticed partial send puts a
+   statement's figures into the text index with no decision behind them.
+8. **409 Conflict, not 403.** The caller has the permission the route asks for.
+   What is missing is not rights but a decision, and the response says which files
+   and what was found in each, so an interface can offer the admission.
+
+### The limit this has, stated as a limit and asserted as a test
+
+**The gate asks whether an admission exists, not whether an unused one does.** So
+one recorded decision clears the same file for every later send.
+`AdjudicationDecision` says an admission "authorises one send" and
+`admit_case_file` appends a second event rather than deduplicating; this does not
+honour that.
+
+**Nothing in the schema can.** There is no link from an adjudication to a
+processing job and no per-file record of a send that a decision could be matched
+against. A `consumed` flag on the event is the obvious fix and is the wrong one:
+it would make an append-only log mutable, which is the single property the table
+exists to have. Closing it is a schema change, not a change to this module.
+
+It is written into the module docstring, and **asserted as a test that describes
+the behaviour as it is** — so the limit lives in the suite rather than only in
+prose, and a later change that closes it fails a test that says what changed.
+
+### Traps found this session
+
+**`decisions.record` requires an `Actor`, not a `User`.** A test passed the ORM
+user straight through and died with `DecisionError: actor must be an Actor, got
+User`. `admit_case_file` accepts a `User` and converts internally, which is why
+this is easy to get wrong from a test that has one to hand. Wrap it:
+`decisions.Actor(name=..., email=..., user_id=...)`.
+
+**`git` path arguments silently match nothing unless the command starts with an
+absolute `cd` to the repo root.** A `git diff -- backend/routers/evidence.py` run
+with the working directory at `backend/` returned **empty output and exit 0**,
+which reads as "no changes" rather than as an error. `CLAUDE.md` records the cwd
+trap; this is the form of it that costs a wrong answer instead of a failure.
+
+**pytest is not in the documented bootstrap, and left a directory that cannot be
+removed.** See "Learned recently" for the flags that make it safe.
+
+---
+
+## The session before this one, in detail
+
+*Compress this into "The previous sessions, in brief" next session.*
+
+**A person can now overrule the router about one file, on the record, as
+`5fa71a2`.** Five files, 1,115 insertions, 15 deletions. **Backend only.**
+
+That was **chunk 2a of item 8**. Two files were new and three edited:
 
 - `services/financial/admit_file.py` (309 lines) — `admit_case_file`,
   `find_case_file`, `FileAdmission`, `FileAdmissionOutcome`.
@@ -255,16 +392,13 @@ it. Five outcomes: `admitted`, `not_found`, `nothing_to_override`, `refused`,
    actually carries fails loudly instead, which is the right direction here: the
    branch decides whether a refusal reaches the interface or the error path.
 
-### What this deliberately does not do — and it is the next unit
+### What that deliberately did not do — CLOSED at `4e13821`
 
-**It records the override. It does not send the file, and it does not stop a
-held file being sent without one.** `admission.py` states the rule as *"the event
-is written before the file is sent, or it is not sent"*; this is the first half.
-The second half is **a gate on the processing route that refuses a blocking file
-with no admission behind it**, and that is what turns "written first" from a
-convention into a guarantee. Until it lands, **this records an override the
-processing route does not consult.** Both the service docstring and the route
-docstring say so in as many words, so it does not depend on this file surviving.
+It recorded the override and did not stop a held file being sent without one.
+`admission.py` states the rule as *"the event is written before the file is sent,
+or it is not sent"*, and 2a was the first half. **The second half landed this
+session** as `services/financial/admission_gate.py`. The two together are the
+whole rule, subject to the consumption limit recorded above.
 
 ### Known gap, and it is in the other service
 
@@ -277,7 +411,7 @@ effect for that one outcome**. Closing it is an engine change and was not this
 unit. It is recorded in `admit_file.py`'s own docstring under a heading, not just
 here.
 
-### Three traps found this session
+### Three traps found in that session
 
 **A test premise can be impossible and the error will not say so plainly.** A
 test built an `EvidenceFile` with `stored_path=None` to exercise the pathless
@@ -328,16 +462,23 @@ happy path. He was right to ask. The answer given, which is not to be softened:
   migration has never been applied to a real database — this is the largest open
   risk in the project and it is not a code defect. (The third item that used to
   be listed here, the browser gate, is no longer one: it ran green at `e655a0a`.)
-- **NEW at `5fa71a2`, and a different kind of debt.**
+- **STANDING and now sharper at `4e13821`, and a different kind of debt.**
   `POST /api/financial/files/{file_id}/admit` has **no TypeScript caller at
   all** — no `financialAPI` method, no contract test, no hook, no control. The
   service under it has 20 Python tests and the route itself 6, but it is
-  reachable in practice only with a hand-made HTTP request.
-  So it is not in the frontend debt above, because there is no frontend for it
-  to be stubbed against. **A person cannot yet actually overrule the router**;
-  the capability exists and the way to it does not. Chunk 2b is backend and will
-  not change that, so the interface for it is still owed and should be named as
-  such when the item is described as done.
+  reachable in practice only with a hand-made HTTP request. So it is not in the
+  frontend debt above, because there is no frontend for it to be stubbed against.
+  **A person cannot yet actually overrule the router**; the capability exists and
+  the way to it does not.
+
+  **This session made that matter more, not less.** Before `4e13821` the missing
+  interface meant an unused capability. Now the gate refuses, so on a live case a
+  held file **cannot be processed at all** from the interface: the 409 comes back
+  carrying exactly what a person would need in order to admit the file, and there
+  is no screen that reads it or button that acts on it. The backend is complete
+  and correct and the loop is not closed. **The admission control is now the
+  thing most worth building next after chunk 3**, and item 8 must not be
+  described as done without it.
 
 **Neil's ruling: he will test a full working version himself when the system is
 ready, and the build continues in the meantime.** So do not re-litigate this. Do
@@ -360,9 +501,10 @@ entry point for data is on the evidence side: `ProcessHoldDialog` renders
 
 ---
 
-## The session before this one, in detail
+## The session before that one, in detail
 
-*Compress this into "The previous sessions, in brief" next session.*
+*Compress this into "The previous sessions, in brief" next session. It is two
+units old now and has been carried once already.*
 
 **The record of decisions taken on a case went on screen, as `e655a0a`.** Nine
 files, 1,099 insertions, 18 deletions. **Frontend only.** `DecisionsTable.tsx`
@@ -858,6 +1000,33 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
 These accumulate. The heading used to say "new this session", which stopped being
 true the first time a session added to the list instead of replacing it.
 
+- **`git` path arguments match nothing unless the command begins with an
+  absolute `cd` to the repo root — and it fails silently.**
+  `git diff -- backend/routers/evidence.py` run with the working directory at
+  `backend/` returned **empty output and exit 0**, while `git status` in the same
+  session showed the file modified. Pathspecs are resolved relative to the
+  current directory, so from `backend/` the path `backend/routers/...` simply
+  does not exist. `CLAUDE.md` records that the bash cwd resets unpredictably;
+  this is the form of it that produces a **wrong answer rather than an error**,
+  and it very nearly meant committing a diff that had never been reviewed. Every
+  git invocation gets `cd <repo root> &&` in the same command, including the
+  read-only ones.
+- **pytest is not in the documented bootstrap, and a plain run leaves a directory
+  that cannot be removed.** The financial suite is `unittest`, but the evidence
+  tests are pytest and are worth running whenever a service or router is touched.
+  Install `pytest==8.3.4` and `pytest-asyncio==0.25.0` into the same `--target`
+  as the rest. Then **always pass `-p no:cacheprovider --basetemp=/dev/shm/pt-$(id -un)`.**
+  Without them, pytest writes `backend/pytest-cache-files-*`, then hits the
+  workspace `unlink` denial trying to clean it up and dies in a
+  `RecursionError` **after the tests have already passed** — so the run reports
+  failure when nothing failed. The directory it leaves is empty, so `git status`
+  does not show it and it cannot get into a commit, but `rm -rf` on it fails with
+  `Operation not permitted` and it stays for good.
+- **`decisions.record` requires a `decisions.Actor` and rejects a `User` with
+  `DecisionError: actor must be an Actor, got User`.** `Actor` is a dataclass
+  with `name`, `email` and an optional `user_id`. `admit_case_file` takes a
+  `User` and converts internally, so a test written against that helper and then
+  adapted to call `record` directly fails on exactly this.
 - **`test_financial_exports.py` is fully automatic. There is no list in it to
   update.** This file said for several sessions that "a new module exported from
   `__init__.py` must be added there", and `CLAUDE.md` still says it. Reading the
@@ -884,12 +1053,14 @@ true the first time a session added to the list instead of replacing it.
   `resolve_path` to hand a service, and the reason such a service must never
   default that argument to "use the path as written": that works in development
   and fails quietly in a container.
-- **`/dev/shm` does not start empty, and 1.5G free is not a safe assumption.**
-  **398M free of 2.0G** at this head, because it carries other users' leftovers,
+- **`/dev/shm` does not start empty, and no free-space figure in this file
+  survives a session.** It was 1.5G, then 398M, and is **244M free of 2.0G** at
+  this head — the fall from 398M is this session's own `pylibs-*` directory plus
+  pytest. It carries other users' leftovers,
   which cannot be removed from inside a session: a **928M Chromium directory**
   (recorded elsewhere in this file as 106.4 MiB, because that is the size of the
-  *shell*, not the installed tree) and **four `pylibs-*` directories at 151M
-  each**, one per previous backend session. **So the pip bootstrap is 151M, not
+  *shell*, not the installed tree) and **five `pylibs-*` directories at 151M
+  each**, one per previous backend session, this session's being the fifth. **So the pip bootstrap is 151M, not
   the ~463M this file claimed, and free space falls by 151M with every backend
   session that runs it.** Run `df -h /dev/shm` and `du -sh /dev/shm/*` before the bootstrap and
   before any Chromium install, and do not trust a free-space figure in this file.
@@ -1775,63 +1946,70 @@ turns out to depend on something later in the list, stop and ask.
   `66d1e67`, `519895e` and `e64c2ca`); reconciliation ✅ item 7 (`dfcef2b`).
   **Item 8, adjudication and proof class, is in progress** — **chunk 1 of 3, the
   decisions surface, is complete** (reader `a40bb61`, route `2eefc4d`, wire
-  `0fa07d5`, words `71d859d`, hook `62ff2de`, screen `e655a0a`); **chunk 2a, the
-  admission record, is complete** (`5fa71a2`). **Chunk 2b, the gate on the
-  processing route, is the next unit.** Then chunk 3, proof class. Then
-  duplicates, suspect amounts, locators.
+  `0fa07d5`, words `71d859d`, hook `62ff2de`, screen `e655a0a`); **chunk 2, the
+  admission path, is complete on the backend** — 2a the record (`5fa71a2`), 2b
+  the gate (`4e13821`). **Chunk 3, proof class and `requires_adjudication`, is
+  the next unit.** Then duplicates, suspect amounts, locators. **The admission
+  control on the frontend is owed and is not in any chunk** — see Verification
+  debt.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-### Current unit: item 8, chunk 2b — the gate on the processing route
+### Current unit: item 8, chunk 3 — proof class and `requires_adjudication`
 
-**Start here.** This is the second half of the rule `admission.py` states in its
-own words: *"the event is written before the file is sent, or it is not sent."*
-`5fa71a2` landed the first half — a person can record an override. **Nothing yet
-enforces the second half**, so today a held file can be sent to the document
-pipeline with no decision behind it, and the recorded override is an entry
-nothing consults. The unit is the enforcement.
+**Start here.** Chunk 2 is finished on the backend, so what remains of item 8 is
+the last of the three the wiring plan named. The plan's words for it: *"proof
+class is computed and never set by hand; the interface shows it and shows what an
+adjudication changed, and never offers a control that sets it."*
 
-**Where it goes, read from the source this session, not remembered.**
+**What is already true, established by grepping the source at `e64c2ca` and not
+since re-checked — check it again before building.**
 
-- **`POST /api/evidence/process/background`**, `routers/evidence.py:1254`,
-  `process_evidence_background`. This is what actually enqueues work.
-  `POST /api/evidence/route-check` at `routers/evidence.py:1318` sits in the gap
-  before it and already answers "which of these are bank files?" — its own
-  docstring names `/process/background` as the thing the caller passes to next.
-  **So the classification the gate needs is already computed at the right
-  moment by the right function; what is missing is a refusal.**
-- **`services/financial/route_check.check_case_files(db, *, case_id, file_ids,
-  resolve_path)`** returns a `FileRouteCheck` per id, in caller order, with
-  `not_found` for ids outside the case rather than dropping them. That is the
-  batch shape the gate wants. `resolve_path` is
-  `routers.evidence._resolve_stored_path`.
-- **There is no reader that answers "has an admission been recorded for this
-  file?" and the gate will need one.** `services/financial/admission.py` exports
-  only `record_admission`, the two `ROUTED_*` constants and its errors;
-  `decision_log.py` exports `list_case_decisions`, which pages a whole case's log
-  and is not a per-subject lookup. **Writing that reader is probably the first
-  half of this unit** — a query over `AdjudicationEvent` for
-  `subject=evidence_file`, `subject_id=<file>`,
-  `decision=admit_financial_document`, scoped to the case.
+- **`assign_proof_class` already has production callers.** `camt053.py`,
+  `bai2.py`, `mt940.py`, `nacha.py` and `documents.py`. Proof class is **already
+  computed and stored at parse time**, so this unit is not "start computing it";
+  it is the surface that shows it and the words that say what it means.
+- **`requires_adjudication` has zero production callers.** Defined at
+  `proof_class.py:206`, exported, and called by nothing. **That is the gap.**
+- **There is no proof-class route.** `routers/financial_adjudication.py` now has
+  three routes — quarantine, release, admit — and none of them is this. The
+  router, its `_adjudication_case_permission` dependency and its `_respond`
+  helper are the natural home.
 
-**Three things to settle from source before building, not from this file.**
-First, whether the gate refuses the whole batch or drops the blocked files and
-processes the rest — `/process/background` already returns a `messages` list and
-partial `job_ids`, so partial success is its existing idiom, but a silent drop is
-the failure mode this subsystem exists to prevent, so whatever it does must be
-*said* in the response. Second, whether an admission authorises exactly one send
-— `AdjudicationDecision` and `admit_case_file`'s docstring both say an admission
-authorises **one** send and nothing is deduplicated, which implies the gate
-should consume one, not treat the file as permanently cleared. Third, whether the
-gate belongs in the router or in a service the router calls; every other rule of
-this kind in this subsystem lives in `services/financial/`.
+**Plan it from these four files and not from this one:**
+`services/financial/proof_class.py`, `services/financial/admission.py`,
+`services/financial/adjudication.py` (which carries `AdjudicationError`,
+`UnpaidObligationError`, `MalformedVerdictError` and the `Adjudication` class at
+line 180), and `routers/financial_adjudication.py`.
 
-**Known gap this unit does not close.** The engine's own pre-stage,
-`evidence-engine/app/pipeline/orchestrator.py`, independently fails any job whose
-file it detects as native, and no admission recorded on this side can reach it.
-So even after the gate lands, an admitted **native** file is recorded, passed by
-the gate, sent, and then refused by the engine by name. **Do not treat this as an
+**Two things to settle from source before building.** First, whether
+`requires_adjudication` is a read the interface calls or something the ingestion
+path evaluates and stores — that decides whether this chunk is a route or a
+column. Second, what "shows what an adjudication changed" means concretely for a
+class that is computed: the class before and the class after are both derived, so
+the thing that changed is the input, and the surface has to show that rather than
+implying a person set a class.
+
+**The rule that governs the whole chunk, from `CLAUDE.md`:** proof class is
+computed, never set by hand, including by us. The interface must not offer a
+control that sets it. A class a person can raise is an opinion.
+
+### The unit that is owed and is in no chunk: the admission control
+
+`POST /api/financial/files/{file_id}/admit` has no TypeScript caller, and as of
+`4e13821` the gate refuses without one. So a held file now cannot be processed
+from the interface at all, and the 409 that comes back carries everything a
+person would need to admit it with nothing to read it. **This is a frontend unit
+and it is not in the wiring plan, so it needs a ruling from Neil about where it
+sits in the order.** It is recorded under Verification debt as well. Do not fold
+it into chunk 3 without asking.
+
+**Known gap neither chunk closes, and it is in the other service.** The engine's
+own pre-stage, `evidence-engine/app/pipeline/orchestrator.py`, independently
+fails any job whose file it detects as native, and no admission recorded on this
+side can reach it. So an admitted **native** file is now recorded, passed by the
+gate, sent, and then refused by the engine by name. **Do not treat this as an
 open question and do not add it to the plan.** The position, taken here so it is
 not re-argued: the backend half is correct as built, the refusal is loud rather
 than silent, and closing it is a change to a service whose suite **cannot be run
@@ -1868,15 +2046,20 @@ sets it."*
      production caller; `POST /api/financial/files/{file_id}/admit` on the
      adjudication router lets a person reach it. **A named person can now
      overrule the router about one file, on the record.**
-   - **Chunk 2b, the enforcement — THIS IS THE NEXT UNIT.** Nothing yet stops a
-     held file being sent to the document pipeline with no admission behind it,
-     so the override recorded by 2a is an entry nothing consults. Its own
-     section is above, under "Current unit". It is **backend** work, so it needs
-     the `/dev/shm` pip bootstrap under "Carried forward", including the
-     `TMPDIR` flag the documented `CLAUDE.md` form is missing.
-3. **Proof class and `requires_adjudication`**, last, because the class is
-   already computed and already rendered; what is missing is the explanation of
-   what it means and what an adjudication changed about it.
+   - ✅ **Chunk 2b, the enforcement — complete, `4e13821`.**
+     `services/financial/admission_gate.py` is called from `process_db_files`
+     immediately before the send, and all three routes that reach it answer 409
+     naming each held file and what was found in it. **No held file reaches the
+     document pipeline without a named person having said on the record that it
+     should.** Not delivered: every send separately authorised — see the
+     consumption flag under Standing flags.
+   - **Still owed and in no chunk: the control.** Neither 2a nor 2b touched
+     TypeScript, so there is still no way for a person to actually admit a file.
+     Its own section is above.
+3. **Proof class and `requires_adjudication` — THIS IS THE NEXT UNIT**, because
+   the class is already computed and already rendered; what is missing is the
+   explanation of what it means and what an adjudication changed about it. Its
+   own section is above, under "Current unit".
 
 **Four facts established by grepping the source at `e64c2ca`, not remembered.**
 They change the shape of the unit, so check them again before building but do not
@@ -1897,13 +2080,18 @@ re-derive them from scratch:
   *"a later unit"*. Chunk 2a was that later unit. Its one caller is
   `services/financial/admit_file.py:admit_case_file`. **Left here as written
   because the two docstrings still say "a later unit" and will read as stale to
-  the next person; they were not touched by `5fa71a2` and correcting them is a
-  loose end, not a unit.**
+  the next person; they were not touched by `5fa71a2` or `4e13821`, and
+  correcting them is a loose end, not a unit.**
 - **`routers/financial_adjudication.py` had only two routes, both from item 6**
   (`POST /transactions/{id}/quarantine` and `.../release`); `5fa71a2` added a
   third, `POST /files/{file_id}/admit`. There is still **no proof-class route.**
   The router, its permission dependency `_adjudication_case_permission` and its
   `_respond` helper were already built and were the natural home, as predicted.
+  **Its route-set test compares the whole route dict exhaustively**, so chunk 3
+  adding a fourth route will fail
+  `test_every_route_is_a_post_against_the_thing_it_adjudicates` on purpose. That
+  is the design: a route added here inherits `case:edit` unconditionally, so
+  whoever adds one has to say what it is.
 
 **Read before building chunks 2 and 3, and plan from these rather than from this
 file:** `services/financial/proof_class.py`,
@@ -1912,12 +2100,16 @@ carries `AdjudicationError`, `UnpaidObligationError`, `MalformedVerdictError` an
 the `Adjudication` class at line 180), and `routers/financial_adjudication.py`.
 **Do not plan those chunks from this file** — plan them from those four.
 
-**Chunks 2b and 3 are backend and need the pip bootstrap.** The documented
-`CLAUDE.md` one still fails on `ENOSPC`; the working form is under "Carried
-forward", including the `TMPDIR` flag that was missing from it. It was run and
-re-measured at `5fa71a2`, so the backend baseline above is real and not carried:
-**3,409**. Re-measure it again anyway rather than trusting this line, and check
-the arithmetic against the number of tests the unit adds.
+**Chunk 3 is at least partly backend and needs the pip bootstrap.** The
+documented `CLAUDE.md` one still fails on `ENOSPC`; the working form is under
+"Carried forward", including the `TMPDIR` flag that was missing from it. It was
+run and re-measured at `4e13821`, so the backend baseline above is real and not
+carried: **3,434**. Re-measure it again anyway rather than trusting this line,
+and check the arithmetic against the number of tests the unit adds. **If the
+chunk touches `services/evidence_*` or any router, run the evidence tests too** —
+`python3 -m pytest tests/ -k "evidence or cellebrite"`, 59 passing at this head.
+The financial suite does not cover them, which `4e13821` found out the useful
+way round.
 
 **When a chunk touches the frontend**, the vitest cache must go on `/dev/shm`
 carrying the current user, and the browser gate needs the Chromium install and
@@ -2323,15 +2515,29 @@ before item 12 lands.
 - **Whether ingestion should trigger a sweep at the end of a run is not
   decided and was not decided here.** It is the obvious next caller, and item 8
   (proof class) is the unit that will actually need one. Flagged, not parked.
-- **NEW at `5fa71a2`: an admission can be recorded, and nothing consults it.**
-  A named person can now overrule the router about one file and have that
-  override written to the adjudication log with their name, their grounds and
-  what the router had found. But the processing route does not check for one, so
-  **a held file can still be sent to the document pipeline with no decision
-  behind it**, and a recorded admission changes nothing about what happens to the
-  file. `admit_file.py` says so in its own docstring rather than implying
-  otherwise. Chunk 2b is the unit that closes it, and until it lands **do not
-  describe the admission path as enforcing anything.** It records.
+- **CLEARED at `4e13821`: an admission is now consulted.** This flag read, at
+  `5fa71a2`, that a decision could be recorded and that the processing route did
+  not check for one, so a held file could still be sent with nothing behind it.
+  `services/financial/admission_gate.py` is called from `process_db_files`
+  immediately before the send, and all three routes that reach it return 409 with
+  the file named and the finding attached. **The admission path now enforces**,
+  subject to the one flag below.
+- **NEW at `4e13821`: an admission is not consumed, and nothing in the schema can
+  express consumption.** The gate asks whether an `admit_financial_document`
+  decision **exists** for a file in this case, not whether an **unused** one
+  does. So one recorded decision clears the same file for every later send, while
+  `AdjudicationDecision` and `admit_case_file` both say an admission authorises
+  **one** send. There is no link from an adjudication to a processing job and no
+  per-file record of a send that a decision could be spent against. A `consumed`
+  flag on the event would make an append-only log mutable, which is the one
+  property the table exists to have, so it is the wrong fix. **What the gate does
+  deliver in full: no held file reaches the document pipeline without a named
+  person having said on the record that it should. What it does not deliver:
+  every send separately authorised.** Say it that way when the item is described.
+  Closing it is a **schema change** and a unit of its own; it is not a defect in
+  this module and is not parked as a question. It is written into the module
+  docstring and asserted as a test, so a change that closes it fails a test that
+  says what changed.
 - **NEW at `5fa71a2`: the engine has its own native-file refusal and no override
   channel.** `evidence-engine/app/pipeline/orchestrator.py` fails any job whose
   file it detects as native, and an admission recorded on the backend cannot
@@ -2425,7 +2631,9 @@ before item 12 lands.
   available** — unchanged for ten sessions, against 129M eleven sessions ago.
   Root is at 99% with 120M free. **`/dev/shm` does not start empty and 1.5G free
   is not a safe assumption** — an older wording here said it was. Measured at
-  `5fa71a2`: 2.0G total, **1.6G used, 398M free**, and it does not start empty.
+  `4e13821`: 2.0G total, **1.7G used, 244M free**, and it does not start empty.
+  It was 398M one session ago and 1.5G before that, so **no free-space figure in
+  this file survives a session.**
   Full breakdown, including what is leaving the leftovers behind and how fast, is
   under **How to run the browser gate** above. Measure it with `df -h /dev/shm`
   at the start of any session that needs room rather than trusting a figure in
