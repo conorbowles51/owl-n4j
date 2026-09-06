@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `6953895`, “Review selected source amounts
-  with exact text offsets in the evidence UI”, parent `d104980`. A documentation commit follows it;
+- **Latest implementation commit:** `1f58ab0`, “Verify source amount assessment
+  through local HTTP and Chromium”, parent `8c70695`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,47 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Source amount assessment verified in the running local app
+
+`1f58ab0` adds repeatable `scripts/check_local_source_amounts.py` and a dedicated
+Chromium regression. The script has hard-coded isolated local database/API targets,
+creates only labelled synthetic cases/files, checks all three origins, exact decimal
+strings, wrong-case 404 and stale/mismatched-source 409, and verifies no transaction
+or adjudication rows were created. Canonical source content remains unchanged.
+Run it with the backend venv and PYTHON_DOTENV_DISABLED=1, as documented in
+`docs/local-application.md`. This is a provenance fixture, not an extraction test.
+
+Live fixture case: **37009e6c-7617-48dd-aef6-9ce1ffab0527**. Files: digital
+8cfb58aa-4746-4738-b7db-e85a7c789fba; recognized
+551da3d7-4459-4e0f-9e95-aecd4f5e3cf7; unknown
+90945d27-a7cd-4dcb-8e87-98b93c4855b0. Metadata also persists in
+`data/local-runtime/source-amount-check.json`. In Evidence, select Text in case,
+search Synthetic amount review, open the assessment panel, select 1234, enter USD.
+The real browser/HTTP round trip succeeded for all three: digital 1234.00 USD;
+recognized and unknown both 12.34 and 1234.00 as possible readings. Inspected the
+rendered panel screenshot. No real evidence/database changes.
+
+Restarted only the isolated backend on 58002; it now loads both source endpoints.
+Current backend exec session 67264, log `/tmp/loupe-neilbyrne-source-backend-runtime.out`.
+The engine/worker still need their prior text_origin code restart before extraction
+validation. The browser smoke script is `/tmp/loupe-neilbyrne-source-live.cjs`,
+successful output `/tmp/loupe-neilbyrne-source-live-retry.out`, screenshots
+`/tmp/loupe-neilbyrne-source-live-{0,1,2}.png`. Initial script dispatched select
+alone, which React's selection plugin does not observe; dispatching mouseup after
+setSelectionRange correctly exercised it. This was a smoke harness issue.
+
+Validation: **10 Chromium tests in 8 files pass**, including canonical CRLF/emoji
+selection in a later 12,000-character window, exact proposals and resetting on
+navigation. TypeScript, ESLint, Python 3.10 syntax and diff checks pass. HTTP log:
+`/tmp/loupe-neilbyrne-source-http.out`; browser log:
+`/tmp/loupe-neilbyrne-source-browser-native.out`. Production code unchanged;
+prior full-suite baselines remain 3,541 financial (12 skipped), 877 frontend unit.
+
+Next: inspect the agreed item 10 revalidation/ingestion wiring and choose its next
+bounded integration. Explicit source assessment and transaction correction now have
+separate tested interfaces; automatic amount/column identification and admission
+of unresolved source readings are still not wired. Preserve that distinction.
 
 ### Source amount review is connected to evidence text search
 
