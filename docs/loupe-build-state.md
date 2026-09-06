@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `67fd272`, “Add exact read-only ledger correction
-  previews”, parent `e6f2ca9`. A documentation commit follows it;
+- **Latest implementation commit:** `e756fbf`, “Append audited ledger corrections
+  with verification invalidation”, parent `87c916d`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -32,8 +32,50 @@ completed-item claims and environment recipes in that history are not current.
 - **Duplicate status:** comparison plus explicit exclusion/restoration are connected
   for one case. The broader item 9 still has authorized cross-matter sightings and
   comparison scaling/coverage work outstanding. The legacy bulk resolver is not
-  exposed. Item 10 is underway: correction preview backend is complete; replacement
-  writer and correction UI are still outstanding.
+  exposed. Item 10 is underway: correction preview and replacement writer are
+  complete; correction UI and broader revalidation are still outstanding.
+
+### Append-only amount correction writer
+
+`e756fbf` adds `correct_transaction` and authenticated case-edit scoped POST
+`/api/financial/transactions/{transaction_id}/correction`. It takes exact minor-unit
+strings, direction, mandatory reason, and the reviewed document revision. Actor
+identity comes from authentication. The preview's document/period/row locks are
+held through revision checking, replacement, audit, reconciliation and commit.
+Failures roll everything back. Repeated/stale requests cannot append another row.
+
+Original amount and citation remain unchanged. The old row becomes superseded,
+points to its replacement, and clears quarantine coherently; the replacement
+inherits any existing quarantine and source locator. It has its own derived
+content hash/reference and provenance naming the previous row/reference. Historical
+occurrences remain occupied, so correcting back to a previously recorded reading
+creates another version without overwriting the original citation. The new
+`correct_transaction` audit event contains before/after reading snapshots, linkage,
+original disposition, authenticated actor/reason and reviewed revision.
+
+Every linked statement period is reconciled from the new admitted row set, with
+ownership validation, then the existing machine classifier updates document/row
+classes. Unknown source shape or inconsistent row classes are refused. Existing
+admissibility reservations survive. Mandatory native control totals and printed
+running-balance chains **are not revalidated by this writer**: either adds a durable
+reservation withholding automatic inclusion (p3), even when closing arithmetic
+balances. There is no reservation-clearance API yet. A correction can therefore
+remove the whole document from default verified totals; the UI must explain this
+before confirmation. Proof class is never supplied by a person. No graph writes.
+
+Migration `20260906_correction_decision` widens the audit decision vocabulary. Its
+downgrade refuses while correction events exist. Applied successfully to isolated
+local PostgreSQL. Full backend suite: **3,524 tests, 12 skipped**, including 13 new
+correction tests; Python 3.10 syntax and diff checks pass. Real HTTP/PG test created
+synthetic case `c1da9946-1dfd-413a-a4e9-1828e1c76b72`: original preserved, replacement
+and one correction audit committed, class recomputed to p3, repeat refused with 409.
+Logs: `/tmp/loupe-neilbyrne-corrections{,-full,-migrate}.out`.
+
+Next: correction review/record UI plus reading/history display. Include exact money,
+separate preview/confirmation, durable success vs uncertain response, original-case
+cache invalidation, and the verification limitations above. Preview output does not
+yet project the writer's proof-class changes; add that disclosure before exposing
+the final action. No frontend changes in this unit. No push or merge.
 
 ### Ledger correction preview foundation
 
@@ -52,10 +94,10 @@ An unlinked row reports unavailable period impact. The endpoint rolls back to
 release snapshot locks. No row, reconciliation result, proof class or audit event
 is written, even if a direct service caller subsequently commits.
 
-This is deliberately **not yet a correction writer or a frontend control**.
+This preview itself is **not a correction writer or a frontend control**.
 The existing graph editor is a separate edit-in-place path; it must not be reused
-for the relational ledger. Next unit: append-only replacement and audit semantics,
-then a review/record UI showing both readings. Before writing, settle revalidation
+for the relational ledger. The replacement writer is now recorded above; next is
+a review/record UI showing both readings. Revalidation must be explained
 from the actual source shape: a statement balance identity is not a native file's
 control-total validation. The preview explicitly does not claim native controls,
 running-balance chains, proof class or graph were revalidated. A passing preview
