@@ -112,6 +112,7 @@ class PermissionResolverTests(unittest.TestCase):
                 ],
                 "/api/financial/transactions/{transaction_id}/release": ["POST"],
                 "/api/financial/files/{file_id}/admit": ["POST"],
+                "/api/financial/documents/{document_id}/duplicate-decision": ["POST"],
             },
         )
 

@@ -57,10 +57,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from postgres.models.enums import AdjudicationSubject, LedgerStatus, QuarantineReason
-from postgres.models.financial import FinancialTransaction
+from postgres.models.financial import FinancialTransaction, FinancialSourceDocument
 from services.financial.decisions import Actor, DecisionError, history
 from services.financial.localisation import rescue_if_removed
 from services.financial.money import MoneyError
@@ -215,6 +216,22 @@ def find_case_transaction(
     )
 
 
+def _lock_case_transaction(session, *, case_id, transaction_id):
+    document_id = session.scalar(select(FinancialTransaction.source_document_id).where(
+        FinancialTransaction.id == transaction_id, FinancialTransaction.case_id == case_id,
+    ))
+    if document_id is None:
+        return None, None
+    # Same lock order as duplicate decisions: document, then its row.
+    document = session.scalar(select(FinancialSourceDocument).where(
+        FinancialSourceDocument.id == document_id, FinancialSourceDocument.case_id == case_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    row = session.scalar(select(FinancialTransaction).where(
+        FinancialTransaction.id == transaction_id, FinancialTransaction.case_id == case_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    return row, document
+
+
 def _latest_adjudication_id(
     session: "Session", transaction: FinancialTransaction
 ) -> Optional[str]:
@@ -330,11 +347,14 @@ def quarantine_case_row(
     ``services.financial`` commits, so a caller that did not would return a
     response describing a decision that was about to be discarded.
     """
-    transaction = find_case_transaction(
+    transaction, document = _lock_case_transaction(
         session, case_id=case_id, transaction_id=transaction_id
     )
-    if transaction is None:
+    if transaction is None or document is None:
         return _not_found(transaction_id)
+    if document.status != "admitted":
+        return _current(transaction, RowAdjudicationOutcome.refused,
+                        reason="Restore or admit the source document before changing its rows.")
 
     already_adjudicated = (
         transaction.ledger_status == LedgerStatus.quarantined.value
@@ -432,11 +452,14 @@ def release_case_row(
     The caller's ``session`` is committed here on success, for the reason
     :func:`quarantine_case_row` gives.
     """
-    transaction = find_case_transaction(
+    transaction, document = _lock_case_transaction(
         session, case_id=case_id, transaction_id=transaction_id
     )
-    if transaction is None:
+    if transaction is None or document is None:
         return _not_found(transaction_id)
+    if document.status != "admitted":
+        return _current(transaction, RowAdjudicationOutcome.refused,
+                        reason="Restore or admit the source document before changing its rows.")
 
     try:
         actor_record = actor_from_user(actor)

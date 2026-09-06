@@ -7,17 +7,22 @@ const document = z.object({
   status: z.string().min(1),
   superseded_by_id: z.string().nullable(),
 })
+const reviewedDocument = document.extend({
+  revision: z.string().regex(/^[a-f0-9]{64}$/),
+})
 const schema = z.object({
   case_id: z.string(),
   documents: count,
   compared: count,
   skipped: z.array(document.extend({ reason: z.string().min(1) })),
+  excluded_documents: z.array(reviewedDocument),
   groups: z.array(
     z.object({
       group_key: z.string().min(1),
       members: z
         .array(
-          document.extend({
+          reviewedDocument.extend({
+            reading_fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
             match: z.string().min(1),
             rows_by_status: z.record(z.string(), count),
           })
@@ -40,6 +45,10 @@ export function readDuplicateCandidates(
   const ids = [...members, ...data.skipped].map((row) => row.document_id)
   if (
     data.case_id !== caseId ||
+    data.excluded_documents.some((row) => row.status !== "superseded") ||
+    new Set(data.excluded_documents.map((row) => row.document_id)).size !==
+      data.excluded_documents.length ||
+    data.excluded_documents.length > data.documents ||
     data.compared + data.skipped.length !== data.documents ||
     members.length > data.compared ||
     new Set(ids).size !== ids.length ||

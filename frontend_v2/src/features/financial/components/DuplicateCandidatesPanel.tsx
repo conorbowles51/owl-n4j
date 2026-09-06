@@ -1,6 +1,10 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useDuplicateCandidates } from "../hooks/use-duplicate-candidates"
+import {
+  DuplicateDecisionForm,
+  type DuplicateSelection,
+} from "./DuplicateDecisionForm"
 import { duplicateMatchLabel } from "../lib/duplicate-format"
 
 export function DuplicateCandidatesPanel({
@@ -9,6 +13,7 @@ export function DuplicateCandidatesPanel({
   caseId: string | undefined
 }) {
   const [opened, setOpened] = useState(false)
+  const [selection, setSelection] = useState<DuplicateSelection | null>(null)
   const { data, isPending, isError, error, isFetching, refetch } =
     useDuplicateCandidates(caseId, opened)
   return (
@@ -40,6 +45,12 @@ export function DuplicateCandidatesPanel({
         >
           {opened ? "Refresh comparison" : "Compare documents"}
         </Button>
+      )}
+      {selection && (
+        <DuplicateDecisionForm
+          selection={selection}
+          onClose={() => setSelection(null)}
+        />
       )}
       {caseId &&
         opened &&
@@ -104,11 +115,64 @@ export function DuplicateCandidatesPanel({
                               )
                               .join(" · ") || "No stored rows"}
                           </p>
+                          {row.status === "admitted" &&
+                            group.members
+                              .filter(
+                                (other) =>
+                                  other.document_id !== row.document_id &&
+                                  other.status === "admitted" &&
+                                  other.reading_fingerprint ===
+                                    row.reading_fingerprint
+                              )
+                              .map((primary) => (
+                                <Button
+                                  key={primary.document_id}
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={!!selection || isFetching}
+                                  onClick={() =>
+                                    setSelection({
+                                      caseId,
+                                      document: row,
+                                      primary,
+                                    })
+                                  }
+                                >
+                                  Exclude this copy; retain {primary.filename}
+                                </Button>
+                              ))}
                         </li>
                       ))}
                     </ul>
                   </details>
                 ))
+              )}
+              {data.excluded_documents.length > 0 && (
+                <details>
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Excluded documents ({data.excluded_documents.length})
+                  </summary>
+                  <ul className="mt-2 space-y-2">
+                    {data.excluded_documents.map((row) => (
+                      <li
+                        key={row.document_id}
+                        className="flex items-center justify-between gap-2 text-sm"
+                      >
+                        <span>{row.filename}</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!!selection || isFetching}
+                          onClick={() =>
+                            setSelection({ caseId, document: row })
+                          }
+                        >
+                          Restore {row.filename}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
               {data.skipped.length > 0 && (
                 <details>

@@ -69,7 +69,8 @@ def _public_definitions(path: pathlib.Path) -> list[str]:
 class PackageSurfaceTests(unittest.TestCase):
     def test_duplicate_query_surface_is_exported(self):
         for name in ("MAX_COMPARISON_DOCUMENTS", "DuplicateQueryLimitError",
-                     "list_duplicate_candidates"):
+                     "list_duplicate_candidates", "DuplicateDecisionError",
+                     "decide_duplicate", "duplicate_revision"):
             self.assertIn(name, package.__all__)
             self.assertTrue(hasattr(package, name))
 

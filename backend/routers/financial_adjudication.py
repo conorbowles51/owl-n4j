@@ -40,6 +40,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
+from typing import Literal, Optional
+from services.financial.duplicate_decisions import DuplicateDecisionError, decide_duplicate
+from services.financial.quarantine_row import actor_from_user, ActorError
 
 from postgres.session import get_db
 from routers.case_access import case_access_dependency
@@ -238,3 +242,29 @@ async def admit_file_to_document_pipeline(
         resolve_path=_resolve_stored_path,
     )
     return _respond_admission(result)
+
+
+class DuplicateDecisionRequest(BaseModel):
+    action: Literal["exclude", "restore"]
+    reason: str = Field(min_length=1, max_length=4000)
+    expected_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+    primary_id: Optional[UUID] = None
+    expected_primary_revision: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
+@router.post("/documents/{document_id}/duplicate-decision")
+async def record_duplicate_decision(
+    document_id: UUID,
+    payload: DuplicateDecisionRequest,
+    case_id: UUID = Query(...),
+    current_user=Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return decide_duplicate(db, case_id=case_id, document_id=document_id,
+                                actor=actor_from_user(current_user), **payload.model_dump())
+    except (DuplicateDecisionError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 422), detail=str(exc))
+    except Exception:
+        logger.exception("Duplicate decision failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The decision could not be confirmed. Refresh before trying again.")

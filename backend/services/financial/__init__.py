@@ -251,6 +251,9 @@ from services.financial.transactions import (
     normalise_sign,
     record_transactions,
 )
+from services.financial.duplicate_decisions import (
+    DuplicateDecisionError, decide_duplicate, duplicate_revision,
+)
 from services.financial.duplicate_query import (
     MAX_COMPARISON_DOCUMENTS,
     DuplicateQueryLimitError,
@@ -1100,6 +1103,9 @@ __all__ = [
     "DocumentFingerprint",
     "DuplicateError",
     "DuplicateGroup",
+    "DuplicateDecisionError",
+    "decide_duplicate",
+    "duplicate_revision",
     "MAX_COMPARISON_DOCUMENTS",
     "DuplicateQueryLimitError",
     "list_duplicate_candidates",

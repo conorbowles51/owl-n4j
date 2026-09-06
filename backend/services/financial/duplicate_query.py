@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
 from services.financial.duplicates import fingerprint_document
+from services.financial.duplicate_decisions import duplicate_revision
 
 MAX_COMPARISON_DOCUMENTS = 500
 
@@ -40,6 +41,7 @@ def list_duplicate_candidates(session, case_id: uuid.UUID) -> dict:
     groups = {}
     skipped = []
     compared = 0
+    excluded_documents = []
     for document in documents:
         view = {
             "document_id": str(document.id),
@@ -50,10 +52,14 @@ def list_duplicate_candidates(session, case_id: uuid.UUID) -> dict:
         if document.status not in ("admitted", "superseded"):
             skipped.append({**view, "reason": "Document is held out or rejected."})
             continue
+        view["revision"] = duplicate_revision(session, document)
+        if document.status == "superseded":
+            excluded_documents.append(view.copy())
         fingerprint = fingerprint_document(session, document)
         if fingerprint.group_key is None:
             skipped.append({**view, "reason": "No stored periods or transactions to compare."})
             continue
+        view["reading_fingerprint"] = fingerprint.content_fingerprint
         compared += 1
         groups.setdefault(fingerprint.group_key, []).append((document, view, fingerprint))
 
@@ -88,4 +94,5 @@ def list_duplicate_candidates(session, case_id: uuid.UUID) -> dict:
     return {
         "case_id": str(case_id), "documents": len(documents),
         "compared": compared, "skipped": skipped, "groups": result,
+        "excluded_documents": excluded_documents,
     }

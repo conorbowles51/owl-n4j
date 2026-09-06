@@ -13,6 +13,7 @@ export function duplicateCandidates(caseId = "case-1"): DuplicateCandidates {
         reason: "No stored periods or transactions to compare.",
       },
     ],
+    excluded_documents: [],
     groups: [
       {
         group_key: "group",
@@ -22,6 +23,8 @@ export function duplicateCandidates(caseId = "case-1"): DuplicateCandidates {
             filename: "original.ofx",
             status: "admitted",
             superseded_by_id: null,
+            revision: "a".repeat(64),
+            reading_fingerprint: "b".repeat(64),
             match: "comparison_document",
             rows_by_status: { admitted: 2 },
           },
@@ -30,6 +33,8 @@ export function duplicateCandidates(caseId = "case-1"): DuplicateCandidates {
             filename: "copy.ofx",
             status: "superseded",
             superseded_by_id: "first",
+            revision: "a".repeat(64),
+            reading_fingerprint: "b".repeat(64),
             match: "identical_reading",
             rows_by_status: { superseded: 2 },
           },
