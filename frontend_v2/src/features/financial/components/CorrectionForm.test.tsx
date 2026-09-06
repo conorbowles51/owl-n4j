@@ -2,7 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { CorrectionForm } from "./CorrectionForm"
-import { correctionMinor, correctionMoney } from "../lib/correction-contract"
+import {
+  correctionMinor,
+  correctionMoney,
+  correctionPreview,
+} from "../lib/correction-contract"
 
 afterEach(() => vi.restoreAllMocks())
 const preview = {
@@ -161,6 +165,53 @@ it("withholds confirmation when the source cannot be classified", async () => {
       "This document will be excluded from default verified totals."
     )
   ).toBeNull()
+})
+it.each([
+  { included_in_default_totals: true },
+  { proposed_proof_class: null },
+  {
+    proposed_proof_class: "p2",
+    included_in_default_totals: true,
+    reservations: ["Native controls not checked"],
+  },
+  { can_record: false, proposed_proof_class: null, reason: "" },
+  { reason: "Recording is not possible" },
+])(
+  "refuses inconsistent verification before confirmation (%j)",
+  async (verification) => {
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        response({
+          ...preview,
+          verification: { ...preview.verification, ...verification },
+        })
+      )
+    mount()
+    fireEvent.click(screen.getByRole("button", { name: "Preview correction" }))
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Preview unavailable"
+    )
+    expect(
+      screen.getByRole("button", { name: "Record correction" })
+    ).toBeDisabled()
+    expect(fetch).toHaveBeenCalledTimes(1)
+  }
+)
+it("rejects malformed original magnitudes instead of displaying invented money", () => {
+  for (const amount_minor of ["-1", "01", "9223372036854775808", "1e3", "1.2"])
+    expect(
+      correctionPreview.safeParse({
+        ...preview,
+        original: { ...preview.original, amount_minor },
+      }).success
+    ).toBe(false)
+  expect(
+    correctionPreview.safeParse({
+      ...preview,
+      original: { ...preview.original, amount_minor: "9223372036854775807" },
+    }).success
+  ).toBe(true)
 })
 it("invalidates the preview when the proposal changes", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(response(preview))

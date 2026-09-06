@@ -2,6 +2,14 @@ import { z } from "zod"
 import { currencyMinorUnits } from "./ledger-format"
 
 const integer = z.string().regex(/^-?(0|[1-9][0-9]*)$/)
+const magnitude = z
+  .string()
+  .regex(/^(0|[1-9][0-9]{0,18})$/)
+  .refine(
+    (value) =>
+      /^[0-9]{1,19}$/.test(value) && BigInt(value) <= 9223372036854775807n,
+    "Amount is outside the ledger range"
+  )
 const direction = z.enum(["credit", "debit"])
 const proof = z.enum(["p0", "p1", "p2", "p3"])
 const identity = z.object({
@@ -17,12 +25,12 @@ export const correctionPreview = z.object({
     key: z.string(),
     ref_id: z.string(),
     source_document_id: z.string(),
-    amount_minor: integer,
+    amount_minor: magnitude,
     currency: z.string(),
     direction,
   }),
   proposed: z.object({
-    amount_minor: integer,
+    amount_minor: magnitude,
     currency: z.string(),
     direction,
     ledger_status: z.enum(["admitted", "quarantined"]),
@@ -31,15 +39,31 @@ export const correctionPreview = z.object({
     .object({ current: identity, proposed: identity })
     .nullable(),
   limitation: z.string(),
-  verification: z.object({
-    can_record: z.boolean(),
-    current_proof_class: proof,
-    proposed_proof_class: proof.nullable(),
-    reservations: z.array(z.string()),
-    included_in_default_totals: z.boolean(),
-    scope: z.string(),
-    reason: z.string().nullable(),
-  }),
+  verification: z
+    .object({
+      can_record: z.boolean(),
+      current_proof_class: proof,
+      proposed_proof_class: proof.nullable(),
+      reservations: z.array(z.string()),
+      included_in_default_totals: z.boolean(),
+      scope: z.string(),
+      reason: z.string().nullable(),
+    })
+    .refine((value) => {
+      if (!value.can_record)
+        return (
+          value.proposed_proof_class === null &&
+          !value.included_in_default_totals &&
+          Boolean(value.reason?.trim())
+        )
+      if (value.proposed_proof_class === null || value.reason !== null)
+        return false
+      const eligible = value.proposed_proof_class !== "p3"
+      return (
+        value.included_in_default_totals === eligible &&
+        (!eligible || value.reservations.length === 0)
+      )
+    }, "Correction verification is inconsistent"),
 })
 export type CorrectionPreview = z.infer<typeof correctionPreview>
 export const correctionAnswer = z.object({
