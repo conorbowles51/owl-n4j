@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `a5857b3`, “Enable backend PDF rendering and
-  verify ledger source navigation end to end”, parent `546605a`. A documentation commit follows it;
+- **Latest implementation commit:** `8a3ab2f`, “Assess selected source amounts
+  directly from ledger citations”, parent `6cc4277`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,47 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Amount assessment is reachable from a ledger citation
+
+`8a3ab2f` adds Assess an amount in source text inside LedgerSourceDialog, reusing
+the same SourceAmountPanel already tested in evidence search. It passes the
+resolved evidence-file ID and original case, never derives raw text from the
+ledger amount, and requires an explicit text selection and currency. Closing
+assessment leaves source navigation available. Missing canonical text returns its
+clear error while Open source file stays usable. No correction or admission is
+performed; the separate correction preview/record flow remains authoritative.
+
+Extended `scripts/check_local_ledger_source.py` to extract the actual generated
+PDF's text into a canonical record, with digital provenance explicitly assigned
+for this generated fixture, and verify an exact read-only 400.00 GBP assessment.
+New fixture case **5adbd65c-2541-4b8b-88b7-b9358896b944**, file
+7364782f-1eae-425a-bbf3-90f4c1b77712. Admitted row
+67f55237-fed8-45f6-8b8e-dfbdaa807d7f; held-out row
+54e2a8f2-72a1-415c-a6e6-9ee40a6e393f. Latest IDs are in
+`data/local-runtime/ledger-source-check.json`. Prior synthetic cases remain intact.
+
+The real browser followed Ledger → View source → Assess an amount in source text,
+selected 400.00 and entered GBP. It returned Digital text / 400.00 GBP. Closing
+assessment/source returned to the unchanged admitted 400.00 GBP ledger row.
+Screenshot inspected. Harness `/tmp/loupe-neilbyrne-ledger-assess-live.cjs`, output
+same basename .out, screenshot same basename .png. HTTP integration also passed.
+
+Validation: **888 unit tests in 90 files, 11 Chromium tests in 9 files pass**;
+TypeScript, ESLint, Python 3.10 syntax and diff checks pass. Two new integration
+unit tests cover resolved file/text selection and unavailable canonical text.
+Logs: `/tmp/loupe-neilbyrne-ledger-assess-{focused,full,browser,http}.out`.
+Production backend unchanged; baseline stays 3,549 with zero skips. No real data
+or external AI calls. Existing backend session 72136 remains current.
+
+Next: move from the now-tested manual source review/correction interface toward
+remaining ingestion integration. Before wiring automatic suspect flags, establish
+where extracted table cells become relational transaction drafts, retaining raw
+amount text, origin and row/column identity; do not invent them from normalized
+ledger integers. If that seam requires a larger design, implement another bounded
+agreed-plan prerequisite and record the dependency. Engine/worker still need the
+prior text_origin restart before a new extraction run. Stop starting segments at
+20:00 Dublin (19:00 UTC) and pause the heartbeat after a safe checkpoint.
 
 ### Live ledger PDF source navigation verified
 
