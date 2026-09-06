@@ -35,6 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
+from services.financial.ledger_source import LedgerSourceError, ledger_source
 
 from postgres.models.enums import (
     AdjudicationDecision,
@@ -83,6 +84,17 @@ router = APIRouter(
         Depends(_require_ledger_case_access),
     ],
 )
+
+
+@router.get("/ledger/{transaction_id}/source")
+async def get_ledger_source(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return ledger_source(db, case_id=case_id, transaction_id=transaction_id)
+    except LedgerSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger source lookup failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Ledger source could not be read.")
 
 
 class AmountAssessmentRequest(BaseModel):
