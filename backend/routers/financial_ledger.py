@@ -34,7 +34,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field
-from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount
+from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
 
 from postgres.models.enums import (
     AdjudicationDecision,
@@ -92,6 +92,24 @@ class AmountAssessmentRequest(BaseModel):
     expected_text: str = Field(min_length=1, max_length=128, strict=True)
     content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     currency: str = Field(pattern=r"^[A-Z]{3}$")
+
+
+@router.get("/source-files/{evidence_file_id}/text")
+async def get_amount_source_text(
+    evidence_file_id: UUID,
+    case_id: UUID = Query(...),
+    start_char: int = Query(0, ge=0),
+    limit: int = Query(12000, ge=1, le=20000),
+    db: Session = Depends(get_db),
+):
+    try:
+        return read_amount_source_text(db, case_id=case_id, evidence_file_id=evidence_file_id,
+                                       start_char=start_char, limit=limit)
+    except AmountAssessmentError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Source text read failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Source text could not be read.")
 
 
 @router.post("/source-files/{evidence_file_id}/amount-assessment")

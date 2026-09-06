@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from postgres.base import Base
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceFolder
-from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount
+from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
 from routers import financial_ledger
 
 
@@ -51,6 +51,22 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(answer["currency_source"], "caller_supplied")
         self.assertEqual(self.source.content, self.content)
         self.assertFalse(self.db.dirty)
+
+    def test_source_window_uses_the_assessment_offsets_and_digest(self):
+        window = read_amount_source_text(self.db, case_id=self.case, evidence_file_id=self.file, start_char=9, limit=4)
+        self.assertEqual(window["content"], "1234")
+        self.assertEqual(window["content_sha256"], self.digest)
+        self.assertEqual(window["end_char"], 13)
+        self.assertTrue(window["has_more"])
+        self.assertEqual(window["character_count"], len(self.content))
+
+    def test_source_window_refuses_wrong_case_and_excessive_size(self):
+        for params, status in (({"case_id": uuid4()}, 404), ({"limit": 20001}, 422), ({"start_char": 999}, 409)):
+            args = dict(case_id=self.case, evidence_file_id=self.file)
+            args.update(params)
+            with self.assertRaises(AmountAssessmentError) as ctx:
+                read_amount_source_text(self.db, **args)
+            self.assertEqual(ctx.exception.status_code, status)
 
     def test_measured_digital_text_is_parsed_without_ocr_suspicion(self):
         self.source.source_locations = [{**self.location, "text_origin": "digital_text_layer"}]

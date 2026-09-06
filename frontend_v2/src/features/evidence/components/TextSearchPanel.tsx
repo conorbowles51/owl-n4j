@@ -23,6 +23,7 @@ import type {
 import { evidenceAPI } from "../api"
 import { useEvidenceStore } from "../evidence.store"
 import { useEvidenceTextSearch } from "../hooks/use-text-search"
+import { SourceAmountPanel } from "@/features/financial/components/SourceAmountPanel"
 
 interface ViewerTarget {
   evidenceId: string
@@ -48,10 +49,18 @@ function HighlightedSnippet({ hit }: { hit: EvidenceTextSearchHit }) {
 
 function DocumentTypeIcon({ filename }: { filename: string }) {
   const extension = filename.split(".").pop()?.toLowerCase()
-  if (["csv", "xls", "xlsx"].includes(extension ?? "")) return <FileSpreadsheet className="size-4" />
-  if (["jpg", "jpeg", "png", "gif", "tif", "tiff", "webp"].includes(extension ?? "")) return <FileImage className="size-4" />
-  if (["mp3", "wav", "m4a", "ogg", "flac"].includes(extension ?? "")) return <Music className="size-4" />
-  if (["mp4", "mov", "avi", "mkv", "webm"].includes(extension ?? "")) return <Film className="size-4" />
+  if (["csv", "xls", "xlsx"].includes(extension ?? ""))
+    return <FileSpreadsheet className="size-4" />
+  if (
+    ["jpg", "jpeg", "png", "gif", "tif", "tiff", "webp"].includes(
+      extension ?? ""
+    )
+  )
+    return <FileImage className="size-4" />
+  if (["mp3", "wav", "m4a", "ogg", "flac"].includes(extension ?? ""))
+    return <Music className="size-4" />
+  if (["mp4", "mov", "avi", "mkv", "webm"].includes(extension ?? ""))
+    return <Film className="size-4" />
   return <FileText className="size-4" />
 }
 
@@ -81,26 +90,40 @@ function HitButton({
 }
 
 function DocumentResultCard({
+  caseId,
   document,
   query,
   onOpen,
 }: {
+  caseId: string
   document: EvidenceTextSearchDocument
   query: string
-  onOpen: (document: EvidenceTextSearchDocument, hit: EvidenceTextSearchHit) => void
+  onOpen: (
+    document: EvidenceTextSearchDocument,
+    hit: EvidenceTextSearchHit
+  ) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [assessing, setAssessing] = useState(false)
   const matchesQuery = useInfiniteQuery({
     queryKey: ["evidence-text-matches", document.evidence_id, query],
     queryFn: ({ pageParam, signal }) =>
-      evidenceAPI.getTextMatches(document.evidence_id, query, 50, pageParam, signal),
+      evidenceAPI.getTextMatches(
+        document.evidence_id,
+        query,
+        50,
+        pageParam,
+        signal
+      ),
     initialPageParam: 0,
     getNextPageParam: (page) =>
       page.has_more ? page.offset + page.returned_matches : undefined,
     enabled: expanded,
   })
-  const expandedMatches = matchesQuery.data?.pages.flatMap((page) => page.matches) ?? []
-  const expandedTotal = matchesQuery.data?.pages[0]?.total_matches ?? document.total_matches
+  const expandedMatches =
+    matchesQuery.data?.pages.flatMap((page) => page.matches) ?? []
+  const expandedTotal =
+    matchesQuery.data?.pages[0]?.total_matches ?? document.total_matches
   const visibleMatches = expanded ? expandedMatches : document.matches
   const shownCount = expanded ? expandedMatches.length : document.shown_matches
 
@@ -109,7 +132,9 @@ function DocumentResultCard({
       <div className="flex items-start gap-2.5 border-b border-border/70 p-3">
         <button
           type="button"
-          onClick={() => document.matches[0] && onOpen(document, document.matches[0])}
+          onClick={() =>
+            document.matches[0] && onOpen(document, document.matches[0])
+          }
           className="flex min-w-0 flex-1 items-start gap-2.5 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -139,7 +164,11 @@ function DocumentResultCard({
         ) : expanded && matchesQuery.isError ? (
           <div className="flex items-center justify-between gap-3 p-2 text-xs text-destructive">
             <span>Couldn’t load all matches.</span>
-            <Button size="sm" variant="outline" onClick={() => matchesQuery.refetch()}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => matchesQuery.refetch()}
+            >
               Retry
             </Button>
           </div>
@@ -166,12 +195,34 @@ function DocumentResultCard({
             onClick={() => setExpanded((value) => !value)}
             aria-expanded={expanded}
           >
-            {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+            {expanded ? (
+              <ChevronDown className="size-3.5" />
+            ) : (
+              <ChevronRight className="size-3.5" />
+            )}
             {expanded ? "Collapse" : "View all"}
           </Button>
         )}
       </div>
 
+      <div className="p-2">
+        {assessing ? (
+          <SourceAmountPanel
+            key={`${caseId}:${document.evidence_id}`}
+            caseId={caseId}
+            evidenceId={document.evidence_id}
+            onClose={() => setAssessing(false)}
+          />
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAssessing(true)}
+          >
+            Assess an amount in source text
+          </Button>
+        )}
+      </div>
       {expanded && matchesQuery.hasNextPage && (
         <div className="border-t border-border/70 p-2">
           <Button
@@ -181,7 +232,9 @@ function DocumentResultCard({
             disabled={matchesQuery.isFetchingNextPage}
             onClick={() => matchesQuery.fetchNextPage()}
           >
-            {matchesQuery.isFetchingNextPage && <Loader2 className="size-3.5 animate-spin" />}
+            {matchesQuery.isFetchingNextPage && (
+              <Loader2 className="size-3.5 animate-spin" />
+            )}
             Load more matches
           </Button>
         </div>
@@ -198,7 +251,10 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
   const firstPage = search.data?.pages[0]
   const documents = search.data?.pages.flatMap((page) => page.documents) ?? []
 
-  const openHit = (document: EvidenceTextSearchDocument, hit: EvidenceTextSearchHit) => {
+  const openHit = (
+    document: EvidenceTextSearchDocument,
+    hit: EvidenceTextSearchHit
+  ) => {
     setViewerTarget({
       evidenceId: document.evidence_id,
       documentName: document.document_name,
@@ -214,9 +270,12 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
         <span className="mb-4 flex size-11 items-center justify-center rounded-full border border-primary/20 bg-primary/8 text-primary">
           <Search className="size-5" />
         </span>
-        <p className="text-sm font-semibold">Search document text across this case</p>
+        <p className="text-sm font-semibold">
+          Search document text across this case
+        </p>
         <p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">
-          Enter an exact name, phrase, account number, or other literal text. Results are grouped by document.
+          Enter an exact name, phrase, account number, or other literal text.
+          Results are grouped by document.
         </p>
       </div>
     )
@@ -237,9 +296,18 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
     content = (
       <div className="flex h-full flex-col items-center justify-center px-8 text-center">
         <AlertCircle className="size-7 text-destructive" />
-        <p className="mt-3 text-sm font-semibold">Search couldn’t be completed</p>
-        <p className="mt-1 text-xs text-muted-foreground">Your query is still here. Retry when you’re ready.</p>
-        <Button variant="outline" size="sm" className="mt-4" onClick={() => search.refetch()}>
+        <p className="mt-3 text-sm font-semibold">
+          Search couldn’t be completed
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Your query is still here. Retry when you’re ready.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-4"
+          onClick={() => search.refetch()}
+        >
           Retry search
         </Button>
       </div>
@@ -252,11 +320,13 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
           Check punctuation and spacing, or try a shorter literal phrase.
         </p>
-        {firstPage && firstPage.searchable_documents < firstPage.case_documents && (
-          <p className="mt-4 rounded-md bg-muted px-3 py-2 text-[11px] text-muted-foreground">
-            Searchable text is available for {firstPage.searchable_documents} of {firstPage.case_documents} case documents.
-          </p>
-        )}
+        {firstPage &&
+          firstPage.searchable_documents < firstPage.case_documents && (
+            <p className="mt-4 rounded-md bg-muted px-3 py-2 text-[11px] text-muted-foreground">
+              Searchable text is available for {firstPage.searchable_documents}{" "}
+              of {firstPage.case_documents} case documents.
+            </p>
+          )}
       </div>
     )
   } else {
@@ -265,17 +335,22 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
         <div className="sticky top-0 z-10 space-y-2 border-b border-border bg-card/95 px-3 py-3 backdrop-blur-sm">
           <div className="flex items-baseline justify-between gap-3">
             <p className="text-sm font-semibold">
-              {firstPage.total_matches.toLocaleString()} {firstPage.total_matches === 1 ? "match" : "matches"} across {firstPage.total_documents.toLocaleString()} {firstPage.total_documents === 1 ? "document" : "documents"}
+              {firstPage.total_matches.toLocaleString()}{" "}
+              {firstPage.total_matches === 1 ? "match" : "matches"} across{" "}
+              {firstPage.total_documents.toLocaleString()}{" "}
+              {firstPage.total_documents === 1 ? "document" : "documents"}
             </p>
           </div>
           {documents.length < firstPage.total_documents && (
             <p className="font-mono text-[10px] tabular-nums text-muted-foreground">
-              Showing {documents.length} of {firstPage.total_documents} matching documents
+              Showing {documents.length} of {firstPage.total_documents} matching
+              documents
             </p>
           )}
           {firstPage.searchable_documents < firstPage.case_documents && (
             <p className="rounded-md border border-border bg-muted/40 px-2.5 py-2 text-[11px] leading-4 text-muted-foreground">
-              Searchable text is available for {firstPage.searchable_documents} of {firstPage.case_documents} case documents.
+              Searchable text is available for {firstPage.searchable_documents}{" "}
+              of {firstPage.case_documents} case documents.
             </p>
           )}
         </div>
@@ -284,6 +359,7 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
           {documents.map((document) => (
             <DocumentResultCard
               key={document.evidence_id}
+              caseId={caseId}
               document={document}
               query={search.debouncedQuery}
               onOpen={openHit}
@@ -297,13 +373,16 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
               disabled={search.isFetchingNextPage}
               onClick={() => search.fetchNextPage()}
             >
-              {search.isFetchingNextPage && <Loader2 className="size-3.5 animate-spin" />}
+              {search.isFetchingNextPage && (
+                <Loader2 className="size-3.5 animate-spin" />
+              )}
               Load more documents
             </Button>
           )}
           {!search.hasNextPage && documents.length > 0 && (
             <p className="py-2 text-center font-mono text-[10px] text-muted-foreground">
-              Showing {documents.length} of {firstPage.total_documents} matching documents
+              Showing {documents.length} of {firstPage.total_documents} matching
+              documents
             </p>
           )}
         </div>
@@ -312,12 +391,21 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
   }
 
   return (
-    <div className={cn("h-full", search.isFetching && !search.isLoading && "cursor-progress")}>
+    <div
+      className={cn(
+        "h-full",
+        search.isFetching && !search.isLoading && "cursor-progress"
+      )}
+    >
       {content}
       <DocumentViewer
         open={viewerTarget !== null}
         onOpenChange={(open) => !open && setViewerTarget(null)}
-        documentUrl={viewerTarget ? evidenceAPI.getFileUrl(viewerTarget.evidenceId) : undefined}
+        documentUrl={
+          viewerTarget
+            ? evidenceAPI.getFileUrl(viewerTarget.evidenceId)
+            : undefined
+        }
         documentName={viewerTarget?.documentName}
         initialPage={viewerTarget?.page}
         navigationKey={viewerTarget?.navigationKey}
