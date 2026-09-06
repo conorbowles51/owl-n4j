@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { evidenceAPI } from "@/features/evidence/api"
 import { readLocator } from "../lib/locator"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
+import { SourceAmountPanel } from "./SourceAmountPanel"
 
 const citationSchema = z.object({
   case_id: z.string(),
@@ -42,6 +43,7 @@ export function LedgerSourceDialog({
   onClose: () => void
 }) {
   const [viewFile, setViewFile] = useState(false)
+  const [assessAmount, setAssessAmount] = useState(false)
   const source = useQuery({
     queryKey: ["ledger-source", caseId, transactionId],
     retry: false,
@@ -121,6 +123,18 @@ export function LedgerSourceDialog({
               <Button onClick={() => setViewFile(true)}>
                 Open source file
               </Button>
+              {assessAmount ? (
+                <SourceAmountPanel
+                  key={`${caseId}:${data.evidence_file_id}`}
+                  caseId={caseId}
+                  evidenceId={data.evidence_file_id}
+                  onClose={() => setAssessAmount(false)}
+                />
+              ) : (
+                <Button variant="outline" onClick={() => setAssessAmount(true)}>
+                  Assess an amount in source text
+                </Button>
+              )}
             </>
           )}
         </DialogContent>

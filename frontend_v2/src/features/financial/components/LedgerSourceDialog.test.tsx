@@ -106,3 +106,95 @@ it("shows a digest refusal without fetching or opening evidence", async () => {
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(screen.queryByRole("button", { name: "Open source file" })).toBeNull()
 })
+
+it("assesses only text selected from the resolved evidence file", async () => {
+  const fetch = mount()
+  await screen.findByRole("button", { name: "Assess an amount in source text" })
+  fetch.mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({
+        case_id: "case",
+        evidence_file_id: citation.evidence_file_id,
+        content: "Amount 1234",
+        content_sha256: "b".repeat(64),
+        start_char: 0,
+        end_char: 11,
+        character_count: 11,
+        has_more: false,
+        offset_unit: "unicode_code_points",
+      })
+    )
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Assess an amount in source text" })
+  )
+  const source = await screen.findByLabelText("Source text")
+  expect(fetch.mock.calls[1][0]).toContain(
+    `/source-files/${citation.evidence_file_id}/text?case_id=case`
+  )
+  expect(
+    screen.getByRole("button", { name: "Assess selected amount" })
+  ).toBeDisabled()
+  fireEvent.select(source, { target: { selectionStart: 7, selectionEnd: 11 } })
+  fireEvent.change(screen.getByLabelText("Currency (ISO code)"), {
+    target: { value: "USD" },
+  })
+  fetch.mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({
+        case_id: "case",
+        evidence_file_id: citation.evidence_file_id,
+        content_sha256: "b".repeat(64),
+        start_char: 7,
+        end_char: 11,
+        applied: false,
+        offset_unit: "unicode_code_points",
+        currency_source: "caller_supplied",
+        limitation: "Selected text only.",
+        assessment: {
+          raw: "1234",
+          currency: "USD",
+          origin: "unknown",
+          suspicion: "decimal_point_absent",
+          explanation: "Review the source.",
+          proposals: [{ minor_units: "1234", basis: "Possible decimal" }],
+        },
+      })
+    )
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Assess selected amount" })
+  )
+  expect(await screen.findByRole("status")).toHaveTextContent("12.34 USD")
+  expect(fetch.mock.calls[2][0]).toContain(
+    `/source-files/${citation.evidence_file_id}/amount-assessment?case_id=case`
+  )
+  expect(JSON.parse(String(fetch.mock.calls[2][1]?.body)).expected_text).toBe(
+    "1234"
+  )
+  expect(fetch).toHaveBeenCalledTimes(3)
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close amount assessment" })
+  )
+  expect(screen.queryByRole("status")).toBeNull()
+  expect(screen.getByRole("button", { name: "Open source file" })).toBeEnabled()
+})
+
+it("keeps original file access when extracted text is unavailable", async () => {
+  const fetch = mount()
+  await screen.findByRole("button", { name: "Assess an amount in source text" })
+  fetch.mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({ detail: "Source text not found in this case." }),
+      { status: 404 }
+    )
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Assess an amount in source text" })
+  )
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Source text not found"
+  )
+  expect(screen.getByRole("button", { name: "Open source file" })).toBeEnabled()
+  expect(screen.queryByLabelText("Source text")).toBeNull()
+})

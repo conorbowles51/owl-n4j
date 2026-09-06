@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from tests.test_financial_duplicates import DuplicateTestCase, printed
 from postgres.models.case import Case
 from postgres.models.user import User
-from postgres.models.evidence import EvidenceFile
+from postgres.models.evidence import EvidenceFile, EvidenceDocumentText
 from postgres.models.financial import FinancialTransaction
 from services.financial.runs import open_ingestion_run
 from services.financial.transactions import LOCATOR_PROVENANCE_KEY
@@ -59,6 +59,13 @@ def main():
             evidence = fixture.db.get(EvidenceFile, document.evidence_file_id)
             evidence.stored_path, evidence.original_filename = str(path), path.name
             evidence.sha256, evidence.size, evidence.status = digest, path.stat().st_size, "processed"
+            with pymupdf.open(path) as pdf:
+                content = pdf[0].get_text()
+            text_digest = hashlib.sha256(content.encode()).hexdigest()
+            fixture.db.add(EvidenceDocumentText(evidence_file_id=evidence.id, content=content,
+                content_sha256=text_digest, character_count=len(content), source_locations=[{
+                    "kind": "page", "page_number": 1, "start_char": 0, "end_char": len(content),
+                    "text_origin": "digital_text_layer"}]))
             rows = list(fixture.db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id == document.id).order_by(FinancialTransaction.amount_minor.desc())))
             for row, top in zip(rows, (112000, 152000)):
                 row.provenance = {**(row.provenance or {}), LOCATOR_PROVENANCE_KEY: {
@@ -80,9 +87,20 @@ def main():
             original = client.get(f"/api/evidence/{file_id}/file")
             original.raise_for_status()
             assert hashlib.sha256(original.content).hexdigest() == digest
+            source_path = f"/api/financial/source-files/{file_id}"
+            text = client.get(source_path + "/text", params={"case_id": case_id})
+            text.raise_for_status()
+            assert text.json()["content"] == content
+            start = content.index("400.00")
+            assessment = client.post(source_path + "/amount-assessment", params={"case_id": case_id}, json={
+                "start_char": start, "end_char": start + 6, "expected_text": "400.00",
+                "content_sha256": text_digest, "currency": "GBP"})
+            assessment.raise_for_status()
+            assert assessment.json()["assessment"]["minor_units"] == "40000"
+            assert assessment.json()["applied"] is False
             summary = {"case_id": case_id, "evidence_file_id": file_id, "admitted_row": row_ids[0], "held_out_row": row_ids[1]}
             (ROOT / "data/local-runtime/ledger-source-check.json").write_text(json.dumps(summary, indent=2))
-            print("PASS: both ledger source citations, rendered PNG and original PDF bytes.")
+            print("PASS: both ledger source citations, rendered PNG, original PDF bytes and canonical-text assessment.")
             print(json.dumps(summary, indent=2))
     finally:
         fixture.db.close()
