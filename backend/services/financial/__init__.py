@@ -8,6 +8,7 @@ that fails to close can detect an absence.
 Nothing in this package may represent a monetary value as a float.
 """
 
+from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
 from services.financial.accounts import (
     IDENTITY_TIERS,
     NON_VALUES,
@@ -885,6 +886,8 @@ from services.financial.version import (
 )
 
 __all__ = [
+    "CorrectionPreviewError",
+    "preview_amount_correction",
     # Account identity.  The one writer whose failures are silent: merging two
     # accounts that are not one account still closes every balance identity
     # downstream, so the module refuses far more than it accepts.

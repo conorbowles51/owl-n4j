@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from services.financial.duplicate_decisions import DuplicateDecisionError, decide_duplicate
+from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
 from services.financial.quarantine_row import actor_from_user, ActorError
 
 from postgres.session import get_db
@@ -63,7 +64,7 @@ logger = logging.getLogger(__name__)
 def _adjudication_case_permission(
     request: Request, payload: dict
 ) -> tuple[str, str] | None:
-    # Every route on this router writes; none of them only read.  Stated
+    # Every route writes or previews a proposed edit. Stated
     # unconditionally rather than per path so that a route added here inherits
     # the write bar, which is the safe direction for a mistake to fall.
     return ("case", "edit")
@@ -250,6 +251,31 @@ class DuplicateDecisionRequest(BaseModel):
     expected_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
     primary_id: Optional[UUID] = None
     expected_primary_revision: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
+class AmountCorrectionPreviewRequest(BaseModel):
+    # A decimal string avoids rounding BIGINT money in browser JSON numbers.
+    amount_minor: str = Field(strict=True, pattern=r"^(0|[1-9][0-9]{0,18})$")
+    direction: Literal["credit", "debit"]
+
+
+@router.post("/transactions/{transaction_id}/correction-preview")
+async def amount_correction_preview(
+    transaction_id: UUID, payload: AmountCorrectionPreviewRequest,
+    case_id: UUID = Query(...), db: Session = Depends(get_db),
+):
+    try:
+        return preview_amount_correction(db, case_id=case_id, transaction_id=transaction_id,
+                                         amount_minor=int(payload.amount_minor), direction=payload.direction)
+    except CorrectionPreviewError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    except Exception:
+        logger.exception("Correction preview failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The correction preview could not be calculated.")
+    finally:
+        # Release the coherent-snapshot locks and discard any incidental ORM
+        # state. A preview must never persist reconciliation or disposition.
+        db.rollback()
 
 
 @router.post("/documents/{document_id}/duplicate-decision")
