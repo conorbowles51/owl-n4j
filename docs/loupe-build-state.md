@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `65be755`, “Open stored source pages and
-  highlights from relational ledger rows”, parent `0d3f90f`. A documentation commit follows it;
+- **Latest implementation commit:** `a5857b3`, “Enable backend PDF rendering and
+  verify ledger source navigation end to end”, parent `546605a`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,49 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Live ledger PDF source navigation verified
+
+`a5857b3` adds `scripts/check_local_ledger_source.py`, a generated-PDF integration
+fixture and a Chromium regression for the citation/highlight/file dialog chain.
+The real local backend lacked PyMuPDF (only the engine installed it), so page
+rendering would return 503. Added PyMuPDF>=1.25,<2 to backend requirements, installed
+1.28.2 in the isolated backend venv, and updated the renderer loader comment.
+Backend pip check passes. No new PDF system dependency was needed.
+
+The script targets only the isolated database/API, creates a clearly synthetic
+PDF/case with one admitted 400.00 GBP row and one held-out 20.00 GBP row, records
+explicit rectangles, checks both citation responses, the real rendered PNG and
+original PDF digest. It assigns synthetic positions/statuses, not extraction or
+admission outcomes. Its ingestion attempt remains open, accurately disclosed in
+the UI. The fixture is for navigation, not balance/reconciliation acceptance.
+
+Case **38f31809-eaed-44cc-a537-92e86f579d16**, file
+223c8d83-b26d-4938-99e3-5105dd97c199. Admitted row
+81aa78c2-a3f5-4b9d-ba04-ea0d6cac7a19; held-out row
+82524359-fb99-4178-9e8c-a2e0fbe2ce08. IDs persist in
+`data/local-runtime/ledger-source-check.json`. The live browser verified both
+View source actions: 1200×1553 page image, separate correct highlights on the
+400.00 and 20.00 printed lines, original PDF opened at page 1, Escape returning
+to the source dialog and then the ledger. Screenshot visually inspected.
+Live harness `/tmp/loupe-neilbyrne-ledger-source-live.cjs`, log same basename .out;
+screenshots `/tmp/loupe-neilbyrne-ledger-{Ledger,Held-out}.png`.
+
+Validation: **all 3,549 financial tests pass, now with zero skips**: installing the
+renderer enabled the 12 previously skipped real-library checks. **11 Chromium
+tests in 9 files pass**; TypeScript, ESLint, Python 3.10 syntax and diff checks pass.
+Unit baseline remains 886 (no production frontend code changed). Chromium test
+initially compared computed pixel styles against percentages; corrected it to
+assert stored relative styles, and the rerun passed. Logs:
+`/tmp/loupe-neilbyrne-ledger-source-{http,pdf-browser,pdf-backend}.out`.
+Backend restarted with citation route; exec session 72136, runtime log
+`/tmp/loupe-neilbyrne-ledger-source-backend-runtime.out`. No real evidence changed.
+
+Next: source navigation is connected for stored relational locators. Revisit the
+remaining item 10 source-assessment-to-review link; avoid presenting the read-only
+assessment as automatic transaction identification. Native/running-balance
+revalidation and graph projection remain outstanding. The engine/worker still
+need restarting for prior text_origin changes before a new extraction check.
 
 ### Source navigation connected on Ledger and Held out
 
