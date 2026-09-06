@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `b8aeb5b`, “Show case-wide evidence classification
-  above the ledger”, parent `b968348`. A documentation commit follows it;
+- **Latest implementation commit:** `47f03ca`, “Keep duplicate previews from
+  rewriting reconciliation results”, parent `05b7e03`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -20,11 +20,67 @@ completed-item claims and environment recipes in that history are not current.
   complete**, subject to the explicitly preserved backend limitations below.
 - **Uncommitted implementation work:** none. Existing unrelated documents,
   evidence, backups and `src/__probe.test.ts` were left untouched and untracked.
-- **Next unit:** Phase 2 item 9, duplicates. Start from the actual `duplicates.py`
-  implementation and its existing tests, then identify the necessary case-scoped
-  endpoints, review controls and cache invalidations. Do not treat the old plan's
-  descriptions as verified source facts. This will touch Python; establish an
-  appropriate local runtime before claiming a backend gate.
+- **Next unit:** Continue Phase 2 item 9, duplicates. A prerequisite read-only
+  detection fix is committed; fingerprint coverage, case-scoped endpoints and
+  review controls remain unbuilt. See the findings immediately below. Item 9
+  is **not complete**. The local backend test environment now works.
+
+### Duplicate detection prerequisite completed
+
+`score_document` called `reconcile_period`, which flushes saved totals, verdicts
+and timestamps. Consequently `find_groups`, documented as read-only, performed
+writes while nominating candidates. It now calls `total_transactions` and the
+pure `evaluate_identity`, reading balances without recording an attempt.
+Nomination still evaluates current admitted rows, rather than trusting possibly
+stale stored reconciliation. Actual reconciliation remains an explicit writer.
+
+Two new SQLite regression tests failed against the old code and pass with the
+fix. They check all period columns survive a preview followed by commit, capture
+SQL to assert no writes, and prove current rows govern nomination while a prior
+stored result remains unchanged. The focused duplicate/reconciliation set passed
+99 tests. The **full financial suite passed 3,468 tests, 12 skipped**. No routes,
+UI, schema or production evidence were changed. No live E2E was performed.
+
+Source findings to carry into the rest of item 9:
+
+- `store_fingerprint` has no production caller. `find_groups` skips null keys;
+  an empty response cannot mean a checked case has no duplicates. Design explicit
+  coverage and a way to fingerprint existing documents as well as future ingest.
+- `GroupMember.excluded` is the proposed strong-match policy, not a read of the
+  persisted status. A review response must distinguish proposed and actual state.
+- Only identical bytes/readings qualify for exclusion; same account/period is
+  a candidate only. Do not wire automatic hiding for that weaker match.
+- Audit nomination after supersession before exposing mutation: existing scoring
+  counts admitted rows, while grouping includes superseded documents. Existing
+  idempotence tests cover a simple pair, not every change of nominee or population.
+- Fingerprints currently hash period identity and transaction content hashes,
+  including all row statuses. Check empty periods, absent bounds, corrections,
+  and balance observations before treating a hash match as safe exclusion.
+- `cross_matter_sightings` reads other case IDs directly. Do not expose that helper
+  without checking authorization for each matter. Purge is separate and destructive;
+  it is not necessary for the first reversible review interface.
+
+### Backend runtime now verified on this Mac
+
+The isolated environment is `/tmp/loupe-neilbyrne-backend-venv`, using installed
+**Python 3.12**. Changed files additionally pass `ast.parse(feature_version=(3,10))`;
+this is a syntax check, not a Python 3.10 runtime test. No global Python packages
+or repository dependency manifests were changed.
+
+Installed the pinned bootstrap packages from `CLAUDE.md`, then added missing
+`python-dotenv==1.2.3`, `bcrypt==5.0.0`, `cryptography==50.0.1` for configuration
+and router imports. Earlier full-suite attempts failed collection for missing
+bcrypt/cryptography; the final run collected all 3,468 tests and passed. ChromaDB
+and pypdf import warnings remain; this is not evidence those optional features work.
+
+Run from `backend/`:
+
+```
+env PYTHONDONTWRITEBYTECODE=1 PYTHONHASHSEED=0 /tmp/loupe-neilbyrne-backend-venv/bin/python -m unittest discover -s tests -p 'test_financial_*.py' -t .
+```
+
+Final output: `/tmp/loupe-neilbyrne-duplicates-backend.out`. Frontend gates were
+not rerun for this backend-only change; their last verified results follow below.
 
 ### What the classification display now does
 
@@ -118,8 +174,8 @@ classification census through loading, expanding the rules and refreshing.
 end-to-end runs.** The classification unit added 36 unit tests and one Chromium
 test. The unrelated `__probe.test.ts` still contributes one file and one unit test.
 
-Backend tests were not rerun: this unit changes only frontend code. The previous
-reported financial baseline remains 3,466 tests with 12 skipped, not newly verified.
+The classification unit changed only frontend code. Backend tests were subsequently
+run for the duplicate prerequisite: 3,468 tests with 12 skipped, as recorded above.
 Neil's plan to test the full working product when ready remains unchanged.
 
 ### Local environment replaces Claude's sandbox assumptions
