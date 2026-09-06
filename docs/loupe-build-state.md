@@ -36,6 +36,25 @@ completed-item claims and environment recipes in that history are not current.
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
 
+### End-of-window availability checkpoint
+
+Progress report committed as `bdedcda`: **docs/loupe-progress-2026-09-06.md** is the
+short briefing for Neil. Detailed resumable state remains here. Last implementation
+is still `092d32e`; subsequent commits record handoffs/reports.
+
+At 18:55 UTC (19:55 Dublin), frontend 55174, backend /health on 58002 and engine
+/health on 58003 all returned HTTP 200. Tracked working tree was clean and diff
+checks passed. Latest test logs reconfirmed 3,549 financial tests with zero skips,
+895 frontend unit and 11 Chromium passing. These suites were not redundantly
+rerun for this documentation-only checkpoint. No new feature work was started
+in the final five minutes.
+
+Heartbeat continue-loupe-development remains active only until the authorized
+19:00 UTC / 20:00 Dublin cutoff. The current task will pause it then and record
+that outcome. Local app processes are to remain running for Neil's testing.
+Next implementation remains the typed source mapping/candidate contract described
+in docs/loupe-pdf-ledger-bridge.md, not automatic admission from graph numbers.
+
 ### Historical correction sources verified live; next bridge designed
 
 `092d32e` extends `scripts/check_local_ledger_source.py` with optional
