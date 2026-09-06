@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `47f03ca`, “Keep duplicate previews from
-  rewriting reconciliation results”, parent `05b7e03`. A documentation commit follows it;
+- **Latest implementation commit:** `8bdd848`, “Connect fresh duplicate comparisons
+  to the financial ledger”, parent `6d0716c`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -20,10 +20,90 @@ completed-item claims and environment recipes in that history are not current.
   complete**, subject to the explicitly preserved backend limitations below.
 - **Uncommitted implementation work:** none. Existing unrelated documents,
   evidence, backups and `src/__probe.test.ts` were left untouched and untracked.
-- **Next unit:** Continue Phase 2 item 9, duplicates. A prerequisite read-only
-  detection fix is committed; fingerprint coverage, case-scoped endpoints and
-  review controls remain unbuilt. See the findings immediately below. Item 9
-  is **not complete**. The local backend test environment now works.
+- **Session convention:** Neil explicitly said the session-delimitation rule was
+  for Claude and authorized continuing in this same session. Keep tested commits
+  and the disk handoff; do not require a new session after each unit.
+- **Next unit:** Continue Phase 2 item 9 with explicit exclusion/restoration and
+  recorded reasons. Fresh comparison and its case-view API/UI are connected.
+  Item 9 is **not complete**. Do not expose the legacy resolver unchanged;
+  remaining mutation risks are recorded below.
+
+### Duplicate comparison is connected
+
+The ledger tab now mounts `DuplicateCandidatesPanel` alongside the census and
+ledger, in its own error boundary. **Compare documents** starts an on-demand
+case-scoped GET `/api/financial/duplicates`; details show filenames, document IDs,
+match descriptions, persisted document status/supersession target and row counts
+by stored status. Coverage explicitly reports compared and skipped documents.
+Skipped files include a reason. An empty comparison never claims no evidence or
+no duplicates. The comparison itself changes no disposition or totals.
+
+- `duplicate_query.list_duplicate_candidates` recomputes fingerprints in memory
+  for admitted/superseded documents. This includes old imports with null keys and
+  avoids stale cached keys after rows change. No backfill, native-ingest changes
+  or stored-fingerprint update is needed for this read path.
+- Fingerprint v2 includes **all** rows, including payment-file rows with no period
+  and unlinked rows beside linked periods, account identities, currencies, period
+  bounds/source labels and opening/closing balance observations. Empty documents
+  receive `(None, None)` rather than the same empty digest. JSON encoding prevents
+  separator ambiguity. Earlier v1 keys are not rewritten; the UI ignores them.
+- A same-file/different-reading conflict has its own description. The comparison
+  document is an anchor, not a recommended primary. An admitted anchor is preferred
+  over a superseded one. Match labels do not assert that evidence is interchangeable.
+- **Scope limitation stated in the UI:** grouping requires the same complete
+  account/period coverage key. Different coverage is not grouped, even with the
+  same file hash. This is a candidate review, not exhaustive pairwise byte detection.
+- The synchronous API refuses cases over **500 financial source documents** with
+  an explicit 422 and returns no partial result. This protects a potentially costly
+  on-demand scan; large-case support needs a bounded asynchronous/full-case design.
+- The route inherits authentication and `case:view`. Unexpected failures return a
+  generic message. Other-case file names and documents are excluded from queries.
+- The hook uses `["financial-ledger", caseId, "duplicates"]`, so existing ledger
+  ingestion/adjudication invalidation also refreshes row dispositions here. No
+  previous-case placeholder, no automatic retry. Failed refresh hides old results.
+  The panel is keyed by case to reset its opened state on navigation.
+- `readDuplicateCandidates` validates shape, case, coverage totals, unique IDs and
+  group keys, anchor count and safe nonnegative counts; future match/status labels
+  remain visible rather than becoming automatic permission to act.
+
+Verification at this implementation:
+
+| Gate | Result |
+| --- | --- |
+| Financial backend suite, Python 3.12 | **3,481 tests passed, 12 skipped** |
+| Frontend unit | **86 files, 854 tests passed** |
+| Chromium | **5 files, 7 tests passed** |
+| TypeScript / eslint | **exit 0 / exit 0** |
+| Python 3.10 syntax parsing | passed for changed backend files |
+
+Backend additions cover historical null fingerprints, no writes even after commit,
+case isolation, empty documents, stale stored keys, conflicting readings, actual
+supersession/row status, coverage limits, balances and unlinked transactions; route
+checks include inherited view permission and error redaction. Frontend checks cover
+contract rejection, on-demand GET, ledger invalidation, failed refresh and details
+in Chromium. Browser service responses are fixtures, not live backend E2E.
+
+Logs: `/tmp/loupe-neilbyrne-duplicate-query-{backend,unit,browser,tsc,lint}.out`.
+The first backend attempt failed the package-export guard; the new public symbols
+were then exported and the complete final suite passed. No schema, evidence-engine,
+Neo4j or live-evidence writes occurred. No dependency manifests changed.
+
+### Next: reversible duplicate decisions
+
+Do not connect `resolve_duplicates` as a blind bulk POST. Before enabling writes:
+
+- Recheck the current compared pair, case permissions and disposition at write time;
+  reject stale requests and weak/shared-coverage or conflicting-reading matches.
+- Preserve an admitted primary and prevent supersession cycles/chains or all copies
+  disappearing. Legacy nomination scores only admitted rows while grouping already
+  superseded documents, so its simple rerun tests are insufficient.
+- Audit restoration against row corrections. Legacy `restore_document` readmits
+  **all** rows with superseded status, while that status also represents corrected
+  rows. Record exactly which rows an exclusion changed and restore only those,
+  preserving quarantine/rejection and later correction decisions.
+- Require the authenticated actor and stated reason, atomic decision/state commit,
+  concurrent-write checks and explicit success/refusal/uncertain UI. No automatic
+  exclusion on import and no purge action is needed for the reversible interface.
 
 ### Duplicate detection prerequisite completed
 
@@ -41,7 +121,7 @@ stored result remains unchanged. The focused duplicate/reconciliation set passed
 99 tests. The **full financial suite passed 3,468 tests, 12 skipped**. No routes,
 UI, schema or production evidence were changed. No live E2E was performed.
 
-Source findings to carry into the rest of item 9:
+Earlier source findings (comparison fixes above supersede the fingerprint gaps):
 
 - `store_fingerprint` has no production caller. `find_groups` skips null keys;
   an empty response cannot mean a checked case has no duplicates. Design explicit
@@ -79,8 +159,8 @@ Run from `backend/`:
 env PYTHONDONTWRITEBYTECODE=1 PYTHONHASHSEED=0 /tmp/loupe-neilbyrne-backend-venv/bin/python -m unittest discover -s tests -p 'test_financial_*.py' -t .
 ```
 
-Final output: `/tmp/loupe-neilbyrne-duplicates-backend.out`. Frontend gates were
-not rerun for this backend-only change; their last verified results follow below.
+Final output: `/tmp/loupe-neilbyrne-duplicates-backend.out`. Those were the prerequisite-only gates. The subsequent comparison unit gates are
+recorded above; historical classification verification follows below.
 
 ### What the classification display now does
 
