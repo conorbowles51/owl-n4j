@@ -49,9 +49,10 @@ checks passed. Latest test logs reconfirmed 3,549 financial tests with zero skip
 rerun for this documentation-only checkpoint. No new feature work was started
 in the final five minutes.
 
-Heartbeat continue-loupe-development remains active only until the authorized
-19:00 UTC / 20:00 Dublin cutoff. The current task will pause it then and record
-that outcome. Local app processes are to remain running for Neil's testing.
+Heartbeat **continue-loupe-development is PAUSED**, updated through the app tool
+at 19:00 UTC / 20:00 Dublin and verified in its saved configuration. The authorized
+unattended window has ended; no further automatic segments should run. Local app
+processes remain running for Neil's testing. Resume development when Neil asks.
 Next implementation remains the typed source mapping/candidate contract described
 in docs/loupe-pdf-ledger-bridge.md, not automatic admission from graph numbers.
 
