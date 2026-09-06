@@ -3,6 +3,16 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
+**If you have not worked on this subsystem before, read
+`docs/financial-handoff.md` first.** It was written at `8a29fd2` on Neil's
+instruction, for agents joining the work: what the financial subsystem is, the
+sandbox facts that otherwise cost a session, the sixteen-unit plan with each
+unit's status verified against source, what remains, and where the two planning
+documents are wrong. **It corrects one claim in this file:** the proof-standing
+census is *not* on screen. `financialAPI.getCaseProofStanding` exists with its
+contract test and has **zero consumers** — no hook, no component renders it, so
+item 8 owes two frontend units rather than one.
+
 **Read first, at `2f93da1`+.** The session after `2f93da1` was **not a build
 session**. Neil sent "seriously?????? fix this now", it was read as a rebuke
 about the admission control, and he corrected it: **"I meant fix the sandbox
