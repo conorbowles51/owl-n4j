@@ -48,6 +48,8 @@ def duplicate_revision(session, document):
     value = [str(document.id), document.status, str(document.superseded_by_id),
              document.duplicate_match_rung, document.duplicate_review_required, document.proof_class,
              fingerprint.content_fingerprint,
+             (document.metadata_ or {}).get("source_shape"),
+             (document.metadata_ or {}).get("admissibility_reservations"),
              latest.subject_sequence if latest else 0,
              [[str(item) for item in row] for row in rows]]
     return hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()

@@ -14,8 +14,7 @@ from postgres.models.enums import AdjudicationDecision, AdjudicationSubject, Tra
 from postgres.models.financial import FinancialTransaction, FinancialSourceDocument, FinancialStatementPeriod
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
 from services.financial.decisions import Actor, record
-from services.financial.documents import read_source_shape, reclassify_after_reconciliation, document_reconciliation, UnknownSourceShapeError
-from services.financial.proof_class import SourceShape
+from services.financial.documents import reclassify_after_reconciliation, document_reconciliation
 from services.financial.reconcile import reconcile_period
 from services.financial.references import RowReading, content_hash, ref_id
 
@@ -32,10 +31,8 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
             raise CorrectionPreviewError("The document changed. Review the correction again.", 409)
         original = session.get(FinancialTransaction, transaction_id)
         document = session.get(FinancialSourceDocument, original.source_document_id)
-        try:
-            shape = read_source_shape(document)
-        except UnknownSourceShapeError:
-            raise CorrectionPreviewError("The source shape is unavailable; correction cannot be revalidated.", 409) from None
+        if not preview["verification"]["can_record"]:
+            raise CorrectionPreviewError(preview["verification"]["reason"], 409)
         rows = list(session.scalars(select(FinancialTransaction).where(
             FinancialTransaction.source_document_id == document.id)))
         if any(r.proof_class != document.proof_class for r in rows):
@@ -89,21 +86,12 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
             if any(r.case_id != case_id or r.source_document_id != document.id or r.account_id != period.account_id for r in linked):
                 raise CorrectionPreviewError("Statement row ownership is inconsistent.", 409)
             reconcile_period(session, period)
-        reservations = (document.metadata_ or {}).get("admissibility_reservations", [])
-        if not isinstance(reservations, list) or any(not isinstance(r, str) for r in reservations):
-            raise CorrectionPreviewError("Source admissibility reservations are malformed.", 409)
-        reservations = list(reservations)
-        if shape is SourceShape.native_with_control_totals:
-            reservation = "Corrected ledger reading: native control totals require revalidation."
-            if reservation not in reservations:
-                reservations.append(reservation)
-        if any(r.running_balance_minor is not None for r in rows):
-            reservation = "Corrected ledger reading: printed running-balance chain requires revalidation."
-            if reservation not in reservations:
-                reservations.append(reservation)
+        reservations = preview["verification"]["reservations"]
         document.metadata_ = {**(document.metadata_ or {}), "admissibility_reservations": reservations}
         reclassify_after_reconciliation(session, document, document_reconciliation(session, document), reservations=reservations)
         session.flush()
+        if document.proof_class != preview["verification"]["proposed_proof_class"]:
+            raise CorrectionPreviewError("Verification changed during recording; nothing was committed.", 409)
         result = {"case_id": str(case_id), "transaction_id": str(transaction_id),
                   "replacement_id": str(replacement_id), "replacement_ref_id": reference,
                   "adjudication_id": str(event.id), "applied": True,

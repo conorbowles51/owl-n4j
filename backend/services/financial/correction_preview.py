@@ -16,6 +16,9 @@ from services.financial.money import Money
 from services.financial.periods import read_opening, read_closing
 from services.financial.reconcile import total_transactions, evaluate_identity
 from services.financial.transaction_query import to_view
+from services.financial.correction_verification import correction_verification
+from services.financial.documents import UnknownSourceShapeError
+from postgres.models.enums import ReconciliationStatus
 
 
 class CorrectionPreviewError(ValueError):
@@ -78,34 +81,43 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
         "native_controls_rechecked": False,
         "proof_class_changed": False,
     }
-    if row.statement_period_id is None:
-        return result
-    period = next((p for p in periods if p.id == row.statement_period_id), None)
-    if period is None or period.account_id != row.account_id or period.currency != row.currency:
-        raise CorrectionPreviewError("The row and statement period do not have coherent ownership and currency.", 409)
-    # A period's rows must belong to the same case/document/account. Refuse
-    # malformed cross-links instead of leaking their values into the preview.
-    period_rows = list(session.scalars(select(FinancialTransaction).where(
-        FinancialTransaction.statement_period_id == period.id)))
-    if any(r.case_id != case_id or r.source_document_id != document.id or r.account_id != period.account_id
-           for r in period_rows):
-        raise CorrectionPreviewError("The statement period has inconsistent row ownership.", 409)
-    totals = total_transactions(session, period_id=period.id, currency=period.currency)
-    credits, debits = totals.credits.minor_units, totals.debits.minor_units
-    if row.ledger_status == "admitted":
-        credits -= row.amount_minor if row.direction == "credit" else 0
-        debits -= row.amount_minor if row.direction == "debit" else 0
-        credits += amount_minor if direction == "credit" else 0
-        debits += amount_minor if direction == "debit" else 0
-    proposed = replace(totals, credits=Money(credits, period.currency), debits=Money(debits, period.currency))
-    def identity(value):
-        outcome = evaluate_identity(opening=read_opening(period), closing=read_closing(period),
-                                    totals=value, currency=period.currency)
-        return {"status": outcome.status.value,
-                "credits_minor": str(value.credits.minor_units), "debits_minor": str(value.debits.minor_units),
-                "delta_minor": None if outcome.delta is None else str(outcome.delta.minor_units),
-                "counted": value.counted, "excluded": dict(value.excluded),
-                "independent_balances": outcome.independent}
-    result["statement_identity"] = {"period_id": str(period.id), "current": identity(totals), "proposed": identity(proposed)}
-    result["limitation"] = "Statement balance only; no native control totals, running-balance chain, proof class or graph has been revalidated. Existing quarantine is preserved."
+    statuses = []
+    for period in periods:
+        period_rows = list(session.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.statement_period_id == period.id)))
+        if any(r.case_id != case_id or r.source_document_id != document.id or r.account_id != period.account_id
+               for r in period_rows):
+            raise CorrectionPreviewError("The statement period has inconsistent row ownership.", 409)
+        affected = period.id == row.statement_period_id
+        if affected and period.currency != row.currency:
+            raise CorrectionPreviewError("The row and period currencies disagree.", 409)
+        totals = total_transactions(session, period_id=period.id, currency=period.currency)
+        credits, debits = totals.credits.minor_units, totals.debits.minor_units
+        if affected and row.ledger_status == "admitted":
+            credits -= row.amount_minor if row.direction == "credit" else 0
+            debits -= row.amount_minor if row.direction == "debit" else 0
+            credits += amount_minor if direction == "credit" else 0
+            debits += amount_minor if direction == "debit" else 0
+        proposed = replace(totals, credits=Money(credits, period.currency), debits=Money(debits, period.currency))
+        def identity(value):
+            outcome = evaluate_identity(opening=read_opening(period), closing=read_closing(period),
+                                        totals=value, currency=period.currency)
+            return {"status": outcome.status.value,
+                    "credits_minor": str(value.credits.minor_units), "debits_minor": str(value.debits.minor_units),
+                    "delta_minor": None if outcome.delta is None else str(outcome.delta.minor_units),
+                    "counted": value.counted, "excluded": dict(value.excluded),
+                    "independent_balances": outcome.independent}
+        projected = identity(proposed)
+        statuses.append(ReconciliationStatus(projected["status"]))
+        if affected:
+            result["statement_identity"] = {"period_id": str(period.id), "current": identity(totals), "proposed": projected}
+            result["limitation"] = "Statement balance only; native controls and running-balance chains are not revalidated. Existing quarantine is preserved."
+    try:
+        result["verification"] = correction_verification(document, rows, statuses)
+    except (UnknownSourceShapeError, ValueError):
+        result["verification"] = {"can_record": False, "current_proof_class": document.proof_class,
+                                  "proposed_proof_class": None, "reservations": [],
+                                  "included_in_default_totals": False,
+                                  "scope": "all rows in this source document",
+                                  "reason": "Source classification or reservations are unavailable or inconsistent; recording is refused."}
     return result

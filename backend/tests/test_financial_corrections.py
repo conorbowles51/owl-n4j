@@ -154,3 +154,43 @@ class CorrectionTests(DuplicateTestCase):
         last = self.db.get(FinancialTransaction, new.superseded_by_id)
         self.assertNotEqual(last.content_hash, digest)
         self.assertEqual(last.provenance["correction"]["occurrence"], 1)
+
+    def test_preview_predicts_recorded_class_and_reservations_without_writes(self):
+        from services.financial.correction_preview import preview_amount_correction
+        self.row.running_balance_minor = 40000
+        self.db.commit()
+        preview = preview_amount_correction(self.db, case_id=self.case.id, transaction_id=self.row.id,
+                                             amount_minor=41000, direction="credit")
+        verification = preview["verification"]
+        self.assertTrue(verification["can_record"])
+        self.assertEqual(verification["proposed_proof_class"], "p3")
+        self.assertFalse(verification["included_in_default_totals"])
+        self.assertNotIn("admissibility_reservations", self.document.metadata_)
+        result = self.correct(expected_revision=preview["document_revision"])
+        self.assertEqual(result["proof_class"], verification["proposed_proof_class"])
+        self.assertEqual(self.document.metadata_["admissibility_reservations"], verification["reservations"])
+
+    def test_source_metadata_changes_invalidate_review(self):
+        revision = duplicate_revision(self.db, self.document)
+        self.document.metadata_ = {**self.document.metadata_, "admissibility_reservations": ["Manual hold"]}
+        self.db.commit()
+        with self.assertRaises(CorrectionPreviewError) as caught:
+            self.correct(expected_revision=revision)
+        self.assertEqual(caught.exception.status_code, 409)
+
+    def test_preview_reports_unknown_source_as_not_recordable(self):
+        from services.financial.correction_preview import preview_amount_correction
+        self.document.metadata_ = {}
+        self.db.commit()
+        preview = preview_amount_correction(self.db, case_id=self.case.id, transaction_id=self.row.id,
+                                             amount_minor=41000, direction="credit")
+        self.assertFalse(preview["verification"]["can_record"])
+        self.assertIsNone(preview["verification"]["proposed_proof_class"])
+
+    def test_verification_disagreement_rolls_back_recording(self):
+        with patch("services.financial.corrections.reclassify_after_reconciliation"):
+            with self.assertRaises(CorrectionPreviewError):
+                self.correct()
+        self.db.refresh(self.row)
+        self.assertIsNone(self.row.superseded_by_id)
+        self.assertEqual(list(self.db.scalars(select(AdjudicationEvent))), [])
