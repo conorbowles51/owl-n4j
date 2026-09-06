@@ -46,6 +46,7 @@
  */
 
 import { CircleHelp } from "lucide-react"
+import { CorrectionHistory } from "./CorrectionHistory"
 
 import { Badge } from "@/components/ui/badge"
 import {
@@ -111,6 +112,7 @@ function DecisionRow({ record }: { record: DecisionRecord }) {
             {decision.effect}
           </p>
 
+          {record.decision === "correct_transaction" && <CorrectionHistory before={record.before} after={record.after} />}
           {reason === "" ? (
             <p
               className="text-xs text-muted-foreground italic"

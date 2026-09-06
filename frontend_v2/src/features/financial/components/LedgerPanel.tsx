@@ -31,7 +31,10 @@ import { CircleAlert, Loader2, ScrollText } from "lucide-react"
 import { EmptyState } from "@/components/ui/empty-state"
 
 import type { LedgerTransaction } from "../api"
-import { useLedgerTransactions, type LedgerQueryParams } from "../hooks/use-ledger-transactions"
+import {
+  useLedgerTransactions,
+  type LedgerQueryParams,
+} from "../hooks/use-ledger-transactions"
 import { readLedgerStatus } from "../lib/ledger-format"
 import { LedgerTable } from "./LedgerTable"
 
@@ -42,6 +45,7 @@ export function LedgerPanel({
   caseId,
   params,
   onAdjudicate,
+  onCorrect,
 }: {
   caseId: string | undefined
   params?: LedgerQueryParams
@@ -53,8 +57,12 @@ export function LedgerPanel({
    * the moment its answer arrived.
    */
   onAdjudicate?: (transaction: LedgerTransaction) => void
+  onCorrect?: (transaction: LedgerTransaction) => void
 }) {
-  const { data, isPending, isError, error } = useLedgerTransactions(caseId, params)
+  const { data, isPending, isError, error } = useLedgerTransactions(
+    caseId,
+    params
+  )
 
   if (!caseId) {
     return (
@@ -113,7 +121,8 @@ export function LedgerPanel({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground" data-testid="ledger-summary">
-        {rows.length} {rows.length === 1 ? "row" : "rows"}, {status.label.toLowerCase()}.
+        {rows.length} {rows.length === 1 ? "row" : "rows"},{" "}
+        {status.label.toLowerCase()}.
       </p>
 
       {countDisagrees && (
@@ -129,7 +138,11 @@ export function LedgerPanel({
         </p>
       )}
 
-      <LedgerTable transactions={rows} onAdjudicate={onAdjudicate} />
+      <LedgerTable
+        transactions={rows}
+        onAdjudicate={onAdjudicate}
+        onCorrect={onCorrect}
+      />
     </div>
   )
 }

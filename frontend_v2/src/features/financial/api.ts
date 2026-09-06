@@ -735,6 +735,7 @@ export const ADJUDICATION_DECISIONS = [
   "explain_balance_failure",
   "reclassify_document",
   "admit_financial_document",
+  "correct_transaction",
 ] as const
 export type AdjudicationDecision = (typeof ADJUDICATION_DECISIONS)[number]
 

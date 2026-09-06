@@ -191,6 +191,10 @@ const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
     description:
       "How well a document is proved was settled once its figures had been checked, which cannot be known when the document first arrives. Every total filters on this, so the standing before and after is kept here rather than changing quietly.",
   },
+  correct_transaction: {
+    label: "Ledger amount corrected",
+    description: "The original reading was retained and replaced by a corrected row with a new citation. Verification is recalculated separately.",
+  },
   admit_financial_document: {
     label: "Sent out for text processing",
     description:
@@ -223,6 +227,7 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   release_row: "success",
   explain_balance_failure: "info",
   reclassify_document: "info",
+  correct_transaction: "info",
   admit_financial_document: "danger",
 }
 
@@ -253,6 +258,7 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   release_row: true,
   explain_balance_failure: false,
   reclassify_document: true,
+  correct_transaction: true,
   admit_financial_document: false,
 }
 

@@ -287,12 +287,17 @@ function LedgerRow({
   transaction,
   showQuarantineGrounds,
   onAdjudicate,
+  onCorrect,
 }: {
   transaction: LedgerTransaction
   showQuarantineGrounds: boolean
   onAdjudicate?: (transaction: LedgerTransaction) => void
+  onCorrect?: (transaction: LedgerTransaction) => void
 }) {
-  const amount = formatLedgerAmount(transaction.amount_minor, transaction.currency)
+  const amount = formatLedgerAmount(
+    transaction.amount_minor,
+    transaction.currency
+  )
   const direction = readDirection(transaction.direction)
   const status = readLedgerStatus(transaction.ledger_status)
   const proofClass = readProofClass(transaction.proof_class)
@@ -306,7 +311,10 @@ function LedgerRow({
   const balance =
     transaction.running_balance_minor === null
       ? null
-      : formatLedgerAmount(transaction.running_balance_minor, transaction.currency)
+      : formatLedgerAmount(
+          transaction.running_balance_minor,
+          transaction.currency
+        )
 
   return (
     <TableRow data-testid="ledger-row" data-row-key={transaction.key}>
@@ -364,7 +372,10 @@ function LedgerRow({
       </TableCell>
 
       <TableCell className="align-top text-right whitespace-nowrap">
-        <span className="font-mono text-sm tabular-nums" data-testid="ledger-amount">
+        <span
+          className="font-mono text-sm tabular-nums"
+          data-testid="ledger-amount"
+        >
           {amount.text}
         </span>{" "}
         <span className="text-xs text-muted-foreground">{amount.currency}</span>
@@ -476,6 +487,22 @@ function LedgerRow({
 
       {showQuarantineGrounds && <GroundsCell transaction={transaction} />}
 
+      {onCorrect && (
+        <TableCell>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={
+              !["admitted", "quarantined"].includes(
+                transaction.ledger_status
+              ) || transaction.superseded_by_id !== null
+            }
+            onClick={() => onCorrect(transaction)}
+          >
+            Correct amount
+          </Button>
+        </TableCell>
+      )}
       {onAdjudicate !== undefined && (
         <ActionCell
           transaction={transaction}
@@ -494,6 +521,7 @@ export function LedgerTable({
   transactions,
   showQuarantineGrounds = false,
   onAdjudicate,
+  onCorrect,
 }: {
   transactions: LedgerTransaction[]
   showQuarantineGrounds?: boolean
@@ -502,11 +530,13 @@ export function LedgerTable({
    * the action column; the table does nothing else with it.
    */
   onAdjudicate?: (transaction: LedgerTransaction) => void
+  onCorrect?: (transaction: LedgerTransaction) => void
 }) {
   const columnCount =
     BASE_COLUMN_COUNT +
     (showQuarantineGrounds ? 1 : 0) +
-    (onAdjudicate !== undefined ? 1 : 0)
+    (onAdjudicate !== undefined ? 1 : 0) +
+    (onCorrect ? 1 : 0)
 
   return (
     <Table data-testid="ledger-table">
@@ -520,6 +550,7 @@ export function LedgerTable({
           <TableHead>How it was read</TableHead>
           <TableHead>Status</TableHead>
           {showQuarantineGrounds && <TableHead>Grounds</TableHead>}
+          {onCorrect && <TableHead>Correction</TableHead>}
           {onAdjudicate !== undefined && <TableHead>Decision</TableHead>}
         </TableRow>
       </TableHeader>
@@ -541,6 +572,7 @@ export function LedgerTable({
               transaction={transaction}
               showQuarantineGrounds={showQuarantineGrounds}
               onAdjudicate={onAdjudicate}
+              onCorrect={onCorrect}
             />
           ))
         )}

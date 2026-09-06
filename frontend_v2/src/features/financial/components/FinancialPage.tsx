@@ -44,7 +44,7 @@ import { TransactionTable } from "./TransactionTable"
 import { FinancialCharts } from "./FinancialCharts"
 import { DuplicateCandidatesPanel } from "./DuplicateCandidatesPanel"
 import { ProofStandingPanel } from "./ProofStandingPanel"
-import { LedgerPanel } from "./LedgerPanel"
+import { CorrectableLedger } from "./CorrectableLedger"
 import { QuarantinePanel } from "./QuarantinePanel"
 import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
 import { IngestionRunNotice } from "./IngestionRunNotice"
@@ -539,7 +539,7 @@ export function FinancialPage() {
               <DuplicateCandidatesPanel key={caseId} caseId={caseId} />
             </ErrorBoundary>
             <ErrorBoundary level="section">
-              <LedgerPanel caseId={caseId} onAdjudicate={setAdjudicationRow} />
+              <CorrectableLedger key={caseId} caseId={caseId} onAdjudicate={setAdjudicationRow} />
             </ErrorBoundary>
           </div>
         </TabsContent>
