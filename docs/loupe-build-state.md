@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `7566305`, “Guard exact held-out correction
-  and reading history in Chromium”, parent `0efa9d8`. A documentation commit follows it;
+- **Latest implementation commit:** `9c64b15`, “Refuse inconsistent correction
+  verification and malformed magnitudes”, parent `46015bb`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,35 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Correction response consistency and ingestion seam audit
+
+`9c64b15` validates correction-preview verification as a coherent contract:
+recordable previews need a proposed class and no refusal reason; class eligibility
+must agree with the class, and unresolved reservations cannot accompany automatic
+eligibility. Non-recordable previews need a reason and cannot claim a proposed
+class or inclusion. Original/proposed magnitudes must be canonical nonnegative
+decimal strings within PostgreSQL BIGINT range. Statement deltas remain signed
+and unrestricted by a single-row magnitude. These checks validate the server's
+claim, never assign a class on behalf of a reviewer.
+
+**874 unit tests in 88 files**, **9 Chromium tests in 7 files**, TypeScript and
+ESLint pass. Six new tests cover contradictory responses and malformed magnitudes.
+Logs: `/tmp/loupe-neilbyrne-correction-contract-{unit,browser}.out`. Backend is
+unchanged; the full 3,528-test baseline was verified in the preceding segment.
+No database writes this segment.
+
+Ingestion audit: `native_ingest._transaction_drafts` takes `NativeRow.reading`,
+which is already a normalized RowReading, plus its locator; it stores reversal
+metadata but no original amount-text/origin pair. `native.py` constructs those
+readings from parsed native amount values. `suspect_amounts.read_amount` has no
+production caller beyond package export. Passing the integer back as text would
+invent evidence and cannot implement item 10. Next: trace the statement/OCR path
+in the evidence engine and its original-text provenance, then define the smallest
+real connection for suspect readings. Do not claim native control revalidation,
+source locators or graph projection are completed; the plan keeps those separate.
+The tested correction UI is complete for currently stored rows, while automatic
+suspect-amount identification remains unwired.
 
 ### Live held-out round trip and Chromium regression verified
 
