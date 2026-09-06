@@ -101,7 +101,8 @@ from postgres.models.financial import (
     FinancialTransaction,
 )
 from services.financial.decisions import Actor, record
-from services.financial.reconcile import reconcile_period
+from services.financial.periods import read_closing, read_opening
+from services.financial.reconcile import evaluate_identity, total_transactions
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.orm import Session
@@ -331,7 +332,17 @@ def score_document(
     independent = True
     complete = True
     for period in periods:
-        outcome = reconcile_period(session, period)
+        # Nomination is also used by the read-only group preview. Evaluate
+        # current rows without recording a reconciliation attempt: merely
+        # viewing candidates must not rewrite totals, verdicts or timestamps.
+        outcome = evaluate_identity(
+            opening=read_opening(period),
+            closing=read_closing(period),
+            totals=total_transactions(
+                session, period_id=period.id, currency=period.currency
+            ),
+            currency=period.currency,
+        )
         if outcome.status == ReconciliationStatus.balanced:
             balanced += 1
         elif outcome.status == ReconciliationStatus.unbalanced:
