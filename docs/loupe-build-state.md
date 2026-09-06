@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `8a3ab2f`, “Assess selected source amounts
-  directly from ledger citations”, parent `6cc4277`. A documentation commit follows it;
+- **Latest implementation commit:** `52fa438`, “Open original and replacement
+  source citations from correction history”, parent `d267a2e`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,42 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Correction history exposes both source citations
+
+`52fa438` threads the decision's case ID into CorrectionHistory and adds View
+original source / View replacement source. Each opens LedgerSourceDialog with
+its own snapshot row ID; it does not substitute the currently admitted version
+for the original. The historical exact amounts remain unchanged. The dialog is
+hidden when the case changes; absent case context or unreadable snapshots offer
+no navigation. The existing source endpoint supports superseded rows and the
+shared dialog reports their current historical status separately from the event.
+
+Validation: **891 unit tests in 91 files, 11 Chromium tests in 9 files pass**;
+TypeScript, ESLint and diff checks pass. Three new tests cover each version's ID,
+exact large amounts, original-case isolation and unavailable snapshots. Logs:
+`/tmp/loupe-neilbyrne-history-source-{unit,browser}.out`. Backend unchanged; baseline
+3,549 with zero skips. No real data changes. Live historical-source navigation
+has not yet been exercised; the underlying current/held-out PDF viewer path was
+verified in preceding segments.
+
+Ingestion seam audit: production search for record_transactions calls under
+backend/services and evidence-engine/app returns only native_ingest.py:240.
+NativeRow at native.py:528 already contains RowReading, locator, account/date and
+reversal fields; _RowCollector constructs it after normalized fields are parsed.
+The PDF extraction path builds financial graph entity properties in
+extract_entities.py and property_canonicalization.py, not TransactionDraft objects.
+There is no existing PDF-cell-to-relational-writer handoff to attach automatic
+suspect flags to. A source amount selected in the UI is grounded text, not a
+complete transaction draft. Do not wire it into ledger admission by inventing
+account, date, direction or column semantics. That larger bridge needs an explicit
+implementation design retaining raw amount text/origin and row identity.
+
+Next bounded work: live correction-history source check using a generated-PDF
+fixture with a real correction, or finish source-view failure reporting. Then
+prepare the PDF-to-relational draft design from the actual extraction contracts.
+Current backend session 72136 is still valid. Engine/worker restart for prior
+text_origin code remains pending. Unattended cutoff stays 20:00 Dublin (19:00 UTC).
 
 ### Amount assessment is reachable from a ledger citation
 
