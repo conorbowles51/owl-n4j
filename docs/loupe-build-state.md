@@ -1,5 +1,135 @@
 # Loupe build state
 
+## Current position — 6 September 2026, Codex takeover
+
+**Read this section first. It supersedes the older status, permission and sandbox
+claims preserved below.** The older detailed decisions remain useful, but dates,
+completed-item claims and environment recipes in that history are not current.
+
+- **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
+- **Latest implementation commit:** `8ac2455`, “Connect held-file admissions to
+  evidence processing”, parent `cb1cd13`. A documentation commit follows it;
+  confirm the real tip with `git log -3 --oneline`.
+- **Authorization:** Neil asked Codex to understand the project, then explicitly
+  said **“ok take over and continue please.”** The preceding recommendation was
+  to complete the admission control and the case-wide proof-class display,
+  then continue the agreed sequence. The older demand for a ruling on the
+  admission control is resolved. Do not ask for that approval again.
+- **Completed this session:** the admission control, including the previously
+  parked API contract. The nine implementation/test files are committed.
+- **Uncommitted implementation work:** none. Existing unrelated documents,
+  evidence, backups and `src/__probe.test.ts` were left untouched and untracked.
+- **Next unit:** the case-wide proof-standing display. **Item 8 is not complete.**
+  `getCaseProofStanding` still has no production consumer. Read
+  `proof_standing.py`, the ledger route, its API contract, `FinancialPage`, and
+  the existing ledger/decisions readers before designing its placement.
+
+### What the admission control now does
+
+`ProcessHoldDialog` remains the shared surface for all seven processing entry
+points. For each held file it shows the finding and offers a reason field and
+**Record decision**. This calls the existing backend admission route. It does not
+process anything. A verified `admitted` answer, or a verified
+`nothing_to_override` answer, exposes **Process this file** as a separate action.
+That action sends only that file with the original profile, worker count and image
+provider. Other held and cleared files remain available in the dialog.
+
+- `lib/admission-format.ts` validates the structured 409 refusal and interprets
+  admission responses. Unknown, malformed, cross-file or contradictory answers
+  cannot enable processing. A 200 refusal is shown as a refusal.
+- `use-guarded-process.ts` reads server refusals as well as preliminary route
+  checks. Releasing previously cleared files no longer erases a new server hold.
+  A single-file refusal retains the rest of the selection and replaces the stale
+  admission. Unexpected file ids cannot become actionable selections; repeated
+  preliminary-check ids stop the request rather than choosing one finding.
+- One synchronous operation lock prevents duplicate submissions and actions
+  during an in-flight decision. Held state is scoped to its case. The case id is
+  passed as a processing mutation variable so navigation cannot retarget a send.
+- A recorded or potentially recorded decision invalidates that case's
+  `financial-decisions` cache. Refused/no-op answers do not claim a write.
+- Processing retries do not automatically record another admission. An uncertain
+  admission or processing response is described as uncertain; there is no
+  automatic mutation retry. Successfully requested files cannot be sent again
+  within this held request.
+- The backend's fresh file finding updates the held row, including the option to
+  use the ledger if the recheck identifies a native format.
+
+**Existing backend limitations remain, and this unit does not claim to close them.**
+The admission gate checks existence, not per-send consumption. The evidence engine
+still independently refuses native bank files; the control says so before the
+person records a decision and directs supported native files to Send to ledger.
+No backend, engine, schema or migration code changed.
+
+### Verification on this Mac
+
+All four frontend gates ran against the final implementation, with the committed
+lockfile's dependencies restored using `npm ci --ignore-scripts`:
+
+| Gate | Result |
+| --- | --- |
+| `vitest run --project unit` | **81 files, 809 tests passed** |
+| `vitest run --project browser` | **3 files, 5 tests passed** |
+| `tsc -b --force` | **exit 0** |
+| `eslint .` | **exit 0** |
+
+The new Chromium test mounts the real dialog and processing hook and uses the
+real API clients. It exercises a preliminary clearance followed by a server 409,
+recording a reason, and a separate processing click. **Service responses are
+fixtures. This is not a live backend or real-case end-to-end run.** The 20 parked
+API contract tests are included; 40 unit tests and one browser test were added.
+The unrelated `__probe.test.ts` still contributes one file and one unit test.
+
+Backend tests were not rerun: this unit changes only frontend code. The previous
+reported financial baseline remains 3,466 tests with 12 skipped, not newly verified.
+Neil's plan to test the full working product when ready remains unchanged.
+
+### Local environment replaces Claude's sandbox assumptions
+
+This session runs on **macOS (Darwin)** in
+`/Users/neilbyrne/Documents/Owl/owl-n4j`, not `/sessions/...`. System Python was
+3.14.2; disk had about 44 GiB available. `/dev/shm` borrowing recipes and claims
+that engine tests are impossible here do not transfer. Keep the project's Python
+compatibility targets; establish an appropriate runtime before backend work.
+
+The existing `node_modules` lacked Mac Rollup. A broad `npm install` repaired
+platform dependencies but selected newer versions; it was followed by **`npm ci`
+to restore the exact lockfile** before the final checks. No package manifest or
+lockfile changed. npm needed network approval. Cache:
+`/tmp/loupe-neilbyrne-npm`. Do not run dependency upgrades as part of this unit.
+
+The Chromium test server was blocked by sandbox localhost restrictions (`listen
+EPERM`), then all browser tests passed outside the sandbox with the installed Mac
+Chromium. “No tests” after that failure was not counted as a passing gate. Logs
+for this session are `/tmp/loupe-neilbyrne-{unit,browser,tsc,lint}.out`.
+
+Git writes need sandbox approval. The implementation used a temporary index,
+explicit paths, `commit-tree`, and an atomic `update-ref` with the expected parent;
+the real index was restored from the reviewed temporary index. No git config was
+changed, no unrelated files were staged, and nothing was pushed.
+
+### Remaining sequence and risks
+
+Phase 1 is connected. In Phase 2, runs, quarantine and decisions have interfaces;
+reconciliation remains API-only. Finish item 8's case-wide classification display,
+then items 9–11: duplicates, ledger corrections, source locators. Phase 3 remains
+projection, continuity/coverage, linkage/correlation/flow; Phase 4 remains
+exhibit/export and tracing. The original plan's sequence stands.
+
+The graph still is not derived from the ledger. No automatic reconciliation sweep
+or reconciliation control exists. Computed quarantine grounds and localisation
+still lack their wider production callers. Append-only storage is a service-layer
+promise, not a database guarantee. Carry forward the remaining defects and design
+decisions in the history and `financial-handoff.md`; this unit did not close them.
+
+---
+
+## Historical running detail through `cb1cd13`
+
+The following is preserved for the reasoning and earlier decisions. Its “current
+unit”, uncommitted-work, missing-admission-control and Linux environment statements
+are historical and are superseded by the dated update above.
+
+
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 

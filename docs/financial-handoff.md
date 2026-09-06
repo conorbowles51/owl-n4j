@@ -1,5 +1,12 @@
 # The financial subsystem: full handoff
 
+> **Takeover update, 6 September 2026:** Neil authorized continuing the work.
+> The admission control and its parked API contract are now committed as
+> `8ac2455`; the old approval requirement in sections 5, 8 and 12 is resolved.
+> Item 8 still owes the case-wide proof-standing display. Read the dated opening
+> of [the build state](loupe-build-state.md) for current status and Mac test
+> instructions. The Linux sandbox limits below are historical.
+
 Written at head `8a29fd2` on branch `integration/evidence-main-reunion`, for
 agents who did not build it.
 
