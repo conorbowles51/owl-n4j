@@ -119,6 +119,14 @@ NEW_DECISION = "admit_financial_document"
 
 
 def upgrade() -> None:
+    # This revision is 33 characters. PostgreSQL enforces Alembic's default
+    # VARCHAR(32), unlike SQLite; widen before Alembic records this revision.
+    # Keep the existing revision identity for databases that already applied it.
+    op.alter_column(
+        "alembic_version", "version_num",
+        existing_type=sa.String(32), type_=sa.String(128),
+        existing_nullable=False,
+    )
     op.drop_constraint(SUBJECT_CONSTRAINT, TABLE, type_="check")
     op.create_check_constraint(
         SUBJECT_CONSTRAINT, TABLE, f"subject_type IN {SUBJECTS_AFTER}"
