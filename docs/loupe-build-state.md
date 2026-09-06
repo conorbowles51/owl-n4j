@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `0442f17`, “Establish isolated local application
-  and verify PostgreSQL duplicate decisions”, parent `52f373a`. A documentation commit follows it;
+- **Latest implementation commit:** `67fd272`, “Add exact read-only ledger correction
+  previews”, parent `e6f2ca9`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -32,7 +32,42 @@ completed-item claims and environment recipes in that history are not current.
 - **Duplicate status:** comparison plus explicit exclusion/restoration are connected
   for one case. The broader item 9 still has authorized cross-matter sightings and
   comparison scaling/coverage work outstanding. The legacy bulk resolver is not
-  exposed. After integration verification, item 10 is ledger corrections.
+  exposed. Item 10 is underway: correction preview backend is complete; replacement
+  writer and correction UI are still outstanding.
+
+### Ledger correction preview foundation
+
+`67fd272` adds `preview_amount_correction` and authenticated, case-edit scoped
+POST `/api/financial/transactions/{transaction_id}/correction-preview` with required
+`case_id`. Input is an exact decimal **string** of minor units plus explicit
+credit/debit direction. Negative, fractional, boolean, unchanged and out-of-BIGINT
+amounts are refused. Money in the preview response is also serialized as strings.
+
+The preview locks document, periods and rows in the established order, refreshes
+ORM state, and supplies a reviewed document revision for a future writer to
+recheck. It only accepts current admitted/quarantined rows in admitted documents,
+refuses inconsistent case/period ownership, preserves the original locator and
+quarantine, and computes **fresh current/proposed statement balance identities**.
+An unlinked row reports unavailable period impact. The endpoint rolls back to
+release snapshot locks. No row, reconciliation result, proof class or audit event
+is written, even if a direct service caller subsequently commits.
+
+This is deliberately **not yet a correction writer or a frontend control**.
+The existing graph editor is a separate edit-in-place path; it must not be reused
+for the relational ledger. Next unit: append-only replacement and audit semantics,
+then a review/record UI showing both readings. Before writing, settle revalidation
+from the actual source shape: a statement balance identity is not a native file's
+control-total validation. The preview explicitly does not claim native controls,
+running-balance chains, proof class or graph were revalidated. A passing preview
+does not authorize stale data to be written or silently release a quarantined row.
+
+Verification: **3,511 financial backend tests pass, 12 skipped** (14 new tests),
+Python 3.10 syntax check, diff check, and real authenticated HTTP/PostgreSQL preview
+on the synthetic local case with an unchanged before/after ledger. Full-suite log:
+`/tmp/loupe-neilbyrne-correction-preview-full.out`. The first full runs caught the
+route-inventory guard and malformed foreign-period error handling; both were
+fixed before the final passing run. No frontend changes or new schema migration.
+The local application remains running. No push or merge.
 
 ### Local application is running
 
