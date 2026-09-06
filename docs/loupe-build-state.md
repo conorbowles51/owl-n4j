@@ -3,14 +3,17 @@
 Where the work stands. Rewritten whenever a unit lands. Durable rules live in
 `CLAUDE.md` at the repo root, not here.
 
-**Last updated:** 6 September 2026 (records `62ff2de`, the third frontend chunk
-of the decisions screen: `use-case-decisions.ts`, the hook that fetches and
-caches a page of the decision log, plus its 14-test unit file. **Still no
-screen** — the next chunk, `DecisionsPanel` plus its tab, is the one that
-closes the standing flag. **Item 8 is still in progress.** Read the disk note
-under Standing flags **before running anything**: the documented `CLAUDE.md`
-bootstrap still fails, and the working form needs one more environment variable
-than this file previously recorded.
+**Last updated:** 6 September 2026 (records `e655a0a`, the decisions screen
+itself: `DecisionsTable`, `DecisionsPanel`, a seventh tab on `FinancialPage`,
+and the invalidation that keeps the log current after a row is adjudicated.
+**The record of decisions is now on screen** — two standing flags close with
+this commit, and **chunk 1 of item 8, the decisions surface, is complete**. The
+next unit is chunk 2, the admission path, which is backend work. Read the disk
+note under Standing flags **before running anything**: the documented
+`CLAUDE.md` bootstrap still fails, and the working form needs one more
+environment variable than this file previously recorded. **The browser-gate
+entry in that section was wrong and has been corrected — the gate ran green
+this session.**
 
 **Neil raised two things this session that outrank the build order.** He asked
 whether assertion-driven work would hold up "when we get to the real piece",
@@ -26,10 +29,10 @@ the system is ready. That is a commitment this build now owes him. See
 ## Position
 
 - **Branch:** `integration/evidence-main-reunion`
-- **Head when this was written:** `62ff2de`
-  (`62ff2de84308d4af9bb7cf33037dc14da61aeb7e`), "Read a case's decision history
-  without flattening the page it came in", parent `e3978eb` (which was the
-  state-file commit for `71d859d`). **Confirm the real tip with
+- **Head when this was written:** `e655a0a`
+  (`e655a0acb9cd291e31b154aa27ce545f72e0b02b`), "feat(financial): show the
+  record of decisions taken on a case", parent `5316e95` (which was the
+  state-file commit for `62ff2de`). **Confirm the real tip with
   `git log --oneline -5`** at the start of every session rather than trusting
   this line — the state-file commit that follows this one will already have
   moved it.
@@ -60,7 +63,7 @@ disk note under Standing flags.
 
 ### Scale
 
-**130 commits** since `c4246c0` (27 August), counting `62ff2de`; 131 once the
+**132 commits** since `c4246c0` (27 August), counting `e655a0a`; 133 once the
 state-file commit lands on top of it. Counted with
 `git rev-list --count c4246c0..HEAD`, not incremented from the previous figure.
 
@@ -77,24 +80,61 @@ self-justifying, and it was **spent almost entirely on internal consistency**
 rather than on whether the pieces work together when running. Do not quote the
 test count to Neil as evidence the system works.
 
-### Gate baselines as of `62ff2de`
+### Gate baselines as of `e655a0a`
 
-- **Frontend unit: 75 files, 700 tests, all passing.** Measured at this head over
-  the whole project. Up 1 file and 14 tests from `71d859d`'s 74/686, accounted
-  for exactly by the new `use-case-decisions.test.tsx`. **Nothing else moved.**
+- **Frontend unit: 77 files, 734 tests, all passing.** Measured at this head over
+  the whole project. Up 2 files and 34 tests from `62ff2de`'s 75/700: 30 from the
+  two new financial test files (`DecisionsTable.test.tsx` 16,
+  `DecisionsPanel.test.tsx` 14) and 4 from the new decisions block in
+  `FinancialPage.test.tsx`. **Nothing else moved.**
 - **`tsc -b --force` 0; `eslint .` 0.** Both measured at this head over the whole
   project, **from `frontend_v2/` with an absolute `cd` and the local binaries.**
-  See the working-directory trap below; the first attempt this session ran both
+  See the working-directory trap below; the first attempt at `62ff2de` ran both
   in the session root and returned a meaningless clean.
+- **Frontend browser: 2 files, 4 tests, all passing — actually run this session,
+  at this head.** The previous entry here said the gate could not be run and
+  never would be. That was wrong; see **How to run the browser gate** below. It
+  needs a per-session Chromium install and `--fileParallelism=false`.
 - **Backend financial suite: `Ran 3381 tests in 13.049s, OK (skipped=12)`.** NOT
-  re-run at this head and it did not need to be: the commit is two TypeScript
+  re-run at this head and it did not need to be: the commit is nine TypeScript
   files and no Python. The figure carries forward from `2eefc4d`, where it was
-  measured in full, through `0fa07d5`, which was likewise TypeScript only. **The
-  Python bootstrap has therefore not been run for three sessions**, which is why
-  a fresh session picking up backend work must still do it — see the disk note.
-- **Frontend browser: NOT RUN, and it could not be.** See the disk note. Last
-  known-good figure is 2 files, 4 tests. **Do not carry "browser green" forward
-  as though it were verified at this head.**
+  measured in full, through `0fa07d5` and `62ff2de`, both likewise TypeScript
+  only. **The Python bootstrap has therefore not been run for four sessions**,
+  which is why a fresh session picking up backend work must still do it — see the
+  disk note. **The next unit is backend, so the next session will need it.**
+
+### How to run the browser gate
+
+This is the correction to a claim that stood in this file for several sessions.
+The gate is runnable. The Chromium headless shell is **106.4 MiB**, not the
+"roughly 700M" recorded previously, and `/dev/shm` has room for it (2.0G total,
+~1.5G free at session start; it dropped to ~562M free after the install).
+
+```
+cd <repo>/frontend_v2 && PLAYWRIGHT_BROWSERS_PATH=/dev/shm/pw-$(id -un) \
+  TMPDIR=/dev/shm/pwdl-$(id -un) ./node_modules/.bin/playwright install chromium
+```
+
+Both variables are needed: `PLAYWRIGHT_BROWSERS_PATH` because the default
+`/sessions/<session>/.cache` is on a filesystem with **zero** bytes free, and
+`TMPDIR` because the download stages through `os.tmpdir()`, which is `/tmp` on
+the near-full root filesystem. Do **not** pass `--with-deps`; it needs root.
+
+Then, with the same `PLAYWRIGHT_BROWSERS_PATH` set:
+
+```
+VITE_CACHE_DIR=/dev/shm/vite-cache-$(id -un) \
+  ./node_modules/.bin/vitest run --project browser --fileParallelism=false
+```
+
+**`--fileParallelism=false` is required in this sandbox.** Run in parallel, the
+two browser files race the single vite dev server and one dies with
+`Failed to fetch dynamically imported module: .../CaseSettingsPage.tsx`. This
+was diagnosed this session and is **not** a defect in that file: it passes 3 of
+3 when run alone, the file was last touched at `0385354` on 21 July, its import
+graph reaches no financial code, and a warm cache does not help. Serially the
+project reports exactly the documented 2 files, 4 tests. **Do not chase this as
+a code bug.**
 
 **Eight tracebacks on stderr during the backend run are expected and are not
 failures — this figure was wrong here for several sessions and read "six".** It
@@ -139,16 +179,130 @@ being exercised. A `logger.error` without a traceback is not a failure either.
 
 ## What this session did
 
+**The record of decisions taken on a case is now on screen, as `e655a0a`.** Nine
+files, 1,099 insertions, 18 deletions. **Frontend only; no Python was touched.**
+
+This is chunk (c) of the three named three sessions ago, taken in order, and it
+completes **chunk 1 of item 8**. Four files are new and five were edited:
+
+- `components/DecisionsTable.tsx` (234 lines) — presentational, one row per
+  decision, and it draws nothing the record does not say.
+- `components/DecisionsPanel.tsx` (117 lines) — owns the four states a table
+  cannot be in the middle of (no case, in flight, failed, empty) and the two
+  claims made about the page that did arrive.
+- `components/DecisionsTable.test.tsx` (274 lines, **16 tests**) and
+  `components/DecisionsPanel.test.tsx` (257 lines, **14 tests**).
+- `components/FinancialPage.tsx` (+32) — the `Gavel` trigger and the tab body.
+- `stores/financial.store.ts` (+16) — `"decisions"` added to the `mainView`
+  union. **No migration was needed and none was written:** `mainView` is
+  deliberately excluded from the persisted slice, so a new member cannot
+  invalidate a stored value. That exclusion is now the reason it is documented.
+- `hooks/use-row-adjudication.ts` (+49) — the invalidation, below.
+- `hooks/use-case-decisions.ts` (+15) — the docstring paragraph on what
+  invalidates this key was written when nothing did; it now records what does.
+- `components/FinancialPage.test.tsx` (+4 tests, 3 assertions corrected).
+
+### The four things the panel had to get right, and how each was settled
+
+1. **The heading comes from `describeDecisionPage(page)`, never from the row
+   count.** A sentence composed from `decisions.length` says "12 decisions" over
+   the first twelve of two hundred. Pinned by a test that feeds a page of 2 with
+   `total: 200` and asserts the summary reads "Showing 1 to 2 of 200 decisions."
+   plus "More come after this page."
+2. **A page with nothing on it is not a record with nothing in it.** A page past
+   the end (`total: 200, offset: 400, decisions: []`) must not render the empty
+   state, because "nothing has been decided" and "you have paged past the
+   decisions there are" call for opposite next moves. Its own test.
+3. **The panel does not warn on a count disagreement the way its siblings do.**
+   This endpoint pages by design, so `total` exceeding the page length is the
+   ordinary case; the sibling panels' `count-disagreement` warning would fire on
+   every case with a history. Pinned negatively —
+   `queryByTestId("decisions-count-disagreement")` must be null.
+4. **`changedStoredState` is three-valued and null renders as "not recorded",
+   never as "no".** Null means this build cannot read the member, so it cannot
+   say whether anything moved.
+
+### The invalidation gap is closed
+
+`use-row-adjudication.ts` now invalidates `["financial-decisions", caseId]`
+alongside the ledger's key. A quarantine and a release each append to the log,
+so without this the panel showed a page one decision short of the one the person
+had just taken, with no indication anything was missing. **That is the whole
+failure this surface exists to prevent, so it was a blocking item and it is
+done.** It is gated on a `decisionWasRecorded` predicate rather than on mutation
+success alone, so a response that reports no decision does not evict a good page.
+
+**It is the only writer wired to this key today.** Supersession, restore, purge
+and reclassification all append to the same log server-side and none has a
+mutation hook in this build yet. Nothing is missing so much as not yet written;
+each closes its own half when it lands. This is recorded in the hook's docstring
+too, so it does not depend on this file surviving.
+
+### One trap found this session
+
+**The browser gate's "unrunnable" entry in this file was false, and cost
+nothing to disprove.** See **How to run the browser gate** above. The lesson is
+narrower than it looks: the claim was recorded with a specific number in it
+("roughly 700M") that was never measured, and it then stood unchallenged for
+several sessions and was carried forward each time as though verified. **A
+figure in this file that was estimated rather than measured must say so.**
+
+---
+
+## Verification debt — read this before quoting any test count
+
+Neil asked this session whether building to assertions would hold up "when we
+get to the real piece", and whether the passing suites were a happy path. He was
+right to ask. The answer given, which is not to be softened:
+
+- **Every one of the 734 frontend tests stubs `globalThis.fetch`.** They prove
+  the reading, narrowing and caching logic is internally consistent, and they
+  catch regressions in it. **Not one of them demonstrates the product working
+  against a running backend.**
+- **The only genuine bridge is the four `api.*.test.ts` contract files**
+  (`api.decisions.test.ts` and its siblings), which `readFileSync` the Python
+  source off disk and assert the wire field names still match. That catches
+  drift in *names*, not in *behaviour*.
+- The backend suite is the stronger half, because it runs the real Python
+  against a real SQLite database. But SQLite is not Postgres and synthetic rows
+  are not evidence.
+- **No session has ever started the backend, pointed the frontend at it, and
+  opened a real case.** Combined with the standing flags already recorded below
+  — half two has only ever run against synthetic ledgers, and the alembic
+  migration has never been applied to a real database — this is the largest open
+  risk in the project and it is not a code defect. (The third item that used to
+  be listed here, the browser gate, is no longer one: it ran green this session.)
+
+**Neil's ruling: he will test a full working version himself when the system is
+ready, and the build continues in the meantime.** So do not re-litigate this. Do
+**not** report green gates to him as though they settled whether something
+works. When a unit lands, say what was verified and by what means.
+
+**Confirmed by reading the source this session: the ingest-to-ledger path exists
+end to end, so that test is possible when he wants it.** `docker-compose.yml`
+brings up Postgres 16 on 5434, Neo4j, Redis, ChromaDB, and the evidence engine
+with its own migration step. The backend exposes `POST /api/financial/precheck`
+and `POST /api/financial/ingest` (`routers/financial_ingest.py`) and `GET
+/ledger`, `/runs`, `/decisions` (`routers/financial_ledger.py`). The frontend
+routes `FinancialPage` at `/financial` (`app/routes.tsx:162`) with **seven** tabs
+wired — ledger, held out, attempts, decisions, transactions, counterparties,
+trends. The first four read Postgres and the last three read the graph. The
+entry point for data is on the evidence side: `ProcessHoldDialog` renders
+`SendToLedgerDialog`, which calls `usePrecheckFile` then `useIngestFile` from
+`hooks/use-ledger-ingest.ts`. **The one known gap for a first real run is
+`alembic upgrade head`,** which has never been applied from a session.
+
+---
+
+## The session before this one, in detail
+
+*Compress this into "The previous sessions, in brief" next session.*
+
 **The decision log can now be fetched and cached, as `62ff2de`.** Two files, 505
 insertions, no deletions. **Frontend only; no Python was touched.**
 
-This is chunk (b) of the three named two sessions ago, taken in order.
-`use-case-decisions.ts` (110 lines) follows `use-ingestion-runs.ts`, and its
-test file (395 lines, **14 tests**) follows `use-row-adjudication.test.tsx`.
-
-**Nothing a user can see changed, so the standing flag about the adjudication
-log being readable-but-invisible is still open.** It clears at chunk (c),
-`DecisionsPanel` plus its tab, which is the next unit.
+Chunk (b) of the three. `use-case-decisions.ts` (110 lines) follows
+`use-ingestion-runs.ts`; its test file is 395 lines, **14 tests**.
 
 ### The four calls in the hook that were decisions, not defaults
 
@@ -163,7 +317,7 @@ Each is recorded in the module's own header docstring as well as here.
 2. **The page envelope is handed back whole, not unpacked.** `total` and
    `truncated` are fields on the envelope, not on the rows, and
    `describeDecisionPage` takes the page whole. A hook returning only
-   `decisions` would throw away the fact that a history was cut short — which is
+   `decisions` would throw away the fact that a history was cut short, which is
    the one thing this surface exists to be honest about.
 3. **No `placeholderData` and no polling.** Holding the previous page's rows on
    screen under the new page's heading ("Showing 101 to 200" over rows 1-100) is
@@ -172,295 +326,36 @@ Each is recorded in the module's own header docstring as well as here.
    with `!== undefined`,** so `limit: 0` and `offset: 0` reach the wire instead
    of being dropped by truthiness. Two tests pin this directly.
 
-### Two traps found this session, both worth more than the commit
+### Two traps found that session, both worth more than the commit
 
 **A query with a live observer clears `isInvalidated` as soon as the refetch it
 triggered succeeds.** A test written the way `use-row-adjudication.test.tsx`
-writes them — reading `getQueryState(key)?.isInvalidated` — therefore fails
+writes them, reading `getQueryState(key)?.isInvalidated`, therefore fails
 against a mounted hook. That file gets away with it because the keys it seeds
 have **no observer**, so nothing refetches and the flag stays set. **Assert the
-observable refetch (fetch call count 1 → 2) instead of the flag.** The sibling
-"not swept by a ledger invalidation" test was strengthened the same way, to
-assert fetch was *not* called again.
+observable refetch (fetch call count 1 to 2) instead of the flag.**
 
 **The bash working directory resets to the session root, and `npx` will then
-silently do the wrong thing.** `CLAUDE.md` says this; this session proved the
-cost. `npx tsc -b --force` and `npx eslint .` were run without an absolute `cd`,
-executed against an almost-empty directory, returned clean, and **were reported
-to Neil as passing gates.** They were worthless. It surfaced only when the unit
-run failed with `npm error code ENOSPC ... mkdir '/sessions/<session>/.npm'` —
-`npx` was trying to *download* vitest, because there is no `node_modules` in the
-session root. Two rules follow, and neither is optional:
+silently do the wrong thing.** `npx tsc -b --force` and `npx eslint .` were run
+without an absolute `cd`, executed against an almost-empty directory, returned
+clean, and **were reported to Neil as passing gates.** They were worthless. It
+surfaced only when the unit run failed with
+`npm error code ENOSPC ... mkdir '/sessions/<session>/.npm'`: `npx` was trying
+to *download* vitest, because there is no `node_modules` in the session root.
+Three rules follow, and none is optional:
 
 - **`cd` with an absolute path in the same invocation, every time**, and confirm
   with `pwd` in the same command when the result is going to be reported.
-- **Run the local binaries directly** — `./node_modules/.bin/vitest`,
-  `./node_modules/.bin/tsc`, `./node_modules/.bin/eslint` — never `npx`. With
-  `/sessions` full, `npx` cannot fall back to a download, so a wrong directory
-  produces a disk error rather than a wrong answer only by luck.
-- Also re-learned: **`TSC_EXIT=${PIPESTATUS[0]}` came back empty.** Do not read
-  an exit code through a pipe.
+- **Run the local binaries directly**, `./node_modules/.bin/vitest`,
+  `./node_modules/.bin/tsc`, `./node_modules/.bin/eslint`, never `npx`.
+- **`TSC_EXIT=${PIPESTATUS[0]}` came back empty.** Do not read an exit code
+  through a pipe; redirect to a file and read `$?`.
 
----
-
-## Verification debt — read this before quoting any test count
-
-Neil asked this session whether building to assertions would hold up "when we
-get to the real piece", and whether the passing suites were a happy path. He was
-right to ask. The answer given, which is not to be softened:
-
-- **Every one of the 700 frontend tests stubs `globalThis.fetch`.** They prove
-  the reading, narrowing and caching logic is internally consistent, and they
-  catch regressions in it. **Not one of them demonstrates the product working
-  against a running backend.**
-- **The only genuine bridge is the four `api.*.test.ts` contract files**
-  (`api.decisions.test.ts` and its siblings), which `readFileSync` the Python
-  source off disk and assert the wire field names still match. That catches
-  drift in *names*, not in *behaviour*.
-- The backend suite is the stronger half, because it runs the real Python
-  against a real SQLite database. But SQLite is not Postgres and synthetic rows
-  are not evidence.
-- **No session has ever started the backend, pointed the frontend at it, and
-  opened a real case.** Combined with the three standing flags already recorded
-  below — half two has only ever run against synthetic ledgers, the alembic
-  migration has never been applied to a real database, the browser gate cannot
-  run — this is the largest open risk in the project and it is not a code
-  defect.
-
-**Neil's ruling: he will test a full working version himself when the system is
-ready, and the build continues in the meantime.** So do not re-litigate this. Do
-**not** report green gates to him as though they settled whether something
-works. When a unit lands, say what was verified and by what means.
-
-**Confirmed by reading the source this session: the ingest-to-ledger path exists
-end to end, so that test is possible when he wants it.** `docker-compose.yml`
-brings up Postgres 16 on 5434, Neo4j, Redis, ChromaDB, and the evidence engine
-with its own migration step. The backend exposes `POST /api/financial/precheck`
-and `POST /api/financial/ingest` (`routers/financial_ingest.py`) and `GET
-/ledger`, `/runs`, `/decisions` (`routers/financial_ledger.py`). The frontend
-routes `FinancialPage` at `/financial` (`app/routes.tsx:162`) with six tabs
-wired — ledger, quarantine, runs, transactions, counterparties, trends. The
-entry point for data is on the evidence side: `ProcessHoldDialog` renders
-`SendToLedgerDialog`, which calls `usePrecheckFile` then `useIngestFile` from
-`hooks/use-ledger-ingest.ts`. **The one known gap for a first real run is
-`alembic upgrade head`,** which has never been applied from a session.
-
----
-
-## The session before this one, in detail
-
-*Compress this into "The previous sessions, in brief" next session; it is kept
-in full here only because the reasoning below has not yet been summarised
-without loss.*
-
-**The decision vocabulary now has words, as `71d859d`.** Two files, 784
-insertions, no deletions. **Frontend only; no Python was touched.**
-
-This is chunk (a) of the three named as the next unit last session, taken in the
-order named. `0fa07d5` deliberately typed `subject_type` and `decision` as
-`string` on the record so a backend one version ahead could not smuggle an
-unrecognised member through a union claiming it could not exist. This is the edge
-where that narrowing happens, and both the hook and the panel sit on top of it.
-
-**Nothing a user can see changed, so the standing flag about the adjudication log
-being readable-but-invisible is still open.** It was narrowed at `2eefc4d` and
-has not moved since. It clears when a panel renders, which is chunk (c).
-
-### What landed
-
-**`frontend_v2/src/features/financial/lib/decision-format.ts`** (new, 420 lines)
-— placed beside `ledger-format.ts`, `run-format.ts` and `adjudication-format.ts`,
-whose shape it follows. Exports `DECISION_SOURCE`,
-`DECISION_ORDER_IS_NOT_SEQUENCE`, `readDecisionSubject`, `DecisionReading` and
-`readDecision`, `DecidedBy` and `readDecidedBy`, `formatDecisionTime`, and
-`describeDecisionPage`. Internal: `SUBJECT_COPY` (5 members), `DECISION_COPY`
-(8), `DECISION_VARIANT`, `CHANGED_STORED_STATE`. Narrowing goes through `narrow`
-from `ledger-format.ts` rather than a second implementation, so an unrecognised
-word is handled the way it is handled on every other screen: named, marked, never
-blank.
-
-**`frontend_v2/src/features/financial/lib/decision-format.test.ts`** (new, 364
-lines, **28 tests**) — modelled on `run-format.test.ts`.
-
-### Every phrase was written from the writer, not from the member's name
-
-This is the reason the session spent as much of its window reading Python as
-writing TypeScript. **Two of the eight members read backwards from their own
-names**, and describing them from the name would have put a false statement on
-screen:
-
-- **`admit_financial_document` does not mean a document was admitted into the
-  ledger.** It means a file the router held back — because it recognised bank
-  data, and indexing a statement as prose turns its figures into searchable text
-  no total can be traced to — was sent out to that text pipeline anyway, by a
-  named person, against the router's finding. `financial` describes the document,
-  not the destination. Nothing enters the ledger by it, and it changes no stored
-  column: "held" was never a stored state, only the absence of a job.
-- **`explain_balance_failure` is not a disposition.** It records a finding about
-  why a statement's own figures do not add up, and changes no status and never
-  can. A well-corroborated explanation of a weakly-proved document leaves it
-  weakly proved.
-
-Both senses are pinned by named tests, so an edit tidying the wording cannot
-reverse either one quietly. The source for both is the `AdjudicationDecision`
-docstring in `backend/postgres/models/enums.py`, corroborated against the actual
-writers.
-
-### The four calls that were decisions, not defaults
-
-**`changedStoredState` is three-valued, not a boolean.** False means the entry
-recorded a view and moved nothing. **Null means this build cannot read the
-member**, and so cannot say which of the two it was. Collapsing null into false
-would report an unknown decision as having changed nothing, which is the
-reassuring answer and the one it has not earned. This is the same shape as
-`QuarantineGrounds.decidedByPerson` in `ledger-format.ts` and was copied from it
-deliberately. Six members change stored state; the two named above do not.
-
-**`by_machine` is read off the record and never re-derived.** The backend makes
-the comparison once, in `decision_log.to_record`, case-insensitively against
-`RECONCILIATION_ACTOR_EMAIL` (`reconciliation@loupe.invalid`, a reserved domain
-no person's account can hold). `api.ts` already says why it is not repeated: a
-reader that got the comparison wrong would show software moving a document as
-though an analyst had, which is the most misleading thing this log could be made
-to say. **A named test pins it** — a record carrying the reconciliation stage's
-own address with the flag false must read as a person.
-
-**`describeDecisionPage` never claims "showing all" from `truncated` alone.**
-`DecisionPage.truncated` is `self.offset + len(self.decisions) < self.total`,
-which **looks forward only**: it is false on the last page even though pages came
-before it. So "Showing all N decisions" is claimed only when `offset === 0 &&
-!truncated`. This trap was found by reading `decision_log.py` rather than by
-inference, and there is a test for the last-page case specifically.
-
-**No `needsAttention`.** `run-format.ts` has one because a broken run is a fact
-about the ledger being short. Every record here is a decision somebody or
-something already took deliberately, and no member of the vocabulary is by itself
-a problem. Which of them matters is a question about the case, not about the
-word, so this module does not answer it.
-
-Three smaller ones, recorded because they are the kind of thing a later session
-would otherwise redo differently. `DECISION_SOURCE` is "the case's record of
-decisions", not "the ledger", because a decision is not a column on a
-transaction and outlives its subject — a purge writes its decision before
-deleting the row. `formatDecisionTime` delegates to `formatRunTime` rather than
-reimplementing it, so the two surfaces give one answer to a fixed locale, an
-unparseable value and a missing one. And `before`/`after` are **not**
-interpreted here: they are the writer's shape, differing per member (a purge has
-no `after` at all), so reading them belongs to whatever renders one decision in
-detail.
-
-### Colours
-
-`DECISION_VARIANT` follows the ledger's so the same event reads the same on both
-screens: `quarantine_row` amber because a set-aside row badges amber there,
-`release_row` success. `warning` is used for **no** member, because `LedgerTable`
-and `adjudication-format.ts` both reserve it for "this build cannot read this
-value" — which is exactly the unrecognised case here. `purge_duplicate` takes the
-solid `destructive` rather than the softer `danger` because it is the only member
-in the vocabulary that cannot be undone.
-
-`Badge` falls through to its loud `default` variant for a key a map does not
-carry, so a member missing from the table would render as the most important
-thing on the screen. `Record<AdjudicationDecision, BadgeVariant>` makes the
-compiler catch that instead, and the same applies to `CHANGED_STORED_STATE` and
-both copy tables.
-
-### What the 28 tests pin
-
-Three on subjects: every member gets a non-empty label and description that is
-not "unrecognised"; `evidence_file` is kept distinct from `source_document`,
-because it names the one subject the ledger has never held and a reader who
-conflated them would go looking for totals that were never going to exist; and an
-unrecognised subject names its raw value and cites `DECISION_SOURCE`.
-
-Eight on decisions: every member gets words; **labels are all distinct** (a
-shared label would show one phrase for two different things and nothing else on
-the row distinguishes them); no recognised member wears the unrecognised colour;
-`changedStoredState === false` is true of **exactly**
-`admit_financial_document` and `explain_balance_failure`, asserted as a sorted
-list so a third would fail; `destructive` is worn by exactly `purge_duplicate`;
-the two backwards-reading members are pinned to the sense the backend states; and
-an unrecognised decision returns `value: null`, `variant: "warning"`,
-`changedStoredState: null` and a non-empty effect.
-
-Six on who decided, including the two that matter: the machine's stored name
-(`Loupe reconciliation stage`) is **replaced**, not shown, because it reads like
-a person in a column of people; and the flag is never re-derived from the
-address. Then name-over-address-over-`"Not recorded"`, whitespace-only names
-falling through, and an entry with neither reading as *incomplete* rather than as
-nobody having decided.
-
-Three on time and seven on the page sentence, the latter covering every branch:
-empty log, singular "1 decision", start-of-record, **last page with
-`truncated: false` and `offset > 0`**, mid-record with more following, and an
-empty page past the end (which must not read as an empty log — the two call for
-opposite next moves). One on `DECISION_ORDER_IS_NOT_SEQUENCE`.
-
-### Verification
-
-The new test file was run alone first — **28 tests, all passing** — and only then
-the whole unit project: **74 files, 686 tests, all passing**, `STATUS=0`. The
-delta was checked rather than eyeballed: 73 → 74 files and 658 → 686 tests is
-+1 and +28, which is this file exactly. **Nothing unaccounted for.**
-
-`npx tsc -b --force` returned 0. `npx eslint .` returned 0, and both output files
-were read to confirm the only content was npm's version notice.
-
-**The vite cache was pointed at `/dev/shm`, never `/tmp`.** `/` is 99% full and a
-cache directory there is one of the three ways the gate reports a silent "no
-tests". The path carries `$(id -un)` for the usual reason, as do the three gate
-output files.
-
-Backend gates not run and **not claimed** — the commit is two TypeScript files
-and no Python. This is symmetric with `2eefc4d`, where the frontend gates were
-not run and not claimed for a Python-only commit.
-
-**Every gate command was redirected to a file and its status read from `$?`,
-never through a pipe.**
-
-The staged tree (`634a464dc7b2a223fa78a5657ed734fd0e3c32d6`) was diffed against
-`HEAD` before committing and held exactly the two intended files, 784 insertions
-and no deletions, with the untracked `.bak` files, the probe test and all of
-Neil's case material correctly excluded. `git status --porcelain` showed no
-tracked modifications afterwards.
-
-### What the next unit is
-
-**`DecisionsPanel` and its tab on `FinancialPage` — chunk (c), the one that
-clears the standing flag.** Chunks (a) and (b) have both landed, so every layer
-below the screen now exists: the wire types and client call (`0fa07d5`), the
-reader that turns a stored row into words (`71d859d`), and the hook that fetches
-and caches a page (`62ff2de`). Nothing further is needed before the panel.
-
-Read `QuarantinePanel.tsx` and `IngestionRunsPanel.tsx` first and follow them
-rather than inventing a third shape. Four things this panel must get right, all
-of them already decided and none of them open questions:
-
-- **Use `describeDecisionPage(page)` for the heading** rather than composing one
-  from the row count. It only claims "Showing all" when `offset === 0` and
-  `truncated` is false, which is the whole point of handing the envelope back
-  whole.
-- **`changedStoredState` is three-valued.** Null means this build cannot read
-  the member and so cannot say whether anything moved. It must not render as
-  "no".
-- **Honour the keep-mounted rule for `RowAdjudicationDialog`** — see the ledger
-  screen's own rules below.
-- **Nothing currently invalidates `["financial-decisions", ...]`.** See the new
-  standing flag; closing it belongs with this unit.
-
-After the screen: the admission path, which is what finally gives
-`record_admission` a caller, and then proof class and `requires_adjudication`.
-
-After the screen: the admission path, which is what finally gives
-`record_admission` a caller, and then proof class and `requires_adjudication`.
-The three-way split of item 8, and the reasoning for that order, is under the
-`a40bb61` entry in "The previous sessions, in brief" below.
-
-### One fact found this session that is not about this commit
+### One fact found then that is not about that commit
 
 **`explain_balance_failure` has no production writer.**
 `grep -rn "explain_balance_failure" --include=*.py .` from the repo root returns
-the enum, the model, the migrations and tests — and nothing in
+the enum, the model, the migrations and tests, and nothing in
 `services/financial/` that records one. Every other member has a writer:
 `admission.py:150`, `documents.py:654`, `duplicates.py:577/643/783`,
 `quarantine.py:680/745`.
@@ -476,6 +371,50 @@ balance-failure work comes up; it is not blocking anything now.
 ---
 
 ## The previous sessions, in brief
+
+**`71d859d`, the words for the decision vocabulary.** Two files, 784 insertions,
+frontend only. `lib/decision-format.ts` (420 lines) beside `ledger-format.ts`
+and `run-format.ts`, whose shape it follows, plus 364 lines and **28 tests**.
+Exports `DECISION_SOURCE`, `DECISION_ORDER_IS_NOT_SEQUENCE`,
+`readDecisionSubject`, `readDecision`, `readDecidedBy`, `formatDecisionTime`,
+`describeDecisionPage`. Narrowing goes through `narrow` from `ledger-format.ts`,
+so an unrecognised word is named, marked, never blank. Four things settled there
+that later work must not undo:
+
+- **Every phrase was written from the writer, not from the member's name**, and
+  two of the eight read backwards from theirs. `admit_financial_document` does
+  **not** mean a document entered the ledger: it means a file the router held
+  back, because indexing a statement as prose turns its figures into searchable
+  text no total can be traced to, was sent to that text pipeline anyway by a
+  named person against the router's finding. `explain_balance_failure` is
+  **not** a disposition: it records why a statement's own figures do not add up
+  and changes no status. Both senses are pinned by named tests so a tidy-up
+  cannot reverse them quietly. Source: the `AdjudicationDecision` docstring in
+  `backend/postgres/models/enums.py`, corroborated against the actual writers.
+- **`changedStoredState` is three-valued.** False means the entry recorded a
+  view and moved nothing; **null means this build cannot read the member.**
+  Collapsing null into false reports an unknown decision as having changed
+  nothing, which is the reassuring answer and the one it has not earned. Six
+  members change stored state; the two above do not, asserted as a sorted list
+  so a third would fail.
+- **`by_machine` is read off the record and never re-derived.** The backend
+  compares once, in `decision_log.to_record`, case-insensitively against
+  `reconciliation@loupe.invalid`. A reader that got it wrong would show software
+  moving a document as though an analyst had. A named test pins it.
+- **`describeDecisionPage` never claims "showing all" from `truncated` alone.**
+  `truncated` is `offset + len(decisions) < total`, which looks **forward only**
+  and is false on the last page even though pages came before it. "Showing all N
+  decisions" is claimed only when `offset === 0 && !truncated`.
+
+Colour: `DECISION_VARIANT` follows the ledger's so the same event reads the same
+on both screens. `warning` is used for **no** member, because the ledger reserves
+it for "this build cannot read this value". `purge_duplicate` takes solid
+`destructive` as the only member that cannot be undone. The maps are typed
+`Record<AdjudicationDecision, ...>` because `Badge` falls through to its loudest
+variant for a missing key, so a forgotten member would render as the most
+important thing on screen; the compiler catches it instead. There is deliberately
+no `needsAttention`: every record is a decision somebody already took, and which
+of them matters is a question about the case, not about the word.
 
 **`0fa07d5`, the wire shape and the client call.** Two files, 618 insertions,
 frontend only. A new "Reading back what was decided" section in
@@ -845,6 +784,35 @@ live in **`CLAUDE.md`**. Deliberately not duplicated here.
 These accumulate. The heading used to say "new this session", which stopped being
 true the first time a session added to the list instead of replacing it.
 
+- **The browser gate runs. Chromium is 106.4 MiB, not the 700M this file
+  asserted.** With `PLAYWRIGHT_BROWSERS_PATH` and `TMPDIR` both on `/dev/shm`,
+  and `--fileParallelism=false` on the run. Commands under **How to run the
+  browser gate**. The general lesson: **a number in this file that was estimated
+  rather than measured has to say so**, because once written it gets carried
+  forward as though it were verified.
+- **The browser project's two files race the single vite dev server.** Run in
+  parallel, one dies with `Failed to fetch dynamically imported module` naming
+  whichever file lost. It is not a defect in that file: it passes alone, a warm
+  cache does not help, and the named file's import graph reaches nothing that
+  changed. `--fileParallelism=false` gives the documented 2 files, 4 tests.
+- **A `describe` block added to `FinancialPage.test.tsx` must mock the new
+  panel's hook, or the page renders green with a dead tab behind it.** Unmocked,
+  the panel's hook reaches for a `QueryClientProvider` the page render does not
+  supply and throws — and **the panel's own `ErrorBoundary` catches the throw**,
+  so nothing fails and nothing is on screen. The existing per-tab blocks all
+  mock theirs for this reason; follow them rather than discovering it again.
+- **`selectTab` in that file uses `fireEvent.mouseDown`, not `click`.** Radix
+  tab triggers change on `mousedown` and have no `onClick`. A `click` silently
+  does nothing and the assertion that follows fails on the wrong thing.
+- **Adding a tab breaks three assertions in `FinancialPage.test.tsx`, and one
+  docstring.** Two `getAllByRole("tab")` length checks and one `toEqual` over
+  the tab names. The docstring above the strip test states how many tabs read
+  Postgres versus the graph, and **is part of the change** — a comment left
+  contradicting the code beneath it is worse than no comment.
+- **`mainView` in `financial.store.ts` is deliberately excluded from the
+  persisted slice, so a new member needs no migration.** Confirmed by reading
+  the store, not assumed. This is why the seventh tab cost sixteen lines rather
+  than a versioned migration.
 - **`TMPDIR` must be moved to `/dev/shm` as well as `--target`, or pip fails
   with `[Errno 28] No space left on device` even though the target has room.**
   This file previously recorded only the `--target /dev/shm/pylibs-$(id -un)`
@@ -1086,12 +1054,14 @@ true the first time a session added to the list instead of replacing it.
   with `ENOSPC: no space left on device` **after** downloading 100%, twice, once
   per mirror, so it looks like a network problem and is not. **The free-space
   figure in this bullet was going stale every session, so it now lives in one
-  place only: the disk note under Standing flags.** As of `35cc6be` it is zero,
-  and the browser gate is unrunnable. Assume that until measured otherwise.
+  place only: the disk note under Standing flags.** As of `e655a0a` it is still
+  zero. **But `/sessions` is the wrong destination anyway:** send the install to
+  `/dev/shm` with `PLAYWRIGHT_BROWSERS_PATH` and stage the download there with
+  `TMPDIR`, and it costs 106.4 MiB. See **How to run the browser gate**.
 - **The repo mount is a different, much larger filesystem** —
   `/sessions/<session>/mnt/owl-n4j` is 461G with 39G free — but **do not stage
   the browser download there.** It is Neil's working repo, the workspace denies
-  `unlink`, and 350M of undeletable browser binaries would be left in his tree.
+  `unlink`, and the binaries would be left undeletable in his tree.
 - **When only backend files change, say so and skip the browser project rather
   than reporting a stale figure as fresh.** Check with
   `git status --porcelain` before deciding.
@@ -1603,15 +1573,70 @@ which were updated at `e64c2ca` when the sixth tab landed.**
 - **The notice is a sibling of `LedgerPanel`, not inside it.** `LedgerPanel`'s
   four early returns would otherwise hide it exactly when the ledger is empty.
   **Do not "tidy" this by nesting them.**
-- **`FinancialMainView` has six members** as of `e64c2ca`, `"ledger" | "runs" |
-  "quarantine" | "transactions" | "counterparties" | "trends"`. **The order is
-  load bearing:** the first three read Postgres, the last three read the graph,
-  and `"quarantine"` is placed with the first group for that reason.
-- **The ledger, attempts and held-out tabs take no graph chrome.** A case with an
-  empty graph must still reach all three.
+- **`FinancialMainView` has seven members** as of `e655a0a`, `"ledger" | "runs" |
+  "quarantine" | "decisions" | "transactions" | "counterparties" | "trends"`.
+  **The order is load bearing:** the first four read Postgres, the last three
+  read the graph, and `"quarantine"` and `"decisions"` are placed with the first
+  group for that reason.
+- **The ledger, attempts, held-out and decisions tabs take no graph chrome.** A
+  case with an empty graph must still reach all four.
 - **`api.runs.test.ts` reads the Python source** to prove the two languages
   still agree. A backend change to the route, the parameters, the envelope keys
   or the ordering clause fails a frontend test. That is the intended alarm.
+
+### The decisions screen's own rules, as of `e655a0a`
+
+From `DecisionsPanel.tsx` and `DecisionsTable.tsx`. This screen is the one place
+that shows **how** the ledger came to stand as it does, so several of the rules
+below are about not letting a partial view read as a complete one.
+
+- **`DecisionsPanel` calls `useCaseDecisions(caseId)` with nothing after it,**
+  keying at `["financial-decisions", caseId, null]`. Passing `{}` or an explicit
+  undefined field opens a second cache entry for identical data — same rule
+  `IngestionRunNotice` states. A test asserts the call has one argument.
+- **There is no count-disagreement warning here, and its absence is
+  deliberate.** `LedgerPanel`, `QuarantinePanel` and `IngestionRunsPanel` all
+  compare `total` against the rows they were sent, because their endpoints do
+  not page. **This one pages by design**, so `total !== decisions.length` is the
+  ordinary case and the warning would fire on every case with a history. **Do
+  not add one.** What that warning does elsewhere is done here in words, by
+  `describeDecisionPage`.
+- **The heading is `describeDecisionPage(data)` and must never be composed from
+  `decisions.length`.** A sentence built from the row count says "12 decisions"
+  over the first twelve of two hundred. The trap that makes this hard is in the
+  format module: **`truncated` only looks forward** and is false on the last page
+  of many, so "showing all of them" cannot be read off it alone.
+- **The empty state is gated on `data.total === 0`, not on the length of the
+  page.** A page that came back with no rows while `total` is positive means the
+  read landed past the end of the log, and "nothing has been decided" and "you
+  have paged past the decisions there are" call for opposite next moves. A test
+  pins the two apart.
+- **The failed-read message names what is lost** — that nothing on screen says
+  why anything was set aside, hidden or removed — rather than drawing nothing.
+  An empty screen where the record should be reads as a case nothing was ever
+  decided about, which is exactly what a person would say to defend a total.
+- **`DECISION_ORDER_IS_NOT_SEQUENCE` is rendered by `DecisionsTable` itself,**
+  for the same reason `RUN_COUNTS_ARE_HISTORY` is rendered by
+  `IngestionRunsTable`: whoever draws the rows draws the caveat, so a caller
+  cannot separate them. `recorded_at` is written at the start of the transaction,
+  so decisions taken in one act share it exactly and sit adjacent in an arbitrary
+  order. `subject_sequence` **is** reliable, and is the numbering shown per row.
+- **The effect of a decision is rendered in words, never as a tick or a cross.**
+  `changedStoredState` is three-valued and `null` means this build does not
+  recognise the decision, so it cannot say whether anything moved. `readDecision`
+  resolves all three into `effect`, which is always safe to render. The raw value
+  is exposed as `data-changed-stored-state`, and **the null case is written as
+  the string `"null"` rather than as an absent attribute**, so a test for the
+  unknown case fails if the attribute stops being written rather than passing on
+  its absence.
+- **`UNRECOGNISED_VARIANT` here is `"warning"`, following `LedgerTable`,** and
+  both the decision badge and the subject cell carry `data-unrecognised`. A
+  stored word this build cannot read must not be drawn as though it were a label.
+- **`reason` is shown whole, never truncated, and an empty one is named.** It is
+  what the person typed at the time and the part of the entry that has to survive
+  being read back months later. Blank space where the grounds go reads as no
+  reason having been given; the row says "No grounds recorded" instead, with the
+  distinction spelled out in the title.
 
 ---
 
@@ -1633,49 +1658,39 @@ turns out to depend on something later in the list, stop and ask.
   **complete end to end** (write path `150084a`, localisation reader and rescue
   reporting `35cc6be`, screen chunks 1 to 5 `1894fc4`, `19bffae`, `610df9b`,
   `66d1e67`, `519895e` and `e64c2ca`); reconciliation ✅ item 7 (`dfcef2b`).
-  **Item 8, adjudication and proof class, is in progress** — chunk 1 of 3, the
-  decisions surface, has its case-scoped reader `a40bb61` and its route `2eefc4d`;
-  the screen is outstanding and is the next unit. Then duplicates, suspect
-  amounts, locators.
+  **Item 8, adjudication and proof class, is in progress** — **chunk 1 of 3, the
+  decisions surface, is complete** (reader `a40bb61`, route `2eefc4d`, wire
+  `0fa07d5`, words `71d859d`, hook `62ff2de`, screen `e655a0a`). **Chunk 2, the
+  admission path, is the next unit.** Then duplicates, suspect amounts,
+  locators.
 - **Phase 3, make the ledger the source of the graph** — projection, continuity
   and coverage, linkage and correlation and flow.
 - **Phase 4, get it out** — exhibit and export, tracing.
 
-### Current unit: item 8, adjudication and proof class — the decisions screen
+### Current unit: item 8, adjudication and proof class — the admission path
 
-**Start here.** The wiring plan's own words for it: *"`assign_proof_class`,
-`requires_adjudication`, `record_admission`, the decisions surface. Proof class
-is computed and never set by hand; the interface shows it and shows what an
-adjudication changed, and never offers a control that sets it."*
+**Start here.** The wiring plan's own words for the whole item:
+*"`assign_proof_class`, `requires_adjudication`, `record_admission`, the
+decisions surface. Proof class is computed and never set by hand; the interface
+shows it and shows what an adjudication changed, and never offers a control that
+sets it."*
 
-**The chunking, decided at `a40bb61` and reasoned about at length under "What
-this session did":**
+**The chunking, decided at `a40bb61`:**
 
-1. **The decisions surface.** `services/financial/decision_log.py` ✅ `a40bb61`.
-   `GET /api/financial/decisions` on the **ledger** router ✅ `2eefc4d`.
-   `financialAPI.getCaseDecisions` and its contract test ✅ `0fa07d5`.
-   `lib/decision-format.ts` and its test ✅ `71d859d`.
-   **Still to do, in this order: the hook, then the panel.** The log is readable
-   over HTTP, callable from TypeScript, and now readable as English, and no user
-   can see it. Nothing needs deciding about where the route lives, what the wire
-   looks like, or what the vocabulary means; all three are settled and built. The
-   remaining two are frontend units, so the `/dev/shm` pip bootstrap is *not*
-   needed for either — the vitest and Chromium notes are. Specifically:
-   - ~~**`decision-format.ts`.**~~ Landed at `71d859d`. Exports
-     `readDecisionSubject`, `readDecision` (with `variant`, three-valued
-     `changedStoredState` and an always-safe `effect`), `readDecidedBy`,
-     `formatDecisionTime`, `describeDecisionPage`, `DECISION_SOURCE` and
-     `DECISION_ORDER_IS_NOT_SEQUENCE`. **The hook and the panel use these rather
-     than touching `subject_type` or `decision` as strings.**
-   - **`use-case-decisions`.** Follow `use-ingestion-runs`. The page envelope
-     carries `total` and `truncated`, and both have to reach the component —
-     a hook that returns only `decisions` throws away the fact that the history
-     was cut short, which is the one thing this read exists to be honest about.
-   - **`DecisionsPanel` and its tab on `FinancialPage`.** Note the keep-mounted
-     rule under Standing flags before touching `FinancialPage`:
-     `RowAdjudicationDialog` is mounted outside `Tabs` on purpose and two tests
-     hold it there.
-2. **The admission path**, which gives `record_admission` its first caller.
+1. ✅ **The decisions surface — complete.**
+   `services/financial/decision_log.py` `a40bb61`;
+   `GET /api/financial/decisions` on the **ledger** router `2eefc4d`;
+   `financialAPI.getCaseDecisions` and its contract test `0fa07d5`;
+   `lib/decision-format.ts` and its test `71d859d`;
+   `use-case-decisions.ts` and its test `62ff2de`;
+   `DecisionsTable`, `DecisionsPanel`, the seventh tab and the invalidation
+   `e655a0a`. **A user can now read the record of what was decided about a case
+   and on what grounds.**
+2. **The admission path, which gives `record_admission` its first caller —
+   THIS IS THE NEXT UNIT.** It is **backend** work, so it needs the `/dev/shm`
+   pip bootstrap under "Carried forward", including the `TMPDIR` flag the
+   documented `CLAUDE.md` form is missing. Plan it from the four source files
+   named below, **not from this file**.
 3. **Proof class and `requires_adjudication`**, last, because the class is
    already computed and already rendered; what is missing is the explanation of
    what it means and what an adjudication changed about it.
@@ -1702,28 +1717,24 @@ re-derive them from scratch:
   router, its permission dependency `_adjudication_case_permission` and its
   `_respond` helper are already built and are the natural home.
 
-**Read before building the screen:** `backend/routers/financial_ledger.py` for
-the contract the screen consumes — the route's parameters and the shape of
-`DecisionPage.as_dict()`, including `total` and `truncated`, which a history
-screen has to render rather than quietly drop —
-`frontend_v2/src/features/financial/api.ledger.ts` and its test for how a read
-is added to the API object, and the quarantine screen's own files as the nearest
-worked precedent for a tab on the financial page. The frontend conventions are
-under "And on the frontend, as of `e64c2ca`" above and they are not optional.
-
-**Read before building chunks 2 and 3:** `services/financial/proof_class.py`,
+**Read before building chunks 2 and 3, and plan from these rather than from this
+file:** `services/financial/proof_class.py`,
 `services/financial/admission.py`, `services/financial/adjudication.py` (which
 carries `AdjudicationError`, `UnpaidObligationError`, `MalformedVerdictError` and
 the `Adjudication` class at line 180), and `routers/financial_adjudication.py`.
 **Do not plan those chunks from this file** — plan them from those four.
 
-**The screen is frontend work, so the `/dev/shm` pip bootstrap is not needed for
-it.** What *is* needed is the vitest cache path on `/tmp` carrying the current
-user and the per-session Chromium install, both in `CLAUDE.md`; all three of the
+**Chunks 2 and 3 are backend and need the pip bootstrap.** The documented
+`CLAUDE.md` one still fails on `ENOSPC`; the working form is under "Carried
+forward", including the `TMPDIR` flag that was missing from it. The Python
+bootstrap has not been run for four sessions, so budget the twenty seconds and
+re-measure the backend baseline rather than carrying `3381` forward again.
+
+**When a chunk touches the frontend**, the vitest cache must go on `/dev/shm`
+carrying the current user, and the browser gate needs the Chromium install and
+`--fileParallelism=false` under "How to run the browser gate" above. All of the
 frontend failure modes report a silent "no tests", so **never read "no tests" as
-green.** Chunks 2 and 3 are backend and do need the bootstrap — the documented
-`CLAUDE.md` one still fails on `ENOSPC`, and the working form is under "Carried
-forward", now including the `TMPDIR` flag that was missing from it.
+green.**
 
 **The settled rule that constrains the whole unit** is already in `CLAUDE.md`:
 *proof class is computed, never set by hand, including by us. A class a person
@@ -2096,16 +2107,17 @@ before item 12 lands.
 
 ## Standing flags
 
-- **NEW at `62ff2de`: nothing invalidates `["financial-decisions", ...]`.**
-  `use-row-adjudication.ts` invalidates only `["financial-ledger", caseId]`, and
-  the decisions hook deliberately caches outside that prefix. But quarantining
-  or releasing a row **appends to the decision log**, so with the panel open a
-  user would adjudicate a row and see the log fail to grow. **This is a blocking
-  item for chunk (c)**, not a defect in the hook: the invalidation belongs with
-  the mutation that has a panel to refresh. Two tests in
-  `use-case-decisions.test.tsx` pin the current behaviour in both directions —
-  a ledger invalidation does not sweep this key, and its own prefix does.
-- **NEW at `62ff2de`: no live end-to-end run has ever been done.** See
+- **CLEARED at `e655a0a`: `["financial-decisions", ...]` is now invalidated.**
+  This flag read, at `62ff2de`, that nothing swept the key, so a user could
+  quarantine a row with the panel open and watch the log fail to grow.
+  `use-row-adjudication.ts` now invalidates `["financial-decisions", caseId]`
+  alongside the ledger's key, gated on a `decisionWasRecorded` predicate so a
+  response reporting no decision does not evict a good page. **It is still the
+  only writer wired to this key** — supersession, restore, purge and
+  reclassification all append to the same log server-side and none has a
+  mutation hook in this build yet. That is recorded in the hook's docstring, so
+  each closes its own half when it lands.
+- **No live end-to-end run has ever been done.** See
   **Verification debt** near the top of this file. Neil has ruled that he will
   test a full working version himself when the system is ready; do not
   re-litigate it, and do not present green gates as evidence the system works.
@@ -2122,20 +2134,17 @@ before item 12 lands.
 - **Whether ingestion should trigger a sweep at the end of a run is not
   decided and was not decided here.** It is the obvious next caller, and item 8
   (proof class) is the unit that will actually need one. Flagged, not parked.
-- **The adjudication log is readable over HTTP, the frontend has a call for it
-  and words for it, and no screen shows it.** Narrowed at `2eefc4d`, at
-  `0fa07d5`, and again at `71d859d`, **not cleared.**
-  `decision_log.list_case_decisions` landed at `a40bb61`,
-  `GET /api/financial/decisions` at `2eefc4d`, `financialAPI.getCaseDecisions`
-  at `0fa07d5`, and `lib/decision-format.ts` at `71d859d`, all tested, and the
-  route is confirmed mounted. **Two lines this flag used to carry — "nothing in
-  `frontend_v2` calls that path" and "no format module" — are now false and have
-  been removed.** What is still missing is the hook, the panel and the tab. So on
-  a live case the history remains invisible to the person using the product, even
-  though every layer beneath the component now exists. **This flag clears when a
-  panel renders it, not before.** Until then, do not describe the history as
-  something anybody can see — "reachable", "callable", "readable" and "visible"
-  are four different claims and only the first three are true.
+- **CLEARED at `e655a0a`: the adjudication log is on screen.** This flag stood
+  for five commits and read that the log was readable over HTTP, callable from
+  TypeScript, readable as English, and visible to nobody. It said it would clear
+  "when a panel renders it, not before". `DecisionsPanel` renders it, under a
+  "Decisions" tab on `FinancialPage`, and a user can now see who decided what
+  about a case's evidence and on what grounds. **Two things stay true and are
+  worth carrying forward.** The page is a page: `total` and `truncated` are on
+  screen precisely so a reader cannot take a hundred rows for the record. And
+  `explain_balance_failure` still has no production writer (see the session
+  detail above), so a live case cannot yet produce one and its absence from a
+  case is not a defect in the panel.
 - **The quarantine screen is reachable as of `e64c2ca`, and this flag is
   cleared.** It read, for four commits, that every part existed and none of it
   was reachable. That is no longer true: the "Held out" tab is in the tab strip,
@@ -2220,11 +2229,13 @@ before item 12 lands.
     that touches Python must still budget the twenty seconds for the bootstrap
     rather than assuming a warm environment — **`/dev/shm` does not survive
     between sessions**, so it is a fresh install every time.
-  - **The browser gate is not runnable and will not become runnable.** Chromium
-    needs roughly 700M to install and there is nowhere to put it: `/dev/shm` is
-    2.0G but is RAM, and spending most of it on browser binaries to run four
-    tests is not a good trade. **Say plainly that the gate could not run** rather
-    than repeating a previous session's figure.
+  - **The browser gate IS runnable, and this bullet used to say it was not.**
+    The "roughly 700M" figure it carried was never measured. The Chromium
+    headless shell is **106.4 MiB** and installs into `/dev/shm` in seconds with
+    `PLAYWRIGHT_BROWSERS_PATH` and `TMPDIR` both pointed there. It ran green at
+    `e655a0a`: 2 files, 4 tests, with `--fileParallelism=false`. Full commands
+    under **How to run the browser gate** near the top. Like the pip bootstrap
+    this is a fresh install every session, because `/dev/shm` does not survive.
   - **None of this is Loupe's doing and no session can clear it.** The space is
     held by other session directories that are not readable or removable from
     inside a session. **This needs Neil to reclaim space on his side**, and
