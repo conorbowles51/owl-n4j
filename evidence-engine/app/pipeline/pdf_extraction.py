@@ -55,6 +55,7 @@ class PdfExtractionResult:
 class _PageResult:
     page_number: int
     text: str
+    text_origin: str = "unknown"
     extraction_method: str = "native"
     detection_reason: str = "usable_native_text"
     ocr_status: str | None = None
@@ -149,6 +150,42 @@ def _ocr_detection_reason(page: fitz.Page, native_text: str) -> str | None:
 _table_reader: Any = None
 _table_reader_attempted = False
 _table_reader_failure: str | None = None
+
+_origin_reader: Any = None
+_origin_reader_attempted = False
+
+
+def _embedded_text_origin(page: fitz.Page) -> str:
+    """Measure embedded text provenance; embedded does not imply digital.
+
+    Reuse the financial reader's conservative scan-overlay check. A separately
+    deployed engine without that reader must say unknown, never assume digital.
+    This labels provenance only; it does not identify amounts or change text.
+    """
+    global _origin_reader, _origin_reader_attempted
+    if not _origin_reader_attempted:
+        _origin_reader_attempted = True
+        repo_root = Path(__file__).resolve().parents[3]
+        for candidate in reversed([repo_root / "backend", Path("/backend")]):
+            if candidate.exists() and str(candidate) not in sys.path:
+                sys.path.insert(0, str(candidate))
+        try:
+            from services.financial.suspect_amounts import page_text_origin
+
+            _origin_reader = page_text_origin
+        except Exception:
+            logger.warning(
+                "PDF text-origin reader unavailable; recording unknown origin", exc_info=True
+            )
+    if _origin_reader is None:
+        return "unknown"
+    try:
+        return _origin_reader(page).value
+    except Exception:
+        logger.warning(
+            "PDF text-origin measurement failed; recording unknown origin", exc_info=True
+        )
+        return "unknown"
 
 
 def _load_table_reader() -> Any:
@@ -545,6 +582,7 @@ def _page_span(page_result: _PageResult, start_char: int) -> dict:
         "start_char": start_char,
         "end_char": start_char + len(page_result.text),
         "extraction_method": page_result.extraction_method,
+        "text_origin": page_result.text_origin,
         "detection_reason": page_result.detection_reason,
     }
     if page_result.extraction_method == "tesseract_ocr":
@@ -595,7 +633,10 @@ def _extract_pdf_sync(
             native_text = page.get_text()
             detection_reason = _ocr_detection_reason(page, native_text)
             if detection_reason is None:
-                page_result = _PageResult(page_number=page_number, text=native_text)
+                page_result = _PageResult(
+                    page_number=page_number, text=native_text,
+                    text_origin=_embedded_text_origin(page),
+                )
                 page_chunks, page_tables = _extract_native_tables(page, page_number)
                 table_chunks.extend(page_chunks)
                 extracted_tables.extend(page_tables)
@@ -653,6 +694,7 @@ def _extract_pdf_sync(
                 ) from exc
 
             page_result.text = text
+            page_result.text_origin = "recognised_glyphs"
             page_result.ocr_status = "success" if text else "no_text"
             page_result.ocr_confidence = confidence
             page_result.ocr_dpi = dpi

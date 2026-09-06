@@ -65,6 +65,7 @@ def build_canonical_document_text(doc: ExtractedDocument) -> CanonicalDocumentTe
             }
             for key in (
                 "extraction_method",
+                "text_origin",
                 "detection_reason",
                 "ocr_status",
                 "ocr_confidence",

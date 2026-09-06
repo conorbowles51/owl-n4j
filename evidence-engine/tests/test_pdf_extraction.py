@@ -178,6 +178,7 @@ async def test_image_only_pdf_is_ocrd_and_replaces_missing_native_text(
         "start_char": 0,
         "end_char": len(result.text),
         "extraction_method": "tesseract_ocr",
+        "text_origin": "recognised_glyphs",
         "detection_reason": "no_native_text",
         "ocr_status": "success",
         "ocr_confidence": 94.0,

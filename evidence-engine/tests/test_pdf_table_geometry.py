@@ -260,6 +260,7 @@ def test_the_summary_agrees_with_the_payload_it_summarises(part_filled_document,
         "located_values",
         "unlocated_values",
         "by_source",
+        "by_table_source",
     }
 
 
