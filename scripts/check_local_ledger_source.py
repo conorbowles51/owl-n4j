@@ -4,6 +4,7 @@ Uses only the isolated local stack. Run with the backend venv and
 PYTHON_DOTENV_DISABLED=1. Leaves a labelled case for browser inspection.
 """
 import hashlib
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -25,7 +26,7 @@ from services.financial.runs import open_ingestion_run
 from services.financial.transactions import LOCATOR_PROVENANCE_KEY
 
 
-def main():
+def main(correct_held_out=False):
     engine = create_engine("postgresql+psycopg://loupe_local:loupe_local_dev@127.0.0.1:55434/loupe_local")
     fixture = DuplicateTestCase()
     fixture.SessionLocal = sessionmaker(bind=engine, autoflush=False)
@@ -56,6 +57,7 @@ def main():
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             document = fixture.make_copy(sha256=digest, opening=printed(0), closing=printed(42000))
             document.page_count = 1
+            document.metadata_ = {**(document.metadata_ or {}), "source_shape": "statement_document"}
             evidence = fixture.db.get(EvidenceFile, document.evidence_file_id)
             evidence.stored_path, evidence.original_filename = str(path), path.name
             evidence.sha256, evidence.size, evidence.status = digest, path.stat().st_size, "processed"
@@ -99,6 +101,27 @@ def main():
             assert assessment.json()["assessment"]["minor_units"] == "40000"
             assert assessment.json()["applied"] is False
             summary = {"case_id": case_id, "evidence_file_id": file_id, "admitted_row": row_ids[0], "held_out_row": row_ids[1]}
+            if correct_held_out:
+                route = f"/api/financial/transactions/{row_ids[1]}"
+                proposal = {"amount_minor": "2100", "direction": "credit"}
+                preview = client.post(route + "/correction-preview", params={"case_id": case_id}, json=proposal)
+                preview.raise_for_status()
+                assert preview.json()["verification"]["can_record"] is True
+                correction = client.post(route + "/correction", params={"case_id": case_id}, json={
+                    **proposal, "expected_revision": preview.json()["document_revision"],
+                    "reason": "Synthetic history navigation test: intentionally edit 20.00 to 21.00; not evidence."})
+                correction.raise_for_status()
+                new_id = correction.json()["replacement_id"]
+                assert correction.json()["ledger_status"] == "quarantined"
+                old_source = client.get(f"/api/financial/ledger/{row_ids[1]}/source", params={"case_id": case_id})
+                new_source = client.get(f"/api/financial/ledger/{new_id}/source", params={"case_id": case_id})
+                old_source.raise_for_status()
+                new_source.raise_for_status()
+                assert old_source.json()["ledger_status"] == "superseded"
+                assert old_source.json()["superseded_by_id"] == new_id
+                assert old_source.json()["locator"] == new_source.json()["locator"]
+                assert old_source.json()["evidence_file_id"] == new_source.json()["evidence_file_id"] == file_id
+                summary["corrected_row"] = new_id
             (ROOT / "data/local-runtime/ledger-source-check.json").write_text(json.dumps(summary, indent=2))
             print("PASS: both ledger source citations, rendered PNG, original PDF bytes and canonical-text assessment.")
             print(json.dumps(summary, indent=2))
@@ -108,4 +131,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--correct-held-out", action="store_true", help="Also record a synthetic correction for historical source navigation")
+    main(correct_held_out=parser.parse_args().correct_held_out)

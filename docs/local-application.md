@@ -95,6 +95,12 @@ explicitly and does not test automatic extraction or admission. Backend
 requirements now include PyMuPDF; an older venv needs that dependency installed
 to serve page images.
 
+Pass `--correct-held-out` to the ledger source check to also record a synthetic
+20.00 → 21.00 GBP correction. In Decisions, expand Original and replacement
+readings and open each source. Both retain the original PDF rectangle; the old
+row is superseded and the replacement remains held out. This deliberately altered
+fixture validates history/navigation, not the correctness of the replacement.
+
 Verified 6 September 2026: migrations from an empty PostgreSQL database to head,
 all service connections and OCR, native PDF rendering, both venvs' `pip check`,
 3,497 financial tests (12 skipped), and the real duplicate/lock-contention check.
