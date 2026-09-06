@@ -2240,9 +2240,9 @@ async def get_evidence_file(
 def _load_pymupdf():
     """The PDF rendering library, or None where it is not installed.
 
-    PyMuPDF is not in requirements.txt, so its absence is an expected
-    deployment state, not an error: the page-image endpoint answers 503 and
-    everything else on this router keeps working.  ``pymupdf`` is the
+    PyMuPDF is declared in requirements.txt. If an incomplete installation
+    cannot load it, the page-image endpoint answers 503 while the rest of
+    this router keeps working. ``pymupdf`` is the
     current import name; ``fitz`` is the same library's older name, kept as
     a fallback for environments that predate the rename.
     """

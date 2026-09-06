@@ -79,6 +79,22 @@ In that case's Evidence view, switch Search scope to “Text in case”, search 
 1234 and enter USD. Digital text returns 1234.00; the other sources offer 12.34
 and 1234.00. These are synthetic provenance fixtures, not an extraction test.
 
+Check ledger-to-PDF navigation with a generated source and stored rectangles:
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_ledger_source.py
+```
+
+This creates another labelled synthetic case, with one admitted row and one held
+out. It checks both citation endpoints, the rendered PNG and original PDF digest.
+Open the returned case's Financial view and use View source on each tab. The
+stored rectangle identifies the corresponding printed amount; Open source file
+opens the original PDF. Fixture IDs persist in
+`data/local-runtime/ledger-source-check.json`. The fixture assigns positions
+explicitly and does not test automatic extraction or admission. Backend
+requirements now include PyMuPDF; an older venv needs that dependency installed
+to serve page images.
+
 Verified 6 September 2026: migrations from an empty PostgreSQL database to head,
 all service connections and OCR, native PDF rendering, both venvs' `pip check`,
 3,497 financial tests (12 skipped), and the real duplicate/lock-contention check.
