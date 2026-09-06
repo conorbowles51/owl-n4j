@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `1aea7f2`, “Report source page failures without
-  showing misleading highlights”, parent `fa209e0`. A documentation commit follows it;
+- **Latest implementation commit:** `092d32e`, “Verify historical correction sources
+  and define the PDF ledger bridge boundary”, parent `aa22b79`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,46 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Historical correction sources verified live; next bridge designed
+
+`092d32e` extends `scripts/check_local_ledger_source.py` with optional
+`--correct-held-out`. It creates a fresh generated-PDF fixture, supplies its
+explicit statement_document shape, previews/records an intentionally synthetic
+20.00 → 21.00 GBP correction, and checks that the original is superseded while
+the replacement stays quarantined. Both source citations retain the same file
+and rectangle. Default invocation still leaves the original two-row fixture.
+The script changes only its freshly created isolated synthetic case.
+
+Live case **defe8353-1427-48ff-a9fe-becd9e735e14**, source file
+0667f9ac-6230-4a6d-9c7d-f5428aa478fb. Original held-out row
+fb7e190d-f589-419a-977c-27a23ce2129b; replacement
+7cdc441f-277e-4c34-90e9-21b2c871a779, reference TX-QTQV-4EB4-PQ8G.
+The Decisions screen displayed original 20.00 and replacement 21.00. Both source
+buttons fetched their own row IDs and displayed the correct original printed
+20.00 rectangle. The original dialog states it has been replaced. Screenshot
+inspected. A computed p2→p3 event also appears because the fixture's held-out row
+leaves the statement unbalanced; no reviewer-assigned class was used.
+
+Validation: synthetic HTTP preview/write/history-source checks pass; live browser
+checks pass. Logs `/tmp/loupe-neilbyrne-history-source-{http,live}.out`; browser
+harness `/tmp/loupe-neilbyrne-history-source-live.cjs`; screenshots
+`/tmp/loupe-neilbyrne-View-{original,replacement}-source.png`. Python 3.10 syntax
+and diff checks pass. Production app unchanged; baselines remain 3,549 financial
+(zero skips), 895 unit and 11 Chromium. No real data or external AI calls.
+
+New **docs/loupe-pdf-ledger-bridge.md** is a concrete proposal for the missing
+PDF-to-relational ingestion bridge, clearly marked unimplemented. It separates
+source-bound mapping, unresolved candidate storage, source-grounded assessment,
+atomic complete-draft materialization and later graph projection. The next code
+unit is the typed mapping/candidate contract and source-binding tests. Do not
+materialize unresolved readings by selecting a proposal to fit the integer schema.
+
+Unattended window is nearing its 20:00 Dublin / 19:00 UTC cutoff. Keep the next
+segment bounded and leave a clean checkpoint. At cutoff, pause the heartbeat and
+summarize completed work and the remaining bridge, revalidation and projection.
+Backend session 72136 remains running. Engine/worker still need the earlier
+text_origin restart before any new extraction test. All unrelated files preserved.
 
 ### Source rendering failures are explicit
 
