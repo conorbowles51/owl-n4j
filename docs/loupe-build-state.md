@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `52fa438`, “Open original and replacement
-  source citations from correction history”, parent `d267a2e`. A documentation commit follows it;
+- **Latest implementation commit:** `1aea7f2`, “Report source page failures without
+  showing misleading highlights”, parent `fa209e0`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,37 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Source rendering failures are explicit
+
+`1aea7f2` fixes a misleading source-view failure path. TransactionSourceHighlight
+now surfaces failed authenticated page requests instead of silently falling back
+to text that could claim a page was shown. SourceHighlight handles browser image
+decode failures, removes the page/highlight and reports the failure. A different
+image URL can recover. Page-only citations with no supplied image explicitly say
+that no rendering is available. Neither path invents a rectangle or drops the
+stored page number. Close/reopen retries through the existing authenticated fetch.
+The source dialog's original-file action remains independent and available.
+
+Validation: **895 unit tests in 92 files, 11 Chromium tests in 9 files pass**;
+TypeScript, ESLint and diff checks pass. Four new tests cover both image kinds'
+decode failure/recovery, no-image wording and page-only HTTP failure. Updated the
+existing rectangle-fetch failure expectation and supplied a valid PNG in the
+Chromium source test, since invalid fake bytes now correctly trigger an error.
+Logs `/tmp/loupe-neilbyrne-source-failure-{unit,browser}.out`.
+
+Live local browser check intercepted only the generated fixture's page-image
+request with a synthetic 503. Verified an explicit page-1 failure, no highlight,
+and enabled Open source file action. No server/evidence mutation. Harness/output:
+`/tmp/loupe-neilbyrne-source-failure-live.{cjs,out}`. Production backend unchanged;
+baseline remains 3,549 with zero skips. Real local app continues running.
+
+Next: live correction-history source navigation with a real synthetic correction,
+then preserve a concrete design for the absent PDF-to-relational draft bridge.
+Do not claim automatic suspect-amount ingestion or graph projection is done.
+Current backend session 72136 remains current; engine/worker still need their
+prior text_origin restart before new extraction testing. The unattended window
+ends at 20:00 Dublin / 19:00 UTC; finish a safe checkpoint and pause heartbeat then.
 
 ### Correction history exposes both source citations
 
