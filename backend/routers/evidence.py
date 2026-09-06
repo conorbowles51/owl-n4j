@@ -34,7 +34,7 @@ from services.cypher_generator import generate_cypher_from_graph
 from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_text_search_service import search_case_text, search_document_text
 from services import evidence_engine_client
-from services.financial import PageRenderError, render_page_png
+from services.financial import PageRenderError, UnadmittedFileError, render_page_png
 from .auth import get_current_user
 from routers.case_access import (
     authorize_case,
@@ -1311,6 +1311,26 @@ async def process_evidence_background(
             "job_ids": job_ids or None,
             "message": "; ".join(messages) if messages else "No files to process",
         }
+    except UnadmittedFileError as e:
+        # 409 and not 403.  The caller has the permission this route asks for
+        # -- they passed ``evidence:upload`` above.  What is missing is not
+        # rights but a decision: one or more of these files is bank data the
+        # router holds back, and nobody has said on the record that it should
+        # go to the document pipeline anyway.  A 403 would tell them to ask an
+        # administrator, which would not help.
+        #
+        # The body names every held file and what was found in it, so the
+        # interface can offer the admission without a second round trip to
+        # ``/route-check`` -- whose answer, taken later, may not be the one
+        # this refusal was based on.
+        #
+        # Placed before the catch-all below, which is the only reason this
+        # survives at all.  That catch-all has no ``except HTTPException:
+        # raise`` in front of it, so this handler's own 404 for unknown file
+        # ids is currently reported as a 500; see ``/route-check``, which says
+        # so.  That defect is not fixed here and this branch does not depend on
+        # it being fixed.
+        raise HTTPException(status_code=409, detail=e.as_dict())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1460,6 +1480,11 @@ async def process_evidence(
             skipped += engine_result.get("skipped_count", 0)
 
         return ProcessResponse(processed=processed, skipped=skipped, errors=errors)
+    except UnadmittedFileError as e:
+        # Same refusal as ``/process/background``, for the same reason and in
+        # the same shape.  Both routes reach ``process_db_files``, so a gate on
+        # only one of them would be a door with a lock beside it.
+        raise HTTPException(status_code=409, detail=e.as_dict())
     except ImportError as e:
         raise HTTPException(
             status_code=500,

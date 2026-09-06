@@ -37,6 +37,13 @@ from services.financial.admission import (
     WrongFileError,
     record_admission,
 )
+from services.financial.admission_gate import (
+    HeldFile,
+    UnadmittedFileError,
+    admitted_file_ids,
+    gate_document_processing,
+    held_without_admission,
+)
 from services.financial.admit_file import (
     FileAdmission,
     FileAdmissionOutcome,
@@ -1608,6 +1615,14 @@ __all__ = [
     "FileAdmissionOutcome",
     "admit_case_file",
     "find_case_file",
+    # And the other half of it: the processing route refusing a held file that
+    # no decision stands behind, which is what makes "written before sent" a
+    # property rather than a habit of the one path that records.
+    "HeldFile",
+    "UnadmittedFileError",
+    "admitted_file_ids",
+    "gate_document_processing",
+    "held_without_admission",
     # Run identity
     "IngestionRunHandle",
     "RunAborted",

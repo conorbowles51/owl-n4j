@@ -19,6 +19,7 @@ from postgres.models.user import User
 from routers.users import get_current_db_user
 from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_processing_service import process_db_files
+from services.financial import UnadmittedFileError
 from services.folder_context_service import resolve_effective_profile
 from services.processing_profile_service import (
     normalize_instruction_list,
@@ -457,6 +458,13 @@ async def process_folder(
         return result
     except HTTPException:
         raise
+    except UnadmittedFileError as e:
+        # The third and last way into ``process_db_files``, refused the same
+        # way as the two on the evidence router.  This one matters most: a
+        # folder is processed by asking for the folder, so the caller may
+        # never have seen a file list at all, and the body naming each held
+        # file is the only account they get of what stopped it.
+        raise HTTPException(status_code=409, detail=e.as_dict())
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

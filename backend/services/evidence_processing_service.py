@@ -11,10 +11,34 @@ from postgres.models.evidence import EvidenceFile
 from services import evidence_engine_client
 from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_job_sync import reconcile_case_jobs
+from services.financial.admission_gate import gate_document_processing
 from services.folder_context_service import build_processing_snapshot
 from services.job_status_subscriber import get_subscriber
 
 logger = logging.getLogger(__name__)
+
+
+def _stored_path(stored_path: str | None) -> Path | None:
+    """The path this module opens for a file, and the only one it opens.
+
+    Given as a function so that :func:`gate_document_processing` can be handed
+    the same one.  The gate decides whether a file is bank data the router
+    holds back, and it has to decide that about the bytes this module is about
+    to send; a gate resolving a path differently from its caller would clear
+    one file and send another.
+
+    ``routers.evidence._resolve_stored_path`` does more than this, falling back
+    to a container layout when the stored path is not present on this host.  It
+    returns the direct path unchanged whenever that path exists, and that is
+    the only case reaching the gate -- everything else has already been counted
+    as missing on disk and dropped -- so on the files a decision is actually
+    taken about, the two agree exactly.
+
+    The ``None`` branch is unreachable while ``evidence_files.stored_path`` is
+    NOT NULL.  It is written anyway so that a schema which stopped being would
+    skip the file rather than raise while building a path.
+    """
+    return Path(stored_path) if stored_path else None
 
 
 def _serialize_profile_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -70,8 +94,8 @@ async def process_db_files(
     valid_files: list[EvidenceFile] = []
 
     for ef in candidates:
-        path = Path(ef.stored_path)
-        if not path.exists():
+        path = _stored_path(ef.stored_path)
+        if path is None or not path.exists():
             missing_on_disk += 1
             continue
 
@@ -106,6 +130,27 @@ async def process_db_files(
             "missing_on_disk": missing_on_disk,
             "message": "No files found on disk",
         }
+
+    # Nothing above this line has changed anything.  The gate is the last thing
+    # asked before the first thing is written, so a refusal leaves the files
+    # exactly as it found them: not marked processing, no snapshot, no job.
+    #
+    # It is applied to `valid_files` and not to `file_ids`, because a file that
+    # is not going to be sent needs no decision behind it.  Gating the request
+    # instead of the send would turn today's "that one is missing from disk, we
+    # skipped it" into a refusal of the whole batch over a file nobody was
+    # about to process.
+    #
+    # Raises `UnadmittedFileError`, which the three routes that reach here turn
+    # into a 409 naming each held file and what the router found in it.  It is
+    # deliberately not caught: a gate whose failure can be swallowed by the
+    # caller it constrains is not a gate.
+    gate_document_processing(
+        db,
+        case_id=case_id,
+        files=valid_files,
+        resolve_path=_stored_path,
+    )
 
     EvidenceDBStorage.mark_processing(
         db,
