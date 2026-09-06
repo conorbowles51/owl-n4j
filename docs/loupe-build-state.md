@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `1f58ab0`, “Verify source amount assessment
-  through local HTTP and Chromium”, parent `8c70695`. A documentation commit follows it;
+- **Latest implementation commit:** `c7d3a88`, “Resolve ledger citations to same-case
+  evidence files and stored locators”, parent `88f4bfc`. A documentation commit follows it;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,46 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Relational ledger citation endpoint
+
+`c7d3a88` adds authenticated case:view GET
+`/api/financial/ledger/{transaction_id}/source?case_id=...` and exported
+`ledger_source` / `LedgerSourceError`. A single query joins transaction, financial
+source document and evidence file, requiring the same case on all three. It returns
+the actual evidence-file ID, original filename, row reference/status, supersession
+link and validated stored locator. The internal disk path is never returned.
+
+Recorded evidence SHA-256 must match the valid ingestion SHA-256, otherwise 409;
+wrong-case/missing links return 404. `file_bytes_verified:false` explicitly limits
+this to recorded metadata comparison. No source bytes are reread. Missing locators
+are labelled missing; malformed ones, boolean pages and pages beyond stored page
+count are labelled invalid. No highlight is inferred. Valid rectangle coordinates
+retain millipoints/pdf_displayed space; page-only, not-positional and unlocated
+semantics are preserved. Historical/superseded rows can still cite their originals.
+
+Validation: **3,549 financial tests pass, 12 skipped**. Eight new tests cover identity,
+wrong-case ownership, digest drift and invalid digests, historical page references,
+rectangle preservation, malformed/missing/out-of-range locations and router refusal.
+The first full run caught the required package export omission; fixed exports and
+reran the full suite successfully. Python 3.10 syntax and diff checks pass.
+Log: `/tmp/loupe-neilbyrne-ledger-source-full.out`. No frontend changes; prior
+baselines remain 877 unit / 10 Chromium. No database writes or live endpoint test.
+The isolated backend needs restarting to load this new route.
+
+Plan decision: item 10 requires source citations and item 11 explicitly supplies
+relational locator navigation. This is that prerequisite, not a claim that automatic
+amount/column detection or native/running-balance revalidation is done. Existing
+`attach_transaction_locators` interprets graph source_document_id as evidence-file
+ID; relational source_document_id identifies a different table and cannot be passed
+to it unchanged. Relational rows already store locators in provenance. The new
+endpoint resolves their evidence identity first and retains those locators.
+
+Next: add a source action on current and held-out ledger rows using this endpoint
+and the existing evidence viewer/highlight components. Validate missing/malformed
+locations and digest refusal in the UI, then use a synthetic relational fixture
+with a real generated source file for live navigation. Do not guess a source page
+from row_index. Graph projection remains a separate later item.
 
 ### Source amount assessment verified in the running local app
 
