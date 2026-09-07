@@ -313,7 +313,9 @@ describe("FinancialPage", () => {
     expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
 
     selectTab("Transactions")
-    expect(screen.getByPlaceholderText(GRAPH_SEARCH)).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", {name: "Financial intelligence"}))
+    expect(screen.getByPlaceholderText("Search financial intelligence...")).toBeInTheDocument()
   })
 
   /** The case that used to be unreachable: ledger rows, no graph. */
@@ -340,7 +342,8 @@ describe("FinancialPage", () => {
     expect(screen.queryByText("No documentary transactions")).not.toBeInTheDocument()
 
     selectTab("Transactions")
-    expect(screen.getByText("No documentary transactions")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", {name: "Financial intelligence"}))
+    expect(screen.getByText("No financial intelligence")).toBeInTheDocument()
     expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
   })
 })
@@ -738,5 +741,30 @@ describe("FinancialPage authoritative Trends", () => {
     expect(screen.getByText(/do not reflect ledger corrections/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", {name: "Ledger postings"}))
     expect(screen.getByRole("region", {name: "Authoritative ledger trends"})).toBeInTheDocument()
+  })
+})
+
+
+describe("FinancialPage authoritative Transactions", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useFinancialStore.getState().reset()
+    ledgerEmpty(); runsEmpty(); adjudicationIdle()
+  })
+  it.each(["empty", "loading", "populated"])("shows ledger transactions independently of a %s graph", (state) => {
+    if (state === "empty") graphEmpty(); else if (state === "loading") graphLoading(); else graphWithRows()
+    renderPage(); selectTab("Transactions")
+    expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
+    expect(screen.getByRole("region", {name: "Current ledger summary"})).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
+    expect(screen.queryByText("Money Out")).not.toBeInTheDocument()
+  })
+  it("returns from intelligence to current ledger readings", () => {
+    graphEmpty(); renderPage(); selectTab("Transactions")
+    fireEvent.click(screen.getByRole("button", {name: "Financial intelligence"}))
+    expect(screen.queryByText(/No admitted rows in the ledger/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/do not reflect ledger corrections/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", {name: "Ledger postings"}))
+    expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 })

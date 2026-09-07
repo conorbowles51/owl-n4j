@@ -593,3 +593,22 @@ Finally it removes the temporary membership/user and confirms removal. It does n
 change ledger readings or evidence. Report: `data/local-runtime/ledger-export-access-check.json`.
 This passed against the running export endpoint; admin access alone is no longer
 the only authenticated download scenario checked.
+
+## Main documentary Transactions tab
+
+Transactions in Ledger postings mode now mounts the same CorrectableLedger used
+by the Ledger tab, including exact summary, filters, source lookup and correction/
+adjudication controls. Graph loading or emptiness cannot hide it. Financial
+intelligence remains explicitly separate and does not claim ledger corrections.
+Counterparties still uses legacy graph data and remains a migration task.
+
+```sh
+node scripts/check_local_transactions_ledger_ui.cjs
+```
+
+Read-only synthetic bigint check: verifies exact HTTP amount9007199254740993 and
+balance-9223372036854775808, their table display in the main Transactions tab, and
+opening/cancelling the decision dialog. Report:
+`data/local-runtime/transactions-ledger-ui-check.json`.31 page tests pass (an old
+search-placeholder assertion was updated for intelligence mode), TypeScript and
+scoped ESLint pass. No source/evidence or transaction decisions are changed.

@@ -601,7 +601,19 @@ export function FinancialPage() {
         </TabsContent>
 
         <TabsContent value="transactions" className="flex min-h-0 flex-1 flex-col">
-          {graphTab(
+          <div className="flex items-center gap-2 border-b p-3">
+            <Button variant={isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("transactions")}>Ledger postings</Button>
+            <Button variant={!isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("intelligence")}>Financial intelligence</Button>
+          </div>
+          {isTransactionsMode ? (
+            <div className="min-h-0 flex-1 overflow-auto p-4">
+              <ErrorBoundary level="section">
+                <CorrectableLedger key={caseId} caseId={caseId} onAdjudicate={setAdjudicationRow} />
+              </ErrorBoundary>
+            </div>
+          ) : <>
+            <p className="border-b p-3 text-sm">Financial intelligence uses extracted graph records, including claims and valuations. These are separate from ledger posting totals and do not reflect ledger corrections.</p>
+            {graphTab(
             <>
               {isTransactionsMode && (
                 <BulkActionsBar
@@ -640,7 +652,7 @@ export function FinancialPage() {
                 />
               </div>
             </>
-          )}
+          )}</>}
         </TabsContent>
 
         <TabsContent value="counterparties" className="flex min-h-0 flex-1 flex-col">
