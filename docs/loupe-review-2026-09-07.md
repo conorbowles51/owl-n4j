@@ -1,5 +1,8 @@
 # Loupe review — 7 September 2026
 
+Scheduled development was paused at **12:43 Dublin time** for this handoff, ahead
+of your 1pm cutoff. The application is still running locally.
+
 The financial application runs locally in separate Python virtual environments.
 The reviewed ledger now drives the main documentary Transactions, Counterparties
 and Trends screens. You can filter the ledger and download its rows, totals,

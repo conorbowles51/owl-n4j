@@ -1,10 +1,14 @@
 # Loupe financial development checklist
 
-Extended authorized window: 7 September 2026, until **13:00 Europe/Dublin
-(12:00 UTC)**. Neil explicitly extended the deadline; the existing heartbeat is
-ACTIVE every five minutes in this same task. Reserve the final 15 minutes for
-verification and handoff. Neil requests mindful usage: targeted checks and reuse
-of valid passing suites. Earlier 06:00/09:00 plans remain history.
+Final scheduled handoff:7September2026. The authorized cutoff was
+13:00Europe/Dublin; the heartbeat was **PAUSED at12:43Dublin** for handoff before
+that cutoff, confirmed by automation_update. No further automatic segments are
+expected. Earlier ACTIVE/time-window statements below are retained history.
+
+**Overall: eight partial features (1,2,3,4,5,6,8,10), two remaining (7,9), none
+complete end to end.** See [the review and testing guide](loupe-review-2026-09-07.md).
+Completed subitems stay visible. Neil requested mindful usage; valid passing tests
+were reused and targeted checks covered the final small change.
 
 Keep all ten features and their subitems visible. Mark verified completions [x];
 never remove completed work. A feature is complete only when its complete user
@@ -455,3 +459,7 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   healthy, synthetic10rows/2100GBP restored, both original PDF hashes unchanged,
   zero matching isolated ingestions. AI processing not tested. Schedule remains
   ACTIVE pending planned11:45UTC final handoff/pause.
+
+- Final handoff: automation_update confirmed PAUSED at12:43Dublin, before13:00
+  cutoff. App remains running. Final verification and all ten feature statuses
+  recorded in running state and review guide; no whole-feature completion claim.

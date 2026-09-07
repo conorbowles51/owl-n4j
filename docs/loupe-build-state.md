@@ -6,6 +6,43 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Final scheduled handoff — 7 September 2026, 12:43 Dublin
+
+**Scheduled development is PAUSED.** automation_update confirmed
+continue-loupe-development statusPAUSED at11:43UTC, ahead of the13:00Dublin cutoff
+while completing the reserved handoff. No more automatic segments are expected.
+Earlier ACTIVE/deadline/next-heartbeat instructions below are historical and are
+superseded here. Resume only on a new user request; do not silently reactivate.
+
+User-facing guide: docs/loupe-review-2026-09-07.md. Original ten-feature checklist
+retained:1,2,3,4,5,6,8,10partial;7transaction matching and9funds tracing remaining;
+none complete end to end. Main documentary Transactions, Counterparties and Trends
+now use current ledger data. Exact scoped ZIP/HTML/JSON exports, decision history,
+manifest hashes, permissions and exclusion propagation are implemented and tested.
+Remaining work includes automatic PDF extraction, complete control revalidation,
+broader duplicate/cross-case handling, all graph/search consumers, matching/tracing,
+polished exhibits and full real-PDF/AI acceptance. Do not mark these complete.
+
+Verification:3,827backend tests,1,032frontend unit tests,11Chromium tests, TypeScript
+and full ESLint passed at09c341c; later primary export change51ebd77 passed44targeted
+tests, TypeScript/scoped ESLint and live ZIP/hash checks. Last app change51ebd77;
+health/script/docs checkpoint46c4339. Tracked tree clean before final state edits;
+unrelated untracked material preserved. No pushes, merges or git-config changes.
+
+Local stack remains running:frontend55174, backend58002(exec18309,
+/tmp/loupe-neilbyrne-counterparty-server.out), engine58003; separate persistent
+venvs and Docker data. Last read-only health/preservation check11:36UTC passed:
+all three HTTP200, real PDFs unchanged/no matching isolated ingestion copies,
+synthetic coverage fixture10included/0excluded/2100GBP.6audit decisions retained
+there after restored tests. AI processing remains untested. Reports and replay
+instructions are in docs/local-application.md and data/local-runtime.
+
+**On requested resumption:** read this section and retained checklist, inspect git
+and live fixture state. Prioritize end-to-end extraction/accuracy acceptance and
+remaining authoritative consumers before transfer matching/tracing. Do not rerun
+mutation fixture scripts blindly; finalized/corrected fixtures are intentionally
+persistent. Reuse passing suites unless further changes justify another full run.
+
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
 - **Latest implementation checkpoint:** `51ebd77`, primary Ledger/Transactions
   export integration. Full integrated baseline at `09c341c`;44targeted tests and
