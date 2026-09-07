@@ -24,8 +24,10 @@ feature below is complete at the start of this window.
    - [ ] Show questionable amounts, dates and account details alongside the source.
    - [ ] Let the investigator confirm, correct or reject candidate readings, preserving the original and the reason for each decision.
    - [ ] Prevent retries or simultaneous candidate reviews from creating duplicate transactions.
-   - [x] Foundation: immutable in-memory pending candidate contract, with missing context representable (5d7279d). Persistent storage/review is not built.
+   - [x] Foundation: immutable in-memory pending candidate contract, with missing context representable (5d7279d). Persistent storage is now implemented below; review remains.
    - [x] Existing ledger corrections retain originals, history and reasons, with stale-review protection; manual source amount assessment is connected. These do not yet provide candidate review.
+
+   - [x] Foundation: persist immutable candidate originals outside totals with atomic saves and same-mapping retry safety (826caee). Verified with PostgreSQL lock contention and overwrite-refusal triggers. Review UI remains.
 
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
@@ -86,6 +88,11 @@ feature below is complete at the start of this window.
   foundation under feature 1. All 3,596 financial tests, 895 unit tests, 11 Chromium
   tests, TypeScript and ESLint pass. Feature 1 remains partial; storage/review and
   automatic extraction are not claimed complete. Next: persistent candidates.
+
+- 7 September, overnight: **826caee** completed candidate original storage under
+  feature 2. 3,612 financial tests and all frontend gates pass. Live PostgreSQL
+  contention produced one mapping/two candidates/zero ledger rows; both originals
+  reject SQL updates. Next: review records and assessment, then endpoints/UI.
 
 ## Morning handoff
 

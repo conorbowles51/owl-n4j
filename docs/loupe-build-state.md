@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `5ab6931`, “Bind pending PDF candidates to verified
-  stored grid cells and geometry”, parent `88a4676`. A state commit follows;
+- **Latest implementation commit:** `826caee`, “Persist immutable pending PDF originals
+  with atomic retry-safe saves”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,45 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Pending PDF originals persisted — 7 September 2026 overnight
+
+`826caee` adds mapping/candidate original tables, migration
+`20260907_candidate_originals`, and `candidate_store.py`. A dedicated-session
+writer locks the case-scoped evidence file and existing text/geometry rows,
+rebinds either typed mapping, and atomically commits the complete originals.
+Same-mapping retries return original IDs/actor; new mapping revisions append.
+Readers verify counts and snapshot digests. PostgreSQL UPDATE triggers protect
+both original tables; an ORM guard covers ordinary SQLite ORM writes. Case/file
+deletion still cascades. No money or mutable review state is stored: candidates
+remain pending and outside totals. No HTTP/UI has been added yet.
+
+**Verified:** 3,612 financial tests (zero skips), 895 frontend unit tests, 11
+Chromium tests, TypeScript and ESLint pass. New unit tests cover 16 storage cases,
+including persisted reload, stale/cross-case refusal, failure rollback, original
+immutability, returned-payload isolation, and both source contracts. Logs are
+`/tmp/loupe-neilbyrne-candidate-{financial,unit,browser,eslint}.out`.
+
+The migration was applied only to isolated loupe_local PostgreSQL. Repeatable
+`scripts/check_local_candidates.py` generates a synthetic PDF and actual table
+geometry, then observes two PostgreSQL lock waiters before releasing competing
+saves. Result: one mapping, two pending candidates, zero ledger transactions.
+Direct SQL UPDATE of both originals is refused. Fixture case
+`77196023-eda3-48cb-b6c9-dc7bdb126e0f`, mapping
+`6e30ec2f-cf76-4784-8704-075e69fcaae9`; IDs also saved in
+`data/local-runtime/candidate-check.json`. Migration and live logs:
+`/tmp/loupe-neilbyrne-candidate-{migration,postgres}.out`. The migration refuses
+downgrade while originals exist. No HTTP or full workflow acceptance is claimed.
+
+**Next:** append-only candidate review records with pending/resolved/rejected
+states, review revisions and reasons; integrate assessment of original amounts.
+Then authorized endpoints/UI and atomic ledger materialization. Cross-revision
+or overlapping-mapping transaction deduplication is still required at
+materialization; snapshot retry safety must not be mistaken for that guarantee.
+Keep all ten checklist features visible and partial until their whole workflows
+are connected. Scheduled work remains authorized until 06:00 Dublin; last
+15 minutes reserved for handoff. Tracked implementation is committed; no push,
+no real data changes, no external AI calls.
 
 ### Stored PDF grid binding completed — 7 September 2026 overnight
 
