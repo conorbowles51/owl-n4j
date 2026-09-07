@@ -68,6 +68,11 @@ class CoverageQueryTests(fixture.DuplicateTestCase):
         self.assertFalse(item["available"])
         self.assertEqual(item["currencies"],[])
         self.assertIn("500",item["reason"])
+        from services.financial.coverage_query import requested_statement_coverage
+        requested=requested_statement_coverage(self.db,case_id=self.case.id,account_id=self.account.id,
+            start_date=date(2026,1,1),end_date=date(2026,1,31))
+        self.assertFalse(requested["available"])
+        self.assertEqual(requested["currencies"],[])
 
     def test_account_page_is_explicit_and_bounded(self):
         self.assertEqual(self.read(offset=100)["items"],[])
@@ -85,3 +90,84 @@ class CoverageRouterTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(router,"list_statement_coverage",side_effect=RuntimeError("private")):
             with self.assertRaises(HTTPException) as caught:await router.get_statement_coverage(case,0,"db")
             self.assertNotIn("private",caught.exception.detail)
+
+class RequestedCoverageTests(fixture.DuplicateTestCase):
+    def requested(self, start=date(2026,2,1), end=date(2026,2,28), **changes):
+        from services.financial.coverage_query import requested_statement_coverage
+        return requested_statement_coverage(self.db, **{**dict(case_id=self.case.id,
+            account_id=self.account.id, start_date=start, end_date=end), **changes})
+
+    def test_gap_then_enclosing_export_and_precise_citations(self):
+        self.make_copy(bounds=PeriodBounds.printed(date(2026,1,1),date(2026,1,31)))
+        self.make_copy(bounds=PeriodBounds.printed(date(2026,3,1),date(2026,3,31)))
+        result=self.requested();group=result["currencies"][0]
+        self.assertEqual(group["covered_days"],0)
+        self.assertEqual(group["gaps"],[dict(start="2026-02-01",end="2026-02-28",days=28)])
+        export=self.make_copy(bounds=PeriodBounds.printed(date(2026,1,1),date(2026,3,31)))
+        result=self.requested();group=result["currencies"][0]
+        self.assertEqual(group["covered_days"],28)
+        self.assertEqual(group["uncovered_days"],0)
+        self.assertEqual(group["windows"][0]["period_ids"],
+            [p["period_id"] for p in result["periods"] if p["source_document_id"]==str(export.id)])
+        self.assertFalse(result["applied"])
+        self.assertFalse(self.db.new or self.db.dirty)
+
+    def test_both_requested_tails_count_and_currencies_remain_separate(self):
+        self.make_copy(bounds=PeriodBounds.printed(date(2026,2,10),date(2026,2,20)))
+        group=self.requested()["currencies"][0]
+        self.assertEqual(group["covered_days"],11)
+        self.assertEqual(group["uncovered_days"],17)
+        self.assertEqual(group["gaps"],[dict(start="2026-02-01",end="2026-02-09",days=9),dict(start="2026-02-21",end="2026-02-28",days=8)])
+        document=self.make_copy(bounds=PeriodBounds.printed(date(2026,2,1),date(2026,2,28)))
+        row=self.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id==document.id))
+        row.currency="USD";self.db.commit()
+        groups={g["currency"]:g for g in self.requested()["currencies"]}
+        self.assertEqual(len(groups),2)
+        self.assertEqual(groups["USD"]["uncovered_days"],0)
+        self.assertEqual(sum(g["uncovered_days"] for g in groups.values()),17)
+
+    def test_inclusive_leap_day_and_maximum_date(self):
+        for day in (date(2024,2,29),date.max):
+            self.make_copy(bounds=PeriodBounds.printed(day,day))
+            result=self.requested(day,day)
+            self.assertEqual(result["requested_days"],1)
+            self.assertEqual(result["currencies"][0]["covered_days"],1)
+            self.assertEqual(result["currencies"][0]["gaps"],[])
+
+    def test_no_eligible_bounds_is_unknown(self):
+        self.assertFalse(self.requested()["available"])
+        document=self.make_copy();document.status="superseded";self.db.commit()
+        result=self.requested()
+        self.assertFalse(result["available"])
+        self.assertEqual(result["currencies"],[])
+        self.assertEqual(result["periods"][0]["exclusion_reason"],"source_not_admitted")
+
+    def test_foreign_account_and_source_never_supply_coverage(self):
+        with self.assertRaises(CoverageQueryError) as caught:self.requested(case_id=self.other_case.id)
+        self.assertEqual(caught.exception.status_code,404)
+        with self.assertRaises(CoverageQueryError):self.requested(account_id=uuid4())
+        document=self.make_copy();document.case_id=self.other_case.id;self.db.commit()
+        result=self.requested()
+        self.assertFalse(result["available"])
+        self.assertEqual(result["periods"],[])
+        self.assertEqual(result["currencies"],[])
+
+    def test_invalid_dates_are_refused(self):
+        with self.assertRaises(CoverageQueryError):self.requested(account_id=None)
+        for start,end in ((date(2026,3,1),date(2026,2,1)),(None,date.today()),("2026-01-01",date.today())):
+            with self.assertRaises(CoverageQueryError):self.requested(start,end)
+
+class RequestedCoverageRouterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_route_scope_and_generic_failure(self):
+        from routers import financial_ledger as router
+        from fastapi import HTTPException
+        case,account=uuid4(),uuid4();start,end=date(2026,2,1),date(2026,2,28)
+        with patch.object(router,"requested_statement_coverage",return_value={}) as call:
+            await router.get_requested_statement_coverage(case,account,start,end,"db")
+            call.assert_called_once_with("db",case_id=case,account_id=account,start_date=start,end_date=end)
+        for error,status in ((CoverageQueryError("Not found",404),404),(RuntimeError("private"),500)):
+            with patch.object(router,"requested_statement_coverage",side_effect=error):
+                with self.assertRaises(HTTPException) as caught:
+                    await router.get_requested_statement_coverage(case,account,start,end,"db")
+                self.assertEqual(caught.exception.status_code,status)
+                self.assertNotIn("private",caught.exception.detail)

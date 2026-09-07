@@ -42,7 +42,7 @@ from services.financial.candidate_reviews import read_candidate_review
 from services.financial.candidate_overlap import check_candidate_source_reuse
 from services.financial.candidate_materialization import preview_candidate_finalization
 from routers.evidence import _resolve_stored_path
-from services.financial.coverage_query import CoverageQueryError, list_statement_coverage
+from services.financial.coverage_query import requested_statement_coverage, CoverageQueryError, list_statement_coverage
 from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError
 
@@ -132,6 +132,19 @@ async def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(
     except Exception:
         logger.exception("Candidate list failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Saved PDF readings could not be listed.")
+
+
+@router.get("/requested-statement-coverage")
+async def get_requested_statement_coverage(case_id: UUID = Query(...), account_id: UUID = Query(...),
+        start_date: date = Query(...), end_date: date = Query(...), db: Session = Depends(get_db)):
+    try:
+        return requested_statement_coverage(db, case_id=case_id, account_id=account_id,
+            start_date=start_date, end_date=end_date)
+    except CoverageQueryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Requested statement coverage failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Requested statement coverage could not be calculated.")
 
 
 @router.get("/statement-coverage")

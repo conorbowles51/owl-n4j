@@ -354,3 +354,19 @@ node scripts/check_local_ledger_filters_ui.cjs
 
 Report: `data/local-runtime/ledger-filters-ui-check.json`. Screenshot:
 `/tmp/loupe-neilbyrne-ledger-filters-ui.png`. No evidence or ledger rows are changed.
+
+Requested-date coverage is available through the case:view read endpoint
+`/api/financial/requested-statement-coverage`, requiring case_id, account_id,
+start_date and end_date. It intersects eligible printed periods with the inclusive
+requested interval, including uncovered dates outside all known bounds. Currency
+groups remain separate; missing/derived/excluded bounds and original source-period
+IDs remain visible. No eligible bounds or more than500 periods means unavailable,
+not a claim of complete evidence. The filter-screen result panel remains next.
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_requested_coverage.py
+```
+
+This read-only check uses the existing synthetic coverage fixture to compare a
+February gap against an enclosing export, and checks unauthenticated refusal,
+missing account and reversed dates. Report: `data/local-runtime/requested-coverage-check.json`.

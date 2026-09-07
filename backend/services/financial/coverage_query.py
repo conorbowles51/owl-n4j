@@ -11,10 +11,13 @@ class CoverageQueryError(ValueError):
         self.status_code=status_code
 
 
-def list_statement_coverage(session, *, case_id, offset=0, limit=25):
+def list_statement_coverage(session, *, case_id, offset=0, limit=25, account_id=None):
     if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 25:
         raise CoverageQueryError("Invalid account coverage page limits.")
-    accounts=list(session.scalars(select(FinancialAccount).where(FinancialAccount.case_id==case_id)
+    account_query = select(FinancialAccount).where(FinancialAccount.case_id == case_id)
+    if account_id is not None:
+        account_query = account_query.where(FinancialAccount.id == account_id)
+    accounts=list(session.scalars(account_query
         .order_by(FinancialAccount.id).offset(offset).limit(limit+1)))
     items=[]
     for account in accounts[:limit]:
@@ -72,3 +75,51 @@ def _coverage(currency, periods):
         covered_days=sum(w["end"]-w["start"]+1 for w in windows),uncovered_days=sum(g["days"] for g in gaps),
         windows=[dict(start=date.fromordinal(w["start"]).isoformat(),end=date.fromordinal(w["end"]).isoformat(),
                       period_ids=w["period_ids"]) for w in windows],gaps=gaps,overlaps=overlaps)
+
+
+def requested_statement_coverage(session, *, case_id, account_id, start_date, end_date):
+    """Printed bounds intersecting an explicit closed search interval; never completeness."""
+    if account_id is None:
+        raise CoverageQueryError("Select one ledger account for requested date coverage.")
+    if type(start_date) is not date or type(end_date) is not date or start_date > end_date:
+        raise CoverageQueryError("A valid start date on or before the end date is required.")
+    response = list_statement_coverage(session, case_id=case_id, account_id=account_id)
+    if not response["items"]:
+        raise CoverageQueryError("Ledger account not found in this case.", 404)
+    account = response["items"][0]
+    groups = []
+    if account["available"]:
+        for group in account["currencies"]:
+            # Intersect the original eligible periods, not a merged window's
+            # period_ids: otherwise an outside period becomes a false citation.
+            clipped = []
+            for period in account["periods"]:
+                if not period["included"] or period["currency"] != group["currency"]:
+                    continue
+                start = max(start_date, date.fromisoformat(period["start"]))
+                end = min(end_date, date.fromisoformat(period["end"]))
+                if start <= end:
+                    clipped.append(dict(period_id=period["period_id"], start=start.isoformat(), end=end.isoformat()))
+            covered = _coverage(group["currency"], clipped)
+            cursor = start_date.toordinal()
+            last = end_date.toordinal()
+            gaps = []
+            for window in covered["windows"]:
+                start, end = date.fromisoformat(window["start"]).toordinal(), date.fromisoformat(window["end"]).toordinal()
+                if cursor < start:
+                    gaps.append(_gap(cursor, start - 1))
+                cursor = end + 1
+            if cursor <= last:
+                gaps.append(_gap(cursor, last))
+            groups.append(dict(currency=group["currency"], covered_days=covered["covered_days"],
+                uncovered_days=sum(g["days"] for g in gaps), windows=covered["windows"], gaps=gaps))
+    return dict(case_id=str(case_id), account_id=str(account_id), start_date=start_date.isoformat(),
+        end_date=end_date.isoformat(), requested_days=end_date.toordinal()-start_date.toordinal()+1,
+        available=account["available"] and bool(groups),
+        reason=account["reason"] or (None if groups else "No eligible printed bounds; date coverage is unknown."),
+        periods=account["periods"], currencies=groups, applied=False,
+        limitation="Printed statement bounds only, grouped by currency. Uncovered requested dates include dates outside known statements. Covered dates do not prove complete transaction extraction or that no transactions occurred. Missing, derived or excluded statement bounds do not contribute.")
+
+
+def _gap(start, end):
+    return dict(start=date.fromordinal(start).isoformat(), end=date.fromordinal(end).isoformat(), days=end-start+1)
