@@ -9,10 +9,13 @@ export function RunningBalanceComparisonPanel({
   caseId,
   comparison,
 }: {
-  caseId: string
+  caseId?: string
   comparison: RunningBalanceComparison
 }) {
-  const [source, setSource] = useState<string | null>(null)
+  const [source, setSource] = useState<{
+    caseId: string
+    transactionId: string
+  } | null>(null)
   return (
     <details className="space-y-2 rounded border p-3">
       <summary>Running-balance comparison</summary>
@@ -63,14 +66,19 @@ export function RunningBalanceComparisonPanel({
                           comparison.currency
                         )}
                         .
-                        <Button
-                          variant="link"
-                          onClick={() =>
-                            setSource(finding.after_transaction_id)
-                          }
-                        >
-                          View source: {finding.after_ref}
-                        </Button>
+                        {caseId && (
+                          <Button
+                            variant="link"
+                            onClick={() =>
+                              setSource({
+                                caseId,
+                                transactionId: finding.after_transaction_id,
+                              })
+                            }
+                          >
+                            View source: {finding.after_ref}
+                          </Button>
+                        )}
                       </p>
                     ))}
                     {check.findings_truncated && (
@@ -86,10 +94,10 @@ export function RunningBalanceComparisonPanel({
           ))}
         </>
       )}
-      {source && (
+      {source && source.caseId === caseId && (
         <LedgerSourceDialog
-          caseId={caseId}
-          transactionId={source}
+          caseId={source.caseId}
+          transactionId={source.transactionId}
           onClose={() => setSource(null)}
         />
       )}

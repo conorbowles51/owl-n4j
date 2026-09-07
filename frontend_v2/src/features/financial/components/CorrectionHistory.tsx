@@ -2,9 +2,14 @@ import { z } from "zod"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
-import { correctionMoney } from "../lib/correction-contract"
+import { RunningBalanceComparisonPanel } from "./RunningBalanceComparisonPanel"
+import {
+  correctionMoney,
+  runningBalanceComparison,
+} from "../lib/correction-contract"
 
 const snapshot = z.object({
+  running_balance_comparison: z.unknown().optional(),
   row: z.object({
     key: z.string(),
     ref_id: z.string(),
@@ -34,6 +39,13 @@ export function CorrectionHistory({
         Correction reading history is unavailable or unrecognised.
       </p>
     )
+  const recorded = replacement.data.running_balance_comparison
+  const comparison = runningBalanceComparison.safeParse(recorded)
+  const comparisonValid =
+    comparison.success &&
+    (!comparison.data.available ||
+      (comparison.data.currency === old.data.row.currency &&
+        comparison.data.currency === replacement.data.row.currency))
   return (
     <details className="text-xs">
       <summary>Original and replacement readings</summary>
@@ -54,6 +66,23 @@ export function CorrectionHistory({
         These are the readings recorded at this decision, not a claim about
         their current status.
       </p>
+      {recorded == null ? (
+        <p>No running-balance comparison was recorded with this correction.</p>
+      ) : comparisonValid ? (
+        <div>
+          <p>
+            Saved comparison at the time of this correction; it has not been
+            recalculated against later changes.
+          </p>
+          <RunningBalanceComparisonPanel
+            key={`${caseId}:${replacement.data.row.key}`}
+            caseId={caseId}
+            comparison={comparison.data}
+          />
+        </div>
+      ) : (
+        <p>Saved running-balance comparison is unavailable or inconsistent.</p>
+      )}
       {caseId && (
         <div className="flex flex-wrap gap-2 pt-2">
           <Button

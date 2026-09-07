@@ -71,3 +71,49 @@ it("offers no source navigation without case context or readable snapshots", () 
     screen.queryByRole("button", { name: "View replacement source" })
   ).toBeNull()
 })
+
+it("shows saved comparison availability without recomputing historical results", () => {
+  render(
+    <CorrectionHistory
+      before={before}
+      after={{
+        ...after,
+        running_balance_comparison: {
+          available: false,
+          reason: "No stored running balances at review time.",
+          interpretations: [],
+        },
+      }}
+      caseId="case"
+    />
+  )
+  fireEvent.click(screen.getByText("Original and replacement readings"))
+  expect(screen.getByText(/Saved comparison at the time/)).toBeVisible()
+  fireEvent.click(screen.getByText("Running-balance comparison"))
+  expect(
+    screen.getByText("No stored running balances at review time.")
+  ).toBeVisible()
+})
+it("keeps original readings available when optional diagnostics are malformed", () => {
+  render(
+    <CorrectionHistory
+      before={before}
+      after={{ ...after, running_balance_comparison: { available: true } }}
+      caseId="case"
+    />
+  )
+  fireEvent.click(screen.getByText("Original and replacement readings"))
+  expect(
+    screen.getByText(/Saved running-balance comparison is unavailable/)
+  ).toBeVisible()
+  expect(screen.getByText(/Original TX-OLD/)).toBeVisible()
+})
+it("does not claim older corrections have a recorded comparison", () => {
+  render(<CorrectionHistory before={before} after={after} />)
+  fireEvent.click(screen.getByText("Original and replacement readings"))
+  expect(
+    screen.getByText(
+      "No running-balance comparison was recorded with this correction."
+    )
+  ).toBeVisible()
+})

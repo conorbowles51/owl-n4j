@@ -318,3 +318,17 @@ The synthetic accounts demonstrate a28-day February gap and an enclosing export
 that fills it. Reports: coverage-check.json and coverage-ui-check.json under
 data/local-runtime. Screenshot: `/tmp/loupe-neilbyrne-statement-coverage-ui.png`.
 The synthetic preparation completes its audit run and never uses real evidence.
+
+The Decisions tab now displays the saved running-balance comparison within
+**Original and replacement readings**. It is labelled as the result at correction
+time, not a recalculation against later ledger changes. Older corrections without
+that diagnostic say so. Optional malformed diagnostics do not hide the two readings.
+Using the completed synthetic running-balance correction above, verify read-only
+history/source navigation with:
+
+```sh
+node scripts/check_local_balance_history_ui.cjs
+```
+
+Screenshots use `/tmp/loupe-neilbyrne-balance-history-ui.png` and
+`/tmp/loupe-neilbyrne-balance-history-source-ui.png`. The check does not edit records.

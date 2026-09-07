@@ -540,3 +540,13 @@ that bounds do not certify extracted transactions or records outside known bound
 Source period/document/file IDs are retained in the response. Exact source-bound date
 citation navigation and integration with transaction search remain further work;
 this panel does not invent a page/rectangle for a period bound.
+
+## Historical running-balance diagnostics — 7 September 2026
+
+Correction history parses the optional saved comparison independently of its original
+and replacement snapshots. Missing historical diagnostics are explicit; malformed or
+currency-inconsistent diagnostics are withheld without hiding the readings. Valid
+comparisons reuse the conditional-order display and link to original transaction
+sources under the selected case. They are labelled as saved-at-decision results,
+never silently recalculated. Source-dialog state is bound to its originating case,
+and source links are unavailable without case context.
