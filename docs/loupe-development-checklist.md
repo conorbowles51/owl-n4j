@@ -70,6 +70,8 @@ feature below is complete at the start of this window.
 
    - [x] Correction running-balance diagnostics: compare before/after under both possible source-row orders, expose unchecked intervals and retain source-linked results in the correction audit (4b70844). Proven order/coverage and native-control revalidation remain; this does not promote classification.
 
+   - [x] Historical running-balance diagnostics: show the saved comparison in correction history, preserve original source links, and distinguish historical results from current ledger state (42e42f1).
+
 4. **Finish duplicate handling — partial**
    - [ ] Extend the existing same-case comparison to the remaining supported situations.
    - [ ] Show matching evidence in other cases only where the user has permission.
@@ -293,3 +295,9 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   February gap and its absence where an enclosing export covers the same dates.
   Search integration and precise period-bound source navigation remain; no whole
   remaining feature is newly completed.
+
+- 7 September, extended window: **42e42f1** exposes saved running-balance diagnostics
+  in correction history.960 frontend unit/11 Chromium/TypeScript/ESLint pass; unchanged
+  backend remains at3,763 passed financial tests. Read-only browser history/source
+  check passes. Development now transitions to final verification and the morning
+  handoff; all ten features and their completion marks remain above.

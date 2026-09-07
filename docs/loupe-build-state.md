@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `8b6c9ad`, “Show printed statement coverage
-  without false gaps from enclosing exports”. A state commit follows;
+- **Latest implementation commit:** `42e42f1`, “Expose saved running-balance
+  diagnostics in correction history”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,35 @@ for verification, the retained ten-feature checklist and the handoff, then pause
 Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Historical balance diagnostics connected — 7 September 2026
+
+`42e42f1` displays saved running-balance comparisons inside Decisions → Original
+and replacement readings. The panel explicitly labels them as the comparison at
+correction time, not a recalculation against later changes. Missing old diagnostics
+are explicit; malformed/currency-inconsistent optional data does not hide the two
+readings. Source links retain original transaction IDs and case-bound dialog state;
+no links are offered without case context.
+
+**Verified:**960 frontend unit tests,11 Chromium,TypeScript/full ESLint. Backend
+unchanged; its latest full gate remains3,763 financial tests, zero skips. Read-only
+live browser check reopens the existing running-balance correction decision, shows
+saved400→410 diagnostics and opens the highlighted replaced original PDF row.
+Script check_local_balance_history_ui.cjs uses running-balance-ui-check.json; it
+makes no record changes. Screenshots /tmp/loupe-neilbyrne-balance-history-ui.png
+and balance-history-source-ui.png. Backend remains exec session97535 from coverage.
+
+**Next scheduled segment: final verification and morning handoff.** No further
+feature expansion is planned in the short time before the reserved07:45UTC window.
+Inspect current git/checkpoint state, confirm isolated local services and read-only
+fixture reports, verify that the supplied PDFs remain unchanged/un-ingested, and
+prepare a plain-language morning review with all ten feature statuses. Existing
+passing suites need not be repeated absent a change or unresolved concern. Preserve
+all checked items, partial work and limitations. Do not claim automatic extraction,
+native controls, canonical graph/exports/tracing or full application acceptance.
+After the final report/checkpoint, pause continue-loupe-development through the app
+before08:00UTC(09:00Dublin). Schedule currently ACTIVE every5 minutes. Feature status:
+partial1,2,3,4,6,10; remaining5,7,8,9; none of these ten whole features fully complete.
 
 ### Printed statement coverage connected — 7 September 2026
 
