@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `0ae8242`, “Summarize eligible ledger postings
-  with exact currency totals and exclusions”. A state commit follows;
+- **Latest implementation commit:** `b82d010`, “Display exact current ledger totals
+  and refresh them after decisions”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,34 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Exact ledger summary display — 7 September 2026
+
+`b82d010` connects LedgerSummaryPanel to applied account/date filters. Exact-string
+money formatting; validates response scope, count reconciliation and signed net
+arithmetic with BigInt. Unknown/oversized summaries never become zero. Shows
+included proof classes, separate currency posting totals and disjoint exclusion
+counts. Hides old totals while refetching; case-scoped financial-ledger invalidation
+from corrections and adjudications refreshes it. Held out remains separate.
+
+Verified:43 targeted frontend tests (10 new summary,2 wrapper,14 correction,17
+adjudication), TypeScript and scoped ESLint. Authenticated synthetic UI set aside
+one GBP400 row: summary changed2100→1700 and10→9 included/1 excluded; restored row
+returned2100/10. Two synthetic audit decisions remain; all fixture rows restored.
+Screenshot visually inspected: /tmp/loupe-neilbyrne-summary-panel-ui.png. Script
+check_local_summary_panel_ui.cjs; report summary-panel-ui-check.json. Logs use
+/tmp/loupe-neilbyrne-summary-panel-{tests,tsc,lint,live}.out. Backend unchanged at
+exec61007. No real evidence writes. Feature5 is now partial due connected ledger
+summary; graph transaction/counterparty/trend cards remain legacy and unmigrated.
+
+**Next segment:** audit exact money in the existing ledger row API/UI before
+expanding authoritative analysis. Summary strings now safely exceed JS integer
+precision, but transaction_query.TransactionView.to_json currently returns integer
+amount_minor/running_balance_minor. Inspect frontend API types, formatting and
+all callers; connect a compatible exact-string boundary if unsafe JSON numbers
+can lose cents, with beyond-safe-integer end-to-end tests. Preserve original money,
+source/correction actions and historical contracts rather than coercing via Number.
+Then continue migrating analysis/graph views. Schedule remains ACTIVE to13:00 Dublin.
 
 ### Exact ledger summary service/API — 7 September 2026
 

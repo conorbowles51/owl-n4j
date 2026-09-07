@@ -79,9 +79,10 @@ feature below is complete at the start of this window.
    - [ ] Make larger comparisons practical and clearly show what was checked.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
-5. **Make every financial view use the authoritative ledger — remaining**
+5. **Make every financial view use the authoritative ledger — partial**
    - [x] Backend/API exact ledger posting summaries, separate currencies, explicit excluded populations and a hard no-partial-total limit (0ae8242). Display and legacy-view replacement remain.
    - [ ] Connect the graph and financial analysis screens to the reviewed ledger.
+   - [x] Current ledger summary display uses exact currency totals and included/excluded populations, with applied-filter scope and correction/adjudication refresh (b82d010). Legacy graph cards and other analysis views remain.
    - [ ] Ensure corrections and exclusions consistently update totals, searches and money-flow views.
    - [ ] Prevent older extracted graph values from being counted alongside reviewed transactions.
 
@@ -339,3 +340,9 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   37 targeted backend tests and read-only synthetic HTTP pass; exact GBP2100 and
   filtered GBP840 verified. Feature5 remains overall unfinished because no
   analysis screen is migrated yet. Next: exact summary display and invalidation.
+
+
+- 7 September, 09:44 Dublin: **b82d010** connects authoritative ledger summary UI.
+  43 targeted frontend tests, TypeScript/scoped lint and live synthetic exclusion/
+  restoration pass (GBP2100→1700→2100). Feature5 now partial; graph views remain
+  unmigrated. Status: partial1,2,3,4,5,6,10; remaining7,8,9; no whole feature complete.
