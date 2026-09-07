@@ -202,3 +202,51 @@ class MaterializationTests(MaterializationFixture):
                 CandidateFinalizationRequest.model_validate({**request,"documentary_financial_rows":value})
         with self.assertRaises(ValidationError):
             CandidateFinalizationRequest.model_validate({**request,"proof_class":"p2"})
+
+    def test_finalized_review_retains_history_and_original_for_resolved_and_rejected(self):
+        self.decide(self.candidates[1], "rejected")
+        before = [read_candidate_review(self.db, case_id=self.case.id, candidate_id=c) for c in self.candidates]
+        self.assertEqual([v["finalization_id"] for v in before], [None, None])
+        result = self.finalize()
+        for candidate_id, original in zip(self.candidates, before):
+            current = read_candidate_review(self.db, case_id=self.case.id, candidate_id=candidate_id)
+            self.assertEqual(current, {**original, "finalization_id": result["finalization_id"]})
+        with self.assertRaises(CandidateStoreError) as error:
+            read_candidate_review(self.db, case_id=self.other_case.id, candidate_id=self.candidates[0])
+        self.assertEqual(error.exception.status_code, 404)
+
+    def test_finalized_account_setup_refused_without_new_account_or_audit_run(self):
+        from services.financial.candidate_accounts import create_candidate_account
+        from postgres.models.financial import FinancialAccount
+        state = read_candidate_review(self.db, case_id=self.case.id, candidate_id=self.candidates[0])
+        self.finalize()
+        def counts():
+            return tuple(self.db.scalar(select(func.count()).select_from(model))
+                         for model in (FinancialAccount, FinancialIngestionRun))
+        before = counts()
+        with self.assertRaisesRegex(CandidateStoreError, "finalized"):
+            create_candidate_account(session_factory=self.SessionLocal, case_id=self.case.id,
+                candidate_id=self.candidates[0], actor=self.actor, request=dict(
+                    expected_revision=state["review_revision"], label="Unused account", currency="GBP", reason="Synthetic"))
+        self.assertEqual(counts(), before)
+
+    def test_account_setup_rechecks_finalization_after_precheck(self):
+        from contextlib import contextmanager
+        from services.financial import candidate_accounts as module
+        from postgres.models.financial import FinancialAccount
+        state = read_candidate_review(self.db, case_id=self.case.id, candidate_id=self.candidates[0])
+        original_run = module.ingestion_run
+        @contextmanager
+        def finalize_before_account_run(**kwargs):
+            self.finalize()
+            with original_run(**kwargs) as run:
+                yield run
+        before = self.db.scalar(select(func.count()).select_from(FinancialAccount))
+        with patch.object(module, "ingestion_run", finalize_before_account_run):
+            with self.assertRaisesRegex(CandidateStoreError, "finalized"):
+                module.create_candidate_account(session_factory=self.SessionLocal, case_id=self.case.id,
+                    candidate_id=self.candidates[0], actor=self.actor, request=dict(
+                        expected_revision=state["review_revision"], label="Unused account", currency="GBP", reason="Synthetic"))
+        self.assertEqual(self.db.scalar(select(func.count()).select_from(FinancialAccount)), before)
+        run = self.db.scalar(select(FinancialIngestionRun).where(FinancialIngestionRun.status == "failed"))
+        self.assertIsNotNone(run)

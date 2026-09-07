@@ -448,3 +448,21 @@ Automatic financial extraction, broader date/account uncertainty handling, compl
 statement coverage/control verification and the remaining numbered features are
 not completed by this workflow. Selected rows still do not enter default verified
 totals. The two real PDFs remain read-only test inputs, never ingested into a case.
+
+## Finalized review protection — 7 September 2026
+
+The review response now requires a nullable `finalization_id`, case-scoped through
+its mapping/file. It leaves original/history/review revision unchanged. Both resolved
+and rejected readings in a sealed batch become read-only; missing seal-state fields
+fail frontend validation rather than accidentally enabling old write controls.
+Review cache refresh keys include finalization so an already-open form resets when
+another screen finalizes. Source amount assessment stays available with a separate
+currency input that does not change the displayed reviewed currency. Corrections
+belong to the ledger, and receipt source links preserve the original transaction.
+
+Provisional-account setup checks for finalization before opening its audit run and
+again under the source-file lock. The second check protects against finalization
+between initial inspection and account creation. A rejected raced attempt records a
+failed audit run but no account. Tests exercise this ordering and both sealed statuses.
+The browser correction round trip keeps the selected-document P3 classification and
+replaces the active ledger row without changing the saved candidate reading.

@@ -50,6 +50,7 @@ export const candidateReview = z
     status: candidateStatus,
     reading: candidateReading.nullable(),
     review_revision: revision,
+    finalization_id: id.nullable(),
     history,
     applied: z.literal(false),
   })

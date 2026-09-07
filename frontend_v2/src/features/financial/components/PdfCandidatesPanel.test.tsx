@@ -22,6 +22,7 @@ const base = {
   status: "pending",
   reading: null,
   review_revision: "a".repeat(64),
+  finalization_id: null,
   history: [],
   applied: false,
 }
@@ -302,4 +303,71 @@ it("invalidates the original case after the form closes during a write", async (
   expect(fetch.mock.calls.filter(([, o]) => o?.method === "POST")).toHaveLength(
     1
   )
+})
+
+it.each(["resolved", "rejected"])(
+  "keeps finalized %s readings read-only with source assessment and history",
+  async (status) => {
+    const reading = {
+      account_id: "account-a",
+      currency: "GBP",
+      amount_minor: "1234",
+      direction: "debit",
+      booking_date: "2026-02-01",
+      value_date: null,
+      transaction_date: null,
+      description: "Synthetic",
+    }
+    const fetch = mockServer({
+      review: {
+        ...base,
+        status,
+        finalization_id: "seal-a",
+        reading: status === "resolved" ? reading : null,
+        history: [
+          {
+            id: "event-a",
+            sequence: 1,
+            status,
+            reason: "Original review reason",
+            reading: status === "resolved" ? reading : null,
+            actor: { name: "Reviewer", email: "reviewer@example.test" },
+            created_at: "2026-09-07T03:00:00Z",
+          },
+        ],
+      },
+    })
+    mountForm()
+    expect(await screen.findByText(/Finalized reading/)).toBeInTheDocument()
+    expect(screen.getByLabelText("Reviewed amount")).toBeDisabled()
+    expect(screen.getByLabelText("Reason for decision")).toBeDisabled()
+    for (const name of [
+      "Record resolved reading",
+      "Reject reading",
+      "Reopen for review",
+      "Create provisional account",
+    ])
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument()
+    expect(screen.getByText("Original review reason")).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText("Currency for source assessment"), {
+      target: { value: "GBP" },
+    })
+    expect(
+      screen.getByRole("button", { name: "Assess original amounts" })
+    ).toBeEnabled()
+    expect(
+      fetch.mock.calls.filter(([, options]) => options?.method === "POST")
+    ).toHaveLength(0)
+  }
+)
+
+it("refuses a review response that omits its finalization state", async () => {
+  mockServer({ review: { ...base, finalization_id: undefined } })
+  mountForm()
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Review could not be loaded"
+  )
+  expect(
+    screen.queryByRole("button", { name: "Record resolved reading" })
+  ).not.toBeInTheDocument()
 })

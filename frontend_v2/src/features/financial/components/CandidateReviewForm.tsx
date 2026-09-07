@@ -58,7 +58,7 @@ export function CandidateReviewForm({
         <p role="status">Loading review…</p>
       ) : (
         <ReviewFields
-          key={`${candidateId}:${query.data.review_revision}:${reload}`}
+          key={`${candidateId}:${query.data.review_revision}:${query.data.finalization_id}:${reload}`}
           review={query.data}
           caseId={caseId}
           mappingId={mappingId}
@@ -86,8 +86,11 @@ function ReviewFields({
   fileId: string
   onReload: () => void
 }) {
+  const finalized = review.finalization_id !== null
   const previous = review.reading
   const [currency, setCurrency] = useState(previous?.currency ?? "")
+  const [sourceCurrency, setSourceCurrency] = useState(previous?.currency ?? "")
+  const assessmentCurrency = finalized ? sourceCurrency : currency
   const [amount, setAmount] = useState(
     previous
       ? correctionMoney(previous.amount_minor, previous.currency).slice(
@@ -211,6 +214,7 @@ function ReviewFields({
   )
   const send = (status: "pending" | "resolved" | "rejected") => {
     if (
+      finalized ||
       lock.current ||
       accountBusyRef.current ||
       blocked ||
@@ -238,9 +242,21 @@ function ReviewFields({
   return (
     <div className="space-y-3 text-sm">
       <p>
-        Review status: <strong>{review.status}</strong>. These readings are
-        outside ledger totals, including after resolution.
+        Review status: <strong>{review.status}</strong>.
       </p>
+      {finalized ? (
+        <p role="status">
+          Finalized reading. Original values and review history are read-only.
+          {review.status === "resolved"
+            ? " This reading was added to the ledger. Use ledger corrections for later changes."
+            : " This rejected reading was retained in the finalized batch and was not added to the ledger."}{" "}
+          Finalization alone does not include readings in verified totals.
+        </p>
+      ) : (
+        <p>
+          These readings are outside ledger totals, including after resolution.
+        </p>
+      )}
       <ul className="space-y-1">
         {review.original.cells.map((cell) => (
           <li key={cell.column_index}>
@@ -251,7 +267,10 @@ function ReviewFields({
           </li>
         ))}
       </ul>
-      <fieldset disabled={disabled} className="grid gap-3 sm:grid-cols-2">
+      <fieldset
+        disabled={disabled || finalized}
+        className="grid gap-3 sm:grid-cols-2"
+      >
         <label>
           Currency
           <input
@@ -369,22 +388,24 @@ function ReviewFields({
           />
         </label>
       </fieldset>
-      <CandidateAccountForm
-        caseId={caseId}
-        candidateId={review.candidate_id}
-        fileId={fileId}
-        reviewRevision={review.review_revision}
-        currency={currency}
-        disabled={record.isPending || blocked}
-        onBusy={(busy) => {
-          accountBusyRef.current = busy
-          setAccountBusy(busy)
-        }}
-        onCreated={(created) => {
-          setNewAccount(created)
-          setAccount(created.id)
-        }}
-      />
+      {!finalized && (
+        <CandidateAccountForm
+          caseId={caseId}
+          candidateId={review.candidate_id}
+          fileId={fileId}
+          reviewRevision={review.review_revision}
+          currency={currency}
+          disabled={record.isPending || blocked}
+          onBusy={(busy) => {
+            accountBusyRef.current = busy
+            setAccountBusy(busy)
+          }}
+          onCreated={(created) => {
+            setNewAccount(created)
+            setAccount(created.id)
+          }}
+        />
+      )}
       {accounts.isError && (
         <p role="alert">
           Accounts could not be loaded. {accounts.error.message}
@@ -399,23 +420,39 @@ function ReviewFields({
           can be resolved.
         </p>
       )}
+      {finalized && (
+        <label>
+          Currency for source assessment
+          <input
+            className={fieldClass}
+            value={sourceCurrency}
+            maxLength={3}
+            onChange={(e) => {
+              setSourceCurrency(e.target.value.toUpperCase())
+              assessment.reset()
+            }}
+          />
+        </label>
+      )}
       <Button
         variant="outline"
         disabled={
-          disabled || assessment.isPending || !/^[A-Z]{3}$/.test(currency)
+          disabled ||
+          assessment.isPending ||
+          !/^[A-Z]{3}$/.test(assessmentCurrency)
         }
-        onClick={() => assessment.mutate(currency)}
+        onClick={() => assessment.mutate(assessmentCurrency)}
       >
         Assess original amounts
       </Button>
       {assessment.isError && (
         <p role="alert">Assessment failed. {assessment.error.message}</p>
       )}
-      {assessment.data && assessment.data.currency === currency && (
+      {assessment.data && assessment.data.currency === assessmentCurrency && (
         <div className="space-y-3">
           <p>
-            Currency supplied for assessment: {currency}. Column meanings remain
-            proposals.
+            Currency supplied for assessment: {assessmentCurrency}. Column
+            meanings remain proposals.
           </p>
           {assessment.data.amount_cells.map((cell) => (
             <div
@@ -429,12 +466,16 @@ function ReviewFields({
               {cell.assessment?.minor_units !== undefined && (
                 <p>
                   Numeric reading:{" "}
-                  {correctionMoney(cell.assessment.minor_units, currency)}
+                  {correctionMoney(
+                    cell.assessment.minor_units,
+                    assessmentCurrency
+                  )}
                 </p>
               )}
               {cell.assessment?.proposals?.map((p, index) => (
                 <p key={index}>
-                  Possible reading: {correctionMoney(p.minor_units, currency)}.{" "}
+                  Possible reading:{" "}
+                  {correctionMoney(p.minor_units, assessmentCurrency)}.{" "}
                   {p.basis}
                 </p>
               ))}
@@ -459,26 +500,34 @@ function ReviewFields({
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button
-          disabled={disabled || !reason.trim() || !ready}
-          onClick={() => send("resolved")}
-        >
-          Record resolved reading
-        </Button>
-        <Button
-          variant="outline"
-          disabled={disabled || !reason.trim() || review.status === "rejected"}
-          onClick={() => send("rejected")}
-        >
-          Reject reading
-        </Button>
-        <Button
-          variant="outline"
-          disabled={disabled || !reason.trim() || review.status === "pending"}
-          onClick={() => send("pending")}
-        >
-          Reopen for review
-        </Button>
+        {!finalized && (
+          <>
+            <Button
+              disabled={disabled || !reason.trim() || !ready}
+              onClick={() => send("resolved")}
+            >
+              Record resolved reading
+            </Button>
+            <Button
+              variant="outline"
+              disabled={
+                disabled || !reason.trim() || review.status === "rejected"
+              }
+              onClick={() => send("rejected")}
+            >
+              Reject reading
+            </Button>
+            <Button
+              variant="outline"
+              disabled={
+                disabled || !reason.trim() || review.status === "pending"
+              }
+              onClick={() => send("pending")}
+            >
+              Reopen for review
+            </Button>
+          </>
+        )}
         <Button variant="ghost" disabled={record.isPending} onClick={onReload}>
           Reload review
         </Button>

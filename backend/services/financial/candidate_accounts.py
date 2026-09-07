@@ -10,7 +10,7 @@ from pydantic import Field, model_validator
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile, EvidenceDocumentText, EvidenceTableGeometry
 from postgres.models.financial import FinancialAccount
-from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate
+from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateFinalization
 from services.financial.accounts import AccountDraft, record_account
 from services.financial.candidate_assessment import current_candidate_original
 from services.financial.candidate_reviews import read_candidate_review
@@ -48,6 +48,7 @@ def create_candidate_account(*, session_factory, case_id, candidate_id, request,
             .where(FinancialCandidateMapping.case_id == case_id, FinancialExtractionCandidate.id == candidate_id))
         if file_id is None:
             raise CandidateStoreError('Candidate not found in this case.', 404)
+        _require_unfinalized(session, case_id, file_id)
     label = request.label.strip()
     draft = AccountDraft.unidentified(distinguisher='candidate-account:' + _digest(dict(
         evidence_file_id=str(file_id), currency=request.currency, label=label)), currency=request.currency,
@@ -63,6 +64,8 @@ def create_candidate_account(*, session_factory, case_id, candidate_id, request,
                 if session.scalar(select(EvidenceFile.id).where(EvidenceFile.id == file_id,
                         EvidenceFile.case_id == case_id).with_for_update()) is None:
                     raise CandidateStoreError('Candidate source not found in this case.', 404)
+                # The file lock serializes this check with finalization.
+                _require_unfinalized(session, case_id, file_id)
                 if session.scalar(select(EvidenceDocumentText.evidence_file_id).where(
                         EvidenceDocumentText.evidence_file_id == file_id).with_for_update()) is None:
                     raise CandidateStoreError('Candidate source text is missing.', 404)
@@ -90,3 +93,10 @@ def create_candidate_account(*, session_factory, case_id, candidate_id, request,
                 session.rollback()
                 raise
     return result
+
+
+def _require_unfinalized(session, case_id, file_id):
+    if session.scalar(select(FinancialCandidateFinalization.id).where(
+            FinancialCandidateFinalization.case_id == case_id,
+            FinancialCandidateFinalization.evidence_file_id == file_id)) is not None:
+        raise CandidateStoreError("This PDF reading is finalized. Use ledger correction history.")

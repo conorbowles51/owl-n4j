@@ -89,8 +89,15 @@ def read_candidate_review(session, *, case_id, candidate_id):
         raise CandidateStoreError("Candidate not found in this case.", 404)
     if _digest(candidate.snapshot) != candidate.snapshot_sha256:
         raise CandidateStoreError("Candidate original is inconsistent.")
+    finalization_id = session.scalar(select(FinancialCandidateFinalization.id)
+        .join(FinancialCandidateMapping,
+            FinancialCandidateMapping.evidence_file_id == FinancialCandidateFinalization.evidence_file_id)
+        .where(FinancialCandidateMapping.id == candidate.mapping_id,
+            FinancialCandidateMapping.case_id == case_id,
+            FinancialCandidateFinalization.case_id == case_id))
     return dict(candidate_id=str(candidate.id), case_id=str(case_id), original=deepcopy(candidate.snapshot),
-                **candidate_review_state(session, candidate=candidate), applied=False)
+                **candidate_review_state(session, candidate=candidate), applied=False,
+                finalization_id=str(finalization_id) if finalization_id else None)
 
 
 def review_candidate(session, *, case_id, candidate_id, request, actor):

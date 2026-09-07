@@ -228,3 +228,22 @@ transaction import. Failed/refused setup remains visible with its recorded error
 but does not claim missing imported transactions. Mixed histories retain the real
 import warning and count setup separately. An operation label contradicting nonzero
 import counters does not suppress an import warning.
+
+## Finalized PDF readings and later corrections
+
+Run these in order against the isolated services with the current backend. They
+create a fresh synthetic PDF case, resolve its two rows, finalize them through the
+browser, then correct one ledger amount while retaining its original source:
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/prepare_local_finalization_ui.py
+node scripts/check_local_finalization_ui.cjs
+node scripts/check_local_finalized_review_ui.cjs
+```
+
+The last script requires a freshly finalized fixture without a previous correction;
+rerun all three to repeat the complete check. It verifies the read-only candidate
+screen, retained history and source assessment, an authenticated 409 for provisional
+account setup after finalization, a GBP12.34→12.35 ledger replacement remaining P3,
+and the original receipt's correction notice and highlighted PDF row. Results are
+in `data/local-runtime/finalized-review-ui-check.json`. Real evidence is not used.
