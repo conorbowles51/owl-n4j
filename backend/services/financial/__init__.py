@@ -8,6 +8,7 @@ that fails to close can detect an absence.
 Nothing in this package may represent a monetary value as a float.
 """
 
+from services.financial.candidate_store import CandidateStoreError, store_pdf_candidates, read_candidate_mapping
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
 from services.financial.corrections import correct_transaction
 from services.financial.correction_verification import correction_verification
@@ -898,6 +899,7 @@ from services.financial.version import (
 )
 
 __all__ = [
+    "CandidateStoreError", "store_pdf_candidates", "read_candidate_mapping",
     "PdfGridMapping", "PdfGridBoundMapping", "bind_pdf_grid_mapping", "pdf_grid_source_revision",
     "PdfMappingError", "PdfTextSpan", "PdfColumnProposal", "PdfCellProposal",
     "PdfRowProposal", "PdfContextProposal", "PdfMappingProposal", "PdfBoundCell",

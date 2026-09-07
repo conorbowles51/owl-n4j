@@ -30,6 +30,7 @@ from postgres.models.case_profile import (
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 from postgres.models.significant import SignificantEntity
 from postgres.models.loupe import Loupe, LoupeLink, LoupeMember, LoupeRevision
+from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate
 from postgres.models.financial import (
     AdjudicationEvent,
     FinancialAccount,
@@ -61,6 +62,7 @@ from postgres.models.workspace import (
 )
 
 __all__ = [
+    "FinancialCandidateMapping", "FinancialExtractionCandidate",
     "User", "Case", "CaseMembership", "RejectedMergePair",
     "CostRecord", "CostJobType", "AIPricingRate", "CaseDeadline",
     "NotebookNote", "NotebookNoteLink", "TimelineView", "TimelineViewEvent",

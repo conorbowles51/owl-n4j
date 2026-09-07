@@ -107,3 +107,18 @@ all service connections and OCR, native PDF rendering, both venvs' `pip check`,
 This is a working integration environment, not exhaustive application acceptance
 testing. The dependency ranges and image major tags are not a complete frozen
 release lock.
+
+Check pending PDF candidate storage and real PostgreSQL contention:
+
+```sh
+python3 scripts/local_app.py migrate
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_candidates.py
+```
+
+This generates a labelled PDF/case and reads its actual table geometry. Two writers
+are held at a PostgreSQL source-row lock before release; exactly one mapping and
+two pending originals survive, and neither enters the ledger. Direct SQL attempts
+to UPDATE either original table are refused by database triggers. The script uses
+only the isolated local database and records IDs in
+`data/local-runtime/candidate-check.json`. Candidate review/HTTP/UI is not exposed
+yet. The migration refuses downgrade while saved originals exist.

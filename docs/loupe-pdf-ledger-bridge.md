@@ -124,3 +124,21 @@ geometry and back through this binder. Case isolation, drift, malformed geometry
 repeated amounts, unknown/recognised origins and immutable originals are tested.
 Next implementation is candidate persistence with immutable source/mapping
 snapshots, followed by auditable review transitions and amount assessment.
+
+## Pending original storage — 7 September 2026
+
+Migration `20260907_candidate_originals` adds mapping and candidate original tables
+outside the ledger. `candidate_store.py` locks the evidence file and existing
+source text/geometry rows, rebinds either mapping contract, then commits all
+originals atomically. Same-mapping retries return the original IDs and actor;
+changed mappings append new originals. Snapshot digests detect incomplete or
+inconsistent stored data. PostgreSQL triggers reject updates, and ORM guards
+provide the same protection for ordinary ORM writes in SQLite. Case/file deletion
+still cascades, consistent with existing evidence deletion semantics.
+
+These tables contain no normalized money or mutable review status. The current
+reader reports pending. Reviews will be separate records, leaving these originals
+intact. New mapping snapshots are not deduplicated across revisions or overlapping
+regions; materialization must enforce that later. The service requires an
+authorized case and actor from its eventual route, and a dedicated clean session.
+No route/UI or review transition is enabled by this storage segment.
