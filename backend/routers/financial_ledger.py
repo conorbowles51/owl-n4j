@@ -39,6 +39,8 @@ from services.financial.ledger_source import LedgerSourceError, ledger_source
 from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
 from services.financial.candidate_assessment import assess_candidate_amounts
 from services.financial.candidate_reviews import read_candidate_review
+from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
+from services.financial.pdf_candidates import PdfMappingError
 
 from postgres.models.enums import (
     AdjudicationDecision,
@@ -494,3 +496,28 @@ async def get_duplicate_candidates(
     except Exception:
         logger.exception("Failed to compare financial documents for case %s", case_id)
         raise HTTPException(status_code=500, detail="Duplicate comparison could not be completed.")
+
+
+@router.get("/candidate-sources")
+async def get_candidate_sources(case_id: UUID = Query(...), limit: int = 25, offset: int = 0,
+                                db: Session = Depends(get_db)):
+    try:
+        return list_candidate_sources(db, case_id=case_id, limit=limit, offset=offset)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    except Exception:
+        logger.exception("Failed to list candidate sources")
+        raise HTTPException(status_code=500, detail="Stored PDF sources could not be loaded.")
+
+
+@router.get("/candidate-sources/{evidence_file_id}/pages/{page_number}")
+async def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id: UUID = Query(...),
+                               table_index: int = 0, db: Session = Depends(get_db)):
+    try:
+        return read_candidate_source(db, case_id=case_id, evidence_file_id=evidence_file_id,
+                                     page_number=page_number, table_index=table_index)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    except Exception:
+        logger.exception("Failed to read candidate source")
+        raise HTTPException(status_code=500, detail="Stored PDF table could not be loaded.")

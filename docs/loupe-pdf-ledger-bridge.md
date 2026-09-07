@@ -199,3 +199,22 @@ Verified with a synthetic real-browser reopen/resolve round trip and authenticat
 creation retry. Creation of source mappings through the UI, automatic extraction,
 account creation and atomic materialization still remain. Resolution stays outside
 ledger totals. Earlier “UI remains” notes above describe the preceding checkpoint.
+
+
+## Deliberate stored-grid nomination — 7 September 2026
+
+`candidate_sources.py` lists case-scoped source pages and reads one validated table
+at a time using the same revision and geometry checks as the binder. Source cells
+are returned with exact text, grid coordinates and locators; oversized tables/cells
+are refused without truncation. Read routes use case:view. The UI shows the page,
+leaves columns unidentified and rows unselected, and saves only deliberate choices
+through the existing case:edit writer. Rows from text alignment are explicitly
+labelled as inferred. Pagination never changes source row indices.
+
+Saved responses must echo the exact proposed source revision, rows and meanings.
+Writes require explicit reload before another attempt; identical retry safety stays
+in the writer. A synthetic live-browser selection/save/retry produced one pending
+row under the same mapping ID. All 153 extracted tables in the two user-provided
+PDFs passed a read-only source/binding contract check. Their 7,529 source rows are
+not claimed to be transactions. Account setup, extraction initiation and atomic
+materialization remain; this adds a UI for already-stored PDF table extraction.

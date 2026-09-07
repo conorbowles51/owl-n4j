@@ -154,3 +154,31 @@ case. The screen supports rejection, review reload, account search and all three
 date roles. A stable accessible label is used for selects and the reason textarea.
 Source mapping creation still requires the API or fixture script; automatic PDF
 import, account creation and ledger materialization are not part of this screen.
+
+
+Select and save rows from stored PDF tables in Financial → Ledger → PDF readings
+→ Choose PDF rows. Pick a source page/table, inspect its image, assign column
+meanings and select rows. Nothing is selected or classified automatically. Reload
+resets the selection; identical saves return the same mapping. New extraction and
+account setup remain separate prerequisites. Verify this with a synthetic case:
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_candidates.py
+node scripts/check_local_candidate_source_ui.cjs
+```
+
+The browser check selects only one row, checks the source image, saves twice and
+verifies the same mapping ID with one pending candidate. IDs are recorded in
+`data/local-runtime/candidate-source-ui-check.json`. To run a read-only contract
+check on the user-provided PDFs without inserting them into any database:
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_real_pdf_candidate_sources.py
+```
+
+This uses same-pass extraction snapshots in memory, binds all extracted nonempty
+rows with unknown meanings and writes only aggregate diagnostics under
+`data/local-runtime/pdf-inspection`. It does not classify those rows as transactions
+or constitute real-document ingestion acceptance. Real PDFs and generated page
+images stay outside Git. Both supplied files passed: 153 tables/7,529 source rows
+across 164 pages, including 11 verified blank pages.

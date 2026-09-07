@@ -8,6 +8,7 @@ import {
   candidateMapping,
   candidateUrl,
 } from "../lib/candidate-contract"
+import { CandidateSourcePicker } from "./CandidateSourcePicker"
 import { CandidateReviewForm } from "./CandidateReviewForm"
 
 export function PdfCandidatesPanel({ caseId }: { caseId: string | undefined }) {
@@ -39,6 +40,7 @@ export function PdfCandidatesPanel({ caseId }: { caseId: string | undefined }) {
 }
 
 function CandidateMappings({ caseId }: { caseId: string }) {
+  const [choosing, setChoosing] = useState(false)
   const [offset, setOffset] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
   const list = useQuery({
@@ -58,6 +60,8 @@ function CandidateMappings({ caseId }: { caseId: string }) {
   })
   return (
     <div className="space-y-3 text-sm">
+      <Button variant="outline" onClick={() => setChoosing(v => !v)}>{choosing ? "Hide source selection" : "Choose PDF rows"}</Button>
+      {choosing && <CandidateSourcePicker caseId={caseId} onSaved={setSelected} />}
       <Button
         variant="outline"
         size="sm"
