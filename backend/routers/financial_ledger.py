@@ -31,7 +31,7 @@ from datetime import date
 from typing import Optional, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
@@ -42,6 +42,7 @@ from services.financial.candidate_reviews import read_candidate_review
 from services.financial.candidate_overlap import check_candidate_source_reuse
 from services.financial.candidate_materialization import preview_candidate_finalization
 from routers.evidence import _resolve_stored_path
+from services.financial.ledger_snapshot import capture_ledger_export, ledger_export_archive
 from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
 from services.financial.coverage_query import requested_statement_coverage, CoverageQueryError, list_statement_coverage
 from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
@@ -133,6 +134,25 @@ async def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(
     except Exception:
         logger.exception("Candidate list failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Saved PDF readings could not be listed.")
+
+
+@router.get("/ledger-export")
+def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db)):
+    try:
+        exported=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id,
+            start_date=start_date,end_date=end_date)
+        return Response(content=ledger_export_archive(exported),media_type="application/zip",headers={
+            "Content-Disposition": 'attachment; filename="loupe-ledger-export.zip"',
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            "X-Loupe-Case-Id": str(case_id), "X-Loupe-Account-Id": str(account_id) if account_id else "",
+            "X-Loupe-Start-Date": start_date.isoformat() if start_date else "",
+            "X-Loupe-End-Date": end_date.isoformat() if end_date else ""})
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger export failed for case %s",case_id)
+        raise HTTPException(status_code=500,detail="Ledger export could not be prepared.")
 
 
 @router.get("/ledger-trends")

@@ -522,3 +522,25 @@ export's two reads, verifies the original snapshot remains unchanged, observes t
 new decision in a later export, and restores the row in finally. Two synthetic audit
 events remain. It verifies digest/byte count and oversize refusal. Report:
 `data/local-runtime/ledger-export-check.json`.
+
+## Download a ledger snapshot
+
+The documentary Trends tab now offers **Download ledger snapshot** for the applied
+account/date scope. The authenticated case-scoped endpoint returns a ZIP containing
+`ledger-snapshot.json` and `manifest.json`. It preserves the captured JSON bytes;
+the manifest records their SHA-256 and byte count. The browser checks response scope
+before saving. This is a structured data export, not a formatted investigator report.
+Original PDFs and structured candidate-review history are not bundled, and recorded
+source hashes do not claim fresh file verification.
+
+Read-only browser smoke check against the existing synthetic coverage case:
+
+```sh
+node scripts/check_local_ledger_export_ui.cjs
+```
+
+Saved ZIP: `data/local-runtime/ledger-export-ui.zip`. The byte-level verification
+report `data/local-runtime/ledger-export-ui-check.json` confirms ten included rows,
+four relevant decisions and the exact manifest digest. The captured synthetic total
+is GBP 2,100. Backend snapshot/package tests passed (31), frontend export/page tests
+passed (33), and TypeScript and scoped ESLint passed.

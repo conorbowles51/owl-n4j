@@ -106,3 +106,16 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
         decision_count=len(document['decisions']),included_rows=document['ledger']['included_rows'],
         excluded_rows=document['ledger']['excluded_rows'])
     return LedgerExport(snapshot,json.dumps(manifest,sort_keys=True,separators=(',',':')))
+
+
+def ledger_export_archive(export):
+    """Package canonical bytes without reserializing the captured content."""
+    import io
+    import zipfile
+    stream=io.BytesIO()
+    with zipfile.ZipFile(stream,'w',compression=zipfile.ZIP_DEFLATED) as archive:
+        for name,content in (('ledger-snapshot.json',export.snapshot.content),('manifest.json',export.manifest)):
+            info=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0))
+            info.compress_type=zipfile.ZIP_DEFLATED
+            archive.writestr(info,content.encode('utf-8'))
+    return stream.getvalue()

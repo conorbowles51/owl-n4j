@@ -1,5 +1,6 @@
 import { useState } from "react"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
+import { LedgerExportButton } from "./LedgerExportButton"
 import { LedgerFilters } from "./LedgerFilters"
 import { LedgerSummaryPanel } from "./LedgerSummaryPanel"
 import { LedgerTrendsPanel } from "./LedgerTrendsPanel"
@@ -23,6 +24,7 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
       <LedgerFilters caseId={caseId} onApply={setParams} />
       <RequestedCoveragePanel caseId={caseId} params={params} />
       <LedgerSummaryPanel caseId={caseId} params={params} />
+      <LedgerExportButton caseId={caseId} params={params} />
       <LedgerTrendsPanel caseId={caseId} params={params} />
     </section>
   )

@@ -64,3 +64,26 @@ class LedgerSnapshotTests(LedgerSummaryTests):
     def test_live_export_refuses_non_postgres_connections(self):
         from services.financial.ledger_snapshot import capture_ledger_export
         with self.assertRaises(LedgerSummaryError):capture_ledger_export(self.db.get_bind(),case_id=self.case.id)
+
+    def test_archive_preserves_snapshot_bytes_and_safe_names(self):
+        import io,zipfile
+        from services.financial.ledger_snapshot import LedgerExport,ledger_export_archive
+        snapshot=self.capture()
+        with zipfile.ZipFile(io.BytesIO(ledger_export_archive(LedgerExport(snapshot,'{"manifest":true}')))) as archive:
+            self.assertEqual(set(archive.namelist()),{'ledger-snapshot.json','manifest.json'})
+            self.assertEqual(archive.read('ledger-snapshot.json'),snapshot.content.encode('utf-8'))
+
+    def test_download_route_is_scoped_attachment_and_hides_internal_errors(self):
+        from routers import financial_ledger as router
+        from services.financial.ledger_snapshot import LedgerExport
+        from fastapi import HTTPException
+        case_id=self.case.id
+        with patch.object(router,'capture_ledger_export',return_value=LedgerExport(self.capture(),'{}')) as call:
+            response=router.download_ledger_export(case_id,None,None,None,self.db)
+            call.assert_called_once_with(self.db.get_bind(),case_id=case_id,account_id=None,start_date=None,end_date=None)
+            self.assertEqual(response.headers['content-type'],'application/zip')
+            self.assertEqual(response.headers['x-loupe-case-id'],str(case_id))
+            self.assertEqual(response.headers['cache-control'],'no-store')
+        with patch.object(router,'capture_ledger_export',side_effect=RuntimeError('private')):
+            with self.assertRaises(HTTPException) as caught:router.download_ledger_export(case_id,None,None,None,self.db)
+            self.assertNotIn('private',caught.exception.detail)
