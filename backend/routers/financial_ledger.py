@@ -42,6 +42,7 @@ from services.financial.candidate_reviews import read_candidate_review
 from services.financial.candidate_overlap import check_candidate_source_reuse
 from services.financial.candidate_materialization import preview_candidate_finalization
 from routers.evidence import _resolve_stored_path
+from services.financial.coverage_query import CoverageQueryError, list_statement_coverage
 from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError
 
@@ -131,6 +132,17 @@ async def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(
     except Exception:
         logger.exception("Candidate list failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Saved PDF readings could not be listed.")
+
+
+@router.get("/statement-coverage")
+async def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
+    try:
+        return list_statement_coverage(db, case_id=case_id, offset=offset)
+    except CoverageQueryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Statement coverage failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Statement coverage could not be calculated.")
 
 
 @router.get("/ledger-accounts")

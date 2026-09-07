@@ -522,3 +522,21 @@ is earned from these conditional diagnostics. Document revision now includes act
 row order, running balance, amount/direction/account/currency/period fields, so a
 changed stored balance invalidates a prior preview even without a recalculated
 content hash. Source links open the original row, including after replacement.
+
+## Printed statement-bound coverage — 7 September 2026
+
+Case:view GET statement-coverage reads account/period/source ownership together and
+reports bounded date coverage. It reuses the existing printed-bound rule but unions
+all eligible intervals, including enclosing exports, before computing gaps; the
+continuity module's exclusion of enclosing periods is appropriate for balance seams,
+not for claiming date-range absence. Overlaps are explicit, dates count once and
+currencies are separate. Missing/derived dates and nonadmitted sources remain visible.
+Cross-case source links or accounts over500 periods return unavailable rather than
+partial or leaked information. Accounts page25 at a time with has_more/offset.
+
+The Ledger coverage panel uses the financial-ledger case cache prefix, so existing
+correction/finalization/duplicate invalidations refresh its snapshot. It makes clear
+that bounds do not certify extracted transactions or records outside known bounds.
+Source period/document/file IDs are retained in the response. Exact source-bound date
+citation navigation and integration with transaction search remain further work;
+this panel does not invent a page/rectangle for a period bound.

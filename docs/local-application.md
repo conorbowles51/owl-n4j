@@ -295,3 +295,26 @@ printed balances400/420, record the correction remainingP3, and open the origina
 PDF source. Rerun the preparation before repeating. Reports are running-balance-check.json
 and running-balance-ui-check.json under data/local-runtime; screenshots use the
 /tmp/loupe-neilbyrne-running-balance prefix. Native controls remain unrevalidated.
+
+## Statement date coverage
+
+The Ledger tab offers **Check statement coverage**. It pages through25 accounts,
+with a hard500-period limit per account. Exceeding that limit returns unavailable
+rather than showing partial coverage. Only admitted sources with printed start/end
+bounds contribute. Dates derived from transactions, missing bounds and excluded
+sources remain listed with reasons. Currency groups stay separate.
+
+Overlapping/enclosing periods are combined before finding internal gaps, so an
+export spanning a missing month prevents a false date-range gap. Coverage describes
+recorded statement bounds, not complete extraction or absence of transactions.
+No inference is made about records before/after the first/last known bounds.
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/prepare_local_coverage_ui.py
+node scripts/check_local_coverage_ui.cjs
+```
+
+The synthetic accounts demonstrate a28-day February gap and an enclosing export
+that fills it. Reports: coverage-check.json and coverage-ui-check.json under
+data/local-runtime. Screenshot: `/tmp/loupe-neilbyrne-statement-coverage-ui.png`.
+The synthetic preparation completes its audit run and never uses real evidence.

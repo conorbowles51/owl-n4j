@@ -43,6 +43,7 @@ import { BulkActionsBar } from "./BulkActionsBar"
 import { TransactionTable } from "./TransactionTable"
 import { FinancialCharts } from "./FinancialCharts"
 import { DuplicateCandidatesPanel } from "./DuplicateCandidatesPanel"
+import { StatementCoveragePanel } from "./StatementCoveragePanel"
 import { PdfCandidatesPanel } from "./PdfCandidatesPanel"
 import { ProofStandingPanel } from "./ProofStandingPanel"
 import { CorrectableLedger } from "./CorrectableLedger"
@@ -539,6 +540,7 @@ export function FinancialPage() {
               <DuplicateCandidatesPanel key={caseId} caseId={caseId} />
             </ErrorBoundary>
             <ErrorBoundary level="section">
+              <StatementCoveragePanel key={`coverage:${caseId}`} caseId={caseId} />
               <PdfCandidatesPanel key={caseId} caseId={caseId} />
             </ErrorBoundary>
             <ErrorBoundary level="section">
