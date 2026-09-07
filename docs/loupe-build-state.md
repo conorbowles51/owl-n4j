@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `49f2b83`, “Download scoped ledger snapshots
-  with exact manifests from Trends”. A state commit follows;
+- **Latest implementation commit:** `8a1e051`, “Bundle a readable escaped report
+  derived from the captured ledger snapshot”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,30 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Readable captured ledger report — 7 September 2026
+
+`8a1e051` adds ledger-report.html to the same ZIP, rendered only from immutable
+snapshot content. Scope, currency totals in explicit exact minor units, included
+and excluded readings, source metadata/digests, row/provenance and relevant decision
+records are present. HTML escapes all evidence values; CSP forbids scripts and
+external resources. Report size over16MiB refuses instead of truncating. Manifest
+adds report SHA-256/byte count/derived snapshot digest, preserving snapshot bytes.
+32 targeted backend tests passed including hostile markup, unsafe-JS-range money,
+size refusal and hash binding. Scoped ESLint/diff checks passed; browser downloaded
+ZIP and independently checked both digests, ten synthetic rows and four decisions.
+Chromium rendered all14 articles with no horizontal overflow at1280px; screenshot
+visually checked. Reports: data/local-runtime/ledger-report-check.json and
+ledger-report-preview.png. Backend now exec17992, log
+/tmp/loupe-neilbyrne-report-server.out. No real evidence changes.
+Feature8 remains partial: PDF pagination/polished exhibits, candidate-review history
+and source-file bundling are not completed. This report labels minor-unit values;
+familiar major-unit formatting can reuse the existing exact currency formatter.
+
+**Next segment:** verify filtered export totals and permission refusals over actual
+HTTP; then improve readable money display using the established currency-unit rules
+without losing the exact integer representation. Preserve all ten checklist features.
+Reserve11:45UTC for final verification/handoff; ACTIVE schedule ends13:00Dublin.
 
 ### Scoped ledger ZIP download — 7 September 2026
 

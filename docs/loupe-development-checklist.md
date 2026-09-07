@@ -106,6 +106,7 @@ feature below is complete at the start of this window.
    - [ ] Connect comparisons between financial records and statements or claims about payments.
 
 8. **Produce traceable reports and exports — partial**
+   - [x] Bundle a readable HTML report derived from the exact captured snapshot, with scope, totals, included/excluded readings, source references and decision details; independently hash the report (8a1e051). Browser layout/download verified. Amounts use explicit minor units; polished exhibits and PDF pagination remain.
    - [x] Download the applied ledger scope as a ZIP with exact rows/totals, source references, relevant decision history and a byte-verifiable manifest (49f2b83). Browser download and digest verified; formatted reports and broader export workflow remain.
    - [x] Consistent PostgreSQL snapshot of relevant decision history plus exact JSON export manifest, with event/output bounds (001009d). Download/report UI remains; candidate-review history and fresh source-byte verification explicitly excluded.
    - [x] Internal immutable ledger snapshot captures exact rows/totals/source metadata and exclusions from one read, with stable content hash (1efe4ad). Decision history, manifest and download remain; snapshot explicitly not export-ready.
@@ -400,3 +401,7 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   final six-button-test rerun, TypeScript/scoped ESLint and Chromium download pass.
   Saved ZIP independently verified: ten synthetic rows, four decisions, GBP2,100,
   matching digest/byte count. Feature8 now partial; no entire feature complete.
+
+- Readable report checkpoint (8a1e051):32 targeted backend tests and scoped ESLint
+  pass. Browser ZIP and both hashes verified, ten readings/four decisions rendered;
+  screenshot inspected with no horizontal overflow. Feature8 remains partial.
