@@ -14,8 +14,8 @@ const { chromium } = require(path.join(root, 'frontend_v2/node_modules/playwrigh
   await page.getByRole('button', {name: 'Sign in', exact: true}).click();
   await page.waitForURL(url => !url.pathname.includes('login'));
   await page.goto(`http://127.0.0.1:55174/cases/${fixture.case_id}/financial`);
-  await page.getByRole('tab', {name: 'Ledger', exact: true}).click();
-  await page.getByTestId('ledger-summary').filter({hasText: '10 rows'}).waitFor();
+  await page.getByRole('tab', {name: 'Trends', exact: true}).click();
+  await page.getByRole('region', {name: 'Authoritative ledger trends', exact: true}).waitFor();
   const panel=page.getByRole('region',{name:'Ledger totals by date',exact:true});
   await panel.getByRole('button',{name:'Read ledger date totals',exact:true}).click();
   await panel.getByText('2026-01-01 · GBP · 10 postings',{exact:true}).waitFor();

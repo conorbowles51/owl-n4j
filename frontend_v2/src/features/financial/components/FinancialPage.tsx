@@ -10,6 +10,8 @@ import {
   ShieldAlert,
   Users,
 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { LedgerAnalysis } from "./LedgerAnalysis"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
@@ -676,7 +678,17 @@ export function FinancialPage() {
         </TabsContent>
 
         <TabsContent value="trends" className="flex min-h-0 flex-1 flex-col">
-          {graphTab(
+          <div className="flex items-center gap-2 border-b p-3">
+            <Button variant={isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("transactions")}>Ledger postings</Button>
+            <Button variant={!isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("intelligence")}>Financial intelligence</Button>
+          </div>
+          {isTransactionsMode ? (
+            <div className="min-h-0 flex-1 overflow-auto">
+              <ErrorBoundary level="section"><LedgerAnalysis key={caseId} caseId={caseId}/></ErrorBoundary>
+            </div>
+          ) : <>
+            <p className="border-b p-3 text-sm">Financial intelligence uses extracted graph records, including claims and valuations. These are separate from ledger posting totals and do not reflect ledger corrections.</p>
+            {graphTab(
             <>
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
                 <div>
@@ -728,6 +740,7 @@ export function FinancialPage() {
               </div>
             </>
           )}
+          </>}
         </TabsContent>
       </Tabs>
 

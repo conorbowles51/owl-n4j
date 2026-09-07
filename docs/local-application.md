@@ -472,3 +472,15 @@ Read-only check: synthetic daily/monthly GBP2100 and source citation navigation.
 The fixture has no stored page rectangle; this check verifies the cited record,
 not PDF highlighting. Report: `data/local-runtime/trends-panel-ui-check.json`;
 screenshot: `/tmp/loupe-neilbyrne-trends-source-ui.png`.
+
+## Top-level Trends workflow
+
+The main **Trends** tab now uses **Ledger postings** analysis for documentary
+transactions: its own applied account/date filters, coverage, exact summary and
+daily/monthly totals/source links. It remains available while graph reads are
+loading or empty. **Financial intelligence** retains the separate graph-based
+claims/valuations view with an explicit limitation; its selector remains accessible
+when empty. Graph Transactions and Counterparties are not yet migrated.
+
+`check_local_trends_panel_ui.cjs` now enters the top-level Trends tab to verify
+this workflow against the existing synthetic fixture.

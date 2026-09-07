@@ -715,3 +715,28 @@ it("shows the classification census even when both the graph and admitted ledger
 vi.mock("../hooks/use-duplicate-candidates", () => ({
   useDuplicateCandidates: () => ({ isPending: true, isFetching: false, refetch: vi.fn() }),
 }))
+
+
+describe("FinancialPage authoritative Trends", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useFinancialStore.getState().reset()
+    ledgerEmpty(); runsEmpty(); adjudicationIdle()
+  })
+  it.each(["empty", "loading"])("reaches ledger trends with a %s graph", (state) => {
+    if (state === "empty") graphEmpty(); else graphLoading()
+    renderPage(); selectTab("Trends")
+    expect(screen.getByRole("region", {name: "Authoritative ledger trends"})).toBeInTheDocument()
+    expect(screen.getByRole("region", {name: "Current ledger summary"})).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
+    expect(screen.queryByText("Money Out")).not.toBeInTheDocument()
+  })
+  it("separates intelligence and always permits returning to ledger analysis", () => {
+    graphEmpty(); renderPage(); selectTab("Trends")
+    fireEvent.click(screen.getByRole("button", {name: "Financial intelligence"}))
+    expect(screen.queryByRole("region", {name: "Authoritative ledger trends"})).not.toBeInTheDocument()
+    expect(screen.getByText(/do not reflect ledger corrections/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", {name: "Ledger postings"}))
+    expect(screen.getByRole("region", {name: "Authoritative ledger trends"})).toBeInTheDocument()
+  })
+})
