@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `d40474a`, “Group authoritative ledger postings
-  by date with exact source-linked totals”. A state commit follows;
+- **Latest implementation commit:** `8582179`, “Display exact ledger date totals
+  with contributing source navigation”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,34 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Source-linked ledger date display — 7 September 2026
+
+`8582179` connects LedgerTrendsPanel in Ledger to applied filters, with explicit
+read/refresh and daily/monthly selection.25-point pages and25-reading pages per
+point; links use existing LedgerSourceDialog. Validates scope/grouping, exact
+point/summary money, row counts and unique contributing IDs. Currency groups stay
+separate; unavailable never zero. Scope-keyed state clears old results/source.
+Legacy graph Trends remains separate; no graph migration claim.
+
+Verified:21 targeted frontend tests (9 new trends,2 wrapper,10 summary), TypeScript
+and scoped lint. Initial TypeScript test-only exact option was removed (testing-
+library role options differ from Playwright); final typecheck passed. Live read-only
+synthetic browser daily/monthly GBP2100 and contributing source record scope passed.
+Fixture has no stored page location; source dialog correctly says so. Screenshot
+visually inspected, no PDF highlighting claimed. Script check_local_trends_panel_ui.cjs;
+report trends-panel-ui-check.json; screenshot /tmp/loupe-neilbyrne-trends-source-ui.png.
+Logs /tmp/loupe-neilbyrne-trends-panel-{tests,tsc,lint,live}.out. Backend unchanged
+exec21922. No real evidence changes. Feature5 remains partial.
+
+**Next segment:** consolidate the connected summary/date-filter/trend work with
+one full financial backend gate and frontend unit/browser/TypeScript/lint gate.
+Several bounded segments have landed since the last full gate, so this is now
+integration verification, not repetition of unchanged checks. Fix actual failures,
+record current counts, and inspect source action/routing behavior. Then continue
+migrating legacy graph analysis to the authoritative ledger or traceable exports
+in dependency order; never mix graph numeric values with ledger exact strings.
+Schedule remains ACTIVE to13:00 Dublin, reserve final15 minutes for handoff.
 
 ### Authoritative date totals backend/API — 7 September 2026
 
