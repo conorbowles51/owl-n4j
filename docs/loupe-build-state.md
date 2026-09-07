@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `9e0ec3a`, “Use authoritative ledger analysis
-  in the main documentary Trends view”. A state commit follows;
+- **Latest implementation commit:** `1efe4ad`, “Capture deterministic ledger readings
+  and totals for a traceable export foundation”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,35 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Internal deterministic snapshot foundation — 7 September 2026
+
+`1efe4ad` adds optional capture_readings to the same ledger_summary SELECT/pass;
+normal summary/trends responses unchanged. Captures all scoped readings including
+excluded states, exact money strings, original provenance, source IDs/digest/parser/
+classification/status, inclusion/reason and replacement link. Frozen LedgerSnapshot
+contains deterministic UTF-8 JSON, SHA256 and byte count, no generation timestamp.
+No partial snapshot above row limit. Explicit export_ready=false/history_captured=false;
+not exposed through API/download and not a completed traceable export.
+
+Verified:47 targeted snapshot/summary/package tests, plus focused single-read proof.
+Exact >JS-safe money, stable hash, byte length, immutable old content after later
+provenance edits, excluded readings and no-partial bound pass. Initial SELECT-count
+test counted an expired fixture case-ID lookup; resolve fixture UUID before measuring,
+then actual capture performs one SELECT. Logs /tmp/loupe-neilbyrne-ledger-snapshot-
+{tests,single-read}.out. No live DB changes; backend session21922 not restarted for
+this internal service. Source bytes not verified; only recorded ingestion hashes.
+
+**Next segment:** add consistent decision-history capture and export-event manifest.
+Rows/totals/source state and relevant AdjudicationEvents must share one PostgreSQL
+repeatable-read read-only transaction, not independent READ COMMITTED snapshots.
+Use a fresh owned session/connection so caller auth reads cannot change isolation;
+SQLite test path must have explicit documented snapshot behavior. Bound decisions
+and serialized output; refuse truncation. Bind relevant case/row/source/file subjects,
+retain original correction lineage and actor/reason/before/after. Preserve deterministic
+content hash; generation time belongs in manifest, whose digest_covers must correctly
+name ledger JSON (existing export_manifest is HTML-specific, do not relabel blindly).
+Only expose download after these prerequisites and synthetic consistency tests.
 
 ### Main documentary Trends migration — 7 September 2026
 

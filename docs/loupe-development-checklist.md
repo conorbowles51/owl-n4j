@@ -106,6 +106,7 @@ feature below is complete at the start of this window.
    - [ ] Connect comparisons between financial records and statements or claims about payments.
 
 8. **Produce traceable reports and exports — remaining**
+   - [x] Internal immutable ledger snapshot captures exact rows/totals/source metadata and exclusions from one read, with stable content hash (1efe4ad). Decision history, manifest and download remain; snapshot explicitly not export-ready.
    - [ ] Connect existing export and exhibit components to reviewed results.
    - [ ] Include source references, correction history and relevant limitations.
    - [ ] Ensure exported totals agree with the application.
@@ -381,3 +382,8 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
 - 7 September, 10:31 Dublin: **9e0ec3a** migrates main documentary Trends to ledger
   analysis.36 targeted tests, TypeScript/lint and live source-linked Trends check
   pass. Feature5 stays partial; next work begins traceable authoritative exports.
+
+
+- 7 September, 10:40 Dublin: **1efe4ad** adds internal deterministic snapshot
+  foundation.47 targeted tests and single-SELECT proof pass. No export endpoint or
+  completion claim; next is consistent decision history and accurate JSON manifest.
