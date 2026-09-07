@@ -46,6 +46,25 @@ statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
 
+### Handoff health/preservation check — 7 September 2026, 11:36 UTC
+
+`46c4339` adds repeatable read-only scripts/check_local_handoff.py. Frontend55174,
+backend58002/health and engine58003/health all200. Synthetic coverage case remains
+10included/0excluded/210000GBPminor units. Both real PDF SHA-256 values match the
+original inspection baseline; zero isolated evidence_files match either digest or
+filename. SQL connection explicitly READ ONLY. Report
+ data/local-runtime/handoff-verification.json. AI provider processing still not
+validated. User guide updated with12:36Dublin verification time. Application code
+unchanged since51ebd77; full and targeted test baselines remain valid.
+
+**Next heartbeat:** check clock. At/after11:45UTC begin final handoff/pause through
+ automation_update, preserving existing automation fields/prompt and marking status
+PAUSED. Before11:45UTC avoid repeated full suites/extraction; no remaining bounded
+implementation is in progress. Verify tracked tree clean and guide/checklist links.
+Final message: scheduled run paused for13:00Dublin handoff; application running,
+completed main ledger views/export work, eightpartial/two remaining, none whole
+complete; link review guide. No claim of pause before tool success. No pushes.
+
 ### Review guide prepared — 7 September 2026, before final cutoff
 
 `5975be9` adds docs/loupe-review-2026-09-07.md: plain-language numbered status of

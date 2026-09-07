@@ -450,3 +450,8 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   numbered complete-subitem/remaining status and three local demos. Current API
   counts verified; generated-PDF correction-history browser demo passed read-only.
   Final health/preservation check and scheduled pause remain at11:45UTC.
+
+- Handoff preservation checkpoint (46c4339),12:36Dublin:all three HTTP services
+  healthy, synthetic10rows/2100GBP restored, both original PDF hashes unchanged,
+  zero matching isolated ingestions. AI processing not tested. Schedule remains
+  ACTIVE pending planned11:45UTC final handoff/pause.
