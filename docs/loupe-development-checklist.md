@@ -49,6 +49,8 @@ feature below is complete at the start of this window.
 
    - [x] Incomplete coverage stays explicit: selected documentary financial rows remain outside verified totals even when subset arithmetic balances; reconciliation and corrections cannot silently promote them (ed656da). End-to-end admission remains.
 
+   - [x] Durable finalization storage: keep permanent candidate/review/transaction links, refuse repeated sealed batches and later review/mapping changes, and protect source scope in PostgreSQL (f0ddde3). Atomic transaction creation and its concurrent retry acceptance remain.
+
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
@@ -226,3 +228,9 @@ through computed classification, stored document metadata, reconciliation and
 correction verification. 3,701 financial tests pass (zero skips); 927 frontend
 unit/11 Chromium, TypeScript/full ESLint pass. Next: immutable finalization links
 and source claims, then the atomic candidate-to-ledger writer.
+
+Extended-window implementationf0ddde3 adds immutable whole-file finalization and
+source/review/transaction linkage infrastructure. 3,707 financial tests pass with
+zero skips; ten isolated PostgreSQL guard checks passed with all fixture rows
+rolled back. End-to-end candidate admission is still incomplete: its writer,
+preview, concurrent retry test and UI remain. All original features are retained.

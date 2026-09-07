@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `ed656da`, “Keep selected financial rows
-  outside complete-statement verification”. A state commit follows;
+- **Latest implementation commit:** `f0ddde3`, “Seal candidate finalizations
+  and preserve immutable ledger links”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,43 @@ for verification, the retained ten-feature checklist and the handoff, then pause
 Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Finalization storage — extended window, 7 September 2026
+
+`f0ddde3` adds immutable FinancialCandidateFinalization and
+FinancialCandidateTransaction records. One seal per case/file/source document;
+unique candidate/transaction/source-claim links retain the original reviewed
+transaction after ledger state changes. PG insertion guards verify source/run/case
+and digest/method/shape scope, plus the candidate's latest resolved review and
+transaction scope. UPDATE guards prevent rewriting; existing deletion cascades
+remain. File locks serialize finalization with mapping/candidate/review insertions,
+which are refused after sealing. Service review returns409 pointing to corrections;
+identical mapping retries still return the original, but new mappings are refused.
+
+**Verified:** 3,707 financial tests pass, zero skips (six new storage/service tests).
+Isolated PG migration20260907_candidate_finalizations applied; script
+`scripts/check_local_candidate_finalizations.py` passed ten live scope/duplicate/
+immutability/post-seal/downgrade checks. It copies freshly generated synthetic
+fixtures and rolls every inserted row back. No real evidence or cases changed.
+Frontend unchanged: last verified927 unit/11 Chromium, TypeScript/full ESLint.
+The running backend needs restart before exercising the new workflow/guards.
+
+**Next segment:** implement the actual atomic whole-file writer and preview. Read
+all current mappings/candidates/reviews under file→text→geometry→candidate locks;
+refuse pending readings, empty resolved set, overlap/uncomparable/truncated reuse,
+stale source bytes, cross-case or wrong-currency accounts and existing ledger
+readings of this file/digest. Compute canonical manifest/revision and stable source
+claims independently of proposed meanings. Use complete document-wide occurrence
+hashing; create method4/selected_document_rows/P3 source and exact integer drafts,
+then finalization+links in the same transaction. Receipt snapshots must include
+all rejected and resolved review revisions plus the verified-byte receipt, actor
+and explicit documentary-financial-row attestation/reason. Retry should return the
+same durable receipt/transaction IDs; no second run's duplicate rows. Validate
+actual PG concurrent/retried writes before exposing APIs or UI. Whole-file sealing
+refuses adding omitted rows later; document that limitation plainly. Limits1000
+readings/transactions do not imply full extraction of larger PDFs. No public
+finalize endpoint exists and no saved app candidates have been materialized.
+Schedule ACTIVE every five minutes to09:00 Dublin (08:00 UTC), handoff07:45 UTC.
 
 ### Selected-row classification — extended window, 7 September 2026
 
