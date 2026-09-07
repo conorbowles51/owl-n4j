@@ -123,7 +123,7 @@ it("keeps unknown separate from empty activity", async () => {
 it.each([
   [null, "Counterparty not recorded"],
   ["", "Blank source label"],
-  ["Acme ", '\"Acme \"'],
+  ["Acme ", '"Acme "'],
 ])("preserves label meaning %s", async (label, expected) => {
   mount({ ...answer, counterparties: [{ ...answer.counterparties[0], label }] })
   fireEvent.click(
