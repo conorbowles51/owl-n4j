@@ -42,6 +42,7 @@ from services.financial.candidate_reviews import read_candidate_review
 from services.financial.candidate_overlap import check_candidate_source_reuse
 from services.financial.candidate_materialization import preview_candidate_finalization
 from routers.evidence import _resolve_stored_path
+from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
 from services.financial.coverage_query import requested_statement_coverage, CoverageQueryError, list_statement_coverage
 from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError
@@ -132,6 +133,19 @@ async def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(
     except Exception:
         logger.exception("Candidate list failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Saved PDF readings could not be listed.")
+
+
+@router.get("/ledger-summary")
+async def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        db: Session = Depends(get_db)):
+    try:
+        return ledger_summary(db, case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger summary failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Ledger summary could not be calculated.")
 
 
 @router.get("/requested-statement-coverage")

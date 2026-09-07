@@ -381,3 +381,23 @@ coverage does not certify complete transactions.
 `check_local_ledger_filters_ui.cjs` now also checks February coverage for both
 synthetic accounts (0 versus28 covered days) and verifies Clear removes the old
 coverage. Screenshot: `/tmp/loupe-neilbyrne-filtered-coverage-ui.png`.
+
+## Exact ledger summary service
+
+`/api/financial/ledger-summary` is a case:view read with optional account_id and
+inclusive ordering-date start_date/end_date filters. It returns exact decimal
+integer strings for credits_minor, debits_minor and net_minor, separated by
+currency. Both row and source must be admitted and in the default counted proof
+classes (P0/P1/P2). Other rows are counted once by exclusion reason, in priority
+order: row status, source status, then proof classification. Inconsistent ownership
+or admitted replacement links refuse the result. More than10,000 matching rows
+returns unavailable with null counts and no partial money. This is account-posting
+arithmetic; it does not match transfers, establish a balance, or certify completeness.
+The display and replacement of existing graph-derived analysis remain next.
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_ledger_summary.py
+```
+
+The read-only synthetic check verifies10 postings/GBP2100, an account filter/GBP840,
+and an empty February scope. Report: `data/local-runtime/ledger-summary-check.json`.
