@@ -612,3 +612,21 @@ opening/cancelling the decision dialog. Report:
 `data/local-runtime/transactions-ledger-ui-check.json`.31 page tests pass (an old
 search-placeholder assertion was updated for intelligence mode), TypeScript and
 scoped ESLint pass. No source/evidence or transaction decisions are changed.
+
+## Ledger counterparty-label summary API
+
+`/api/financial/ledger-counterparties` uses the same bounded eligibility read as the
+ledger summary. It groups verbatim counterparty_raw labels separately by currency,
+retains contributing transaction/source IDs, and returns exact integer-string totals.
+Equal labels do not establish identity or transfer matches. Null, blank, differently
+cased and whitespace-different labels remain separate. No inferred sender/beneficiary
+roles are assigned. Oversized results are unavailable with no partial groups/totals.
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_ledger_counterparties.py
+```
+
+Read-only local HTTP check verified case10/account4/empty0 rows and parity with the
+summary, including explicit missing labels and contributing references. Report:
+`data/local-runtime/ledger-counterparties-check.json`.38 summary/package tests and
+one route scope/error test pass. UI integration remains the next stage.

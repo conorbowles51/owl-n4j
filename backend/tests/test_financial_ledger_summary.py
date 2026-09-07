@@ -123,3 +123,67 @@ class LedgerTrendTests(LedgerSummaryTests):
         self.assertEqual(result['points'],[])
         self.assertIsNone(result['included_rows'])
         with self.assertRaises(LedgerSummaryError):self.read(grouping='weekly')
+
+
+class LedgerCounterpartyTests(LedgerSummaryTests):
+    def counterparty_read(self, **scope):
+        from services.financial.ledger_summary import ledger_counterparties
+        return ledger_counterparties(self.db, case_id=self.case.id, **scope)
+
+    def test_verbatim_labels_missing_values_currencies_and_exact_totals(self):
+        for label, currency, amount in (
+            (None, 'GBP', 3), ('', 'GBP', 5), ('Acme', 'GBP', 9007199254740993),
+            ('Acme', 'GBP', 7), ('acme', 'GBP', 11), ('Acme ', 'GBP', 13), ('Acme', 'USD', 17),
+        ):
+            row, _ = self.add(amount)
+            row.counterparty_raw, row.currency = label, currency
+            self.db.commit()
+        excluded, _ = self.add(999, status=LedgerStatus.rejected)
+        excluded.counterparty_raw = 'Acme'; self.db.commit()
+        result = self.counterparty_read()
+        groups = {(g['label'], g['currency']): g for g in result['counterparties']}
+        self.assertEqual(len(groups), 6)
+        self.assertEqual(groups[('Acme', 'GBP')]['credits_minor'], '9007199254741000')
+        self.assertEqual(result['excluded_rows'], 1)
+        self.assertNotIn(str(excluded.id), [key for g in groups.values() for key in g['transaction_ids']])
+        for currency in result['currencies']:
+            matching = [g for g in groups.values() if g['currency'] == currency['currency']]
+            for field in ('credits_minor', 'debits_minor', 'net_minor'):
+                self.assertEqual(sum(int(g[field]) for g in matching), int(currency[field]))
+        self.assertNotIn('readings', result)
+        self.assertIn('without identity resolution', result['counterparty_limitation'])
+
+    def test_scope_limits_and_current_decisions(self):
+        first, _ = self.add(100)
+        second, _ = self.add(25, TransactionDirection.debit)
+        first.counterparty_raw = second.counterparty_raw = 'Source label'; self.db.commit()
+        result = self.counterparty_read()
+        group = result['counterparties'][0]
+        self.assertEqual(group['net_minor'], '75')
+        self.assertEqual(set(group['transaction_ids']), {str(first.id), str(second.id)})
+        self.assertEqual(len(group['source_document_ids']), 2)
+        from services.financial.quarantine_row import quarantine_case_row
+        quarantine_case_row(self.db, case_id=self.case.id, transaction_id=first.id, actor=self.user, reason='Counterparty totals check')
+        self.assertEqual(self.counterparty_read()['counterparties'][0]['net_minor'], '-25')
+        self.assertEqual(self.counterparty_read(account_id=self.other_account.id)['counterparties'], [])
+        self.assertEqual(self.counterparty_read(start_date=date(2027,1,1))['counterparties'], [])
+        with patch('services.financial.ledger_summary.MAX_SUMMARY_ROWS', 1):
+            result = self.counterparty_read()
+        self.assertFalse(result['available'])
+        self.assertEqual(result['counterparties'], [])
+        self.assertIsNone(result['included_rows'])
+
+class LedgerCounterpartyRouterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_scope_and_failure_responses(self):
+        from routers import financial_ledger as router
+        from fastapi import HTTPException
+        case, account = uuid4(), uuid4()
+        with patch('services.financial.ledger_summary.ledger_counterparties', return_value={}) as call:
+            await router.get_ledger_counterparties(case, account, None, None, 'db')
+            call.assert_called_once_with('db', case_id=case, account_id=account, start_date=None, end_date=None)
+        for error, status in ((LedgerSummaryError('Invalid range'),422), (RuntimeError('private'),500)):
+            with patch('services.financial.ledger_summary.ledger_counterparties', side_effect=error):
+                with self.assertRaises(HTTPException) as caught:
+                    await router.get_ledger_counterparties(case,None,None,None,'db')
+                self.assertEqual(caught.exception.status_code,status)
+                self.assertNotIn('private',caught.exception.detail)

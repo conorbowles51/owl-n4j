@@ -120,3 +120,38 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
             point['source_document_ids'] = sorted(point['source_document_ids'])
         result['points'] = [points[key] for key in sorted(points)]
     return result
+
+
+def ledger_counterparties(session, *, case_id, account_id=None, start_date=None, end_date=None):
+    """Group exact source labels, not inferred people or matched transfers."""
+    result = ledger_summary(session, case_id=case_id, account_id=account_id,
+        start_date=start_date, end_date=end_date, capture_readings=True)
+    readings = result.pop('readings')
+    result.pop('history_captured')
+    result.update(counterparties=[], label_basis='counterparty_raw_exact',
+        counterparty_limitation='Equal source labels are grouped verbatim within each currency, without identity resolution or transfer matching. Missing and blank labels remain separate. Credits and debits are account postings, not inferred sender or beneficiary roles.')
+    if not result['available']:
+        return result
+    groups = {}
+    for reading in readings:
+        if not reading['included']:
+            continue
+        row = reading['row']
+        label = row['counterparty_raw']
+        if label is not None and not isinstance(label, str):
+            raise LedgerSummaryError('An included counterparty label is invalid.')
+        currency = get_currency(row['currency']).code
+        group = groups.setdefault((label, currency), dict(label=label, currency=currency,
+            rows=0, credits_minor=0, debits_minor=0, transaction_ids=[], source_document_ids=set()))
+        group['rows'] += 1
+        group[row['direction'] + 's_minor'] += int(row['amount_minor'])
+        group['transaction_ids'].append(row['key'])
+        group['source_document_ids'].add(reading['source']['id'])
+    for key in sorted(groups, key=lambda key: (key[0] is not None, key[0] or '', key[1])):
+        group = groups[key]
+        group['net_minor'] = str(group['credits_minor'] - group['debits_minor'])
+        group['credits_minor'] = str(group['credits_minor'])
+        group['debits_minor'] = str(group['debits_minor'])
+        group['source_document_ids'] = sorted(group['source_document_ids'])
+        result['counterparties'].append(group)
+    return result

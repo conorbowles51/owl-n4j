@@ -155,6 +155,19 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
         raise HTTPException(status_code=500,detail="Ledger export could not be prepared.")
 
 
+@router.get("/ledger-counterparties")
+async def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db)):
+    from services.financial.ledger_summary import ledger_counterparties
+    try:
+        return ledger_counterparties(db, case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger counterparty summary failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Ledger counterparty summary could not be calculated.")
+
+
 @router.get("/ledger-trends")
 async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
