@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `08b1540`, “Represent investigator-reviewed
-  financial readings explicitly”. A state commit follows;
+- **Latest implementation commit:** `ed656da`, “Keep selected financial rows
+  outside complete-statement verification”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,34 @@ for verification, the retained ten-feature checklist and the handoff, then pause
 Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Selected-row classification — extended window, 7 September 2026
+
+`ed656da` adds SourceShape.selected_document_rows for documentary financial rows
+with incomplete document/control coverage. Computed P3 is retained for every
+reconciliation outcome, including balanced. Persisted source metadata round-trips,
+and both reclassification and correction verification keep the original source
+and transaction at P3/outside default totals. P3 UI wording describes incomplete
+coverage as well as failed/unavailable checks. Narrative assertions remain P4;
+this shape must not be used to relabel figures in letters or interviews.
+
+**Verified:** 3,701 financial tests, zero skips (two new safety/persistence tests
+and expanded complete shape/outcome matrix); 927 frontend unit/11 Chromium,
+TypeScript/full ESLint pass. No new database migration in this unit. The local
+backend still needs restart before exercising the new writer/method/shape.
+
+**Next segment:** immutable candidate-to-transaction links and source claims, then
+atomic sealed whole-file finalization. All saved candidates must be resolved or
+rejected; retain rejection history and refuse unresolved source overlap/reuse.
+Use a whole-document batch for occurrence hashes, current source/review locks,
+verified bytes, method investigator_review and selected_document_rows shape. A
+future request must explicitly attest documentary financial rows with a reason;
+never infer that from a table or accept caller proof class/coverage promotion.
+Use durable finalization identity for retries and reroute post-finalization edits
+to ledger corrections. Test concurrent/retried writes on isolated PostgreSQL
+before exposing API/UI. Detailed limits/provenance remain in the bridge plan.
+Heartbeat ACTIVE every five minutes through 09:00 Dublin (08:00 UTC), reserving
+07:45–08:00 UTC for handoff. No candidates admitted yet.
 
 ### Investigator reading provenance — extended window, 7 September 2026
 

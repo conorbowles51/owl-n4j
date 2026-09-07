@@ -47,6 +47,8 @@ feature below is complete at the start of this window.
 
    - [x] Truthful reading method: explicitly record investigator-reviewed readings without claiming native/template/model extraction or promoting their classification (08b1540). Storage, UI labels and PostgreSQL downgrade protection verified; candidate materialization remains.
 
+   - [x] Incomplete coverage stays explicit: selected documentary financial rows remain outside verified totals even when subset arithmetic balances; reconciliation and corrections cannot silently promote them (ed656da). End-to-end admission remains.
+
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
@@ -218,3 +220,9 @@ Extended-window implementation08b1540 adds explicit investigator-reviewed origin
 Verified: 3,699 backend financial tests (zero skips), 927 frontend unit/11 Chromium,
 TypeScript/full ESLint; local PostgreSQL constraints and downgrade guard checked.
 Main feature statuses remain partial/remaining until the end-to-end work is done.
+
+Extended-window implementationed656da preserves incomplete selected-row coverage
+through computed classification, stored document metadata, reconciliation and
+correction verification. 3,701 financial tests pass (zero skips); 927 frontend
+unit/11 Chromium, TypeScript/full ESLint pass. Next: immutable finalization links
+and source claims, then the atomic candidate-to-ledger writer.
