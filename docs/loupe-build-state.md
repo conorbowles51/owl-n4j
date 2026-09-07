@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `421ad37`, “Register ledger summary exports
-  and restore page integration test providers”. A state commit follows;
+- **Latest implementation commit:** `9e0ec3a`, “Use authoritative ledger analysis
+  in the main documentary Trends view”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,34 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Main documentary Trends migration — 7 September 2026
+
+`9e0ec3a` routes main Trends in transactions mode to LedgerAnalysis (its own
+account/date filters, requested coverage, exact summary/date totals/source links).
+It is independent of graph loading/emptiness. Always-visible Ledger postings /
+Financial intelligence selector preserves the graph intelligence workflow; its
+explicit note says graph claims/valuations do not reflect ledger corrections.
+No graph amounts are fed into ledger analysis. Transactions/Counterparties remain
+legacy graph views. Ledger tab still has its own summary/date panels.
+
+Verified:36 targeted frontend tests (27 page,9 date panel), TypeScript and scoped
+lint. Page tests verify empty/loading graph access and mode-switch return. Read-only
+live browser enters top-level Trends, switches monthly/daily GBP2100 and opens
+contributing source citation. Script check_local_trends_panel_ui.cjs now checks this
+entry point; existing runtime report/screenshot reused. Logs use
+/tmp/loupe-neilbyrne-trends-migration-{tests,tsc,lint,live}.out. Backend unchanged
+exec21922. No real evidence changes. Feature5 remains partial.
+
+**Next segment:** inspect existing report/export components and add a traceable
+export of the authoritative ledger analysis, with exact currency totals, scope,
+source/transaction IDs, included classifications, exclusions and limitations.
+Prefer a bounded immutable snapshot contract before UI download; ensure rows and
+totals come from the same eligibility read rather than two changing queries.
+Do not reuse legacy graph numeric exports for ledger results. Include correction
+lineage/decision basis explicitly or retain the export as incomplete until connected.
+No external publishing; use synthetic local verification. Graph/counterparty,
+transfers and tracing still remain. Schedule ACTIVE until13:00 Dublin.
 
 ### Consolidated integration checks — 7 September 2026
 

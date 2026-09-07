@@ -85,6 +85,7 @@ feature below is complete at the start of this window.
    - [x] Preserve full bigint money through individual ledger JSON, table and decision identity using exact strings, with safe numeric compatibility (19a8980).
    - [x] Backend/API exact ledger posting summaries, separate currencies, explicit excluded populations and a hard no-partial-total limit (0ae8242). Display and legacy-view replacement remain.
    - [ ] Connect the graph and financial analysis screens to the reviewed ledger.
+   - [x] Main documentary Trends uses ledger analysis independently of graph loading; intelligence remains explicitly separate (9e0ec3a). Transactions/Counterparties graph migration remains.
    - [x] Current ledger summary display uses exact currency totals and included/excluded populations, with applied-filter scope and correction/adjudication refresh (b82d010). Legacy graph cards and other analysis views remain.
    - [ ] Ensure corrections and exclusions consistently update totals, searches and money-flow views.
    - [ ] Prevent older extracted graph values from being counted alongside reviewed transactions.
@@ -375,3 +376,8 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   backend3,791 pass; frontend1,001-test run had six page-test failures, all resolved
   by the24-test page rerun.11 Chromium, TypeScript/full lint pass. Next: migrate
   the top-level documentary Trends workflow to authoritative ledger data.
+
+
+- 7 September, 10:31 Dublin: **9e0ec3a** migrates main documentary Trends to ledger
+  analysis.36 targeted tests, TypeScript/lint and live source-linked Trends check
+  pass. Feature5 stays partial; next work begins traceable authoritative exports.
