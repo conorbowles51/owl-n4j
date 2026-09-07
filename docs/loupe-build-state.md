@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `982c530`, “Show source coverage for applied
-  ledger account and date filters”. A state commit follows;
+- **Latest implementation commit:** `0ae8242`, “Summarize eligible ledger postings
+  with exact currency totals and exclusions”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,35 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Exact ledger summary service/API — 7 September 2026
+
+`0ae8242` adds case:view ledger-summary and ledger_summary.py, one bounded SELECT
+joining current transaction/source/account state with populate_existing. Optional
+account and inclusive ordering-date filters; max10,000 matching rows. Above limit,
+null counts/no money rather than a partial result. Both source and row must be
+admitted and counted by default P0/P1/P2; excluded rows counted once in status,
+source-status, proof-class priority. Refuses inconsistent ownership, admitted
+replacement links and malformed included money/direction/currency. Money is summed
+as Python integers and serialized as exact integer strings, currencies separate.
+Net postings are not an account balance or transfer-deduplicated money movement.
+
+Verified:37 targeted summary/router/transaction-query tests;9 new summary tests
+include >JS-safe money, negative net, currency separation, row/source exclusions,
+case/date/account filters, hard limit, ownership and inconsistent replacement.
+Read-only authenticated isolated HTTP:10 postings GBP2100, account4 GBP840, and
+February0 rows. Script check_local_ledger_summary.py; report ledger-summary-check.json.
+Logs /tmp/loupe-neilbyrne-ledger-summary-{tests,final-tests,live}.out. Backend now
+exec session61007, logfile ledger-summary-backend.out. No frontend changes, no
+real evidence writes. Latest frontend passing targeted checks remain unchanged.
+
+**Next segment:** connect an exact-string LedgerSummaryPanel to the applied
+account/date filters with clear inclusion counts and exclusion reasons. Bind
+case/account/date response scope, show unavailable without zeros, format via
+existing exact money helpers, and use the financial-ledger invalidation prefix
+so corrections/exclusions refresh it. Verify synthetic totals and a correction
+or exclusion refresh without touching real material. Graph cards remain legacy
+until deliberately replaced; do not claim every financial view is authoritative.
 
 ### Filtered coverage connected — 7 September 2026
 
