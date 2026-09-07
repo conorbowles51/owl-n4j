@@ -29,6 +29,8 @@ feature below is complete at the start of this window.
 
    - [x] Foundation: persist immutable candidate originals outside totals with atomic saves and same-mapping retry safety (826caee). Verified with PostgreSQL lock contention and overwrite-refusal triggers. Review UI remains.
 
+   - [x] Foundation: assess saved original amount cells through case-scoped read-only APIs, preserving uncertainty and source citations and refusing source drift (8d6425a). Verified through authenticated local HTTP; review UI remains.
+
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
@@ -93,6 +95,11 @@ feature below is complete at the start of this window.
   feature 2. 3,612 financial tests and all frontend gates pass. Live PostgreSQL
   contention produced one mapping/two candidates/zero ledger rows; both originals
   reject SQL updates. Next: review records and assessment, then endpoints/UI.
+
+- 7 September, overnight: **8d6425a** connected saved-candidate amount assessment
+  and read APIs under feature 2. 3,631 financial tests and all frontend gates pass;
+  authenticated local HTTP returns exact original readings and their PDF rectangle.
+  Candidate review decisions/UI remain next; no whole feature is newly complete.
 
 ## Morning handoff
 

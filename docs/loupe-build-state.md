@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `826caee`, “Persist immutable pending PDF originals
-  with atomic retry-safe saves”. A state commit follows;
+- **Latest implementation commit:** `8d6425a`, “Assess saved PDF candidate amounts
+  through case-scoped read-only APIs”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,46 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Saved-candidate assessment connected — 7 September 2026 overnight
+
+`8d6425a` adds `candidate_assessment.py`: saved originals are checked against a
+fresh source binding before assessing amount/debit/credit/balance proposals.
+Raw text and origin come from the original cells; uncertain alternatives remain,
+unknown columns are listed without guessing, and money integers serialize as
+strings. Currency is explicit caller context. Every candidate remains pending;
+there is no review decision or ledger write. An assessment revision hashes the
+exact displayed result for future review, but does not authorize a write.
+
+Case:view routes: GET `/api/financial/candidate-mappings/{mapping_id}` and POST
+`/api/financial/candidates/{candidate_id}/amount-assessment`, body currency only.
+`current_candidate_original` verifies stored hashes, source binding and full
+snapshot equality; a later writer must hold locks through verification/commit.
+No source-state cache may substitute for that check. Unexpected route errors are
+sanitized, and wrong-case/stale-source responses remain distinct.
+
+**Verified:** 3,631 financial tests (zero skips), 895 frontend unit tests, 11
+Chromium tests, TypeScript and ESLint pass. New assessment coverage adds 19 tests
+including source drift, canonical/grid originals, uncertain alternatives, large
+exact values, zero/sign, case scope, unclassified columns, currency revision and
+rehashed corrupted originals. Logs `/tmp/loupe-neilbyrne-assessment-*.out`.
+
+The isolated backend was restarted (verified old PID 84533) to load new routes.
+Current backend exec session 83073, log
+`/tmp/loupe-neilbyrne-candidate-backend-runtime.out`. Updated
+`scripts/check_local_candidates.py` passed authenticated HTTP mapping read and
+assessment, source rectangle, forbidden raw-text override and invalid currency.
+It also reruns the PostgreSQL contention/immutable-trigger checks. Latest fixture:
+case `9b633df0-1d6c-453b-ad76-5a140a1f9601`, mapping
+`411e6b12-d386-4043-88ac-26393e694cf9`; durable IDs in
+`data/local-runtime/candidate-check.json`, log
+`/tmp/loupe-neilbyrne-candidate-assessment-http.out`. No real evidence or AI calls.
+
+**Next:** append-only candidate review records and resolved/rejected/pending
+transitions with exact complete reading validation and stale-review protection.
+Then creation/review endpoints and UI, followed by atomic materialization. Keep
+feature 2 partial until this workflow is usable end to end. Tracked implementation
+committed; schedule remains active to 06:00 Dublin with final 15-minute handoff.
 
 ### Pending PDF originals persisted — 7 September 2026 overnight
 
