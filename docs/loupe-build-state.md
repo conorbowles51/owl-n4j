@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `8a1e051`, “Bundle a readable escaped report
-  derived from the captured ledger snapshot”. A state commit follows;
+- **Latest implementation commit:** `96f3a3f`, “Format report money exactly and
+  verify scoped export parity over HTTP”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,28 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Exact report money and export scope parity — 7 September 2026
+
+`96f3a3f` reuses Money.format for familiar currency units plus exact raw minor units
+in brackets. Historical currencies labelled; unsupported/invalid excluded values
+remain unscaled.92 targeted snapshot/money/package tests passed including unsafe-JS
+integer range, signed and0/2/3/4decimal currencies. Scoped ESLint/diff checks passed.
+Read-only HTTP script check_local_ledger_export_scope.py compares snapshot summary
+scope/totals/exclusions for whole case10rows, account4, inclusive single day4,
+empty date0 and unknown account0; both artifact hashes verified. Unknown account
+is an empty filter, not a validated identity. Anonymous refused, missing case404,
+reversed dates422. This is not a non-member authorization matrix.
+Report data/local-runtime/ledger-export-scope-check.json. Local Chromium rendered
+2,100.00GBP alongside210000minor units without1280px overflow; screenshot visually
+checked at data/local-runtime/ledger-report-money-preview.png. Backend exec20679,
+log /tmp/loupe-neilbyrne-report-money-server.out. No real evidence changes.
+
+**Next segment:** verify actual case-member/non-member authorization for exports
+with isolated synthetic users/fixtures and restore any setup changes; then review
+remaining main Transactions/Counterparties migration to authoritative ledger data
+(feature5) before building transfer matching/tracing on it. Report/exhibit feature8
+remains partial. Reserve11:45UTC for handoff; schedule ACTIVE until13:00Dublin.
 
 ### Readable captured ledger report — 7 September 2026
 

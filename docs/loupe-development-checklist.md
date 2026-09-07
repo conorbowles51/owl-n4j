@@ -106,6 +106,7 @@ feature below is complete at the start of this window.
    - [ ] Connect comparisons between financial records and statements or claims about payments.
 
 8. **Produce traceable reports and exports — partial**
+   - [x] Format report money exactly in currency units while preserving minor units, and verify exported totals/exclusions against the summary API across case/account/date/empty scopes (96f3a3f).92 targeted tests and live HTTP/hash/layout checks pass; non-member access matrix remains.
    - [x] Bundle a readable HTML report derived from the exact captured snapshot, with scope, totals, included/excluded readings, source references and decision details; independently hash the report (8a1e051). Browser layout/download verified. Amounts use explicit minor units; polished exhibits and PDF pagination remain.
    - [x] Download the applied ledger scope as a ZIP with exact rows/totals, source references, relevant decision history and a byte-verifiable manifest (49f2b83). Browser download and digest verified; formatted reports and broader export workflow remain.
    - [x] Consistent PostgreSQL snapshot of relevant decision history plus exact JSON export manifest, with event/output bounds (001009d). Download/report UI remains; candidate-review history and fresh source-byte verification explicitly excluded.
@@ -405,3 +406,7 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
 - Readable report checkpoint (8a1e051):32 targeted backend tests and scoped ESLint
   pass. Browser ZIP and both hashes verified, ten readings/four decisions rendered;
   screenshot inspected with no horizontal overflow. Feature8 remains partial.
+
+- Exact report/scope checkpoint (96f3a3f):92 targeted tests, scoped ESLint and
+  browser layout pass; live HTTP parity/hash checks cover five scopes. Anonymous,
+  missing-case and reversed-date refusals verified. Feature8 stays partial.
