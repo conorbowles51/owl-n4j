@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `46a3417`, “Show source-bound date uncertainty
-  without guessing years or date order”. A state commit follows;
+- **Latest implementation commit:** `aac46b0`, “Suggest explicit PDF column labels
+  and preserve transaction date roles”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,42 @@ for verification, the retained ten-feature checklist and the handoff, then pause
 Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Explicit PDF column suggestions — 7 September 2026
+
+`aac46b0` adds a deliberate source-picker aid: scan only the first ten stored rows
+for exact supported labels, preserving original text and positions and showing
+competing meanings without choosing. No fuzzy OCR repair, substring matching or
+generic Date-role guess. Every suggestion requires a click; no source rows become
+selected. Source reload clears suggestions/selection. Accepted meanings use the
+existing revision-bound manual mapping, not a new automatic-extraction provenance.
+The aid does not persist a separate header event or claim transaction classification.
+Both text and grid contracts now support transaction_date separately from booking
+and value dates. Existing snapshots serialize identically; no migration/rewrite.
+
+**Verified:** all 3,741 backend financial tests, zero skips; 950 frontend unit;
+11 Chromium; TypeScript/full ESLint. Fresh synthetic PDF browser check accepted
+Transaction Date/Amount labels, selected only the first actual data row, kept the
+header/other row unselected, saved one pending candidate and preserved the same
+mapping on retry. No ledger admission or real evidence use. Repeatable scripts:
+prepare_local_header_ui.py then check_local_header_ui.cjs. Separate fixture/report
+header-check.json/header-ui-check.json; existing candidate-check.json unchanged.
+Case `b89ed1d8-b40e-492a-8365-1b66e5d2eef8`, file
+`9101c4b5-2e9f-4533-8062-b37017bf0750`, mapping
+`7380d10e-2a48-4f20-8fdf-d51ba9f37586`. Screenshot:
+`/tmp/loupe-neilbyrne-header-suggestions-ui.png`. Current isolated backend exec
+session55961, log `/tmp/loupe-neilbyrne-headers-backend.out`, supports new date role.
+
+**Next segment:** move to retained feature3, inspecting existing printed-control,
+reconciliation and running-balance modules/contracts. Implement a bounded missing
+accuracy check and its appropriate connection, preserving exact integer money,
+source evidence, explicit unavailable outcomes and computed classification. Automatic
+transaction nomination, complete extraction/date/account context and complete PDF
+coverage remain unfinished; do not spend the whole remaining window presenting
+small selection aids as full extraction. Independent accuracy checks are authorized.
+All ten features remain: partial1,2,3,4,10; remaining5,6,7,8,9. Check the clock before
+a new segment. Keep every5-minute schedule to09:00 Dublin; final verification and
+handoff start07:45UTC, pause no later than08:00UTC.
 
 ### Source date uncertainty connected — 7 September 2026
 

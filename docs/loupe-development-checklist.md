@@ -25,6 +25,8 @@ feature below is complete at the start of this window.
 
    - [x] Source-byte prerequisite: compare the current case-scoped file against the saved candidate digest, refusing missing/changed sources and observed changes during reading (43b2402; 11 new tests). This is a backend prerequisite; ledger admission remains unconnected.
 
+   - [x] Column suggestion aid: propose exact supported labels from the first ten stored rows, require explicit acceptance, and preserve a separate transaction-date role (aac46b0). No automatic transaction classification or row selection is claimed.
+
 2. **Review uncertain readings before they enter the ledger — partial**
    - [x] Save deliberately selected rows from stored PDF tables separately until they are ready for use (9ddfe63). Automatic extraction/nomination remains under feature 1.
    - [ ] Show questionable amounts, dates and account details alongside the source.
@@ -268,3 +270,10 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   11 Chromium tests pass, plus TypeScript/ESLint. Live browser preserves both01/02
   interpretations and the missing year while highlighting the original PDF cell.
   Full automatic extraction/nomination and complete date/account review remain.
+
+- 7 September, extended window: **aac46b0** adds explicit printed-label suggestions
+  and transaction-date column support. All 3,741 financial, 950 frontend unit and
+  11 Chromium tests pass, plus TypeScript/ESLint. A fresh synthetic PDF browser check
+  saved only the chosen non-header row pending and preserved its mapping on retry.
+  Full automatic row nomination/extraction remains; next focus is missing accuracy
+  checks under feature3. Completed work remains visible above.
