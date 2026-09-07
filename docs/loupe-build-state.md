@@ -36,6 +36,24 @@ completed-item claims and environment recipes in that history are not current.
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
 
+### User-supplied real PDF checks — 7 September 2026
+
+Neil supplied two redacted PDFs in `data/loupe-test-pdfs` for local testing.
+Read-only extraction with the actual `read_tables` adapter completed all 164 pages
+without exceptions: 56/56 pages with text/table candidates in the first document,
+97/108 in the second. All 11 textless pages in the second render entirely white
+at native scale (pixel check), not missed scanned transaction pages. Sample pages
+were visually inspected. The adapter also emits text-alignment tables for letters,
+application forms and disclosures: a located table is not a transaction.
+
+Local-only per-page results/hashes: `data/local-runtime/pdf-inspection/inspection.json`.
+Real PDFs, rendered pages and extracted content must stay out of commits. No external
+AI calls, application ingestion or ledger writes were made with these files. This
+is extraction smoke coverage, not transaction accuracy or complete import acceptance.
+Use these real formats for the next source-row selection/mapping workflow and verify
+transaction/date/amount meaning against the actual page. The user's folder is inside
+the project, not ~/data. Existing synthetic review tests remain independently repeatable.
+
 ### Saved-candidate review UI completed — 7 September 2026 overnight
 
 `ee6edb4` adds case-scoped bounded mapping lists/account search and a case:edit
