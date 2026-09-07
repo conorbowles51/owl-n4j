@@ -70,8 +70,13 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         from services.financial.ledger_snapshot import LedgerExport,ledger_export_archive
         snapshot=self.capture()
         with zipfile.ZipFile(io.BytesIO(ledger_export_archive(LedgerExport(snapshot,'{"manifest":true}')))) as archive:
-            self.assertEqual(set(archive.namelist()),{'ledger-snapshot.json','manifest.json'})
+            self.assertEqual(set(archive.namelist()),{'ledger-snapshot.json','manifest.json','ledger-report.html'})
             self.assertEqual(archive.read('ledger-snapshot.json'),snapshot.content.encode('utf-8'))
+            report=archive.read('ledger-report.html')
+            manifest=json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['report']['sha256'],hashlib.sha256(report).hexdigest())
+            self.assertEqual(manifest['report']['byte_count'],len(report))
+            self.assertEqual(manifest['report']['derived_from_sha256'],snapshot.sha256)
 
     def test_download_route_is_scoped_attachment_and_hides_internal_errors(self):
         from routers import financial_ledger as router
@@ -87,3 +92,19 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         with patch.object(router,'capture_ledger_export',side_effect=RuntimeError('private')):
             with self.assertRaises(HTTPException) as caught:router.download_ledger_export(case_id,None,None,None,self.db)
             self.assertNotIn('private',caught.exception.detail)
+
+    def test_report_escapes_evidence_preserves_exact_money_and_limits(self):
+        from services.financial.ledger_snapshot import render_ledger_report
+        row, _ = self.add(amount=9007199254740993)
+        row.description = '<script>alert("evidence")</script>'
+        row.provenance = {'unsafe': '<img src="https://example.org/track">'}
+        self.db.commit()
+        report = render_ledger_report(self.capture())
+        self.assertIn('9007199254740993', report)
+        self.assertIn('&lt;script&gt;', report)
+        self.assertNotIn('<script>', report)
+        self.assertNotIn('<img ', report)
+        self.assertIn('minor units', report)
+        self.assertIn('Decision history has not been captured', report)
+        with patch('services.financial.ledger_snapshot.MAX_EXPORT_BYTES', 1):
+            with self.assertRaises(LedgerSummaryError): render_ledger_report(self.capture())

@@ -544,3 +544,19 @@ report `data/local-runtime/ledger-export-ui-check.json` confirms ten included ro
 four relevant decisions and the exact manifest digest. The captured synthetic total
 is GBP 2,100. Backend snapshot/package tests passed (31), frontend export/page tests
 passed (33), and TypeScript and scoped ESLint passed.
+
+### Readable report in the same bundle
+
+The ZIP now also includes `ledger-report.html`, rendered solely from the captured
+snapshot. It shows scope, exact minor-unit currency totals, included/excluded
+readings, source references, preserved row/provenance details and relevant decisions.
+No live queries run during rendering. Evidence text is HTML-escaped, no external
+resources or scripts are allowed, and reports over 16 MiB are refused intact.
+The manifest's `report` entry records the HTML SHA-256, byte count and source snapshot
+digest; the existing document digest still covers the unchanged snapshot JSON.
+
+The same browser download script verifies delivery. Latest synthetic report checks:
+`data/local-runtime/ledger-report-check.json` and `ledger-report-preview.png`.
+32 targeted backend tests passed; Chromium showed ten readings/four decisions and
+no horizontal overflow at 1280 pixels. The HTML is readable locally; PDF pagination
+and a polished exhibit/report workflow remain unverified.

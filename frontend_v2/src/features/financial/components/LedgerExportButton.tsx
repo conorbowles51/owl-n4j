@@ -112,7 +112,8 @@ function ScopedExport({
       </Button>
       <p>
         Downloads the applied account/date scope, exact rows and totals, source
-        references and relevant decision history with a verification manifest.
+        references and relevant decision history with a verification manifest and a
+        readable HTML report. Report amounts are labelled in exact minor units.
         Original source files and structured PDF review history are not bundled.
         Recorded source hashes are not fresh file checks.
       </p>

@@ -1,9 +1,4 @@
-"""Deterministic immutable content for an unfinished ledger export.
-
-Captures rows, source classification and totals from the same bounded SELECT.
-This is not an externally exposed export: decision history and an export-event
-manifest must be captured before that workflow is complete.
-"""
+"""Immutable ledger snapshots, consistent history capture and downloadable reports."""
 import hashlib
 import json
 from dataclasses import dataclass
@@ -112,10 +107,79 @@ def ledger_export_archive(export):
     """Package canonical bytes without reserializing the captured content."""
     import io
     import zipfile
+    report = render_ledger_report(export.snapshot)
+    report_bytes = report.encode('utf-8')
+    manifest = json.loads(export.manifest)
+    manifest['report'] = dict(filename='ledger-report.html', sha256=hashlib.sha256(report_bytes).hexdigest(),
+        byte_count=len(report_bytes), derived_from_sha256=export.snapshot.sha256)
     stream=io.BytesIO()
     with zipfile.ZipFile(stream,'w',compression=zipfile.ZIP_DEFLATED) as archive:
-        for name,content in (('ledger-snapshot.json',export.snapshot.content),('manifest.json',export.manifest)):
+        for name,content in (('ledger-snapshot.json',export.snapshot.content),('manifest.json',json.dumps(manifest,sort_keys=True,separators=(',',':'))), ('ledger-report.html',report)):
             info=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0))
             info.compress_type=zipfile.ZIP_DEFLATED
             archive.writestr(info,content.encode('utf-8'))
     return stream.getvalue()
+
+
+def render_ledger_report(snapshot):
+    """Render only immutable captured content; never consult live data or execute evidence."""
+    from html import escape
+
+    document = json.loads(snapshot.content)
+    ledger = document['ledger']
+
+    def text(value):
+        return escape('Not recorded' if value is None else str(value), quote=True)
+
+    def details(label, value):
+        return '<details><summary>' + text(label) + '</summary><pre>' + text(
+            json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2)) + '</pre></details>'
+
+    def table(headers, rows):
+        return '<table><thead><tr>' + ''.join('<th>' + text(h) + '</th>' for h in headers) + (
+            '</tr></thead><tbody>' + ''.join('<tr>' + ''.join('<td>' + text(v) + '</td>' for v in row)
+            + '</tr>' for row in rows) + '</tbody></table>')
+
+    parts = ['<!doctype html><html lang="en"><head><meta charset="utf-8">',
+        '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; base-uri \'none\'; form-action \'none\'">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        '<title>Loupe ledger report</title><style>body{font:16px system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#172033}',
+        'table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{border:1px solid #aaa;padding:.5rem;text-align:left;overflow-wrap:anywhere}',
+        'pre{white-space:pre-wrap;overflow-wrap:anywhere}article{border-top:1px solid #aaa;margin-top:1rem;padding-top:1rem}',
+        '@media print{details>*{display:block}thead{display:table-header-group}body{max-width:none}}</style></head><body>',
+        '<h1>Loupe ledger report</h1><p>Captured account postings and recorded decisions.</p>',
+        '<h2>Scope and interpretation</h2>',
+        table(['Case', 'Account', 'Ordering dates, inclusive'], [[ledger['case_id'],
+            ledger['account_id'] or 'All accounts', (ledger['start_date'] or 'Unbounded') + ' to ' + (ledger['end_date'] or 'Unbounded')]]),
+        '<p>' + text(ledger['limitation']) + '</p>',
+        '<p>Amounts below are exact integer minor units, not major currency units. '
+        'No exchange-rate conversion or transfer matching is applied.</p>',
+        '<p>Included rows: ' + text(ledger['included_rows']) + '; excluded rows: ' + text(ledger['excluded_rows']) + '.</p>',
+        '<h2>Totals by currency — minor units</h2>',
+        table(['Currency', 'Rows', 'Credits', 'Debits', 'Net postings'],
+              [[c['currency'], c['rows'], c['credits_minor'], c['debits_minor'], c['net_minor']] for c in ledger['currencies']]),
+        '<h2>Limitations</h2><ul>' + ''.join('<li>' + text(v) + '</li>' for v in document['limitations']) + '</ul>',
+        '<h2>Captured readings</h2><p>Excluded readings are retained for review and do not enter the totals.</p>']
+    for reading in ledger['readings']:
+        row = reading['row']
+        parts += ['<article><h3>Reading ' + text(row['key']) + '</h3>',
+            table(['Included in totals', 'Ordering date', 'Description', 'Direction', 'Currency', 'Amount — minor units'],
+                  [['Yes' if reading['included'] else 'No: ' + str(reading['exclusion_reason']),
+                    row['ordering_date'], row['description'], row['direction'], row['currency'], row['amount_minor']]]),
+            details('Source reference and recorded ingestion digest', reading['source']),
+            details('Original captured row, dates and source locator', row),
+            details('Preserved transaction provenance', reading['provenance']), '</article>']
+    parts += ['<h2>Relevant recorded decisions</h2>', '<p>' + text(document.get('decision_order', 'Decision history has not been captured.')) + '</p>']
+    for decision in document.get('decisions', []):
+        parts += ['<article><h3>' + text(decision['decision']) + '</h3>',
+            table(['Subject', 'Sequence', 'Recorded at', 'Actor', 'Reason'], [[
+                decision['subject_type'] + ': ' + decision['subject_id'], decision['subject_sequence'],
+                decision['recorded_at'], decision['actor_name'] or decision['actor_email'], decision['reason']]]),
+            details('Decision reference, original values and changed values', decision), '</article>']
+    parts += ['<h2>Verification</h2><p>This report is derived only from the bundled ledger-snapshot.json. '
+        'Its SHA-256 is <code>' + text(snapshot.sha256) + '</code>; its UTF-8 size is ' + text(snapshot.byte_count) +
+        ' bytes. The manifest separately identifies the report bytes.</p></body></html>']
+    result = ''.join(parts)
+    if len(result.encode('utf-8')) > MAX_EXPORT_BYTES:
+        raise LedgerSummaryError('Readable report exceeds 16 MiB; narrow the scope. No partial report was produced.')
+    return result
