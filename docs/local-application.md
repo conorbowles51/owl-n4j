@@ -579,3 +579,17 @@ minor units in brackets. Historical currencies are labelled; unsupported currenc
 remain explicitly unscaled.92 targeted snapshot/money/package tests passed, including
 large values and zero/two/three/four decimal places. Local Chromium layout verified
 at1280px; screenshot `data/local-runtime/ledger-report-money-preview.png`.
+
+### Live export membership checks
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_ledger_export_access.py
+```
+
+The script targets only the fixed isolated local database and service. It creates a
+temporary ordinary user, verifies non-member403, member-without-case:view403,
+view-only-member200, then revokes membership and verifies403 using the same token.
+Finally it removes the temporary membership/user and confirms removal. It does not
+change ledger readings or evidence. Report: `data/local-runtime/ledger-export-access-check.json`.
+This passed against the running export endpoint; admin access alone is no longer
+the only authenticated download scenario checked.
