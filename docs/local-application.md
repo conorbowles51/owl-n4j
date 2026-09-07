@@ -560,3 +560,22 @@ The same browser download script verifies delivery. Latest synthetic report chec
 32 targeted backend tests passed; Chromium showed ten readings/four decisions and
 no horizontal overflow at 1280 pixels. The HTML is readable locally; PDF pagination
 and a polished exhibit/report workflow remain unverified.
+
+### Export scope parity and readable exact money
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_ledger_export_scope.py
+```
+
+This read-only check compares exported totals/exclusions/scope against the summary
+API for the entire synthetic case, one account, a single inclusive day and empty
+results. Unknown account IDs behave as empty filters, not identity validation.
+Unauthenticated downloads, missing cases and reversed dates are refused. This is
+not a non-member authorization matrix. Snapshot and report digests are verified
+for every successful scope. Report: `data/local-runtime/ledger-export-scope-check.json`.
+
+HTML amounts now reuse Money.format with exact integer arithmetic, retaining raw
+minor units in brackets. Historical currencies are labelled; unsupported currencies
+remain explicitly unscaled.92 targeted snapshot/money/package tests passed, including
+large values and zero/two/three/four decimal places. Local Chromium layout verified
+at1280px; screenshot `data/local-runtime/ledger-report-money-preview.png`.

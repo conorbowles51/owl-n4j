@@ -108,3 +108,22 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         self.assertIn('Decision history has not been captured', report)
         with patch('services.financial.ledger_snapshot.MAX_EXPORT_BYTES', 1):
             with self.assertRaises(LedgerSummaryError): render_ledger_report(self.capture())
+
+    def test_report_money_uses_exact_currency_exponents_and_honest_fallback(self):
+        from services.financial.ledger_snapshot import render_ledger_report, LedgerSnapshot
+        self.add()
+        document = json.loads(self.capture().content)
+        for currency, value, expected in (
+            ('USD', '9007199254740993', '90,071,992,547,409.93 USD'),
+            ('JPY', '-1234', '-1,234 JPY'),
+            ('KWD', '1234', '1.234 KWD'),
+            ('CLF', '1234', '0.1234 CLF'),
+            ('IEP', '1234', '12.34 IEP (historical currency)'),
+            ('ZZZ', '1234', '1234 minor units (unscaled: unsupported currency)'),
+        ):
+            with self.subTest(currency=currency):
+                row = document['ledger']['readings'][0]['row']
+                row['currency'], row['amount_minor'] = currency, value
+                report = render_ledger_report(LedgerSnapshot(json.dumps(document), 'test', 0))
+                self.assertIn(expected, report)
+                self.assertIn(value, report)

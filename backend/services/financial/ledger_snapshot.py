@@ -135,6 +135,18 @@ def render_ledger_report(snapshot):
         return '<details><summary>' + text(label) + '</summary><pre>' + text(
             json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2)) + '</pre></details>'
 
+    def money_display(value, currency):
+        from services.financial.money import Money, MoneyError
+        import re
+        if not isinstance(value, str) or not re.fullmatch(r"-?(0|[1-9][0-9]*)", value):
+            return str(value) + ' minor units (unscaled: invalid stored integer)'
+        try:
+            amount = Money(int(value), currency)
+            historical = ' (historical currency)' if amount.currency_info.is_historical else ''
+            return amount.format() + historical + ' [' + value + ' minor units]'
+        except (MoneyError, ValueError, TypeError):
+            return value + ' minor units (unscaled: unsupported currency)'
+
     def table(headers, rows):
         return '<table><thead><tr>' + ''.join('<th>' + text(h) + '</th>' for h in headers) + (
             '</tr></thead><tbody>' + ''.join('<tr>' + ''.join('<td>' + text(v) + '</td>' for v in row)
@@ -152,20 +164,20 @@ def render_ledger_report(snapshot):
         table(['Case', 'Account', 'Ordering dates, inclusive'], [[ledger['case_id'],
             ledger['account_id'] or 'All accounts', (ledger['start_date'] or 'Unbounded') + ' to ' + (ledger['end_date'] or 'Unbounded')]]),
         '<p>' + text(ledger['limitation']) + '</p>',
-        '<p>Amounts below are exact integer minor units, not major currency units. '
-        'No exchange-rate conversion or transfer matching is applied.</p>',
+        '<p>Amounts show currency units with their exact integer minor units in brackets. '
+        'Unsupported values remain explicitly unscaled. No exchange-rate conversion or transfer matching is applied.</p>',
         '<p>Included rows: ' + text(ledger['included_rows']) + '; excluded rows: ' + text(ledger['excluded_rows']) + '.</p>',
-        '<h2>Totals by currency — minor units</h2>',
+        '<h2>Totals by currency</h2>',
         table(['Currency', 'Rows', 'Credits', 'Debits', 'Net postings'],
-              [[c['currency'], c['rows'], c['credits_minor'], c['debits_minor'], c['net_minor']] for c in ledger['currencies']]),
+              [[c['currency'], c['rows'], money_display(c['credits_minor'], c['currency']), money_display(c['debits_minor'], c['currency']), money_display(c['net_minor'], c['currency'])] for c in ledger['currencies']]),
         '<h2>Limitations</h2><ul>' + ''.join('<li>' + text(v) + '</li>' for v in document['limitations']) + '</ul>',
         '<h2>Captured readings</h2><p>Excluded readings are retained for review and do not enter the totals.</p>']
     for reading in ledger['readings']:
         row = reading['row']
         parts += ['<article><h3>Reading ' + text(row['key']) + '</h3>',
-            table(['Included in totals', 'Ordering date', 'Description', 'Direction', 'Currency', 'Amount — minor units'],
+            table(['Included in totals', 'Ordering date', 'Description', 'Direction', 'Currency', 'Amount (exact minor units in brackets)'],
                   [['Yes' if reading['included'] else 'No: ' + str(reading['exclusion_reason']),
-                    row['ordering_date'], row['description'], row['direction'], row['currency'], row['amount_minor']]]),
+                    row['ordering_date'], row['description'], row['direction'], row['currency'], money_display(row['amount_minor'], row['currency'])]]),
             details('Source reference and recorded ingestion digest', reading['source']),
             details('Original captured row, dates and source locator', row),
             details('Preserved transaction provenance', reading['provenance']), '</article>']
