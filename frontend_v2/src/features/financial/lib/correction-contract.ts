@@ -16,6 +16,56 @@ const identity = z.object({
   status: z.string(),
   delta_minor: integer.nullable(),
 })
+const balanceWalk = z
+  .object({
+    compared_intervals: z.number().int().nonnegative(),
+    mismatch_count: z.number().int().nonnegative(),
+    unanchored_balances: z.number().int().nonnegative(),
+    excluded_rows: z.number().int().nonnegative(),
+    trailing_rows_without_balance: z.number().int().nonnegative(),
+    findings_truncated: z.boolean(),
+    findings: z
+      .array(
+        z.object({
+          before_ref: z.string().nullable(),
+          after_ref: z.string(),
+          after_transaction_id: z.string(),
+          expected_minor: integer,
+          printed_minor: integer,
+          delta_minor: integer,
+        })
+      )
+      .max(100),
+  })
+  .refine(
+    (v) =>
+      v.mismatch_count <= v.compared_intervals &&
+      v.findings.length <= v.mismatch_count
+  )
+export const runningBalanceComparison = z.discriminatedUnion("available", [
+  z.object({
+    available: z.literal(false),
+    reason: z.string(),
+    interpretations: z.array(z.never()).length(0),
+  }),
+  z.object({
+    available: z.literal(true),
+    reason: z.null(),
+    currency: z.string(),
+    limitation: z.string(),
+    interpretations: z
+      .array(
+        z.object({
+          order: z.enum(["source_row_order", "reverse_source_row_order"]),
+          current: balanceWalk,
+          proposed: balanceWalk,
+        })
+      )
+      .length(2)
+      .refine((v) => new Set(v.map((i) => i.order)).size === 2),
+  }),
+])
+export type RunningBalanceComparison = z.infer<typeof runningBalanceComparison>
 export const correctionPreview = z.object({
   case_id: z.string(),
   transaction_id: z.string(),
@@ -35,6 +85,7 @@ export const correctionPreview = z.object({
     direction,
     ledger_status: z.enum(["admitted", "quarantined"]),
   }),
+  running_balances: runningBalanceComparison.optional(),
   statement_identity: z
     .object({ current: identity, proposed: identity })
     .nullable(),

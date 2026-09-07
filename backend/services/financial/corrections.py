@@ -67,12 +67,14 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
                        before={"row": preview["original"], "replacement_id": None,
                                "original_status": original.ledger_status,
                                "original_quarantine_reason": original.quarantine_reason,
-                               "reviewed_revision": expected_revision},
+                               "reviewed_revision": expected_revision,
+                               "running_balance_comparison": None},
                        after={"row": {**preview["original"], **preview["proposed"],
                                        "key": str(replacement_id), "ref_id": reference},
                               "replacement_id": str(replacement_id),
                               "original_status": "superseded", "original_quarantine_reason": None,
-                              "reviewed_revision": expected_revision})
+                              "reviewed_revision": expected_revision,
+                              "running_balance_comparison": preview["running_balances"]})
         session.add(replacement)
         session.flush()
         original.ledger_status = "superseded"

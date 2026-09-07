@@ -41,7 +41,10 @@ def duplicate_revision(session, document):
     rows = list(session.execute(select(
         FinancialTransaction.id, FinancialTransaction.ledger_status,
         FinancialTransaction.superseded_by_id, FinancialTransaction.content_hash,
-        FinancialTransaction.proof_class,
+        FinancialTransaction.proof_class, FinancialTransaction.row_index,
+        FinancialTransaction.running_balance_minor, FinancialTransaction.amount_minor,
+        FinancialTransaction.direction, FinancialTransaction.account_id,
+        FinancialTransaction.currency, FinancialTransaction.statement_period_id,
     ).where(FinancialTransaction.source_document_id == document.id)
       .order_by(FinancialTransaction.id)))
     latest = _latest(session, document)

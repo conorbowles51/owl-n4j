@@ -107,6 +107,22 @@ class CorrectionPreviewTests(DuplicateTestCase):
             self.preview()
         self.assertEqual(exc.exception.status_code, 409)
 
+    def test_running_balance_comparison_changes_with_proposal_without_writes(self):
+        self.row.running_balance_minor = 40000
+        self.db.commit()
+        result = self.preview()
+        self.assertTrue(result["running_balances"]["available"])
+        forward = result["running_balances"]["interpretations"][0]
+        self.assertEqual(forward["current"]["mismatch_count"], 0)
+        self.assertEqual(forward["proposed"]["mismatch_count"], 1)
+        self.assertFalse(self.db.dirty or self.db.new)
+
+    def test_running_balance_change_invalidates_review_even_without_rehashed_content(self):
+        first = self.preview()["document_revision"]
+        self.row.running_balance_minor = 40000
+        self.db.commit()
+        self.assertNotEqual(first, self.preview()["document_revision"])
+
     def test_route_inherits_authentication_and_case_edit(self):
         from routers import financial_adjudication as router
         route = next(r for r in router.router.routes if r.path.endswith("/correction-preview"))

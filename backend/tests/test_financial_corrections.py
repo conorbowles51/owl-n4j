@@ -130,6 +130,17 @@ class CorrectionTests(DuplicateTestCase):
         self.assertEqual(self.document.proof_class, "p3")
         self.assertIn("running-balance", self.document.metadata_["admissibility_reservations"][0])
 
+    def test_recorded_correction_retains_running_balance_diagnostics_without_promotion(self):
+        self.row.running_balance_minor = 40000
+        self.db.commit()
+        result = self.correct()
+        event = self.db.scalar(select(AdjudicationEvent).where(AdjudicationEvent.decision == "correct_transaction"))
+        comparison = event.after["running_balance_comparison"]
+        self.assertTrue(comparison["available"])
+        self.assertEqual(comparison["interpretations"][0]["proposed"]["mismatch_count"], 1)
+        self.assertEqual(result["proof_class"], "p3")
+        self.assertIn("requires revalidation", self.document.metadata_["admissibility_reservations"][0])
+
     def test_unknown_shape_is_an_explicit_refusal(self):
         self.document.metadata_ = {}
         self.db.commit()

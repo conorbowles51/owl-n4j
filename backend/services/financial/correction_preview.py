@@ -17,6 +17,7 @@ from services.financial.periods import read_opening, read_closing
 from services.financial.reconcile import total_transactions, evaluate_identity
 from services.financial.transaction_query import to_view
 from services.financial.correction_verification import correction_verification
+from services.financial.correction_balances import correction_running_balances
 from services.financial.documents import UnknownSourceShapeError
 from postgres.models.enums import ReconciliationStatus
 
@@ -76,6 +77,7 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
         "proposed": {"amount_minor": str(amount_minor), "direction": direction,
                      "currency": row.currency, "ledger_status": row.ledger_status},
         "statement_identity": None,
+        "running_balances": dict(available=False, reason="No linked statement period; running-balance comparison is unavailable.", interpretations=[]),
         "limitation": "No linked statement period; statement balance impact is unavailable.",
         "applied": False,
         "native_controls_rechecked": False,
@@ -111,7 +113,9 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
         statuses.append(ReconciliationStatus(projected["status"]))
         if affected:
             result["statement_identity"] = {"period_id": str(period.id), "current": identity(totals), "proposed": projected}
-            result["limitation"] = "Statement balance only; native controls and running-balance chains are not revalidated. Existing quarantine is preserved."
+            result["running_balances"] = correction_running_balances(period, period_rows,
+                transaction_id=row.id, amount_minor=amount_minor, direction=direction)
+            result["limitation"] = "Statement balance checked; running-balance comparisons are conditional on source order and balance convention. Native controls are not revalidated. Existing quarantine is preserved."
     try:
         result["verification"] = correction_verification(document, rows, statuses)
     except (UnknownSourceShapeError, ValueError):

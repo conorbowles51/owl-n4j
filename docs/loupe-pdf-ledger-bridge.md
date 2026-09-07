@@ -502,3 +502,23 @@ protects against drift. Automatic transaction row nomination remains outstanding
 Both grid and canonical-text column contracts now accept transaction_date separately
 from booking_date/value_date; existing snapshots serialize identically. No schema
 migration or original rewriting is needed.
+
+## Conditional running-balance correction diagnostics — 7 September 2026
+
+Correction previews compare current/proposed movement against stored running balances
+for the linked period, under both ascending and descending source-row interpretations.
+They assume post-transaction balances explicitly; matching arithmetic does not prove
+that convention, order, coverage or glyph accuracy. Only independent printed opening
+balances anchor the first interval. Missing balance rows accumulate intervening
+movement; excluded rows break the chain. Superseded versions are not counted again.
+Duplicate active positions, mixed account/currency, malformed arithmetic, absent
+balances and more than1,000 period rows produce explicit unavailable results.
+All integers serialize as decimal strings. Counts cover the complete bounded walk;
+only the first100 mismatches per interpretation are displayed, with truncation stated.
+
+The correction event retains the reviewed comparison in after.running_balance_comparison
+(before is null). The existing revalidation reservation remains: no grading promotion
+is earned from these conditional diagnostics. Document revision now includes actual
+row order, running balance, amount/direction/account/currency/period fields, so a
+changed stored balance invalidates a prior preview even without a recalculated
+content hash. Source links open the original row, including after replacement.

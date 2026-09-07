@@ -276,3 +276,22 @@ This uses a separate header-check.json fixture. The browser accepts two printed
 labels, selects only one non-header row, saves it pending, and verifies an identical
 retry preserves its mapping. Results: header-ui-check.json; screenshot:
 `/tmp/loupe-neilbyrne-header-suggestions-ui.png`. No real evidence is used.
+
+## Running-balance impact during correction
+
+Correction previews now show conditional comparisons in source row order and its
+reverse. Printed post-transaction balances must still be confirmed against the
+source; neither interpretation promotes a proof class. Missing anchors, excluded
+rows and unchecked tails are explicit. Mismatches link back to original ledger
+sources. Recordings preserve the comparison in the correction audit event.
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/prepare_local_running_balance_ui.py
+node scripts/check_local_running_balance_ui.cjs
+```
+
+These create a fresh isolated synthetic PDF/ledger case, preview GBP400→410 against
+printed balances400/420, record the correction remainingP3, and open the original
+PDF source. Rerun the preparation before repeating. Reports are running-balance-check.json
+and running-balance-ui-check.json under data/local-runtime; screenshots use the
+/tmp/loupe-neilbyrne-running-balance prefix. Native controls remain unrevalidated.

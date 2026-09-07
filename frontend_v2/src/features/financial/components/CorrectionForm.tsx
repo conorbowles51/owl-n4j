@@ -1,6 +1,7 @@
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { ApiError, fetchAPI } from "@/lib/api-client"
+import { RunningBalanceComparisonPanel } from "./RunningBalanceComparisonPanel"
 import { Button } from "@/components/ui/button"
 import {
   correctionAnswer,
@@ -51,7 +52,9 @@ export function CorrectionForm({
         data.proposed.currency !== currency ||
         data.original.currency !== currency ||
         data.proposed.amount_minor !== input.amount_minor ||
-        data.proposed.direction !== input.direction
+        data.proposed.direction !== input.direction ||
+        (data.running_balances?.available &&
+          data.running_balances.currency !== currency)
       )
         throw new Error(
           "The preview does not match this correction. Refresh the ledger."
@@ -212,6 +215,12 @@ export function CorrectionForm({
             </p>
           )}
           <p>{reviewed.limitation}</p>
+          {reviewed.running_balances && (
+            <RunningBalanceComparisonPanel
+              caseId={caseId}
+              comparison={reviewed.running_balances}
+            />
+          )}
           <p>
             Document verification: {reviewed.verification.current_proof_class} →{" "}
             {reviewed.verification.proposed_proof_class ?? "unavailable"}. This
