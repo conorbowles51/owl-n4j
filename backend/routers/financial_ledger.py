@@ -39,6 +39,7 @@ from services.financial.ledger_source import LedgerSourceError, ledger_source
 from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
 from services.financial.candidate_assessment import assess_candidate_amounts
 from services.financial.candidate_reviews import read_candidate_review
+from services.financial.candidate_overlap import check_candidate_source_reuse
 from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError
 
@@ -521,3 +522,14 @@ async def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id
     except Exception:
         logger.exception("Failed to read candidate source")
         raise HTTPException(status_code=500, detail="Stored PDF table could not be loaded.")
+
+
+@router.get("/candidate-sources/{evidence_file_id}/reuse-check")
+async def get_candidate_source_reuse(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return check_candidate_source_reuse(db, case_id=case_id, evidence_file_id=evidence_file_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Source reuse check failed")
+        raise HTTPException(status_code=500, detail="Source reuse check could not be completed.")

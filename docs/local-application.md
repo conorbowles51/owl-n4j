@@ -202,3 +202,22 @@ retry and unchanged review/totals, and writes `candidate-account-check.json`. Th
 second creates/selects an account through the browser and resolves a synthetic
 12.34 GBP reading; its source stays unchanged and no transaction enters totals.
 Screenshot: `/tmp/loupe-neilbyrne-provisional-account-ui.png`.
+
+
+Saved PDF batches also expose **Check repeated source rows**. It compares pending
+and resolved candidates across that PDF's mappings and links to the exact readings.
+Rejected candidates remain counted. The check detects reused grid rows/overlapping
+text and possible overlapping source areas; equal amounts alone are not duplicates.
+Uncomparable mixed or unlocated sources and comparison/detail limits are explicit.
+This is a snapshot check, not a transaction deduplicator or ledger-write permit.
+
+After running the synthetic source-selection check (which adds a second mapping
+that reuses one original row), verify the read-only browser check with:
+
+```sh
+node scripts/check_local_candidate_reuse_ui.cjs
+```
+
+It expects at least one reused source row, verifies reported comparison coverage
+and follows the finding to its exact candidate. Screenshot:
+`/tmp/loupe-neilbyrne-source-reuse-ui.png`. It makes no review or ledger changes.

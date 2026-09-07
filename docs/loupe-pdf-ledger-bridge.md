@@ -236,3 +236,39 @@ case/source/currency, selects a newly created account and blocks uncertain retri
 until review reload. This makes a new-source review possible without guessing
 identity. Known-account establishment/merge and atomic ledger materialization still
 remain; provisional setup changes neither the reading nor classification/totals.
+
+
+## Source reuse review before materialization — 7 September 2026
+
+`candidate_overlap.py` rebinds every saved mapping under a shared source-file lock
+and compares active candidates across mappings. Same stored row identity survives
+changed proposed meanings. Canonical character overlap and conservative bounding
+source-area overlap are reported separately; mixed/unlocated source claims may be
+uncomparable. Equal values at different source rows are not by themselves a finding.
+Rejected candidates remain counted but are excluded from active comparisons.
+
+Bounds are explicit: 100 mappings/1,000 readings (refused beyond either), 10,000
+pairs per check, first 100 finding details with complete compared-pair counts. The
+response includes scope, coverage, limitations and a snapshot revision over all
+mapping/review revisions. The UI can open the exact candidate in either batch.
+No source finding rejects or merges anything, and this snapshot must never be
+used as a materialization permit. Database-enforced immutable source claims and
+candidate-to-transaction links are still required for the future writer.
+
+### Materialization questions resolved by the current code inspection
+
+- `record_transactions` writes a document's whole batch because identical-content
+  occurrence indices are document-scoped. Incremental per-candidate calls cannot
+  simply append to that writer without addressing occurrence identity.
+- Existing extraction layers describe native/template/structural-model/grounded-
+  model readings; the candidate record preserves text origin and review history
+  but does not yet establish a truthful ledger extraction-layer assignment. Do not
+  call a human reading native/template or invent model involvement to fit the enum.
+- PDF row nomination does not establish statement shape or printed period/control
+  coverage. `SourceDocumentDraft` requires source shape and computes proof class.
+  Resolution cannot be used as evidence that statement arithmetic passed.
+- Existing PDF snapshots check recorded file digests, not the current file bytes.
+  A materialization boundary must decide and verify the actual-byte requirement.
+
+Address these contract/integration issues before exposing a ledger writer; retain
+existing source originals and review histories throughout.

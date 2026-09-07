@@ -8,6 +8,7 @@ import {
   candidateMapping,
   candidateUrl,
 } from "../lib/candidate-contract"
+import { CandidateReuseCheck } from "./CandidateReuseCheck"
 import { CandidateSourcePicker } from "./CandidateSourcePicker"
 import { CandidateReviewForm } from "./CandidateReviewForm"
 
@@ -40,6 +41,7 @@ export function PdfCandidatesPanel({ caseId }: { caseId: string | undefined }) {
 }
 
 function CandidateMappings({ caseId }: { caseId: string }) {
+  const [targetCandidate, setTargetCandidate] = useState<string | null>(null)
   const [choosing, setChoosing] = useState(false)
   const [offset, setOffset] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
@@ -60,8 +62,12 @@ function CandidateMappings({ caseId }: { caseId: string }) {
   })
   return (
     <div className="space-y-3 text-sm">
-      <Button variant="outline" onClick={() => setChoosing(v => !v)}>{choosing ? "Hide source selection" : "Choose PDF rows"}</Button>
-      {choosing && <CandidateSourcePicker caseId={caseId} onSaved={setSelected} />}
+      <Button variant="outline" onClick={() => setChoosing((v) => !v)}>
+        {choosing ? "Hide source selection" : "Choose PDF rows"}
+      </Button>
+      {choosing && (
+        <CandidateSourcePicker caseId={caseId} onSaved={setSelected} />
+      )}
       <Button
         variant="outline"
         size="sm"
@@ -128,9 +134,14 @@ function CandidateMappings({ caseId }: { caseId: string }) {
       )}
       {selected && (
         <CandidateRows
-          key={`${caseId}:${selected}`}
+          key={`${caseId}:${selected}:${targetCandidate}`}
           caseId={caseId}
           mappingId={selected}
+          initialCandidateId={targetCandidate}
+          onOpenReading={(mapping, candidate) => {
+            setSelected(mapping)
+            setTargetCandidate(candidate)
+          }}
         />
       )}
     </div>
@@ -140,11 +151,15 @@ function CandidateMappings({ caseId }: { caseId: string }) {
 function CandidateRows({
   caseId,
   mappingId,
+  initialCandidateId,
+  onOpenReading,
 }: {
   caseId: string
   mappingId: string
+  initialCandidateId: string | null
+  onOpenReading: (mapping: string, candidate: string) => void
 }) {
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(initialCandidateId)
   const [page, setPage] = useState(0)
   const mapping = useQuery({
     queryKey: ["financial-candidates", caseId, "mapping", mappingId],
@@ -181,6 +196,11 @@ function CandidateRows({
   const data = mapping.data
   return (
     <div className="space-y-3">
+      <CandidateReuseCheck
+        caseId={caseId}
+        fileId={data.evidence_file_id}
+        onOpenReading={onOpenReading}
+      />
       <h3 className="font-semibold">Saved original readings</h3>
       <ul className="space-y-2">
         {data.candidates.slice(page * 25, page * 25 + 25).map((row) => (
@@ -216,7 +236,7 @@ function CandidateRows({
           </Button>
         </div>
       )}
-      {selected && (
+      {selected && data.candidates.some((row) => row.id === selected) && (
         <CandidateReviewForm
           key={`${caseId}:${selected}`}
           caseId={caseId}

@@ -901,6 +901,7 @@ from services.financial.version import (
 )
 
 __all__ = [
+    "check_candidate_source_reuse",
     "CandidateAccountRequest", "create_candidate_account",
     "list_candidate_sources", "read_candidate_source",
     "CandidateResolvedReading", "CandidateReviewRequest", "read_candidate_review", "review_candidate",
@@ -1854,3 +1855,5 @@ __all__ = [
 from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
 
 from services.financial.candidate_accounts import CandidateAccountRequest, create_candidate_account
+
+from services.financial.candidate_overlap import check_candidate_source_reuse
