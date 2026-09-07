@@ -370,3 +370,14 @@ PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/chec
 This read-only check uses the existing synthetic coverage fixture to compare a
 February gap against an enclosing export, and checks unauthenticated refusal,
 missing account and reversed dates. Report: `data/local-runtime/requested-coverage-check.json`.
+
+The applied-filter panel now offers **Check filtered coverage** once one account
+and both dates are applied. It shows covered/uncovered requested days separately
+for each currency, original period identifiers and excluded bounds. Changing the
+applied scope or clearing filters removes the prior result; refresh hides stale
+results while checking. No eligible bounds remains unknown, and full printed-date
+coverage does not certify complete transactions.
+
+`check_local_ledger_filters_ui.cjs` now also checks February coverage for both
+synthetic accounts (0 versus28 covered days) and verifies Clear removes the old
+coverage. Screenshot: `/tmp/loupe-neilbyrne-filtered-coverage-ui.png`.
