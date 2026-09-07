@@ -81,9 +81,9 @@ feature below is complete at the start of this window.
    - [ ] Ensure corrections and exclusions consistently update totals, searches and money-flow views.
    - [ ] Prevent older extracted graph values from being counted alongside reviewed transactions.
 
-6. **Show missing periods and incomplete evidence — remaining**
-   - [ ] Identify gaps and overlaps between account statements.
-   - [ ] Show which accounts and dates the available evidence covers.
+6. **Show missing periods and incomplete evidence — partial**
+   - [x] Identify gaps and overlaps between recorded account statements with eligible printed bounds (8b6c9ad). Enclosing exports are included; oversized accounts are explicitly unavailable.
+   - [x] Show which accounts and dates the recorded statement bounds cover, with exclusions and limits visible (8b6c9ad). This does not certify full transaction extraction or undated/unprocessed evidence.
    - [ ] Distinguish no matching transaction found from insufficient records to know.
 
 7. **Connect transactions and explain money movement — remaining**
@@ -286,3 +286,10 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   browser/PG correction400→410 reports the introduced mismatch and retainsP3 plus
   original source navigation. Feature3 remains partial: complete controls and
   source-confirmed order/coverage are not claimed verified.
+
+- 7 September, extended window: **8b6c9ad** connects case-scoped statement date
+  coverage under feature6, now partial. All 3,763 financial,957 frontend unit and
+  11 Chromium tests pass, plus TypeScript/ESLint. Synthetic browser shows the
+  February gap and its absence where an enclosing export covers the same dates.
+  Search integration and precise period-bound source navigation remain; no whole
+  remaining feature is newly completed.

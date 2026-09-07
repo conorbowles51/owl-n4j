@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `4b70844`, “Show and retain conditional
-  running-balance impacts of ledger corrections”. A state commit follows;
+- **Latest implementation commit:** `8b6c9ad`, “Show printed statement coverage
+  without false gaps from enclosing exports”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,42 @@ for verification, the retained ten-feature checklist and the handoff, then pause
 Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Printed statement coverage connected — 7 September 2026
+
+`8b6c9ad` adds protected case:view statement-coverage and a Ledger panel.25-account
+pages,500-period hard limit per account; oversized/cross-case-source data returns
+unavailable rather than partial or leaked coverage. Reuses the existing printed-bound
+rule and retains missing/derived dates/nonadmitted-source exclusions. Unions all
+eligible intervals, including enclosing exports, before calculating internal gaps,
+so long exports do not falsely appear to leave months missing. Counts overlapping
+days once, keeps currencies separate, and retains source period/document/file IDs.
+The panel explains that covered bounds do not prove complete extraction or absence
+of transactions, and dates outside first/last known bounds are not assessed.
+Query key uses financial-ledger case prefix for existing write invalidations.
+Exact date-bound citation navigation and integration with transaction searches remain.
+
+**Verified:** all 3,763 backend financial tests, zero skips;957 frontend unit;
+11 Chromium;TypeScript/full ESLint. Synthetic PostgreSQL/browser accounts show a
+28-day February gap versus a0-day gap/90-covered-day union when an enclosing export
+spans January–March. Tests cover nesting, duplicate/contiguous bounds, leap day,
+maximum calendar date, exclusions, source ownership and the500-period guard.
+Scripts prepare_local_coverage_ui.py then check_local_coverage_ui.cjs use a separate
+fixture with a completed synthetic audit run,5 documents/10 transactions; no real
+source material. Case `e0da5581-a1ac-4db5-a3a9-e17021fb807a`. Reports under
+coverage-check.json/coverage-ui-check.json; screenshot
+`/tmp/loupe-neilbyrne-statement-coverage-ui.png`. Backend current exec session97535,
+log `/tmp/loupe-neilbyrne-coverage-backend.out`. Existing synthetic fixtures unchanged.
+
+**Next segment:** check clock and timebox another bounded integration if before
+07:45UTC. Candidate options: expose the newly retained running-balance audit details
+in correction history, or improve source navigation for recorded coverage periods
+without inventing a page for printed dates. Native revalidation, automatic PDF
+nomination/full extraction and canonical graph/exports/tracing remain larger work.
+Feature6 is now partial, alongside1,2,3,4,10; remaining5,7,8,9. No entire remaining
+feature is completed. At07:45UTC switch to final verification and a plain-language
+nine-o'clock report retaining all ten features; pause automation by08:00UTC(09:00Dublin).
+The active schedule remains every5 minutes. Real PDFs remain read-only/un-ingested.
 
 ### Running-balance correction diagnostics — 7 September 2026
 
