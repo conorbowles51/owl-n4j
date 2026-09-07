@@ -68,6 +68,8 @@ feature below is complete at the start of this window.
    - [ ] Explain all remaining discrepancies while keeping classification calculated by the system.
    - [x] Existing statement balance reconciliation and correction consequences are connected; proof class is computed. Broader checks remain.
 
+   - [x] Correction running-balance diagnostics: compare before/after under both possible source-row orders, expose unchecked intervals and retain source-linked results in the correction audit (4b70844). Proven order/coverage and native-control revalidation remain; this does not promote classification.
+
 4. **Finish duplicate handling — partial**
    - [ ] Extend the existing same-case comparison to the remaining supported situations.
    - [ ] Show matching evidence in other cases only where the user has permission.
@@ -277,3 +279,10 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   saved only the chosen non-header row pending and preserved its mapping on retry.
   Full automatic row nomination/extraction remains; next focus is missing accuracy
   checks under feature3. Completed work remains visible above.
+
+- 7 September, extended window: **4b70844** connects conditional running-balance
+  correction diagnostics and persists the reviewed results. All 3,753 financial,
+  952 frontend unit and 11 Chromium tests pass, plus TypeScript/ESLint. Synthetic
+  browser/PG correction400→410 reports the introduced mismatch and retainsP3 plus
+  original source navigation. Feature3 remains partial: complete controls and
+  source-confirmed order/coverage are not claimed verified.

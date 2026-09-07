@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `aac46b0`, “Suggest explicit PDF column labels
-  and preserve transaction date roles”. A state commit follows;
+- **Latest implementation commit:** `4b70844`, “Show and retain conditional
+  running-balance impacts of ledger corrections”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,47 @@ for verification, the retained ten-feature checklist and the handoff, then pause
 Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Running-balance correction diagnostics — 7 September 2026
+
+`4b70844` adds current/proposed running-balance comparisons in correction preview
+and stores them in the immutable correction event. Both source-row orders are shown;
+post-transaction balance convention, correct glyphs and coverage remain explicit
+conditions, so no class is promoted and existing revalidation reservations remain.
+Only printed independent opening balances anchor the first interval. Missing-balance
+rows accumulate movement; excluded rows interrupt the chain; superseded versions
+are not counted twice. Limits1,000 period rows/100 displayed mismatches per walk;
+full bounded comparison counts and truncation are explicit. Missing/ambiguous order,
+malformed arithmetic or account/currency mismatch is unavailable, not a clean pass.
+Exact decimal strings and original transaction source links survive recording.
+Document revision now binds actual running balance/order/amount/direction/account/
+currency/period fields in addition to hashes, so changing a balance invalidates a
+review even without updating content_hash. This also strengthens duplicate revisions.
+
+**Verified:** all 3,753 backend financial tests, zero skips; 952 frontend unit;
+11 Chromium; TypeScript/full ESLint. Initial audit-snapshot shape mismatch was caught
+and fixed: running_balance_comparison is null in before and the full reviewed result
+in after. Live synthetic PDF/PG/browser preview400→410 shows0→1 mismatch in source
+order, recordsP3, and opens the original replaced row's highlighted PDF source.
+Scripts prepare_local_running_balance_ui.py then check_local_running_balance_ui.cjs
+create/mutate only a fresh labelled synthetic case. They inherit the ledger-source
+fixture's open audit-run convention; this fixture is not a full ingestion acceptance.
+Case `5675421f-0860-4048-abe1-902241a1feec`, original
+`0ac8a69d-e642-45e6-9bf6-198f2fe7afd0`, replacement
+`d68a7a5f-5b37-4398-b10a-f74aa0c8c27b` (`TX-DGAZ-KGTF-F0NH`). Reports under
+running-balance-check.json/running-balance-ui-check.json. Screenshots under
+/tmp/loupe-neilbyrne-running-balance-preview-ui.png and running-balance-source-ui.png.
+Current isolated backend exec session23096, log `/tmp/loupe-neilbyrne-balances-backend.out`.
+
+**Next segment:** inspect remaining complete-period/printed-control checks and their
+existing services before choosing the next bounded unit. Native mandatory-control
+revalidation and proven running-order/coverage still remain; this diagnostic does
+not finish feature3. Period coverage/continuity may offer an independently connectable
+capability under feature6 if full native revalidation cannot fit before the handoff.
+Use existing exact-money services rather than inventing control facts. Still partial
+features1,2,3,4,10; remaining5,6,7,8,9. Check clock before starting. Reserve07:45–08:00UTC
+for final verification/checklist/handoff and pause the active5-minute automation by
+09:00 Dublin (08:00UTC). Real PDFs remain read-only and un-ingested.
 
 ### Explicit PDF column suggestions — 7 September 2026
 
