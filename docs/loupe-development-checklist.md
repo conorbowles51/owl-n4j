@@ -80,6 +80,7 @@ feature below is complete at the start of this window.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
 5. **Make every financial view use the authoritative ledger — partial**
+   - [x] Daily/monthly exact ledger posting totals share summary eligibility and retain contributing transaction/source IDs (d40474a). Time-series display and legacy graph migration remain.
    - [x] Preserve full bigint money through individual ledger JSON, table and decision identity using exact strings, with safe numeric compatibility (19a8980).
    - [x] Backend/API exact ledger posting summaries, separate currencies, explicit excluded populations and a hard no-partial-total limit (0ae8242). Display and legacy-view replacement remain.
    - [ ] Connect the graph and financial analysis screens to the reviewed ledger.
@@ -354,3 +355,9 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   adjusted/rerun); TypeScript/scoped lint and real synthetic PostgreSQL→HTTP→UI
   bigint/negative-balance checks pass. API money fields now strings. Next: exact
   authoritative time summaries; no whole feature newly complete.
+
+
+- 7 September, 10:03 Dublin: **d40474a** adds date-grouped ledger backend/API.
+  32 targeted backend tests and read-only synthetic HTTP pass; date totals reconcile
+  exactly with the summary and source IDs match. Next: display and contributing-row
+  navigation. Feature5 stays partial; original ten-feature checklist retained.

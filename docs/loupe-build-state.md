@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `19a8980`, “Preserve exact bigint money across
-  ledger JSON and browser displays”. A state commit follows;
+- **Latest implementation commit:** `d40474a`, “Group authoritative ledger postings
+  by date with exact source-linked totals”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,34 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Authoritative date totals backend/API — 7 September 2026
+
+`d40474a` extends the shared ledger_summary eligibility/arithmetic pass with optional
+daily/monthly grouping and exposes case:view ledger-trends. Ordinary summary JSON
+is unchanged. One bounded read returns overall currency totals and sorted date/
+currency points with exact money strings and contributing transaction/source IDs.
+Monthly labels are first-of-month; actual grouping uses ordering_date, not statement
+bounds. No zero-filled missing dates or transfer/balance claims. Same10,000-row
+limit and exclusions; unavailable returns no partial points.
+
+Verified:32 targeted backend tests (summary/date grouping/transaction query), including
+points summing exactly to summary, >JS-safe cents, rejected exclusion, leap/max dates,
+currency separation, scope and size bound. Read-only authenticated synthetic HTTP
+compares daily/monthly GBP2100 and10 tx/five source IDs to actual ledger rows;
+February returns no points; invalid grouping422. Existing fixture's ten rows all
+have January ordering dates even on March statements, so groupedJanuary is correct.
+Script check_local_ledger_trends.py; report ledger-trends-check.json. Logs use
+/tmp/loupe-neilbyrne-ledger-trends-{tests,live}.out. Backend exec21922, logfile
+ledger-trends-backend.out. Frontend unchanged; no real evidence writes.
+
+**Next segment:** connect a bounded exact-date totals panel in the Ledger view,
+with daily/monthly selection, applied account/date scope and current query
+invalidation. Validate point/overall totals and case/scope before displaying.
+Allow inspecting contributing current ledger rows and their existing source action
+without presenting excluded rows as contributors. Keep legacy graph Trends clearly
+separate until deliberately migrated; no silent amount-sign translation. Use
+synthetic daily/monthly source-linked browser acceptance and targeted tests.
 
 ### Exact individual ledger money — 7 September 2026
 
