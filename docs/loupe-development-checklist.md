@@ -45,6 +45,8 @@ feature below is complete at the start of this window.
 
    - [x] Cross-batch source reuse review: detect repeated stored rows/overlapping source claims, expose uncomparable pairs and coverage limits, and open the affected readings (7ee220b). This is not database-enforced materialization deduplication.
 
+   - [x] Truthful reading method: explicitly record investigator-reviewed readings without claiming native/template/model extraction or promoting their classification (08b1540). Storage, UI labels and PostgreSQL downgrade protection verified; candidate materialization remains.
+
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
@@ -211,3 +213,8 @@ pass with zero skips. The original ten-feature statuses remain unchanged: this
 prerequisite does not yet make candidate-to-ledger admission complete. Next work
 is truthful human-review provenance, followed by immutable ledger/source links
 and transaction retry/concurrency protection.
+
+Extended-window implementation08b1540 adds explicit investigator-reviewed origin.
+Verified: 3,699 backend financial tests (zero skips), 927 frontend unit/11 Chromium,
+TypeScript/full ESLint; local PostgreSQL constraints and downgrade guard checked.
+Main feature statuses remain partial/remaining until the end-to-end work is done.

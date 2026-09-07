@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `43b2402`, “Verify saved PDF candidate source
-  bytes before materialization”. A state commit follows;
+- **Latest implementation commit:** `08b1540`, “Represent investigator-reviewed
+  financial readings explicitly”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,33 @@ for verification, the retained ten-feature checklist and the handoff, then pause
 Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Investigator reading provenance — extended window, 7 September 2026
+
+`08b1540` introduces extraction method4, investigator_review, with corresponding
+source/transaction constraints and frontend wording. It is a separate human
+reading method, not an automated tier or a verification grade. The transaction
+writer refuses mixing human/automated document and row methods. Native shapes
+still require native extraction; unchecked reviewed statements remain P3/outside
+default totals. Original extraction provenance/review history remain necessary.
+Existing duplicate ranking gives review alone no preference over an equally
+checked automated reading; only method3 is labelled a model fallback.
+
+**Verified:** 3,699 financial tests, zero skips; 927 frontend unit and 11 Chromium;
+TypeScript/full ESLint pass. Isolated PostgreSQL migrated to
+`20260907_investigator_reading`. `scripts/check_local_reading_method.py` verifies
+both table constraints accept4/refuse5 and downgrade refuses existing human
+readings, with all synthetic row changes rolled back. No candidates materialized.
+The running backend predates this change: restart it before exercising a writer
+using method4. Frontend Vite already serves changed labels.
+
+**Next segment:** represent selected PDF financial rows without asserting the whole
+PDF is a statement or that every transaction was selected; settle the conservative
+computed source classification/coverage contract. Then implement immutable source
+claims and candidate→transaction links, sealed whole-document finalization with
+retry/concurrency tests, review-after-materialization rules, and UI/API connection.
+Existing source-byte verification is ready to call inside that locked boundary.
+Schedule remains ACTIVE every five minutes through 09:00 Dublin (08:00 UTC).
 
 ### Source bytes verified — extended window, 7 September 2026
 
