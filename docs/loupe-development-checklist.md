@@ -1,7 +1,7 @@
 # Loupe financial development checklist
 
 Authorized overnight window: 7 September 2026, until **06:00 Europe/Dublin
-(05:00 UTC)**. Scheduled continuation every 15 minutes in the same task.
+(05:00 UTC)**. Scheduled continuation every 5 minutes in the same task.
 
 Keep all ten features and their subitems visible. Mark verified completions [x];
 never remove completed work. A feature is complete only when its complete user

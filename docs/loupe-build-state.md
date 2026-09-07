@@ -41,7 +41,7 @@ completed-item claims and environment recipes in that history are not current.
 Neil explicitly asked to work through the remaining ten-feature list on a schedule
 until **2026-09-07 06:00 Europe/Dublin (05:00 UTC)**, and to mark completed work
 without removing it. The existing heartbeat `continue-loupe-development` has been
-updated through the app tool to ACTIVE every 15 minutes, with this cutoff and the
+updated through the app tool to ACTIVE every 5 minutes, with this cutoff and the
 current next implementation scope. This supersedes the older paused-window notes.
 
 `docs/loupe-development-checklist.md` preserves all ten numbered features, the
