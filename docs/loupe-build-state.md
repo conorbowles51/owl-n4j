@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `cc96526`, “Verify live export membership
-  permissions and immediate revocation”. A state commit follows;
+- **Latest implementation commit:** `b67e365`, “Use authoritative ledger readings
+  in main documentary Transactions view”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,27 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Main documentary Transactions migration — 7 September 2026
+
+`b67e365` mounts CorrectableLedger in main Transactions when mode=transactions,
+independent of graph loading/empty states. Reuses exact ledger summary, applied
+filters, source/correction/adjudication controls. Explicit Ledger postings vs
+Financial intelligence selector remains reachable even on empty graph; intelligence
+shows limitation and keeps its graph UI. Existing Ledger tab remains.31 page tests
+passed after updating an old graph-search expectation to the intelligence search
+placeholder. TypeScript/scoped ESLint/diff checks passed. Local Chromium verified
+main Transactions bigint amount and negative balance plus decision open/cancel;
+report data/local-runtime/transactions-ledger-ui-check.json. No writes to evidence
+or ledger. Backend unchanged exec20679.
+
+**Next segment:** migrate documentary Counterparties to exact summaries of captured
+ledger counterparty_raw labels with included eligibility, separate currencies and
+contributing row/source references. Do not infer identity or claim transfer matching
+from equal labels. Missing labels remain explicit. Reuse shared bounded ledger read
+and exact arithmetic; ensure corrections/exclusions invalidate view. Inspect existing
+counterparty services before choosing implementation. Funds matching/tracing remains
+separate unfinished work. Reserve11:45UTC for handoff; ACTIVE until13:00Dublin.
 
 ### Live export membership verification — 7 September 2026
 
