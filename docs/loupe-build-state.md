@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `42e42f1`, “Expose saved running-balance
-  diagnostics in correction history”. A state commit follows;
+- **Latest implementation commit:** `e13375c`, “Keep empty ledger answers scoped
+  and expose missing response rows”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -36,16 +36,43 @@ completed-item claims and environment recipes in that history are not current.
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
 
-### Extended authorization — 7 September 2026, through 09:00 Dublin
+### Extended authorization — 7 September 2026, through 13:00 Dublin
 
-Neil explicitly requested “continue on the work, extend the schedule to 9am”.
-The existing `continue-loupe-development` heartbeat was updated through the app
-and confirmed ACTIVE every five minutes until **09:00 Europe/Dublin (08:00 UTC)**.
-This supersedes all earlier cutoff/pause statements below. Reserve 07:45–08:00 UTC
-for verification, the retained ten-feature checklist and the handoff, then pause.
-Continue ledger materialization in tested units: actual-byte verification first,
-then truthful reading provenance and immutable candidate/source transaction claims.
-Do not interpret candidate resolution as arithmetic verification or ledger admission.
+Neil upgraded and requested mindful usage, then explicitly said “extend this
+working session until 1pm”. The existing continue-loupe-development heartbeat was
+updated through the app and confirmed ACTIVE every five minutes until
+**13:00 Europe/Dublin (12:00 UTC)**. This supersedes all earlier cutoff/pause
+statements below. Reserve 11:45–12:00 UTC for verification and the retained
+checklist/handoff. Reuse valid passing checks; target tests to changed behavior
+and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Scoped empty ledger answers — 7 September 2026
+
+`e13375c` corrects empty LedgerPanel answers when an account or date filter is
+supplied: no matching rows no longer claims the whole case has none. Both empty
+and populated answers show the requested scope and explain ordering-date bounds.
+Empty answers explain that they do not prove no transactions occurred or complete
+records. A reported-count discrepancy remains visible even if zero rows arrive.
+The existing account/date hook contract is used; new filter controls and measured
+search coverage are not claimed complete.
+
+Verified: 15 targeted LedgerPanel tests, TypeScript build and scoped ESLint pass.
+The named CorrectableLedger.test.tsx does not exist; only the actual 15-test file
+was collected, and that is the reported count. No backend changes; earlier full
+backend 3,763, frontend 960 and Chromium 11 passing gates remain baseline evidence,
+not reruns of this change. Logs: /tmp/loupe-neilbyrne-empty-ledger-{test,tsc,lint}.out.
+
+The earlier final read-only check succeeded after the upgrade: frontend/backend/
+engine returned HTTP200 at 07:47UTC. Both real PDF hashes match their inspection
+baselines and each has zero evidence_files copies in isolated PostgreSQL. Report:
+data/local-runtime/morning-verification.json. AI processing remains untested.
+
+**Next segment:** connect usable account/date filters to the current ledger read,
+then quantify requested-date coverage without treating printed bounds as proof of
+complete transaction extraction. Inspect existing account-search contracts first;
+preserve exact money, source actions, corrections and case isolation. The graph,
+reports, transfer matching and tracing work still remain. No whole feature was
+completed by this fix. Keep the original ten-feature checklist and checked items.
 
 ### Historical balance diagnostics connected — 7 September 2026
 
@@ -64,17 +91,9 @@ Script check_local_balance_history_ui.cjs uses running-balance-ui-check.json; it
 makes no record changes. Screenshots /tmp/loupe-neilbyrne-balance-history-ui.png
 and balance-history-source-ui.png. Backend remains exec session97535 from coverage.
 
-**Next scheduled segment: final verification and morning handoff.** No further
-feature expansion is planned in the short time before the reserved07:45UTC window.
-Inspect current git/checkpoint state, confirm isolated local services and read-only
-fixture reports, verify that the supplied PDFs remain unchanged/un-ingested, and
-prepare a plain-language morning review with all ten feature statuses. Existing
-passing suites need not be repeated absent a change or unresolved concern. Preserve
-all checked items, partial work and limitations. Do not claim automatic extraction,
-native controls, canonical graph/exports/tracing or full application acceptance.
-After the final report/checkpoint, pause continue-loupe-development through the app
-before08:00UTC(09:00Dublin). Schedule currently ACTIVE every5 minutes. Feature status:
-partial1,2,3,4,6,10; remaining5,7,8,9; none of these ten whole features fully complete.
+The prior 09:00 cutoff plan has been superseded by the 13:00 authorization above.
+Feature status remains partial 1,2,3,4,6,10; remaining 5,7,8,9. None of these ten
+whole features is fully complete.
 
 ### Printed statement coverage connected — 7 September 2026
 

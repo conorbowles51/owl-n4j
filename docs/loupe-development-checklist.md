@@ -1,9 +1,10 @@
 # Loupe financial development checklist
 
-Extended authorized window: 7 September 2026, until **09:00 Europe/Dublin
-(08:00 UTC)**. Neil explicitly extended the deadline; the existing heartbeat is
+Extended authorized window: 7 September 2026, until **13:00 Europe/Dublin
+(12:00 UTC)**. Neil explicitly extended the deadline; the existing heartbeat is
 ACTIVE every five minutes in this same task. Reserve the final 15 minutes for
-verification and handoff. The earlier 06:00 handoff below remains as history.
+verification and handoff. Neil requests mindful usage: targeted checks and reuse
+of valid passing suites. Earlier 06:00/09:00 plans remain history.
 
 Keep all ten features and their subitems visible. Mark verified completions [x];
 never remove completed work. A feature is complete only when its complete user
@@ -87,6 +88,7 @@ feature below is complete at the start of this window.
    - [x] Identify gaps and overlaps between recorded account statements with eligible printed bounds (8b6c9ad). Enclosing exports are included; oversized accounts are explicitly unavailable.
    - [x] Show which accounts and dates the recorded statement bounds cover, with exclusions and limits visible (8b6c9ad). This does not certify full transaction extraction or undated/unprocessed evidence.
    - [ ] Distinguish no matching transaction found from insufficient records to know.
+   - [x] Empty ledger answers respect account/date filters, explain that no match does not establish absence of transactions, and retain response-count discrepancy warnings even for zero rows (e13375c). Quantified search coverage and filter controls remain.
 
 7. **Connect transactions and explain money movement — remaining**
    - [ ] Link likely transfers between accounts and parties.
@@ -301,3 +303,10 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   backend remains at3,763 passed financial tests. Read-only browser history/source
   check passes. Development now transitions to final verification and the morning
   handoff; all ten features and their completion marks remain above.
+
+
+- 7 September, 08:53 Dublin: **e13375c** corrects scoped empty ledger answers
+  and preserves incomplete-response warnings with zero returned rows.15 targeted
+  unit tests, TypeScript and scoped ESLint pass; unchanged backend gates reused.
+  Neil extended the ACTIVE five-minute heartbeat until13:00 Dublin (12:00 UTC).
+  All ten features and earlier completion entries remain visible.
