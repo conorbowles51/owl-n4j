@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `c4ae63e`, “Record immutable candidate reviews
-  with exact readings and stale-review protection”. A state commit follows;
+- **Latest implementation commit:** `ee6edb4`, “Connect saved PDF reading review
+  with scoped lists and source assessment”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,33 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Saved-candidate review UI completed — 7 September 2026 overnight
+
+`ee6edb4` adds case-scoped bounded mapping lists/account search and a case:edit
+creation API that reuses the source-bound atomic writer. Financial → Ledger → PDF
+readings opens saved batches/rows, preserves original text and exposes review,
+rejection, reopening, exact amount assessment and authenticated source highlights.
+All three date roles remain separate. A reason, known compatible account, explicit
+currency/direction and exact amount are required to resolve. Uncertain writes block
+further submissions until explicit reload; stale responses cannot silently replace
+the displayed review. Resolution still does not create/admit a ledger transaction.
+
+**Verified:** 3,657 financial tests (zero skips), 905 frontend unit tests, 11 Chromium
+tests, TypeScript and ESLint pass. Six backend tests and ten UI tests added; export
+checks and focused UI/TypeScript/lint rerun after final accessible-label fixes.
+Authenticated creation retry returns the original IDs. Real Chromium through the
+local application reopened/resolved the synthetic candidate, retained five events,
+showed the source image and original 1234.00 GBP, and saved reviewed 12.34 GBP.
+Screenshot `/tmp/loupe-neilbyrne-candidate-review-ui.png`; repeat with
+`scripts/check_local_candidate_ui.cjs` after the review fixture script. Fixture IDs
+remain in `data/local-runtime/candidate-review-check.json`. Backend currently runs
+via local_app.py (log `/tmp/loupe-neilbyrne-candidate-ui-backend.out`), frontend55174.
+
+**Next:** source mapping creation workflow (stored table inspection and deliberate
+column/row nomination) so users can populate these reviews without fixture scripts;
+then account setup and atomic candidate materialization/revalidation. Automatic PDF
+extraction/OCR and the remainder of the ten-feature checklist are not complete.
 
 ### Candidate review history and APIs completed — 7 September 2026 overnight
 

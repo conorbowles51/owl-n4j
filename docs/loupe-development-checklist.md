@@ -22,7 +22,7 @@ feature below is complete at the start of this window.
 2. **Review uncertain readings before they enter the ledger — partial**
    - [ ] Save possible transactions separately until they are ready for use.
    - [ ] Show questionable amounts, dates and account details alongside the source.
-   - [ ] Let the investigator confirm, correct or reject candidate readings, preserving the original and the reason for each decision.
+   - [x] Let the investigator confirm, correct or reject saved candidate readings, preserving the original and the reason for each decision (ee6edb4). Local UI verified; getting new PDF mappings into this screen and ledger materialization remain.
    - [ ] Prevent retries or simultaneous candidate reviews from creating duplicate transactions.
    - [x] Foundation: immutable in-memory pending candidate contract, with missing context representable (5d7279d). Persistent storage is now implemented below; review remains.
    - [x] Existing ledger corrections retain originals, history and reasons, with stale-review protection; manual source amount assessment is connected. These do not yet provide candidate review.
@@ -32,6 +32,8 @@ feature below is complete at the start of this window.
    - [x] Foundation: assess saved original amount cells through case-scoped read-only APIs, preserving uncertainty and source citations and refusing source drift (8d6425a). Verified through authenticated local HTTP; review UI remains.
 
    - [x] Foundation: append resolved/rejected/reopened review decisions with reasons, exact reading validation, immutable history and stale-review protection (c4ae63e). Case-scoped read/edit APIs and real PostgreSQL contention verified. Review screens remain.
+
+   - [x] Saved-reading UI: bounded batch/row lists, account search, original amount assessment with source image, exact review form and immutable history (ee6edb4). Creation API retries preserve original IDs.
 
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
@@ -107,6 +109,12 @@ feature below is complete at the start of this window.
   feature 2. 3,651 financial tests and all frontend gates pass. Real concurrent
   reviews return one 200/one 409; authenticated reopen/resolve retains history.
   Next: candidate listing/creation and review screens, then materialization.
+
+- 7 September, overnight: **ee6edb4** connected saved-candidate review screens under
+  feature 2 and mapping creation/list APIs. 3,657 financial tests, 905 unit tests,
+  11 Chromium tests, TypeScript and ESLint pass. Live browser review retained five
+  history events and displayed the original PDF image; authenticated creation retry
+  returned original IDs. Source mapping creation UI and materialization remain.
 
 ## Morning handoff
 
