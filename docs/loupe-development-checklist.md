@@ -88,6 +88,7 @@ feature below is complete at the start of this window.
    - [x] Identify gaps and overlaps between recorded account statements with eligible printed bounds (8b6c9ad). Enclosing exports are included; oversized accounts are explicitly unavailable.
    - [x] Show which accounts and dates the recorded statement bounds cover, with exclusions and limits visible (8b6c9ad). This does not certify full transaction extraction or undated/unprocessed evidence.
    - [ ] Distinguish no matching transaction found from insufficient records to know.
+   - [x] Backend/API requested account/date coverage counts outside tails, preserves currency groups and exact intersecting source-period references, and returns unknown/unavailable explicitly (036f700). Filter-screen integration remains.
    - [x] Explicit account/date filters on current ledger rows, draft/apply/clear behavior, bounded case-scoped account lookup and case-switch resets (a6ee80c). Requested-interval coverage remains.
    - [x] Empty ledger answers respect account/date filters, explain that no match does not establish absence of transactions, and retain response-count discrepancy warnings even for zero rows (e13375c). Quantified search coverage and filter controls remain.
 
@@ -318,3 +319,9 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   authenticated synthetic Chromium pass: February gap returns0 rows, Clear
   restores10. No real evidence edited. Requested-interval coverage remains next;
   feature6 is still partial and every prior completed item is retained.
+
+
+- 7 September, 09:16 Dublin: **036f700** adds requested-date coverage backend/API.
+  Targeted coverage/router tests and authenticated synthetic HTTP pass (February
+  gap28 versus enclosing export0). No source/evidence writes. The result panel is
+  next; feature6 stays partial and the five-minute schedule remains ACTIVE to13:00.

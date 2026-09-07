@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `a6ee80c`, “Connect explicit account and date
-  filters to current ledger rows”. A state commit follows;
+- **Latest implementation commit:** `036f700`, “Measure printed statement coverage
+  within a requested account date range”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,36 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Requested-date coverage service/API — 7 September 2026
+
+`036f700` adds case:view requested-statement-coverage requiring account and closed
+start/end dates. Filters the account in SQL before its bounded500-period read.
+Reuses printed-bound exclusions and unions clipped original periods per currency,
+including both outside tails as uncovered requested dates. Clipping before union
+prevents outside-only periods becoming false coverage citations. Missing eligible
+bounds, oversized accounts and inconsistent source ownership remain unavailable;
+foreign/absent account404, invalid interval422. No transaction-completeness claim.
+
+Verified:34 targeted coverage/ledger-router tests pass; after adding explicit
+missing-account protection and requested oversized-account assertions, the coverage
+suite passes again. Read-only authenticated local HTTP compares February gap28 days
+versus enclosing export0, and refuses unauthenticated/missing-account/reversed-date
+requests. Script check_local_requested_coverage.py; report under data/local-runtime/
+requested-coverage-check.json. Logs /tmp/loupe-neilbyrne-requested-coverage-*.out.
+No full unchanged frontend suites repeated; this unit has no UI changes.
+Backend restarted as exec session41598, logfile requested-coverage-backend.out.
+Its loaded endpoint preceded the final direct-service None-account guard (HTTP
+already requires UUID); restart on the next integration check to load the final code.
+Use explicit backend workdir for unittest and root workdir for edits/scripts;
+wrong-cwd test invocations failed before running and were corrected.
+
+**Next segment:** connect a requested-coverage result panel beside applied ledger
+filters. Require one selected account and both dates; preserve case/account/date
+response bindings, uncertainty/exclusions and separate currencies. Do not show old
+coverage for changed applied filters. Verify live February-gap and enclosing-export
+results using existing synthetic fixture. Exact PDF date-bound navigation and
+broader search coverage remain; all ten overall feature statuses unchanged.
 
 ### Current ledger filters connected — 7 September 2026
 
