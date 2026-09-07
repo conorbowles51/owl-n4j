@@ -332,3 +332,25 @@ node scripts/check_local_balance_history_ui.cjs
 
 Screenshots use `/tmp/loupe-neilbyrne-balance-history-ui.png` and
 `/tmp/loupe-neilbyrne-balance-history-source-ui.png`. The check does not edit records.
+
+## Account and date filters on current ledger rows
+
+In Ledger, use **Find accounts**, explicitly select a result, enter optional
+ordering-date bounds, and choose **Apply ledger filters**. Typing or selecting
+only changes the draft; the scope above the rows describes the applied answer.
+Both endpoints are inclusive. **Clear ledger filters** restores all admitted
+ledger rows. Case changes reset drafts, applied filters and source/correction
+selection. Held out retains its separate behavior.
+
+Account results are bounded to100 with an explicit narrow-search notice. Empty
+results do not establish absence of transactions or complete records. Quantified
+coverage for the requested account/date interval remains a separate next step.
+Using the existing synthetic coverage fixture, this read-only check selects its
+February-gap account, verifies an empty February answer, and clears back to10 rows:
+
+```sh
+node scripts/check_local_ledger_filters_ui.cjs
+```
+
+Report: `data/local-runtime/ledger-filters-ui-check.json`. Screenshot:
+`/tmp/loupe-neilbyrne-ledger-filters-ui.png`. No evidence or ledger rows are changed.

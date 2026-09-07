@@ -1,11 +1,26 @@
 import { useState } from "react"
+import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
+import { LedgerFilters } from "./LedgerFilters"
 import type { LedgerTransaction } from "../api"
 import { CorrectionForm } from "./CorrectionForm"
 import { LedgerPanel } from "./LedgerPanel"
 import { QuarantinePanel } from "./QuarantinePanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 
-export function CorrectableLedger({
+export function CorrectableLedger(props: {
+  caseId: string | undefined
+  onAdjudicate: (row: LedgerTransaction) => void
+  heldOut?: boolean
+}) {
+  return (
+    <CorrectableLedgerContent
+      key={`${props.caseId}:${props.heldOut}`}
+      {...props}
+    />
+  )
+}
+
+function CorrectableLedgerContent({
   caseId,
   onAdjudicate,
   heldOut = false,
@@ -14,6 +29,7 @@ export function CorrectableLedger({
   onAdjudicate: (row: LedgerTransaction) => void
   heldOut?: boolean
 }) {
+  const [params, setParams] = useState<LedgerQueryParams>({})
   const [selected, setSelected] = useState<LedgerTransaction | null>(null)
   const [source, setSource] = useState<{
     caseId: string
@@ -22,6 +38,9 @@ export function CorrectableLedger({
   const Panel = heldOut ? QuarantinePanel : LedgerPanel
   return (
     <div className="space-y-3">
+      {caseId && !heldOut && (
+        <LedgerFilters caseId={caseId} onApply={setParams} />
+      )}
       {source && source.caseId === caseId && (
         <LedgerSourceDialog
           key={`${source.caseId}:${source.transactionId}`}
@@ -42,6 +61,7 @@ export function CorrectableLedger({
       )}
       <Panel
         caseId={caseId}
+        params={heldOut ? undefined : params}
         onAdjudicate={onAdjudicate}
         onCorrect={selected ? undefined : setSelected}
         onSource={(row) =>
