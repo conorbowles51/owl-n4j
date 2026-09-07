@@ -189,3 +189,37 @@ describe("LedgerPanel with rows", () => {
     expect(screen.getAllByTestId("ledger-row")).toHaveLength(1)
   })
 })
+
+
+describe("LedgerPanel filtered and incomplete empty answers", () => {
+  it.each([
+    { accountId: "acct-2" },
+    { startDate: "2026-02-01" },
+    { endDate: "2026-02-28" },
+  ])("limits an empty answer to the requested scope %o", (params) => {
+    useLedgerTransactions.mockReturnValue(settled([]))
+    render(<LedgerPanel caseId="case-1" params={params} />)
+    expect(screen.getByText("No admitted rows match these filters")).toBeTruthy()
+    expect(screen.queryByText("No admitted rows in the ledger")).toBeNull()
+    expect(screen.getByText(/does not establish that no transactions occurred/)).toBeTruthy()
+    expect(screen.getByTestId("ledger-filter-scope").textContent).toContain(Object.values(params)[0])
+  })
+
+  it("retains a response count disagreement even when no rows arrived", () => {
+    useLedgerTransactions.mockReturnValue(settled([], 40))
+    render(<LedgerPanel caseId="case-1" />)
+    expect(screen.getByTestId("ledger-count-disagreement").textContent).toContain("reported 40 rows and sent 0")
+    expect(screen.queryByTestId("ledger-table")).toBeNull()
+  })
+
+  it("shows both date bounds and account scope beside populated results", () => {
+    useLedgerTransactions.mockReturnValue(settled([makeRow()]))
+    render(<LedgerPanel caseId="case-1" params={{ accountId: "acct-1", startDate: "2024-01-01", endDate: "2024-12-31" }} />)
+    const scope = screen.getByTestId("ledger-filter-scope").textContent
+    expect(scope).toContain("acct-1")
+    expect(scope).toContain("on or after 2024-01-01")
+    expect(scope).toContain("on or before 2024-12-31")
+    expect(scope).toContain("may differ")
+    expect(screen.getAllByTestId("ledger-row")).toHaveLength(1)
+  })
+})

@@ -105,27 +105,31 @@ export function LedgerPanel({
   const rows = data.transactions
   const countDisagrees = data.total !== rows.length
 
-  if (rows.length === 0) {
-    return (
-      <EmptyState
-        icon={ScrollText}
-        title={`No ${status.label.toLowerCase()} rows in the ledger`}
-        description={
-          `Nothing in this case's relational ledger currently holds the ` +
-          `status "${status.label.toLowerCase()}". Rows that were quarantined, ` +
-          `superseded or rejected are not counted here and are not shown; ` +
-          `change the status filter to see them.`
-        }
-      />
-    )
-  }
+  const hasScopeFilter = Boolean(
+    params?.accountId || params?.startDate || params?.endDate
+  )
+  const scope = [
+    params?.accountId ? `Account: ${params.accountId}.` : null,
+    params?.startDate ? `Ordering date on or after ${params.startDate}.` : null,
+    params?.endDate ? `Ordering date on or before ${params.endDate}.` : null,
+  ]
+    .filter(Boolean)
+    .join(" ")
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground" data-testid="ledger-summary">
-        {rows.length} {rows.length === 1 ? "row" : "rows"},{" "}
-        {status.label.toLowerCase()}.
-      </p>
+      {hasScopeFilter && (
+        <p className="text-xs text-muted-foreground" data-testid="ledger-filter-scope">
+          {scope} Date filters use the ledger ordering date, which may differ
+          from a date printed on the statement.
+        </p>
+      )}
+      {rows.length > 0 && (
+        <p className="text-xs text-muted-foreground" data-testid="ledger-summary">
+          {rows.length} {rows.length === 1 ? "row" : "rows"},{" "}
+          {status.label.toLowerCase()}.
+        </p>
+      )}
 
       {countDisagrees && (
         <p
@@ -140,12 +144,31 @@ export function LedgerPanel({
         </p>
       )}
 
-      <LedgerTable
-        transactions={rows}
-        onAdjudicate={onAdjudicate}
-        onCorrect={onCorrect}
-        onSource={onSource}
-      />
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={ScrollText}
+          title={
+            hasScopeFilter
+              ? `No ${status.label.toLowerCase()} rows match these filters`
+              : `No ${status.label.toLowerCase()} rows in the ledger`
+          }
+          description={
+            `No rows were returned for status "${status.label.toLowerCase()}"` +
+            (hasScopeFilter
+              ? " within the account/date filters."
+              : " in this case's ledger.") +
+            " Rows with other statuses, including quarantined, superseded or rejected readings, are not counted here unless that status is selected." +
+            " This does not establish that no transactions occurred or that the records are complete. Check statement coverage and unfinished processing attempts."
+          }
+        />
+      ) : (
+        <LedgerTable
+          transactions={rows}
+          onAdjudicate={onAdjudicate}
+          onCorrect={onCorrect}
+          onSource={onSource}
+        />
+      )}
     </div>
   )
 }
