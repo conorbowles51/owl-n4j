@@ -34,3 +34,5 @@ it("does not attach current-ledger filters to held out rows", () => {
 })
 
 vi.mock("./LedgerSummaryPanel", () => ({ LedgerSummaryPanel: () => null }))
+
+vi.mock("./LedgerTrendsPanel", () => ({ LedgerTrendsPanel: () => null }))

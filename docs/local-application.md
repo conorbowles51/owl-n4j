@@ -456,3 +456,19 @@ Read-only against the synthetic coverage fixture: daily/monthly GBP2100, ten
 transaction IDs/five source IDs, and empty February. All fixture postings have
 January ordering dates despite their different statement bounds. Report:
 `data/local-runtime/ledger-trends-check.json`.
+
+Ledger now offers **Read ledger date totals**, with daily/monthly selection and
+25-point pages. Each point offers pages of25 contributing-reading links using the
+existing source dialog. Date money reconciles to the overall summary; inconsistent
+scope, repeated IDs or mismatched totals are refused. Applied scope changes clear
+prior results and source selection. This is a ledger panel; legacy graph Trends
+remains separate.
+
+```sh
+node scripts/check_local_trends_panel_ui.cjs
+```
+
+Read-only check: synthetic daily/monthly GBP2100 and source citation navigation.
+The fixture has no stored page rectangle; this check verifies the cited record,
+not PDF highlighting. Report: `data/local-runtime/trends-panel-ui-check.json`;
+screenshot: `/tmp/loupe-neilbyrne-trends-source-ui.png`.

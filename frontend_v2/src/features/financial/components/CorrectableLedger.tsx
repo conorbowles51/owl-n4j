@@ -1,6 +1,7 @@
 import { useState } from "react"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
+import { LedgerTrendsPanel } from "./LedgerTrendsPanel"
 import { LedgerSummaryPanel } from "./LedgerSummaryPanel"
 import { LedgerFilters } from "./LedgerFilters"
 import type { LedgerTransaction } from "../api"
@@ -45,6 +46,7 @@ function CorrectableLedgerContent({
           <LedgerFilters caseId={caseId} onApply={setParams} />
           <RequestedCoveragePanel caseId={caseId} params={params} />
           <LedgerSummaryPanel caseId={caseId} params={params} />
+          <LedgerTrendsPanel caseId={caseId} params={params} />
         </>
       )}
       {source && source.caseId === caseId && (
