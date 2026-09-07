@@ -1,3 +1,4 @@
+import { LedgerCounterpartiesAnalysis } from "./LedgerCounterpartiesAnalysis"
 import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { useParams } from "react-router-dom"
 import {
@@ -656,7 +657,17 @@ export function FinancialPage() {
         </TabsContent>
 
         <TabsContent value="counterparties" className="flex min-h-0 flex-1 flex-col">
-          {graphTab(
+          <div className="flex items-center gap-2 border-b p-3">
+            <Button variant={isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("transactions")}>Ledger postings</Button>
+            <Button variant={!isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("intelligence")}>Financial intelligence</Button>
+          </div>
+          {isTransactionsMode ? (
+            <div className="min-h-0 flex-1 overflow-auto">
+              <ErrorBoundary level="section"><LedgerCounterpartiesAnalysis key={caseId} caseId={caseId}/></ErrorBoundary>
+            </div>
+          ) : <>
+            <p className="border-b p-3 text-sm">Financial intelligence uses extracted graph records, including claims and valuations. These are separate from ledger posting totals and do not reflect ledger corrections.</p>
+            {graphTab(
             !isTransactionsMode ? (
               <div className="flex flex-1 items-center justify-center p-4">
                 <EmptyState
@@ -686,7 +697,7 @@ export function FinancialPage() {
                 />
               </div>
             )
-          )}
+          )}</>}
         </TabsContent>
 
         <TabsContent value="trends" className="flex min-h-0 flex-1 flex-col">

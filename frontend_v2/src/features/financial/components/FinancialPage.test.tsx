@@ -768,3 +768,27 @@ describe("FinancialPage authoritative Transactions", () => {
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 })
+
+describe("FinancialPage authoritative Counterparties", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useFinancialStore.getState().reset()
+    ledgerEmpty(); runsEmpty(); adjudicationIdle()
+  })
+  it.each(["empty", "loading", "populated"])("shows ledger transactions independently of a %s graph", (state) => {
+    if (state === "empty") graphEmpty(); else if (state === "loading") graphLoading(); else graphWithRows()
+    renderPage(); selectTab("Counterparties")
+    expect(screen.getByRole("region", {name: "Authoritative ledger counterparties"})).toBeInTheDocument()
+    expect(screen.getByRole("region", {name: "Current ledger summary"})).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
+    expect(screen.queryByText("Money Out")).not.toBeInTheDocument()
+  })
+  it("returns from intelligence to current ledger readings", () => {
+    graphEmpty(); renderPage(); selectTab("Counterparties")
+    fireEvent.click(screen.getByRole("button", {name: "Financial intelligence"}))
+    expect(screen.queryByRole("region", {name: "Authoritative ledger counterparties"})).not.toBeInTheDocument()
+    expect(screen.getByText(/do not reflect ledger corrections/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", {name: "Ledger postings"}))
+    expect(screen.getByRole("region", {name: "Authoritative ledger counterparties"})).toBeInTheDocument()
+  })
+})

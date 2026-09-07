@@ -630,3 +630,22 @@ Read-only local HTTP check verified case10/account4/empty0 rows and parity with 
 summary, including explicit missing labels and contributing references. Report:
 `data/local-runtime/ledger-counterparties-check.json`.38 summary/package tests and
 one route scope/error test pass. UI integration remains the next stage.
+
+## Documentary Counterparties screen
+
+The main Counterparties tab in Ledger postings mode now reads the relational ledger
+regardless of graph loading/emptiness. Applied account/date filters, coverage and
+summary panels accompany exact source-label groups. Response scope, unique reading
+IDs and group-to-summary arithmetic are validated before display. Missing/blank
+labels remain distinct; quoted labels preserve whitespace. Groups and contributing
+source links are paged25at a time. Ledger decision cache invalidation refreshes the
+results. No identity resolution or transfer matching is implied.
+
+```sh
+node scripts/check_local_counterparties_panel_ui.cjs
+```
+
+Synthetic local Chromium verified GBP2100,10missing-label readings and the correct
+case-scoped source dialog. Report: `data/local-runtime/counterparties-panel-ui-check.json`.
+35page tests and14panel tests pass, including scope/total refusal, missing/blank
+labels, pagination and decision refresh. TypeScript/scoped ESLint pass.
