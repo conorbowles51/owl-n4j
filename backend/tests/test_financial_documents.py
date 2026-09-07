@@ -187,6 +187,7 @@ class ShapeAndLayerTests(unittest.TestCase):
             ExtractionLayer.template,
             ExtractionLayer.structural,
             ExtractionLayer.grounded_model,
+            ExtractionLayer.investigator_review,
         ):
             for shape in (
                 SourceShape.native_with_control_totals,

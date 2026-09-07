@@ -237,7 +237,7 @@ class FinancialSourceDocument(Base, TimestampMixin):
             name="ck_financial_source_documents_quarantine_coherent",
         ),
         CheckConstraint(
-            "extraction_layer BETWEEN 0 AND 3",
+            "extraction_layer BETWEEN 0 AND 4",
             name="ck_financial_source_documents_extraction_layer",
         ),
         UniqueConstraint(
@@ -708,7 +708,7 @@ class FinancialTransaction(Base, TimestampMixin):
             name="ck_financial_transactions_has_a_date",
         ),
         CheckConstraint(
-            "extraction_layer BETWEEN 0 AND 3",
+            "extraction_layer BETWEEN 0 AND 4",
             name="ck_financial_transactions_extraction_layer",
         ),
         UniqueConstraint(

@@ -322,17 +322,19 @@ class DateSource(str, Enum):
 
 
 class ExtractionLayer(int, Enum):
-    """How a value was read, by decreasing determinism.
+    """How a value was read; codes 0–3 order automated extraction methods.
 
-    The layer is recorded on every document and every row because it bounds
-    what may be claimed about the result.  Layer 3 is a marked fallback, not a
-    normal path, and a ledger built mostly from it is a ledger to be explained.
+    Investigator review is a separate method, not a fifth automation tier or
+    a statement that arithmetic passed. Original extraction provenance and the
+    investigator's review history must be retained separately. Layer 3 remains
+    the marked model fallback.
     """
 
     native = 0            # Structured parse of a format that defines the field.
     template = 1          # Version-controlled template match on a known layout.
     structural = 2        # Structural OCR plus model interpretation.
     grounded_model = 3    # Model with retrieval grounding.  Fallback only.
+    investigator_review = 4  # Explicit reading with retained source/review history.
 
 
 class DuplicateMatchRung(int, Enum):

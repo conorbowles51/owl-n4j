@@ -435,7 +435,7 @@ export function readQuarantineGrounds(raw: string): QuarantineGrounds {
 
 export interface ExtractionLayerReading {
   /** Null when this build does not recognise the layer. */
-  value: 0 | 1 | 2 | 3 | null
+  value: 0 | 1 | 2 | 3 | 4 | null
   raw: number
   label: string
   description: string
@@ -446,7 +446,7 @@ export interface ExtractionLayerReading {
   isFallback: boolean
 }
 
-const EXTRACTION_LAYER_COPY: Record<0 | 1 | 2 | 3, TermCopy> = {
+const EXTRACTION_LAYER_COPY: Record<0 | 1 | 2 | 3 | 4, TermCopy> = {
   0: {
     label: "Native",
     description:
@@ -467,10 +467,15 @@ const EXTRACTION_LAYER_COPY: Record<0 | 1 | 2 | 3, TermCopy> = {
     description:
       "Read by a model with the source held alongside it. A marked fallback, not a normal path.",
   },
+  4: {
+    label: "Investigator reviewed",
+    description:
+      "Explicitly read by an investigator, with the original source and review history retained. This does not mean the financial checks passed.",
+  },
 }
 
 export function readExtractionLayer(raw: number): ExtractionLayerReading {
-  if (raw === 0 || raw === 1 || raw === 2 || raw === 3) {
+  if (raw === 0 || raw === 1 || raw === 2 || raw === 3 || raw === 4) {
     return {
       value: raw,
       raw,

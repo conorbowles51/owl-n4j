@@ -292,3 +292,30 @@ rebind under those locks, call this check immediately before its atomic write,
 and retain the receipt. Database locks cannot stop external filesystem changes
 after the read. Source shape/layer and immutable materialization/source claims
 still remain as described above.
+
+
+## Investigator reading method — extended 7 September window
+
+The schema now represents `ExtractionLayer.investigator_review = 4`, a separate
+method rather than another automated extraction tier. Source documents and
+transactions accept this code, and the UI labels it “Investigator reviewed” while
+explicitly withholding any claim that financial checks passed. Human-reviewed
+rows/documents cannot be mixed with automated extraction methods in the writer.
+Native source shapes still require native extraction; an investigator-reviewed
+statement starts at computed P3 like any unchecked statement. Original extraction
+origin and immutable review history must still accompany future materialization.
+
+The existing duplicate ranking retains automated method order before method4:
+review alone earns no preference over an otherwise equally checked automated
+reading. This is a conservative tie-break, not a new proof class or a claim that
+human readings are a model fallback. Method3 alone retains the fallback badge.
+
+Migration `20260907_investigator_reading` extends both database constraints and
+refuses downgrade while method4 rows exist. Verified on isolated PostgreSQL by
+`scripts/check_local_reading_method.py`, rolling back every test row change.
+The local database is migrated; restart the local backend before exercising a
+future writer using the new method. No reviewed candidate has entered the ledger.
+
+Next resolve selected-row source shape/coverage without claiming the full PDF is
+a statement or all transactions were selected. Then immutable source/candidate
+claims and atomic whole-document finalization remain before a public ledger writer.

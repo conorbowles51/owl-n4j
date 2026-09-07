@@ -205,6 +205,7 @@ describe("readExtractionLayer", () => {
     expect(readExtractionLayer(1).label).toBe("Template")
     expect(readExtractionLayer(2).label).toBe("Structural")
     expect(readExtractionLayer(3).label).toBe("Grounded model")
+    expect(readExtractionLayer(4).label).toBe("Investigator reviewed")
   })
 
   it("marks the fallback layer and only the fallback layer", () => {
@@ -215,12 +216,13 @@ describe("readExtractionLayer", () => {
     expect(readExtractionLayer(0).isFallback).toBe(false)
     expect(readExtractionLayer(1).isFallback).toBe(false)
     expect(readExtractionLayer(2).isFallback).toBe(false)
+    expect(readExtractionLayer(4).isFallback).toBe(false)
   })
 
   it("says it does not know a layer outside the range", () => {
-    const unknown = readExtractionLayer(4)
+    const unknown = readExtractionLayer(5)
     expect(unknown.value).toBeNull()
-    expect(unknown.label).toContain("4")
+    expect(unknown.label).toContain("5")
     expect(unknown.isFallback).toBe(false)
   })
 })

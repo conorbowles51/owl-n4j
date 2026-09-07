@@ -269,12 +269,12 @@ describe("the closed vocabularies", () => {
     ])
   })
 
-  it("extraction layer still runs from 0 to 3", () => {
+  it("extraction method codes still run from 0 to 4", () => {
     // An int enum rather than a string one, and the ledger stores the int, so
     // it is read from the column constraint that the writer has to satisfy.
     const model = read(backend("postgres/models/financial.py"))
     expect(model).toMatch(
-      /"extraction_layer BETWEEN 0 AND 3",\s*\n\s*name="ck_financial_transactions_extraction_layer"/
+      /"extraction_layer BETWEEN 0 AND 4",\s*\n\s*name="ck_financial_transactions_extraction_layer"/
     )
   })
 })

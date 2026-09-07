@@ -650,6 +650,13 @@ def record_transactions(
         layer = document_layer if draft.extraction_layer is None else (
             draft.extraction_layer
         )
+        if (layer is ExtractionLayer.investigator_review) != (
+            document_layer is ExtractionLayer.investigator_review
+        ):
+            raise TransactionFieldError(
+                "Investigator-reviewed rows require an investigator-reviewed "
+                "source document; automated and human reading provenance cannot be mixed."
+            )
         if layer.value < document_layer.value:
             raise TransactionFieldError(
                 f"row {draft.row_index} claims extraction layer {layer.value} "

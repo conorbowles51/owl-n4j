@@ -637,6 +637,29 @@ class RecordTransactionsTests(TransactionPersistenceTestCase):
         (row,) = self.write([self.draft()])
         self.assertEqual(row.extraction_layer, ExtractionLayer.structural.value)
 
+    def test_investigator_reading_retains_method_without_promoting_proof(self):
+        document = self.admit(sha256_at_ingestion="c" * 64,
+                              extraction_layer=ExtractionLayer.investigator_review)
+        (row,) = self.write([self.draft()], document=document)
+        self.db.commit()
+        self.assertEqual(row.extraction_layer, 4)
+        self.assertEqual(document.extraction_layer, 4)
+        self.assertEqual(row.proof_class, ProofClass.p3.value)
+        self.assertNotIn(ProofClass(row.proof_class), DEFAULT_TOTAL_CLASSES)
+
+    def test_human_method_is_not_an_automated_row_fallback(self):
+        with self.assertRaisesRegex(TransactionFieldError, "cannot be mixed"):
+            self.write([self.draft(extraction_layer=ExtractionLayer.investigator_review)])
+
+    def test_human_document_cannot_claim_automated_rows(self):
+        document = self.admit(sha256_at_ingestion="c" * 64,
+                              extraction_layer=ExtractionLayer.investigator_review)
+        for layer in (ExtractionLayer.native, ExtractionLayer.template,
+                      ExtractionLayer.structural, ExtractionLayer.grounded_model):
+            with self.subTest(layer=layer):
+                with self.assertRaisesRegex(TransactionFieldError, "cannot be mixed"):
+                    self.write([self.draft(extraction_layer=layer)], document=document)
+
     def test_a_row_may_be_less_deterministic_than_its_document(self):
         """One figure recovered by a model inside a structural read is true."""
         (row,) = self.write(

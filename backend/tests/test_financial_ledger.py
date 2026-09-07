@@ -213,8 +213,8 @@ class FinancialLedgerStructureTests(unittest.TestCase):
         """The BETWEEN bounds in SQL and the enum members must describe one range."""
         layers = [member.value for member in ExtractionLayer]
         self.assertEqual(min(layers), 0)
-        self.assertEqual(max(layers), 3)
-        self.assertEqual(sorted(layers), list(range(4)))
+        self.assertEqual(max(layers), 4)
+        self.assertEqual(sorted(layers), list(range(5)))
 
         bounded = [
             str(constraint.sqltext)
@@ -225,7 +225,7 @@ class FinancialLedgerStructureTests(unittest.TestCase):
         ]
         self.assertEqual(len(bounded), 2, "documents and transactions each bound it")
         for sqltext in bounded:
-            self.assertIn("BETWEEN 0 AND 3", sqltext)
+            self.assertIn("BETWEEN 0 AND 4", sqltext)
 
     def test_adjudications_carry_no_updated_at(self):
         """The table records decisions, so it must not invite editing them."""
@@ -575,7 +575,7 @@ class FinancialLedgerConstraintTests(unittest.TestCase):
         self.assertEqual(stored.ordering_date_source, DateSource.posted.value)
 
     def test_extraction_layer_is_bounded(self):
-        self.assertRejected(lambda: self.make_transaction(extraction_layer=4))
+        self.assertRejected(lambda: self.make_transaction(extraction_layer=5))
         self.assertRejected(lambda: self.make_transaction(extraction_layer=-1))
 
     def test_unknown_ledger_status_is_rejected(self):
