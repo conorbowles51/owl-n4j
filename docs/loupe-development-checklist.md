@@ -123,6 +123,7 @@ feature below is complete at the start of this window.
    - [ ] Preserve the basis for each tracing result so it can be reviewed.
 
 10. **Test the complete application locally — partial**
+    - [x] Verify actual export membership permissions and immediate revocation with a temporary ordinary local user (cc96526): non-member/no-view denied, view-only allowed, revoked same-token denied, test user removed.
     - [ ] Exercise the full journey from document upload through review, analysis and export.
     - [ ] Validate external AI processing that has not yet been tested.
     - [ ] Test interrupted processing, retries, permissions and larger document sets across the completed workflow.
@@ -410,3 +411,7 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
 - Exact report/scope checkpoint (96f3a3f):92 targeted tests, scoped ESLint and
   browser layout pass; live HTTP parity/hash checks cover five scopes. Anonymous,
   missing-case and reversed-date refusals verified. Feature8 stays partial.
+
+- Export access checkpoint (cc96526): live four-state membership matrix passed;
+  temporary user/membership removed. No ledger/evidence writes or production fix.
+  Feature10 remains partial; next main documentary Transactions migration.

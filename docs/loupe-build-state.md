@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `96f3a3f`, “Format report money exactly and
-  verify scoped export parity over HTTP”. A state commit follows;
+- **Latest implementation commit:** `cc96526`, “Verify live export membership
+  permissions and immediate revocation”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,25 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Live export membership verification — 7 September 2026
+
+`cc96526` adds check_local_ledger_export_access.py against only fixed isolated
+PostgreSQL/HTTP services. Temporary ordinary user: non-member403; collaborator
+with edit but without case:view403; case:view without edit200; revoke membership,
+same token403. Finally removes membership/user and confirms removal. All passed;
+report data/local-runtime/ledger-export-access-check.json. No ledger/evidence
+changes and no production fix needed. Backend remains exec20679. Existing92
+money/snapshot/package tests reused; this segment adds a live boundary check.
+
+**Next segment:** migrate main documentary Transactions tab to CorrectableLedger,
+independently of graph loading/empty state, using the same explicit documentary vs
+intelligence selector pattern already in main Trends. Keep intelligence separate,
+source/correction/adjudication controls available and graph counts outside ledger
+view. Existing Ledger tab remains available. Inspect FinancialPage test harness;
+verify graph-independent rendering, mode switch and synthetic browser flow. Then
+Counterparties and transfer/tracing work remain. Reserve11:45UTC for handoff;
+schedule ACTIVE until13:00Dublin. No whole feature is complete.
 
 ### Exact report money and export scope parity — 7 September 2026
 
