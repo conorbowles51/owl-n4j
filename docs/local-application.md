@@ -659,3 +659,21 @@ Chromium11tests across9files passed; TypeScript and full ESLint passed.
 Logs: /tmp/loupe-neilbyrne-final-integration-{backend,unit,browser,tsc,lint}.out.
 These checks validate the implemented scope; automatic extraction/AI processing,
 complete real-PDF acceptance and all ten full features are not thereby complete.
+
+## Cross-view exclusion acceptance
+
+```sh
+node scripts/check_local_cross_view_exclusion.cjs
+python3 scripts/verify_local_cross_view_exports.py
+```
+
+Only the fixed synthetic coverage case is allowed. The browser selects an exact
+transaction UUID, excludes a known400GBP reading through main Transactions, checks
+Transactions/Counterparties/Trends all show1700GBP, and downloads an export. Finally
+it restores that exact row using the writer API, verifies2100GBP and downloads the
+restored export. Both original and decision history remain; two synthetic audit
+events are added. The ZIP check verifies9→10included rows, unchanged original400GBP,
+1700→2100GBP, both hashes/byte counts and one additional restoration decision.
+Latest run passed, with5decisions while excluded and6after restoration. Report:
+`data/local-runtime/cross-view-exclusion-check.json`. This verifies exclusion across
+the migrated views, not every correction or legacy graph consumer.
