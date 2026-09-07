@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `5cc894e`, “Summarize exact ledger
-  counterparty labels with scoped source references”. A state commit follows;
+- **Latest implementation commit:** `0fe3c69`, “Connect main Counterparties to
+  exact ledger labels and source readings”; a test-only quote-escape lint fix follows. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,28 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Documentary Counterparties UI — 7 September 2026
+
+`0fe3c69` mounts LedgerCounterpartiesAnalysis in main documentary Counterparties
+independent of graph loading/emptiness. Shared filters/coverage/summary plus exact
+verbatim source-label groups, explicit null/blank and quoted whitespace. Scope,
+unique contributing IDs and group-to-summary arithmetic validated.25groups and
+25source links/page; financial-ledger cache prefix refreshes on decisions. Source
+links open current case-scoped reading dialog.35page tests and14panel tests passed;
+TypeScript passed. Final scoped lint found two redundant escapes in a test label;
+removed in following test-only commit and scoped lint rerun passed. Browser verified
+GBP2100/10missing-label readings and correct source scope; report
+ data/local-runtime/counterparties-panel-ui-check.json. No live evidence/ledger
+writes. Backend unchanged exec18309.
+
+**Next segment:** integration verification is now justified by main Transactions,
+Counterparties and export changes since421ad37: run financial backend suite and
+frontend unit/browser/TypeScript/lint once, resolve any integration failures, then
+checkpoint. Read existing logs instead of duplicating targeted checks. Broader
+identity matching, tracing, automatic extraction and full real-PDF acceptance remain.
+Reserve11:45UTC for final handoff; ACTIVE schedule ends13:00Dublin. Feature5 remains
+partial because graph-wide/search/money-flow consumers are not all migrated.
 
 ### Counterparty-label summary backend — 7 September 2026
 
