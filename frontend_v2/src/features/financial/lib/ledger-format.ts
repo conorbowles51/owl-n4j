@@ -155,20 +155,19 @@ function group(digits: string): string {
  * below zero.
  */
 export function formatLedgerAmount(
-  amountMinor: number,
+  amountMinor: string | number,
   currency: string
 ): LedgerAmountText {
   const code = currency.trim().toUpperCase()
-  const sign = amountMinor < 0 ? "-" : ""
-
-  if (!Number.isSafeInteger(amountMinor)) {
-    // Not a whole number of minor units, or too large to be one exactly.
-    // Either way it cannot be scaled without inventing the part that is
-    // missing, so it is shown as it arrived.
-    return { text: String(amountMinor), currency: code, scaled: false }
+  // Current APIs send integer strings; retain safe numeric compatibility with
+  // older responses, never scale an already-imprecise JSON number.
+  const raw = String(amountMinor)
+  if ((typeof amountMinor === "number" && !Number.isSafeInteger(amountMinor)) ||
+      !/^-?(0|[1-9][0-9]*)$/.test(raw)) {
+    return { text: raw, currency: code, scaled: false }
   }
-
-  const digits = String(Math.abs(amountMinor))
+  const sign = raw.startsWith("-") ? "-" : ""
+  const digits = sign ? raw.slice(1) : raw
   const exponent = currencyMinorUnits(code)
   if (exponent === null) {
     return { text: sign + group(digits), currency: code, scaled: false }

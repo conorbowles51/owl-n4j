@@ -200,10 +200,10 @@ export interface LedgerTransaction {
    * a major unit depends on the currency, and `formatLedgerAmount` in
    * `ledger-format.ts` is the one place that knows it.
    */
-  amount_minor: number
+  amount_minor: string | number
   currency: string
   direction: string
-  running_balance_minor: number | null
+  running_balance_minor: string | number | null
   transaction_date: string | null
   posted_date: string | null
   value_date: string | null

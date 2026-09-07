@@ -328,3 +328,16 @@ describe("changeAvailableFor", () => {
     expect(ROW_CHANGE_LABELS.release).toBe("Let back in")
   })
 })
+
+
+describe("exact integer-string ledger amounts", () => {
+  it("preserves cents beyond safe JS numbers and signed bigint limits", () => {
+    expect(formatLedgerAmount("9007199254740993", "USD").text).toBe("90,071,992,547,409.93")
+    expect(formatLedgerAmount("-9223372036854775808", "GBP").text).toBe("-92,233,720,368,547,758.08")
+    expect(formatLedgerAmount("9223372036854775807", "JPY").text).toBe("9,223,372,036,854,775,807")
+  })
+  it("refuses malformed strings and unsafe legacy numeric values", () => {
+    for (const raw of ["1e3", "12.5", "01", "", "NaN", 9007199254740992])
+      expect(formatLedgerAmount(raw, "USD").scaled).toBe(false)
+  })
+})

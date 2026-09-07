@@ -417,3 +417,22 @@ restores it through the UI. It verifies9 included/1 excluded then10 included and
 GBP2100 after restoration. It adds two synthetic audit decisions; it does not use
 real evidence. Report: `data/local-runtime/summary-panel-ui-check.json`; screenshot:
 `/tmp/loupe-neilbyrne-summary-panel-ui.png`. The graph analysis cards remain legacy.
+
+## Exact money on individual ledger rows
+
+The ledger API now serializes amount_minor and non-null running_balance_minor as
+integer strings, preserving the full PostgreSQL bigint range in browsers. Internal
+Python views retain integers. Frontend formatting accepts canonical integer strings
+and safe legacy numbers; unsafe numeric or malformed values remain unscaled.
+External API consumers must accept the string representation for these two fields.
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/prepare_local_exact_rows.py
+node scripts/check_local_exact_rows_ui.cjs
+```
+
+Creates a separate synthetic case and checks9007199254740993 minor units and
+-9223372036854775808 running-balance minor units through HTTP, table and decision
+dialog (cancelled without a decision). Reports: exact-rows-check.json and
+exact-rows-ui-check.json under data/local-runtime. Screenshot:
+`/tmp/loupe-neilbyrne-exact-rows-ui.png`.

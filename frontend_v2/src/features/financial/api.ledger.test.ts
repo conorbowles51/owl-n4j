@@ -210,7 +210,7 @@ describe("the ledger row shape", () => {
     // anyone.
     const source = read(backend("services/financial/transaction_query.py"))
     const body = pythonBlock(source, "    def to_json(self)")
-    const emitted = [...body.matchAll(/"([a-z_0-9]+)":\s*self\./g)].map((m) => m[1])
+    const emitted = [...body.matchAll(/^\s{12}"([a-z_0-9]+)":/gm)].map((m) => m[1])
 
     expect(emitted.length).toBeGreaterThan(0)
     expect(new Set(emitted)).toEqual(new Set(LEDGER_TRANSACTION_FIELDS))

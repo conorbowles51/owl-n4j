@@ -371,6 +371,16 @@ class ToViewTests(LedgerQueryTestCase):
         self.assertIsNone(payload["statement_period_id"])
         self.assertIsNone(payload["superseded_by_id"])
 
+    def test_json_money_preserves_full_bigint_precision_and_negative_balance(self):
+        import json
+        (row,) = self.write([self.draft()])
+        row.amount_minor = 9007199254740993
+        row.running_balance_minor = -9223372036854775808
+        payload = json.loads(json.dumps(to_view(row).to_json()))
+        self.assertEqual(payload["amount_minor"], "9007199254740993")
+        self.assertEqual(payload["running_balance_minor"], "-9223372036854775808")
+
+
 
 if __name__ == "__main__":
     unittest.main()
