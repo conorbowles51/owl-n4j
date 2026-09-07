@@ -15,7 +15,9 @@ feature below is complete at the start of this window.
    - [ ] Identify transaction rows and column meanings: dates, amounts, accounts and money coming in or going out.
    - [ ] Link each extracted value to its exact location in the original document, including verified stored PDF cells.
    - [ ] Handle digital PDFs and scanned documents while preserving uncertainty where the source is unclear.
-   - [x] Foundation: bind nominated canonical-text rows to exact source spans and source/provenance revisions; keep every candidate pending. Verified in 5d7279d, including 21 new tests. Automatic extraction and geometry binding remain.
+   - [x] Foundation: bind nominated canonical-text rows to exact source spans and source/provenance revisions; keep every candidate pending. Verified in 5d7279d, including 21 new tests. Automatic extraction remains; geometry adapter completion is recorded below.
+
+   - [x] Foundation: verify stored PDF table/cell identity and rectangles without guessed text offsets (5ab6931). Includes repeated amounts, provenance drift, malformed geometry and generated-PDF extraction tests.
 
 2. **Review uncertain readings before they enter the ledger — partial**
    - [ ] Save possible transactions separately until they are ready for use.
@@ -79,6 +81,11 @@ feature below is complete at the start of this window.
   this window yet. Earlier implementation details and test evidence are in
   docs/loupe-build-state.md. Add dated completed segments here with commit and test
   evidence, retaining all earlier entries.
+
+- 7 September, overnight: **5ab6931** completed the stored PDF grid binding
+  foundation under feature 1. All 3,596 financial tests, 895 unit tests, 11 Chromium
+  tests, TypeScript and ESLint pass. Feature 1 remains partial; storage/review and
+  automatic extraction are not claimed complete. Next: persistent candidates.
 
 ## Morning handoff
 

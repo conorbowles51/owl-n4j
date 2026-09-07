@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `5d7279d`, “Bind pending PDF candidates to exact
-  source text and provenance revisions”, parent `300ed0b`. A state commit follows;
+- **Latest implementation commit:** `5ab6931`, “Bind pending PDF candidates to verified
+  stored grid cells and geometry”, parent `88a4676`. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,39 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Stored PDF grid binding completed — 7 September 2026 overnight
+
+`5ab6931` adds `pdf_geometry_candidates.py`, an alternate immutable pending mapping
+contract keyed to stored page/table index/row/column. It handles cell text without
+inventing canonical offsets when PDF text is column-major. A single case-scoped
+query snapshots file/text/geometry; the source revision includes geometry and
+provenance. A matching non-null extraction job is required for text and geometry.
+Historical unbound geometry is refused; the canonical text contract remains
+available. Neither adapter rereads file bytes or writes/adopts a transaction.
+
+The binder preserves exact stored text, proposed column meanings, table discovery
+method and valid locators. It rejects repeated grid coordinates, page/dimension
+mismatches, cells outside table bounds, overlapping rectangles, changed metadata,
+changed geometry and stale provenance. Unlocated cells stay unlocated. The stored
+page map determines origin conservatively; invalid/overlapping maps stay unknown.
+
+**Checks:** 3,596 financial tests pass, zero skips; 895 frontend unit tests, 11
+Chromium tests, TypeScript and ESLint pass. The new module has 25 tests including a
+generated PDF read by the actual table extractor, stored and bound back to distinct
+rectangles for repeated amounts. Package export coverage adds one more test.
+Logs: `/tmp/loupe-neilbyrne-grid-{financial,unit,browser,eslint,real-pdf}.out`.
+Initial browser run hit sandbox EPERM opening loopback; the approved escalated
+rerun passed all 11 tests (the earlier no-tests output was not accepted). Initial
+fixture used sub-point page dimensions and was corrected to realistic millipoints
+so the established 1-point containment tolerance was tested meaningfully.
+
+The retained feature checklist marks this foundation complete under feature 1,
+which remains partial. **Next: immutable candidate persistence and review state
+outside the integer ledger, then assessment and materialization.** No real evidence
+or external AI calls; no push. Tracked implementation committed; unrelated
+untracked files untouched. Scheduled continuation remains active every 5 minutes
+until 06:00 Dublin, with the final 15 minutes reserved for handoff.
 
 ### Authorized scheduled continuation until 6am Dublin — 7 September 2026
 
