@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `8d6425a`, “Assess saved PDF candidate amounts
-  through case-scoped read-only APIs”. A state commit follows;
+- **Latest implementation commit:** `c4ae63e`, “Record immutable candidate reviews
+  with exact readings and stale-review protection”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,51 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Candidate review history and APIs completed — 7 September 2026 overnight
+
+`c4ae63e` adds migration `20260907_candidate_reviews`, an append-only review
+model/service, and GET/POST `/api/financial/candidates/{candidate_id}/review`.
+Reads require case:view; writes require case:edit and the authenticated actor.
+Every decision has a reason, original digest, sequence and previous-revision link.
+State derives from history; original candidate/mapping rows stay unchanged.
+Resolution, rejection, reopening and revised resolutions append events.
+
+A resolved reading requires a supported currency, nonnegative decimal-string
+minor units within BIGINT, explicit direction, at least one identified ISO
+booking/value/transaction date, description and a same-case compatible account.
+No amount floats, inferred dates or manually assigned proof class/admission.
+Source/text/geometry and candidate locks precede rebinding and stale-review checks;
+account compatibility is checked under a lock. Resolution does not admit a row.
+Mapping/assessment reads now include current review state/revision. History remains
+readable after source drift, while new decisions are refused. PostgreSQL and ORM
+UPDATE guards preserve history; case/file deletion still cascades.
+
+**Verified:** 3,651 financial tests, zero skips; 895 frontend unit tests, 11
+Chromium tests, TypeScript and ESLint pass. Added 20 review/service/route tests.
+The exhaustive adjudication route whitelist was extended to acknowledge the new
+POST rather than weakening the permission check. Logs:
+`/tmp/loupe-neilbyrne-review-{financial,unit,browser,eslint,migration,postgres}.out`.
+
+Migration applied only to isolated loupe_local. New repeatable
+`scripts/check_local_candidate_reviews.py` creates a synthetic PDF fixture,
+observes two PostgreSQL review lock waiters, gets exactly one 200/one 409, then
+reopens and resolves via authenticated HTTP. Three history entries and original
+text survive; PostgreSQL rejects history UPDATE. Latest fixture case
+`35ed8c59-9115-451d-bc7d-037ffacdb069`, candidate
+`4968063f-2818-4f46-b5e1-97ac4cc60d74`, account
+`03aa6b56-b4d0-45dd-bcca-ffd0e42f4bd4`; full IDs in
+`data/local-runtime/candidate-review-check.json`. Synthetic reviewed 12.34 differs
+from the digital 1234.00 original intentionally to test audit preservation.
+
+Backend restarted for these routes; exec session 7860, log
+`/tmp/loupe-neilbyrne-review-backend-runtime.out`. **Next: candidate listing and
+creation endpoints, account choices and the candidate review UI**, then atomic
+ledger materialization. Materialization must pin the reviewed revision and prevent
+later candidate changes from bypassing the existing ledger correction path.
+Feature 2 remains partial until its user workflow is connected. Schedule active
+through 06:00 Dublin with final 15 minutes for handoff. No real data or AI calls;
+tracked implementation committed and no push.
 
 ### Saved-candidate assessment connected — 7 September 2026 overnight
 

@@ -31,6 +31,8 @@ feature below is complete at the start of this window.
 
    - [x] Foundation: assess saved original amount cells through case-scoped read-only APIs, preserving uncertainty and source citations and refusing source drift (8d6425a). Verified through authenticated local HTTP; review UI remains.
 
+   - [x] Foundation: append resolved/rejected/reopened review decisions with reasons, exact reading validation, immutable history and stale-review protection (c4ae63e). Case-scoped read/edit APIs and real PostgreSQL contention verified. Review screens remain.
+
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
@@ -100,6 +102,11 @@ feature below is complete at the start of this window.
   and read APIs under feature 2. 3,631 financial tests and all frontend gates pass;
   authenticated local HTTP returns exact original readings and their PDF rectangle.
   Candidate review decisions/UI remain next; no whole feature is newly complete.
+
+- 7 September, overnight: **c4ae63e** completed review history and APIs under
+  feature 2. 3,651 financial tests and all frontend gates pass. Real concurrent
+  reviews return one 200/one 409; authenticated reopen/resolve retains history.
+  Next: candidate listing/creation and review screens, then materialization.
 
 ## Morning handoff
 
