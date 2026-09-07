@@ -10,6 +10,7 @@ Nothing in this package may represent a monetary value as a float.
 
 from services.financial.candidate_reviews import CandidateResolvedReading, CandidateReviewRequest, read_candidate_review, review_candidate
 from services.financial.candidate_assessment import assess_candidate_amounts, current_candidate_original
+from services.financial.candidate_source_bytes import verify_candidate_source_bytes
 from services.financial.candidate_store import CandidateStoreError, store_pdf_candidates, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
 from services.financial.corrections import correct_transaction
@@ -905,7 +906,7 @@ __all__ = [
     "CandidateAccountRequest", "create_candidate_account",
     "list_candidate_sources", "read_candidate_source",
     "CandidateResolvedReading", "CandidateReviewRequest", "read_candidate_review", "review_candidate",
-    "assess_candidate_amounts", "current_candidate_original",
+    "assess_candidate_amounts", "current_candidate_original", "verify_candidate_source_bytes",
     "CandidateStoreError", "store_pdf_candidates", "read_candidate_mapping", "list_candidate_mappings", "list_candidate_accounts",
     "PdfGridMapping", "PdfGridBoundMapping", "bind_pdf_grid_mapping", "pdf_grid_source_revision",
     "PdfMappingError", "PdfTextSpan", "PdfColumnProposal", "PdfCellProposal",

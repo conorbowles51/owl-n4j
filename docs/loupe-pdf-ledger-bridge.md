@@ -272,3 +272,23 @@ candidate-to-transaction links are still required for the future writer.
 
 Address these contract/integration issues before exposing a ledger writer; retain
 existing source originals and review histories throughout.
+
+
+## Source-byte prerequisite — extended 7 September window
+
+`candidate_source_bytes.verify_candidate_source_bytes` rebinds the immutable saved
+candidate, scopes the storage lookup to its case and verifies the current file
+against the bound evidence digest. The trusted application storage resolver is
+injected; callers cannot supply an arbitrary source path. Hashing streams bounded
+chunks, refuses non-regular files and files over 256 MiB, and detects observed
+size/metadata changes during the read. Errors do not expose private storage paths.
+The receipt records the exact digest, count and verification time without changing
+the saved original's historical `file_bytes_verified:false`.
+
+This internal prerequisite has no public admission endpoint. It does not prove
+extraction accuracy or classification and is not a reusable permit. The future
+writer must acquire file/text/geometry/review locks in the established order,
+rebind under those locks, call this check immediately before its atomic write,
+and retain the receipt. Database locks cannot stop external filesystem changes
+after the read. Source shape/layer and immutable materialization/source claims
+still remain as described above.
