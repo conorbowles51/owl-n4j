@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `b82d010`, “Display exact current ledger totals
-  and refresh them after decisions”. A state commit follows;
+- **Latest implementation commit:** `19a8980`, “Preserve exact bigint money across
+  ledger JSON and browser displays”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,35 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Exact individual ledger money — 7 September 2026
+
+`19a8980` changes TransactionView.to_json amount_minor and non-null
+running_balance_minor to integer strings. Python view fields remain integers.
+Frontend LedgerTransaction accepts string or legacy number; formatLedgerAmount
+scales canonical integer strings exactly and still refuses unsafe numbers or
+malformed strings. Table and decision identity both reuse this formatter. API
+consumers must accept strings for these two fields; other money contracts unchanged.
+
+Verified:38 targeted backend tests;114 frontend tests across formatting/table/
+dialog/API contract passed after updating the contract test's old direct-self
+serialization regex (the16 contract tests rerun and pass). TypeScript/scoped lint
+pass. Separate synthetic PostgreSQL case4f760410-9f57-4f0e-9c5f-cfc703505871 proves
+9007199254740993 amount and -9223372036854775808 balance through real HTTP and table;
+decision dialog displays exact amount and is cancelled. Initial browser check
+failed on an exact-text locator that omitted the nested currency; corrected
+row-identity text locator passes, no product defect. Scripts prepare_local_exact_rows.py
+and check_local_exact_rows_ui.cjs; runtime exact-rows-{check,ui-check}.json and
+/tmp/loupe-neilbyrne-exact-rows-*.out/png. Backend now exec93997, logfile
+exact-rows-server.out. No real evidence changes; synthetic fixture retained.
+
+**Next segment:** continue authoritative analysis integration. Inspect existing
+financial trend/graph contracts and build exact per-date currency ledger summaries
+using the same row/source inclusion rules rather than legacy signed graph amounts.
+Keep count/exclusion scope and transfer limitations visible, ensure totals agree
+with ledger-summary, and connect a bounded trends display with source drill-down.
+Avoid duplicating eligibility logic: refactor a shared reader if needed with targeted
+regression checks. Graph replacement, exports and tracing remain unfinished.
 
 ### Exact ledger summary display — 7 September 2026
 

@@ -80,6 +80,7 @@ feature below is complete at the start of this window.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
 5. **Make every financial view use the authoritative ledger — partial**
+   - [x] Preserve full bigint money through individual ledger JSON, table and decision identity using exact strings, with safe numeric compatibility (19a8980).
    - [x] Backend/API exact ledger posting summaries, separate currencies, explicit excluded populations and a hard no-partial-total limit (0ae8242). Display and legacy-view replacement remain.
    - [ ] Connect the graph and financial analysis screens to the reviewed ledger.
    - [x] Current ledger summary display uses exact currency totals and included/excluded populations, with applied-filter scope and correction/adjudication refresh (b82d010). Legacy graph cards and other analysis views remain.
@@ -346,3 +347,10 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   43 targeted frontend tests, TypeScript/scoped lint and live synthetic exclusion/
   restoration pass (GBP2100→1700→2100). Feature5 now partial; graph views remain
   unmigrated. Status: partial1,2,3,4,5,6,10; remaining7,8,9; no whole feature complete.
+
+
+- 7 September, 09:55 Dublin: **19a8980** closes individual ledger JSON precision
+  loss.38 targeted backend and114 targeted frontend tests pass (contract test
+  adjusted/rerun); TypeScript/scoped lint and real synthetic PostgreSQL→HTTP→UI
+  bigint/negative-balance checks pass. API money fields now strings. Next: exact
+  authoritative time summaries; no whole feature newly complete.
