@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `ee6edb4`, “Connect saved PDF reading review
-  with scoped lists and source assessment”. A state commit follows;
+- **Latest implementation commit:** `9ddfe63`, “Add deliberate PDF row and column
+  selection for pending candidate review”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,38 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Stored-PDF row selection completed — 7 September 2026 overnight
+
+`9ddfe63` adds candidate_sources service and case:view list/table endpoints.
+Financial → Ledger → PDF readings → Choose PDF rows exposes stored page/table
+selection with an authenticated source image. Column meanings start unidentified;
+no rows are preselected. Rows inferred from text spacing are labelled accordingly.
+Exact row/cell coordinates and text are submitted through the existing case:edit
+candidate writer. Source revisions and echoed selections are checked. Source reload
+resets the form, and uncertain submissions cannot be repeated without that reload.
+Tables/cells beyond candidate bounds are refused without silently truncating data.
+
+**Verified:** 3,666 financial tests (zero skips), 912 unit tests, 11 Chromium tests,
+TypeScript and full ESLint pass. Nine backend/seven UI tests added. A real local
+Chromium check selected one synthetic source row, rendered its source page, saved
+and retried with the same mapping ID, then opened its pending review. Repeat with
+`scripts/check_local_candidate_source_ui.cjs`; IDs in
+`data/local-runtime/candidate-source-ui-check.json`. Source screenshot:
+`/tmp/loupe-neilbyrne-source-selection-ui.png`. Current backend log:
+`/tmp/loupe-neilbyrne-source-ui-backend.out`; frontend55174/backend58002.
+
+The read-only real-PDF contract check (`scripts/check_real_pdf_candidate_sources.py`)
+passed all 153 extracted tables/7,529 source rows across the two supplied PDFs.
+These are not transaction counts. All cells were bound with unknown meanings in
+memory only; no real evidence was persisted, admitted or sent to AI. Aggregate local
+results: `data/local-runtime/pdf-inspection/candidate-sources.json`.
+
+**Next:** account setup for candidate resolution, then atomic materialization of
+resolved candidates with conservative classification/revalidation and cross-revision
+source-row duplicate protection. Extraction initiation/automatic nomination remain
+separate work: this UI requires stored text and geometry from the same extraction.
+Earlier next-step/UI-missing notes below are historical checkpoints.
 
 ### User-supplied real PDF checks — 7 September 2026
 

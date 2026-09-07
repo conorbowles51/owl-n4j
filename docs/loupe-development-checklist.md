@@ -19,8 +19,10 @@ feature below is complete at the start of this window.
 
    - [x] Foundation: verify stored PDF table/cell identity and rectangles without guessed text offsets (5ab6931). Includes repeated amounts, provenance drift, malformed geometry and generated-PDF extraction tests.
 
+   - [x] Deliberate source selection: inspect a stored PDF table, choose rows and assign proposed column meanings without automatic transaction classification (9ddfe63). Both real PDFs passed source-binding smoke checks; full transaction accuracy remains.
+
 2. **Review uncertain readings before they enter the ledger — partial**
-   - [ ] Save possible transactions separately until they are ready for use.
+   - [x] Save deliberately selected rows from stored PDF tables separately until they are ready for use (9ddfe63). Automatic extraction/nomination remains under feature 1.
    - [ ] Show questionable amounts, dates and account details alongside the source.
    - [x] Let the investigator confirm, correct or reject saved candidate readings, preserving the original and the reason for each decision (ee6edb4). Local UI verified; getting new PDF mappings into this screen and ledger materialization remain.
    - [ ] Prevent retries or simultaneous candidate reviews from creating duplicate transactions.
@@ -115,6 +117,12 @@ feature below is complete at the start of this window.
   11 Chromium tests, TypeScript and ESLint pass. Live browser review retained five
   history events and displayed the original PDF image; authenticated creation retry
   returned original IDs. Source mapping creation UI and materialization remain.
+
+- 7 September, overnight: **9ddfe63** connects deliberate PDF source selection under
+  features 1/2. All 3,666 financial, 912 unit, 11 Chromium tests and TS/lint pass.
+  Local UI save/retry preserves one pending row under the same mapping ID.
+  Read-only real-PDF checks passed 153 tables/7,529 source rows; these are not
+  transaction counts. Next: account setup and materialization/revalidation.
 
 ## Morning handoff
 
