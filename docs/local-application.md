@@ -436,3 +436,23 @@ Creates a separate synthetic case and checks9007199254740993 minor units and
 dialog (cancelled without a decision). Reports: exact-rows-check.json and
 exact-rows-ui-check.json under data/local-runtime. Screenshot:
 `/tmp/loupe-neilbyrne-exact-rows-ui.png`.
+
+## Date-grouped authoritative ledger totals
+
+`/api/financial/ledger-trends` accepts the summary's case/account/date scope plus
+`grouping=daily|monthly`. It uses the same eligibility pass and exact arithmetic
+as ledger-summary, returning the overall totals and date/currency points from one
+read. Dates use ordering_date; monthly labels use the first of the month. Points
+retain transaction IDs and source-document IDs. Excluded rows do not contribute.
+Missing dates are not filled with zero; these totals do not establish inactivity,
+balances or deduplicated money movement. The same10,000-row bound applies.
+The ledger trends display and navigation to contributing rows remain next.
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_ledger_trends.py
+```
+
+Read-only against the synthetic coverage fixture: daily/monthly GBP2100, ten
+transaction IDs/five source IDs, and empty February. All fixture postings have
+January ordering dates despite their different statement bounds. Report:
+`data/local-runtime/ledger-trends-check.json`.

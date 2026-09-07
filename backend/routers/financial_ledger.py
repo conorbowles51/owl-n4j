@@ -28,7 +28,7 @@ belongs with the reads.
 """
 
 from datetime import date
-from typing import Optional
+from typing import Optional, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -133,6 +133,20 @@ async def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(
     except Exception:
         logger.exception("Candidate list failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Saved PDF readings could not be listed.")
+
+
+@router.get("/ledger-trends")
+async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        grouping: Literal["daily", "monthly"] = Query("monthly"), db: Session = Depends(get_db)):
+    try:
+        return ledger_summary(db, case_id=case_id, account_id=account_id, start_date=start_date,
+            end_date=end_date, grouping=grouping)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger trends failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Ledger trends could not be calculated.")
 
 
 @router.get("/ledger-summary")

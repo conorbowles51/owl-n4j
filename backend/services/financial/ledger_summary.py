@@ -18,7 +18,9 @@ class LedgerSummaryError(ValueError):
     pass
 
 
-def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None):
+def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping=None):
+    if grouping not in (None, "daily", "monthly"):
+        raise LedgerSummaryError("Choose daily or monthly ledger grouping.")
     for value in (start_date, end_date):
         if value is not None and type(value) is not date:
             raise LedgerSummaryError("Summary date bounds must be calendar dates.")
@@ -41,12 +43,15 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         available=False, reason=None, considered_rows=None, included_rows=None, excluded_rows=None,
         exclusions=None, currencies=[], applied=False,
         limitation="Current ledger account postings only, with admitted source documents and included row/source proof classes. Currency totals are separate. Internal transfers are not matched or netted; net postings are not an account balance. Missing evidence and incomplete extraction are not measured by these totals.")
+    if grouping is not None:
+        result.update(grouping=grouping, date_basis="ordering_date", points=[])
     if len(pairs) > MAX_SUMMARY_ROWS:
         result['reason'] = 'More than 10000 rows match this scope. Narrow the account or dates; no partial total was calculated.'
         return result
     exclusions = {status.value: 0 for status in LedgerStatus if status.value != 'admitted'}
     exclusions.update(source_not_admitted=0, proof_class_not_included=0)
     groups = {}
+    points = {}
     for row, document, account in pairs:
         if document is None or account is None or document.case_id != case_id or account.case_id != case_id:
             raise LedgerSummaryError("Ledger source or account ownership is inconsistent; summary unavailable.")
@@ -76,11 +81,26 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         group = groups.setdefault(currency.code, dict(currency=currency.code, rows=0, credits_minor=0, debits_minor=0))
         group['rows'] += 1
         group[row.direction + 's_minor'] += row.amount_minor
-    for group in groups.values():
+        if grouping is not None:
+            if type(row.ordering_date) is not date:
+                raise LedgerSummaryError("An included ledger ordering date is invalid.")
+            bucket = row.ordering_date if grouping == "daily" else row.ordering_date.replace(day=1)
+            point = points.setdefault((bucket.isoformat(),currency.code),
+                dict(date=bucket.isoformat(),currency=currency.code,rows=0,credits_minor=0,debits_minor=0,
+                     transaction_ids=[],source_document_ids=set()))
+            point['rows'] += 1
+            point[row.direction + 's_minor'] += row.amount_minor
+            point['transaction_ids'].append(str(row.id))
+            point['source_document_ids'].add(str(document.id))
+    for group in list(groups.values()) + list(points.values()):
         group['net_minor'] = str(group['credits_minor'] - group['debits_minor'])
         group['credits_minor'] = str(group['credits_minor'])
         group['debits_minor'] = str(group['debits_minor'])
     excluded = sum(exclusions.values())
     result.update(available=True, considered_rows=len(pairs), included_rows=len(pairs)-excluded,
         excluded_rows=excluded, exclusions=exclusions, currencies=[groups[c] for c in sorted(groups)])
+    if grouping is not None:
+        for point in points.values():
+            point['source_document_ids'] = sorted(point['source_document_ids'])
+        result['points'] = [points[key] for key in sorted(points)]
     return result

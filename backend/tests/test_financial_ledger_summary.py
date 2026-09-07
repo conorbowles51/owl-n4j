@@ -87,3 +87,39 @@ class LedgerSummaryRouterTests(unittest.IsolatedAsyncioTestCase):
                     await router.get_ledger_summary(case,None,None,None,'db')
                 self.assertEqual(caught.exception.status_code,status)
                 self.assertNotIn('private',caught.exception.detail)
+
+class LedgerTrendTests(LedgerSummaryTests):
+    def test_monthly_points_equal_summary_and_keep_sources(self):
+        first,doc=self.add(9007199254740993)
+        second,_=self.add(12,TransactionDirection.debit)
+        second.ordering_date=date(2026,2,28);self.db.commit()
+        self.add(999,status=LedgerStatus.rejected)
+        result=self.read(grouping='monthly')
+        self.assertEqual(result['date_basis'],'ordering_date')
+        self.assertEqual([p['date'] for p in result['points']],['2026-01-01','2026-02-01'])
+        self.assertEqual(result['points'][0]['transaction_ids'],[str(first.id)])
+        self.assertEqual(result['points'][0]['source_document_ids'],[str(doc.id)])
+        for group in result['currencies']:
+            points=[p for p in result['points'] if p['currency']==group['currency']]
+            for field in ('credits_minor','debits_minor','net_minor'):
+                self.assertEqual(sum(int(p[field]) for p in points),int(group[field]))
+            self.assertEqual(sum(p['rows'] for p in points),group['rows'])
+        self.assertEqual(result['excluded_rows'],1)
+
+    def test_daily_currency_groups_do_not_invent_empty_dates(self):
+        first,_=self.add(100);first.ordering_date=date(2024,2,29)
+        second,_=self.add(200);second.currency='USD';second.ordering_date=date(2024,2,29)
+        third,_=self.add(300);third.ordering_date=date.max;self.db.commit()
+        result=self.read(grouping='daily')
+        self.assertEqual([(p['date'],p['currency']) for p in result['points']],
+            [('2024-02-29','GBP'),('2024-02-29','USD'),('9999-12-31','GBP')])
+        self.assertEqual(len(self.read(grouping='monthly')['points']),3)
+
+    def test_filtered_and_oversized_trends_never_give_partial_points(self):
+        self.add();self.add()
+        self.assertEqual(self.read(grouping='daily',start_date=date(2026,2,1))['points'],[])
+        with patch('services.financial.ledger_summary.MAX_SUMMARY_ROWS',1):result=self.read(grouping='daily')
+        self.assertFalse(result['available'])
+        self.assertEqual(result['points'],[])
+        self.assertIsNone(result['included_rows'])
+        with self.assertRaises(LedgerSummaryError):self.read(grouping='weekly')
