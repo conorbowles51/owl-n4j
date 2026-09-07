@@ -1,14 +1,14 @@
 # Loupe build state
 
-## Current position — 6 September 2026, Codex takeover
+## Current position — 7 September 2026, Codex continuation
 
 **Read this section first. It supersedes the older status, permission and sandbox
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `092d32e`, “Verify historical correction sources
-  and define the PDF ledger bridge boundary”, parent `aa22b79`. A documentation commit follows it;
+- **Latest implementation commit:** `5d7279d`, “Bind pending PDF candidates to exact
+  source text and provenance revisions”, parent `300ed0b`. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -36,7 +36,56 @@ completed-item claims and environment recipes in that history are not current.
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
 
-### End-of-window availability checkpoint
+### PDF candidate text contract — 7 September 2026
+
+Neil asked whether much development remained, received an explicit account of the
+unfinished ingestion/validation/projection work, and said **“please continue.”**
+This authorizes active development; yesterday's heartbeat remains paused.
+
+`5d7279d` adds `services/financial/pdf_candidates.py`: immutable typed proposed
+columns, ordered rows, exact Unicode text spans and optional source-backed context.
+The read-only binder joins evidence file/text within the authorized case, verifies
+recorded file metadata and recomputed text digest, and checks every cell/header/
+context span. It returns pending candidates only, with stored-origin/page metadata.
+No migration, HTTP endpoint, candidate writer, normalized amount or admission is
+introduced. Missing context and unknown column meanings remain representable.
+
+Source revisions cover identity, recorded file/text digests, source locations and
+extraction job. Mapping revisions cover the entire proposal. Identical amounts at
+different offsets have distinct snapshot keys. Snapshot keys are not sufficient
+for future cross-revision/cross-table ingestion deduplication. The eventual writer
+must rebind within its transaction and enforce separate materialization identity.
+
+The conservative stored-page provenance logic was extracted from amount assessment
+into `source_span_origin` and reused without changing assessment behavior. Unknown,
+malformed and overlapping source maps cannot acquire digital certainty. Callers
+cannot add origin, settled amount, status or proof-class fields to proposals.
+
+**Scope limitation:** this binds nominated canonical-text regions, not verified
+stored table geometry. No rectangles are asserted or file bytes reread. The v1
+contract expects nonoverlapping rows in canonical text order; irregular/column-major
+source needs an explicit geometry adapter, not fabricated canonical offsets.
+
+**Validation:** 3,570 financial tests passed, zero skips, in the persistent backend
+venv, including 21 new contract tests. Command from backend:
+`../data/local-runtime/backend-venv/bin/python -m unittest discover -s tests -p
+ 'test_financial_*.py' -t .` (one line); log
+`/tmp/loupe-neilbyrne-pdf-contract-financial.out`. Earlier focused run passed 37
+tests before three additional edge tests were added. New checks include cross-case
+refusal, file/text/provenance/job drift, repeated values, malformed grids, exact
+Unicode offsets, zero/sign/currency/unreadable raw text, immutable originals and
+revalidation of copied models. Existing optional-library warnings are non-failing.
+No frontend change; frontend gates and app health were not rerun this segment.
+`git diff --check` passes. No real evidence was read or changed. Nothing pushed.
+
+**Next:** bind the contract to verified stored table/cell geometry, then immutable
+candidate storage and review transitions outside the integer ledger. Amount
+assessment integration and atomic materialization remain after those boundaries.
+See `docs/loupe-pdf-ledger-bridge.md` for the updated contract and limitations.
+Tracked implementation is committed; unrelated untracked files remain untouched.
+
+### Historical end-of-window availability checkpoint (6 September)
+
 
 Progress report committed as `bdedcda`: **docs/loupe-progress-2026-09-06.md** is the
 short briefing for Neil. Detailed resumable state remains here. Last implementation
