@@ -17,7 +17,8 @@ from services.financial.correction_preview import CorrectionPreviewError, previe
 from services.financial.corrections import correct_transaction
 from services.financial.correction_verification import correction_verification
 from services.financial.correction_balances import correction_running_balances
-from services.financial.coverage_query import CoverageQueryError, list_statement_coverage
+from services.financial.coverage_query import CoverageQueryError, list_statement_coverage, requested_statement_coverage
+from services.financial.ledger_summary import LedgerSummaryError, ledger_summary
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
 from services.financial.pdf_geometry_candidates import (
     PdfGridMapping, PdfGridBoundMapping, bind_pdf_grid_mapping, pdf_grid_source_revision,
@@ -905,6 +906,7 @@ from services.financial.version import (
 )
 
 __all__ = [
+    "LedgerSummaryError", "ledger_summary", "requested_statement_coverage",
     "CandidateFinalizationRequest", "preview_candidate_finalization", "finalize_candidates",
     "check_candidate_source_reuse",
     "CandidateAccountRequest", "create_candidate_account",

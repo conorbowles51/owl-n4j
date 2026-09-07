@@ -13,6 +13,7 @@
  * that do exist. The tests below fail if that early return ever comes back.
  */
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -53,35 +54,17 @@ vi.mock("../hooks/use-ledger-transactions", () => ({
   useLedgerTransactions: ledger.useLedgerTransactions,
 }))
 
-/*
- * Two components on this page read the run history: the notice above the
- * ledger and the attempts tab. Both call this hook, and unmocked it reaches
- * for a `QueryClientProvider` that this render does not supply and throws.
- * Each is wrapped in its own `ErrorBoundary`, which catches the throw, so
- * without this mock the page renders green while both are dead.
- */
+// Control run-history results independently of the ledger and graph fixtures.
 vi.mock("../hooks/use-ingestion-runs", () => ({
   useIngestionRuns: runs.useIngestionRuns,
 }))
 
-/*
- * The adjudication dialog is mounted by the page, deliberately outside every
- * error boundary on it, so unmocked this hook's reach for a
- * `QueryClientProvider` would take the whole page down rather than one panel.
- * Nothing here sends anything: what these tests are about is which component
- * is on screen and for how long, not what the ledger answers.
- */
+// Keep adjudication outcomes deterministic while checking dialog lifetime.
 vi.mock("../hooks/use-row-adjudication", () => ({
   useRowAdjudication: adjudication.useRowAdjudication,
 }))
 
-/*
- * Mocked for the reason the run history is: unmocked it reaches for a
- * `QueryClientProvider` this render does not supply and throws, and the panel's
- * own `ErrorBoundary` catches the throw, so the page would render green with a
- * dead tab behind it. What is asserted below is that the page mounts this
- * panel, not what the log answers; that is `DecisionsPanel.test.tsx`.
- */
+// Decision-log rendering has its own tests; this suite checks page placement.
 vi.mock("../hooks/use-case-decisions", () => ({
   useCaseDecisions: decisions.useCaseDecisions,
 }))
@@ -229,8 +212,16 @@ function runsEmpty() {
  * into its error boundary, and a tab asserted to be showing the graph would in
  * fact be showing a caught error.
  */
+// Real auxiliary panels need the same query provider as the application.
+// Keep it stable across rerenders, but isolate its cache between tests.
+let pageQueries: QueryClient
+beforeEach(() => {
+  pageQueries = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+})
+
 function pageTree() {
   return (
+    <QueryClientProvider client={pageQueries}>
     <TooltipProvider>
       <MemoryRouter initialEntries={["/cases/case-1/financial"]}>
         <Routes>
@@ -238,6 +229,7 @@ function pageTree() {
         </Routes>
       </MemoryRouter>
     </TooltipProvider>
+    </QueryClientProvider>
   )
 }
 
@@ -306,7 +298,7 @@ describe("FinancialPage", () => {
     graphWithRows()
     renderPage()
 
-    expect(ledger.useLedgerTransactions).toHaveBeenCalledWith("case-1", undefined)
+    expect(ledger.useLedgerTransactions).toHaveBeenCalledWith("case-1", {})
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 
