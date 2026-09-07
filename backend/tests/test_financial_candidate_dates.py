@@ -34,6 +34,29 @@ class CandidateDateTests(unittest.TestCase):
         self.assertTrue(all(c["column_index"] != 1 for c in result["date_cells"]))
         self.assertEqual(result["date_cells"][0]["assessment"]["status"], "missing_year")
 
+    def test_transaction_date_role_survives_grid_binding_and_assessment(self):
+        self.f.save(raw="2026-02-01", meaning="transaction_date")
+        cell = next(c for c in self.assess()["date_cells"] if c["column_index"] == 1)
+        self.assertEqual(cell["proposed_meaning"], "transaction_date")
+        self.assertEqual(cell["assessment"]["proposals"][0]["iso_date"], "2026-02-01")
+
+    def test_transaction_date_role_survives_canonical_text_binding(self):
+        from services.financial.pdf_candidates import pdf_mapping_source_revision
+        from uuid import UUID
+        f = self.f.fixture
+        text = "01/02"
+        position = f.text.content.index(text)
+        saved = f.save(proposal=dict(case_id=str(f.case), evidence_file_id=str(f.file),
+            source_revision=pdf_mapping_source_revision(f.db, case_id=f.case, evidence_file_id=f.file),
+            table_id=str(uuid4()), start_char=position, end_char=position+len(text),
+            columns=[dict(column_index=0, meaning="transaction_date")], rows=[dict(row_index=0,
+                cells=[dict(column_index=0, source=dict(start_char=position, end_char=position+len(text), text=text))])]))
+        self.f.candidate_id = UUID(saved["candidates"][0]["id"])
+        cell = self.assess()["date_cells"][0]
+        self.assertEqual(cell["proposed_meaning"], "transaction_date")
+        self.assertEqual(cell["source"]["start_char"], position)
+        self.assertEqual(cell["assessment"]["status"], "missing_year")
+
     def test_wrong_case_and_changed_source_refused(self):
         self.f.save(meaning="booking_date")
         with self.assertRaises(CandidateStoreError) as error:

@@ -261,3 +261,18 @@ node scripts/check_local_candidate_dates_ui.cjs
 The script uses candidate-check.json and leaves reviews and ledger money unchanged.
 It expects the synthetic first-row date `01/02`. Screenshot:
 `/tmp/loupe-neilbyrne-candidate-dates-ui.png`.
+
+The source picker offers **Suggest column meanings** for exact labels in its first
+ten stored rows. Suggestions require an explicit click and never select rows.
+Generic Date remains unresolved; Transaction date is now a separate supported role
+in both grid and canonical-text mappings. To test against a fresh synthetic PDF:
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/prepare_local_header_ui.py
+node scripts/check_local_header_ui.cjs
+```
+
+This uses a separate header-check.json fixture. The browser accepts two printed
+labels, selects only one non-header row, saves it pending, and verifies an identical
+retry preserves its mapping. Results: header-ui-check.json; screenshot:
+`/tmp/loupe-neilbyrne-header-suggestions-ui.png`. No real evidence is used.

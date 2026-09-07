@@ -8,6 +8,7 @@ import {
   candidateMapping,
   candidateUrl,
 } from "../lib/candidate-contract"
+import { proposePdfHeaders } from "../lib/pdf-header-proposals"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 
 const index = z.number().int().nonnegative()
@@ -57,6 +58,7 @@ const meanings = [
   ["credit", "Money in"],
   ["booking_date", "Booking date"],
   ["value_date", "Value date"],
+  ["transaction_date", "Transaction date"],
   ["description", "Description"],
   ["reference", "Reference"],
   ["balance", "Balance"],
@@ -253,6 +255,8 @@ function SourceSelection({
   source: z.infer<typeof sourceTable>
   onSaved: (id: string) => void
 }) {
+  const [showHeaders, setShowHeaders] = useState(false)
+  const headers = proposePdfHeaders(source.rows)
   const [selected, setSelected] = useState<number[]>([])
   const [columns, setColumns] = useState<Record<number, string>>({})
   const [page, setPage] = useState(0)
@@ -348,6 +352,47 @@ function SourceSelection({
         locatorPayload={source.locator}
       />
       <fieldset disabled={disabled} className="space-y-3">
+        <Button variant="outline" onClick={() => setShowHeaders((v) => !v)}>
+          {showHeaders ? "Hide column suggestions" : "Suggest column meanings"}
+        </Button>
+        {showHeaders && (
+          <div className="space-y-2 rounded border p-3">
+            <p>
+              Checked the first {headers.checkedRows} stored rows for exact
+              column labels.
+              {headers.hasMore ? " Later rows were not checked." : ""} Matches
+              are suggestions, not proof of a header or transaction. Generic
+              “Date” does not establish a date role. Applying a meaning does not
+              select any rows.
+            </p>
+            {headers.proposals.length === 0 && (
+              <p>
+                No supported exact labels found. Assign meanings manually from
+                the source.
+              </p>
+            )}
+            {headers.proposals.map((header) => (
+              <div key={`${header.column}:${header.meaning}`}>
+                <p>
+                  Source row {header.row + 1}, column {header.column + 1}: “
+                  {header.text}”
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setColumns((v) => ({
+                      ...v,
+                      [header.column]: header.meaning,
+                    }))
+                  }
+                >
+                  Use {header.label} for column {header.column + 1}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="grid gap-2 sm:grid-cols-3">
           {source.columns.map((column) => (
             <label key={column}>

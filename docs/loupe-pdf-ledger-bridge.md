@@ -485,3 +485,20 @@ expose these proposals read-only, including after finalization. Response scope,
 revision, raw-source consistency and no-write status are validated. Unknown columns
 are counted, not classified. Named-month/other unsupported formats are retained for
 manual review; automatic nomination and date-context resolution remain outstanding.
+
+## Explicit column suggestion aid — 7 September 2026
+
+The source picker scans at most the first ten stored rows for exact supported labels
+(case/whitespace normalization only). It cites original text and source row/column,
+retains competing meanings, and does not guess generic Date, OCR repairs, substrings
+or row classifications. Users explicitly apply each suggestion to the existing
+proposed-meaning controls; all row checkboxes remain unchanged. Reload resets the
+suggestions and selections. A matched label is not proof of a header or transaction.
+
+Accepted meanings are stored using the existing source-revision-bound manual mapping
+contract; this UI aid does not claim an independent automatic extraction provenance
+or persist a separate header-extraction event. Whole-page source revision still
+protects against drift. Automatic transaction row nomination remains outstanding.
+Both grid and canonical-text column contracts now accept transaction_date separately
+from booking_date/value_date; existing snapshots serialize identically. No schema
+migration or original rewriting is needed.

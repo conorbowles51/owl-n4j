@@ -251,3 +251,48 @@ it("invalidates the original case list after an unmounted save", async () => {
     })
   )
 })
+
+it("offers exact header suggestions without assigning meanings or selecting rows", async () => {
+  const fetch = server()
+  mount()
+  await open()
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Suggest column meanings" })
+  )
+  expect(
+    screen.getByText(/Generic “Date” does not establish/)
+  ).toBeInTheDocument()
+  expect(screen.getByLabelText("Column 2 meaning")).toHaveValue("unknown")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Use Amount for column 2" })
+  )
+  expect(screen.getByLabelText("Column 2 meaning")).toHaveValue("amount")
+  expect(screen.getByLabelText("Column 1 meaning")).toHaveValue("unknown")
+  expect(screen.getByLabelText("Select source row 1")).not.toBeChecked()
+  expect(screen.getByLabelText("Select source row 4")).not.toBeChecked()
+  expect(fetch.mock.calls.filter(([, o]) => o?.method === "POST")).toHaveLength(
+    0
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reload source and selection" })
+  )
+  await waitFor(() =>
+    expect(screen.getByLabelText("Column 2 meaning")).toHaveValue("unknown")
+  )
+})
+it("saves an explicitly chosen transaction date role separately from booking date", async () => {
+  const fetch = server()
+  mount()
+  await choose()
+  fireEvent.change(screen.getByLabelText("Column 1 meaning"), {
+    target: { value: "transaction_date" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save selected rows for review" })
+  )
+  await screen.findByText(/Rows saved/)
+  const request = fetch.mock.calls.find(([, o]) => o?.method === "POST")!
+  expect(JSON.parse(String(request[1]?.body)).columns[0].meaning).toBe(
+    "transaction_date"
+  )
+})
