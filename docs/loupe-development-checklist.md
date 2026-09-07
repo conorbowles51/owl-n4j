@@ -57,6 +57,8 @@ feature below is complete at the start of this window.
 
    - [x] Finalized review protection: keep originals/history and source assessment accessible, block later candidate/account edits, and verify a ledger correction preserves the receipt and original PDF citation (a7c231d). The replacement remains P3 outside verified totals.
 
+   - [x] Source date assessment: display alternative numeric dates, unresolved years/centuries, invalid dates and original citations without selecting a reading (46a3417). Automatic date/context resolution and account uncertainty work remain.
+
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
@@ -260,3 +262,9 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   TypeScript/ESLint. Synthetic browser correction replaces GBP12.34 with12.35,
   keeps P3, and retains the original highlighted source through its receipt.
   Features1/2 remain partial; no complete-application claim.
+
+- 7 September, extended window: **46a3417** connects read-only source date
+  assessment in saved candidate review. All 3,739 financial, 944 frontend unit and
+  11 Chromium tests pass, plus TypeScript/ESLint. Live browser preserves both01/02
+  interpretations and the missing year while highlighting the original PDF cell.
+  Full automatic extraction/nomination and complete date/account review remain.

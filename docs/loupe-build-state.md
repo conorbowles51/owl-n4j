@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `a7c231d`, “Keep finalized PDF readings
-  read-only and verify later ledger corrections”. A state commit follows;
+- **Latest implementation commit:** `46a3417`, “Show source-bound date uncertainty
+  without guessing years or date order”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,39 @@ for verification, the retained ten-feature checklist and the handoff, then pause
 Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Source date uncertainty connected — 7 September 2026
+
+`46a3417` adds conservative numeric date assessment before review: keep both valid
+numeric orders, missing years, ambiguous two-digit centuries, invalid calendar values
+and unsupported text. Never infer locale/year/century/period context or OCR repairs.
+Even unambiguous calendar formats require source review. Named-month dates remain
+unsupported/manual. The service rebinds current candidate originals and processes
+only proposed booking/value/transaction columns, retaining exact locators/spans,
+origin and review revision. Unknown columns remain unclassified. Read-only case:view
+GET date-assessment and a review panel show proposals with source highlights; they
+never fill review fields or write ledger data, including on finalized readings.
+
+**Verified:** 3,739 backend financial tests, zero skips; 944 frontend unit tests;
+11 Chromium tests; TypeScript/full ESLint. The first full suite correctly caught
+missing package exports for source_dates; assess_date_text and assess_candidate_dates
+are now exported and the full rerun passes. Live browser on the existing synthetic
+case shows both month/day alternatives for01/02, no fabricated full year, and the
+highlighted exact date cell. `scripts/check_local_candidate_dates_ui.cjs` is read-only
+and works against candidate-check.json's original synthetic01/02 fixture, including
+when finalized. Screenshot `/tmp/loupe-neilbyrne-candidate-dates-ui.png`. Backend now
+exec session36691, log `/tmp/loupe-neilbyrne-dates-backend.out`, current date route
+loaded via local_app.py. No real evidence modified or ingested.
+
+**Next segment:** inspect existing PDF extraction and stored-grid source picker,
+then connect a bounded automatic nomination aid where source evidence supports it.
+Any suggested column meanings/rows must remain proposals for explicit review, with
+headers/nontransaction rows not silently admitted. Reuse exact source binding and
+revision protections, preserve unsupported/uncertain cases, and keep external AI
+disabled. Account context, full date-context resolution, complete statement controls
+and remaining financial features are not complete. The retained checklist still has
+partial1,2,3,4,10 and remaining5,6,7,8,9. Check the clock; schedule remains every5
+minutes until09:00 Dublin, reserving07:45–08:00UTC for final verification/handoff.
 
 ### Finalized review protection and correction round trip — 7 September 2026
 
