@@ -1,7 +1,8 @@
 # Loupe financial development checklist
 
 Authorized overnight window: 7 September 2026, until **06:00 Europe/Dublin
-(05:00 UTC)**. Scheduled continuation every 5 minutes in the same task.
+(05:00 UTC)**. Scheduled continuation ran every 5 minutes in the same task; the overnight window
+is now closing with the morning handoff below.
 
 Keep all ten features and their subitems visible. Mark verified completions [x];
 never remove completed work. A feature is complete only when its complete user
@@ -24,16 +25,16 @@ feature below is complete at the start of this window.
 2. **Review uncertain readings before they enter the ledger — partial**
    - [x] Save deliberately selected rows from stored PDF tables separately until they are ready for use (9ddfe63). Automatic extraction/nomination remains under feature 1.
    - [ ] Show questionable amounts, dates and account details alongside the source.
-   - [x] Let the investigator confirm, correct or reject saved candidate readings, preserving the original and the reason for each decision (ee6edb4). Local UI verified; getting new PDF mappings into this screen and ledger materialization remain.
+   - [x] Let the investigator confirm, correct or reject saved candidate readings, preserving the original and the reason for each decision (ee6edb4). Local UI verified; deliberate stored-PDF mapping is now connected. Automatic nomination and ledger materialization remain.
    - [ ] Prevent retries or simultaneous candidate reviews from creating duplicate transactions.
-   - [x] Foundation: immutable in-memory pending candidate contract, with missing context representable (5d7279d). Persistent storage is now implemented below; review remains.
+   - [x] Foundation: immutable in-memory pending candidate contract, with missing context representable (5d7279d). Persistent storage and review are now implemented below.
    - [x] Existing ledger corrections retain originals, history and reasons, with stale-review protection; manual source amount assessment is connected. These do not yet provide candidate review.
 
-   - [x] Foundation: persist immutable candidate originals outside totals with atomic saves and same-mapping retry safety (826caee). Verified with PostgreSQL lock contention and overwrite-refusal triggers. Review UI remains.
+   - [x] Foundation: persist immutable candidate originals outside totals with atomic saves and same-mapping retry safety (826caee). Verified with PostgreSQL lock contention and overwrite-refusal triggers. UI completion is recorded below.
 
-   - [x] Foundation: assess saved original amount cells through case-scoped read-only APIs, preserving uncertainty and source citations and refusing source drift (8d6425a). Verified through authenticated local HTTP; review UI remains.
+   - [x] Foundation: assess saved original amount cells through case-scoped read-only APIs, preserving uncertainty and source citations and refusing source drift (8d6425a). Verified through authenticated local HTTP; UI completion is recorded below.
 
-   - [x] Foundation: append resolved/rejected/reopened review decisions with reasons, exact reading validation, immutable history and stale-review protection (c4ae63e). Case-scoped read/edit APIs and real PostgreSQL contention verified. Review screens remain.
+   - [x] Foundation: append resolved/rejected/reopened review decisions with reasons, exact reading validation, immutable history and stale-review protection (c4ae63e). Case-scoped read/edit APIs and real PostgreSQL contention verified. Review screen completion is recorded below.
 
    - [x] Saved-reading UI: bounded batch/row lists, account search, original amount assessment with source image, exact review form and immutable history (ee6edb4). Creation API retries preserve original IDs.
 
@@ -145,6 +146,55 @@ feature below is complete at the start of this window.
 
 ## Morning handoff
 
-Pending. Before the cutoff, record completed feature numbers, partial progress,
-remaining work, test results, any blockers, and the local application's verified
-availability. Do not infer current availability from yesterday's health checks.
+Prepared 7 September 2026 before the 06:00 Dublin cutoff. The heartbeat
+`continue-loupe-development` was paused through the app at approximately 04:42 UTC
+(05:42 Dublin). The local application remains running. Completed work remains
+checked above; none of the ten whole features is being marked finished prematurely.
+
+| Feature | Overall status | Position at handoff |
+| --- | --- | --- |
+| 1. PDF import | Partial | Stored-table selection, exact source binding and real-PDF extraction checks work. Automatic import/nomination and complete transaction accuracy remain. |
+| 2. Uncertain-reading review | Partial | Separate immutable originals, review/history UI, source assessment, provisional accounts and source-reuse checks work. Ledger materialization and database-enforced cross-mapping transaction deduplication remain. |
+| 3. Financial accuracy checks | Partial | Earlier balance reconciliation/correction work remains connected. Broader printed controls and running-balance revalidation remain. |
+| 4. Duplicate handling | Partial | Earlier same-case exclusion/restoration works. Authorized cross-case comparisons and larger-scale coverage remain. |
+| 5. Authoritative ledger across views | Remaining | Graph and financial analysis still need the agreed ledger projection. |
+| 6. Evidence coverage and missing periods | Remaining | Statement gaps/overlaps and coverage views remain. |
+| 7. Transaction connections | Remaining | Transfer matching and explainable money movement remain. |
+| 8. Reports and exports | Remaining | Connect existing components to reviewed results with matching totals and audit references. |
+| 9. Funds tracing | Remaining | Connect calculations to reviewed history and expose assumptions/results. |
+| 10. Full local testing | Partial | Isolated runtime and repeated synthetic HTTP/PostgreSQL/UI checks work. Upload-to-analysis/export and external AI acceptance remain. |
+
+**Completed this window:** immutable stored PDF candidate originals and review
+history, source amount assessment, row/column selection UI, provisional account
+setup with recorded reasons, cross-batch source reuse checks and accurate audit
+notices. Implementation commits and evidence are retained in the completion record.
+
+**Verification:** 3,685 backend financial tests (zero skips), 927 frontend unit tests,
+11 Chromium tests, TypeScript and full ESLint pass. Live synthetic checks cover
+source images, exact amounts, case scope, stale reviews, immutable originals/history,
+concurrent saves/reviews/account creation, retry reuse and navigation to source findings.
+The last frontend-only wording change did not alter the backend test checkpoint.
+
+**Real PDFs:** both supplied files remain byte-for-byte unchanged and outside Git.
+164 pages were read locally, with 153 tables/7,529 source rows passing the source-binding
+contract check; 11 pages render blank. Those source rows are not transaction counts.
+No real-document database ingestion, external AI processing or transaction-accuracy
+acceptance is claimed by this check.
+
+**Local availability verified at 04:39–04:41 UTC:** frontend55174/backend58002,
+engine58003, PostgreSQL55434, Neo4j57474/57687, Redis56379 and Chroma58101 respond.
+Engine checks also confirm OCR/storage availability. Its OpenAI health flag only
+checks that a key string exists; the isolated launcher uses a dummy key and external
+AI processing is not verified. Local migration: 20260907_candidate_reviews.
+
+**Try the new screens:** open Financial → Ledger → PDF readings in the synthetic
+case `61272494-00de-4a97-8ba9-77fce4be2f24`. Select a saved batch to review readings or
+check source reuse; Choose PDF rows opens deliberate source selection. The displayed
+refused setup audit is an intentional stale-review test, not missing imported money.
+The real PDFs have only been tested read-only, so they do not appear as ingested cases.
+
+**Next development priority:** safely move complete reviewed candidates into the
+ledger. This needs immutable candidate-to-transaction links, whole-document occurrence
+handling, defensible source shape/extraction-layer provenance and reconciliation
+coverage. Concrete constraints are in docs/loupe-pdf-ledger-bridge.md. No uncommitted
+implementation is left. No pushes, merges or real-data changes were made.

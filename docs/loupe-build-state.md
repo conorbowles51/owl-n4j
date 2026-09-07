@@ -36,6 +36,30 @@ completed-item claims and environment recipes in that history are not current.
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
 
+### Morning handoff — 7 September 2026, overnight window closing
+
+The authorized overnight development is checkpointed. The final ten-feature status
+and checked subitems are retained in `docs/loupe-development-checklist.md` under
+Morning handoff. Whole features **1,2,3,4,10 are partial**; **5,6,7,8,9 remain**.
+No whole remaining feature is claimed complete. The older “Item8 complete” near the
+top refers to an earlier wiring-plan item, not feature8 of the overnight checklist.
+
+Current verified gates: 3,685 financial tests (zero skips), 927 frontend unit tests,
+11 Chromium tests, TypeScript/full ESLint. Local application/service checks at
+04:39–04:41 UTC passed, with migration20260907_candidate_reviews. Engine's OpenAI
+health flag checks key presence only; external AI is not tested or enabled with a
+real key in this isolated runtime. Real PDFs remain unchanged/untracked; no real
+PDF was ingested into a database. Synthetic UI case:
+`61272494-00de-4a97-8ba9-77fce4be2f24`, frontend55174. The app-panel request to show
+that case was queued by Codex; the URL is valid and the frontend is responding.
+
+Latest implementation f94e347; state commits follow. No uncommitted implementation
+remains. The next substantive dependency is ledger materialization, with constraints
+in docs/loupe-pdf-ledger-bridge.md. Do not mistake resolved candidates for admitted
+transactions or source binding smoke checks for transaction accuracy. Heartbeat `continue-loupe-development` was confirmed PAUSED through automation_update
+at approximately 04:42 UTC (05:42 Dublin), before the cutoff. The local application
+was left running; no post-cutoff development is authorized.
+
 ### Account audit display corrected — 7 September 2026 overnight
 
 `f94e347` distinguishes the known provisional_candidate_account operation from
