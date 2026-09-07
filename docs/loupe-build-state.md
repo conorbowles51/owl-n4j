@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `001009d`, “Capture consistent ledger decision
-  history with a precise export manifest”. A state commit follows;
+- **Latest implementation commit:** `49f2b83`, “Download scoped ledger snapshots
+  with exact manifests from Trends”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,28 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Scoped ledger ZIP download — 7 September 2026
+
+`49f2b83` connects the case:view authenticated ledger-export endpoint and Trends
+button to the owned consistent export transaction. Applied account/date scope is
+checked before the browser saves original ZIP bytes. Fixed safe filenames contain
+ledger-snapshot.json and manifest.json. No-store response, bounded content, abort
+on scope change, two-minute timeout and duplicate-click protection are included.
+Backend 31 targeted tests and frontend 33 tests passed; final six-button-test rerun,
+TypeScript, scoped ESLint and diff checks passed. Chromium saved the synthetic ZIP;
+independent byte verification confirmed ten rows, four decisions, GBP 2,100 and the
+matching digest/byte count. Report: data/local-runtime/ledger-export-ui-check.json.
+No real evidence changed. Backend now exec22102, log
+/tmp/loupe-neilbyrne-export-download-server.out. Feature8 is partial: this is a
+structured snapshot, not a formatted investigator report. Original source files,
+structured candidate-review history and fresh source-byte checks remain excluded.
+
+**Next segment:** build a readable report from the same immutable captured snapshot,
+including exact totals, scope, sources and decision references; keep all limitations
+visible and avoid mixing in legacy graph export results. Reserve 11:45 UTC onward
+for final verification/handoff; schedule remains ACTIVE through 13:00 Dublin.
+Older next-step text below describes completed historical stages.
 
 ### Consistent history/export manifest service — 7 September 2026
 

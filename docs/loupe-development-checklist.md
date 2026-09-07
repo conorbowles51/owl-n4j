@@ -105,7 +105,8 @@ feature below is complete at the start of this window.
    - [ ] Show the evidence supporting a match and distinguish exact matches from uncertain ones.
    - [ ] Connect comparisons between financial records and statements or claims about payments.
 
-8. **Produce traceable reports and exports — remaining**
+8. **Produce traceable reports and exports — partial**
+   - [x] Download the applied ledger scope as a ZIP with exact rows/totals, source references, relevant decision history and a byte-verifiable manifest (49f2b83). Browser download and digest verified; formatted reports and broader export workflow remain.
    - [x] Consistent PostgreSQL snapshot of relevant decision history plus exact JSON export manifest, with event/output bounds (001009d). Download/report UI remains; candidate-review history and fresh source-byte verification explicitly excluded.
    - [x] Internal immutable ledger snapshot captures exact rows/totals/source metadata and exclusions from one read, with stable content hash (1efe4ad). Decision history, manifest and download remain; snapshot explicitly not export-ready.
    - [ ] Connect existing export and exhibit components to reviewed results.
@@ -394,3 +395,8 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   read with JSON-specific manifest.29 targeted tests covered/resolved and live
   synthetic concurrent-write consistency/digest checks pass; row restored. Next:
   authenticated attachment and browser download. Feature8 remains unfinished.
+
+- Scoped export download checkpoint (49f2b83): backend31/frontend33 targeted tests,
+  final six-button-test rerun, TypeScript/scoped ESLint and Chromium download pass.
+  Saved ZIP independently verified: ten synthetic rows, four decisions, GBP2,100,
+  matching digest/byte count. Feature8 now partial; no entire feature complete.
