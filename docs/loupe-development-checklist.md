@@ -55,6 +55,8 @@ feature below is complete at the start of this window.
 
    - [x] Connected finalization UI: current preview, explicit coverage acceptance/reason, safe reload/retry behavior, refreshed ledger rows and source-image links (a2f4337). The larger automatic extraction and complete-statement workflows remain.
 
+   - [x] Finalized review protection: keep originals/history and source assessment accessible, block later candidate/account edits, and verify a ledger correction preserves the receipt and original PDF citation (a7c231d). The replacement remains P3 outside verified totals.
+
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
@@ -251,3 +253,10 @@ Chromium tests, TypeScript/full ESLint and real-browser creation/retry/source
 highlight checks. The original retry-protection subitem is now checked rather
 than removed. Whole-feature statuses remain partial/remaining as broader automatic
 extraction, uncertainty, controls/coverage and other listed capabilities still remain.
+
+- 7 September, extended window: **a7c231d** makes finalized candidate screens
+  read-only and refuses new provisional accounts before/after a racing finalization.
+  All 3,728 backend financial, 937 frontend unit and 11 Chromium tests pass, plus
+  TypeScript/ESLint. Synthetic browser correction replaces GBP12.34 with12.35,
+  keeps P3, and retains the original highlighted source through its receipt.
+  Features1/2 remain partial; no complete-application claim.

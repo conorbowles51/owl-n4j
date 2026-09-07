@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `a2f4337`, “Connect reviewed PDF finalization
-  to authenticated UI and source evidence”. A state commit follows;
+- **Latest implementation commit:** `a7c231d`, “Keep finalized PDF readings
+  read-only and verify later ledger corrections”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -47,6 +47,47 @@ Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
 
+### Finalized review protection and correction round trip — 7 September 2026
+
+`a7c231d` makes review responses explicitly report nullable case-scoped
+finalization_id without changing original/history/revision. Finalized resolved and
+rejected forms retain the original fields/history but disable edits and remove
+review/account write controls. Source assessment remains usable with independent
+currency state. Missing seal-state fields fail UI validation. Refreshed finalization
+state remounts the fields even when the review revision itself has not changed.
+Provisional account creation checks before audit and again under the file lock;
+interleaved finalization cannot leave an unused account behind.
+
+**Verified:** all 3,728 backend financial tests, zero skips; 937 frontend unit tests;
+11 Chromium tests; TypeScript/full ESLint. Live synthetic browser check confirms
+read-only review/history/source assessment and authenticated account setup409.
+A finalized GBP12.34 row was corrected to12.35; only the replacement remains in
+the active ledger, classification staysP3, and the original receipt acknowledges
+the correction and opens the highlighted original PDF row. No real evidence used.
+
+New script `scripts/check_local_finalized_review_ui.cjs` runs AFTER fresh
+prepare_local_finalization_ui.py and check_local_finalization_ui.cjs. It mutates
+only their synthetic case and needs a fresh fixture to repeat the correction.
+Latest case remains `5adf884c-aede-4a8d-923e-c3f240d2f708`; original transaction
+`85c81954-4957-4510-91b3-16981fc321bc` is now superseded by
+`91628f90-46f2-4f33-a098-7e6d9f3bb320` (`TX-FF03-S888-TJ4W`). Report:
+`data/local-runtime/finalized-review-ui-check.json`. Screenshots:
+`/tmp/loupe-neilbyrne-finalized-review-ui.png` and
+`/tmp/loupe-neilbyrne-finalized-correction-source-ui.png`. Current isolated backend
+exec session49440, log `/tmp/loupe-neilbyrne-readonly-backend.out`, launched through
+local_app.py. It contains the new required response field and account guard.
+
+**Next segment:** the deliberate source-selection → review → finalization → ledger
+correction path is connected. Continue the retained feature1/2 work: inspect existing
+PDF extraction/nomination and date/account assessment contracts, then implement a
+bounded source-bound uncertainty/nomination improvement. Ambiguous date order or
+missing years must remain explicit; do not silently infer context or admit automatic
+proposals. External AI remains disabled. Complete controls/coverage, canonical ledger
+views, exports and tracing are still outstanding. All ten features remain visible;
+partial1,2,3,4,10, remaining5,6,7,8,9. No whole feature newly completed.
+Schedule remains ACTIVE every5 minutes through09:00 Dublin (08:00 UTC). Check the
+clock before a new segment; reserve07:45–08:00UTC for final verification/handoff.
+
 ### Finalization API and UI connected — extended window, 7 September 2026
 
 `a2f4337` exposes protected case:view preview and case:edit finalization endpoints,
@@ -76,7 +117,7 @@ kept intact. Full IDs: data/local-runtime/finalization-ui-check.json. Screenshot
 finalization-source-ui.png (each with loupe-neilbyrne prefix). candidate-check.json
 now names this FINALIZED fixture; recreate before older pending-candidate scripts.
 
-**Next segment:** make candidate review screens explicitly read-only after sealing
+**Historical next segment (completed in a7c231d above):** make candidate review screens explicitly read-only after sealing
 while retaining all originals/history/source assessment, and verify a finalized
 ledger row's correction/source/receipt round trip. Backend already refuses review
 writes after seal, but the old form still offers controls that lead to that409.
