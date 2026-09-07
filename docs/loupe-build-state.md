@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `b67e365`, “Use authoritative ledger readings
-  in main documentary Transactions view”. A state commit follows;
+- **Latest implementation commit:** `5cc894e`, “Summarize exact ledger
+  counterparty labels with scoped source references”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,30 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Counterparty-label summary backend — 7 September 2026
+
+`5cc894e` adds ledger_counterparties in ledger_summary.py and case:view GET
+ledger-counterparties. Same bounded captured-readings eligibility, exact integer
+currency totals, transaction/source IDs; excluded rows never enter groups. Verbatim
+labels: null/blank/case/whitespace differences distinct; no inferred identity,
+sender/beneficiary or transfer match. Removes internal readings from API response.
+Oversized scope unavailable without partial counts/groups.38 summary/package tests
+passed after replacing an invalid direct quarantine fixture update with the real
+writer; additional route scope/error test passed. Live synthetic HTTP case10,
+account4, empty0 with summary parity and missing-label/source refs verified.
+Report data/local-runtime/ledger-counterparties-check.json; script
+check_local_ledger_counterparties.py. Backend exec18309, log
+/tmp/loupe-neilbyrne-counterparty-server.out. No real evidence or synthetic ledger
+writes in live check. Counterparties UI still legacy until next segment.
+
+**Next segment:** connect LedgerCounterpartiesPanel to this endpoint with shared
+financial-ledger cache prefix, applied account/date filters and scope validation;
+validate exact group totals against response summary, page groups and contributing
+source links. Null/blank source labels explicitly distinct. Mount in documentary
+Counterparties independently of graph loading, retain explicit intelligence switch.
+Do not claim identity/transfer matching. Reserve11:45UTC for final handoff;
+schedule ACTIVE until13:00Dublin. None of ten full features newly complete.
 
 ### Main documentary Transactions migration — 7 September 2026
 

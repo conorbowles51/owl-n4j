@@ -80,6 +80,7 @@ feature below is complete at the start of this window.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
 5. **Make every financial view use the authoritative ledger — partial**
+   - [x] Backend/API exact counterparty source-label totals share ledger eligibility, separate currencies and retain contributing transaction/source references (5cc894e).38 summary/package tests, route test and live HTTP parity pass. UI integration remains; no identity/transfer matching claimed.
    - [x] Main documentary Transactions uses current ledger readings, filters, exact summary and source/correction/decision controls independently of graph loading (b67e365).31 page tests and live bigint/decision-dialog check pass. Counterparties migration remains.
    - [x] Exact daily/monthly ledger totals display with paged contributing-reading source links and reconciliation to the summary (8582179). Legacy graph Trends remains separate.
    - [x] Daily/monthly exact ledger posting totals share summary eligibility and retain contributing transaction/source IDs (d40474a). Time-series display and legacy graph migration remain.
@@ -420,3 +421,6 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
 - Main Transactions checkpoint (b67e365):31 page tests, TypeScript/scoped ESLint,
   exact bigint/negative-balance browser check and decision dialog open/cancel pass.
   Feature5 remains partial; documentary Counterparties is the next migration.
+
+- Counterparty-label backend checkpoint (5cc894e):38 tests plus route scope/errors
+  and live case/account/empty summary parity pass. Main Counterparties UI remains.
