@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import event, func, select, update
 
 from postgres.base import Base
-from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview
+from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview, FinancialCandidateFinalization
 from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping, store_pdf_candidates
 from services.financial.decisions import Actor
 from services.financial.pdf_candidates import pdf_mapping_source_revision
@@ -18,7 +18,7 @@ class CandidateStoreTests(unittest.TestCase):
 
     def setUp(self):
         grid_fixture.GridBindingTests.setUp(self)
-        Base.metadata.create_all(self.engine, tables=[FinancialCandidateMapping.__table__, FinancialExtractionCandidate.__table__, FinancialCandidateReview.__table__])
+        Base.metadata.create_all(self.engine, tables=[FinancialCandidateMapping.__table__, FinancialExtractionCandidate.__table__, FinancialCandidateReview.__table__, FinancialCandidateFinalization.__table__])
         self.mapping["schema_version"] = "pdf-grid-mapping-v1"
         self.actor = Actor(name="Synthetic investigator", email="synthetic@example.test")
 
@@ -58,6 +58,22 @@ class CandidateStoreTests(unittest.TestCase):
         self.assertEqual(first["id"], second["id"])
         self.assertEqual(first["candidates"], second["candidates"])
         self.assertEqual(first["actor"], second["actor"])
+        self.assertEqual(self.counts(), (1, 2))
+
+    def test_finalized_file_allows_identical_retry_but_refuses_new_mapping(self):
+        first = self.save()
+        # This binder fixture has no ledger tables. A sealed-file marker is
+        # sufficient to exercise the service guard; real FK/scope checks have
+        # a separate PostgreSQL finalization fixture.
+        self.db.add(FinancialCandidateFinalization(case_id=self.case,
+            evidence_file_id=self.file, source_document_id=uuid4(), ingestion_run_id=uuid4(),
+            source_sha256="a" * 64, snapshot_sha256="b" * 64, snapshot={}, actor={},
+            reason="Synthetic seal", transaction_count=1))
+        self.db.commit()
+        self.assertEqual(self.save()["id"], first["id"])
+        self.mapping["columns"][1]["meaning"] = "balance"
+        with self.assertRaisesRegex(CandidateStoreError, "finalized"):
+            self.save()
         self.assertEqual(self.counts(), (1, 2))
 
     def test_stale_retry_refused_without_overwriting_originals(self):

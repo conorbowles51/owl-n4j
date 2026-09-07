@@ -10,7 +10,7 @@ from copy import deepcopy
 from sqlalchemy import or_, select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
-from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview
+from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview, FinancialCandidateFinalization
 from postgres.models.financial import FinancialAccount
 from services.financial.decisions import Actor
 from services.financial.pdf_candidates import PdfMappingError, PdfMappingProposal, _digest, bind_pdf_mapping
@@ -121,6 +121,10 @@ def store_pdf_candidates(session, *, case_id, proposal, actor):
                 raise CandidateStoreError("Existing candidate originals do not match the source binding.")
             session.commit()
             return {**result, "created": False}
+        if session.scalar(select(FinancialCandidateFinalization.id).where(
+                FinancialCandidateFinalization.case_id == case_id,
+                FinancialCandidateFinalization.evidence_file_id == file_id)) is not None:
+            raise CandidateStoreError("This PDF reading is finalized. Use ledger correction history.")
         mapping = FinancialCandidateMapping(case_id=case_id, evidence_file_id=file_id,
             mapping_revision=bound.mapping_revision, snapshot=original, snapshot_sha256=_digest(original),
             candidate_count=len(candidates), actor=dict(name=actor.name, email=actor.email,

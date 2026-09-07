@@ -345,3 +345,36 @@ whole-file finalization. Require all saved candidates to be resolved or rejected
 exclude rejected readings without deleting their history, and refuse unresolved
 source reuse before writing. Repeated content requires document-wide occurrence
 indexing; reviews after finalization must use existing ledger correction history.
+
+
+## Immutable finalization storage — 7 September 2026
+
+`FinancialCandidateFinalization` seals one candidate batch per case/file and
+links its source document/run, byte digest, manifest digest, actor/reason and
+transaction count. `FinancialCandidateTransaction` retains each candidate's exact
+resolved review and original ledger transaction, plus a stable source-claim digest.
+Unique constraints cover file finalization, source document, candidate, transaction
+and source claim within the sealed file. UPDATE guards preserve both records;
+existing case/file/source deletion cascades remain consistent with repository policy.
+
+PostgreSQL validates case/file/document/run/digest/reading-method/shape consistency
+on finalization, and candidate/latest-resolved-review/transaction scope on linking.
+File locks serialize seals with direct mapping, candidate and review insertions;
+new insertions after sealing are refused. The service review guard gives a plain
+409 directing users to ledger corrections. Mapping creation permits an identical
+pre-existing retry but refuses a new mapping after the seal. Original links remain
+attached to their original transaction when that transaction's ledger state changes.
+
+Migration `20260907_candidate_finalizations` is applied only to the isolated local
+database. The local verification script exercises scope, duplicate, update and
+post-seal guards plus protected downgrade with every synthetic row rolled back.
+This is storage infrastructure, not a materialization writer: manifest integrity,
+complete candidate review coverage, overlap checks, source-claim derivation and
+atomic transaction creation remain the writer's next responsibility. Do not expose
+a public finalize route until those checks and concurrent retry tests pass.
+
+Whole-file sealing deliberately refuses later additions. A future whole-reading
+replacement workflow would be needed to add omitted rows after finalization; never
+work around it with another mapping or a second source-document batch. Current
+limits remain explicit (up to 1,000 transactions); selecting fewer rows must never
+be described as complete extraction of a larger PDF.

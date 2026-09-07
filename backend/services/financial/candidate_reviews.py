@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
 from postgres.models.financial import FinancialAccount
-from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialCandidateReview, FinancialExtractionCandidate
+from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialCandidateReview, FinancialExtractionCandidate, FinancialCandidateFinalization
 from services.financial.candidate_store import CandidateStoreError
 from services.financial.decisions import Actor
 from services.financial.money import MoneyError, get_currency
@@ -109,6 +109,10 @@ def review_candidate(session, *, case_id, candidate_id, request, actor):
             EvidenceFile.case_id == case_id).with_for_update())
         if file_id is None:
             raise CandidateStoreError("Candidate source not found in this case.", 404)
+        if session.scalar(select(FinancialCandidateFinalization.id).where(
+                FinancialCandidateFinalization.case_id == case_id,
+                FinancialCandidateFinalization.evidence_file_id == file_id)) is not None:
+            raise CandidateStoreError("This PDF reading is finalized. Use ledger correction history.")
         if session.scalar(select(EvidenceDocumentText.evidence_file_id).where(
                 EvidenceDocumentText.evidence_file_id == file_id).with_for_update()) is None:
             raise CandidateStoreError("Candidate source text is missing.", 404)
