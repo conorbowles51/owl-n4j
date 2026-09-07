@@ -44,3 +44,23 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         self.add();self.add()
         with patch('services.financial.ledger_summary.MAX_SUMMARY_ROWS',1):
             with self.assertRaises(LedgerSummaryError):self.capture()
+
+    def test_history_retains_actor_and_reason_and_is_case_scoped(self):
+        from services.financial.quarantine_row import quarantine_case_row
+        from services.financial.ledger_snapshot import _capture_history
+        row,_=self.add()
+        quarantine_case_row(self.db,case_id=self.case.id,transaction_id=row.id,actor=self.user,reason='Snapshot history test')
+        document=json.loads(self.capture().content)
+        result=_capture_history(self.db,document,case_id=self.case.id)
+        self.assertTrue(result['ledger']['history_captured'])
+        self.assertEqual(len(result['decisions']),1)
+        self.assertEqual(result['decisions'][0]['reason'],'Investigator: Snapshot history test')
+        self.assertEqual(result['decisions'][0]['actor_email'],self.user.email)
+        self.assertEqual(result['decisions'][0]['subject_id'],str(row.id))
+        self.assertEqual(_capture_history(self.db,json.loads(self.capture().content),case_id=self.other_case.id)['decisions'],[])
+        with patch('services.financial.ledger_snapshot.MAX_EXPORT_DECISIONS',0):
+            with self.assertRaises(LedgerSummaryError):_capture_history(self.db,document,case_id=self.case.id)
+
+    def test_live_export_refuses_non_postgres_connections(self):
+        from services.financial.ledger_snapshot import capture_ledger_export
+        with self.assertRaises(LedgerSummaryError):capture_ledger_export(self.db.get_bind(),case_id=self.case.id)

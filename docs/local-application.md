@@ -497,3 +497,28 @@ Source hashes are recorded ingestion hashes, not reverified file bytes.
 This service is not exposed as a downloadable export: its content explicitly says
 export_ready=false and history_captured=false. Decision-history capture under a
 consistent database snapshot, export manifest and UI remain required next.
+
+## Consistent ledger export service
+
+`capture_ledger_export` owns a fresh PostgreSQL REPEATABLE READ, READ ONLY
+transaction for rows/totals and relevant decision history. It refuses a reused
+connection or non-PostgreSQL engine. History includes captured transaction,
+source-document, statement-period and evidence-file subjects within the same case;
+actor/reason/before/after and per-subject sequence are preserved. It is not all case
+history, and structured candidate-review history is not embedded (provenance and
+finalization references remain). Recorded source hashes are not fresh byte checks.
+
+Content schema2 is deterministic; the separate manifest identifies its exact UTF-8
+JSON digest, byte count, generation time and code version. More than10,000 decisions
+or16 MiB serialized content refuses the export rather than truncating it. HTTP/UI
+download is not connected yet.
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_ledger_export.py
+```
+
+This synthetic PostgreSQL test excludes a row on another connection between the
+export's two reads, verifies the original snapshot remains unchanged, observes the
+new decision in a later export, and restores the row in finally. Two synthetic audit
+events remain. It verifies digest/byte count and oversize refusal. Report:
+`data/local-runtime/ledger-export-check.json`.
