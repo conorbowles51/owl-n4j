@@ -201,7 +201,7 @@ export function NodeDetailSheet({
 
     return (
       <>
-        <div className="flex h-full flex-col border-l border-border bg-card">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden border-l border-border bg-card">
           <MultiNodePanel
             nodes={selectedNodes}
             onMerge={selectedNodeKeys.size >= 2 ? onMergeSelected : undefined}
