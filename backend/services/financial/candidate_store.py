@@ -42,11 +42,15 @@ def list_candidate_accounts(session, *, case_id, search="", limit=100):
     query = select(FinancialAccount).where(FinancialAccount.case_id == case_id)
     if search.strip():
         query = query.where(or_(*(field.icontains(search.strip(), autoescape=True) for field in (
-            FinancialAccount.identifier_as_printed, FinancialAccount.holder_name, FinancialAccount.institution_name))))
+            FinancialAccount.identifier_as_printed, FinancialAccount.holder_name, FinancialAccount.institution_name,
+            FinancialAccount.metadata_["display_label"].as_string()))))
     rows = list(session.scalars(query.order_by(FinancialAccount.id).limit(limit+1)))
     return dict(case_id=str(case_id), has_more=len(rows)>limit,
         items=[dict(id=str(row.id), identifier=row.identifier_as_printed, holder=row.holder_name,
-                    institution=row.institution_name, currency=row.currency) for row in rows[:limit]])
+                    institution=row.institution_name, currency=row.currency,
+                    display_label=(row.metadata_ or {}).get("display_label"),
+                    source_file_id=(row.metadata_ or {}).get("candidate_account_source_file_id"),
+                    provisional=bool((row.metadata_ or {}).get("identity_provisional"))) for row in rows[:limit]])
 
 
 def read_candidate_mapping(session, *, case_id, mapping_id):

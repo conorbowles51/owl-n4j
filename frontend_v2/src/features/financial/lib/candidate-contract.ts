@@ -101,6 +101,9 @@ export const candidateAccounts = z.object({
       holder: z.string().nullable(),
       institution: z.string().nullable(),
       currency: z.string().nullable(),
+      display_label: z.string().nullable().optional(),
+      provisional: z.boolean().optional(),
+      source_file_id: z.string().nullable().optional(),
     })
   ),
 })

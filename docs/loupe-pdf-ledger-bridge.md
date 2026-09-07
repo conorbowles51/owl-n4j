@@ -218,3 +218,21 @@ row under the same mapping ID. All 153 extracted tables in the two user-provided
 PDFs passed a read-only source/binding contract check. Their 7,529 source rows are
 not claimed to be transactions. Account setup, extraction initiation and atomic
 materialization remain; this adds a UI for already-stored PDF table extraction.
+
+
+## Provisional account setup — 7 September 2026
+
+Candidate review can create an explicitly provisional account through a case:edit
+endpoint. `AccountDraft.unidentified` and `record_account` retain the existing
+identity rules; the distinguisher includes source file, currency and the explicit
+label. No printed identifier or holder is invented. An ingestion run records actor,
+request/reason and outcome, and first-seen provenance survives retries. The source
+file/text/geometry are locked and rebound before creation, and stale review context
+is refused. Concurrent same-label creators serialize on the source file and reuse
+one account. Candidate review refuses a document-scoped account from another PDF.
+
+The UI marks these accounts provisional, records a reason, checks the returned
+case/source/currency, selects a newly created account and blocks uncertain retries
+until review reload. This makes a new-source review possible without guessing
+identity. Known-account establishment/merge and atomic ledger materialization still
+remain; provisional setup changes neither the reading nor classification/totals.

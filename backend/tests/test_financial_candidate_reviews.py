@@ -214,6 +214,15 @@ class CandidateReviewTests(unittest.TestCase):
                 list_candidate_accounts(self.fixture.db, case_id=self.fixture.case, **params)
 
 
+
+    def test_document_scoped_provisional_account_cannot_be_reused_for_another_pdf(self):
+        self.account.metadata_ = {"candidate_account_source_file_id": str(uuid4())}
+        self.fixture.db.commit()
+        with self.assertRaises(CandidateStoreError) as caught:
+            self.review(status="resolved", reading=self.reading())
+        self.assertEqual(caught.exception.status_code, 422)
+
+
 class CandidateReviewRouterTests(unittest.IsolatedAsyncioTestCase):
     async def test_mapping_creation_uses_authenticated_actor_and_case(self):
         from routers import financial_adjudication as router

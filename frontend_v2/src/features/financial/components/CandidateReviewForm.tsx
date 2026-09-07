@@ -13,6 +13,10 @@ import {
   type CandidateReading,
   type CandidateReview,
 } from "../lib/candidate-contract"
+import {
+  CandidateAccountForm,
+  type CandidateAccount,
+} from "./CandidateAccountForm"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 
 const fieldClass = "block w-full rounded border bg-background p-2 text-sm"
@@ -93,6 +97,9 @@ function ReviewFields({
       : ""
   )
   const [account, setAccount] = useState(previous?.account_id ?? "")
+  const [newAccount, setNewAccount] = useState<CandidateAccount | null>(null)
+  const [accountBusy, setAccountBusy] = useState(false)
+  const accountBusyRef = useRef(false)
   const [direction, setDirection] = useState(previous?.direction ?? "")
   const [bookingDate, setBookingDate] = useState(previous?.booking_date ?? "")
   const [valueDate, setValueDate] = useState(previous?.value_date ?? "")
@@ -180,9 +187,17 @@ function ReviewFields({
     },
   })
   const minor = correctionMinor(amount, currency)
-  const selectedAccount = accounts.data?.items.find(
-    (item) => item.id === account
-  )
+  const accountOptions = (
+    newAccount
+      ? [
+          newAccount,
+          ...(accounts.data?.items ?? []).filter(
+            (item) => item.id !== newAccount.id
+          ),
+        ]
+      : (accounts.data?.items ?? [])
+  ).filter((item) => !item.source_file_id || item.source_file_id === fileId)
+  const selectedAccount = accountOptions.find((item) => item.id === account)
   const ready = Boolean(
     minor !== null &&
     account &&
@@ -197,6 +212,7 @@ function ReviewFields({
   const send = (status: "pending" | "resolved" | "rejected") => {
     if (
       lock.current ||
+      accountBusyRef.current ||
       blocked ||
       !reason.trim() ||
       (status === "resolved" && !ready)
@@ -218,7 +234,7 @@ function ReviewFields({
         : null
     record.mutate({ status, reading })
   }
-  const disabled = record.isPending || blocked
+  const disabled = record.isPending || blocked || accountBusy
   return (
     <div className="space-y-3 text-sm">
       <p>
@@ -277,9 +293,16 @@ function ReviewFields({
             onChange={(e) => setAccount(e.target.value)}
           >
             <option value="">Choose an account</option>
-            {accounts.data?.items.map((item) => (
+            {accountOptions.map((item) => (
               <option key={item.id} value={item.id}>
-                {[item.holder, item.institution, item.identifier, item.currency]
+                {[
+                  item.display_label,
+                  item.provisional ? "Provisional" : null,
+                  item.holder,
+                  item.institution,
+                  item.identifier,
+                  item.currency,
+                ]
                   .filter(Boolean)
                   .join(" · ") || `Account ${item.id}`}
               </option>
@@ -346,6 +369,22 @@ function ReviewFields({
           />
         </label>
       </fieldset>
+      <CandidateAccountForm
+        caseId={caseId}
+        candidateId={review.candidate_id}
+        fileId={fileId}
+        reviewRevision={review.review_revision}
+        currency={currency}
+        disabled={record.isPending || blocked}
+        onBusy={(busy) => {
+          accountBusyRef.current = busy
+          setAccountBusy(busy)
+        }}
+        onCreated={(created) => {
+          setNewAccount(created)
+          setAccount(created.id)
+        }}
+      />
       {accounts.isError && (
         <p role="alert">
           Accounts could not be loaded. {accounts.error.message}

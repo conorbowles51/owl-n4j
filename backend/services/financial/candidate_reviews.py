@@ -134,6 +134,9 @@ def review_candidate(session, *, case_id, candidate_id, request, actor):
                 FinancialAccount.case_id == case_id).with_for_update().execution_options(populate_existing=True))
             if account is None or (account.currency is not None and account.currency != request.reading.currency):
                 raise CandidateStoreError("Reviewed account is missing from this case or uses a different currency.", 422)
+            provisional_source = (account.metadata_ or {}).get("candidate_account_source_file_id")
+            if provisional_source is not None and provisional_source != str(file_id):
+                raise CandidateStoreError("This provisional account belongs to a different source PDF.", 422)
         event = FinancialCandidateReview(candidate_id=candidate.id, sequence=len(state["history"])+1,
             status=request.status, reason=request.reason, reading=reading,
             original_sha256=candidate.snapshot_sha256, previous_revision=state["review_revision"],

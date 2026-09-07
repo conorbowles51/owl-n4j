@@ -901,6 +901,7 @@ from services.financial.version import (
 )
 
 __all__ = [
+    "CandidateAccountRequest", "create_candidate_account",
     "list_candidate_sources", "read_candidate_source",
     "CandidateResolvedReading", "CandidateReviewRequest", "read_candidate_review", "review_candidate",
     "assess_candidate_amounts", "current_candidate_original",
@@ -1851,3 +1852,5 @@ __all__ = [
 ]
 
 from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
+
+from services.financial.candidate_accounts import CandidateAccountRequest, create_candidate_account

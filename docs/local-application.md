@@ -182,3 +182,23 @@ rows with unknown meanings and writes only aggregate diagnostics under
 or constitute real-document ingestion acceptance. Real PDFs and generated page
 images stay outside Git. Both supplied files passed: 153 tables/7,529 source rows
 across 164 pages, including 11 verified blank pages.
+
+
+A candidate review can now create a **provisional account** when no identified
+account is available. Supply currency, a descriptive label and a reason. The label
+is investigator context, not a printed identifier or holder name. Its identity
+stays separate by source file/currency/label; another source cannot use it. Known
+account identification/merging remains separate work. Creation records an ingestion
+run and does not resolve the candidate or admit money. Repeatable local checks:
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_candidate_accounts.py
+node scripts/check_local_candidate_account_ui.cjs
+```
+
+Both use the synthetic case IDs from `candidate-check.json`. The first proves two
+creators waiting on a PostgreSQL lock produce one account, checks authenticated
+retry and unchanged review/totals, and writes `candidate-account-check.json`. The
+second creates/selects an account through the browser and resolves a synthetic
+12.34 GBP reading; its source stays unchanged and no transaction enters totals.
+Screenshot: `/tmp/loupe-neilbyrne-provisional-account-ui.png`.

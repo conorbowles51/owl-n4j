@@ -39,13 +39,14 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from services.financial.duplicate_decisions import DuplicateDecisionError, decide_duplicate
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
 from services.financial.corrections import correct_transaction
 from services.financial.quarantine_row import actor_from_user, ActorError
+from services.financial.candidate_accounts import CandidateAccountRequest, create_candidate_account
 from services.financial.candidate_reviews import CandidateReviewRequest, review_candidate
 from services.financial.candidate_store import CandidateStoreError, store_pdf_candidates
 from services.financial.pdf_candidates import PdfMappingProposal
@@ -353,3 +354,19 @@ async def record_duplicate_decision(
     except Exception:
         logger.exception("Duplicate decision failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="The decision could not be confirmed. Refresh before trying again.")
+
+
+@router.post("/candidates/{candidate_id}/provisional-account")
+async def record_candidate_account(candidate_id: UUID, body: CandidateAccountRequest,
+                                   case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
+                                   db: Session = Depends(get_db)):
+    try:
+        return create_candidate_account(session_factory=sessionmaker(bind=db.get_bind()),
+            case_id=case_id, candidate_id=candidate_id, request=body, actor=actor_from_user(current_user))
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ActorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Provisional candidate account failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Account creation could not be confirmed. Reload accounts before retrying.")
