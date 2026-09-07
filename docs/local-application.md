@@ -677,3 +677,18 @@ events are added. The ZIP check verifies9→10included rows, unchanged original4
 Latest run passed, with5decisions while excluded and6after restoration. Report:
 `data/local-runtime/cross-view-exclusion-check.json`. This verifies exclusion across
 the migrated views, not every correction or legacy graph consumer.
+
+## Export directly from Ledger or Transactions
+
+Both Ledger and documentary Transactions now show the shared export button beside
+their applied filters/summary. The button receives that exact scope and resets on
+case change. It is absent from Held out because the export includes all scoped
+readings with their eligibility, not only held-out rows.
+
+```sh
+node scripts/check_local_primary_ledger_export_ui.cjs
+```
+
+Primary Transactions download verified:10restored readings,6decisions, matching
+snapshot/report hashes. Report: `data/local-runtime/primary-ledger-export-check.json`.
+44targeted primary-ledger/export/page tests, TypeScript and scoped ESLint passed.
