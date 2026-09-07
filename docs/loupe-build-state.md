@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `9ddfe63`, “Add deliberate PDF row and column
-  selection for pending candidate review”. A state commit follows;
+- **Latest implementation commit:** `dd7fc5b`, “Add source-scoped provisional
+  accounts for PDF candidate review”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,37 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Provisional candidate account setup completed — 7 September 2026 overnight
+
+`dd7fc5b` lets a reviewer explicitly set up a provisional account using currency,
+a descriptive label and a reason. It reuses AccountDraft.unidentified/record_account
+and records the actor, request/reason and outcome in an ingestion run. The label is
+not a printed identifier or holder name. Identity is scoped to source file, currency
+and label. Source locks/rebinding and expected review revision precede the write;
+same-label concurrent creators reuse one account and first-seen run is preserved.
+A candidate cannot use this document-scoped account from another PDF. Known-account
+identification/merging remains separate. Account creation does not change a candidate
+review, proof classification or ledger totals; UI selection still requires review.
+
+**Verified:** 3,676 financial tests (zero skips), 917 unit tests, 11 Chromium tests,
+TypeScript/full ESLint pass. Added nine account-service tests, one cross-source
+review guard test and five account UI tests. Real PostgreSQL contention observed
+two waiting creators and one account; authenticated retry returns that account,
+stale review returns409, review stays unchanged and zero transactions exist.
+A real browser then created/selected a provisional account and resolved a synthetic
+12.34 GBP reading with applied:false. Logs `/tmp/loupe-neilbyrne-accounts-*.out`
+and `/tmp/loupe-neilbyrne-account-ui-live.out`; screenshot
+`/tmp/loupe-neilbyrne-provisional-account-ui.png`. Repeatable scripts:
+`scripts/check_local_candidate_accounts.py`, `scripts/check_local_candidate_account_ui.cjs`.
+Backend log now `/tmp/loupe-neilbyrne-account-ui-backend.out`.
+
+**Next:** atomic materialization of resolved candidates with source-row identity
+across mapping revisions, immutable links, review-after-materialization rules,
+computed classification and existing reconciliation. Read docs/loupe-pdf-ledger-bridge.md
+before writes. Still missing: automatic PDF nomination/extraction integration,
+known-account establishment/merge, statement controls, projection and the remaining
+ten-feature checklist. Do not equate resolved candidates with admitted transactions.
 
 ### Stored-PDF row selection completed — 7 September 2026 overnight
 

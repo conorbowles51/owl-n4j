@@ -37,6 +37,8 @@ feature below is complete at the start of this window.
 
    - [x] Saved-reading UI: bounded batch/row lists, account search, original amount assessment with source image, exact review form and immutable history (ee6edb4). Creation API retries preserve original IDs.
 
+   - [x] Provisional account setup: explicit document/currency-scoped label and reason, audit run, same-account retry protection and a guard against use from another PDF (dd7fc5b). Known-account identity/merge remains separate.
+
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
@@ -123,6 +125,11 @@ feature below is complete at the start of this window.
   Local UI save/retry preserves one pending row under the same mapping ID.
   Read-only real-PDF checks passed 153 tables/7,529 source rows; these are not
   transaction counts. Next: account setup and materialization/revalidation.
+
+- 7 September, overnight: **dd7fc5b** adds provisional account setup under feature2.
+  3,676 financial tests, 917 unit tests, 11 Chromium tests and TS/lint pass.
+  Two real PostgreSQL lock waiters produced one account; browser account setup
+  and candidate resolution passed without ledger admission. Next: materialization.
 
 ## Morning handoff
 
