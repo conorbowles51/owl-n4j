@@ -18,7 +18,9 @@ class LedgerSummaryError(ValueError):
     pass
 
 
-def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping=None):
+def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping=None, capture_readings=False):
+    if type(capture_readings) is not bool:
+        raise LedgerSummaryError("Reading capture must be explicit.")
     if grouping not in (None, "daily", "monthly"):
         raise LedgerSummaryError("Choose daily or monthly ledger grouping.")
     for value in (start_date, end_date):
@@ -43,6 +45,9 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         available=False, reason=None, considered_rows=None, included_rows=None, excluded_rows=None,
         exclusions=None, currencies=[], applied=False,
         limitation="Current ledger account postings only, with admitted source documents and included row/source proof classes. Currency totals are separate. Internal transfers are not matched or netted; net postings are not an account balance. Missing evidence and incomplete extraction are not measured by these totals.")
+    if capture_readings:
+        result['readings'] = []
+        result['history_captured'] = False
     if grouping is not None:
         result.update(grouping=grouping, date_basis="ordering_date", points=[])
     if len(pairs) > MAX_SUMMARY_ROWS:
@@ -61,6 +66,17 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
             row_class, source_class = ProofClass(row.proof_class), ProofClass(document.proof_class)
         except ValueError as exc:
             raise LedgerSummaryError("Stored classification or disposition is unrecognized.") from exc
+        if capture_readings:
+            from services.financial.transaction_query import to_view
+            from copy import deepcopy
+            reason = (status.value if status.value != 'admitted' else
+                'source_not_admitted' if source_status.value != 'admitted' else
+                'proof_class_not_included' if not counts_toward_totals(row_class) or not counts_toward_totals(source_class) else None)
+            result['readings'].append(dict(row=to_view(row).to_json(), included=reason is None,
+                exclusion_reason=reason, provenance=deepcopy(row.provenance),
+                source=dict(id=str(document.id), evidence_file_id=str(document.evidence_file_id) if document.evidence_file_id else None,
+                    sha256_at_ingestion=document.sha256_at_ingestion, proof_class=source_class.value,
+                    status=source_status.value, parser_name=document.parser_name, parser_version=document.parser_version)))
         if status.value == 'admitted' and row.superseded_by_id is not None:
             raise LedgerSummaryError("An admitted row references a replacement; summary unavailable.")
         if status.value != 'admitted':

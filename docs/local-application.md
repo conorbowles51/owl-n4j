@@ -484,3 +484,16 @@ when empty. Graph Transactions and Counterparties are not yet migrated.
 
 `check_local_trends_panel_ui.cjs` now enters the top-level Trends tab to verify
 this workflow against the existing synthetic fixture.
+
+## Internal ledger snapshot foundation
+
+`capture_ledger_snapshot` captures source metadata, exact ledger readings,
+exclusion reasons and totals from one bounded eligibility SELECT. It serializes
+canonical UTF-8 JSON into an immutable value with SHA-256 and byte count. No clock
+value is inserted into the content, so unchanged inputs produce unchanged bytes.
+Original provenance and superseded/rejected/held-out readings within scope remain.
+Source hashes are recorded ingestion hashes, not reverified file bytes.
+
+This service is not exposed as a downloadable export: its content explicitly says
+export_ready=false and history_captured=false. Decision-history capture under a
+consistent database snapshot, export manifest and UI remain required next.
