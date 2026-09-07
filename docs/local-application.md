@@ -120,5 +120,6 @@ are held at a PostgreSQL source-row lock before release; exactly one mapping and
 two pending originals survive, and neither enters the ledger. Direct SQL attempts
 to UPDATE either original table are refused by database triggers. The script uses
 only the isolated local database and records IDs in
-`data/local-runtime/candidate-check.json`. Candidate review/HTTP/UI is not exposed
+`data/local-runtime/candidate-check.json`. The script also verifies authenticated mapping reads and original amount
+assessment through the local backend. Candidate creation/review UI is not exposed
 yet. The migration refuses downgrade while saved originals exist.

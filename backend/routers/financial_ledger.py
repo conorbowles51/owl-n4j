@@ -36,6 +36,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
 from services.financial.ledger_source import LedgerSourceError, ledger_source
+from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping
+from services.financial.candidate_assessment import assess_candidate_amounts
 
 from postgres.models.enums import (
     AdjudicationDecision,
@@ -84,6 +86,34 @@ router = APIRouter(
         Depends(_require_ledger_case_access),
     ],
 )
+
+
+class CandidateAmountAssessmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    currency: str = Field(pattern=r"^[A-Z]{3}$", strict=True)
+
+
+@router.get("/candidate-mappings/{mapping_id}")
+async def get_candidate_mapping(mapping_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return read_candidate_mapping(db, case_id=case_id, mapping_id=mapping_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate mapping lookup failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Candidate mapping could not be read.")
+
+
+@router.post("/candidates/{candidate_id}/amount-assessment")
+async def assess_saved_candidate(candidate_id: UUID, body: CandidateAmountAssessmentRequest,
+                                 case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return assess_candidate_amounts(db, case_id=case_id, candidate_id=candidate_id, currency=body.currency)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate amount assessment failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Candidate amount assessment could not be completed.")
 
 
 @router.get("/ledger/{transaction_id}/source")

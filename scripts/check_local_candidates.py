@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import httpx
 from sqlalchemy import create_engine, func, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
@@ -112,9 +113,26 @@ def main():
             assert "Extraction originals are immutable" in str(exc.orig)
         else:
             raise AssertionError("PostgreSQL allowed an original snapshot to change.")
+    with httpx.Client(base_url="http://127.0.0.1:58002", timeout=30) as client:
+        response = client.post("/api/auth/login", json={"username": "loupe-local@example.com", "password": "Loupe-local-test-2026"})
+        response.raise_for_status()
+        client.headers["Authorization"] = "Bearer " + response.json()["access_token"]
+        response = client.get(f"/api/financial/candidate-mappings/{mapping_id}", params={"case_id": str(case_id)})
+        response.raise_for_status()
+        assert len(response.json()["candidates"]) == 2
+        candidate_id = loaded["candidates"][0]["id"]
+        url = f"/api/financial/candidates/{candidate_id}/amount-assessment"
+        response = client.post(url, params={"case_id": str(case_id)}, json={"currency": "GBP"})
+        response.raise_for_status()
+        assessment = response.json()
+        assert assessment["amount_cells"][0]["assessment"]["minor_units"] == "123400"
+        assert assessment["status"] == "pending" and assessment["applied"] is False
+        assert assessment["amount_cells"][0]["source"]["locator"]["rect"][1] == 50000
+        assert client.post(url, params={"case_id": str(case_id)}, json={"currency": "GBP", "raw": "0"}).status_code == 422
+        assert client.post(url, params={"case_id": str(case_id)}, json={"currency": "XYZ"}).status_code == 422
     summary = dict(case_id=str(case_id), mapping_id=str(mapping_id), competing_writers=2,
         observed_lock_waiters=waiting, mappings=1, candidates=2, ledger_transactions=0,
-        immutable_update_triggers="passed")
+        immutable_update_triggers="passed", authenticated_http_assessment="passed")
     (ROOT / "data/local-runtime/candidate-check.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
     engine.dispose()

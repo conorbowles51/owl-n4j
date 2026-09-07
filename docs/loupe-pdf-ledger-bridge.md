@@ -142,3 +142,19 @@ intact. New mapping snapshots are not deduplicated across revisions or overlappi
 regions; materialization must enforce that later. The service requires an
 authorized case and actor from its eventual route, and a dedicated clean session.
 No route/UI or review transition is enabled by this storage segment.
+
+## Saved-candidate assessment and read API — 7 September 2026
+
+`candidate_assessment.py` rebinds saved originals to the current source before
+assessing proposed amount/debit/credit/balance columns. It uses stored text and
+origin, preserves all uncertain alternatives, returns integer monetary values as
+decimal strings and identifies unclassified columns without guessing their role.
+Currency remains caller-supplied context. Numeric certainty does not resolve a
+transaction, and a saved mapping remains pending. The assessment revision covers
+the displayed result and currency; it is not a write permit.
+
+Read-only, case:view endpoints now expose `GET /api/financial/candidate-mappings/
+{mapping_id}` and `POST /api/financial/candidates/{candidate_id}/amount-assessment`
+(the URL is continuous). The assessment body accepts only currency. The local
+synthetic script verifies these through normal login and source rectangles.
+Review records, transitions, creation endpoints and review UI remain next.
