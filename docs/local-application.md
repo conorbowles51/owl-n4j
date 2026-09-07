@@ -692,3 +692,15 @@ node scripts/check_local_primary_ledger_export_ui.cjs
 Primary Transactions download verified:10restored readings,6decisions, matching
 snapshot/report hashes. Report: `data/local-runtime/primary-ledger-export-check.json`.
 44targeted primary-ledger/export/page tests, TypeScript and scoped ESLint passed.
+
+## Read-only handoff check
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_handoff.py
+```
+
+Checks frontend/backend/engine HTTP200, the restored synthetic10-row/2100GBP
+summary, both real PDFs against their original inspection SHA-256 values, and zero
+matching evidence_files in the isolated database. The PostgreSQL transaction is
+read-only. Report: `data/local-runtime/handoff-verification.json`. Passed at
+11:36UTC on7September2026. Health responses do not establish AI provider readiness.

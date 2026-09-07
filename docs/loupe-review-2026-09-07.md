@@ -119,3 +119,8 @@ acceptance and authoritative ledger consumers before connecting transfer matchin
 and tracing. The [running state](loupe-build-state.md) records the exact next step,
 implementation references and current test fixtures. [Local application instructions](local-application.md)
 cover startup and repeatable checks. Changes are committed locally; nothing was pushed or merged to main.
+
+Local readiness checked at **12:36 Dublin time**: frontend, backend and evidence
+engine responded successfully; the synthetic ledger is restored. Both real PDFs
+still match their original hashes, with no matching copies ingested into the
+isolated database. This is a preservation check, not extraction-accuracy acceptance.
