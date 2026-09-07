@@ -36,6 +36,26 @@ completed-item claims and environment recipes in that history are not current.
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
 
+### Authorized scheduled continuation until 6am Dublin — 7 September 2026
+
+Neil explicitly asked to work through the remaining ten-feature list on a schedule
+until **2026-09-07 06:00 Europe/Dublin (05:00 UTC)**, and to mark completed work
+without removing it. The existing heartbeat `continue-loupe-development` has been
+updated through the app tool to ACTIVE every 15 minutes, with this cutoff and the
+current next implementation scope. This supersedes the older paused-window notes.
+
+`docs/loupe-development-checklist.md` preserves all ten numbered features, the
+remaining subitems, and checked existing foundations. Update it after every tested
+segment, keeping completion evidence and distinguishing partial from complete.
+Read the clock before starting segments; reserve the final 15 minutes for the
+morning handoff and pause the automation before the deadline. At or after the
+cutoff, only checkpoint/report/pause; do not start more development.
+
+This scheduling/checklist checkpoint changes no application code. The last passing
+financial baseline remains 3,570 tests. Immediate next work is still verified
+stored table/cell geometry for pending PDF mappings. No automatic promise that all
+ten features will fit inside this window is made.
+
 ### PDF candidate text contract — 7 September 2026
 
 Neil asked whether much development remained, received an explicit account of the
