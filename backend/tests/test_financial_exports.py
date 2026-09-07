@@ -67,6 +67,13 @@ def _public_definitions(path: pathlib.Path) -> list[str]:
 
 
 class PackageSurfaceTests(unittest.TestCase):
+    def test_pdf_candidate_contracts_are_exported(self):
+        for name in ("PdfMappingProposal", "PdfPendingCandidate", "bind_pdf_mapping",
+                     "pdf_mapping_source_revision", "PdfGridMapping", "PdfGridBoundMapping",
+                     "bind_pdf_grid_mapping", "pdf_grid_source_revision"):
+            self.assertIn(name, package.__all__)
+            self.assertTrue(hasattr(package, name))
+
     def test_source_amount_assessment_is_exported(self):
         for name in ("AmountAssessmentError", "assess_source_amount", "read_amount_source_text", "LedgerSourceError", "ledger_source"):
             self.assertIn(name, package.__all__)

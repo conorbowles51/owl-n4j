@@ -98,7 +98,29 @@ rows in canonical text order; column-major/irregular extraction needs an explici
 geometry binding extension, not reordered or guessed offsets. Empty/missing fields
 may be omitted without creating placeholder ledger values.
 
-Next: extend this contract to verified stored table/cell geometry where canonical
-text offsets do not faithfully locate a cell, then implement immutable candidate
-storage and review transitions outside the integer ledger. Automatic mapping,
-amount assessment integration, atomic materialization and projection remain.
+The stored grid adapter below now covers table/cell identity where canonical text
+offsets do not faithfully locate a cell. Immutable candidate storage and review
+transitions outside the integer ledger are next. Automatic mapping, amount
+assessment integration, atomic materialization and projection remain.
+
+## Stored grid adapter — 7 September 2026
+
+`pdf_geometry_candidates.py` adds the alternate `pdf-grid-mapping-v1` contract.
+It binds page/table index/row/column and exact stored cell text without fabricating
+canonical character offsets. A single case-scoped query snapshots file metadata,
+canonical text/provenance and the page's geometry. Text and geometry must share a
+non-null extraction job; historical unbound geometry is refused. The revision
+covers the complete page geometry as well as source metadata and text provenance.
+
+The adapter validates stored locators, page agreement, table containment, page
+size, unique grid coordinates and nonoverlapping cell rectangles. Missing cell
+rectangles remain explicitly unlocated. It preserves drawn versus text-aligned
+table provenance and proposed column meanings. Origin remains unknown unless the
+stored page map establishes it conservatively. Every result is still pending;
+there is no candidate persistence, review endpoint or ledger write yet.
+
+Generated PDF extraction is exercised through the actual table reader into stored
+geometry and back through this binder. Case isolation, drift, malformed geometry,
+repeated amounts, unknown/recognised origins and immutable originals are tested.
+Next implementation is candidate persistence with immutable source/mapping
+snapshots, followed by auditable review transitions and amount assessment.
