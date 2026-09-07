@@ -7,9 +7,9 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation baseline:** `0fe3c69` main Counterparties UI, `ecffd74`
-  test-only lint fix; integrated verification recorded at `09c341c`. State commit
-  follows; confirm real tip with `git log -3 --oneline`.
+- **Latest implementation checkpoint:** `5aff978`, cross-view exclusion/export
+  acceptance scripts. Application baseline remains `0fe3c69` plus `ecffd74`;
+  integrated verification at `09c341c`. State commit follows.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
   to complete the admission control and the case-wide proof-class display,
@@ -45,6 +45,29 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Cross-view exclusion/export acceptance — 7 September 2026
+
+`5aff978` adds browser check_local_cross_view_exclusion.cjs and independent ZIP
+verify_local_cross_view_exports.py. Fixed synthetic coverage case only; exact UUID
+18ab50c4-1f32-4274-add9-3d1afecd9886/400GBP was excluded through main Transactions.
+Transactions, Counterparties and Trends all changed2100→1700GBP; saved excluded
+ZIP. Finally restored exact row through release API; Transactions returned2100,
+saved restored ZIP. Independent bytes/hash/case/original-reading checks passed:
+9→10included rows,1700→2100GBP,5→6decisions. Both decisions retained. First script
+attempt stopped before mutation because ref_id was not table text; selector fixed
+to existing data-row-key UUID before successful run. No real evidence changes.
+Live fixture now has6decisions (was4); all10rows admitted/restored. Report
+ data/local-runtime/cross-view-exclusion-check.json. Backend still exec18309.
+Existing full integration baseline reused, no application code changed.
+
+**Next segment:** expose the already-tested LedgerExportButton alongside applied
+filters/summary in CorrectableLedger, so both primary Ledger and documentary
+Transactions can download their own scope without navigating away. Held-out tab
+should not imply a held-out-only export. Targeted scope/page checks and read-only
+browser download suffice; do not rerun full suites. Then prepare final local demo
+and retained ten-feature status report. Reserve11:45UTC for final handoff;
+schedule remains ACTIVE until13:00Dublin.
 
 ### Integrated verification baseline — 7 September 2026, 11:03 UTC
 

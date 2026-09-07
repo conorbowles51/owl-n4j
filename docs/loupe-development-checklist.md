@@ -80,6 +80,7 @@ feature below is complete at the start of this window.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
 5. **Make every financial view use the authoritative ledger — partial**
+   - [x] Live exclusion acceptance across Transactions, Counterparties, Trends and export (5aff978): synthetic400GBP excluded, all totals2100→1700, restored with originals/history retained and export hashes verified. Broader correction/legacy graph propagation remains.
    - [x] Main documentary Counterparties displays ledger label groups with exact reconciled totals, scoped filters, paged source links and decision refresh (0fe3c69).35page/14panel tests and live source-dialog check pass; equal labels do not prove identity or transfers.
    - [x] Backend/API exact counterparty source-label totals share ledger eligibility, separate currencies and retain contributing transaction/source references (5cc894e).38 summary/package tests, route test and live HTTP parity pass. UI integration remains; no identity/transfer matching claimed.
    - [x] Main documentary Transactions uses current ledger readings, filters, exact summary and source/correction/decision controls independently of graph loading (b67e365).31 page tests and live bigint/decision-dialog check pass. Counterparties migration remains.
@@ -435,3 +436,7 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
 - Integrated verification checkpoint (09c341c):all3,827backend/1,032unit/11browser
   tests passed, plus TypeScript/full ESLint. No regressions to fix. Existing probe
   test included but untouched. No full-feature completion is implied.
+
+- Cross-view acceptance (5aff978): browser exclusion updates all three migrated
+  views; exact restored snapshot, preserved original and both audit decisions
+  verified. Synthetic fixture restored; now6decisions. No real evidence changes.
