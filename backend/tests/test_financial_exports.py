@@ -68,7 +68,7 @@ def _public_definitions(path: pathlib.Path) -> list[str]:
 
 class PackageSurfaceTests(unittest.TestCase):
     def test_pdf_candidate_contracts_are_exported(self):
-        for name in ("check_candidate_source_reuse", "CandidateAccountRequest", "create_candidate_account", "CandidateResolvedReading", "CandidateReviewRequest", "read_candidate_review", "review_candidate", "assess_candidate_amounts", "current_candidate_original", "CandidateStoreError", "store_pdf_candidates", "read_candidate_mapping", "list_candidate_mappings", "list_candidate_accounts", "list_candidate_sources", "read_candidate_source", "PdfMappingProposal", "PdfPendingCandidate", "bind_pdf_mapping",
+        for name in ("CandidateFinalizationRequest", "preview_candidate_finalization", "finalize_candidates", "check_candidate_source_reuse", "CandidateAccountRequest", "create_candidate_account", "CandidateResolvedReading", "CandidateReviewRequest", "read_candidate_review", "review_candidate", "assess_candidate_amounts", "current_candidate_original", "CandidateStoreError", "store_pdf_candidates", "read_candidate_mapping", "list_candidate_mappings", "list_candidate_accounts", "list_candidate_sources", "read_candidate_source", "PdfMappingProposal", "PdfPendingCandidate", "bind_pdf_mapping",
                      "verify_candidate_source_bytes", "pdf_mapping_source_revision", "PdfGridMapping", "PdfGridBoundMapping",
                      "bind_pdf_grid_mapping", "pdf_grid_source_revision"):
             self.assertIn(name, package.__all__)

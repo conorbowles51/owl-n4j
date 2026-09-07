@@ -378,3 +378,40 @@ replacement workflow would be needed to add omitted rows after finalization; nev
 work around it with another mapping or a second source-document batch. Current
 limits remain explicit (up to 1,000 transactions); selecting fewer rows must never
 be described as complete extraction of a larger PDF.
+
+
+## Atomic reviewed-row writer — 7 September 2026
+
+`preview_candidate_finalization` and `finalize_candidates` now perform fresh
+whole-file preparation. They lock case (NO KEY UPDATE, preserving foreign-key
+insert compatibility), file, text, geometry, candidates and sorted accounts; bind
+every mapping; require all readings resolved/rejected; validate exact readings and
+account scope/currency; compare every active source pair; and verify source bytes.
+At most100 mappings/1,000 total candidates are accepted. The writer's complete
+comparison is bounded at499,500 pairs, independent of the smaller UI reuse-report
+limit; a truncated UI report is never a write permit. Stable source claims omit
+proposed column meanings. Exact date roles and original source cells are preserved.
+
+The explicit request accepts documentary financial rows and incomplete coverage,
+a reason and the current manifest revision. Source/transaction/link/receipt rows
+commit together. The source uses investigator_review and selected_document_rows;
+P3 is computed and default verified totals exclude it. Distinct source rows with
+identical reviewed content remain distinct through document-wide occurrence
+hashes. A row locator encloses selected stored cells without fabricated text
+offsets; individual originals remain in provenance. No guessed balances/periods
+are written. Existing source-file or identical-byte ledger readings are refused.
+
+Identical retries return the durable original receipt and transaction IDs; changed
+requests conflict. A racing second attempt may leave a separate completed audit
+attempt with zero new rows, while the returned result names the original run.
+The fast retry path creates no run. Run lifecycle uses the existing separate audit
+sessions, so audit termination after a committed write can still fail independently;
+a durable receipt makes retry safe. Source-byte checks remain point-in-time.
+
+`check_local_candidate_materialization.py` verifies actual PostgreSQL rollback
+after all rows/links flush, two demonstrably blocked competing requests, one seal,
+two equal-value distinct transactions, identical retries and refusal of reopening.
+Its latest synthetic fixture is recorded in candidate-materialization-check.json;
+candidate-check.json now points at that finalized fixture. Recreate a pending
+fixture before older source-selection/review scripts expecting pending candidates.
+The writer is service-only; authenticated preview/finalize routes and UI remain.
