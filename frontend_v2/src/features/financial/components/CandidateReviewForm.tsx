@@ -17,6 +17,7 @@ import {
   CandidateAccountForm,
   type CandidateAccount,
 } from "./CandidateAccountForm"
+import { CandidateDateAssessment } from "./CandidateDateAssessment"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 
 const fieldClass = "block w-full rounded border bg-background p-2 text-sm"
@@ -267,6 +268,13 @@ function ReviewFields({
           </li>
         ))}
       </ul>
+      <CandidateDateAssessment
+        caseId={caseId}
+        candidateId={review.candidate_id}
+        mappingId={mappingId}
+        fileId={fileId}
+        reviewRevision={review.review_revision}
+      />
       <fieldset
         disabled={disabled || finalized}
         className="grid gap-3 sm:grid-cols-2"

@@ -88,3 +88,28 @@ does not resolve account, date, currency context, direction or admission.
     # Binds the exact displayed proposals, including currency, for a future review.
     payload["assessment_revision"] = _digest(payload)
     return payload
+
+
+def assess_candidate_dates(session, *, case_id, candidate_id):
+    """Fresh source-bound date proposals; no locale/year guesses or writes."""
+    from services.financial.source_dates import assess_date_text
+    saved, candidate, bound = current_candidate_original(session, case_id=case_id, candidate_id=candidate_id)
+    grid = saved["original"]["proposal"]["schema_version"] == "pdf-grid-mapping-v1"
+    typed = next(c for c in bound.candidates if c.candidate_key == candidate["candidate_key"])
+    cells, unknown = [], []
+    for cell in typed.cells:
+        if cell.proposed_meaning not in ("booking_date", "value_date", "transaction_date"):
+            if cell.proposed_meaning == "unknown":
+                unknown.append(cell.column_index)
+            continue
+        raw = cell.text if grid else cell.source.text
+        source = ({"locator": cell.locator.to_json(), "text": raw} if grid else
+                  {"text": raw, "start_char": cell.source.start_char, "end_char": cell.source.end_char,
+                   "page_number": cell.page_number, "offset_unit": "unicode_code_points"})
+        cells.append(dict(column_index=cell.column_index, proposed_meaning=cell.proposed_meaning,
+            source=source, assessment=assess_date_text(raw, cell.origin)))
+    payload = dict(case_id=str(case_id), candidate_id=str(candidate_id), mapping_id=saved["id"],
+        review_revision=candidate["review_revision"], date_cells=cells, unclassified_columns=unknown,
+        applied=False, limitation="Numeric calendar proposals only. No date is selected, corrected or admitted by this assessment.")
+    payload["assessment_revision"] = _digest(payload)
+    return payload

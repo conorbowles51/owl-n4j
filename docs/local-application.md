@@ -247,3 +247,17 @@ screen, retained history and source assessment, an authenticated 409 for provisi
 account setup after finalization, a GBP12.34→12.35 ledger replacement remaining P3,
 and the original receipt's correction notice and highlighted PDF row. Results are
 in `data/local-runtime/finalized-review-ui-check.json`. Real evidence is not used.
+
+Saved candidate review also offers **Assess original dates**. This read-only check
+shows possible numeric calendar readings and missing year/century/context beside
+the original PDF cell. It never fills the review fields or repairs OCR characters.
+With a synthetic fixture from check_local_candidates.py, including one already
+finalized, verify the missing-year alternatives and source highlight with:
+
+```sh
+node scripts/check_local_candidate_dates_ui.cjs
+```
+
+The script uses candidate-check.json and leaves reviews and ledger money unchanged.
+It expects the synthetic first-row date `01/02`. Screenshot:
+`/tmp/loupe-neilbyrne-candidate-dates-ui.png`.

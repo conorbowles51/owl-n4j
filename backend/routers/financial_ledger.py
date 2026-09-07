@@ -37,7 +37,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
 from services.financial.ledger_source import LedgerSourceError, ledger_source
 from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
-from services.financial.candidate_assessment import assess_candidate_amounts
+from services.financial.candidate_assessment import assess_candidate_amounts, assess_candidate_dates
 from services.financial.candidate_reviews import read_candidate_review
 from services.financial.candidate_overlap import check_candidate_source_reuse
 from services.financial.candidate_materialization import preview_candidate_finalization
@@ -143,6 +143,18 @@ async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query
     except Exception:
         logger.exception("Candidate account list failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Ledger accounts could not be listed.")
+
+
+@router.get("/candidates/{candidate_id}/date-assessment")
+async def assess_saved_candidate_dates(candidate_id: UUID, case_id: UUID = Query(...),
+                                       db: Session = Depends(get_db)):
+    try:
+        return assess_candidate_dates(db, case_id=case_id, candidate_id=candidate_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate date assessment failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Candidate date assessment could not be completed.")
 
 
 @router.post("/candidates/{candidate_id}/amount-assessment")

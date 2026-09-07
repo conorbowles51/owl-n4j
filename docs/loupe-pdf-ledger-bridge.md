@@ -466,3 +466,22 @@ between initial inspection and account creation. A rejected raced attempt record
 failed audit run but no account. Tests exercise this ordering and both sealed statuses.
 The browser correction round trip keeps the selected-document P3 classification and
 replaces the active ledger row without changing the saved candidate reading.
+
+## Numeric date uncertainty — 7 September 2026
+
+`assess_date_text` offers conservative numeric calendar proposals: ISO dates,
+day-first/month-first numeric dates with one consistent separator, explicit missing
+year or two-digit-century uncertainty, invalid calendar values and unsupported text.
+No locale, current year, period context or OCR character repair is inferred. Even
+one valid calendar reading requires source review. Recognised/unknown glyph origins
+remain explicit. Two month/day alternatives with no full year never contain an ISO
+date; leap-year validation remains dependent on actual source year context.
+
+`assess_candidate_dates` first rebinds the immutable saved mapping to its current
+case-scoped source, processes only columns proposed as booking/value/transaction
+dates, and retains original source spans or stored locators and review revision.
+Case:view GET `/candidates/{candidate_id}/date-assessment` and the review panel
+expose these proposals read-only, including after finalization. Response scope,
+revision, raw-source consistency and no-write status are validated. Unknown columns
+are counted, not classified. Named-month/other unsupported formats are retained for
+manual review; automatic nomination and date-context resolution remain outstanding.
