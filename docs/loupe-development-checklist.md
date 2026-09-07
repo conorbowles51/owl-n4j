@@ -51,6 +51,8 @@ feature below is complete at the start of this window.
 
    - [x] Durable finalization storage: keep permanent candidate/review/transaction links, refuse repeated sealed batches and later review/mapping changes, and protect source scope in PostgreSQL (f0ddde3). Atomic transaction creation and its concurrent retry acceptance remain.
 
+   - [x] Atomic candidate writer: fresh review/account/source checks, exact whole-batch transactions, retained originals/rejections, one finalization receipt and safe retries (27f8328). PostgreSQL rollback and two competing requests verified; authenticated API and UI remain before this workflow is complete.
+
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
@@ -234,3 +236,9 @@ source/review/transaction linkage infrastructure. 3,707 financial tests pass wit
 zero skips; ten isolated PostgreSQL guard checks passed with all fixture rows
 rolled back. End-to-end candidate admission is still incomplete: its writer,
 preview, concurrent retry test and UI remain. All original features are retained.
+
+Extended-window implementation27f8328 connects reviewed rows to the ledger at
+the service layer. 3,721 backend financial tests pass (zero skips). Live synthetic
+PostgreSQL confirms rollback, two contending requests, distinct equal-value rows,
+one durable receipt, stable retries and sealed review history. API/UI integration
+is next; incomplete-coverage P3 rows remain outside default verified totals.

@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `f0ddde3`, “Seal candidate finalizations
-  and preserve immutable ledger links”. A state commit follows;
+- **Latest implementation commit:** `27f8328`, “Atomically materialize reviewed
+  PDF candidates with safe retries”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,54 @@ for verification, the retained ten-feature checklist and the handoff, then pause
 Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Atomic materialization service — extended window, 7 September 2026
+
+`27f8328` adds CandidateFinalizationRequest, preview_candidate_finalization and
+finalize_candidates. A fresh locked snapshot covers all reviews, original source
+bindings, exact reading/account context, complete source-pair comparisons and
+actual bytes. Requests require manifest revision plus explicit documentary-row
+and incomplete-coverage acceptance/reason. One transaction writes the selected
+source document, document-wide integer transaction batch, seal and review/source
+links. P3/method4/selected_document_rows are computed/fixed by the service; no
+caller proof class or guessed control balances/periods. All rejected reviews
+remain in the snapshot. Source locators and all original cell readings survive.
+
+Limits100 mappings/1,000 total candidates; complete pair check up to499,500 pairs
+rather than treating the bounded UI reuse report as a permit. Case NO KEY UPDATE
+serializes candidate-file aliases without blocking FK inserts; file/text/geometry/
+candidate/sorted-account locks protect the write. Same-source ledger readings
+are refused. Identical retries return original IDs; changed requests conflict.
+A racing losing attempt can have a zero-row completed audit, but fast retries
+create no run. Existing separate audit termination can fail after data commit;
+receipt-based retries still cannot duplicate money.
+
+**Verified:** 3,721 backend financial tests, zero skips (14 new writer tests).
+`scripts/check_local_candidate_materialization.py` passed on isolated PostgreSQL:
+fault after all rows+links flush rolls back source/transactions/seal; two actual
+lock waiters produce one receipt, two distinct equal-content rows, stable retry
+IDs and review-after-seal refusal. No real PDFs were processed or changed.
+Frontend unchanged: last927 unit/11 Chromium plus TypeScript/full ESLint.
+
+Latest synthetic case `2d8dbffc-1b04-42e5-9ab3-7aa92f9555a0`, file
+`ab69826c-f53b-4310-800f-49c61431eb8a`, seal
+`a12db21a-54a0-456a-b409-5f7ba07161db`, source document
+`5a98b864-517d-4cfb-9478-e4412c48a323`, two P3 rows of1234 minor units.
+`data/local-runtime/candidate-materialization-check.json` has full IDs.
+`candidate-check.json` now points at this FINALIZED fixture: recreate a pending
+fixture before older source-selection/review scripts expecting pending candidates.
+
+**Next segment:** expose authenticated case:view preview and case:edit finalization
+routes with ordinary scoped404/stale409/invalid422/generic500 handling, and update
+write-route permission inventory. Then add a deliberate UI preview/acceptance panel
+with two explicit confirmations, reason, fixed P3/incomplete-coverage warning,
+review revision/scope validation, synchronous retry lock and links to resulting
+ledger rows. Invalidate original case caches even if UI unmounts; do not assume
+resolution means inclusion in verified totals. Test HTTP retries/scope and real
+browser flow, then checkpoint. Restart the isolated backend before HTTP tests;
+its currently running process predates the new services/migrations. Migration
+remains20260907_candidate_finalizations. Schedule ACTIVE through09:00 Dublin
+(08:00 UTC), reserving07:45–08:00 UTC for handoff.
 
 ### Finalization storage — extended window, 7 September 2026
 
