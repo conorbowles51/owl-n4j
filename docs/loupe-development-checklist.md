@@ -88,6 +88,7 @@ feature below is complete at the start of this window.
    - [x] Identify gaps and overlaps between recorded account statements with eligible printed bounds (8b6c9ad). Enclosing exports are included; oversized accounts are explicitly unavailable.
    - [x] Show which accounts and dates the recorded statement bounds cover, with exclusions and limits visible (8b6c9ad). This does not certify full transaction extraction or undated/unprocessed evidence.
    - [ ] Distinguish no matching transaction found from insufficient records to know.
+   - [x] Display requested-date coverage alongside applied ledger account/date filters, explicitly distinguish unknown bounds from covered dates, retain exclusions and prevent stale scope results (982c530). Wider search and exact PDF-bound navigation remain.
    - [x] Backend/API requested account/date coverage counts outside tails, preserves currency groups and exact intersecting source-period references, and returns unknown/unavailable explicitly (036f700). Filter-screen integration remains.
    - [x] Explicit account/date filters on current ledger rows, draft/apply/clear behavior, bounded case-scoped account lookup and case-switch resets (a6ee80c). Requested-interval coverage remains.
    - [x] Empty ledger answers respect account/date filters, explain that no match does not establish absence of transactions, and retain response-count discrepancy warnings even for zero rows (e13375c). Quantified search coverage and filter controls remain.
@@ -325,3 +326,9 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   Targeted coverage/router tests and authenticated synthetic HTTP pass (February
   gap28 versus enclosing export0). No source/evidence writes. The result panel is
   next; feature6 stays partial and the five-minute schedule remains ACTIVE to13:00.
+
+
+- 7 September, 09:24 Dublin: **982c530** connects filtered coverage UI.15 targeted
+  tests, TypeScript/scoped lint and read-only live browser pass. February0/28
+  covered-day comparison and Clear behavior verified. Begin authoritative ledger
+  analysis summary next; preserve source admission and computed classification.

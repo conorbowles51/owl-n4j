@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `036f700`, “Measure printed statement coverage
-  within a requested account date range”. A state commit follows;
+- **Latest implementation commit:** `982c530`, “Show source coverage for applied
+  ledger account and date filters”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,35 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Filtered coverage connected — 7 September 2026
+
+`982c530` connects RequestedCoveragePanel beside the applied ledger filters. One
+account and both date bounds are required; checking is explicit. Response case,
+account, dates, applied=false and day-count totals are validated. Scope-keyed
+state hides prior results after applying another scope or Clear; refresh hides
+stale results while fetching. Shows unknown/unavailable, currency-separated counts,
+uncovered requested dates, intersecting period IDs and recorded exclusions.
+Fully covered printed dates explicitly do not certify complete extraction.
+
+Verified:15 targeted frontend tests (10 new coverage + existing filters/wrapper),
+TypeScript and scoped ESLint. Read-only authenticated browser checks both existing
+synthetic accounts (February0 versus28 covered days), Clear removes old coverage,
+and source-period details remain available. Screenshot visually inspected at
+/tmp/loupe-neilbyrne-filtered-coverage-ui.png. Existing check_local_ledger_filters_ui.cjs
+now verifies coverage too; report ledger-filters-ui-check.json. Logs use
+/tmp/loupe-neilbyrne-filtered-coverage-{tests,tsc,lint,live}.out. Backend restarted
+with final036f700 code as exec session83809; logfile filtered-coverage-backend.out.
+No real evidence changes. All ten whole-feature statuses remain unchanged.
+
+**Next segment:** begin the authoritative-ledger analysis connection (feature5)
+by inspecting existing financial aggregate/proof-class/source-admission rules and
+current graph totals. Build a bounded read-only exact-money summary from current
+ledger rows, preserving currencies and explicit included/excluded populations;
+never total quarantined/superseded/rejected or unverified evidence as verified.
+Connect and test in small units before replacing any legacy graph analysis view.
+Do not silently imply ledger corrections update graph data. Coverage exact-PDF
+bound citations and wider search completeness still remain. Schedule ACTIVE to13:00.
 
 ### Requested-date coverage service/API — 7 September 2026
 
