@@ -1,3 +1,4 @@
+import type { EvidenceSort } from "./utils/preferences"
 import { fetchAPI } from "@/lib/api-client"
 import type {
   FolderTreeNode,
@@ -7,6 +8,8 @@ import type {
 } from "@/types/evidence.types"
 
 export interface FolderContentsParams {
+  sort_by?: EvidenceSort["sort_by"]
+  sort_direction?: EvidenceSort["sort_direction"]
   limit?: number
   offset?: number
   search?: string
@@ -14,7 +17,22 @@ export interface FolderContentsParams {
   type?: string
 }
 
+export interface EvidenceFileLocation {
+  file_id: string
+  folder_id: string | null
+  ancestor_ids: string[]
+  file_offset: number
+  file_limit: number
+}
+
+export const FILE_PAGE_SIZE = 250
+
 export const foldersAPI = {
+  getFileLocation: (caseId: string, fileId: string, signal?: AbortSignal, sort: Partial<EvidenceSort> = {}) =>
+    fetchAPI<EvidenceFileLocation>(
+      `/api/evidence-folders/files/${encodeURIComponent(fileId)}/location?${new URLSearchParams({ case_id: caseId, limit: String(FILE_PAGE_SIZE), ...sort })}`,
+      { signal },
+    ),
   getTree: async (caseId: string) => {
     const res = await fetchAPI<{ tree: FolderTreeNode[] }>(
       `/api/evidence-folders/tree?case_id=${caseId}`
@@ -25,16 +43,30 @@ export const foldersAPI = {
   getContents: (
     caseId: string,
     folderId: string | null,
-    params: FolderContentsParams = {}
+    params: FolderContentsParams = {},
+    signal?: AbortSignal,
   ) => {
     const qs = new URLSearchParams({ case_id: caseId })
     if (params.limit) qs.set("limit", String(params.limit))
     if (params.offset) qs.set("offset", String(params.offset))
     if (params.search) qs.set("search", params.search)
     if (params.status && params.status !== "all") qs.set("status", params.status)
+    if (params.sort_by) qs.set("sort_by", params.sort_by)
+    if (params.sort_direction) qs.set("sort_direction", params.sort_direction)
     if (params.type) qs.set("type", params.type)
     return fetchAPI<FolderContentsResponse>(
-      `/api/evidence-folders/${folderId || "root"}/contents?${qs}`
+      `/api/evidence-folders/${folderId || "root"}/contents?${qs}`, { signal }
+    )
+  },
+
+  search: (caseId: string, query: string, scope: "case" | "subtree", folderId: string | null, params: FolderContentsParams, signal?: AbortSignal) => {
+    const qs = new URLSearchParams({ case_id: caseId, query, scope })
+    if (scope === "subtree" && folderId) qs.set("folder_id", folderId)
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && key !== "search") qs.set(key, String(value))
+    }
+    return fetchAPI<Pick<FolderContentsResponse, "files" | "file_total" | "file_limit" | "file_offset">>(
+      `/api/evidence-folders/search?${qs}`, { signal },
     )
   },
 
@@ -60,7 +92,7 @@ export const foldersAPI = {
     ),
 
   move: (folderId: string, newParentId: string | null) =>
-    fetchAPI<{ id: string; name: string; parent_id: string | null }>(
+    fetchAPI<{ id: string; name: string; parent_id: string | null; moved?: number }>(
       `/api/evidence-folders/${folderId}/move`,
       { method: "PUT", body: { new_parent_id: newParentId } }
     ),
@@ -101,7 +133,7 @@ export const foldersAPI = {
     ),
 
   moveFile: (fileId: string, newFolderId: string | null) =>
-    fetchAPI<{ id: string; folder_id: string | null }>(
+    fetchAPI<{ id: string; folder_id: string | null; moved?: number }>(
       `/api/evidence-folders/files/${fileId}/move?new_folder_id=${newFolderId || ""}`,
       { method: "PUT" }
     ),

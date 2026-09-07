@@ -457,7 +457,6 @@ function DetailsPanelContent({
   const isProcessing = file.status === "processing"
   const isFailed = file.status === "failed"
   const isUnprocessed = file.status === "unprocessed"
-  const isStale = displayStatus === "stale"
 
   const processMutation = useProcessBackground(caseId)
 
@@ -592,35 +591,7 @@ function DetailsPanelContent({
             </div>
           )}
 
-          {isStale && (
-            <div className="overflow-hidden rounded-lg border border-orange-500/20 bg-orange-500/5">
-              <div className="flex items-start gap-3 p-4">
-                <AlertCircle className="mt-0.5 size-4 shrink-0 text-orange-500" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium text-orange-600 dark:text-orange-400">
-                    Processing context changed
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    This file was already processed, but its case or folder profile changed after that run. Reprocess it to refresh the extracted data.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-3"
-                    onClick={handleProcess}
-                    disabled={processMutation.isPending}
-                  >
-                    {processMutation.isPending ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <RotateCcw className="size-3.5" />
-                    )}
-                    Reprocess with current profile
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
+
 
           {/* --- Processing: live progress indicator --- */}
           {isProcessing && (
@@ -817,6 +788,8 @@ function DetailsPanelContent({
 
       {/* Document Viewer modal */}
       <DocumentViewer
+        caseId={caseId}
+        evidenceId={file.id}
         open={viewerOpen}
         onOpenChange={setViewerOpen}
         documentUrl={fileUrl}

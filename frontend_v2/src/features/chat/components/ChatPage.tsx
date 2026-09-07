@@ -27,6 +27,7 @@ import type { ChatScope } from "../types"
 export function ChatPage() {
   const { id: caseId } = useParams()
   const [viewerDoc, setViewerDoc] = useState<{
+    evidenceId: string
     url: string
     name: string
     page?: number
@@ -72,6 +73,7 @@ export function ChatPage() {
       }
 
       setViewerDoc({
+        evidenceId: result.evidence_id,
         url: evidenceAPI.getFileUrl(result.evidence_id),
         name: filename,
         page,
@@ -162,6 +164,8 @@ export function ChatPage() {
       {!resultGraphPanelOpen && <ResultGraphPanel />}
 
       <DocumentViewer
+        caseId={caseId}
+        evidenceId={viewerDoc?.evidenceId}
         open={!!viewerDoc}
         onOpenChange={(open) => {
           if (!open) setViewerDoc(null)

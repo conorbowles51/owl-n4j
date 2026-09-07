@@ -629,6 +629,7 @@ export function DossierDetailSheet({
   const [interviewOpen, setInterviewOpen] = useState(false)
   const [linkOpen, setLinkOpen] = useState(false)
   const [viewerDoc, setViewerDoc] = useState<{
+    evidenceId: string
     url: string
     name: string
     page?: number
@@ -642,6 +643,7 @@ export function DossierDetailSheet({
         return
       }
       setViewerDoc({
+        evidenceId: result.evidence_id,
         url: evidenceAPI.getFileUrl(result.evidence_id),
         name: filename,
         page,
@@ -1068,6 +1070,7 @@ export function DossierDetailSheet({
                               key={link.id}
                               onClick={() =>
                                 setViewerDoc({
+                                  evidenceId: link.evidence_file_id,
                                   url: evidenceAPI.getFileUrl(
                                     link.evidence_file_id
                                   ),
@@ -1161,6 +1164,8 @@ export function DossierDetailSheet({
         )}
       </SheetContent>
       <DocumentViewer
+        caseId={caseId}
+        evidenceId={viewerDoc?.evidenceId}
         open={!!viewerDoc}
         onOpenChange={(open) => {
           if (!open) setViewerDoc(null)

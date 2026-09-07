@@ -8,16 +8,17 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from postgres.session import get_db
 from postgres.models.user import User
 from routers.users import get_current_db_user
-from services.evidence_db_storage import EvidenceDBStorage
+from services.evidence_db_storage import EvidenceDBStorage, EvidenceMoveError
 from services.evidence_processing_service import process_db_files
 from services.folder_context_service import resolve_effective_profile
 from services.processing_profile_service import (
@@ -113,10 +114,56 @@ async def get_folder_tree(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/search")
+async def search_files(
+    case_id: uuid.UUID,
+    query: str = Query(..., min_length=1, max_length=1000),
+    scope: Literal["case", "subtree"] = Query("case"),
+    folder_id: Optional[uuid.UUID] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    type_category: Optional[str] = Query(None, alias="type"),
+    sort_by: Literal["name", "date"] = Query("name"),
+    sort_direction: Literal["asc", "desc"] = Query("asc"),
+    limit: int = Query(250, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    _check_case_access(db, str(case_id), current_user)
+    try:
+        return EvidenceDBStorage.search_files(
+            db, case_id, query, scope=scope, folder_id=folder_id, status=status_filter,
+            type_category=type_category, sort_by=sort_by, sort_direction=sort_direction,
+            limit=limit, offset=offset,
+        )
+    except EvidenceMoveError as error:
+        raise HTTPException(error.status_code, str(error))
+
+
+@router.get("/files/{file_id}/location")
+async def get_file_location(
+    file_id: uuid.UUID,
+    case_id: uuid.UUID = Query(...),
+    sort_by: Literal["name", "date"] = Query("name"),
+    sort_direction: Literal["asc", "desc"] = Query("asc"),
+    limit: int = Query(250, ge=1, le=1000),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Resolve the current folder and listing page for an accessible case file."""
+    _check_case_access(db, str(case_id), current_user)
+    location = EvidenceDBStorage.get_file_location(db, case_id, file_id, limit=limit, sort_by=sort_by, sort_direction=sort_direction)
+    if location is None:
+        raise HTTPException(status_code=404, detail="Evidence file not found in this case")
+    return location
+
+
 @router.get("/{folder_id}/contents")
 async def get_folder_contents(
     folder_id: str,
     case_id: str = Query(..., description="Case ID"),
+    sort_by: Literal["name", "date"] = Query("name"),
+    sort_direction: Literal["asc", "desc"] = Query("asc"),
     limit: int = Query(250, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     search: Optional[str] = Query(None),
@@ -130,6 +177,10 @@ async def get_folder_contents(
         _check_case_access(db, case_id, current_user)
 
         fid = None if folder_id == "root" else uuid.UUID(folder_id)
+        if fid:
+            folder = EvidenceDBStorage.get_folder(db, fid)
+            if not folder or folder.case_id != uuid.UUID(case_id):
+                raise HTTPException(404, "Folder not found in this case")
         contents = EvidenceDBStorage.list_contents(
             db,
             uuid.UUID(case_id),
@@ -139,6 +190,7 @@ async def get_folder_contents(
             search=search,
             status=status_filter,
             type_category=type_category,
+            sort_by=sort_by, sort_direction=sort_direction,
         )
 
         # Build breadcrumbs
@@ -198,6 +250,12 @@ async def create_folder(
             "name": folder.name,
             "parent_id": str(folder.parent_id) if folder.parent_id else None,
         }
+    except EvidenceMoveError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "The destination changed or a folder name conflicts. Refresh and try again.")
     except HTTPException:
         raise
     except Exception as e:
@@ -222,6 +280,12 @@ async def rename_folder(
         updated = EvidenceDBStorage.rename_folder(db, uuid.UUID(folder_id), req.name)
         db.commit()
         return {"id": str(updated.id), "name": updated.name}
+    except EvidenceMoveError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "The destination changed or a folder name conflicts. Refresh and try again.")
     except HTTPException:
         raise
     except Exception as e:
@@ -283,31 +347,26 @@ async def move_folder(
 
         new_parent = uuid.UUID(req.new_parent_id) if req.new_parent_id else None
 
-        # Prevent moving folder into its own descendant (or itself)
-        if new_parent:
-            if new_parent == uuid.UUID(folder_id):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Cannot move a folder into itself",
-                )
-            ancestors = EvidenceDBStorage.get_folder_breadcrumbs(db, new_parent)
-            ancestor_ids = {a.id for a in ancestors}
-            if uuid.UUID(folder_id) in ancestor_ids:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Cannot move a folder into its own descendant",
-                )
-
+        previous_parent = folder.parent_id
         updated = EvidenceDBStorage.move_folder(db, uuid.UUID(folder_id), new_parent)
-        EvidenceDBStorage.mark_folder_subtree_stale(db, uuid.UUID(folder_id))
         db.commit()
         return {
             "id": str(updated.id),
             "name": updated.name,
             "parent_id": str(updated.parent_id) if updated.parent_id else None,
+            "moved": int(previous_parent != updated.parent_id),
         }
+    except EvidenceMoveError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "The destination changed or a folder name conflicts. Refresh and try again.")
     except HTTPException:
         raise
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(422, "Invalid file or folder ID") from e
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -351,7 +410,6 @@ async def update_folder_profile(
             mandatory_instructions=payload["mandatory_instructions"],
             profile_overrides=payload["profile_overrides"],
         )
-        EvidenceDBStorage.mark_folder_subtree_stale(db, uuid.UUID(folder_id))
         db.commit()
         return EvidenceDBStorage.get_folder_profile(db, uuid.UUID(folder_id))
     except HTTPException:
@@ -436,7 +494,7 @@ async def process_folder(
             pending = db.scalars(
                 select(EF.id).where(
                     EF.id.in_(file_ids),
-                    (EF.status != "processed") | (EF.processing_stale.is_(True)),
+                    EF.status != "processed",
                 )
             ).all()
             file_ids = list(pending)
@@ -477,12 +535,20 @@ async def move_file(
         _check_case_access(db, str(ef.case_id), current_user, permission=("evidence", "upload"))
 
         target = uuid.UUID(new_folder_id) if new_folder_id else None
-        EvidenceDBStorage.move_file(db, uuid.UUID(file_id), target)
-        EvidenceDBStorage.mark_files_stale(db, [uuid.UUID(file_id)])
+        moved = EvidenceDBStorage.move_files(db, [uuid.UUID(file_id)], target)
         db.commit()
-        return {"id": file_id, "folder_id": new_folder_id}
+        return {"id": file_id, "folder_id": new_folder_id, "moved": len(moved)}
+    except EvidenceMoveError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "The destination changed or a folder name conflicts. Refresh and try again.")
     except HTTPException:
         raise
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(422, "Invalid file or folder ID") from e
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -500,19 +566,30 @@ async def move_files_batch(
         if not file_ids:
             raise HTTPException(status_code=400, detail="No file IDs provided")
 
-        # Access check on first file
-        ef = EvidenceDBStorage.get(db, uuid.UUID(file_ids[0]))
-        if not ef:
-            raise HTTPException(status_code=404, detail="File not found")
-        _check_case_access(db, str(ef.case_id), current_user, permission=("evidence", "upload"))
+        ids = [uuid.UUID(fid) for fid in file_ids]
+        files = EvidenceDBStorage.get_files_by_ids(db, ids)
+        if len(files) != len(set(ids)):
+            raise HTTPException(404, "One or more files no longer exist. Refresh and try again.")
+        for case_id in {file.case_id for file in files}:
+            _check_case_access(db, str(case_id), current_user, permission=("evidence", "upload"))
+        if len({file.case_id for file in files}) != 1:
+            raise HTTPException(400, "All files must belong to the same case.")
 
         target = uuid.UUID(new_folder_id) if new_folder_id else None
-        EvidenceDBStorage.move_files(db, [uuid.UUID(fid) for fid in file_ids], target)
-        EvidenceDBStorage.mark_files_stale(db, [uuid.UUID(fid) for fid in file_ids])
+        moved = EvidenceDBStorage.move_files(db, ids, target)
         db.commit()
-        return {"moved": len(file_ids), "folder_id": new_folder_id}
+        return {"moved": len(moved), "folder_id": new_folder_id}
+    except EvidenceMoveError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "The destination changed or a folder name conflicts. Refresh and try again.")
     except HTTPException:
         raise
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(422, "Invalid file or folder ID") from e
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

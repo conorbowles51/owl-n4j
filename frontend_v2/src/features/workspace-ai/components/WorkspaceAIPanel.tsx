@@ -148,6 +148,8 @@ function OutputContent({ output }: { output: WorkspaceAIOutput }) {
         )
       })}
       <DocumentViewer
+        caseId={output.case_id}
+        evidenceId={source?.evidence_file_id}
         open={source !== null}
         onOpenChange={(open) => {
           if (!open) setSource(null)

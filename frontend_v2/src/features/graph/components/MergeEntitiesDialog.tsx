@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useId, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -46,6 +46,8 @@ export function MergeEntitiesDialog({
   onClearJob,
 }: MergeEntitiesDialogProps) {
   const [preferredName, setPreferredName] = useState("")
+  const preferredNameId = useId()
+  const preferredNameInput = useRef<HTMLInputElement>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -109,15 +111,24 @@ export function MergeEntitiesDialog({
           {/* Entity cards */}
           <div className="flex flex-wrap gap-2">
             {entities.map((entity) => (
-              <div
+              <button
                 key={entity.key}
-                className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5"
+                type="button"
+                disabled={submitting || activeJob !== null}
+                aria-label={`Use ${entity.label} as preferred name`}
+                aria-pressed={preferredName === entity.label}
+                title={entity.label}
+                onClick={() => {
+                  setPreferredName(entity.label)
+                  preferredNameInput.current?.focus()
+                }}
+                className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-left transition-colors enabled:cursor-pointer enabled:hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary aria-pressed:bg-primary/10 disabled:cursor-default"
               >
                 <NodeBadge type={entity.type} />
                 <span className="text-xs font-medium truncate max-w-[140px]">
                   {entity.label}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
 
@@ -125,14 +136,20 @@ export function MergeEntitiesDialog({
           {!activeJob && !isFailed && (
             <>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
+                <label htmlFor={preferredNameId} className="text-xs font-medium text-muted-foreground">
                   Preferred name (optional — AI will decide if left blank)
                 </label>
                 <Input
+                  id={preferredNameId}
+                  ref={preferredNameInput}
+                  disabled={submitting}
                   value={preferredName}
                   onChange={(e) => setPreferredName(e.target.value)}
                   placeholder="Leave blank for AI to choose"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Click an entity above to use its name, or enter a different name.
+                </p>
               </div>
 
               {/* Warning */}

@@ -245,6 +245,7 @@ export interface FolderContentsResponse {
 }
 
 export interface EvidenceFileRecord {
+  folder_path?: { id: string; name: string }[]
   id: string
   case_id: string
   folder_id: string | null

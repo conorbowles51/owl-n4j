@@ -315,6 +315,8 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
     <div className={cn("h-full", search.isFetching && !search.isLoading && "cursor-progress")}>
       {content}
       <DocumentViewer
+        caseId={caseId}
+        evidenceId={viewerTarget?.evidenceId}
         open={viewerTarget !== null}
         onOpenChange={(open) => !open && setViewerTarget(null)}
         documentUrl={viewerTarget ? evidenceAPI.getFileUrl(viewerTarget.evidenceId) : undefined}

@@ -9,11 +9,9 @@ import {
   ChevronDown,
   Play,
   Trash2,
-  Activity,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectTrigger,
@@ -31,9 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { useEvidenceStore } from "../evidence.store"
-import { useUIStore } from "@/stores/ui.store"
 import { useUploadToFolder } from "../hooks/use-upload-to-folder"
-import { useJobs } from "../hooks/use-jobs"
 import { evidenceAPI } from "../api"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -65,20 +61,14 @@ export function FileListToolbar({
     setTypeFilter,
     selectedFileIds,
     currentFolderId,
-    sidebarTab,
     openSidebarTo,
   } = useEvidenceStore()
-  const panelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const archiveInputRef = useRef<HTMLInputElement>(null)
   const [replaceCellebriteReport, setReplaceCellebriteReport] = useState(false)
   const uploadMutation = useUploadToFolder(caseId)
-  const { data: jobs } = useJobs(caseId)
-  const activeCount = jobs?.filter(
-    (j) => !["completed", "failed"].includes(j.status)
-  ).length ?? 0
   const queryClient = useQueryClient()
   const processMutation = useMutation({
     mutationFn: (data: { fileIds: string[] }) =>
@@ -92,8 +82,8 @@ export function FileListToolbar({
   })
 
   const selectionCount = selectedFileIds.size
-  const activeSearchTerm = searchMode === "files" ? fileSearchTerm : textSearchTerm
-  const setActiveSearchTerm = searchMode === "files" ? setFileSearchTerm : setTextSearchTerm
+  const activeSearchTerm = searchMode !== "text" ? fileSearchTerm : textSearchTerm
+  const setActiveSearchTerm = searchMode !== "text" ? setFileSearchTerm : setTextSearchTerm
 
   const handleUploadSelection = (selectedFiles: FileList | null, mode: UploadMode) => {
     const files = Array.from(selectedFiles ?? [])
@@ -163,30 +153,31 @@ export function FileListToolbar({
   }
 
   return (
-    <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
+    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2">
       {/* One search control, two deliberately different scopes. */}
-      <div className="flex min-w-[360px] max-w-[520px] flex-1 items-center overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
+      <div className="flex min-w-[min(100%,360px)] max-w-[560px] flex-1 basis-[400px] items-center overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
         <Select
           value={searchMode}
-          onValueChange={(value) => setSearchMode(value as "files" | "text")}
+          onValueChange={(value) => setSearchMode(value as "files" | "subtree" | "text")}
         >
           <SelectTrigger
             size="sm"
             aria-label="Search scope"
-            className="h-8 w-[136px] shrink-0 rounded-none border-0 border-r border-border bg-muted/30 px-2.5 shadow-none focus-visible:ring-0"
+            className="h-8 w-[162px] shrink-0 [&>span]:truncate rounded-none border-0 border-r border-border bg-muted/30 px-2.5 shadow-none focus-visible:ring-0"
           >
             <SelectValue />
           </SelectTrigger>
           <SelectContent align="start">
-            <SelectItem value="files">Files in folder</SelectItem>
+            <SelectItem value="files">Files in case</SelectItem>
+            <SelectItem value="subtree">Files in this folder and subfolders</SelectItem>
             <SelectItem value="text">Text in case</SelectItem>
           </SelectContent>
         </Select>
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            aria-label={searchMode === "files" ? "Search files in folder" : "Search text in case"}
-            placeholder={searchMode === "files" ? "Filter filenames..." : "Find an exact name, phrase, or number..."}
+            aria-label={searchMode !== "text" ? (searchMode === "subtree" ? "Search files in this folder and subfolders" : "Search files in case") : "Search text in case"}
+            placeholder={searchMode !== "text" ? "Search filenames..." : "Find an exact name, phrase, or number..."}
             value={activeSearchTerm}
             onFocus={() => searchMode === "text" && openTextSearch()}
             onChange={(e) => setActiveSearchTerm(e.target.value)}
@@ -210,13 +201,12 @@ export function FileListToolbar({
         value={statusFilter}
         onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}
       >
-        <SelectTrigger size="sm" className="h-8 w-[130px] text-xs">
+        <SelectTrigger aria-label="Filter status" size="sm" className="h-8 w-[130px] text-xs">
           <SelectValue placeholder="Status" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Status</SelectItem>
           <SelectItem value="unprocessed">Unprocessed</SelectItem>
-          <SelectItem value="stale">Stale</SelectItem>
           <SelectItem value="processing">Processing</SelectItem>
           <SelectItem value="processed">Processed</SelectItem>
           <SelectItem value="failed">Failed</SelectItem>
@@ -225,7 +215,7 @@ export function FileListToolbar({
 
       {/* Type filter */}
       <Select value={typeFilter || "all"} onValueChange={(v) => setTypeFilter(v === "all" ? "" : v)}>
-        <SelectTrigger size="sm" className="h-8 w-[120px] text-xs">
+        <SelectTrigger aria-label="Filter type" size="sm" className="h-8 w-[120px] text-xs">
           <SelectValue placeholder="Type" />
         </SelectTrigger>
         <SelectContent>
@@ -378,37 +368,6 @@ export function FileListToolbar({
         </TooltipContent>
       </Tooltip>
 
-      {/* Divider */}
-      <div className="h-5 w-px bg-border" />
-
-      {/* Jobs toggle */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant={!panelCollapsed && sidebarTab === "processing" ? "secondary" : "outline"}
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => {
-              if (!panelCollapsed && sidebarTab === "processing") {
-                useUIStore.getState().setGraphPanelCollapsed(true)
-              } else {
-                openSidebarTo("processing")
-              }
-            }}
-          >
-            <Activity className="size-3.5" />
-            Jobs
-            {activeCount > 0 && (
-              <Badge variant="info" className="ml-0.5 px-1 py-0 text-[9px] h-4">
-                {activeCount}
-              </Badge>
-            )}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          {!panelCollapsed && sidebarTab === "processing" ? "Hide processing panel" : "Show processing panel"}
-        </TooltipContent>
-      </Tooltip>
     </div>
   )
 }

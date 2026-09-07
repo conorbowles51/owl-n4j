@@ -170,7 +170,7 @@ def _evidence_record_from_db(record) -> dict:
         "size": record.size,
         "sha256": record.sha256,
         "status": record.status,
-        "processing_stale": record.processing_stale,
+        "processing_stale": False,
         "is_duplicate": record.is_duplicate,
         "duplicate_of": str(record.duplicate_of_id) if record.duplicate_of_id else None,
         "is_relevant": record.is_relevant,

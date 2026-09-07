@@ -1,8 +1,10 @@
+import { readEvidencePreferences, saveEvidencePreferences, type EvidenceSort } from "./utils/preferences"
 import { create } from "zustand"
 import { useUIStore } from "@/stores/ui.store"
+import type { EvidenceFileLocation } from "./folders.api"
 
-type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed" | "stale"
-export type EvidenceSearchMode = "files" | "text"
+type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed"
+export type EvidenceSearchMode = "files" | "subtree" | "text"
 export type UploadActivityStatus = "running" | "completed" | "failed"
 
 export interface EvidenceDetailAnchor {
@@ -25,9 +27,19 @@ export interface UploadActivity {
 }
 
 interface EvidenceState {
+  sortBy: EvidenceSort["sort_by"]
+  sortDirection: EvidenceSort["sort_direction"]
+  toggleSort: (column: EvidenceSort["sort_by"]) => void
+  nameWidth: number | null
+  setNameWidth: (width: number | null) => void
   // Navigation
   currentFolderId: string | null
   setCurrentFolder: (id: string | null) => void
+  filePage: number
+  setFilePage: (page: number) => void
+  revealTargetFileId: string | null
+  revealFile: (location: EvidenceFileLocation) => void
+  finishReveal: () => void
 
   // Folder tree
   expandedFolderIds: Set<string>
@@ -92,9 +104,48 @@ interface EvidenceState {
   resetForCase: (caseId: string) => void
 }
 
-export const useEvidenceStore = create<EvidenceState>((set) => ({
+export const useEvidenceStore = create<EvidenceState>((set, get) => ({
+  ...readEvidencePreferences(),
+  toggleSort: (column) => {
+    const state = get()
+    const sortDirection = state.sortBy === column ? (state.sortDirection === "asc" ? "desc" : "asc") : column === "date" ? "desc" : "asc"
+    set({ sortBy: column, sortDirection, filePage: 0, revealTargetFileId: null, selectedFileIds: new Set(), selectedFolderIds: new Set() })
+    saveEvidencePreferences(get())
+  },
+  setNameWidth: (width) => {
+    set({ nameWidth: width === null ? null : Math.max(180, Math.min(1600, width)) })
+    saveEvidencePreferences(get())
+  },
   currentFolderId: null,
-  setCurrentFolder: (id) => set({ currentFolderId: id, selectedFileIds: new Set(), selectedFolderIds: new Set() }),
+  setCurrentFolder: (id) => set({ currentFolderId: id, fileSearchTerm: "", textSearchOverlayOpen: false, filePage: 0, revealTargetFileId: null, selectedFileIds: new Set(), selectedFolderIds: new Set() }),
+  filePage: 0,
+  setFilePage: (page) => set({ filePage: Math.max(0, page), revealTargetFileId: null }),
+  revealTargetFileId: null,
+  revealFile: (location) => {
+    set((state) => ({
+      currentFolderId: location.folder_id,
+      filePage: Math.floor(location.file_offset / location.file_limit),
+      expandedFolderIds: new Set([...state.expandedFolderIds, ...location.ancestor_ids, ...(location.folder_id ? [location.folder_id] : [])]),
+      selectedFileIds: new Set(),
+      selectedFolderIds: new Set(),
+      searchMode: "files",
+      fileSearchTerm: "",
+      textSearchTerm: "",
+      textSearchOverlayOpen: false,
+      statusFilter: "all",
+      typeFilter: "",
+      detailFileId: location.file_id,
+      detailAnchor: null,
+      detailOpen: true,
+      sidebarTab: "details",
+      revealTargetFileId: location.file_id,
+    }))
+    // On narrow screens the details panel covers the folder listing.
+    useUIStore.getState().setGraphPanelCollapsed(
+      typeof window !== "undefined" && Boolean(window.matchMedia?.("(max-width: 767px)").matches),
+    )
+  },
+  finishReveal: () => set({ revealTargetFileId: null }),
 
   expandedFolderIds: new Set(),
   toggleFolderExpand: (id) =>
@@ -154,11 +205,11 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
 
   searchMode: "files",
   setSearchMode: (mode) => {
-    set({ searchMode: mode, textSearchOverlayOpen: mode === "text" })
+    set({ searchMode: mode, textSearchOverlayOpen: mode === "text", filePage: 0, selectedFileIds: new Set(), selectedFolderIds: new Set() })
     if (mode === "text") useUIStore.getState().setGraphPanelCollapsed(false)
   },
   fileSearchTerm: "",
-  setFileSearchTerm: (term) => set({ fileSearchTerm: term }),
+  setFileSearchTerm: (term) => set({ fileSearchTerm: term, selectedFileIds: new Set(), selectedFolderIds: new Set(), filePage: 0, revealTargetFileId: null }),
   textSearchTerm: "",
   setTextSearchTerm: (term) => set({ textSearchTerm: term }),
   textSearchOverlayOpen: false,
@@ -168,9 +219,9 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
   },
   closeTextSearch: () => set({ textSearchOverlayOpen: false }),
   statusFilter: "all",
-  setStatusFilter: (filter) => set({ statusFilter: filter }),
+  setStatusFilter: (filter) => set({ statusFilter: filter, selectedFileIds: new Set(), selectedFolderIds: new Set(), filePage: 0, revealTargetFileId: null }),
   typeFilter: "",
-  setTypeFilter: (filter) => set({ typeFilter: filter }),
+  setTypeFilter: (filter) => set({ typeFilter: filter, selectedFileIds: new Set(), selectedFolderIds: new Set(), filePage: 0, revealTargetFileId: null }),
 
   dragType: null,
   dragId: null,
@@ -214,6 +265,8 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
       return {
         _currentCaseId: caseId,
         currentFolderId: null,
+        filePage: 0,
+        revealTargetFileId: null,
         expandedFolderIds: new Set(),
         selectedFileIds: new Set(),
         selectedFolderIds: new Set(),
