@@ -7,10 +7,11 @@ same mapping snapshot, not overlapping mappings or transactions across revisions
 """
 from copy import deepcopy
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview
+from postgres.models.financial import FinancialAccount
 from services.financial.decisions import Actor
 from services.financial.pdf_candidates import PdfMappingError, PdfMappingProposal, _digest, bind_pdf_mapping
 from services.financial.pdf_geometry_candidates import PdfGridMapping, bind_pdf_grid_mapping
@@ -20,6 +21,32 @@ class CandidateStoreError(ValueError):
     def __init__(self, message, status_code=409):
         super().__init__(message)
         self.status_code = status_code
+
+
+def list_candidate_mappings(session, *, case_id, limit=25, offset=0):
+    if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
+        raise CandidateStoreError("Invalid candidate list page.", 422)
+    rows = session.execute(select(FinancialCandidateMapping, EvidenceFile.original_filename)
+        .join(EvidenceFile, EvidenceFile.id == FinancialCandidateMapping.evidence_file_id)
+        .where(FinancialCandidateMapping.case_id == case_id, EvidenceFile.case_id == case_id)
+        .order_by(FinancialCandidateMapping.created_at.desc(), FinancialCandidateMapping.id.desc())
+        .offset(offset).limit(limit+1)).all()
+    return dict(case_id=str(case_id), offset=offset, has_more=len(rows)>limit,
+        items=[dict(id=str(row.id), evidence_file_id=str(row.evidence_file_id), filename=filename,
+            candidate_count=row.candidate_count, created_at=row.created_at.isoformat()) for row, filename in rows[:limit]])
+
+
+def list_candidate_accounts(session, *, case_id, search="", limit=100):
+    if not isinstance(search, str) or len(search)>128 or type(limit) is not int or not 1 <= limit <= 100:
+        raise CandidateStoreError("Invalid account search.", 422)
+    query = select(FinancialAccount).where(FinancialAccount.case_id == case_id)
+    if search.strip():
+        query = query.where(or_(*(field.icontains(search.strip(), autoescape=True) for field in (
+            FinancialAccount.identifier_as_printed, FinancialAccount.holder_name, FinancialAccount.institution_name))))
+    rows = list(session.scalars(query.order_by(FinancialAccount.id).limit(limit+1)))
+    return dict(case_id=str(case_id), has_more=len(rows)>limit,
+        items=[dict(id=str(row.id), identifier=row.identifier_as_printed, holder=row.holder_name,
+                    institution=row.institution_name, currency=row.currency) for row in rows[:limit]])
 
 
 def read_candidate_mapping(session, *, case_id, mapping_id):

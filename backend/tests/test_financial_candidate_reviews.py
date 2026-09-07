@@ -10,6 +10,7 @@ from postgres.models.financial import FinancialAccount
 from postgres.models.financial_candidates import FinancialCandidateReview
 from services.financial.candidate_assessment import assess_candidate_amounts
 from services.financial.candidate_store import CandidateStoreError
+from services.financial.candidate_store import list_candidate_accounts, list_candidate_mappings
 from services.financial.candidate_reviews import CandidateReviewRequest, read_candidate_review, review_candidate
 from tests import test_financial_candidate_store as store_fixture
 
@@ -178,8 +179,49 @@ class CandidateReviewTests(unittest.TestCase):
             with self.subTest(updates=updates), self.assertRaises(ValidationError):
                 CandidateReviewRequest.model_validate({**base, **updates})
 
+    def test_candidate_list_is_case_scoped_and_paginated(self):
+        f = self.fixture
+        f.mapping["columns"][1]["meaning"] = "balance"
+        f.save()
+        first = list_candidate_mappings(f.db, case_id=f.case, limit=1)
+        second = list_candidate_mappings(f.db, case_id=f.case, limit=1, offset=1)
+        self.assertTrue(first["has_more"])
+        self.assertFalse(second["has_more"])
+        self.assertNotEqual(first["items"][0]["id"], second["items"][0]["id"])
+        self.assertEqual(list_candidate_mappings(f.db, case_id=uuid4())["items"], [])
+
+    def test_candidate_list_does_not_expose_raw_snapshots(self):
+        result = list_candidate_mappings(self.fixture.db, case_id=self.fixture.case)
+        self.assertEqual(result["items"][0]["candidate_count"], 2)
+        self.assertNotIn("original", result["items"][0])
+
+    def test_account_search_is_case_scoped_and_escapes_wildcards(self):
+        f = self.fixture
+        self.account.holder_name = "Synthetic 100% account"
+        f.db.commit()
+        self.assertEqual(len(list_candidate_accounts(f.db, case_id=f.case, search="100%")["items"]), 1)
+        self.assertEqual(list_candidate_accounts(f.db, case_id=f.case, search="100_")["items"], [])
+        self.assertEqual(list_candidate_accounts(f.db, case_id=uuid4())["items"], [])
+
+    def test_candidate_list_limits_are_checked(self):
+        for params in ({"limit": 101}, {"limit": True}, {"offset": -1}):
+            with self.assertRaises(CandidateStoreError):
+                list_candidate_mappings(self.fixture.db, case_id=self.fixture.case, **params)
+
+    def test_account_search_limits_are_checked(self):
+        for params in ({"search": "x"*129}, {"limit": True}, {"limit": 101}):
+            with self.assertRaises(CandidateStoreError):
+                list_candidate_accounts(self.fixture.db, case_id=self.fixture.case, **params)
+
 
 class CandidateReviewRouterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mapping_creation_uses_authenticated_actor_and_case(self):
+        from routers import financial_adjudication as router
+        case = uuid4()
+        with patch.object(router, "actor_from_user", return_value="actor"), patch.object(router, "store_pdf_candidates", return_value={}) as call:
+            await router.record_candidate_mapping("proposal", case, "user", "db")
+        call.assert_called_once_with("db", case_id=case, proposal="proposal", actor="actor")
+
     async def test_write_requires_edit_and_uses_authenticated_actor(self):
         from routers import financial_adjudication as router
         case, candidate = uuid4(), uuid4()

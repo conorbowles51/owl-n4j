@@ -47,7 +47,9 @@ from services.financial.correction_preview import CorrectionPreviewError, previe
 from services.financial.corrections import correct_transaction
 from services.financial.quarantine_row import actor_from_user, ActorError
 from services.financial.candidate_reviews import CandidateReviewRequest, review_candidate
-from services.financial.candidate_store import CandidateStoreError
+from services.financial.candidate_store import CandidateStoreError, store_pdf_candidates
+from services.financial.pdf_candidates import PdfMappingProposal
+from services.financial.pdf_geometry_candidates import PdfGridMapping
 
 from postgres.session import get_db
 from routers.case_access import case_access_dependency
@@ -102,6 +104,21 @@ async def record_candidate_review(candidate_id: UUID, body: CandidateReviewReque
     except Exception:
         logger.exception("Candidate review failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Candidate review could not be recorded. Reload before retrying.")
+
+
+@router.post("/candidate-mappings")
+async def record_candidate_mapping(body: PdfGridMapping | PdfMappingProposal,
+                                   case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
+                                   db: Session = Depends(get_db)):
+    try:
+        return store_pdf_candidates(db, case_id=case_id, proposal=body, actor=actor_from_user(current_user))
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ActorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate save failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="PDF readings could not be saved. Reload before retrying.")
 
 
 def _respond(result) -> dict:

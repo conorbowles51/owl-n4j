@@ -117,6 +117,10 @@ def main():
         response = client.post("/api/auth/login", json={"username": "loupe-local@example.com", "password": "Loupe-local-test-2026"})
         response.raise_for_status()
         client.headers["Authorization"] = "Bearer " + response.json()["access_token"]
+        saved = client.post("/api/financial/candidate-mappings", params={"case_id": str(case_id)}, json=proposal)
+        saved.raise_for_status()
+        assert saved.json()["created"] is False and saved.json()["id"] == str(mapping_id)
+        assert [c["id"] for c in saved.json()["candidates"]] == [c["id"] for c in loaded["candidates"]]
         response = client.get(f"/api/financial/candidate-mappings/{mapping_id}", params={"case_id": str(case_id)})
         response.raise_for_status()
         assert len(response.json()["candidates"]) == 2
@@ -132,7 +136,7 @@ def main():
         assert client.post(url, params={"case_id": str(case_id)}, json={"currency": "XYZ"}).status_code == 422
     summary = dict(case_id=str(case_id), mapping_id=str(mapping_id), competing_writers=2,
         observed_lock_waiters=waiting, mappings=1, candidates=2, ledger_transactions=0,
-        immutable_update_triggers="passed", authenticated_http_assessment="passed")
+        immutable_update_triggers="passed", authenticated_http_assessment="passed", authenticated_http_creation_retry="passed")
     (ROOT / "data/local-runtime/candidate-check.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
     engine.dispose()

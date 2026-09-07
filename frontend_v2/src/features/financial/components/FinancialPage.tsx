@@ -43,6 +43,7 @@ import { BulkActionsBar } from "./BulkActionsBar"
 import { TransactionTable } from "./TransactionTable"
 import { FinancialCharts } from "./FinancialCharts"
 import { DuplicateCandidatesPanel } from "./DuplicateCandidatesPanel"
+import { PdfCandidatesPanel } from "./PdfCandidatesPanel"
 import { ProofStandingPanel } from "./ProofStandingPanel"
 import { CorrectableLedger } from "./CorrectableLedger"
 import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
@@ -536,6 +537,9 @@ export function FinancialPage() {
             </ErrorBoundary>
             <ErrorBoundary level="section">
               <DuplicateCandidatesPanel key={caseId} caseId={caseId} />
+            </ErrorBoundary>
+            <ErrorBoundary level="section">
+              <PdfCandidatesPanel key={caseId} caseId={caseId} />
             </ErrorBoundary>
             <ErrorBoundary level="section">
               <CorrectableLedger key={caseId} caseId={caseId} onAdjudicate={setAdjudicationRow} />

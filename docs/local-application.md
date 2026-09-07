@@ -121,8 +121,7 @@ two pending originals survive, and neither enters the ledger. Direct SQL attempt
 to UPDATE either original table are refused by database triggers. The script uses
 only the isolated local database and records IDs in
 `data/local-runtime/candidate-check.json`. The script also verifies authenticated mapping reads and original amount
-assessment through the local backend. Candidate creation/review UI is not exposed
-yet. The migration refuses downgrade while saved originals exist.
+assessment through the local backend. Authenticated creation retries also return the same saved originals. The migration refuses downgrade while saved originals exist.
 
 Check append-only candidate reviews and stale-review contention:
 
@@ -137,4 +136,21 @@ the original text. A database trigger refuses history updates. Fixture IDs persi
 in `data/local-runtime/candidate-review-check.json`. The deliberately reviewed
 12.34 GBP differs from the original digital reading 1234.00 GBP; it tests audit
 preservation, not the truth of that correction. Resolution does not admit a ledger
-transaction. Candidate creation and review screens are not yet connected.
+transaction. Saved candidate review is available under Financial → Ledger → PDF readings.
+
+
+Check the actual candidate review screen with Chromium (frontend and backend running):
+
+```sh
+node scripts/check_local_candidate_ui.cjs
+```
+
+Run the review fixture script above first. This UI check signs in normally, opens
+the saved synthetic PDF readings, reopens/resolves a reading, verifies the original
+1234.00 GBP assessment and source page image, and saves the exact reviewed 12.34 GBP
+with retained history. A screenshot is saved to
+`/tmp/loupe-neilbyrne-candidate-review-ui.png`. It changes only that labelled test
+case. The screen supports rejection, review reload, account search and all three
+date roles. A stable accessible label is used for selects and the reason textarea.
+Source mapping creation still requires the API or fixture script; automatic PDF
+import, account creation and ledger materialization are not part of this screen.

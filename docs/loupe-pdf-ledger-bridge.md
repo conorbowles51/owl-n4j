@@ -182,3 +182,20 @@ means an analyst supplied a complete reading, not that the evidence passed
 reconciliation or that the transaction counts in totals. A future materializer
 must bind the exact current review and prohibit contradictory later edits after
 materialization, directing ledger corrections through the existing audit path.
+
+
+## Saved-candidate review screen — 7 September 2026
+
+Case-scoped GET candidate-mappings and ledger-accounts provide bounded lists/search.
+POST candidate-mappings accepts only the typed source-bound proposal and uses the
+existing atomic writer with the authenticated case:edit actor. The Financial Ledger
+now has a lazy-open PDF readings panel with batch/row pagination. Review shows exact
+original text, amount assessment and the source image, then accepts explicit account,
+currency, direction, exact amount, separate date roles and reason. Resolve/reject/
+reopen preserve history. Writes block repeat submissions until an explicit reload,
+including uncertain failures; responses are checked against case/candidate/revision.
+
+Verified with a synthetic real-browser reopen/resolve round trip and authenticated
+creation retry. Creation of source mappings through the UI, automatic extraction,
+account creation and atomic materialization still remain. Resolution stays outside
+ledger totals. Earlier “UI remains” notes above describe the preceding checkpoint.

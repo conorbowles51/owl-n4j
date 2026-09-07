@@ -108,6 +108,7 @@ class PermissionResolverTests(unittest.TestCase):
             routes,
             {
                 "/api/financial/candidates/{candidate_id}/review": ["POST"],
+                "/api/financial/candidate-mappings": ["POST"],
                 "/api/financial/transactions/{transaction_id}/quarantine": [
                     "POST"
                 ],
