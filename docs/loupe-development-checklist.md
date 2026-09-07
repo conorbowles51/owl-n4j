@@ -39,6 +39,8 @@ feature below is complete at the start of this window.
 
    - [x] Provisional account setup: explicit document/currency-scoped label and reason, audit run, same-account retry protection and a guard against use from another PDF (dd7fc5b). Known-account identity/merge remains separate.
 
+   - [x] Cross-batch source reuse review: detect repeated stored rows/overlapping source claims, expose uncomparable pairs and coverage limits, and open the affected readings (7ee220b). This is not database-enforced materialization deduplication.
+
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
@@ -130,6 +132,11 @@ feature below is complete at the start of this window.
   3,676 financial tests, 917 unit tests, 11 Chromium tests and TS/lint pass.
   Two real PostgreSQL lock waiters produced one account; browser account setup
   and candidate resolution passed without ledger admission. Next: materialization.
+
+- 7 September, overnight: **7ee220b** adds cross-mapping source reuse checks under
+  feature2. 3,685 financial tests, 922 unit tests, 11 Chromium tests and TS/lint pass.
+  Live browser found one repeated source row across three compared pairs and opened
+  its exact reading. Ledger materialization remains; fix account-audit run wording next.
 
 ## Morning handoff
 

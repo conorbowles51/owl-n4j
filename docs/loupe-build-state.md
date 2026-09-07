@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `dd7fc5b`, “Add source-scoped provisional
-  accounts for PDF candidate review”. A state commit follows;
+- **Latest implementation commit:** `7ee220b`, “Detect repeated PDF source claims
+  across candidate mappings”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,35 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Cross-mapping source reuse checks completed — 7 September 2026 overnight
+
+`7ee220b` adds a bounded read-only check across saved candidate batches from one
+PDF. A shared source-file lock and fresh source binding precede the snapshot.
+Repeated stored grid rows survive changes to proposed meanings; text overlap and
+possible bounding-area overlap are distinct findings. Mixed/unlocated sources may
+be uncomparable. Rejected rows stay counted but are not compared. Limits and
+truncated details are explicit (100 mappings/1,000 readings, 10,000 pairs, first100
+finding details). No check is a duplicate exclusion or ledger materialization permit.
+The UI can open the exact candidate in either batch; snapshots must be rerun after
+review changes. Identical amounts at distinct source rows alone are not findings.
+
+**Verified:** 3,685 financial tests (zero skips), 922 unit tests, 11 Chromium tests,
+TypeScript/full ESLint pass. Nine backend/five UI tests added. A live authenticated
+browser compared three synthetic reading pairs, found one repeated source row and
+opened the exact candidate from its finding. Script:
+`scripts/check_local_candidate_reuse_ui.cjs`; screenshot
+`/tmp/loupe-neilbyrne-source-reuse-ui.png`; backend currently logs to
+`/tmp/loupe-neilbyrne-reuse-ui-backend.out`.
+
+**Immediate next fix found by visual QA:** a failed provisional-account setup audit
+run currently triggers ingestion-specific warning language claiming missing ledger
+transactions. Distinguish this known operation in run display while retaining its
+audit/error visibility. Then final integration verification/handoff before cutoff.
+Materialization remains substantial: whole-document occurrence indexing, truthful
+source shape/extraction-layer provenance, printed controls and actual-byte verification
+need resolution alongside immutable transaction links. Details are recorded in
+`docs/loupe-pdf-ledger-bridge.md`; do not guess an extraction layer to fit the enum.
 
 ### Provisional candidate account setup completed — 7 September 2026 overnight
 
