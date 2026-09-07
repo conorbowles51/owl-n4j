@@ -110,6 +110,7 @@ feature below is complete at the start of this window.
    - [ ] Connect comparisons between financial records and statements or claims about payments.
 
 8. **Produce traceable reports and exports — partial**
+   - [x] Primary Ledger and documentary Transactions export their applied filter scope directly, with case-switch reset and no misleading held-out-only export (51ebd77).44targeted tests and primary browser ZIP/hash checks pass.
    - [x] Format report money exactly in currency units while preserving minor units, and verify exported totals/exclusions against the summary API across case/account/date/empty scopes (96f3a3f).92 targeted tests and live HTTP/hash/layout checks pass; non-member access matrix remains.
    - [x] Bundle a readable HTML report derived from the exact captured snapshot, with scope, totals, included/excluded readings, source references and decision details; independently hash the report (8a1e051). Browser layout/download verified. Amounts use explicit minor units; polished exhibits and PDF pagination remain.
    - [x] Download the applied ledger scope as a ZIP with exact rows/totals, source references, relevant decision history and a byte-verifiable manifest (49f2b83). Browser download and digest verified; formatted reports and broader export workflow remain.
@@ -440,3 +441,7 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
 - Cross-view acceptance (5aff978): browser exclusion updates all three migrated
   views; exact restored snapshot, preserved original and both audit decisions
   verified. Synthetic fixture restored; now6decisions. No real evidence changes.
+
+- Primary export checkpoint (51ebd77):44targeted tests, TypeScript/scoped ESLint
+  and browser download/hash checks pass.10restored synthetic rows/6decisions;
+  no evidence or ledger changes. Prepare final retained feature/demo handoff next.

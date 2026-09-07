@@ -7,9 +7,9 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation checkpoint:** `5aff978`, cross-view exclusion/export
-  acceptance scripts. Application baseline remains `0fe3c69` plus `ecffd74`;
-  integrated verification at `09c341c`. State commit follows.
+- **Latest implementation checkpoint:** `51ebd77`, primary Ledger/Transactions
+  export integration. Full integrated baseline at `09c341c`;44targeted tests and
+  browser export checks cover this later change. State commit follows.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
   to complete the admission control and the case-wide proof-class display,
@@ -45,6 +45,25 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Primary ledger export integration — 7 September 2026
+
+`51ebd77` mounts existing LedgerExportButton in CorrectableLedger beside summary,
+using the same applied params. Both Ledger and documentary Transactions benefit;
+Held out stays without this all-scoped-readings export.44targeted wrapper/export/
+page tests passed, TypeScript/scoped ESLint/diff checks passed. Browser primary
+Transactions ZIP download verified; independent checks10restored rows,6decisions,
+snapshot/report hashes match. Report data/local-runtime/primary-ledger-export-check.json;
+script check_local_primary_ledger_export_ui.cjs. No live data changes. Backend
+remains exec18309. No need repeat full integration suite for this tested wiring.
+
+**Next segment:** prepare a concise local testing/demo guide and retained numbered
+feature status for Neil's13:00return. Verify source/correction/finalization demo
+fixture paths from persistent reports before linking. Continue bounded acceptance
+checks that fit before11:45UTC; do not begin speculative large feature work. At
+11:45UTC perform final local health/PDF-preservation/git status check and pause
+heartbeat through automation_update, with clear complete/partial/remaining report.
+All ten full features remain partial or remaining;7and9 remain unconnected.
 
 ### Cross-view exclusion/export acceptance — 7 September 2026
 
