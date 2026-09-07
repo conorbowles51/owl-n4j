@@ -32,3 +32,5 @@ it("does not attach current-ledger filters to held out rows", () => {
   expect(screen.queryByText("Apply fixture filter")).not.toBeInTheDocument()
   expect(screen.getByText("Held out fixture")).toBeInTheDocument()
 })
+
+vi.mock("./LedgerSummaryPanel", () => ({ LedgerSummaryPanel: () => null }))

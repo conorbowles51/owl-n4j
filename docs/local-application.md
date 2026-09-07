@@ -401,3 +401,19 @@ PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/chec
 
 The read-only synthetic check verifies10 postings/GBP2100, an account filter/GBP840,
 and an empty February scope. Report: `data/local-runtime/ledger-summary-check.json`.
+
+Ledger now displays **Current ledger summary** for the applied account/date scope.
+It preserves exact money strings, shows included classifications and disjoint
+exclusion counts, and hides prior totals during refresh or a scope change. Empty
+eligible results and unavailable summaries have different messages. Corrections
+and row decisions invalidate the same case-scoped query prefix.
+
+```sh
+node scripts/check_local_summary_panel_ui.cjs
+```
+
+This check sets aside one row in the synthetic coverage fixture and immediately
+restores it through the UI. It verifies9 included/1 excluded then10 included and
+GBP2100 after restoration. It adds two synthetic audit decisions; it does not use
+real evidence. Report: `data/local-runtime/summary-panel-ui-check.json`; screenshot:
+`/tmp/loupe-neilbyrne-summary-panel-ui.png`. The graph analysis cards remain legacy.
