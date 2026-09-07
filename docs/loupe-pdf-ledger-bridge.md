@@ -69,6 +69,36 @@ remain outside totals, proof class is computed, and displayed source highlights
 still identify the original evidence. Exercise the final bridge through the
 isolated HTTP/PostgreSQL app, not only mocked component tests.
 
-The first next code unit should be the typed mapping/candidate contract and its
-source-binding tests. A migration or admission endpoint should follow only after
-that contract can express unresolved fields without fabricating a transaction.
+## Implemented contract — 7 September 2026
+
+`backend/services/financial/pdf_candidates.py` now provides a read-only typed
+contract for a nominated canonical-text region, proposed columns, ordered rows,
+exact cell spans and optional source-backed account/currency/period/direction
+context. Binding queries the case-scoped stored source, verifies the text digest
+and exact spans, and returns immutable **pending** candidates. It does not assess
+or normalize amounts, resolve context, write candidates or admit ledger rows.
+
+Source revisions include case/file identity, recorded file digest, canonical text
+digest, source locations and extraction job. Changing provenance without changing
+characters therefore invalidates a mapping. Mapping revisions include the complete
+proposal, and repeated identical amounts at different offsets retain distinct
+candidate keys. The key identifies a mapping snapshot; it is **not** sufficient
+for cross-revision or cross-table materialization deduplication. A future writer
+must enforce that separately and rebind under its transaction.
+
+Origin and page come from the same conservative page-span helper as manual amount
+assessment. Missing, malformed or overlapping provenance stays unknown. The
+contract does not accept caller-supplied origin, settled amounts or proof class.
+Recorded file metadata is checked; original file bytes are not reread.
+
+This is the canonical-text part of step 1, not a completed PDF extractor. Table
+identity is caller-nominated, column meanings remain proposals, and no geometric
+table detection or rectangle claim is made. The v1 contract supports nonoverlapping
+rows in canonical text order; column-major/irregular extraction needs an explicit
+geometry binding extension, not reordered or guessed offsets. Empty/missing fields
+may be omitted without creating placeholder ledger values.
+
+Next: extend this contract to verified stored table/cell geometry where canonical
+text offsets do not faithfully locate a cell, then implement immutable candidate
+storage and review transitions outside the integer ledger. Automatic mapping,
+amount assessment integration, atomic materialization and projection remain.

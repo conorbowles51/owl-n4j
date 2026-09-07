@@ -12,6 +12,11 @@ from services.financial.correction_preview import CorrectionPreviewError, previe
 from services.financial.corrections import correct_transaction
 from services.financial.correction_verification import correction_verification
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
+from services.financial.pdf_candidates import (
+    PdfMappingError, PdfTextSpan, PdfColumnProposal, PdfCellProposal,
+    PdfRowProposal, PdfContextProposal, PdfMappingProposal, PdfBoundCell,
+    PdfPendingCandidate, PdfBoundMapping, pdf_mapping_source_revision, bind_pdf_mapping,
+)
 from services.financial.ledger_source import LedgerSourceError, ledger_source
 from services.financial.accounts import (
     IDENTITY_TIERS,
@@ -890,6 +895,9 @@ from services.financial.version import (
 )
 
 __all__ = [
+    "PdfMappingError", "PdfTextSpan", "PdfColumnProposal", "PdfCellProposal",
+    "PdfRowProposal", "PdfContextProposal", "PdfMappingProposal", "PdfBoundCell",
+    "PdfPendingCandidate", "PdfBoundMapping", "pdf_mapping_source_revision", "bind_pdf_mapping",
     "AmountAssessmentError",
     "assess_source_amount",
     "LedgerSourceError",

@@ -61,6 +61,28 @@ def assess_source_amount(session, *, case_id, evidence_file_id, start_char,
     if end_char > len(content) or content[start_char:end_char] != expected_text:
         raise AmountAssessmentError("The selected text does not match the source offsets.", 409)
 
+    origin, page_number = source_span_origin(content, locations, start_char, end_char)
+    try:
+        reading = read_amount(content[start_char:end_char], currency, origin)
+    except MoneyError as exc:
+        raise AmountAssessmentError(str(exc)) from exc
+    assessment = reading.to_json()
+    if "minor_units" in assessment:
+        assessment["minor_units"] = str(assessment["minor_units"])
+    for proposal in assessment.get("proposals", []):
+        proposal["minor_units"] = str(proposal["minor_units"])
+    return {
+        "case_id": str(case_id), "evidence_file_id": str(evidence_file_id),
+        "content_sha256": actual_hash, "start_char": start_char, "end_char": end_char,
+        "offset_unit": "unicode_code_points", "page_number": page_number,
+        "currency_source": "caller_supplied", "assessment": assessment,
+        "applied": False,
+        "limitation": "Selected text only; this does not establish that it is a transaction amount or admit it to totals.",
+    }
+
+
+def source_span_origin(content, locations, start_char, end_char):
+    """Derive provenance only from one valid, fully covering stored page."""
     # A missing, malformed or overlapping page map cannot establish origin.
     origin = TextOrigin.unknown
     page_number = None
@@ -88,20 +110,4 @@ def assess_source_amount(session, *, case_id, evidence_file_id, start_char,
                     origin = TextOrigin(location.get("text_origin"))
                 except (TypeError, ValueError):
                     pass
-    try:
-        reading = read_amount(content[start_char:end_char], currency, origin)
-    except MoneyError as exc:
-        raise AmountAssessmentError(str(exc)) from exc
-    assessment = reading.to_json()
-    if "minor_units" in assessment:
-        assessment["minor_units"] = str(assessment["minor_units"])
-    for proposal in assessment.get("proposals", []):
-        proposal["minor_units"] = str(proposal["minor_units"])
-    return {
-        "case_id": str(case_id), "evidence_file_id": str(evidence_file_id),
-        "content_sha256": actual_hash, "start_char": start_char, "end_char": end_char,
-        "offset_unit": "unicode_code_points", "page_number": page_number,
-        "currency_source": "caller_supplied", "assessment": assessment,
-        "applied": False,
-        "limitation": "Selected text only; this does not establish that it is a transaction amount or admit it to totals.",
-    }
+    return origin, page_number
