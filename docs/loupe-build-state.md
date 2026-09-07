@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `27f8328`, “Atomically materialize reviewed
-  PDF candidates with safe retries”. A state commit follows;
+- **Latest implementation commit:** `a2f4337`, “Connect reviewed PDF finalization
+  to authenticated UI and source evidence”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,47 @@ for verification, the retained ten-feature checklist and the handoff, then pause
 Continue ledger materialization in tested units: actual-byte verification first,
 then truthful reading provenance and immutable candidate/source transaction claims.
 Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Finalization API and UI connected — extended window, 7 September 2026
+
+`a2f4337` exposes protected case:view preview and case:edit finalization endpoints,
+with authenticated actor/trusted storage resolution and ordinary scoped errors.
+Preview releases locks in finally. The receipt echoes its manifest revision.
+The saved-batch UI checks all batches from the PDF, requires explicit documentary
+financial-row and incomplete-coverage acceptance/reason, blocks double/uncertain
+writes until reload, validates receipt scope/revision/count/unique IDs, and refreshes
+original-case caches even after unmount. Receipt links open the exact source image
+and highlight. Original rows remain P3/method4 outside default verified totals.
+
+**Verified:** 3,725 backend financial tests (zero skips), 934 frontend unit tests,
+11 Chromium, TypeScript/full ESLint. Live browser finalization shows two new ledger
+rows; identical HTTP retry preserves IDs; proof-class injection422 and changed
+request409; reload shows the receipt without another write action; source image
+and highlighted original row checked visually. Scripts prepare_local_finalization_ui.py
+and check_local_finalization_ui.cjs require a fresh synthetic fixture in that order.
+Current backend launched by local_app.py, exec session25410, logs at
+`/tmp/loupe-neilbyrne-finalization-ui-backend.out`; new routes/method/shape active.
+
+Latest synthetic UI case `5adf884c-aede-4a8d-923e-c3f240d2f708`, file
+`c39d567e-5f9b-4e0c-b1ea-ccc9245f855b`, seal
+`dd95cc88-e229-4ae1-a70f-90aa3805668b`, source document
+`3273797c-470a-4eec-8c77-a93674bd6ef7`. Two GBP12.34 P3 rows with original PDF1234
+kept intact. Full IDs: data/local-runtime/finalization-ui-check.json. Screenshots:
+/tmp/loupe-neilbyrne-finalization-preview-ui.png, finalization-result-ui.png,
+finalization-source-ui.png (each with loupe-neilbyrne prefix). candidate-check.json
+now names this FINALIZED fixture; recreate before older pending-candidate scripts.
+
+**Next segment:** make candidate review screens explicitly read-only after sealing
+while retaining all originals/history/source assessment, and verify a finalized
+ledger row's correction/source/receipt round trip. Backend already refuses review
+writes after seal, but the old form still offers controls that lead to that409.
+Prevent pointless provisional-account setup for a sealed reading too. Then continue
+remaining financial development from the retained checklist in dependency order:
+automatic PDF extraction/nomination and broader uncertainty/coverage/reconciliation
+remain, alongside canonical ledger wiring to all views/exports/tracing. The deliberate
+stored-grid workflow is connected, but do not mark whole features complete on that
+basis. All real PDFs remain untouched/read-only and absent from the database.
+Schedule ACTIVE through09:00 Dublin (08:00 UTC); final15 minutes for handoff.
 
 ### Atomic materialization service — extended window, 7 September 2026
 

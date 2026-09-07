@@ -29,7 +29,7 @@ feature below is complete at the start of this window.
    - [x] Save deliberately selected rows from stored PDF tables separately until they are ready for use (9ddfe63). Automatic extraction/nomination remains under feature 1.
    - [ ] Show questionable amounts, dates and account details alongside the source.
    - [x] Let the investigator confirm, correct or reject saved candidate readings, preserving the original and the reason for each decision (ee6edb4). Local UI verified; deliberate stored-PDF mapping is now connected. Automatic nomination and ledger materialization remain.
-   - [ ] Prevent retries or simultaneous candidate reviews from creating duplicate transactions.
+   - [x] Prevent retries or simultaneous candidate reviews from creating duplicate transactions in the deliberate saved-PDF workflow (27f8328, a2f4337). PostgreSQL competing writes and authenticated UI/HTTP retries preserve the original receipt and transaction IDs.
    - [x] Foundation: immutable in-memory pending candidate contract, with missing context representable (5d7279d). Persistent storage and review are now implemented below.
    - [x] Existing ledger corrections retain originals, history and reasons, with stale-review protection; manual source amount assessment is connected. These do not yet provide candidate review.
 
@@ -52,6 +52,8 @@ feature below is complete at the start of this window.
    - [x] Durable finalization storage: keep permanent candidate/review/transaction links, refuse repeated sealed batches and later review/mapping changes, and protect source scope in PostgreSQL (f0ddde3). Atomic transaction creation and its concurrent retry acceptance remain.
 
    - [x] Atomic candidate writer: fresh review/account/source checks, exact whole-batch transactions, retained originals/rejections, one finalization receipt and safe retries (27f8328). PostgreSQL rollback and two competing requests verified; authenticated API and UI remain before this workflow is complete.
+
+   - [x] Connected finalization UI: current preview, explicit coverage acceptance/reason, safe reload/retry behavior, refreshed ledger rows and source-image links (a2f4337). The larger automatic extraction and complete-statement workflows remain.
 
 3. **Complete financial accuracy checks — partial**
    - [ ] Complete checks of transaction totals against all supported printed controls.
@@ -242,3 +244,10 @@ the service layer. 3,721 backend financial tests pass (zero skips). Live synthet
 PostgreSQL confirms rollback, two contending requests, distinct equal-value rows,
 one durable receipt, stable retries and sealed review history. API/UI integration
 is next; incomplete-coverage P3 rows remain outside default verified totals.
+
+Extended-window implementationa2f4337 completes the deliberate stored-grid review
+to finalization UI/API connection. Verified3725 backend/934 frontend unit/11
+Chromium tests, TypeScript/full ESLint and real-browser creation/retry/source
+highlight checks. The original retry-protection subitem is now checked rather
+than removed. Whole-feature statuses remain partial/remaining as broader automatic
+extraction, uncertainty, controls/coverage and other listed capabilities still remain.
