@@ -106,7 +106,9 @@ describe("IngestionRunNotice when it has nothing to say", () => {
   })
 
   it("raises no alarm about a status this build does not recognise", () => {
-    useIngestionRuns.mockReturnValue(settled([makeRun({ status: "superseded" })]))
+    useIngestionRuns.mockReturnValue(
+      settled([makeRun({ status: "superseded" })])
+    )
 
     const { container } = render(<IngestionRunNotice caseId="case-1" />)
 
@@ -160,7 +162,9 @@ describe("IngestionRunNotice on an attempt that did not finish", () => {
     expect(headline.textContent).toContain(
       "One attempt to load evidence into this ledger has not finished."
     )
-    expect(headline.textContent).toContain("less than the evidence it was given")
+    expect(headline.textContent).toContain(
+      "less than the evidence it was given"
+    )
     expect(screen.getAllByTestId("run-notice-item")).toHaveLength(1)
   })
 
@@ -179,7 +183,9 @@ describe("IngestionRunNotice on an attempt that did not finish", () => {
     expect(headline.textContent).toContain(
       "3 attempts to load evidence into this ledger have not finished."
     )
-    expect(headline.textContent).toContain("less than the evidence they were given")
+    expect(headline.textContent).toContain(
+      "less than the evidence they were given"
+    )
     expect(screen.getAllByTestId("run-notice-item")).toHaveLength(3)
   })
 
@@ -233,7 +239,9 @@ describe("IngestionRunNotice on what each flagged attempt says", () => {
 
     render(<IngestionRunNotice caseId="case-1" />)
 
-    expect(screen.getByTestId("run-notice-status").textContent).toBe("In progress")
+    expect(screen.getByTestId("run-notice-status").textContent).toBe(
+      "In progress"
+    )
     expect(screen.getByTestId("run-notice-detail").textContent).toContain(
       "Started 01 Mar 2024, 09:15 by alex@owlcg.com"
     )
@@ -305,7 +313,9 @@ describe("IngestionRunNotice on what each flagged attempt says", () => {
   })
 
   it("shows no error line for an empty error string either", () => {
-    useIngestionRuns.mockReturnValue(settled([makeRun({ status: "failed", error: "" })]))
+    useIngestionRuns.mockReturnValue(
+      settled([makeRun({ status: "failed", error: "" })])
+    )
 
     render(<IngestionRunNotice caseId="case-1" />)
 
@@ -340,4 +350,55 @@ describe("IngestionRunNotice and the read it asks for", () => {
 
     expect(useIngestionRuns).toHaveBeenCalledWith("case-1")
   })
+})
+
+it("retains a refused account setup without claiming missing ledger imports", () => {
+  useIngestionRuns.mockReturnValue(
+    settled([
+      makeRun({
+        status: "failed",
+        config: { operation: "provisional_candidate_account" },
+        documents_seen: 0,
+        transactions_admitted: 0,
+        transactions_quarantined: 0,
+        error: "Review changed; reload.",
+      }),
+    ])
+  )
+  render(<IngestionRunNotice caseId="case-1" />)
+  expect(screen.getByTestId("run-notice-headline")).toHaveTextContent(
+    "One provisional account setup needs attention"
+  )
+  expect(screen.getByTestId("run-notice-headline")).not.toHaveTextContent(
+    "can therefore hold less"
+  )
+  expect(screen.getByTestId("run-notice-error-text")).toHaveTextContent(
+    "Review changed"
+  )
+  expect(screen.getByTestId("run-notice-description")).toHaveTextContent(
+    "does not import transactions"
+  )
+})
+it("counts actual failed imports separately when account setup also needs attention", () => {
+  useIngestionRuns.mockReturnValue(
+    settled([
+      makeRun({ key: "import", status: "failed" }),
+      makeRun({
+        key: "setup",
+        status: "failed",
+        config: { operation: "provisional_candidate_account" },
+        documents_seen: 0,
+        transactions_admitted: 0,
+        transactions_quarantined: 0,
+      }),
+    ])
+  )
+  render(<IngestionRunNotice caseId="case-1" />)
+  expect(screen.getByTestId("run-notice-headline")).toHaveTextContent(
+    "One attempt to load evidence"
+  )
+  expect(screen.getByTestId("run-notice-headline")).toHaveTextContent(
+    "1 provisional account setup attempt needs attention"
+  )
+  expect(screen.getAllByTestId("run-notice-item")).toHaveLength(2)
 })

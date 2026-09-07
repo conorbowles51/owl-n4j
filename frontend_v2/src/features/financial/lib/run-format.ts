@@ -30,7 +30,11 @@
  * everywhere else: named, marked unrecognised, never rendered blank.
  */
 
-import { INGESTION_RUN_STATUSES, type IngestionRun, type IngestionRunStatus } from "../api"
+import {
+  INGESTION_RUN_STATUSES,
+  type IngestionRun,
+  type IngestionRunStatus,
+} from "../api"
 import { narrow, type NarrowedTerm, type TermCopy } from "./ledger-format"
 import type { Badge } from "@/components/ui/badge"
 import type { ComponentProps } from "react"
@@ -104,15 +108,16 @@ export interface RunStatusReading extends NarrowedTerm<IngestionRunStatus> {
   needsAttention: boolean
 }
 
-const NEEDS_ATTENTION: ReadonlySet<IngestionRunStatus> = new Set<IngestionRunStatus>([
-  "pending",
-  "running",
-  "failed",
-  "aborted",
-])
+const NEEDS_ATTENTION: ReadonlySet<IngestionRunStatus> =
+  new Set<IngestionRunStatus>(["pending", "running", "failed", "aborted"])
 
 export function readRunStatus(raw: string): RunStatusReading {
-  const term = narrow(raw, INGESTION_RUN_STATUSES, RUN_STATUS_COPY, "the ingestion record")
+  const term = narrow(
+    raw,
+    INGESTION_RUN_STATUSES,
+    RUN_STATUS_COPY,
+    "the ingestion record"
+  )
   if (term.value === null) {
     return { ...term, variant: "outline", needsAttention: false }
   }
@@ -182,4 +187,36 @@ export function runDuration(run: IngestionRun): string | null {
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
+/** Known non-import work must not imply missing imported transactions. */
+export function isProvisionalAccountRun(run: IngestionRun): boolean {
+  return (
+    run.config.operation === "provisional_candidate_account" &&
+    run.documents_seen === 0 &&
+    run.transactions_admitted === 0 &&
+    run.transactions_quarantined === 0
+  )
+}
+
+export function readRunOperationStatus(run: IngestionRun): RunStatusReading {
+  const status = readRunStatus(run.status)
+  if (!isProvisionalAccountRun(run) || status.value === null) return status
+  const descriptions: Record<IngestionRunStatus, string> = {
+    pending:
+      "Provisional account setup has not started. This operation does not import transactions.",
+    running:
+      "Provisional account setup is still open. Check its recorded outcome before retrying; this operation does not import transactions.",
+    completed:
+      "Provisional account setup completed. The account label and reason were recorded; no transactions were imported by this operation.",
+    failed:
+      "Provisional account setup did not complete successfully. Check the recorded error and current accounts before retrying. This operation does not import transactions.",
+    aborted:
+      "Provisional account setup was stopped. Check current accounts before retrying; this operation does not import transactions.",
+  }
+  return {
+    ...status,
+    description: descriptions[status.value],
+    label: status.value === "failed" ? "Setup not completed" : status.label,
+  }
 }

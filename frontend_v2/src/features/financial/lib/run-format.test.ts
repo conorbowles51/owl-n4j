@@ -19,6 +19,8 @@ import { describe, expect, it } from "vitest"
 import type { IngestionRun } from "../api"
 import {
   RUN_COUNTS_ARE_HISTORY,
+  isProvisionalAccountRun,
+  readRunOperationStatus,
   formatRunTime,
   readRunStarter,
   readRunStatus,
@@ -48,7 +50,13 @@ function run(overrides: Partial<IngestionRun> = {}): IngestionRun {
 
 describe("readRunStatus", () => {
   it("names every status the backend can store", () => {
-    for (const status of ["pending", "running", "completed", "failed", "aborted"]) {
+    for (const status of [
+      "pending",
+      "running",
+      "completed",
+      "failed",
+      "aborted",
+    ]) {
       const reading = readRunStatus(status)
       expect(reading.value).toBe(status)
       expect(reading.label).not.toBe("")
@@ -81,9 +89,13 @@ describe("readRunStatus", () => {
   })
 
   it("gives each status its own badge rather than falling through to the loud one", () => {
-    const variants = ["pending", "running", "completed", "failed", "aborted"].map(
-      (s) => readRunStatus(s).variant
-    )
+    const variants = [
+      "pending",
+      "running",
+      "completed",
+      "failed",
+      "aborted",
+    ].map((s) => readRunStatus(s).variant)
     expect(variants).not.toContain("default")
     expect(new Set(variants).size).toBe(variants.length)
   })
@@ -107,7 +119,9 @@ describe("readRunStatus", () => {
 describe("readRunStarter", () => {
   it("prefers the email, which survives the account being deleted", () => {
     expect(
-      readRunStarter(run({ started_by_email: "alex@owl.test", started_by_user_id: "u-1" }))
+      readRunStarter(
+        run({ started_by_email: "alex@owl.test", started_by_user_id: "u-1" })
+      )
     ).toBe("alex@owl.test")
   })
 
@@ -145,17 +159,26 @@ describe("runDuration", () => {
   it("measures a run that has both ends", () => {
     expect(
       runDuration(
-        run({ started_at: "2024-03-04T09:00:00Z", completed_at: "2024-03-04T09:00:42Z" })
+        run({
+          started_at: "2024-03-04T09:00:00Z",
+          completed_at: "2024-03-04T09:00:42Z",
+        })
       )
     ).toBe("42s")
     expect(
       runDuration(
-        run({ started_at: "2024-03-04T09:00:00Z", completed_at: "2024-03-04T09:05:30Z" })
+        run({
+          started_at: "2024-03-04T09:00:00Z",
+          completed_at: "2024-03-04T09:05:30Z",
+        })
       )
     ).toBe("5m 30s")
     expect(
       runDuration(
-        run({ started_at: "2024-03-04T09:00:00Z", completed_at: "2024-03-04T11:20:00Z" })
+        run({
+          started_at: "2024-03-04T09:00:00Z",
+          completed_at: "2024-03-04T11:20:00Z",
+        })
       )
     ).toBe("2h 20m")
   })
@@ -168,14 +191,19 @@ describe("runDuration", () => {
   it("gives no duration when the two timestamps disagree", () => {
     expect(
       runDuration(
-        run({ started_at: "2024-03-04T09:05:00Z", completed_at: "2024-03-04T09:00:00Z" })
+        run({
+          started_at: "2024-03-04T09:05:00Z",
+          completed_at: "2024-03-04T09:00:00Z",
+        })
       )
     ).toBeNull()
   })
 
   it("gives no duration for a time it cannot parse", () => {
     expect(
-      runDuration(run({ started_at: "whenever", completed_at: "2024-03-04T09:00:00Z" }))
+      runDuration(
+        run({ started_at: "whenever", completed_at: "2024-03-04T09:00:00Z" })
+      )
     ).toBeNull()
   })
 })
@@ -184,6 +212,42 @@ describe("RUN_COUNTS_ARE_HISTORY", () => {
   it("says the counts are the attempt's record and not a count of the ledger", () => {
     // Held as one string so the screen and this test cannot drift.
     expect(RUN_COUNTS_ARE_HISTORY).toMatch(/recorded/)
-    expect(RUN_COUNTS_ARE_HISTORY).toMatch(/not a count of what is in the ledger now/)
+    expect(RUN_COUNTS_ARE_HISTORY).toMatch(
+      /not a count of what is in the ledger now/
+    )
   })
+})
+
+it("describes account setup without claiming imported money", () => {
+  const setup = run({
+    config: { operation: "provisional_candidate_account" },
+    status: "failed",
+  })
+  expect(isProvisionalAccountRun(setup)).toBe(true)
+  expect(readRunOperationStatus(setup).needsAttention).toBe(true)
+  expect(readRunOperationStatus(setup).description).toContain(
+    "does not import transactions"
+  )
+  expect(
+    readRunOperationStatus({ ...setup, status: "completed" }).description
+  ).toContain("no transactions were imported")
+})
+it("does not suppress import warnings when counters contradict the operation label", () => {
+  const setup = run({
+    config: { operation: "provisional_candidate_account" },
+    status: "failed",
+    transactions_admitted: 1,
+  })
+  expect(isProvisionalAccountRun(setup)).toBe(false)
+  expect(readRunOperationStatus(setup)).toEqual(readRunStatus("failed"))
+})
+it("does not guess the meaning of a future account setup status", () => {
+  expect(
+    readRunOperationStatus(
+      run({
+        config: { operation: "provisional_candidate_account" },
+        status: "future",
+      })
+    )
+  ).toEqual(readRunStatus("future"))
 })

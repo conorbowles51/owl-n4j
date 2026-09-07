@@ -221,3 +221,10 @@ node scripts/check_local_candidate_reuse_ui.cjs
 It expects at least one reused source row, verifies reported comparison coverage
 and follows the finding to its exact candidate. Screenshot:
 `/tmp/loupe-neilbyrne-source-reuse-ui.png`. It makes no review or ledger changes.
+
+
+Run notices and the Attempts table distinguish provisional-account setup from
+transaction import. Failed/refused setup remains visible with its recorded error,
+but does not claim missing imported transactions. Mixed histories retain the real
+import warning and count setup separately. An operation label contradicting nonzero
+import counters does not suppress an import warning.

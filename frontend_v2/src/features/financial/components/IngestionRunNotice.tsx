@@ -1,5 +1,7 @@
 /**
  * The attempts that did not finish, said out loud above the ledger.
+ * Known provisional-account setup is identified separately: it records an audit
+ * attempt but cannot establish a gap in imported transactions.
  *
  * An ingestion run is one attempt to put evidence into the ledger. Until this
  * existed, an attempt that broke part way through a statement left no trace on
@@ -46,7 +48,12 @@ import { Badge } from "@/components/ui/badge"
 
 import type { IngestionRun } from "../api"
 import { useIngestionRuns } from "../hooks/use-ingestion-runs"
-import { formatRunTime, readRunStarter, readRunStatus } from "../lib/run-format"
+import {
+  formatRunTime,
+  readRunStarter,
+  readRunOperationStatus,
+  isProvisionalAccountRun,
+} from "../lib/run-format"
 
 /**
  * One flagged attempt.
@@ -56,7 +63,7 @@ import { formatRunTime, readRunStarter, readRunStatus } from "../lib/run-format"
  * there is no unrecognised branch to draw.
  */
 function FlaggedRun({ run }: { run: IngestionRun }) {
-  const status = readRunStatus(run.status)
+  const status = readRunOperationStatus(run)
 
   return (
     <li
@@ -116,10 +123,14 @@ export function IngestionRunNotice({ caseId }: { caseId: string | undefined }) {
     )
   }
 
-  const flagged = data.runs.filter((run) => readRunStatus(run.status).needsAttention)
+  const flagged = data.runs.filter(
+    (run) => readRunOperationStatus(run).needsAttention
+  )
   if (flagged.length === 0) return null
 
-  const one = flagged.length === 1
+  const setupCount = flagged.filter(isProvisionalAccountRun).length
+  const importCount = flagged.length - setupCount
+  const one = importCount === 1
 
   return (
     <div
@@ -130,11 +141,25 @@ export function IngestionRunNotice({ caseId }: { caseId: string | undefined }) {
       <p className="flex items-start gap-2 text-sm font-medium">
         <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span data-testid="run-notice-headline">
-          {one
-            ? "One attempt to load evidence into this ledger has not finished."
-            : `${flagged.length} attempts to load evidence into this ledger have not finished.`}{" "}
-          The ledger below can therefore hold less than the evidence{" "}
-          {one ? "it was" : "they were"} given.
+          {importCount > 0 ? (
+            <>
+              {one
+                ? "One attempt to load evidence into this ledger has not finished."
+                : `${importCount} attempts to load evidence into this ledger have not finished.`}{" "}
+              The ledger below can therefore hold less than the evidence{" "}
+              {one ? "it was" : "they were"} given.
+              {setupCount > 0 &&
+                ` Also, ${setupCount} provisional account setup ${setupCount === 1 ? "attempt needs" : "attempts need"} attention; account setup does not import transactions.`}
+            </>
+          ) : (
+            <>
+              {setupCount === 1
+                ? "One provisional account setup needs attention."
+                : `${setupCount} provisional account setup attempts need attention.`}{" "}
+              Account setup does not import transactions; this is not evidence
+              of missing imported rows.
+            </>
+          )}
         </span>
       </p>
 

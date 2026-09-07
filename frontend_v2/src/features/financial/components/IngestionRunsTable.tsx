@@ -56,7 +56,8 @@ import {
   RUN_COUNTS_ARE_HISTORY,
   formatRunTime,
   readRunStarter,
-  readRunStatus,
+  readRunOperationStatus,
+  isProvisionalAccountRun,
   runDuration,
 } from "../lib/run-format"
 
@@ -64,7 +65,7 @@ import {
 const UNRECOGNISED_VARIANT = "warning" as const
 
 function RunRow({ run }: { run: IngestionRun }) {
-  const status = readRunStatus(run.status)
+  const status = readRunOperationStatus(run)
   const unrecognised = status.value === null
   const duration = runDuration(run)
 
@@ -82,6 +83,12 @@ function RunRow({ run }: { run: IngestionRun }) {
             {status.label}
           </Badge>
 
+          {isProvisionalAccountRun(run) && (
+            <p className="text-xs text-muted-foreground">
+              Provisional account setup · no transaction import
+            </p>
+          )}
+
           {run.error !== null && run.error !== "" && (
             <p
               className="font-mono text-xs break-words text-destructive"
@@ -92,7 +99,10 @@ function RunRow({ run }: { run: IngestionRun }) {
           )}
 
           {run.notes !== null && run.notes !== "" && (
-            <p className="text-xs break-words text-muted-foreground" data-testid="run-notes">
+            <p
+              className="text-xs break-words text-muted-foreground"
+              data-testid="run-notes"
+            >
               {run.notes}
             </p>
           )}
@@ -103,7 +113,10 @@ function RunRow({ run }: { run: IngestionRun }) {
         <div className="font-mono text-xs" data-testid="run-started">
           {formatRunTime(run.started_at)}
         </div>
-        <div className="text-xs text-muted-foreground" data-testid="run-starter">
+        <div
+          className="text-xs text-muted-foreground"
+          data-testid="run-starter"
+        >
           {readRunStarter(run)}
         </div>
       </TableCell>
@@ -137,7 +150,10 @@ function RunRow({ run }: { run: IngestionRun }) {
                 Length not known
               </div>
             ) : (
-              <div className="text-xs text-muted-foreground" data-testid="run-duration">
+              <div
+                className="text-xs text-muted-foreground"
+                data-testid="run-duration"
+              >
                 {duration}
               </div>
             )}
@@ -145,13 +161,22 @@ function RunRow({ run }: { run: IngestionRun }) {
         )}
       </TableCell>
 
-      <TableCell className="align-top text-right tabular-nums" data-testid="run-documents-seen">
+      <TableCell
+        className="align-top text-right tabular-nums"
+        data-testid="run-documents-seen"
+      >
         {run.documents_seen}
       </TableCell>
-      <TableCell className="align-top text-right tabular-nums" data-testid="run-admitted">
+      <TableCell
+        className="align-top text-right tabular-nums"
+        data-testid="run-admitted"
+      >
         {run.transactions_admitted}
       </TableCell>
-      <TableCell className="align-top text-right tabular-nums" data-testid="run-quarantined">
+      <TableCell
+        className="align-top text-right tabular-nums"
+        data-testid="run-quarantined"
+      >
         {run.transactions_quarantined}
       </TableCell>
     </TableRow>
@@ -195,7 +220,10 @@ export function IngestionRunsTable({ runs }: { runs: IngestionRun[] }) {
         Drawn by this component and not by its caller, so the three count
         columns above can never be rendered without it. See the docstring.
       */}
-      <p className="text-xs text-muted-foreground" data-testid="run-counts-are-history">
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="run-counts-are-history"
+      >
         {RUN_COUNTS_ARE_HISTORY}
       </p>
     </div>
