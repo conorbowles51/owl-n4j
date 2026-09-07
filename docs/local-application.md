@@ -649,3 +649,13 @@ Synthetic local Chromium verified GBP2100,10missing-label readings and the corre
 case-scoped source dialog. Report: `data/local-runtime/counterparties-panel-ui-check.json`.
 35page tests and14panel tests pass, including scope/total refusal, missing/blank
 labels, pagination and decision refresh. TypeScript/scoped ESLint pass.
+
+## Integrated verification after ledger view/export migration
+
+On7September2026, after counterparty UI commit0fe3c69 and test-only lint fixecffd74:
+financial backend3,827tests passed with no skips; frontend unit1,032tests across108
+files passed (includes existing unrelated src/__probe.test.ts, left untouched);
+Chromium11tests across9files passed; TypeScript and full ESLint passed.
+Logs: /tmp/loupe-neilbyrne-final-integration-{backend,unit,browser,tsc,lint}.out.
+These checks validate the implemented scope; automatic extraction/AI processing,
+complete real-PDF acceptance and all ten full features are not thereby complete.
