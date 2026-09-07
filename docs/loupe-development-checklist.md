@@ -106,6 +106,7 @@ feature below is complete at the start of this window.
    - [ ] Connect comparisons between financial records and statements or claims about payments.
 
 8. **Produce traceable reports and exports — remaining**
+   - [x] Consistent PostgreSQL snapshot of relevant decision history plus exact JSON export manifest, with event/output bounds (001009d). Download/report UI remains; candidate-review history and fresh source-byte verification explicitly excluded.
    - [x] Internal immutable ledger snapshot captures exact rows/totals/source metadata and exclusions from one read, with stable content hash (1efe4ad). Decision history, manifest and download remain; snapshot explicitly not export-ready.
    - [ ] Connect existing export and exhibit components to reviewed results.
    - [ ] Include source references, correction history and relevant limitations.
@@ -387,3 +388,9 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
 - 7 September, 10:40 Dublin: **1efe4ad** adds internal deterministic snapshot
   foundation.47 targeted tests and single-SELECT proof pass. No export endpoint or
   completion claim; next is consistent decision history and accurate JSON manifest.
+
+
+- 7 September, 10:50 Dublin: **001009d** captures export history under repeatable
+  read with JSON-specific manifest.29 targeted tests covered/resolved and live
+  synthetic concurrent-write consistency/digest checks pass; row restored. Next:
+  authenticated attachment and browser download. Feature8 remains unfinished.

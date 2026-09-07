@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `1efe4ad`, “Capture deterministic ledger readings
-  and totals for a traceable export foundation”. A state commit follows;
+- **Latest implementation commit:** `001009d`, “Capture consistent ledger decision
+  history with a precise export manifest”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,39 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Consistent history/export manifest service — 7 September 2026
+
+`001009d` adds capture_ledger_export(Engine): owns fresh PostgreSQL REPEATABLE READ,
+READ ONLY transaction for snapshot plus relevant AdjudicationEvents. Refuses
+non-PostgreSQL/reused connection. History scoped by case and captured transaction,
+source-document, period and evidence-file subjects. Keeps actor/reason/before/after
+and per-subject sequence; explicitly no cross-subject chronology claim.10,000-event
+and16MiB bounds refuse truncation. Snapshot schema2; separate manifest correctly
+names ledger_snapshot_json_utf8, digest, byte count, generated_at and code_version.
+Structured candidate-review history is not embedded, recorded source bytes not
+reverified; these limitations remain in content. No download endpoint/UI yet.
+
+Verified:29 targeted snapshot/package tests covered; one expectation corrected to
+preserve the writer's existing 'Investigator: ' reason prefix, focused rerun passed.
+Real PostgreSQL synthetic concurrent write test passed: export begun before an
+exclusion equals baseline bytes/history despite intervening commit; later export
+has one fewer included row and one extra decision. Finally restores row; two
+synthetic audit events remain. Baseline2 decisions, post-exclusion3, now4 after
+restore. Digest/byte count and output limit verified. Script check_local_ledger_export.py;
+report ledger-export-check.json. Logs /tmp/loupe-neilbyrne-export-history-{tests,
+final,live}.out. Backend remains exec21922; restart before exposing export API.
+No real evidence writes. Internal snapshot-only function still marks history absent;
+full owned-transaction export function marks captured scoped history present.
+
+**Next segment:** expose a case:view download of the captured snapshot and manifest
+as an attachment, then connect a button in LedgerAnalysis using applied account/date
+filters. Preserve canonical snapshot bytes (do not parse/re-serialize through JS),
+include manifest with accurately named digest, and do not reuse graph PDF exports.
+Use a bounded ZIP or equivalent with fixed safe filenames; no external publication.
+Verify authenticated HTTP, scope/refusals, exact downloaded bytes/digest, history,
+and one synthetic browser download. Keep limitations visible and report feature8
+partial until human-readable reports/exhibits and broader exports are connected.
 
 ### Internal deterministic snapshot foundation — 7 September 2026
 
