@@ -46,6 +46,26 @@ statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
 
+### Review guide prepared — 7 September 2026, before final cutoff
+
+`5975be9` adds docs/loupe-review-2026-09-07.md: plain-language numbered status of
+all ten retained features, three verified synthetic demo links and exact limits.
+Current read-only API check confirms analysis case10included/0excluded/GBP2100;
+finalized-review case0included/3excluded; correction-history case0included/3excluded.
+Report data/local-runtime/demo-check.json. Read-only Chromium historical correction
+and generated-PDF source check passed again; log
+/tmp/loupe-neilbyrne-handoff-history-demo.out. No live writes.
+Eight features partial,7and9remaining, none whole complete. The detailed original
+checklist remains intact. Application head51ebd77; documentation guide5975be9.
+
+**Next segment:** prepare/run final read-only local service health and real-PDF hash/
+no-ingestion preservation check, review git tracked status, and record final results.
+At11:45UTC reserve the remainder for handoff and pause heartbeat through
+ automation_update; do not claim it is paused before tool confirmation. Final
+message should link docs/loupe-review-2026-09-07.md and the local demo, state eight
+partial/two remaining, main completed changes and tests, without claiming full
+application acceptance. No need repeat full suites or regenerate PDF extraction.
+
 ### Primary ledger export integration — 7 September 2026
 
 `51ebd77` mounts existing LedgerExportButton in CorrectableLedger beside summary,

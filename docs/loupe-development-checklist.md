@@ -445,3 +445,8 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
 - Primary export checkpoint (51ebd77):44targeted tests, TypeScript/scoped ESLint
   and browser download/hash checks pass.10restored synthetic rows/6decisions;
   no evidence or ledger changes. Prepare final retained feature/demo handoff next.
+
+- Review guide checkpoint (5975be9): docs/loupe-review-2026-09-07.md preserves
+  numbered complete-subitem/remaining status and three local demos. Current API
+  counts verified; generated-PDF correction-history browser demo passed read-only.
+  Final health/preservation check and scheduled pause remain at11:45UTC.
