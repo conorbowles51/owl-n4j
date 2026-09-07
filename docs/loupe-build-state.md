@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `7ee220b`, “Detect repeated PDF source claims
-  across candidate mappings”. A state commit follows;
+- **Latest implementation commit:** `f94e347`, “Distinguish provisional account
+  setup from failed transaction imports”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,28 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Account audit display corrected — 7 September 2026 overnight
+
+`f94e347` distinguishes the known provisional_candidate_account operation from
+transaction imports in notices and the Attempts table. Refused/failed setup keeps
+its audit/error visible without claiming missing imported ledger rows. Mixed
+histories count genuine imports separately. Nonzero import counters contradicting
+the operation tag retain ordinary import warnings. Unknown statuses are not guessed.
+
+**Verified:** 927 frontend unit tests (five new operation/notice tests), 11 Chromium
+tests, TypeScript/full ESLint pass. Backend is unchanged from the 3,685-passing-test
+checkpoint. Live browser source-reuse/navigation recheck passes; the screenshot
+`/tmp/loupe-neilbyrne-source-reuse-ui.png` now also shows the corrected setup notice.
+All implementation and state checkpoints are local; real PDF files are untracked.
+
+**Next run:** check clock. Reserve 04:45–05:00 UTC for final local availability,
+working-tree/checklist verification and the morning handoff, then pause heartbeat
+before 05:00 UTC. Do not rush the materialization writer: its source shape/layer,
+whole-document occurrence handling and immutable transaction-link issues are recorded
+in `docs/loupe-pdf-ledger-bridge.md`. The current workflow reaches saved/resolved
+candidates, not ledger admission. The ten main remaining features are still partial
+or remaining; no whole feature has been completed in this overnight window.
 
 ### Cross-mapping source reuse checks completed — 7 September 2026 overnight
 

@@ -138,6 +138,11 @@ feature below is complete at the start of this window.
   Live browser found one repeated source row across three compared pairs and opened
   its exact reading. Ledger materialization remains; fix account-audit run wording next.
 
+- 7 September, overnight: **f94e347** corrects account-setup audit display. Setup
+  failures stay visible without being mistaken for missing transaction imports.
+  927 frontend unit tests, 11 Chromium tests, TS/lint and live UI pass; backend
+  remains at the verified 3,685-test checkpoint.
+
 ## Morning handoff
 
 Pending. Before the cutoff, record completed feature numbers, partial progress,
