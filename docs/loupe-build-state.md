@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `e13375c`, “Keep empty ledger answers scoped
-  and expose missing response rows”. A state commit follows;
+- **Latest implementation commit:** `a6ee80c`, “Connect explicit account and date
+  filters to current ledger rows”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -46,6 +46,35 @@ statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
 
+### Current ledger filters connected — 7 September 2026
+
+`a6ee80c` connects deliberate account lookup/selection and inclusive optional
+ordering-date bounds on Ledger. Draft choices do not alter the existing answer;
+Apply submits them and Clear restores all admitted rows. Account lookup uses the
+existing case:view endpoint, validates response case scope, and displays the100-
+result limit/has_more notice. No account auto-selection. Case or held-out mode
+changes remount all filter/source/correction state. Held out remains separate.
+
+Verified:20 targeted tests across LedgerFilters/CorrectableLedger/LedgerPanel,
+TypeScript and scoped ESLint. Read-only authenticated Chromium against existing
+synthetic coverage case e0da5581-a1ac-4db5-a3a9-e17021fb807a selects its gap account,
+keeps10 rows while drafting, applies February bounds to0 rows with limitation,
+and restores10 after Clear. Screenshot visually inspected. Script:
+check_local_ledger_filters_ui.cjs; report data/local-runtime/ledger-filters-ui-check.json;
+screenshot /tmp/loupe-neilbyrne-ledger-filters-ui.png. Logs use
+/tmp/loupe-neilbyrne-ledger-filters-{test,tsc,lint,live}.out. No backend/evidence edits.
+Chromium needs escalation for macOS MachPort access; successful escalated check
+followed the sandbox failure. Initial root npx test invocation was stopped; run
+frontend commands with explicit frontend_v2 workdir. Unchanged full gates reused.
+
+**Next segment:** quantify coverage for a selected account and requested date
+interval, including requested dates outside known printed bounds; never equate
+printed date coverage with complete extraction or absence of transactions. Reuse
+coverage_query interval-union logic and preserve exclusions/currency separation.
+Return unavailable for oversized or cross-case data. Add targeted backend/API/UI
+checks and a synthetic February-gap versus enclosing-export comparison. Broader
+graph, exports, transfers and tracing remain. Schedule ACTIVE until13:00 Dublin.
+
 ### Scoped empty ledger answers — 7 September 2026
 
 `e13375c` corrects empty LedgerPanel answers when an account or date filter is
@@ -67,12 +96,7 @@ engine returned HTTP200 at 07:47UTC. Both real PDF hashes match their inspection
 baselines and each has zero evidence_files copies in isolated PostgreSQL. Report:
 data/local-runtime/morning-verification.json. AI processing remains untested.
 
-**Next segment:** connect usable account/date filters to the current ledger read,
-then quantify requested-date coverage without treating printed bounds as proof of
-complete transaction extraction. Inspect existing account-search contracts first;
-preserve exact money, source actions, corrections and case isolation. The graph,
-reports, transfer matching and tracing work still remain. No whole feature was
-completed by this fix. Keep the original ten-feature checklist and checked items.
+The account/date controls planned here are now connected at a6ee80c above.
 
 ### Historical balance diagnostics connected — 7 September 2026
 

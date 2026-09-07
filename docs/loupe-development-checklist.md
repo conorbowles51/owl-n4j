@@ -88,6 +88,7 @@ feature below is complete at the start of this window.
    - [x] Identify gaps and overlaps between recorded account statements with eligible printed bounds (8b6c9ad). Enclosing exports are included; oversized accounts are explicitly unavailable.
    - [x] Show which accounts and dates the recorded statement bounds cover, with exclusions and limits visible (8b6c9ad). This does not certify full transaction extraction or undated/unprocessed evidence.
    - [ ] Distinguish no matching transaction found from insufficient records to know.
+   - [x] Explicit account/date filters on current ledger rows, draft/apply/clear behavior, bounded case-scoped account lookup and case-switch resets (a6ee80c). Requested-interval coverage remains.
    - [x] Empty ledger answers respect account/date filters, explain that no match does not establish absence of transactions, and retain response-count discrepancy warnings even for zero rows (e13375c). Quantified search coverage and filter controls remain.
 
 7. **Connect transactions and explain money movement — remaining**
@@ -310,3 +311,10 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   unit tests, TypeScript and scoped ESLint pass; unchanged backend gates reused.
   Neil extended the ACTIVE five-minute heartbeat until13:00 Dublin (12:00 UTC).
   All ten features and earlier completion entries remain visible.
+
+
+- 7 September, 09:04 Dublin: **a6ee80c** connects account/date controls to current
+  ledger rows.20 targeted frontend tests, TypeScript/scoped lint and read-only
+  authenticated synthetic Chromium pass: February gap returns0 rows, Clear
+  restores10. No real evidence edited. Requested-interval coverage remains next;
+  feature6 is still partial and every prior completed item is retained.
