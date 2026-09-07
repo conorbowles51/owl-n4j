@@ -123,3 +123,18 @@ only the isolated local database and records IDs in
 `data/local-runtime/candidate-check.json`. The script also verifies authenticated mapping reads and original amount
 assessment through the local backend. Candidate creation/review UI is not exposed
 yet. The migration refuses downgrade while saved originals exist.
+
+Check append-only candidate reviews and stale-review contention:
+
+```sh
+PYTHON_DOTENV_DISABLED=1 data/local-runtime/backend-venv/bin/python scripts/check_local_candidate_reviews.py
+```
+
+This creates a fresh synthetic candidate case, then holds two reviewers at a
+PostgreSQL lock and verifies one success/one stale-revision refusal. Normal login
+and HTTP then reopen and resolve the reading, retaining three history entries and
+the original text. A database trigger refuses history updates. Fixture IDs persist
+in `data/local-runtime/candidate-review-check.json`. The deliberately reviewed
+12.34 GBP differs from the original digital reading 1234.00 GBP; it tests audit
+preservation, not the truth of that correction. Resolution does not admit a ledger
+transaction. Candidate creation and review screens are not yet connected.

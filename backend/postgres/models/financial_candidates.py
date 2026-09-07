@@ -7,7 +7,7 @@ triggers reject UPDATE; the ORM guard also protects SQLite service tests.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, event, func, inspect
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, event, func, inspect
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,6 +48,28 @@ class FinancialExtractionCandidate(Base):
     snapshot: Mapped[dict] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=False)
 
 
+class FinancialCandidateReview(Base):
+    __tablename__ = "financial_candidate_reviews"
+    __table_args__ = (
+        UniqueConstraint("candidate_id", "sequence", name="uq_candidate_review_sequence"),
+        CheckConstraint("sequence > 0", name="ck_candidate_review_sequence"),
+        CheckConstraint("status IN ('pending', 'resolved', 'rejected')", name="ck_candidate_review_status"),
+        CheckConstraint("length(trim(reason)) > 0", name="ck_candidate_review_reason"),
+        CheckConstraint("(status = 'resolved' AND reading IS NOT NULL) OR (status <> 'resolved' AND reading IS NULL)", name="ck_candidate_review_reading"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("financial_extraction_candidates.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    reading: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True).with_variant(JSON(none_as_null=True), "sqlite"), nullable=True)
+    actor: Mapped[dict] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=False)
+    original_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+@event.listens_for(FinancialCandidateReview, "before_update")
 @event.listens_for(FinancialCandidateMapping, "before_update")
 @event.listens_for(FinancialExtractionCandidate, "before_update")
 def _immutable_original(mapper, connection, target):

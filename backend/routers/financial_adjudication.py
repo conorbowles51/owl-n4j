@@ -46,6 +46,8 @@ from services.financial.duplicate_decisions import DuplicateDecisionError, decid
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
 from services.financial.corrections import correct_transaction
 from services.financial.quarantine_row import actor_from_user, ActorError
+from services.financial.candidate_reviews import CandidateReviewRequest, review_candidate
+from services.financial.candidate_store import CandidateStoreError
 
 from postgres.session import get_db
 from routers.case_access import case_access_dependency
@@ -84,6 +86,22 @@ router = APIRouter(
         Depends(_require_adjudication_case_access),
     ],
 )
+
+
+@router.post("/candidates/{candidate_id}/review")
+async def record_candidate_review(candidate_id: UUID, body: CandidateReviewRequest,
+                                  case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
+                                  db: Session = Depends(get_db)):
+    try:
+        return review_candidate(db, case_id=case_id, candidate_id=candidate_id,
+                                request=body, actor=actor_from_user(current_user))
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ActorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate review failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Candidate review could not be recorded. Reload before retrying.")
 
 
 def _respond(result) -> dict:

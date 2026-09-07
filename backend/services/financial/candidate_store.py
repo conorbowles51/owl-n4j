@@ -10,7 +10,7 @@ from copy import deepcopy
 from sqlalchemy import select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
-from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate
+from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview
 from services.financial.decisions import Actor
 from services.financial.pdf_candidates import PdfMappingError, PdfMappingProposal, _digest, bind_pdf_mapping
 from services.financial.pdf_geometry_candidates import PdfGridMapping, bind_pdf_grid_mapping
@@ -23,6 +23,7 @@ class CandidateStoreError(ValueError):
 
 
 def read_candidate_mapping(session, *, case_id, mapping_id):
+    from services.financial.candidate_reviews import candidate_review_state
     mapping = session.scalar(select(FinancialCandidateMapping).where(
         FinancialCandidateMapping.id == mapping_id, FinancialCandidateMapping.case_id == case_id))
     if mapping is None:
@@ -32,11 +33,18 @@ def read_candidate_mapping(session, *, case_id, mapping_id):
     if (len(rows) != mapping.candidate_count or _digest(mapping.snapshot) != mapping.snapshot_sha256
             or any(_digest(row.snapshot) != row.snapshot_sha256 for row in rows)):
         raise CandidateStoreError("Stored candidate originals are incomplete or inconsistent.")
+    events = list(session.scalars(select(FinancialCandidateReview)
+        .join(FinancialExtractionCandidate, FinancialExtractionCandidate.id == FinancialCandidateReview.candidate_id)
+        .where(FinancialExtractionCandidate.mapping_id == mapping.id).order_by(FinancialCandidateReview.sequence)))
+    by_candidate = {row.id: [] for row in rows}
+    for event in events:
+        by_candidate[event.candidate_id].append(event)
     return dict(id=str(mapping.id), case_id=str(mapping.case_id), evidence_file_id=str(mapping.evidence_file_id),
         mapping_revision=mapping.mapping_revision, original=deepcopy(mapping.snapshot),
         actor=deepcopy(mapping.actor), created_at=mapping.created_at.isoformat(),
         candidates=[dict(id=str(row.id), candidate_key=row.candidate_key, row_index=row.row_index,
-                         status="pending", original=deepcopy(row.snapshot)) for row in rows], applied=False)
+                         **candidate_review_state(session, candidate=row, events=by_candidate[row.id]),
+                         original=deepcopy(row.snapshot)) for row in rows], applied=False)
 
 
 def store_pdf_candidates(session, *, case_id, proposal, actor):

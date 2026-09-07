@@ -38,6 +38,7 @@ from services.financial.amount_assessment import AmountAssessmentError, assess_s
 from services.financial.ledger_source import LedgerSourceError, ledger_source
 from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping
 from services.financial.candidate_assessment import assess_candidate_amounts
+from services.financial.candidate_reviews import read_candidate_review
 
 from postgres.models.enums import (
     AdjudicationDecision,
@@ -91,6 +92,17 @@ router = APIRouter(
 class CandidateAmountAssessmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     currency: str = Field(pattern=r"^[A-Z]{3}$", strict=True)
+
+
+@router.get("/candidates/{candidate_id}/review")
+async def get_candidate_review(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return read_candidate_review(db, case_id=case_id, candidate_id=candidate_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate review lookup failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Candidate review could not be read.")
 
 
 @router.get("/candidate-mappings/{mapping_id}")

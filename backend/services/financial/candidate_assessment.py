@@ -82,8 +82,9 @@ does not resolve account, date, currency context, direction or admission.
     payload = dict(case_id=str(case_id), candidate_id=str(candidate_id), mapping_id=saved["id"],
         mapping_revision=saved["mapping_revision"], candidate_key=candidate["candidate_key"],
         currency=currency, currency_source="caller_supplied", source_context=saved["original"]["proposal"]["context"],
-        amount_cells=amounts, unclassified_columns=unclassified, status="pending", applied=False,
-        limitation="Original numeric readings only. Account, dates, column meanings and direction still require review; no transaction is admitted.")
+        amount_cells=amounts, unclassified_columns=unclassified, status=candidate["status"],
+        review_revision=candidate["review_revision"], applied=False,
+        limitation="Original numeric readings only; this assessment does not itself resolve a review or admit a transaction.")
     # Binds the exact displayed proposals, including currency, for a future review.
     payload["assessment_revision"] = _digest(payload)
     return payload

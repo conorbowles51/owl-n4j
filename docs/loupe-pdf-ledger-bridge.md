@@ -158,3 +158,27 @@ Read-only, case:view endpoints now expose `GET /api/financial/candidate-mappings
 (the URL is continuous). The assessment body accepts only currency. The local
 synthetic script verifies these through normal login and source rectangles.
 Review records, transitions, creation endpoints and review UI remain next.
+
+## Append-only candidate reviews — 7 September 2026
+
+Migration `20260907_candidate_reviews` adds immutable review events separate from
+original snapshots. `candidate_reviews.py` computes pending/resolved/rejected state
+from a sequence and prior-revision chain. Resolution requires exact nonnegative
+minor-unit strings within BIGINT range, supported currency, explicit direction,
+at least one identified calendar date and an account in the same case with a
+compatible currency. No proof class or admission field is accepted. Reopening
+clears the current reading but retains it in history; revised resolutions append.
+
+The writer locks source and candidate rows, rebinds originals, checks the reviewed
+revision and commits a named actor/reason atomically. `GET /api/financial/candidates/
+{candidate_id}/review` is case:view; POST at that same continuous path is case:edit.
+Mapping reads and assessments now include current review state and its revision.
+History remains readable when source data later drifts, while further decisions
+are refused until a new source mapping is made. The PostgreSQL history trigger
+refuses UPDATE; existing case/file deletion still cascades.
+
+Review UI, candidate creation endpoints and atomic materialization remain. Resolved
+means an analyst supplied a complete reading, not that the evidence passed
+reconciliation or that the transaction counts in totals. A future materializer
+must bind the exact current review and prohibit contradictory later edits after
+materialization, directing ledger corrections through the existing audit path.

@@ -107,6 +107,7 @@ class PermissionResolverTests(unittest.TestCase):
         self.assertEqual(
             routes,
             {
+                "/api/financial/candidates/{candidate_id}/review": ["POST"],
                 "/api/financial/transactions/{transaction_id}/quarantine": [
                     "POST"
                 ],

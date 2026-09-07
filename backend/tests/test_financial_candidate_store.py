@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import event, func, select, update
 
 from postgres.base import Base
-from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate
+from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview
 from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping, store_pdf_candidates
 from services.financial.decisions import Actor
 from services.financial.pdf_candidates import pdf_mapping_source_revision
@@ -18,7 +18,7 @@ class CandidateStoreTests(unittest.TestCase):
 
     def setUp(self):
         grid_fixture.GridBindingTests.setUp(self)
-        Base.metadata.create_all(self.engine, tables=[FinancialCandidateMapping.__table__, FinancialExtractionCandidate.__table__])
+        Base.metadata.create_all(self.engine, tables=[FinancialCandidateMapping.__table__, FinancialExtractionCandidate.__table__, FinancialCandidateReview.__table__])
         self.mapping["schema_version"] = "pdf-grid-mapping-v1"
         self.actor = Actor(name="Synthetic investigator", email="synthetic@example.test")
 
