@@ -92,8 +92,9 @@ class SourceShape(str, Enum):
     A statement is a statement whether or not it turns out to balance; that it
     balances is the other half, and it arrives later.
 
-    There are four members rather than five: p2 and p3 share one, because they
-    are the same kind of document distinguished only by outcome.
+    P2 and P3 share statement_document, distinguished by arithmetic outcome.
+    Selected documentary rows have their own shape because checking a subset
+    cannot establish that a whole financial record was captured.
     """
 
     # A structured file whose format mandates control totals: camt.053, BAI2,
@@ -107,6 +108,10 @@ class SourceShape(str, Enum):
     # A statement rendered as a document — PDF, scan, photograph.  Whether its
     # arithmetic closes is not a property of the format and is not known here.
     statement_document = "statement_document"
+    # Deliberately selected rows from a financial record, with neither whole-
+    # document coverage nor a complete statement/control block established.
+    # This is not for figures asserted in letters, interviews or other prose.
+    selected_document_rows = "selected_document_rows"
     # Financial claims embedded in unstructured material: chat, email, an
     # interview transcript.  Produces assertions with a speaker, never rows
     # with a document coordinate.
@@ -179,6 +184,12 @@ def assign_proof_class(
     # some other artefact and must not be allowed to promote a claim.
     if shape is SourceShape.unstructured_narrative:
         return ProofClass.p4
+
+    # Balancing a selected subset does not prove completeness. An outcome
+    # alone must never turn nominated financial rows into a checked statement.
+    # A separately established complete reading requires its own source record.
+    if shape is SourceShape.selected_document_rows:
+        return ProofClass.p3
 
     passed = reconciliation in _PASSING
     failed = reconciliation is ReconciliationStatus.unbalanced

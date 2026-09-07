@@ -22,7 +22,7 @@ Four such rules exist, and each has a test whose name says what breaks:
   This is the whole safety property, asserted over the entire input space
   rather than at the four points a reader might think to check.
 
-The full 4x5 matrix is asserted as a literal table.  It is small enough to
+The full 5x5 matrix is asserted as a literal table.  It is small enough to
 write out, and a table makes a behaviour change show up as a diff on the
 expectation rather than as a passing test that now means something else.
 
@@ -56,12 +56,13 @@ from services.financial.proof_class import (
 )
 
 # Local aliases.  The real names say what they mean and are right in
-# production code; here they would wrap each row of the 4x5 table onto three
+# production code; here they would wrap each row of the 5x5 table onto three
 # lines and destroy the one property that makes a table worth writing out.
 NATIVE_TOTALS = SourceShape.native_with_control_totals
 NATIVE_PLAIN = SourceShape.native_without_control_totals
 STATEMENT = SourceShape.statement_document
 NARRATIVE = SourceShape.unstructured_narrative
+SELECTED = SourceShape.selected_document_rows
 
 BALANCED = ReconciliationStatus.balanced
 UNBALANCED = ReconciliationStatus.unbalanced
@@ -100,6 +101,11 @@ class ClassifyMatrixTest(unittest.TestCase):
         (STATEMENT, BALANCED): ProofClass.p2,
         (STATEMENT, UNBALANCED): ProofClass.p3,
         (STATEMENT, UNAVAILABLE): ProofClass.p3,
+        (SELECTED, None): ProofClass.p3,
+        (SELECTED, NOT_ATTEMPTED): ProofClass.p3,
+        (SELECTED, BALANCED): ProofClass.p3,
+        (SELECTED, UNBALANCED): ProofClass.p3,
+        (SELECTED, UNAVAILABLE): ProofClass.p3,
         (NARRATIVE, None): ProofClass.p4,
         (NARRATIVE, NOT_ATTEMPTED): ProofClass.p4,
         (NARRATIVE, BALANCED): ProofClass.p4,
@@ -127,6 +133,17 @@ class ClassifyMatrixTest(unittest.TestCase):
                     assign_proof_class(shape),
                     assign_proof_class(shape, NOT_ATTEMPTED),
                 )
+
+
+class SelectedRowsTests(unittest.TestCase):
+    def test_balanced_subset_never_proves_complete_statement_coverage(self):
+        for outcome in ALL_OUTCOMES:
+            with self.subTest(outcome=outcome):
+                proof = assign_proof_class(SELECTED, outcome)
+                self.assertTrue(requires_adjudication(proof))
+                self.assertTrue(may_produce_ledger_rows(proof))
+                self.assertFalse(counts_toward_totals(proof))
+                self.assertFalse(admits_automatically(proof))
 
 
 class SafetyPropertyTest(unittest.TestCase):

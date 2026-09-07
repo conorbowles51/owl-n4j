@@ -61,8 +61,7 @@ Where the shape is kept
 ``financial_source_documents`` has no shape column, so the shape is recorded in
 ``metadata`` under ``source_shape`` and read back by :func:`read_source_shape`.
 The reclassifier needs it — a class is a function of shape *and* outcome, and
-it cannot recover the shape from the class, since p3 is reached from three of
-the four shapes.  A document written without it can be graded by nobody, which
+it cannot recover the shape from the class, since several source shapes can produce p3.  A document written without it can be graded by nobody, which
 is why the writer always writes it and never takes it from caller metadata.
 """
 

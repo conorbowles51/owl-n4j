@@ -271,7 +271,7 @@ const PROOF_CLASS_COPY: Record<ProofClass, TermCopy> = {
   p3: {
     label: "P3",
     description:
-      "Financial source whose arithmetic did not close or could not be checked. This can include a native bank file as well as a statement document.",
+      "Financial source whose checks are incomplete or did not pass. This includes selected financial rows whose full document coverage has not been established.",
   },
   p4: {
     label: "P4",

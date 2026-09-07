@@ -319,3 +319,29 @@ future writer using the new method. No reviewed candidate has entered the ledger
 Next resolve selected-row source shape/coverage without claiming the full PDF is
 a statement or all transactions were selected. Then immutable source/candidate
 claims and atomic whole-document finalization remain before a public ledger writer.
+
+
+## Selected financial rows are not a complete statement — 7 September 2026
+
+`SourceShape.selected_document_rows` represents deliberately chosen documentary
+financial rows where whole-document coverage and a complete control block have
+not been established. It always computes P3, including when a subset's arithmetic
+is reported balanced. Reclassification and correction verification preserve that
+restriction. The persisted source-shape metadata makes the coverage limitation
+recoverable; the UI's P3 explanation now includes incomplete document coverage.
+
+This is not an alternative classification for amounts asserted in letters, chats
+or interviews: those remain unstructured narrative/P4. The future candidate writer
+must require an explicit documentary-financial-row attestation and reason, rather
+than assume that a selected table is a financial record. It must hardcode this
+limited shape for the selected-row workflow, preserve source/review provenance,
+and never accept caller-supplied proof class or complete-statement claims. A full
+statement extraction/verification workflow is separate; balanced subsets cannot
+replace it. No automatic mapping, ledger writer or coverage acceptance is added
+by this prerequisite.
+
+Next: immutable candidate-to-transaction links/source claims and an atomic sealed
+whole-file finalization. Require all saved candidates to be resolved or rejected,
+exclude rejected readings without deleting their history, and refuse unresolved
+source reuse before writing. Repeated content requires document-wide occurrence
+indexing; reviews after finalization must use existing ledger correction history.

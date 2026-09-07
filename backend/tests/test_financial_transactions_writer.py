@@ -647,6 +647,28 @@ class RecordTransactionsTests(TransactionPersistenceTestCase):
         self.assertEqual(row.proof_class, ProofClass.p3.value)
         self.assertNotIn(ProofClass(row.proof_class), DEFAULT_TOTAL_CLASSES)
 
+    def test_selected_financial_rows_cannot_be_promoted_by_subset_reconciliation(self):
+        from services.financial.documents import read_source_shape
+        from services.financial.correction_verification import correction_verification
+
+        document = self.admit(sha256_at_ingestion="c" * 64,
+            extraction_layer=ExtractionLayer.investigator_review,
+            shape=SourceShape.selected_document_rows)
+        (row,) = self.write([self.draft()], document=document)
+        self.db.commit()
+        self.assertIs(read_source_shape(document), SourceShape.selected_document_rows)
+        result = reclassify_after_reconciliation(
+            self.db, document, ReconciliationStatus.balanced, run=self.run,
+        )
+        self.db.commit()
+        self.db.refresh(row)
+        self.assertIsNone(result)
+        self.assertEqual(document.proof_class, ProofClass.p3.value)
+        self.assertEqual(row.proof_class, ProofClass.p3.value)
+        correction = correction_verification(document, [row], [ReconciliationStatus.balanced])
+        self.assertEqual(correction["proposed_proof_class"], "p3")
+        self.assertFalse(correction["included_in_default_totals"])
+
     def test_human_method_is_not_an_automated_row_fallback(self):
         with self.assertRaisesRegex(TransactionFieldError, "cannot be mixed"):
             self.write([self.draft(extraction_layer=ExtractionLayer.investigator_review)])
