@@ -7,9 +7,9 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `0fe3c69`, “Connect main Counterparties to
-  exact ledger labels and source readings”; a test-only quote-escape lint fix follows. A state commit follows;
-  confirm the real tip with `git log -3 --oneline`.
+- **Latest implementation baseline:** `0fe3c69` main Counterparties UI, `ecffd74`
+  test-only lint fix; integrated verification recorded at `09c341c`. State commit
+  follows; confirm real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
   to complete the admission control and the case-wide proof-class display,
@@ -45,6 +45,25 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Integrated verification baseline — 7 September 2026, 11:03 UTC
+
+`09c341c` records a single integrated verification after main Transactions,
+Counterparties and export work:3,827backend financial tests, zero skips;1,032frontend
+unit tests/108files;11Chromium tests/9files; TypeScript/full ESLint/diff checks all
+passed. Existing unrelated src/__probe.test.ts ran but was not edited or committed.
+Logs /tmp/loupe-neilbyrne-final-integration-{backend,unit,browser,tsc,lint}.out.
+No failures to fix. No real evidence or database changes. Backend still exec18309.
+Do not repeat this full baseline without subsequent changes or unresolved concerns.
+
+**Next segment:** live cross-view exclusion consistency test using existing synthetic
+coverage case. Exclude one known400GBP row through the authorized writer/UI; verify
+Transactions summary, Counterparties, Trends and export all move2100→1700 and ten→nine
+included rows, then restore in finally and verify2100/ten. Preserve audit events;
+no real evidence. Existing check_local_summary_panel_ui.cjs is a useful starting
+point. This verifies exclusion propagation, not full correction/graph-wide matching.
+Afterward use remaining time for bounded acceptance checks; reserve11:45UTC for
+final verification and plain-language ten-feature handoff. ACTIVE until13:00Dublin.
 
 ### Documentary Counterparties UI — 7 September 2026
 

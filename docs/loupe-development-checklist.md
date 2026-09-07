@@ -126,6 +126,7 @@ feature below is complete at the start of this window.
    - [ ] Preserve the basis for each tracing result so it can be reviewed.
 
 10. **Test the complete application locally — partial**
+    - [x] Integrated post-migration baseline:3,827backend tests,1,032frontend unit tests,11Chromium tests, TypeScript and full ESLint pass (09c341c). Full real-PDF/AI journey and all broader features remain incomplete.
     - [x] Verify actual export membership permissions and immediate revocation with a temporary ordinary local user (cc96526): non-member/no-view denied, view-only allowed, revoked same-token denied, test user removed.
     - [ ] Exercise the full journey from document upload through review, analysis and export.
     - [ ] Validate external AI processing that has not yet been tested.
@@ -430,3 +431,7 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   tests, TypeScript and scoped lint pass after correcting redundant test escapes;
   live totals/source dialog verified. Feature5 remains partial for broader graph,
   search and money-flow consumers. Integration suite is next.
+
+- Integrated verification checkpoint (09c341c):all3,827backend/1,032unit/11browser
+  tests passed, plus TypeScript/full ESLint. No regressions to fix. Existing probe
+  test included but untouched. No full-feature completion is implied.
