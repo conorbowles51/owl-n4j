@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `f94e347`, “Distinguish provisional account
-  setup from failed transaction imports”. A state commit follows;
+- **Latest implementation commit:** `43b2402`, “Verify saved PDF candidate source
+  bytes before materialization”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -35,6 +35,42 @@ completed-item claims and environment recipes in that history are not current.
   exposed. Item 10 is underway: correction preview and replacement writer are
   complete, and correction UI/history are now connected on both Ledger and Held out.
   Broader revalidation remains outstanding.
+
+### Extended authorization — 7 September 2026, through 09:00 Dublin
+
+Neil explicitly requested “continue on the work, extend the schedule to 9am”.
+The existing `continue-loupe-development` heartbeat was updated through the app
+and confirmed ACTIVE every five minutes until **09:00 Europe/Dublin (08:00 UTC)**.
+This supersedes all earlier cutoff/pause statements below. Reserve 07:45–08:00 UTC
+for verification, the retained ten-feature checklist and the handoff, then pause.
+Continue ledger materialization in tested units: actual-byte verification first,
+then truthful reading provenance and immutable candidate/source transaction claims.
+Do not interpret candidate resolution as arithmetic verification or ledger admission.
+
+### Source bytes verified — extended window, 7 September 2026
+
+`43b2402` adds the source-byte prerequisite for materialization. It freshly binds
+saved candidates, scopes the evidence lookup, streams the trusted resolved file,
+compares its SHA-256, refuses missing/changed/non-regular/oversized sources and
+observed mutation during reading. A timestamped receipt preserves the old immutable
+original snapshot; this does not establish extraction accuracy or admit money.
+No HTTP writer has been exposed. Callers must retain source/review locks through
+rebinding, this check and their future atomic write; filesystem changes after the
+read cannot be prevented by database locks.
+
+**Verified:** all 3,696 backend financial tests pass, zero skips (11 new source-byte
+tests). Prior frontend gates remain 927 unit/11 Chromium plus TypeScript/ESLint;
+no frontend changes in this unit. Tracked implementation is clean after checkpoint.
+
+**Next segment:** resolve truthful provenance for human-reviewed PDF readings by
+examining extraction-layer schema/constraints and consumers. Existing layers must
+not be repurposed to claim native/template/model extraction. Then implement the
+immutable candidate-to-transaction/source claims and atomic whole-document writer
+with real PostgreSQL retry/race validation. Keep reviewed candidates outside totals
+until that connection and computed classification are verified. The byte checker
+is now available as `verify_candidate_source_bytes` from the financial package.
+Schedule ACTIVE every five minutes until 09:00 Dublin (08:00 UTC); last15 minutes
+reserved for the new morning handoff. The earlier closing report below is history.
 
 ### Morning handoff — 7 September 2026, overnight window closing
 

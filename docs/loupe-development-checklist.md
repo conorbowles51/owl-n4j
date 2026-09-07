@@ -1,8 +1,9 @@
 # Loupe financial development checklist
 
-Authorized overnight window: 7 September 2026, until **06:00 Europe/Dublin
-(05:00 UTC)**. Scheduled continuation ran every 5 minutes in the same task; the overnight window
-is now closing with the morning handoff below.
+Extended authorized window: 7 September 2026, until **09:00 Europe/Dublin
+(08:00 UTC)**. Neil explicitly extended the deadline; the existing heartbeat is
+ACTIVE every five minutes in this same task. Reserve the final 15 minutes for
+verification and handoff. The earlier 06:00 handoff below remains as history.
 
 Keep all ten features and their subitems visible. Mark verified completions [x];
 never remove completed work. A feature is complete only when its complete user
@@ -21,6 +22,8 @@ feature below is complete at the start of this window.
    - [x] Foundation: verify stored PDF table/cell identity and rectangles without guessed text offsets (5ab6931). Includes repeated amounts, provenance drift, malformed geometry and generated-PDF extraction tests.
 
    - [x] Deliberate source selection: inspect a stored PDF table, choose rows and assign proposed column meanings without automatic transaction classification (9ddfe63). Both real PDFs passed source-binding smoke checks; full transaction accuracy remains.
+
+   - [x] Source-byte prerequisite: compare the current case-scoped file against the saved candidate digest, refusing missing/changed sources and observed changes during reading (43b2402; 11 new tests). This is a backend prerequisite; ledger admission remains unconnected.
 
 2. **Review uncertain readings before they enter the ledger — partial**
    - [x] Save deliberately selected rows from stored PDF tables separately until they are ready for use (9ddfe63). Automatic extraction/nomination remains under feature 1.
@@ -198,3 +201,13 @@ ledger. This needs immutable candidate-to-transaction links, whole-document occu
 handling, defensible source shape/extraction-layer provenance and reconciliation
 coverage. Concrete constraints are in docs/loupe-pdf-ledger-bridge.md. No uncommitted
 implementation is left. No pushes, merges or real-data changes were made.
+
+
+### Extended-window checkpoint — 7 September 2026
+
+Neil extended continuation to 09:00 Dublin, with the same five-minute schedule.
+Source-byte verification foundation completed in 43b2402; 3,696 financial tests
+pass with zero skips. The original ten-feature statuses remain unchanged: this
+prerequisite does not yet make candidate-to-ledger admission complete. Next work
+is truthful human-review provenance, followed by immutable ledger/source links
+and transaction retry/concurrency protection.
