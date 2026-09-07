@@ -67,7 +67,8 @@ def _receipt(session, receipt, request=None):
     ):
         raise CandidateStoreError("Finalization transaction links are incomplete or inconsistent.")
     return dict(case_id=str(receipt.case_id), evidence_file_id=str(receipt.evidence_file_id),
-        finalization_id=str(receipt.id), source_document_id=str(receipt.source_document_id),
+        finalization_id=str(receipt.id), finalization_revision=receipt.snapshot["request"]["expected_revision"],
+        source_document_id=str(receipt.source_document_id),
         run_id=str(receipt.ingestion_run_id), transaction_count=receipt.transaction_count,
         transactions=[dict(candidate_id=str(link.candidate_id), transaction_id=str(row.id),
             ref_id=row.ref_id, superseded_by_id=str(row.superseded_by_id) if row.superseded_by_id else None)

@@ -8,6 +8,7 @@ import {
   candidateMapping,
   candidateUrl,
 } from "../lib/candidate-contract"
+import { CandidateFinalizationPanel } from "./CandidateFinalizationPanel"
 import { CandidateReuseCheck } from "./CandidateReuseCheck"
 import { CandidateSourcePicker } from "./CandidateSourcePicker"
 import { CandidateReviewForm } from "./CandidateReviewForm"
@@ -201,6 +202,7 @@ function CandidateRows({
         fileId={data.evidence_file_id}
         onOpenReading={onOpenReading}
       />
+      <CandidateFinalizationPanel caseId={caseId} fileId={data.evidence_file_id} />
       <h3 className="font-semibold">Saved original readings</h3>
       <ul className="space-y-2">
         {data.candidates.slice(page * 25, page * 25 + 25).map((row) => (

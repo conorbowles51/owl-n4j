@@ -45,6 +45,7 @@ from typing import Literal, Optional
 from services.financial.duplicate_decisions import DuplicateDecisionError, decide_duplicate
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
 from services.financial.corrections import correct_transaction
+from services.financial.candidate_materialization import CandidateFinalizationRequest, finalize_candidates
 from services.financial.quarantine_row import actor_from_user, ActorError
 from services.financial.candidate_accounts import CandidateAccountRequest, create_candidate_account
 from services.financial.candidate_reviews import CandidateReviewRequest, review_candidate
@@ -370,3 +371,20 @@ async def record_candidate_account(candidate_id: UUID, body: CandidateAccountReq
     except Exception:
         logger.exception("Provisional candidate account failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Account creation could not be confirmed. Reload accounts before retrying.")
+
+
+@router.post("/candidate-sources/{evidence_file_id}/finalize")
+async def record_candidate_finalization(evidence_file_id: UUID, body: CandidateFinalizationRequest,
+                                        case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
+                                        db: Session = Depends(get_db)):
+    try:
+        return finalize_candidates(session_factory=sessionmaker(bind=db.get_bind()),
+            case_id=case_id, evidence_file_id=evidence_file_id, request=body,
+            actor=actor_from_user(current_user), resolve_path=_resolve_stored_path)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ActorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate finalization failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Finalization could not be confirmed. Reload the preview before retrying.")

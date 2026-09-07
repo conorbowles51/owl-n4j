@@ -415,3 +415,36 @@ Its latest synthetic fixture is recorded in candidate-materialization-check.json
 candidate-check.json now points at that finalized fixture. Recreate a pending
 fixture before older source-selection/review scripts expecting pending candidates.
 The writer is service-only; authenticated preview/finalize routes and UI remain.
+
+
+## Authenticated finalization and browser workflow — 7 September 2026
+
+Case:view GET `/candidate-sources/{file}/finalization-preview` releases snapshot
+locks in finally. Case:edit POST `/candidate-sources/{file}/finalize` derives the
+actor from authentication and uses the trusted storage resolver. Scoped/stale
+errors retain their status; unexpected failures return generic messages. The
+response echoes the finalized manifest revision, so UI acceptance is tied to the
+preview shown. Write-route permission inventory includes the new endpoint.
+
+A deliberate panel within saved PDF batches loads the whole-file preview, reports
+resolved/rejected counts and incomplete coverage, requires two unchecked explicit
+acceptances and a reason, and blocks uncertain/repeated submissions until reload.
+Receipt scope, revision, count and unique transaction/candidate links are checked.
+Finalization refreshes original-case candidate/ledger/audit/classification caches
+even after unmount. Receipts open each original transaction's protected source
+highlight and acknowledge later corrections. Existing saved candidate forms can
+still be opened for review history; a later review write is refused by the seal.
+
+`prepare_local_finalization_ui.py` creates a fresh synthetic pending fixture and
+resolves its two rows. `check_local_finalization_ui.cjs` then verifies actual UI
+finalization, ledger refresh, identical HTTP retry, rejected caller proof-class
+override, changed-request409, reload without another write action and the source
+image/highlight. Source image is checked in the citation dialog, before opening
+the separate full-document viewer. Screenshots are kept under /tmp only. The
+latest case/result is in `data/local-runtime/finalization-ui-check.json`.
+
+This completes deliberate stored-grid selection/review/finalization connectivity.
+Automatic financial extraction, broader date/account uncertainty handling, complete
+statement coverage/control verification and the remaining numbered features are
+not completed by this workflow. Selected rows still do not enter default verified
+totals. The two real PDFs remain read-only test inputs, never ingested into a case.

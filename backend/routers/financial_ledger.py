@@ -40,6 +40,8 @@ from services.financial.candidate_store import CandidateStoreError, read_candida
 from services.financial.candidate_assessment import assess_candidate_amounts
 from services.financial.candidate_reviews import read_candidate_review
 from services.financial.candidate_overlap import check_candidate_source_reuse
+from services.financial.candidate_materialization import preview_candidate_finalization
+from routers.evidence import _resolve_stored_path
 from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError
 
@@ -533,3 +535,18 @@ async def get_candidate_source_reuse(evidence_file_id: UUID, case_id: UUID = Que
     except Exception:
         logger.exception("Source reuse check failed")
         raise HTTPException(status_code=500, detail="Source reuse check could not be completed.")
+
+
+@router.get("/candidate-sources/{evidence_file_id}/finalization-preview")
+async def get_candidate_finalization_preview(evidence_file_id: UUID, case_id: UUID = Query(...),
+                                             db: Session = Depends(get_db)):
+    try:
+        return preview_candidate_finalization(db, case_id=case_id,
+            evidence_file_id=evidence_file_id, resolve_path=_resolve_stored_path)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate finalization preview failed")
+        raise HTTPException(status_code=500, detail="The finalization preview could not be loaded.")
+    finally:
+        db.rollback()

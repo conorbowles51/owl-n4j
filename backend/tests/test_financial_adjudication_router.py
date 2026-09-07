@@ -109,6 +109,7 @@ class PermissionResolverTests(unittest.TestCase):
             {
                 "/api/financial/candidates/{candidate_id}/review": ["POST"],
                 "/api/financial/candidate-mappings": ["POST"],
+                "/api/financial/candidate-sources/{evidence_file_id}/finalize": ["POST"],
                 "/api/financial/candidates/{candidate_id}/provisional-account": ["POST"],
                 "/api/financial/transactions/{transaction_id}/quarantine": [
                     "POST"
