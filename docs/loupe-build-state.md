@@ -7,8 +7,8 @@ claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
 - **Branch:** `integration/evidence-main-reunion`. No merge to main; Neil pushes.
-- **Latest implementation commit:** `8582179`, “Display exact ledger date totals
-  with contributing source navigation”. A state commit follows;
+- **Latest implementation commit:** `421ad37`, “Register ledger summary exports
+  and restore page integration test providers”. A state commit follows;
   confirm the real tip with `git log -3 --oneline`.
 - **Authorization:** Neil asked Codex to understand the project, then explicitly
   said **“ok take over and continue please.”** The preceding recommendation was
@@ -45,6 +45,35 @@ updated through the app and confirmed ACTIVE every five minutes until
 statements below. Reserve 11:45–12:00 UTC for verification and the retained
 checklist/handoff. Reuse valid passing checks; target tests to changed behavior
 and avoid unnecessary repeated full suites. No reset credits were redeemed.
+
+### Consolidated integration checks — 7 September 2026
+
+`421ad37` registers ledger_summary/LedgerSummaryError/requested_statement_coverage
+in the financial package and supplies QueryClientProvider in FinancialPage tests,
+stable across rerenders/isolated per test. Updates default empty-filter expectation.
+The full run exposed one missing package export and six test-harness failures:
+new query panels had no provider, triggering the ledger error boundary. Production
+already provides the query client. No product rendering defect was found by this gate.
+
+**Verified:** final full backend3,791 financial tests, zero skips. Frontend full
+run covered1,001 tests (995 passed/six page-harness failures); after fixes all24
+FinancialPage tests pass, so all failures are resolved without repeating unrelated
+unit files.11 Chromium tests pass, TypeScript/full ESLint pass; post-fix TypeScript
+and changed-file lint pass. Package/summary/coverage45-test check also passes.
+Logs /tmp/loupe-neilbyrne-integration-{backend-final,unit,page-final,browser,tsc,lint,
+final-tsc,final-lint,exports-fix}.out. Do not describe the original frontend full
+run as all-green; give its targeted-resolution sequence when relevant. Tests remain
+synthetic/read-only; real PDFs untouched. Backend session21922 still serves current
+feature code; package export registration takes effect on next restart.
+
+**Next segment:** connect authoritative date analysis into the top-level Trends
+workflow rather than leaving users on legacy graph totals. Inspect FinancialPage's
+mode behavior and filters before changing it: documentary transactions should use
+ledger scope/summary/date totals, while any retained financial-intelligence view
+must be clearly distinguished. Preserve current source links, excluded populations,
+exact-money handling and no graph/ledger mixing. Use page integration tests plus
+one live synthetic navigation check. Graph/counterparty migration and traceable
+exports still remain; feature5 stays partial. Schedule ACTIVE through13:00 Dublin.
 
 ### Source-linked ledger date display — 7 September 2026
 

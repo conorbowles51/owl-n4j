@@ -368,3 +368,10 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
   21 targeted frontend tests, TypeScript/lint and live synthetic source-record check
   pass. No page-location claim for the fixture. Next scheduled unit consolidates
   accumulated changes with one full integration gate before further migration.
+
+
+- 7 September, 10:21 Dublin: **421ad37** fixes integration-gate findings: missing
+  package export and page query-provider/default-filter test setup. Final full
+  backend3,791 pass; frontend1,001-test run had six page-test failures, all resolved
+  by the24-test page rerun.11 Chromium, TypeScript/full lint pass. Next: migrate
+  the top-level documentary Trends workflow to authoritative ledger data.
