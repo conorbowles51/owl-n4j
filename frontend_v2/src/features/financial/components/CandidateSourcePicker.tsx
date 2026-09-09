@@ -127,7 +127,10 @@ export function CandidateSourcePicker({
               completed text and table extraction first.
             </p>
           )}
-          <ul className="space-y-2">
+          <ul
+            aria-label="Available PDF source pages"
+            className="max-h-64 space-y-2 overflow-auto"
+          >
             {list.data.items.map((item) => (
               <li key={`${item.evidence_file_id}:${item.page_number}`}>
                 <Button
@@ -256,6 +259,12 @@ function SourceSelection({
   source: z.infer<typeof sourceTable>
   onSaved: (id: string) => void
 }) {
+  const [focusedCell, setFocusedCell] = useState<{
+    row: number
+    column: number
+    text: string
+    locator: unknown
+  } | null>(null)
   const [showHeaders, setShowHeaders] = useState(false)
   const headers = proposePdfHeaders(source.rows)
   const [selected, setSelected] = useState<number[]>([])
@@ -348,130 +357,185 @@ function SourceSelection({
           ? "Rows inferred from text spacing. Check their grouping against the page."
           : "Table found from drawn lines. Check which rows contain transactions."}
       </p>
-      <TransactionSourceHighlight
-        sourceDocumentId={source.evidence_file_id}
-        locatorPayload={source.locator}
-      />
-      <fieldset disabled={disabled} className="space-y-3">
-        <Button variant="outline" onClick={() => setShowHeaders((v) => !v)}>
-          {showHeaders ? "Hide column suggestions" : "Suggest column meanings"}
-        </Button>
-        {showHeaders && (
-          <div className="space-y-2 rounded border p-3">
-            <p>
-              Checked the first {headers.checkedRows} stored rows for exact
-              column labels.
-              {headers.hasMore ? " Later rows were not checked." : ""} Matches
-              are suggestions, not proof of a header or transaction. Generic
-              “Date” does not establish a date role. Applying a meaning does not
-              select any rows.
-            </p>
-            {headers.proposals.length === 0 && (
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <section
+          aria-label="Original document beside row selection"
+          className="min-w-0 space-y-3 rounded border p-3 lg:sticky lg:top-4"
+        >
+          <h4 className="font-semibold">
+            Original document · page {source.page_number}
+          </h4>
+          <p className="text-sm">
+            Click a table value to locate it on the page. Checking a location
+            does not select the row or verify its reading.
+          </p>
+          {focusedCell && (
+            <div className="space-y-2 text-sm">
               <p>
-                No supported exact labels found. Assign meanings manually from
-                the source.
+                Source row {focusedCell.row + 1}, column{" "}
+                {focusedCell.column + 1}: {focusedCell.text}
               </p>
-            )}
-            {headers.proposals.map((header) => (
-              <div key={`${header.column}:${header.meaning}`}>
+              <Button variant="outline" onClick={() => setFocusedCell(null)}>
+                Show table location
+              </Button>
+            </div>
+          )}
+          <TransactionSourceHighlight
+            sourceDocumentId={source.evidence_file_id}
+            locatorPayload={focusedCell ? focusedCell.locator : source.locator}
+          />
+        </section>
+        <fieldset disabled={disabled} className="min-w-0 space-y-3">
+          <Button variant="outline" onClick={() => setShowHeaders((v) => !v)}>
+            {showHeaders
+              ? "Hide column suggestions"
+              : "Suggest column meanings"}
+          </Button>
+          {showHeaders && (
+            <div className="space-y-2 rounded border p-3">
+              <p>
+                Checked the first {headers.checkedRows} stored rows for exact
+                column labels.
+                {headers.hasMore ? " Later rows were not checked." : ""} Matches
+                are suggestions, not proof of a header or transaction. Generic
+                “Date” does not establish a date role. Applying a meaning does
+                not select any rows.
+              </p>
+              {headers.proposals.length === 0 && (
                 <p>
-                  Source row {header.row + 1}, column {header.column + 1}: “
-                  {header.text}”
+                  No supported exact labels found. Assign meanings manually from
+                  the source.
                 </p>
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    setColumns((v) => ({
-                      ...v,
-                      [header.column]: header.meaning,
-                    }))
+              )}
+              {headers.proposals.map((header) => (
+                <div key={`${header.column}:${header.meaning}`}>
+                  <p>
+                    Source row {header.row + 1}, column {header.column + 1}: “
+                    {header.text}”
+                  </p>
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setColumns((v) => ({
+                        ...v,
+                        [header.column]: header.meaning,
+                      }))
+                    }
+                  >
+                    Use {header.label} for column {header.column + 1}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            {source.columns.map((column) => (
+              <label key={column}>
+                Column {column + 1} meaning
+                <select
+                  aria-label={`Column ${column + 1} meaning`}
+                  className="block w-full rounded border bg-background p-2"
+                  value={columns[column] ?? "unknown"}
+                  onChange={(e) =>
+                    setColumns((v) => ({ ...v, [column]: e.target.value }))
                   }
                 >
-                  Use {header.label} for column {header.column + 1}
-                </Button>
-              </div>
+                  {meanings.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             ))}
           </div>
-        )}
-
-        <div className="grid gap-2 sm:grid-cols-3">
-          {source.columns.map((column) => (
-            <label key={column}>
-              Column {column + 1} meaning
-              <select
-                aria-label={`Column ${column + 1} meaning`}
-                className="block w-full rounded border bg-background p-2"
-                value={columns[column] ?? "unknown"}
-                onChange={(e) =>
-                  setColumns((v) => ({ ...v, [column]: e.target.value }))
-                }
-              >
-                {meanings.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
-        </div>
-        <CandidateRowSuggestions source={source} columns={columns} onSelect={(rows) => setSelected((current) => [...new Set([...current, ...rows])])} />
-        <div className="overflow-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr>
-                <th>Use row</th>
-                {source.columns.map((c) => (
-                  <th key={c}>Column {c + 1}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {source.rows.slice(page * 25, page * 25 + 25).map((row) => (
-                <tr key={row.row_index}>
-                  <td className="p-2">
-                    <label>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select source row ${row.row_index + 1}`}
-                        checked={selected.includes(row.row_index)}
-                        onChange={(e) =>
-                          setSelected((v) =>
-                            e.target.checked
-                              ? [...v, row.row_index]
-                              : v.filter((n) => n !== row.row_index)
-                          )
-                        }
-                      />{" "}
-                      {row.row_index + 1}
-                    </label>
-                  </td>
+          <CandidateRowSuggestions
+            source={source}
+            columns={columns}
+            onSelect={(rows) =>
+              setSelected((current) => [...new Set([...current, ...rows])])
+            }
+          />
+          <div className="overflow-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr>
+                  <th>Use row</th>
                   {source.columns.map((c) => (
-                    <td
-                      className="max-w-72 whitespace-pre-wrap break-words border p-2"
-                      key={c}
-                    >
-                      {row.cells.find((cell) => cell.column_index === c)
-                        ?.expected_text ?? ""}
-                    </td>
+                    <th key={c}>Column {c + 1}</th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex gap-2">
-          <Button disabled={!page} onClick={() => setPage((n) => n - 1)}>
-            Previous table rows
-          </Button>
-          <Button
-            disabled={(page + 1) * 25 >= source.rows.length}
-            onClick={() => setPage((n) => n + 1)}
-          >
-            Next table rows
-          </Button>
-        </div>
-      </fieldset>
+              </thead>
+              <tbody>
+                {source.rows.slice(page * 25, page * 25 + 25).map((row) => (
+                  <tr key={row.row_index}>
+                    <td className="p-2">
+                      <label>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select source row ${row.row_index + 1}`}
+                          checked={selected.includes(row.row_index)}
+                          onChange={(e) =>
+                            setSelected((v) =>
+                              e.target.checked
+                                ? [...v, row.row_index]
+                                : v.filter((n) => n !== row.row_index)
+                            )
+                          }
+                        />{" "}
+                        {row.row_index + 1}
+                      </label>
+                    </td>
+                    {source.columns.map((c) => (
+                      <td
+                        className="max-w-72 whitespace-pre-wrap break-words border p-2"
+                        key={c}
+                      >
+                        {row.cells
+                          .filter((cell) => cell.column_index === c)
+                          .map((cell) => (
+                            <button
+                              key={cell.column_index}
+                              type="button"
+                              aria-label={`Show source row ${row.row_index + 1}, column ${c + 1}`}
+                              aria-pressed={
+                                focusedCell?.row === row.row_index &&
+                                focusedCell.column === c
+                              }
+                              className="w-full rounded p-1 text-left hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring aria-pressed:bg-muted"
+                              onClick={() =>
+                                setFocusedCell({
+                                  row: row.row_index,
+                                  column: c,
+                                  text: cell.expected_text,
+                                  locator: cell.locator,
+                                })
+                              }
+                            >
+                              {cell.expected_text}
+                            </button>
+                          ))}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex gap-2">
+            <Button disabled={!page} onClick={() => setPage((n) => n - 1)}>
+              Previous table rows
+            </Button>
+            <Button
+              disabled={(page + 1) * 25 >= source.rows.length}
+              onClick={() => setPage((n) => n + 1)}
+            >
+              Next table rows
+            </Button>
+          </div>
+        </fieldset>
+      </div>
       <p>
         {selected.length} rows selected. Column meanings are proposals; amounts
         and dates are not converted here. Saved readings stay outside ledger

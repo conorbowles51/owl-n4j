@@ -3,7 +3,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { CandidateSourcePicker } from "./CandidateSourcePicker"
 vi.mock("./TransactionSourceHighlight", () => ({
-  TransactionSourceHighlight: () => <p>Source image</p>,
+  TransactionSourceHighlight: ({
+    locatorPayload,
+  }: {
+    locatorPayload: unknown
+  }) => <p data-testid="source-locator">{JSON.stringify(locatorPayload)}</p>,
 }))
 afterEach(() => vi.restoreAllMocks())
 const table = {
@@ -29,7 +33,11 @@ const table = {
       row_index: 3,
       cells: [
         { column_index: 0, expected_text: "01/02", locator: {} },
-        { column_index: 1, expected_text: "1234", locator: {} },
+        {
+          column_index: 1,
+          expected_text: "1234",
+          locator: { kind: "page_rectangle", page: 1, rect: [10, 20, 30, 40] },
+        },
       ],
     },
   ],
@@ -294,5 +302,37 @@ it("saves an explicitly chosen transaction date role separately from booking dat
   const request = fetch.mock.calls.find(([, o]) => o?.method === "POST")!
   expect(JSON.parse(String(request[1]?.body)).columns[0].meaning).toBe(
     "transaction_date"
+  )
+})
+
+it("locates a cell without nominating or saving its row and resets on source reload", async () => {
+  const fetch = server()
+  mount()
+  await open()
+  const cell = await screen.findByRole("button", {
+    name: "Show source row 4, column 2",
+  })
+  fireEvent.click(cell)
+  expect(cell).toHaveAttribute("aria-pressed", "true")
+  expect(screen.getByTestId("source-locator")).toHaveTextContent(
+    JSON.stringify(table.rows[1].cells[1].locator)
+  )
+  expect(screen.getByLabelText("Select source row 4")).not.toBeChecked()
+  expect(
+    screen.getByRole("button", { name: "Save selected rows for review" })
+  ).toBeDisabled()
+  fireEvent.click(screen.getByRole("button", { name: "Show table location" }))
+  expect(screen.getByTestId("source-locator")).toHaveTextContent("{}")
+  fireEvent.click(cell)
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reload source and selection" })
+  )
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Show table location" })
+    ).not.toBeInTheDocument()
+  )
+  expect(fetch.mock.calls.filter(([, o]) => o?.method === "POST")).toHaveLength(
+    0
   )
 })
