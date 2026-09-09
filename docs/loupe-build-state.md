@@ -6,6 +6,28 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Continued through remaining work — 9 September 2026
+
+Neil explicitly requested continuation through all remaining work. Continue across
+bounded tested units without another keep-going prompt. Old heartbeat remains
+paused; no timed schedule was requested. Provider preference question is pending
+for final AI-assisted acceptance; continue offline work independently and never
+paste/read credentials into messages. No new real-evidence ingestion authorization.
+
+Latest implementationea125fd: source-bound date/amount row suggestions using two
+explicit columns and caller-supplied currency; uncertainty preserved, all checked
+rows retained, no selection/persistence/classification/admission.36source/candidate/
+package tests plus1route scope/error test passed. UI next. Numeric-only date
+assessment limitation corrected. Isolated Docker services restarted; backend2279,
+engine94599, frontend21189 running, logs /tmp/loupe-neilbyrne-resumed-{backend,
+engine,frontend}.out. Backend started beforeea125fd; restart it before new endpoint
+UI check. Existing synthetic fixtures retained; no evidence/ledger writes.
+
+Next: CandidateRowSuggestions component within source picker; explicitly nominated
+columns/currency, scope/source-text validation, paged suggestions, deliberate add
+to selection, no save until existing investigator action. Tests and synthetic UI
+acceptance, then continue extraction/accuracy and remaining ledger consumers.
+
 ### Resumed development — 9 September 2026
 
 Neil explicitly said "continue". Development resumed in this task; the old timed
