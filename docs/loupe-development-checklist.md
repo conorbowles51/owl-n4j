@@ -145,6 +145,7 @@ feature below is complete at the start of this window.
    - [ ] Preserve the basis for each tracing result so it can be reviewed.
 
 10. **Test the complete application locally — partial**
+    - [x] First real-PDF bounded UI journey: upload/local preparation → select two page4 rows → visually checked review/OCR description correction → finalize → exact export verification.0included/2P3excluded, original unchanged. Fullstatement accuracy and candidate-history export remain.
     - [x] Integrated post-migration baseline:3,827backend tests,1,032frontend unit tests,11Chromium tests, TypeScript and full ESLint pass (09c341c). Full real-PDF/AI journey and all broader features remain incomplete.
     - [x] Verify actual export membership permissions and immediate revocation with a temporary ordinary local user (cc96526): non-member/no-view denied, view-only allowed, revoked same-token denied, test user removed.
     - [ ] Exercise the full journey from document upload through review, analysis and export.

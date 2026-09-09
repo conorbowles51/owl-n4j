@@ -6,6 +6,33 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Real PDF two-row review and export verified — 9 September 2026
+
+The uploaded real PDF now completed a bounded actual UI workflow: stored source
+page4 rows40/41 (UI rows41/42) nominated, provisional USD account created, two
+visually verified purchase readings resolved, OCR descriptions corrected against
+the image, finalized and exported. No raw evidence changes or synthetic fixture
+seeding. Finalized P3,0included/2excluded; do not imply complete statement coverage.
+See docs/loupe-review-2026-09-09.md for one user entry point and precise limitations.
+
+Mapping6202a5db-9c9f-458c-9227-99b571ee028e;
+account024a3805-f44d-475f-81cb-2a6f9066e4fa;
+finalizationd19d0ab9-bfb2-495e-b3f0-387125f1e549;
+transactions4465cd35-aa06-4298-af63-0d93430ce880 (1400minor USD) and
+cee1b0d8-31e7-4051-94ae-db3970766147 (10000minor USD).
+Reports data/local-runtime/real-pdf-review-check.json,real-pdf-sample-export.zip,
+real-pdf-export-verification.json. Verification confirms sourcepage4/file/hash,
+exact amounts and exclusions, snapshot/HTMLbyte hashes and unchanged original.
+Screenshot /tmp/loupe-neilbyrne-real-row-review.png inspected; real document text
+is small at current image scale, motivating source zoom as a practical UI fix.
+
+Important remaining export gap: candidate-review history lives in application,
+not bundled with ledger export; manifestdecision_count0 refers to adjudication
+history, not absence of PDF review. Don't mark complete export history done.
+Next practical work: source zoom, bundle candidate review history, extend statement
+accuracy/coverage and secondPDF acceptance. Keep broad transfer/graph expansion
+behind this usable workflow milestone. Scripts refuse duplicate acceptance writes.
+
 ### Real PDF upload reaches source review — 9 September 2026
 
 Implementation213ed7e adds preparation_mode=pdf_review to explicit processing,

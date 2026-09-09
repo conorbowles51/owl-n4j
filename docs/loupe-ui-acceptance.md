@@ -21,11 +21,13 @@ separate Loupes collection design are not by themselves an agreed financial layo
 - [x] Review existing saved candidate values beside their source image; choose
   a column to highlight without first requesting a numeric/date assessment.
   Desktop side-by-side and narrow stacking checked against a synthetic PDF.
-- [ ] Verify this source/review interaction on the supplied real PDFs.
-- [ ] Resolve/reject a bounded, manually checked real-PDF sample, preserve source
+- [x] Verify source/review interaction on the first supplied real PDF (page4, two purchases).
+- [ ] Repeat source/review acceptance on the second supplied PDF.
+- [x] Resolve a bounded, manually checked real-PDF sample, preserve source
   and decision history, and finalize it without implying complete extraction.
 - [ ] Correct a sample, verify analysis eligibility and exact export contents.
-- [ ] Give Neil one clear entry point and repeatable steps through the journey.
+- [x] Give Neil one clear entry point and repeatable steps through the sample journey:
+  docs/loupe-review-2026-09-09.md. Fullstatement and complete history export remain.
 
 ## Full analytical UI (retained beyond the first milestone)
 
