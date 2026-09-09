@@ -669,7 +669,10 @@ class UploadResponse(BaseModel):
     message: Optional[str] = None  # Status message
 
 
+from typing import Literal
+
 class ProcessRequest(BaseModel):
+    preparation_mode: Literal["full", "pdf_review"] = "full"
     case_id: Optional[str] = None
     file_ids: List[str]
     profile: Optional[str] = None  # LLM profile name (e.g., "fraud", "generic")
@@ -1300,6 +1303,7 @@ async def process_evidence_background(
                 case_id=UUID(request.case_id),
                 file_ids=db_backed_ids,
                 force_reprocess=False,
+                preparation_mode=request.preparation_mode,
                 requested_by_user_id=current_user.id,
             )
             job_ids = engine_result.get("job_ids", [])
@@ -1474,6 +1478,7 @@ async def process_evidence(
                 case_id=UUID(request.case_id),
                 file_ids=db_backed_ids,
                 force_reprocess=False,
+                preparation_mode=request.preparation_mode,
                 requested_by_user_id=current_user.id,
             )
             processed += engine_result.get("file_count", 0)

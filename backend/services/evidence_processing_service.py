@@ -57,8 +57,11 @@ async def process_db_files(
     case_id: uuid.UUID,
     file_ids: list[uuid.UUID],
     force_reprocess: bool = False,
+    preparation_mode: str = "full",
     requested_by_user_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
+    if preparation_mode not in ("full", "pdf_review"):
+        raise ValueError("Unknown document preparation mode")
     await reconcile_case_jobs(db, str(case_id))
     ingestion_request_id = str(uuid.uuid4())
 
@@ -73,12 +76,16 @@ async def process_db_files(
         ef = files_by_id.get(file_id)
         if ef is None:
             continue
+        if str(ef.case_id) != str(case_id):
+            raise ValueError("Evidence file does not belong to this case")
         if ef.status == "processing":
             skipped_processing += 1
             continue
         if ef.status == "processed" and not ef.processing_stale and not force_reprocess:
             skipped_processing += 1
             continue
+        if preparation_mode == "pdf_review" and Path(ef.original_filename).suffix.lower() != ".pdf":
+            raise ValueError("PDF review preparation accepts PDF files only")
         candidates.append(ef)
 
     if not candidates:
@@ -107,6 +114,7 @@ async def process_db_files(
         )
         snapshot = {
             **snapshot,
+            "preparation_mode": preparation_mode,
             "ingestion_request_id": ingestion_request_id,
             "requested_by_user_id": str(requested_by_user_id) if requested_by_user_id else None,
             "source_evidence_file_id": str(ef.id),

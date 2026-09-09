@@ -141,6 +141,11 @@ async def upload_files(
             if metadata and isinstance(metadata.get("sibling_files"), list):
                 parsed_siblings = metadata.get("sibling_files")
 
+            preparation_mode = (metadata or {}).get("preparation_mode", "full")
+            if preparation_mode not in ("full", "pdf_review"):
+                raise HTTPException(status_code=400, detail="Unknown preparation mode")
+            if preparation_mode == "pdf_review" and (Path(safe_name).suffix.lower() != ".pdf" or not (metadata or {}).get("source_evidence_file_id")):
+                raise HTTPException(status_code=400, detail="PDF preparation requires a registered PDF evidence file")
             # Create job record
             ingestion_request_id = str(
                 (metadata or {}).get("ingestion_request_id") or ""
@@ -148,6 +153,7 @@ async def upload_files(
             job = Job(
                 id=job_id,
                 case_id=case_id,
+                job_type="pdf_review" if preparation_mode == "pdf_review" else "ingestion",
                 batch_id=batch_id,
                 file_name=safe_name,
                 file_path=str(file_path),

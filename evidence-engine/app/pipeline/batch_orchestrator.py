@@ -410,7 +410,6 @@ async def run_batch_pipeline(
     case_id: str,
     db: AsyncSession,
 ) -> None:
-    await load_ai_model_policy(db)
     result = await db.execute(select(Job).where(Job.batch_id == batch_id).order_by(Job.created_at))
     jobs = list(result.scalars().all())
 
@@ -418,6 +417,25 @@ async def run_batch_pipeline(
         logger.warning("No jobs found for batch %s", batch_id)
         return
 
+    review_jobs = [job for job in jobs if getattr(job, "job_type", "ingestion") == "pdf_review"]
+    if review_jobs:
+        # A review batch must never fall through to model, embedding or graph work.
+        if len(review_jobs) != len(jobs):
+            await _force_fail_unfinished_batch_rows(batch_id, "Mixed preparation modes are not supported")
+            return
+        from app.pipeline.prepare_pdf_review import prepare_pdf_review
+        for job in review_jobs:
+            if job.status == JobStatus.COMPLETED:
+                continue
+            try:
+                await prepare_pdf_review(job, _update_job_status)
+            except Exception:
+                logger.exception("PDF source preparation failed for job %s", job.id)
+                await _update_job_status(job.id, JobStatus.FAILED, 0.0,
+                    "PDF source preparation failed", error_message="PDF source preparation failed; inspect the document and retry.")
+        return
+
+    await load_ai_model_policy(db)
     runtime_snapshot = get_ai_runtime_snapshot()
     for job in jobs:
         job.pipeline_state = dict(getattr(job, "pipeline_state", None) or {})

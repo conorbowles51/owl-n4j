@@ -29,7 +29,9 @@ def test_upload_storage_directory_is_confined_to_configured_root(tmp_path) -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode,expected_type", [("full","ingestion"),("pdf_review","pdf_review")])
 async def test_upload_persists_ingestion_request_id_for_response_recovery(
+    mode, expected_type,
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -63,8 +65,10 @@ async def test_upload_persists_ingestion_request_id_for_response_recovery(
         case_id=str(uuid.uuid4()),
         request=request,
         files=[UploadFile(file=BytesIO(b"%PDF-test"), filename="report.pdf")],
-        processing_metadata='[{"ingestion_request_id":"request-123"}]',
+        processing_metadata=__import__("json").dumps([{"ingestion_request_id":"request-123", "preparation_mode":mode,"source_evidence_file_id":str(uuid.uuid4())}]),
         db=db,
     )
 
     assert jobs[0].pipeline_state["ingestion_request_id"] == "request-123"
+
+    assert jobs[0].job_type == expected_type

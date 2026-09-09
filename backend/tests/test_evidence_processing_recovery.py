@@ -35,6 +35,7 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
     stored_file.write_bytes(b"%PDF-test")
     evidence_file = SimpleNamespace(
         id=evidence_id,
+        case_id=case_id,
         status="unprocessed",
         processing_stale=False,
         stored_path=str(stored_file),

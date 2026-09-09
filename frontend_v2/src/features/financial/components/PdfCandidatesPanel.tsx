@@ -1,3 +1,4 @@
+import { PdfReviewIntake } from "./PdfReviewIntake"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
@@ -63,6 +64,7 @@ function CandidateMappings({ caseId }: { caseId: string }) {
   })
   return (
     <div className="space-y-3 text-sm">
+      <PdfReviewIntake caseId={caseId} onReady={() => setChoosing(true)} />
       <Button variant="outline" onClick={() => setChoosing((v) => !v)}>
         {choosing ? "Hide source selection" : "Choose PDF rows"}
       </Button>

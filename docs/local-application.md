@@ -748,3 +748,20 @@ result. No ledger writes. Reports are `data/local-runtime/conditional-trace-ui-c
 and `conditional-trace-check.json`. This credit-only live fixture verifies wiring;
 backend tests cover withdrawals, method differences, stale snapshots and invalid
 orders. The UI currently supports one attributed deposit per scenario.
+
+### Upload a PDF for local human review
+
+Open Financial → Open PDF readings → Add a PDF for review. Select a PDF and use
+Prepare PDF for review. This queues native PDF text/local Tesseract extraction
+and stored page locations only; it bypasses AI summary, embeddings, entity
+extraction and graph writes. Source preparation does not verify or admit rows.
+Use Find uploaded PDFs to recover an upload without sending another copy.
+Already prepared files are available through Choose PDF rows; processing details
+remain in Evidence. Keep the isolated engine and worker running alongside backend.
+
+`node scripts/check_local_pdf_intake_ui.cjs` records its case/upload/job in
+`data/local-runtime/real-pdf-intake-check.json`. It refuses another submission once
+that record has a job. The first supplied 56-page PDF reached source selection
+through the application, using a new isolated case and an unchanged original.
+The initial UI upload-field mismatch was corrected and acceptance resumed using
+the same uploaded file. Do not remove this record merely to rerun the script.

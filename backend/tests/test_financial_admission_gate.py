@@ -580,6 +580,7 @@ class ProcessingRouteRefusalTestCase(unittest.TestCase):
     def evidence_row(self, path: Path):
         return SimpleNamespace(
             id=uuid.uuid4(),
+            case_id=self.case_id,
             status="unprocessed",
             processing_stale=False,
             stored_path=str(path),
