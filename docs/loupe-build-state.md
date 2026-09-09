@@ -1,10 +1,33 @@
 # Loupe build state
 
-## Current position — 7 September 2026, Codex continuation
+## Current position — 9 September 2026, Codex continuation
 
 **Read this section first. It supersedes the older status, permission and sandbox
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
+
+### Resumed development — 9 September 2026
+
+Neil explicitly said "continue". Development resumed in this task; the old timed
+heartbeat remains paused (no new schedule requested). This supersedes the older
+instruction to await resumption below. Tracked checkout was clean at cc61a14.
+
+Latest implementation43dbbd5: source_dates.py recognizes explicit English month
+names in day-first/month-first forms, full/three-letter/Sept tokens, preserving
+raw text/origin/source references. Full year gives a review-only ISO proposal;
+missing year/century stays unresolved, impossible calendar dates rejected, unknown
+language/OCR lookalikes/ordinal suffixes unsupported without repair. Existing
+candidate date endpoint/UI schema unchanged; no automatic acceptance or class change.
+24targeted source-date/candidate-date/package tests passed; diff check passed.
+Log /tmp/loupe-neilbyrne-named-dates-tests.out. No evidence/ledger/database writes.
+
+Local runtime is not assumed healthy after two days: prior backend exec18309 no
+longer exists and lsof found no listener on58002. Unit checks used the persistent
+backend venv. No live browser claim for this parser change. Next resume should
+check isolated services and restart as needed before doing a synthetic named-date
+UI acceptance check. Then continue conservative extraction/accuracy work, including
+year/context resolution and broader printed controls. Do not guess source years or
+promote classifications. Original ten-feature checklist retained, none whole complete.
 
 ### Final scheduled handoff — 7 September 2026, 12:43 Dublin
 

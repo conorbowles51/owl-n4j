@@ -1,5 +1,8 @@
 # Loupe financial development checklist
 
+Development resumed in this task on9September2026 at Neil's request. The earlier
+timed schedule stays paused; historical handoff status below is retained.
+
 Final scheduled handoff:7September2026. The authorized cutoff was
 13:00Europe/Dublin; the heartbeat was **PAUSED at12:43Dublin** for handoff before
 that cutoff, confirmed by automation_update. No further automatic segments are
@@ -19,6 +22,7 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Propose explicit English named-month dates while preserving source text and unresolved year/century/glyph uncertainty (43dbbd5).24targeted tests pass; source review remains required and automatic extraction remains incomplete.
    - [ ] Identify transaction rows and column meanings: dates, amounts, accounts and money coming in or going out.
    - [ ] Link each extracted value to its exact location in the original document, including verified stored PDF cells.
    - [ ] Handle digital PDFs and scanned documents while preserving uncertainty where the source is unclear.
@@ -463,3 +467,7 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
 - Final handoff: automation_update confirmed PAUSED at12:43Dublin, before13:00
   cutoff. App remains running. Final verification and all ten feature statuses
   recorded in running state and review guide; no whole-feature completion claim.
+
+- 9September continuation (43dbbd5): named-month date proposals connected through
+  existing saved-candidate assessment,24targeted tests passed. No live data writes;
+  old local backend not listening, runtime/browser acceptance to resume next.
