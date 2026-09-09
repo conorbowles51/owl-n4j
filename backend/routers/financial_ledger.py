@@ -611,6 +611,28 @@ async def get_candidate_sources(case_id: UUID = Query(...), limit: int = 25, off
         raise HTTPException(status_code=500, detail="Stored PDF sources could not be loaded.")
 
 
+class CandidateRowSuggestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+    date_column: int = Field(ge=0, strict=True)
+    amount_column: int = Field(ge=0, strict=True)
+    currency: str = Field(pattern=r"^[A-Z]{3}$", strict=True)
+
+
+@router.post("/candidate-sources/{evidence_file_id}/pages/{page_number}/row-suggestions")
+async def suggest_saved_source_rows(evidence_file_id: UUID, page_number: int, body: CandidateRowSuggestionRequest,
+        case_id: UUID = Query(...), table_index: int = 0, db: Session = Depends(get_db)):
+    from services.financial.candidate_sources import suggest_candidate_rows
+    try:
+        return suggest_candidate_rows(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            page_number=page_number, table_index=table_index, **body.model_dump())
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Stored row suggestions failed")
+        raise HTTPException(status_code=500, detail="Stored row suggestions could not be prepared.")
+
+
 @router.get("/candidate-sources/{evidence_file_id}/pages/{page_number}")
 async def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id: UUID = Query(...),
                                table_index: int = 0, db: Session = Depends(get_db)):

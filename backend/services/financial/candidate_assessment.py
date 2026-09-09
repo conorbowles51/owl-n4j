@@ -110,6 +110,6 @@ def assess_candidate_dates(session, *, case_id, candidate_id):
             source=source, assessment=assess_date_text(raw, cell.origin)))
     payload = dict(case_id=str(case_id), candidate_id=str(candidate_id), mapping_id=saved["id"],
         review_revision=candidate["review_revision"], date_cells=cells, unclassified_columns=unknown,
-        applied=False, limitation="Numeric calendar proposals only. No date is selected, corrected or admitted by this assessment.")
+        applied=False, limitation="Calendar proposals only. No date is selected, corrected or admitted by this assessment.")
     payload["assessment_revision"] = _digest(payload)
     return payload

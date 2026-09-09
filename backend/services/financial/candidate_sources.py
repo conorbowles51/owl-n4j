@@ -46,3 +46,52 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
         table_source=source.value, geometry_source=geometry.value, locator=locator.to_json(),
         columns=sorted(columns), rows=[dict(row_index=row, cells=values) for row, values in rows.items()],
         applied=False)
+
+
+def suggest_candidate_rows(session, *, case_id, evidence_file_id, page_number,
+                           table_index, expected_revision, date_column, amount_column, currency):
+    """Find review candidates using two investigator-nominated columns, never admit rows."""
+    from services.financial.source_dates import assess_date_text
+    from services.financial.suspect_amounts import read_amount, TextOrigin
+    from services.financial.money import get_currency, MoneyError
+    source = read_candidate_source(session, case_id=case_id, evidence_file_id=evidence_file_id,
+                                   page_number=page_number, table_index=table_index)
+    if expected_revision != source['source_revision']:
+        raise PdfMappingError('Stored source changed. Reload the table before suggesting rows.', 409)
+    if (type(date_column) is not int or type(amount_column) is not int or date_column == amount_column
+            or date_column not in source['columns'] or amount_column not in source['columns']):
+        raise PdfMappingError('Choose distinct stored date and amount columns.', 422)
+    try:
+        currency = get_currency(currency).code
+    except MoneyError as exc:
+        raise PdfMappingError(str(exc), 422) from exc
+    rows = []
+    for row in source['rows']:
+        cells = {c['column_index']: c for c in row['cells']}
+        date_cell, amount_cell = cells.get(date_column), cells.get(amount_column)
+        date_reading = assess_date_text(date_cell['expected_text'], 'unknown') if date_cell else None
+        amount_reading, error = None, None
+        if amount_cell:
+            try:
+                amount_reading = read_amount(amount_cell['expected_text'], currency, TextOrigin.unknown).to_json()
+                if 'minor_units' in amount_reading:
+                    amount_reading['minor_units'] = str(amount_reading['minor_units'])
+                for proposal in amount_reading.get('proposals', []):
+                    proposal['minor_units'] = str(proposal['minor_units'])
+            except MoneyError as exc:
+                error = str(exc)
+        possible_date = bool(date_reading and date_reading['proposals'])
+        possible_amount = bool(amount_reading and (
+            'minor_units' in amount_reading or amount_reading.get('proposals')))
+        rows.append(dict(row_index=row['row_index'], suggested=possible_date and possible_amount,
+            date_source=date_cell, amount_source=amount_cell, date_assessment=date_reading,
+            amount_assessment=amount_reading, amount_error=error,
+            reason=('Date and amount each have a possible reading; inspect whether this is a transaction.'
+                    if possible_date and possible_amount else
+                    'No date-and-amount proposal under these columns. This does not rule out a transaction.')))
+    return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), page_number=page_number,
+        table_index=table_index, source_revision=source['source_revision'], date_column=date_column,
+        amount_column=amount_column, currency=currency, currency_source='caller_supplied',
+        checked_rows=len(rows), suggested_rows=sum(r['suggested'] for r in rows), rows=rows,
+        applied=False, requires_source_review=True,
+        limitation='Shape-based review suggestions only. Columns and currency are caller-supplied. Glyph origin is treated as unknown. No identity, date role, transaction classification, complete coverage or ledger admission is established; unselected rows may still contain transactions.')

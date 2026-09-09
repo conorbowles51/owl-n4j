@@ -912,7 +912,7 @@ __all__ = [
     "CandidateFinalizationRequest", "preview_candidate_finalization", "finalize_candidates",
     "check_candidate_source_reuse",
     "CandidateAccountRequest", "create_candidate_account",
-    "list_candidate_sources", "read_candidate_source",
+    "list_candidate_sources", "read_candidate_source", "suggest_candidate_rows",
     "CandidateResolvedReading", "CandidateReviewRequest", "read_candidate_review", "review_candidate",
     "assess_candidate_amounts", "assess_candidate_dates", "assess_date_text", "current_candidate_original", "verify_candidate_source_bytes",
     "CandidateStoreError", "store_pdf_candidates", "read_candidate_mapping", "list_candidate_mappings", "list_candidate_accounts",
@@ -1861,7 +1861,7 @@ __all__ = [
     "ruleset_version",
 ]
 
-from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
+from services.financial.candidate_sources import list_candidate_sources, read_candidate_source, suggest_candidate_rows
 
 from services.financial.candidate_accounts import CandidateAccountRequest, create_candidate_account
 

@@ -563,3 +563,17 @@ validity remains conditional without a complete year. Unknown language/month tok
 OCR lookalikes, ordinal suffixes and unsupported separators are not repaired.
 The existing candidate-review endpoint/UI contract is unchanged.24targeted source,
 candidate and package tests passed; no ledger, evidence or classification writes.
+
+## Date-and-amount row suggestions — 9 September 2026
+
+A read-only source-bound service evaluates two explicitly selected columns and an
+explicit currency. It checks every stored row within existing1000row/64column
+source limits, retaining matched and unmatched rows with original date/amount cell
+locators, assessments and reasons. Dates use conservative calendar proposals;
+amounts use the existing uncertain-reading machinery with unknown glyph origin.
+A possible reading in both columns suggests inspection only. Missing-year dates
+and ambiguous amounts remain uncertain; nonmatches are not proof of no transaction.
+No row is selected, persisted, classified or admitted by this request. Changed
+source revisions, duplicate/unknown column IDs and unsupported currencies refuse.
+The case:view POST endpoint is a read request with structured input. UI connection
+is the next stage. Also corrected date-assessment's old numeric-only limitation.
