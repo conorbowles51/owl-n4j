@@ -50,12 +50,17 @@ function mockServer(
     review?: unknown
     writeStatus?: number
     accountCase?: string
+    sourceCase?: string
   } = {}
 ) {
   return vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (url, options) => {
       const path = String(url)
+      if (path.includes("/source-readings")) return json({
+        case_id: overrides.sourceCase ?? "case-a", candidate_id:"row-a",mapping_id:"mapping-a",evidence_file_id:"file-a",
+        review_revision:base.review_revision,applied:false,cells:original.cells.map(c=>({...c,locator:{kind:"unlocated"}}))
+      })
       if (path.includes("ledger-accounts"))
         return json({ ...accounts, case_id: overrides.accountCase ?? "case-a" })
       if (path.includes("/review") && options?.method === "POST") {
@@ -370,4 +375,13 @@ it("refuses a review response that omits its finalization state", async () => {
   expect(
     screen.queryByRole("button", { name: "Record resolved reading" })
   ).not.toBeInTheDocument()
+})
+
+it("opens the original beside the form without requesting an assessment",async()=>{
+ const fetch=mockServer();mountForm();await screen.findByRole("region",{name:"Original document beside review"});
+ await screen.findByRole("button",{name:"Source column 1: amount"});
+ expect(fetch.mock.calls.some(([url])=>String(url).includes("assessment"))).toBe(false)
+})
+it("refuses a source panel from another case",async()=>{
+ mockServer({sourceCase:"other"});mountForm();expect(await screen.findByRole("alert")).toHaveTextContent("do not match");expect(screen.queryByRole("button",{name:"Source column 1: amount"})).not.toBeInTheDocument()
 })

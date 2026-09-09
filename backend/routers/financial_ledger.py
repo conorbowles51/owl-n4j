@@ -261,6 +261,18 @@ async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query
         raise HTTPException(status_code=500, detail="Ledger accounts could not be listed.")
 
 
+@router.get("/candidates/{candidate_id}/source-readings")
+async def get_candidate_source_readings(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.candidate_assessment import candidate_source_readings
+    try:
+        return candidate_source_readings(db, case_id=case_id, candidate_id=candidate_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate source reading failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Original source readings could not be loaded.")
+
+
 @router.get("/candidates/{candidate_id}/date-assessment")
 async def assess_saved_candidate_dates(candidate_id: UUID, case_id: UUID = Query(...),
                                        db: Session = Depends(get_db)):

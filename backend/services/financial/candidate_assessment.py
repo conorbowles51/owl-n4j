@@ -113,3 +113,20 @@ def assess_candidate_dates(session, *, case_id, candidate_id):
         applied=False, limitation="Calendar proposals only. No date is selected, corrected or admitted by this assessment.")
     payload["assessment_revision"] = _digest(payload)
     return payload
+
+
+def candidate_source_readings(session, *, case_id, candidate_id):
+    """Fresh source-bound cells for review, independent of any amount/date guess."""
+    saved, candidate, bound = current_candidate_original(session, case_id=case_id, candidate_id=candidate_id)
+    grid = saved['original']['proposal']['schema_version'] == 'pdf-grid-mapping-v1'
+    typed = next(c for c in bound.candidates if c.candidate_key == candidate['candidate_key'])
+    cells = []
+    for cell in typed.cells:
+        raw = cell.text if grid else cell.source.text
+        locator = cell.locator.to_json() if grid else ({'kind': 'page_only', 'page': cell.page_number}
+            if cell.page_number else {'kind': 'unlocated'})
+        cells.append(dict(column_index=cell.column_index, proposed_meaning=cell.proposed_meaning,
+            text=raw, locator=locator))
+    return dict(case_id=str(case_id), candidate_id=str(candidate_id), mapping_id=saved['id'],
+        evidence_file_id=saved['evidence_file_id'], review_revision=candidate['review_revision'],
+        cells=cells, applied=False)
