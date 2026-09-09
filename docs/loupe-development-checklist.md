@@ -1,5 +1,8 @@
 # Loupe financial development checklist
 
+Current milestone: complete the practical PDF-to-export journey and saved UI design.
+See [UI and workflow acceptance](loupe-ui-acceptance.md). Broader work stays listed.
+
 Development resumed in this task on9September2026 at Neil's request. The earlier
 timed schedule stays paused; historical handoff status below is retained.
 
@@ -8,7 +11,7 @@ Final scheduled handoff:7September2026. The authorized cutoff was
 that cutoff, confirmed by automation_update. No further automatic segments are
 expected. Earlier ACTIVE/time-window statements below are retained history.
 
-**Overall: eight partial features (1,2,3,4,5,6,8,10), two remaining (7,9), none
+**Overall: nine partial features (1,2,3,4,5,6,8,9,10), one remaining (7), none
 complete end to end.** See [the review and testing guide](loupe-review-2026-09-07.md).
 Completed subitems stay visible. Neil requested mindful usage; valid passing tests
 were reused and targeted checks covered the final small change.
@@ -39,6 +42,7 @@ feature below is complete at the start of this window.
    - [x] Column suggestion aid: propose exact supported labels from the first ten stored rows, require explicit acceptance, and preserve a separate transaction-date role (aac46b0). No automatic transaction classification or row selection is claimed.
 
 2. **Review uncertain readings before they enter the ledger — partial**
+   - [x] Show all saved original cells and switch source highlights beside the review form without requesting amount/date assessments. Source binding and UI scope validated; synthetic desktop/narrow browser check and 31 targeted tests pass. Real-PDF acceptance remains.
    - [x] Save deliberately selected rows from stored PDF tables separately until they are ready for use (9ddfe63). Automatic extraction/nomination remains under feature 1.
    - [ ] Show questionable amounts, dates and account details alongside the source.
    - [x] Let the investigator confirm, correct or reject saved candidate readings, preserving the original and the reason for each decision (ee6edb4). Local UI verified; deliberate stored-PDF mapping is now connected. Automatic nomination and ledger materialization remain.
@@ -131,7 +135,9 @@ feature below is complete at the start of this window.
    - [ ] Ensure exported totals agree with the application.
    - [ ] Record which evidence and decisions supported an exported result.
 
-9. **Complete funds tracing — remaining**
+9. **Complete funds tracing — partial**
+   - [x] Conditional single-account tracing captures reviewed ledger/history, explicit opening/deposit/order assumptions and selected methods. Invalid/stale inputs fail without writes. Existing core and bridge tests pass.
+   - [x] Conditional tracing screen compares selected methods and downloads exact hash-verified scenario bytes. 45 frontend tests, TypeScript/scoped ESLint and read-only synthetic browser acceptance pass. Unidentified withdrawals remain visible; changing assumptions clears results. Current UI supports one attributed deposit; broader multi-deposit and cross-account work remain.
    - [ ] Connect existing tracing calculations to reviewed transaction history.
    - [ ] Support comparison of the available tracing methods.
    - [ ] Explain how assumptions, missing records and transaction ordering affect the result.

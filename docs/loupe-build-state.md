@@ -6,6 +6,57 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Product focus and source-beside-review UI — 9 September 2026
+
+Neil raised elapsed time and concern that UI discussions were forgotten. He agreed
+with a new focus: finish a practical real-PDF import/review/correction/analysis/export
+journey, using the saved analytical design. This supersedes the previous next-work
+sequence of expanding tracing/transfer matching. Read docs/loupe-ui-acceptance.md.
+Do not treat endpoint screens or test counts as completion of the intended UI.
+
+Source review improvement: read-only source-readings endpoint validates current
+saved binding and returns all original cells/locators independent of numeric/date
+assessment. CandidateSourcePanel validates case/file/mapping/review/text coverage,
+shows original image beside review fields, switches measured highlights; no guessed
+locations.15UI tests,16backend tests, TypeScript/scoped ESLint pass; live synthetic
+finalized review verifies image, column switching, desktop adjacency and narrow
+no-overflow. Screenshot inspected. No review/ledger writes. Backend64595,
+/tmp/loupe-neilbyrne-source-panel-server.out. Tracing implementation1679cfa is complete
+within its stated single-account/one-deposit UI scope. Its checkpoint docs had not
+yet been committed before Neil's UI questions.
+
+Next: inspect actual PDF upload-to-stored-source route. Existing fixtures seed
+source geometry directly and do not prove production upload workflow. Preserve
+real PDFs; use isolated test copies for the agreed practical journey. No external
+AI processing without selected provider setup. Old heartbeat remains paused.
+
+### Conditional ledger tracing — 9 September 2026
+
+Conditional tracing is connected to the existing five-method core using a captured
+repeatable-read ledger/history snapshot. One account and closed date interval;
+explicit opening balance/basis, complete date-respecting order/basis and attributed
+credits/bases; methods default to none. Stale snapshot, omitted/duplicated readings,
+reversed dates and invalid attribution refused. No ledger writes. API supports50
+attributions; initial UI supports one deposit. Opening funds remain unattributed.
+Results show unidentified/unfunded withdrawals separately; assumptions are never
+marked verified. Download preserves exact server JSON bytes and validates SHA-256,
+byte count, case/account/snapshot and all submitted assumptions. Source files are
+not embedded and cross-account tracing is not established.
+
+Tests:121 targeted backend/core/package tests before final envelope change, then21
+bridge/router tests after;45 frontend tests, TypeScript and scoped ESLint pass.
+Live existing synthetic coverage account:4included readings, FIFO attribution100
+minor units, exact download verified, input edit clears result, no ledger writes.
+Screenshot inspected. Reports data/local-runtime/conditional-trace-ui-check.json
+and conditional-trace-check.json. New backend session6096 log
+/tmp/loupe-neilbyrne-tracing-server.out. Engine94599/frontend21189 remain.
+
+Neil asked status during work; answered progress and remaining scope, continuing.
+Nine features partial, feature7 remaining; none complete end to end. Next extend
+source navigation/multiple deposit assumptions in tracing, then ledger transfer
+matching and broader reconciliation/real-PDF acceptance. Provider question remains
+pending; continue offline. Old heartbeat stays paused.
+
 ### Row suggestion review UI — 9 September 2026
 
 35b6ccb connects CandidateRowSuggestions to source picker. Explicit nominated date/
