@@ -5,7 +5,7 @@
  * `SourceHighlight` exactly as before, with no network call in between.
  */
 
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
@@ -32,6 +32,22 @@ describe("TransactionSourceHighlight", () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it("zooms image and highlight together without fetching another page", async()=>{
+    vi.mocked(fetch).mockResolvedValue(new Response(new Blob(["image"],{type:"image/png"})))
+    render(<TransactionSourceHighlight locatorPayload={rectanglePayload()} sourceDocumentId="doc-1" />)
+    const zoom=await screen.findByRole("button",{name:"Zoom source in"})
+    const box=screen.getByTestId("locator-highlight-box")
+    const before=box.getAttribute("style")
+    fireEvent.click(zoom)
+    expect(screen.getByText("150%")).toBeInTheDocument()
+    expect(screen.getByRole("region",{name:"Scrollable source page"}).firstElementChild).toHaveStyle({width:"150%"})
+    expect(box.getAttribute("style")).toBe(before)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole("button",{name:"Fit source width"}))
+    expect(screen.getByText("100%")).toBeInTheDocument()
+    expect(screen.getByRole("button",{name:"Zoom source out"})).toBeDisabled()
   })
 
   describe("locator kinds with nothing to draw an image under", () => {

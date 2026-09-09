@@ -22,6 +22,8 @@
  * `SourceHighlight` as a bare URL an `<img>` tag could not authenticate.
  */
 
+import { useCallback, useLayoutEffect, useRef, useState } from "react"
+import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 
 import { evidenceAPI } from "@/features/evidence/api"
@@ -41,7 +43,10 @@ interface TransactionSourceHighlightProps {
 function pageNeedingImage(payload: unknown): number | null {
   const reading = readLocator(payload)
   if (!reading.ok) return null
-  if (reading.locator.kind === "page_only" || reading.locator.kind === "page_rectangle") {
+  if (
+    reading.locator.kind === "page_only" ||
+    reading.locator.kind === "page_rectangle"
+  ) {
     return reading.locator.page
   }
   return null
@@ -58,12 +63,18 @@ export function TransactionSourceHighlight({
       ? evidenceAPI.getPageImageUrl(sourceDocumentId, page)
       : null
 
-  const { objectUrl, loading, error } = useProtectedObjectUrl(imageUrl, imageUrl !== null)
+  const { objectUrl, loading, error } = useProtectedObjectUrl(
+    imageUrl,
+    imageUrl !== null
+  )
 
   if (error) {
-    return <p role="alert" className="text-xs text-destructive">
-      Source page {page} could not be loaded. No source highlight is shown. Close and reopen the source to retry.
-    </p>
+    return (
+      <p role="alert" className="text-xs text-destructive">
+        Source page {page} could not be loaded. No source highlight is shown.
+        Close and reopen the source to retry.
+      </p>
+    )
   }
 
   if (imageUrl !== null && loading) {
@@ -76,12 +87,101 @@ export function TransactionSourceHighlight({
   }
 
   return (
-    <div className="max-h-[420px] overflow-auto rounded-md">
-      <SourceHighlight
-        payload={locatorPayload}
-        pageImageUrl={objectUrl}
-        valueLabel={valueLabel}
-      />
+    <ZoomableSource
+      key={imageUrl ?? "unlocated"}
+      locatorPayload={locatorPayload}
+      objectUrl={objectUrl}
+      valueLabel={valueLabel}
+    />
+  )
+}
+
+function ZoomableSource({
+  locatorPayload,
+  objectUrl,
+  valueLabel,
+}: {
+  locatorPayload: unknown
+  objectUrl: string | null
+  valueLabel?: string
+}) {
+  const [zoom, setZoom] = useState(100)
+  const viewport = useRef<HTMLDivElement>(null)
+  const reading = readLocator(locatorPayload)
+  const rectangle =
+    reading.ok && reading.locator.kind === "page_rectangle"
+      ? reading.locator.rectangle
+      : null
+  const centerX = rectangle
+    ? (rectangle.x0 + rectangle.x1) / 2 / rectangle.pageWidth
+    : null
+  const centerY = rectangle
+    ? (rectangle.y0 + rectangle.y1) / 2 / rectangle.pageHeight
+    : null
+  const focus = useCallback(() => {
+    const node = viewport.current
+    if (!node || centerX === null || centerY === null) return
+    const content = node.firstElementChild as HTMLElement | null
+    if (!content) return
+    node.scrollLeft = content.offsetWidth * centerX - node.clientWidth / 2
+    node.scrollTop = content.offsetHeight * centerY - node.clientHeight / 2
+  }, [centerX, centerY])
+  useLayoutEffect(() => {
+    focus()
+  }, [zoom, focus, objectUrl])
+  return (
+    <div className="min-w-0 space-y-2">
+      {objectUrl && (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          role="group"
+          aria-label="Source image zoom"
+        >
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={zoom === 100}
+            onClick={() => setZoom((z) => Math.max(100, z - 50))}
+            aria-label="Zoom source out"
+          >
+            −
+          </Button>
+          <span aria-live="polite">{zoom}%</span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={zoom === 400}
+            onClick={() => setZoom((z) => Math.min(400, z + 50))}
+            aria-label="Zoom source in"
+          >
+            +
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setZoom(100)}>
+            Fit source width
+          </Button>
+          {rectangle && (
+            <Button size="sm" variant="outline" onClick={focus}>
+              Show highlighted value
+            </Button>
+          )}
+        </div>
+      )}
+      <div
+        ref={viewport}
+        tabIndex={objectUrl ? 0 : undefined}
+        role={objectUrl ? "region" : undefined}
+        aria-label={objectUrl ? "Scrollable source page" : undefined}
+        className="max-h-[560px] overflow-auto rounded-md"
+        onLoad={focus}
+      >
+        <div style={{ width: `${zoom}%` }}>
+          <SourceHighlight
+            payload={locatorPayload}
+            pageImageUrl={objectUrl}
+            valueLabel={valueLabel}
+          />
+        </div>
+      </div>
     </div>
   )
 }
