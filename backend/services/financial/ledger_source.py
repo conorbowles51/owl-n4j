@@ -75,4 +75,59 @@ def statement_source(session, *, case_id, period_id):
     return dict(case_id=str(case_id), period_id=str(period.id), source_document_id=str(document.id),
         evidence_file_id=str(evidence.id), filename=evidence.original_filename,
         recorded_digest_matches=True, file_bytes_verified=False,
-        limitation='Opens the registered source file. An exact statement page has not been established by this citation.')
+        reviewed_controls=_statement_controls(session, period, document, evidence),
+        limitation='Registered source file and any retained finalization control readings. These citations do not revalidate current financial readings.')
+
+
+def _statement_controls(session, period, document, evidence):
+    """Return sealed control citations, never infer controls for legacy periods."""
+    from postgres.models.financial_candidates import FinancialCandidateFinalization
+    from services.financial.pdf_candidates import _digest
+    from services.financial.candidate_statement_scopes import ReviewedStatementScope
+    receipts = session.scalars(select(FinancialCandidateFinalization).where(
+        FinancialCandidateFinalization.case_id == period.case_id,
+        FinancialCandidateFinalization.source_document_id == document.id,
+        FinancialCandidateFinalization.evidence_file_id == evidence.id)).all()
+    found = []
+    try:
+        for receipt in receipts:
+            snapshot = receipt.snapshot
+            if _digest(snapshot) != receipt.snapshot_sha256:
+                raise ValueError('Inconsistent finalization receipt')
+            records = snapshot.get('statement_periods', [])
+            for record in records:
+                if record['period_id'] != str(period.id):
+                    continue
+                if record['account_id'] != str(period.account_id) or record['currency'] != period.currency:
+                    raise ValueError('Mismatched statement link')
+                matches = [scope for scope in snapshot['manifest']['statement_scopes']
+                    if scope['account_id'] == record['account_id'] and scope['currency'] == record['currency']
+                    and scope['candidate_ids'] == record['candidate_ids']]
+                if len(matches) != 1:
+                    raise ValueError('Ambiguous statement controls')
+                raw = matches[0]
+                reviewed = ReviewedStatementScope.model_validate({key: value for key, value in raw.items() if key != 'bound_controls'})
+                controls = []
+                for role in ('start', 'end', 'opening', 'closing'):
+                    reading = getattr(reviewed, role)
+                    bound = raw['bound_controls'][role]
+                    if reading is None:
+                        if bound is not None:
+                            raise ValueError('Unexpected absent control')
+                        continue
+                    if {key: value for key, value in bound.items() if key != 'locator'} != reading.model_dump(mode='json'):
+                        raise ValueError('Inconsistent bound control')
+                    locator = Locator.from_json(bound['locator'])
+                    if locator.page != reading.source.page_number or (document.page_count is not None and locator.page > document.page_count):
+                        raise ValueError('Invalid control page')
+                    controls.append(dict(role=role, original_text=reading.source.expected_text,
+                        reviewed_value=reading.value if role in ('start', 'end') else reading.amount_minor,
+                        locator=locator.to_json()))
+                found.append(dict(finalization_id=str(receipt.id), currency=reviewed.currency,
+                    balance_convention=reviewed.balance_convention, reason=reviewed.reason,
+                    controls=controls, scope='Readings and source cells retained at finalization; current values may differ after later changes.'))
+        if len(found) > 1:
+            raise ValueError('Repeated statement controls')
+    except (ValueError, TypeError, KeyError, AttributeError, LocatorError) as exc:
+        raise LedgerSourceError('Retained statement control citations are inconsistent.') from exc
+    return found[0] if found else None

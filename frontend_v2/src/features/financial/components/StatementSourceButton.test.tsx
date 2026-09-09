@@ -47,8 +47,10 @@ it("resolves registered source only after clicking, then opens its file", async 
   fireEvent.click(
     screen.getByRole("button", { name: "Inspect statement source" })
   )
+  await screen.findByText("Source verification details")
+  fireEvent.click(screen.getByText("Source verification details"))
   expect(
-    await screen.findByText("Exact statement page is not established.")
+    screen.getByText("Exact statement page is not established.")
   ).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Open statement file" }))
   expect(screen.getByText("Viewing statement.pdf")).toBeVisible()
@@ -69,4 +71,50 @@ it.each([
   expect(
     screen.queryByRole("button", { name: "Open statement file" })
   ).not.toBeInTheDocument()
+})
+vi.mock("./TransactionSourceHighlight", () => ({
+  TransactionSourceHighlight: ({
+    sourceDocumentId,
+    locatorPayload,
+  }: {
+    sourceDocumentId: string
+    locatorPayload: unknown
+  }) => (
+    <p>
+      Control source {sourceDocumentId} {JSON.stringify(locatorPayload)}
+    </p>
+  ),
+}))
+it("explains liability signs and opens the retained control's original citation", async () => {
+  mount({
+    ...answer,
+    reviewed_controls: {
+      finalization_id: "cdd17bd7-1708-49c2-bc20-3e488e52379f",
+      currency: "USD",
+      balance_convention: "liability_owed",
+      reason: "Read from printed summary",
+      scope: "Retained at finalization",
+      controls: [
+        {
+          role: "opening",
+          original_text: "$6,700.18",
+          reviewed_value: "670018",
+          locator: { kind: "page_only", page: 1 },
+        },
+      ],
+    },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Inspect statement source" })
+  )
+  expect(
+    await screen.findByText(/converted to negative ledger balances/)
+  ).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: /Inspect opening: 6700.18 USD/ })
+  )
+  expect(screen.getByText("Original text: $6,700.18")).toBeVisible()
+  expect(screen.getByText(/Control source cdd17bd7/)).toHaveTextContent(
+    '"page":1'
+  )
 })

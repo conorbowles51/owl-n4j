@@ -199,7 +199,7 @@ export function StatementChecksPanel({
                     </p>
                     <p>
                       {period.independent
-                        ? "Both balances are recorded as printed on this statement."
+                        ? "Both balances are sourced from printed statement controls. Ledger signs reflect the recorded balance convention."
                         : "The balances do not provide an independent pair of printed controls."}
                     </p>
                   </>

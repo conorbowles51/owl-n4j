@@ -1,6 +1,6 @@
 from copy import deepcopy
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, update
 from postgres.models.financial import FinancialStatementPeriod
 from postgres.models.financial_candidates import FinancialCandidateFinalization
 from services.financial.candidate_statement_scopes import ReviewedStatementScope
@@ -86,3 +86,34 @@ class StatementScopeTests(MaterializationFixture):
         self.db.expire_all()
         self.assertEqual(self.db.scalar(select(func.count()).select_from(FinancialStatementPeriod)),0)
         self.assertEqual(self.transactions(),[])
+    def test_statement_source_preserves_original_liability_controls(self):
+        from services.financial.ledger_source import statement_source
+        scope=self.scope();scope['balance_convention']='liability_owed'
+        self.finalize(self.scoped_request(scope))
+        source=statement_source(self.db,case_id=self.case.id,period_id=self.transactions()[0].statement_period_id)
+        controls=source['reviewed_controls']
+        self.assertEqual(controls['balance_convention'],'liability_owed')
+        self.assertEqual(controls['controls'][2]['reviewed_value'],'1234')
+        self.assertEqual(controls['controls'][2]['original_text'],'1234')
+        self.assertEqual(controls['controls'][2]['locator']['page'],1)
+        self.assertFalse(source['file_bytes_verified'])
+    def test_statement_source_refuses_tampered_control_receipt(self):
+        from services.financial.ledger_source import statement_source, LedgerSourceError
+        self.finalize(self.scoped_request())
+        receipt=self.db.scalar(select(FinancialCandidateFinalization))
+        changed=deepcopy(receipt.snapshot);changed['statement_periods'][0]['currency']='USD'
+        self.db.execute(update(FinancialCandidateFinalization).where(FinancialCandidateFinalization.id==receipt.id).values(snapshot=changed));self.db.expire_all()
+        with self.assertRaisesRegex(LedgerSourceError,'inconsistent'):
+            statement_source(self.db,case_id=self.case.id,period_id=self.transactions()[0].statement_period_id)
+    def test_statement_source_refuses_invalid_sealed_locator_and_foreign_case(self):
+        from services.financial.ledger_source import statement_source, LedgerSourceError
+        from services.financial.pdf_candidates import _digest
+        from uuid import uuid4
+        self.finalize(self.scoped_request())
+        period=self.transactions()[0].statement_period_id
+        with self.assertRaises(LedgerSourceError):statement_source(self.db,case_id=uuid4(),period_id=period)
+        receipt=self.db.scalar(select(FinancialCandidateFinalization))
+        changed=deepcopy(receipt.snapshot);changed['manifest']['statement_scopes'][0]['bound_controls']['opening']['locator']['page']=99
+        self.db.execute(update(FinancialCandidateFinalization).where(FinancialCandidateFinalization.id==receipt.id).values(snapshot=changed,snapshot_sha256=_digest(changed)));self.db.expire_all()
+        with self.assertRaisesRegex(LedgerSourceError,'inconsistent'):
+            statement_source(self.db,case_id=self.case.id,period_id=period)
