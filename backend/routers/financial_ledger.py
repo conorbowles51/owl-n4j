@@ -170,13 +170,14 @@ def run_ledger_trace(body: LedgerTraceInput, case_id: UUID = Query(...), db: Ses
 
 @router.get("/ledger-export")
 def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
-        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db)):
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False):
     try:
+        source_options = dict(include_source_files=True, resolve_path=_resolve_stored_path) if include_source_files else {}
         exported=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id,
-            start_date=start_date,end_date=end_date)
+            start_date=start_date,end_date=end_date,**source_options)
         return Response(content=ledger_export_archive(exported),media_type="application/zip",headers={
             "Content-Disposition": 'attachment; filename="loupe-ledger-export.zip"',
-            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store", "X-Loupe-Source-Files": "true" if include_source_files else "false", "X-Content-Type-Options": "nosniff",
             "X-Loupe-Case-Id": str(case_id), "X-Loupe-Account-Id": str(account_id) if account_id else "",
             "X-Loupe-Start-Date": start_date.isoformat() if start_date else "",
             "X-Loupe-End-Date": end_date.isoformat() if end_date else ""})

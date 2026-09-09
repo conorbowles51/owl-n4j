@@ -86,3 +86,44 @@ it("aborts an unfinished download when scope is unmounted", async () => {
   unmount()
   expect(signal?.aborted).toBe(true)
 })
+
+it("includes original files only when selected and confirmed by the response", async () => {
+  const { fetch, makeUrl } = mount({ "X-Loupe-Source-Files": "true" })
+  fireEvent.click(
+    screen.getByLabelText(
+      "Include original source files with fresh hash checks"
+    )
+  )
+  expect(screen.getByText(/complete referenced files/)).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Download ledger snapshot" })
+  )
+  expect(await screen.findByText(/Download started/)).toBeInTheDocument()
+  expect(String(fetch.mock.calls[0][0])).toContain("include_source_files=true")
+  expect(makeUrl).toHaveBeenCalledTimes(1)
+})
+it("refuses an export that omitted requested original files", async () => {
+  const { makeUrl } = mount({ "X-Loupe-Source-Files": "false" })
+  fireEvent.click(
+    screen.getByLabelText(
+      "Include original source files with fresh hash checks"
+    )
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Download ledger snapshot" })
+  )
+  expect(
+    await screen.findByText(/different filters or in an unexpected format/)
+  ).toBeVisible()
+  expect(makeUrl).not.toHaveBeenCalled()
+})
+it("refuses an unexpected original-file bundle", async () => {
+  const { makeUrl } = mount({ "X-Loupe-Source-Files": "true" })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Download ledger snapshot" })
+  )
+  expect(
+    await screen.findByText(/different filters or in an unexpected format/)
+  ).toBeVisible()
+  expect(makeUrl).not.toHaveBeenCalled()
+})

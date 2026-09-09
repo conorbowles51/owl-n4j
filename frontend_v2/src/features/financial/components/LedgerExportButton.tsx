@@ -32,6 +32,7 @@ function ScopedExport({
 }) {
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState("")
+  const [includeSourceFiles, setIncludeSourceFiles] = useState(false)
   const active = useRef<AbortController | null>(null)
   useEffect(() => () => active.current?.abort(), [])
   const download = async () => {
@@ -50,6 +51,7 @@ function ScopedExport({
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)
+      if (includeSourceFiles) search.set("include_source_files", "true")
       const token = localStorage.getItem("authToken")
       const response = await fetch(
         `${candidateUrl("ledger-export", caseId)}&${search}`,
@@ -75,7 +77,11 @@ function ScopedExport({
           (params.accountId ?? "") ||
         response.headers.get("X-Loupe-Start-Date") !==
           (params.startDate ?? "") ||
-        response.headers.get("X-Loupe-End-Date") !== (params.endDate ?? "")
+        response.headers.get("X-Loupe-End-Date") !== (params.endDate ?? "") ||
+        (includeSourceFiles &&
+          response.headers.get("X-Loupe-Source-Files") !== "true") ||
+        (!includeSourceFiles &&
+          response.headers.get("X-Loupe-Source-Files") === "true")
       )
         throw new Error(
           "Export returned for different filters or in an unexpected format."
@@ -107,15 +113,33 @@ function ScopedExport({
       className="space-y-2 rounded border p-3"
       aria-label="Export ledger analysis"
     >
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={includeSourceFiles}
+          disabled={busy}
+          onChange={(event) => setIncludeSourceFiles(event.target.checked)}
+        />
+        Include original source files with fresh hash checks
+      </label>
+      {includeSourceFiles && (
+        <p className="text-sm">
+          Includes complete referenced files, which may contain pages outside
+          the selected dates or account. Up to 100 files and 64 MiB; missing or
+          changed files stop the export.
+        </p>
+      )}
       <Button disabled={busy} onClick={() => void download()}>
         {busy ? "Preparing ledger export…" : "Download ledger snapshot"}
       </Button>
       <p>
         Downloads the applied account/date scope, exact rows and totals, source
-        references and relevant decision history with a verification manifest and a
-        readable HTML report. Report amounts retain their exact minor units alongside currency formatting.
-        PDF original readings, review history and finalization receipts for referenced files are included. Original source files are not bundled.
-        Recorded source hashes are not fresh file checks.
+        references and relevant decision history with a verification manifest
+        and a readable HTML report. Report amounts retain their exact minor
+        units alongside currency formatting. PDF original readings, review
+        history and finalization receipts for referenced files are included.
+        Original files are included only when selected above; otherwise source
+        hashes are recorded values rather than fresh file checks.
       </p>
       {message && <p role="status">{message}</p>}
     </section>

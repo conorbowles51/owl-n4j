@@ -34,6 +34,8 @@ MAX_EXPORT_BYTES = 16 * 1024 * 1024
 class LedgerExport:
     snapshot: LedgerSnapshot
     manifest: str
+    source_files: tuple = ()
+    source_files_requested: bool = False
 
 
 def _capture_history(session, document, *, case_id):
@@ -74,7 +76,7 @@ def _capture_history(session, document, *, case_id):
     return document
 
 
-def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None):
+def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None):
     """Own a fresh PostgreSQL repeatable-read read-only transaction for both reads."""
     from datetime import datetime, timezone
     from sqlalchemy.engine import Engine
@@ -82,6 +84,9 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
     from services.financial.version import code_version
     if not isinstance(engine,Engine) or engine.dialect.name!='postgresql':
         raise LedgerSummaryError('Consistent ledger export requires a fresh PostgreSQL engine connection.')
+    if include_source_files and not callable(resolve_path):
+        raise LedgerSummaryError('Source file export requires a registered path resolver.')
+    source_files = ()
     generated_at=generated_at or datetime.now(timezone.utc)
     if generated_at.tzinfo is None or generated_at.utcoffset() is None:
         raise LedgerSummaryError('Export generation time must carry a timezone.')
@@ -91,6 +96,9 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
             with Session(bind=connection,autoflush=False) as session:
                 snapshot=capture_ledger_snapshot(session,case_id=case_id,account_id=account_id,start_date=start_date,end_date=end_date)
                 document=_capture_history(session,json.loads(snapshot.content),case_id=case_id)
+                if include_source_files:
+                    from services.financial.export_sources import capture_export_sources
+                    source_files = capture_export_sources(session,document,case_id=case_id,resolve_path=resolve_path)
                 content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
     encoded=content.encode('utf-8')
     if len(encoded)>MAX_EXPORT_BYTES:
@@ -105,7 +113,7 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
         pdf_finalization_count=len(document['pdf_review_history']['finalizations']),
         decision_count=len(document['decisions']),included_rows=document['ledger']['included_rows'],
         excluded_rows=document['ledger']['excluded_rows'])
-    return LedgerExport(snapshot,json.dumps(manifest,sort_keys=True,separators=(',',':')))
+    return LedgerExport(snapshot,json.dumps(manifest,sort_keys=True,separators=(',',':')), source_files, include_source_files)
 
 
 def ledger_export_archive(export):
@@ -117,12 +125,20 @@ def ledger_export_archive(export):
     manifest = json.loads(export.manifest)
     manifest['report'] = dict(filename='ledger-report.html', sha256=hashlib.sha256(report_bytes).hexdigest(),
         byte_count=len(report_bytes), derived_from_sha256=export.snapshot.sha256)
+    if export.source_files_requested:
+        manifest['source_files'] = [{key:value for key,value in item.items() if key != 'content'} for item in export.source_files]
+        manifest['source_files_verified_against_ingestion'] = True
+        manifest['source_files_scope'] = 'Complete original files referenced by captured rows; files may contain pages or information outside the ledger filters.'
     stream=io.BytesIO()
     with zipfile.ZipFile(stream,'w',compression=zipfile.ZIP_DEFLATED) as archive:
         for name,content in (('ledger-snapshot.json',export.snapshot.content),('manifest.json',json.dumps(manifest,sort_keys=True,separators=(',',':'))), ('ledger-report.html',report)):
             info=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0))
             info.compress_type=zipfile.ZIP_DEFLATED
             archive.writestr(info,content.encode('utf-8'))
+        for item in export.source_files:
+            info=zipfile.ZipInfo(item['archive_path'],date_time=(1980,1,1,0,0,0))
+            info.compress_type=zipfile.ZIP_DEFLATED
+            archive.writestr(info,item['content'])
     return stream.getvalue()
 
 
