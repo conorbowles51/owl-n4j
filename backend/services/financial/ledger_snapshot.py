@@ -63,11 +63,13 @@ def _capture_history(session, document, *, case_id):
     document['decision_order']='Per-subject sequence only; ordering across different subjects does not establish chronology.'
     document['ledger']['history_captured']=True
     document['export_ready']=True
-    document['schema']='loupe.financial.ledger_snapshot/2'
+    from services.financial.ledger_review_history import capture_pdf_review_history
+    document['pdf_review_history']=capture_pdf_review_history(session,case_id=case_id,evidence_file_ids=scopes['evidence_file'])
+    document['schema']='loupe.financial.ledger_snapshot/3'
     document['limitations']=[
         'Source digests are recorded ingestion digests; source bytes were not reverified for this snapshot.',
         'Decision history covers the captured rows and their source documents, statement periods and evidence files. It is not a complete case history.',
-        'Structured PDF candidate-review history is not embedded; its preserved readings and finalization references remain in transaction provenance.',
+        'PDF review history covers all saved candidates for referenced source files, including other rows outside the ledger filters. Review history is context, not additional transactions.',
     ]
     return document
 
@@ -98,6 +100,9 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
         document_sha256=snapshot.sha256,byte_count=snapshot.byte_count,
         generated_at=generated_at.astimezone(timezone.utc).isoformat(),case_id=str(case_id),
         code_version=code_version(),snapshot_schema=document['schema'],
+        pdf_candidate_review_count=len(document['pdf_review_history']['reviews']),
+        pdf_candidate_count=len(document['pdf_review_history']['candidates']),
+        pdf_finalization_count=len(document['pdf_review_history']['finalizations']),
         decision_count=len(document['decisions']),included_rows=document['ledger']['included_rows'],
         excluded_rows=document['ledger']['excluded_rows'])
     return LedgerExport(snapshot,json.dumps(manifest,sort_keys=True,separators=(',',':')))
@@ -188,6 +193,16 @@ def render_ledger_report(snapshot):
                 decision['subject_type'] + ': ' + decision['subject_id'], decision['subject_sequence'],
                 decision['recorded_at'], decision['actor_name'] or decision['actor_email'], decision['reason']]]),
             details('Decision reference, original values and changed values', decision), '</article>']
+    history=document.get('pdf_review_history')
+    if history is not None:
+        parts += ['<h2>PDF reading review history</h2><p>' + text(history['scope']) + '</p>']
+        parts += [table(['Saved candidates','Review decisions','Finalizations'], [[len(history['candidates']),len(history['reviews']),len(history['finalizations'])]])]
+        for state in history['review_states']:
+            parts += ['<article><h3>Candidate ' + text(state['candidate_id']) + '</h3>']
+            for event in state['history']:
+                parts += [table(['Sequence','Status','Reason','Actor'], [[event['sequence'],event['status'],event['reason'],event['actor'].get('name') or event['actor'].get('email')]]),details('Reviewed values and recorded decision',event)]
+            parts += ['</article>']
+        parts += [details('Original PDF mappings and cells, review chain and finalization receipts',history)]
     parts += ['<h2>Verification</h2><p>This report is derived only from the bundled ledger-snapshot.json. '
         'Its SHA-256 is <code>' + text(snapshot.sha256) + '</code>; its UTF-8 size is ' + text(snapshot.byte_count) +
         ' bytes. The manifest separately identifies the report bytes.</p></body></html>']

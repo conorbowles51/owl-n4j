@@ -5,6 +5,12 @@ from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
 from tests import test_financial_duplicates as fixture
 
 class LedgerSummaryTests(fixture.DuplicateTestCase):
+    def setUp(self):
+        super().setUp()
+        from postgres.base import Base
+        from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview, FinancialCandidateFinalization, FinancialCandidateTransaction
+        Base.metadata.create_all(self.engine,tables=[m.__table__ for m in (FinancialCandidateMapping,FinancialExtractionCandidate,FinancialCandidateReview,FinancialCandidateFinalization,FinancialCandidateTransaction)])
+
     def read(self, **changes):
         return ledger_summary(self.db, **{**dict(case_id=self.case.id), **changes})
     def add(self, amount=100, direction=TransactionDirection.credit, status=LedgerStatus.admitted):

@@ -114,7 +114,7 @@ function ScopedExport({
         Downloads the applied account/date scope, exact rows and totals, source
         references and relevant decision history with a verification manifest and a
         readable HTML report. Report amounts retain their exact minor units alongside currency formatting.
-        Original source files and structured PDF review history are not bundled.
+        PDF original readings, review history and finalization receipts for referenced files are included. Original source files are not bundled.
         Recorded source hashes are not fresh file checks.
       </p>
       {message && <p role="status">{message}</p>}

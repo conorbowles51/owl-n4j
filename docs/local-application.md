@@ -765,3 +765,21 @@ that record has a job. The first supplied 56-page PDF reached source selection
 through the application, using a new isolated case and an unchanged original.
 The initial UI upload-field mismatch was corrected and acceptance resumed using
 the same uploaded file. Do not remove this record merely to rerun the script.
+
+### PDF review history in ledger exports
+
+Ledger export snapshots now use schema3 and capture saved PDF mappings, candidate
+originals, complete review chains and finalization receipts for the source files
+referenced by the captured ledger rows, in the same read-only repeatable-read
+transaction. File history can include candidates outside the row filters; it is
+context and never enters totals. The manifest reports PDF candidate/review/receipt
+counts separately from ledger adjudication decisions. Missing chains, mismatched
+original hashes, broken links and excessive histories fail without truncation.
+Original PDF bytes are still not bundled or freshly verified by export.
+
+`node scripts/check_local_review_history_export.cjs` and
+`python3 scripts/verify_local_review_history_export.py` download and verify the
+existing real-PDF sample without writes. The old `real-pdf-sample-export.zip` is
+preserved as a historical schema2 artifact; `real-pdf-history-export.zip` is the
+new schema3 artifact. The two-row sample has2reviews,1receipt and0ledger
+adjudications; these are different counts.
