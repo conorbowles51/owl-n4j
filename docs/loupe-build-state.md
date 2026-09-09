@@ -6,6 +6,44 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Limited-preview local release candidate — integrated checkpoint
+
+808cf691 integrates local 59e56a2d and remote f76524e with both parents retained.
+Normal git merge failed with `fatal: stash failed` without changing tracked files;
+used git merge-tree, applied its tracked tree with collision checks, resolved five
+files, and committed the tested tree with both parents. No push or deploy.
+
+Preserved remote navigation/pinning/Workspace/Dossiers and local processing guards.
+Remote removed stale processing-status semantics, so removed obsolete sidebar stale
+panel instead of restoring an impossible status. PDF source-preparation now uses
+an explicit evidenceAPI.preparePdfReview method whose mode is fixed to pdf_review;
+no exemption for general processing. Updated incoming pin tests for guarded hook.
+Added missing financial package exports and missing receipt table to a legacy source
+fixture. Viewer Chromium selector distinguishes iframe from newly titled heading.
+
+Added migration merge 20260909_preview_merge joining 20260907_candidate_finalizations
+and 20260902_workspace_ai. Local isolated upgrade succeeded. 3,926 financial tests,
+51 Workspace/Dossier pytest tests, 1,010 UI unit tests pass. Chromium 50 passed in
+suite + final failed selector fixed and passed individually (51). Production build
+and scoped lint pass. Backend venv now also has pytest 8.4.2 for incoming tests.
+
+Integrated runtime backend session 49852; log /tmp/loupe-preview-integrated-runtime.out.
+Fresh real-PDF case ccae1db4-43f8-4f93-b5b8-b744e4d50af9, file
+b807ba23-b704-4edc-9499-c0a1d2853f20; receipt 5df7ed86-f5f0-444c-a175-bd8b9fefd9d4.
+Two actual page-3 readings 18000 credit/6162 debit, P3; exported exact values/history
+and hashes verified. Scripts check_local_pdf_intake_ui.cjs preview and
+check_local_second_pdf_review.cjs preview refuse repeated writes via checkpoints.
+Artifacts preview-pdf-{intake,review}-check.json, preview-pdf-sample-export.zip under
+ data/local-runtime. Existing real cases unchanged; original PDF unchanged.
+
+Local limited-preview release candidate checkpoint achieved. **Live preview remains
+blocked by missing watched server branch and URL**, asked asynchronously twice;
+user has not supplied them. No deployment or Alex account access is verified.
+User explicitly asked to continue until limited preview, then report. See
+ docs/loupe-alex-casework-preview.md for handoff gates and exact scope. Do not claim
+full core release or working totals; accelerated core-release estimate remains
+ docs/loupe-release-estimate-2026-09-09.md. No background schedule started.
+
 ### Alex case-work preview milestone — 9 September 2026
 
 Neil asked to keep developing and select a useful point for Alex to start a case.

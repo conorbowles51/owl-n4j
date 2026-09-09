@@ -37,7 +37,7 @@ statement-control preview drafts are not yet saved drafts.
 - [x] Exact exports retain reviewed values and history; optional original files verified.
 - [x] Review-progress counts and pending filter added; targeted tests cover refreshed decisions.
 - [x] Reopen progress through the browser against the saved real-PDF case; 2 resolved readings remain, no financial writes.
-- [ ] Resolve the five integration conflicts with the remote updates and rerun release checks.
+- [x] Resolve the five integration conflicts with the remote updates and rerun release checks (808cf691). Single migration head; local upgrade/build/financial and Workspace tests pass.
 - [ ] Confirm watched deployment branch and site URL, then release and check that site.
 - [ ] Confirm Alex's account/case permissions and run one new upload on the server.
 
@@ -58,3 +58,26 @@ Automatic transaction nomination and full-statement coverage; broader printed-co
 rechecks; reviewed-ledger graph/counterparty projections; transfer matching and
 money-flow views; remaining tracing and reporting features. These remain on the
 full development checklist rather than disappearing from scope.
+
+## Limited-preview checkpoint reached locally
+
+Release candidate: `808cf691` (integration/evidence-main-reunion), incorporating
+remote `f76524e` as a second parent. No force-push or remote changes performed.
+
+- 3,926 financial backend tests pass.
+- 51 incoming Workspace/Dossier backend tests pass.
+- 1,010 financial/evidence/workspace/case unit tests pass.
+- Chromium: 50 passed in the integrated suite; the remaining source-viewer test
+  passed after disambiguating its iframe from a newly titled heading (51 total).
+- Production build and scoped lint pass. One migration head
+  `20260909_preview_merge`; local database upgrade completed.
+- Fresh case ccae1db4-43f8-4f93-b5b8-b744e4d50af9: original PDF copied/uploaded,
+  108 pages prepared, two real rows reviewed and finalized, exact export checked.
+  18000 credit / 6162 debit; 0 verified-included, 2 P3-excluded. This is still a
+  bounded manual preview, not complete-statement extraction or core-release totals.
+- Saved review reopen and ordinary-user export permissions/revocation verified.
+
+Pending to make it **live for Alex**: confirm server's watched branch/site URL,
+release the tested candidate to that branch, inspect deployment outcome and perform
+server login/new-case/upload checks. Server configuration, user account and source
+files are not supplied by these local tests. Do not report the preview as deployed.
