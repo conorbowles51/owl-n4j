@@ -3,21 +3,24 @@ import { Button } from "@/components/ui/button"
 import {
   correctionMoney,
   type RunningBalanceComparison,
+  type CurrentRunningBalanceComparison,
 } from "../lib/correction-contract"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 export function RunningBalanceComparisonPanel({
   caseId,
   comparison,
+  expanded = false,
 }: {
   caseId?: string
-  comparison: RunningBalanceComparison
+  comparison: RunningBalanceComparison | CurrentRunningBalanceComparison
+  expanded?: boolean
 }) {
   const [source, setSource] = useState<{
     caseId: string
     transactionId: string
   } | null>(null)
   return (
-    <details className="space-y-2 rounded border p-3">
+    <details open={expanded} className="space-y-2 rounded border p-3">
       <summary>Running-balance comparison</summary>
       {!comparison.available ? (
         <p>{comparison.reason}</p>
@@ -31,15 +34,16 @@ export function RunningBalanceComparisonPanel({
                   ? "Assuming source row order"
                   : "Assuming reverse source row order"}
               </p>
-              {(["current", "proposed"] as const).map((stage) => {
-                const check = item[stage]
+              {[
+                { label: "Current reading", check: item.current },
+                ...("proposed" in item
+                  ? [{ label: "Proposed correction", check: item.proposed }]
+                  : []),
+              ].map(({ label, check }) => {
                 return (
-                  <div key={stage}>
+                  <div key={label}>
                     <p>
-                      {stage === "current"
-                        ? "Current reading"
-                        : "Proposed correction"}
-                      : {check.compared_intervals} intervals compared;{" "}
+                      {label}: {check.compared_intervals} intervals compared;{" "}
                       {check.mismatch_count} mismatches.
                     </p>
                     <p>

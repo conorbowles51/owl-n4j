@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { useParams } from "react-router-dom"
 import {
   BarChart3,
+  CalendarRange,
   DollarSign,
   Gavel,
   History,
@@ -47,6 +48,7 @@ import { BulkActionsBar } from "./BulkActionsBar"
 import { TransactionTable } from "./TransactionTable"
 import { FinancialCharts } from "./FinancialCharts"
 import { DuplicateCandidatesPanel } from "./DuplicateCandidatesPanel"
+import { StatementChecksPanel } from "./StatementChecksPanel"
 import { StatementCoveragePanel } from "./StatementCoveragePanel"
 import { PdfCandidatesPanel } from "./PdfCandidatesPanel"
 import { ProofStandingPanel } from "./ProofStandingPanel"
@@ -477,6 +479,10 @@ export function FinancialPage() {
               leave out. A person who has just read a total is one tab away
               from what the total excludes.
             */}
+            <TabsTrigger value="statements" data-testid="financial-tab-statements">
+              <CalendarRange className="size-3.5" />
+              Statements
+            </TabsTrigger>
             <TabsTrigger value="quarantine" data-testid="financial-tab-quarantine">
               <ShieldAlert className="size-3.5" />
               Held out
@@ -545,7 +551,6 @@ export function FinancialPage() {
               <DuplicateCandidatesPanel key={caseId} caseId={caseId} />
             </ErrorBoundary>
             <ErrorBoundary level="section">
-              <StatementCoveragePanel key={`coverage:${caseId}`} caseId={caseId} />
               <PdfCandidatesPanel key={caseId} caseId={caseId} />
             </ErrorBoundary>
             <ErrorBoundary level="section">
@@ -561,6 +566,21 @@ export function FinancialPage() {
           and nothing about a failed attempt to load evidence bears on whether
           the rows that did arrive are being held out of the totals.
         */}
+        <TabsContent value="statements" className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+            <header className="space-y-1">
+              <h2 className="text-lg font-semibold">Statements</h2>
+              <p className="text-sm text-muted-foreground">Inspect balances, date coverage and the source documents behind this case's financial records.</p>
+            </header>
+            <ErrorBoundary level="section">
+              <StatementChecksPanel key={`checks:${caseId}`} caseId={caseId} />
+            </ErrorBoundary>
+            <ErrorBoundary level="section">
+              <StatementCoveragePanel key={`coverage:${caseId}`} caseId={caseId} />
+            </ErrorBoundary>
+          </div>
+        </TabsContent>
+
         <TabsContent value="quarantine" className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-auto p-4">
             <ErrorBoundary level="section">

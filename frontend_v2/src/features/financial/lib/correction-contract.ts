@@ -66,6 +66,26 @@ export const runningBalanceComparison = z.discriminatedUnion("available", [
   }),
 ])
 export type RunningBalanceComparison = z.infer<typeof runningBalanceComparison>
+export const currentRunningBalanceComparison = z.discriminatedUnion(
+  "available",
+  [
+    runningBalanceComparison.options[0],
+    runningBalanceComparison.options[1].extend({
+      interpretations: z
+        .array(
+          z.object({
+            order: z.enum(["source_row_order", "reverse_source_row_order"]),
+            current: balanceWalk,
+          })
+        )
+        .length(2)
+        .refine((v) => new Set(v.map((i) => i.order)).size === 2),
+    }),
+  ]
+)
+export type CurrentRunningBalanceComparison = z.infer<
+  typeof currentRunningBalanceComparison
+>
 export const correctionPreview = z.object({
   case_id: z.string(),
   transaction_id: z.string(),

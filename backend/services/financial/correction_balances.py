@@ -10,6 +10,19 @@ from services.financial.periods import read_opening
 def correction_running_balances(period, rows, *, transaction_id, amount_minor, direction):
     if type(amount_minor) is not int or not 0 <= amount_minor <= 9223372036854775807 or direction not in ("credit", "debit"):
         raise ValueError("A correction requires an exact nonnegative ledger amount and direction.")
+    result = current_running_balances(period, rows)
+    if not result['available']:
+        return result
+    current = sorted((r for r in rows if r.ledger_status != "superseded" and not r.superseded_by_id), key=lambda r: r.row_index)
+    opening = read_opening(period)
+    anchor = opening.amount.minor_units if opening.is_independent else None
+    for interpretation, sequence in zip(result['interpretations'], (current, list(reversed(current)))):
+        interpretation['proposed'] = _walk(sequence, anchor, transaction_id=transaction_id, amount_minor=amount_minor, direction=direction)
+    return result
+
+
+def current_running_balances(period, rows):
+    """Inspect both source-row orders without requiring or inventing a correction."""
     if len(rows) > 1000:
         return dict(available=False, reason="More than 1,000 period rows; running-balance comparison was not performed.", interpretations=[])
     current = [r for r in rows if r.ledger_status != "superseded" and not r.superseded_by_id]
@@ -33,8 +46,7 @@ def correction_running_balances(period, rows, *, transaction_id, amount_minor, d
     return dict(available=True, reason=None, currency=period.currency,
         limitation="Conditional comparisons assuming balances follow each transaction. Neither row order, source accuracy nor complete coverage is established. No proof class is raised.",
         interpretations=[dict(order=order,
-            current=_walk(sequence, anchor),
-            proposed=_walk(sequence, anchor, transaction_id=transaction_id, amount_minor=amount_minor, direction=direction))
+            current=_walk(sequence, anchor))
             for order, sequence in (("source_row_order", ordered), ("reverse_source_row_order", list(reversed(ordered))))])
 
 

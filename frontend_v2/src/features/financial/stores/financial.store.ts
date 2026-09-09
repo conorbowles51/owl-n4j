@@ -41,6 +41,7 @@ export interface SortColumn {
  */
 export type FinancialMainView =
   | "ledger"
+  | "statements"
   | "quarantine"
   | "runs"
   | "decisions"

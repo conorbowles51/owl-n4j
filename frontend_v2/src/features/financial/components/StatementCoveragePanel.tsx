@@ -1,3 +1,4 @@
+import { StatementTimeline } from "./StatementTimeline"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -163,6 +164,30 @@ export function StatementCoveragePanel({
                         </p>
                       </div>
                     ))}
+                    {[
+                      ...new Set(
+                        account.periods.map((period) => period.currency)
+                      ),
+                    ]
+                      .sort()
+                      .map((currency) => (
+                        <StatementTimeline
+                          key={currency}
+                          caseId={caseId}
+                          currency={currency}
+                          periods={account.periods}
+                          gaps={
+                            account.currencies.find(
+                              (group) => group.currency === currency
+                            )?.gaps ?? []
+                          }
+                          overlaps={
+                            account.currencies.find(
+                              (group) => group.currency === currency
+                            )?.overlaps ?? []
+                          }
+                        />
+                      ))}
                     <details>
                       <summary>
                         Source periods ({account.periods.length})

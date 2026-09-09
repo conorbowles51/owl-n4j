@@ -35,7 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
-from services.financial.ledger_source import LedgerSourceError, ledger_source
+from services.financial.ledger_source import LedgerSourceError, ledger_source, statement_source
 from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
 from services.financial.candidate_assessment import assess_candidate_amounts, assess_candidate_dates
 from services.financial.candidate_reviews import read_candidate_review
@@ -44,6 +44,8 @@ from services.financial.candidate_materialization import preview_candidate_final
 from routers.evidence import _resolve_stored_path
 from services.financial.ledger_snapshot import capture_ledger_export, ledger_export_archive
 from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
+from services.financial.statement_balances import capture_statement_running_balances
+from services.financial.statement_checks import capture_statement_checks, StatementCheckError
 from services.financial.coverage_query import requested_statement_coverage, CoverageQueryError, list_statement_coverage
 from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError
@@ -236,6 +238,39 @@ async def get_requested_statement_coverage(case_id: UUID = Query(...), account_i
     except Exception:
         logger.exception("Requested statement coverage failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Requested statement coverage could not be calculated.")
+
+
+@router.get("/statement-periods/{period_id}/running-balances")
+async def get_statement_running_balances(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return capture_statement_running_balances(db.get_bind(), case_id=case_id, period_id=period_id)
+    except StatementCheckError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception:
+        logger.exception("Running-balance check failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Running balances could not be checked.")
+
+
+@router.get("/statement-periods/{period_id}/source")
+async def get_statement_source(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return statement_source(db, case_id=case_id, period_id=period_id)
+    except LedgerSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    except Exception:
+        logger.exception("Statement source read failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Statement source could not be read.")
+
+
+@router.get("/statement-checks")
+async def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
+    try:
+        return capture_statement_checks(db.get_bind(), case_id=case_id, offset=offset)
+    except StatementCheckError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception:
+        logger.exception("Statement balance check failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Statement balances could not be checked.")
 
 
 @router.get("/statement-coverage")

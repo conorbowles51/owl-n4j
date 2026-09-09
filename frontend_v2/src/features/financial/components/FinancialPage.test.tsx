@@ -277,13 +277,14 @@ describe("FinancialPage", () => {
    * case holds now; it answers who moved any of it and on what grounds, and it
    * outlives its subjects.
    */
-  it("opens on the ledger, with the four Postgres tabs first in the strip", () => {
+  it("opens on the ledger, with statement review alongside the ledger tabs", () => {
     graphWithRows()
     renderPage()
 
     const tabs = screen.getAllByRole("tab")
     expect(tabs.map((t) => t.textContent)).toEqual([
       "Ledger",
+      "Statements",
       "Held out",
       "Attempts",
       "Decisions",
@@ -293,6 +294,15 @@ describe("FinancialPage", () => {
       "Trends",
     ])
     expect(tabs[0]).toHaveAttribute("aria-selected", "true")
+  })
+
+  it("opens statement checks and coverage without waiting for graph results", () => {
+    graphLoading()
+    renderPage()
+    selectTab("Statements")
+    expect(screen.getByRole("button", { name: "Check statement balances" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Check statement coverage" })).toBeInTheDocument()
+    expect(screen.queryByText(/No admitted rows in the ledger/i)).not.toBeInTheDocument()
   })
 
   it("mounts the ledger panel in the ledger tab", () => {
@@ -324,7 +334,7 @@ describe("FinancialPage", () => {
     graphEmpty()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(8)
+    expect(screen.getAllByRole("tab")).toHaveLength(9)
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 
@@ -332,7 +342,7 @@ describe("FinancialPage", () => {
     graphLoading()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(8)
+    expect(screen.getAllByRole("tab")).toHaveLength(9)
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 

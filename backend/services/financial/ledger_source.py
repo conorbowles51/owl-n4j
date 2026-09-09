@@ -53,3 +53,26 @@ def ledger_source(session, *, case_id, transaction_id):
             "superseded_by_id": str(row.superseded_by_id) if row.superseded_by_id else None,
             "locator": locator, "locator_state": state,
             "limitation": "Stored source citation only; this does not verify the reading or admit it to totals."}
+
+
+def statement_source(session, *, case_id, period_id):
+    """Open a period's registered file without inventing a page or highlight."""
+    from postgres.models.financial import FinancialStatementPeriod, FinancialAccount
+    result = session.execute(select(FinancialStatementPeriod, FinancialSourceDocument, EvidenceFile)
+        .join(FinancialSourceDocument, FinancialStatementPeriod.source_document_id == FinancialSourceDocument.id)
+        .join(FinancialAccount, FinancialStatementPeriod.account_id == FinancialAccount.id)
+        .join(EvidenceFile, FinancialSourceDocument.evidence_file_id == EvidenceFile.id)
+        .where(FinancialStatementPeriod.id == period_id, FinancialStatementPeriod.case_id == case_id,
+            FinancialAccount.case_id == case_id, FinancialSourceDocument.case_id == case_id,
+            EvidenceFile.case_id == case_id)).one_or_none()
+    if result is None:
+        raise LedgerSourceError('Statement source file not found in this case.', 404)
+    period, document, evidence = result
+    if (not isinstance(document.sha256_at_ingestion, str)
+            or re.fullmatch(r'[a-f0-9]{64}', document.sha256_at_ingestion) is None
+            or evidence.sha256 != document.sha256_at_ingestion):
+        raise LedgerSourceError('The evidence file recorded digest differs from the statement source.')
+    return dict(case_id=str(case_id), period_id=str(period.id), source_document_id=str(document.id),
+        evidence_file_id=str(evidence.id), filename=evidence.original_filename,
+        recorded_digest_matches=True, file_bytes_verified=False,
+        limitation='Opens the registered source file. An exact statement page has not been established by this citation.')
