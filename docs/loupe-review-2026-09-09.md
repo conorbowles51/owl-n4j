@@ -46,3 +46,18 @@ Choose PDF rows now puts the source image beside the selection grid. Click a tab
 value to highlight its location; use the checkbox separately to nominate a row.
 The source has zoom and the layout stacks on narrower screens. Looking at a value
 does not save anything. Avoid saving another copy of these already reviewed rows.
+
+Open **Statements** for balance checks and the coverage timeline. The real two-row
+PDF samples have no complete statement periods, so missing controls remain explicit.
+The existing [corrected synthetic statement](http://127.0.0.1:55174/cases/5675421f-0860-4048-abe1-902241a1feec/financial)
+demonstrates the new checks: open Statements, Check statement balances, then Check
+running balances. The GBP 10 discrepancy links to the original source. The
+[coverage example](http://127.0.0.1:55174/cases/e0da5581-a1ac-4db5-a3a9-e17021fb807a/financial)
+shows gaps and overlaps in its Statements timeline. These are synthetic fixtures,
+not findings about the supplied documents.
+
+For a portable review bundle, select **Include original source files with fresh
+hash checks** before downloading the ledger snapshot. The ZIP then contains the
+complete referenced PDF alongside the report, snapshot and verification manifest.
+Missing or changed files stop that export. This option was checked on both supplied
+PDFs, whose originals remain unchanged.

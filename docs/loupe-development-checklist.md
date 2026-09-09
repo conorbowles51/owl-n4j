@@ -81,6 +81,8 @@ feature below is complete at the start of this window.
    - [x] Source date assessment: display alternative numeric dates, unresolved years/centuries, invalid dates and original citations without selecting a reading (46a3417). Automatic date/context resolution and account uncertainty work remain.
 
 3. **Complete financial accuracy checks — partial**
+   - [x] Statements workspace displays current balance identity and conditional running-balance checks, exact discrepancies and source navigation without overwriting prior results or changing admission (84cd821). Both possible source-row orders remain explicit.
+   - [x] Account/currency timeline shows eligible and excluded bounds, internal gaps and separate overlapping statements; select a period to inspect its registered source (84cd821). This does not prove complete transaction extraction.
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
    - [ ] Repeat all affected checks after a correction, including native controls and running balances.
@@ -128,6 +130,7 @@ feature below is complete at the start of this window.
    - [ ] Connect comparisons between financial records and statements or claims about payments.
 
 8. **Produce traceable reports and exports — partial**
+   - [x] Optional original-source bundle with fresh byte verification, source manifest, case ownership checks and whole-bundle limits; both supplied PDFs independently verified unchanged (5eeda00). Complete referenced files may extend beyond ledger filters.
    - [x] Include source-file PDF mappings/originals, review chains and finalization receipts in schema3 snapshot and readable report; separate review/adjudication counts.50backend/9frontend tests and real-sample hash/content verification pass. Original PDF bytes remain outside bundle.
    - [x] Primary Ledger and documentary Transactions export their applied filter scope directly, with case-switch reset and no misleading held-out-only export (51ebd77).44targeted tests and primary browser ZIP/hash checks pass.
    - [x] Format report money exactly in currency units while preserving minor units, and verify exported totals/exclusions against the summary API across case/account/date/empty scopes (96f3a3f).92 targeted tests and live HTTP/hash/layout checks pass; non-member access matrix remains.

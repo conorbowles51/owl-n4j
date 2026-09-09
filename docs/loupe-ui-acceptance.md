@@ -59,3 +59,11 @@ Backend test counts do not establish completion of these user journeys.
 - [x] Show the source beside row selection; clicking a value highlights its stored
   location without nominating or saving the row. Desktop and narrow layout verified
   on the second real PDF with no financial writes (5f5a2a9).
+
+- [x] Dedicated Statements tab with current balance checks, source-linked running
+  balance discrepancies and selectable account/currency coverage timeline (84cd821).
+  Excluded bounds remain visible; eligible does not mean complete extraction.
+
+- [x] Optional original source files included in the ledger ZIP with fresh byte
+  hashes and explicit complete-file scope; verified independently on both real PDFs
+  (5eeda00). Default export stays metadata/history only.

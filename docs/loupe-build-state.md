@@ -6,6 +6,60 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Original-source export verified — 9 September 2026
+
+5eeda00 adds optional original-file bundling to ledger exports. Default remains
+metadata/history only. The UI explicitly selects complete referenced files and
+warns that these may contain pages outside account/date filters. Same-case file
+records and ingestion digests are checked in the export database snapshot; actual
+regular-file bytes are hashed before ZIP creation. Missing/changed/non-regular
+files, conflicting digests, more than 100 files or more than 64 MiB refuse the
+entire bundle. Safe UUID-based archive names; no local disk paths exported.
+Manifest records per-file SHA-256, size, original name and archive path.
+
+37 targeted backend export tests, 9 frontend export tests, TypeScript/scoped lint
+pass. Both real PDFs downloaded through the UI with original sources; independent
+verification confirms byte-for-byte originals (6,921,177 and 5,561,852 bytes),
+snapshot/HTML hashes, retained review history and 0 included/2 excluded rows each.
+Original files unchanged; zero financial writes. Artifacts first-pdf-with-sources.zip,
+second-pdf-with-sources.zip, original-source-export-verification.json under
+ data/local-runtime. Scripts check_local_original_source_export.cjs and
+verify_local_original_source_exports.py are read-only and safe to repeat.
+Backend session 69571, log /tmp/loupe-neilbyrne-source-export-backend-runtime.out.
+
+Continue in this turn: connect explicitly reviewed PDF statement dates and balance
+controls to finalization. Candidate materialization currently creates no periods
+and permanently seals additions for a file, so a two-row sample must stay a sample.
+Read candidate_materialization.py before extending; preserve legacy receipts and
+incomplete-coverage P3 protection. Do not edit existing finalized real cases.
+
+### Statements workspace completed checkpoint — 9 September 2026
+
+84cd821 adds a dedicated Statements tab: current balance identity, conditional
+running-balance checks, account/currency date timeline and source navigation.
+Current diagnostics use fresh PostgreSQL repeatable-read read-only snapshots;
+exact money strings, scope/ownership checks, explicit missing controls, source
+exclusions and prior stored reconciliation retained. No proof class or admission
+changes. Running comparisons expose both row orders and source links; neither
+order is silently chosen. Checks cover at most 25 periods per page; running balance
+comparison refuses more than 1,000 rows. Timeline preserves held ranges, gaps and
+overlaps separately and does not claim complete extraction.
+
+55 targeted backend tests and 86 frontend tests pass, plus TypeScript/scoped ESLint.
+Read-only live checks on existing coverage, second real PDF and corrected synthetic
+PDF cases passed; zero financial writes and unchanged recorded reconciliations.
+Synthetic correction fixture shows GBP 10 statement discrepancy and -10 forward
+running-balance discrepancy with original source links. Second real PDF has no
+statement periods; selected candidate rows did not invent printed controls.
+Report data/local-runtime/statement-workflow-check.json. Desktop/narrow screenshots
+inspected. Backend session 77497, log /tmp/loupe-neilbyrne-statement-backend.out.
+
+Neil again instructed fewer hand-backs. Continue across meaningful units in the
+same turn; no new authorization is needed. Next active work: optional original
+source files in exports with fresh byte hashes, while retaining source-only
+metadata exports. Full PDF printed-control entry/complete-statement admission,
+native control revalidation and wider analytical features remain outstanding.
+
 ### Second PDF acceptance and source selection layout — 9 September 2026
 
 Latest local commits: f6220fa (interrupted preparation and second-PDF acceptance),
