@@ -1,0 +1,103 @@
+import hashlib
+import json
+from datetime import date
+from unittest.mock import patch
+from pydantic import ValidationError
+from services.financial.ledger_snapshot import LedgerExport, LedgerSnapshot, capture_ledger_snapshot, _capture_history
+from services.financial.ledger_tracing import LedgerTraceInput, ledger_trace_inputs, evaluate_ledger_trace
+from services.financial.ledger_summary import LedgerSummaryError
+from services.financial.tracing import Doctrine, TracingError
+from postgres.models.enums import TransactionDirection, LedgerStatus
+from tests.test_financial_ledger_summary import LedgerSummaryTests
+
+
+class LedgerTracingTests(LedgerSummaryTests):
+    def captured(self):
+        snap=capture_ledger_snapshot(self.db, case_id=self.case.id, account_id=self.account.id,
+                                    start_date=date(2026,1,1), end_date=date(2026,1,31))
+        document=_capture_history(self.db,json.loads(snap.content),case_id=self.case.id)
+        content=json.dumps(document,sort_keys=True,separators=(',',':'))
+        return LedgerExport(LedgerSnapshot(content,hashlib.sha256(content.encode()).hexdigest(),len(content.encode())), '{}')
+
+    def scenario(self):
+        first,_=self.add(500000)
+        second,_=self.add(500000)
+        third,_=self.add(500000,TransactionDirection.debit)
+        export=self.captured()
+        request=LedgerTraceInput(account_id=self.account.id,start_date=date(2026,1,1),end_date=date(2026,1,31),
+            expected_snapshot_sha256=export.snapshot.sha256, opening_balance_minor='0', opening_basis='Synthetic zero opening assumption.',
+            order_basis='Explicit synthetic same-day order for comparison.', ordered_transaction_ids=[first.id,second.id,third.id],
+            attributions=[dict(transaction_id=first.id,claim_id='claim-a',amount_minor='500000',basis='Synthetic attributed deposit.')],
+            doctrines=list(Doctrine))
+        return export,request,first,third
+
+    def test_methods_compare_exactly_and_preserve_all_assumptions(self):
+        export,request,first,third=self.scenario()
+        result=evaluate_ledger_trace(export,request)
+        scenario=json.loads(result['scenario_json'])
+        self.assertFalse(scenario['assumptions_verified'])
+        self.assertFalse(scenario['applied'])
+        self.assertEqual(scenario['inputs']['ordered_transaction_ids'],[str(i) for i in request.ordered_transaction_ids])
+        methods=scenario['comparison']['results']
+        self.assertEqual(methods['first_in_first_out']['outcomes']['claim-a']['surviving']['minor_units'],'0')
+        self.assertEqual(methods['last_in_first_out']['outcomes']['claim-a']['surviving']['minor_units'],'500000')
+        self.assertEqual(scenario['ledger_snapshot'],json.loads(export.snapshot.content))
+        canonical=json.dumps(scenario,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
+        self.assertEqual(result['scenario_sha256'],hashlib.sha256(canonical).hexdigest())
+        self.assertEqual(result['scenario_byte_count'],len(canonical))
+        self.assertEqual(result,evaluate_ledger_trace(export,request))
+        self.assertFalse(self.db.new or self.db.dirty)
+
+    def test_snapshot_change_and_incomplete_or_duplicate_order_refused(self):
+        export,request,_,_=self.scenario()
+        for update in ({'expected_snapshot_sha256':'0'*64}, {'account_id':self.other_account.id},
+                       {'ordered_transaction_ids':request.ordered_transaction_ids[:-1]},
+                       {'ordered_transaction_ids':[request.ordered_transaction_ids[0]]*3},
+                       {'doctrines':[Doctrine.first_in_first_out]*2}):
+            with self.subTest(update=update), self.assertRaises(LedgerSummaryError):
+                evaluate_ledger_trace(export,request.model_copy(update=update))
+
+    def test_ineligible_and_wrong_deposit_attributions_refused(self):
+        export,request,first,third=self.scenario()
+        wrong=request.attributions[0].model_copy(update={'transaction_id':third.id})
+        with self.assertRaises(TracingError):
+            evaluate_ledger_trace(export,request.model_copy(update={'attributions':[wrong]}))
+        from services.financial.quarantine_row import quarantine_case_row
+        quarantine_case_row(self.db,case_id=self.case.id,transaction_id=first.id,actor=self.user,reason='Exclude synthetic claim deposit')
+        fresh=self.captured()
+        with self.assertRaises(LedgerSummaryError):evaluate_ledger_trace(fresh,request)
+        self.assertEqual(ledger_trace_inputs(fresh)['excluded_rows'],1)
+
+    def test_dates_limits_and_missing_assumptions_refused(self):
+        export,request,first,third=self.scenario()
+        third.ordering_date=date(2026,1,1);first.ordering_date=date(2026,1,2);self.db.commit()
+        fresh=self.captured()
+        with self.assertRaises(LedgerSummaryError):
+            evaluate_ledger_trace(fresh,request.model_copy(update={'expected_snapshot_sha256':fresh.snapshot.sha256}))
+        with patch('services.financial.ledger_tracing.MAX_TRACE_ROWS',1):
+            with self.assertRaises(LedgerSummaryError):ledger_trace_inputs(export)
+        with patch('services.financial.ledger_tracing.MAX_EXPORT_BYTES',1):
+            with self.assertRaises(LedgerSummaryError):evaluate_ledger_trace(export,request)
+        values=request.model_dump()
+        for field in ('opening_basis','order_basis','doctrines'):
+            missing={k:v for k,v in values.items() if k!=field}
+            with self.assertRaises(ValidationError):LedgerTraceInput(**missing)
+        with self.assertRaises(ValidationError):LedgerTraceInput(**{**values,'opening_basis':'   '})
+
+
+import unittest
+from uuid import uuid4
+class LedgerTraceRouterTests(unittest.TestCase):
+    def test_capture_scope_and_safe_error_responses(self):
+        from routers import financial_ledger as router
+        from fastapi import HTTPException
+        from unittest.mock import Mock
+        db=Mock(); case,account=uuid4(),uuid4()
+        with patch.object(router,'capture_ledger_export',return_value='captured') as capture, patch.object(router,'ledger_trace_inputs',return_value={'applied':False}):
+            result=router.get_ledger_trace_inputs(case,account,date(2026,1,1),date(2026,1,31),db)
+            self.assertFalse(result['applied'])
+            capture.assert_called_once_with(db.get_bind(),case_id=case,account_id=account,start_date=date(2026,1,1),end_date=date(2026,1,31))
+        with patch.object(router,'capture_ledger_export',side_effect=RuntimeError('private')):
+            with self.assertRaises(HTTPException) as caught:router.get_ledger_trace_inputs(case,account,date(2026,1,1),date(2026,1,31),db)
+            self.assertEqual(caught.exception.status_code,500)
+            self.assertNotIn('private',caught.exception.detail)

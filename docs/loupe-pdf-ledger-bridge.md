@@ -577,3 +577,21 @@ No row is selected, persisted, classified or admitted by this request. Changed
 source revisions, duplicate/unknown column IDs and unsupported currencies refuse.
 The case:view POST endpoint is a read request with structured input. UI connection
 is the next stage. Also corrected date-assessment's old numeric-only limitation.
+
+## Conditional ledger tracing — 9 September 2026
+
+`ledger_tracing.py` captures one account and a closed date interval using the
+existing repeatable-read ledger export. It requires explicit opening funds/basis,
+complete date-respecting movement order/basis, attributed credit amounts/bases and
+selected methods. Stale snapshot hashes, duplicate/omitted readings, reversed dates,
+invalid attribution and oversized scenarios fail without writing anything.
+The existing five-method tracing core supplies the calculation; no method defaults.
+
+The Conditional tracing tab exposes this as an investigator scenario. The first
+UI supports one attributed deposit; the API permits up to 50. Opening funds are
+unattributed. Same-day order is explicitly assumed, not bank verified. Results
+include unidentified and unfunded withdrawals separately. Changing assumptions
+clears results. The exact UTF-8 JSON download contains assumptions, source-bound
+ledger/history capture and full calculation, checked against server SHA-256 and
+byte length before download. It does not embed original source files or establish
+cross-account transfers, identity, legal applicability or evidence completeness.

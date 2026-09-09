@@ -1,3 +1,4 @@
+import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { LedgerCounterpartiesAnalysis } from "./LedgerCounterpartiesAnalysis"
 import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { useParams } from "react-router-dom"
@@ -510,6 +511,7 @@ export function FinancialPage() {
               <Users className="size-3.5" />
               Counterparties
             </TabsTrigger>
+            <TabsTrigger value="tracing">Conditional tracing</TabsTrigger>
             <TabsTrigger value="trends">
               <BarChart3 className="size-3.5" />
               Trends
@@ -699,6 +701,8 @@ export function FinancialPage() {
             )
           )}</>}
         </TabsContent>
+
+        <TabsContent value="tracing" className="min-h-0 flex-1 overflow-auto"><ErrorBoundary level="section"><LedgerTracingWorkbench key={caseId} caseId={caseId} /></ErrorBoundary></TabsContent>
 
         <TabsContent value="trends" className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-2 border-b p-3">

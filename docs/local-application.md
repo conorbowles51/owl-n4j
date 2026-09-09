@@ -737,3 +737,14 @@ no automatic selection and0candidate writes.25targeted UI tests, TypeScript and
 scoped ESLint passed; source/scope/text mismatch checks refuse results. Backend
 service36tests and1route test passed. Local services restarted on9September:
 backend58002, engine58003 and frontend55174, using existing isolated data/venvs.
+
+### Conditional account tracing (read-only synthetic acceptance)
+
+With the isolated backend and frontend running, use
+`node scripts/check_local_ledger_tracing_ui.cjs`. It uses the existing labelled
+coverage case/account, selects one deposit and FIFO explicitly, downloads the
+scenario and checks exact bytes/hash, then confirms changed assumptions clear the
+result. No ledger writes. Reports are `data/local-runtime/conditional-trace-ui-check.json`
+and `conditional-trace-check.json`. This credit-only live fixture verifies wiring;
+backend tests cover withdrawals, method differences, stale snapshots and invalid
+orders. The UI currently supports one attributed deposit per scenario.

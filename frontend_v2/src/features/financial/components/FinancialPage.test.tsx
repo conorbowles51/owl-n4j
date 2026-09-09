@@ -289,6 +289,7 @@ describe("FinancialPage", () => {
       "Decisions",
       "Transactions",
       "Counterparties",
+      "Conditional tracing",
       "Trends",
     ])
     expect(tabs[0]).toHaveAttribute("aria-selected", "true")
@@ -323,7 +324,7 @@ describe("FinancialPage", () => {
     graphEmpty()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(7)
+    expect(screen.getAllByRole("tab")).toHaveLength(8)
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 
@@ -331,7 +332,7 @@ describe("FinancialPage", () => {
     graphLoading()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(7)
+    expect(screen.getAllByRole("tab")).toHaveLength(8)
     expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
   })
 

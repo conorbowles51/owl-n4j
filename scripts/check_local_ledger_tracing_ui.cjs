@@ -1,0 +1,55 @@
+// Read-only conditional scenario over the existing labelled synthetic coverage case.
+const path=require('path'),fs=require('fs'),crypto=require('crypto');
+const root=path.resolve(__dirname,'..');
+const {chromium}=require(path.join(root,'frontend_v2/node_modules/playwright'));
+(async()=>{
+ const caseId='e0da5581-a1ac-4db5-a3a9-e17021fb807a',accountId='c4c09bae-0bec-4605-a67e-ec2015ba344b';
+ const browser=await chromium.launch({headless:true});
+ let page;
+ try{
+  page=await browser.newPage({viewport:{width:1440,height:1200}});page.setDefaultTimeout(20000);
+  await page.goto('http://127.0.0.1:55174/login');
+  await page.getByPlaceholder('Enter your username').fill('loupe-local@example.com');
+  await page.getByPlaceholder('Enter your password').fill('Loupe-local-test-2026');
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL(u=>!u.pathname.includes('login'));
+  await page.goto(`http://127.0.0.1:55174/cases/${caseId}/financial`);
+  await page.getByRole('tab',{name:'Conditional tracing',exact:true}).click();
+  if(!await page.getByRole('button',{name:'Load tracing inputs',exact:true}).isDisabled())throw Error('Unscoped load enabled');
+  const headers={Authorization:`Bearer ${await page.evaluate(()=>localStorage.getItem('authToken'))}`};
+  const accounts=await (await page.request.get(`http://127.0.0.1:58002/api/financial/ledger-accounts?case_id=${caseId}`,{headers})).json();
+  const account=accounts.items.find(a=>a.id===accountId);if(!account)throw Error('Missing synthetic account');
+  const label=[account.display_label,account.identifier,account.holder,account.institution,account.currency].filter(Boolean).join(' · ')||account.id;
+  await page.getByRole('button',{name:'Find accounts',exact:true}).click();
+  await page.getByRole('button',{name:`Select ${label}${account.provisional?' (provisional identity)':''}`,exact:true}).click();
+  await page.getByLabel('Ordering date from',{exact:true}).fill('2026-01-01');
+  await page.getByLabel('Ordering date through',{exact:true}).fill('2026-01-31');
+  await page.getByRole('button',{name:'Apply ledger filters',exact:true}).click();
+  const inputsResponse=page.waitForResponse(r=>r.url().includes("/ledger-trace-inputs?"));
+  await page.getByRole('button',{name:'Load tracing inputs',exact:true}).click();
+  const capturedInputs=await (await inputsResponse).json();
+  await page.getByText('Record your scenario assumptions',{exact:true}).waitFor();
+  await page.getByLabel('Opening balance in minor units',{exact:true}).fill('0');
+  await page.getByLabel('Opening balance basis',{exact:true}).fill('Synthetic acceptance assumption: no opening funds.');
+  await page.getByLabel('Basis for accepting this movement order',{exact:true}).fill('Synthetic acceptance: displayed same-day order assumed, not bank-verified.');
+  const deposit=page.getByLabel('Attributed deposit',{exact:true});
+  await deposit.selectOption(capturedInputs.readings[0].row.key);
+  await page.getByLabel('Claim label',{exact:true}).fill('synthetic-claim');
+  await page.getByLabel('Attributed amount in minor units',{exact:true}).fill('100');
+  await page.getByLabel('Attribution basis',{exact:true}).fill('Synthetic test attribution only.');
+  await page.getByLabel('first in first out',{exact:true}).check();
+  const responsePromise=page.waitForResponse(r=>r.url().includes('/ledger-trace?')&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'Calculate conditional scenario',exact:true}).click();
+  const response=await responsePromise;const envelope=await response.json();if(!response.ok())throw Error(JSON.stringify(envelope));
+  await page.getByRole('region',{name:'Conditional tracing results',exact:true}).waitFor();
+  const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Download conditional scenario',exact:true}).click();
+  const destination=path.join(root,'data/local-runtime/conditional-trace-check.json');await (await pending).saveAs(destination);
+  const bytes=fs.readFileSync(destination),scenario=JSON.parse(bytes);
+  if(crypto.createHash('sha256').update(bytes).digest('hex')!==envelope.scenario_sha256||bytes.length!==envelope.scenario_byte_count)throw Error('Downloaded bytes differ');
+  if(scenario.comparison.results.first_in_first_out.outcomes['synthetic-claim'].surviving.minor_units!=='100')throw Error('Unexpected conditional result');
+  await page.screenshot({path:'/tmp/loupe-neilbyrne-tracing-ui.png',fullPage:true});
+  await page.getByLabel('Attributed amount in minor units',{exact:true}).fill('101');
+  if(await page.getByRole('region',{name:'Conditional tracing results',exact:true}).count())throw Error('Stale result survived changed assumptions');
+  const report={case_id:caseId,account_id:accountId,included_rows:scenario.ledger_snapshot.ledger.included_rows,download_sha256:envelope.scenario_sha256,exact_download:true,assumption_change_clears_result:true,applied:scenario.applied};
+  fs.writeFileSync(path.join(root,'data/local-runtime/conditional-trace-ui-check.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+ }catch(error){ if(page){ await page.screenshot({path:"/tmp/loupe-neilbyrne-tracing-failure.png"});fs.writeFileSync("/tmp/loupe-neilbyrne-tracing-failure.txt",await page.locator("body").innerText()); } throw error; }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

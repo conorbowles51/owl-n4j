@@ -907,6 +907,7 @@ from services.financial.version import (
 )
 
 __all__ = [
+    "LedgerTraceInput", "TraceAttributionInput", "ledger_trace_inputs", "evaluate_ledger_trace",
     "LedgerSnapshot", "capture_ledger_snapshot", "LedgerExport", "capture_ledger_export",
     "LedgerSummaryError", "ledger_summary", "ledger_counterparties", "requested_statement_coverage",
     "CandidateFinalizationRequest", "preview_candidate_finalization", "finalize_candidates",
@@ -1868,3 +1869,5 @@ from services.financial.candidate_accounts import CandidateAccountRequest, creat
 from services.financial.candidate_overlap import check_candidate_source_reuse
 
 from services.financial.candidate_materialization import CandidateFinalizationRequest, preview_candidate_finalization, finalize_candidates
+
+from services.financial.ledger_tracing import LedgerTraceInput, TraceAttributionInput, ledger_trace_inputs, evaluate_ledger_trace

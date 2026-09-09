@@ -47,6 +47,7 @@ export type FinancialMainView =
   | "transactions"
   | "counterparties"
   | "trends"
+  | "tracing"
 export type ChartGroupingOption = "auto" | "daily" | "weekly" | "monthly"
 
 interface FinancialStoreState {

@@ -136,6 +136,36 @@ async def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(
         raise HTTPException(status_code=500, detail="Saved PDF readings could not be listed.")
 
 
+from services.financial.ledger_tracing import LedgerTraceInput, ledger_trace_inputs, evaluate_ledger_trace
+from services.financial.tracing import TracingError
+
+
+@router.get("/ledger-trace-inputs")
+def get_ledger_trace_inputs(case_id: UUID = Query(...), account_id: UUID = Query(...),
+        start_date: date = Query(...), end_date: date = Query(...), db: Session = Depends(get_db)):
+    try:
+        return ledger_trace_inputs(capture_ledger_export(db.get_bind(), case_id=case_id,
+            account_id=account_id, start_date=start_date, end_date=end_date))
+    except (LedgerSummaryError, TracingError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Tracing input capture failed")
+        raise HTTPException(status_code=500, detail="Tracing inputs could not be captured.")
+
+
+@router.post("/ledger-trace")
+def run_ledger_trace(body: LedgerTraceInput, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=body.account_id,
+            start_date=body.start_date, end_date=body.end_date)
+        return evaluate_ledger_trace(captured, body)
+    except (LedgerSummaryError, TracingError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Conditional tracing failed")
+        raise HTTPException(status_code=500, detail="Tracing scenario could not be calculated.")
+
+
 @router.get("/ledger-export")
 def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db)):
