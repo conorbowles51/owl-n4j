@@ -57,6 +57,14 @@ class CandidateDateTests(unittest.TestCase):
         self.assertEqual(cell["source"]["start_char"], position)
         self.assertEqual(cell["assessment"]["status"], "missing_year")
 
+    def test_named_month_keeps_original_source_and_requires_review(self):
+        self.f.save(raw="7 September 2026", meaning="transaction_date")
+        cell = next(c for c in self.assess()["date_cells"] if c["column_index"] == 1)
+        self.assertEqual(cell["source"]["text"], "7 September 2026")
+        self.assertEqual(cell["assessment"]["proposals"][0]["iso_date"], "2026-09-07")
+        self.assertTrue(cell["assessment"]["requires_source_review"])
+        self.assertFalse(self.f.fixture.db.new or self.f.fixture.db.dirty)
+
     def test_wrong_case_and_changed_source_refused(self):
         self.f.save(meaning="booking_date")
         with self.assertRaises(CandidateStoreError) as error:

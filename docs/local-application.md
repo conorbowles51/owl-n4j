@@ -704,3 +704,17 @@ summary, both real PDFs against their original inspection SHA-256 values, and ze
 matching evidence_files in the isolated database. The PostgreSQL transaction is
 read-only. Report: `data/local-runtime/handoff-verification.json`. Passed at
 11:36UTC on7September2026. Health responses do not establish AI provider readiness.
+
+## Named-month date assessment
+
+The saved PDF date-review workflow now accepts explicit English month names such
+as `7 September 2026` or `September 7, 2026`, retaining source text and requiring
+review. It does not infer missing years, centuries, locale or OCR repairs.
+
+```sh
+cd backend
+PYTHON_DOTENV_DISABLED=1 ../data/local-runtime/backend-venv/bin/python -m unittest tests.test_financial_source_dates tests.test_financial_candidate_dates tests.test_financial_exports
+```
+
+24targeted tests passed on9September2026. Restart the local backend to load the
+new parser if it was left running from the previous session.

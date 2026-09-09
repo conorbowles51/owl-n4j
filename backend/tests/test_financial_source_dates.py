@@ -54,3 +54,29 @@ class SourceDateTests(unittest.TestCase):
             self.assertEqual(result["raw"], " 2026-02-01 ")
             self.assertTrue(result["requires_source_review"])
             self.assertNotIn("selected_date", result)
+
+    def test_explicit_english_month_names_and_abbreviations(self):
+        for raw, expected in (("7 September 2026", "2026-09-07"), ("September 7, 2026", "2026-09-07"),
+                              ("SEP 07 2026", "2026-09-07"), ("7 sept 2026", "2026-09-07"),
+                              ("29 Feb 2024", "2024-02-29")):
+            with self.subTest(raw=raw):
+                result = self.read(raw, "recognised_glyphs")
+                self.assertEqual(result['status'], 'unambiguous_format')
+                self.assertEqual(result['proposals'][0]['iso_date'], expected)
+                self.assertTrue(result['requires_source_review'])
+                self.assertEqual(result['raw'], raw)
+
+    def test_named_dates_do_not_infer_year_century_or_repair_tokens(self):
+        for raw, status in (("29 February", "missing_year"), ("Feb 29, 24", "ambiguous_century"),
+                            ("29 February 2026", "invalid_calendar_date"), ("31 Apr", "invalid_calendar_date"),
+                            ("1 January 0000", "invalid_calendar_date")):
+            with self.subTest(raw=raw):
+                result = self.read(raw)
+                self.assertEqual(result['status'], status)
+                self.assertTrue(all('iso_date' not in p for p in result['proposals']))
+        for raw in ("7 Septembcr 2026", "7 septembre 2026", "7th September 2026", "Sep O7 2026",
+                    "September 2026", "Sep 7,", "Sep 7 2026 extra", "7/Sept/2026"):
+            with self.subTest(raw=raw):
+                result = self.read(raw)
+                self.assertEqual(result['status'], 'unsupported')
+                self.assertEqual(result['raw'], raw)

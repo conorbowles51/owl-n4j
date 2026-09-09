@@ -550,3 +550,16 @@ comparisons reuse the conditional-order display and link to original transaction
 sources under the selected case. They are labelled as saved-at-decision results,
 never silently recalculated. Source-dialog state is bound to its originating case,
 and source links are unavailable without case context.
+
+## Named-month date review — 9 September 2026
+
+Source-date assessment now proposes English month-name readings in day-first or
+month-first forms, including full names, three-letter abbreviations and Sept.
+Examples:7September2026 and September7,2026 with whitespace separating tokens.
+Case differences are accepted; original text, glyph origin and source references
+remain unchanged. A valid complete year permits a calendar proposal, not automatic
+review acceptance. Missing years and two-digit centuries stay unresolved; leap-day
+validity remains conditional without a complete year. Unknown language/month tokens,
+OCR lookalikes, ordinal suffixes and unsupported separators are not repaired.
+The existing candidate-review endpoint/UI contract is unchanged.24targeted source,
+candidate and package tests passed; no ledger, evidence or classification writes.
