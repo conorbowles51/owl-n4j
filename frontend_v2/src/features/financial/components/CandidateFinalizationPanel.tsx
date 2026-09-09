@@ -1,3 +1,9 @@
+import { StatementScopeEditor } from "./StatementScopeEditor"
+import {
+  statementScope,
+  scopeReading,
+  type StatementScope,
+} from "../lib/statement-scope-contract"
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -13,6 +19,8 @@ const readySchema = z.object({
   evidence_file_id: id,
   applied: z.literal(false),
   revision,
+  statement_scopes: z.array(statementScope).max(16).optional(),
+  readings: z.array(scopeReading).max(1000).optional(),
   resolved_count: z.number().int().min(1).max(1000),
   rejected_count: z.number().int().min(0).max(1000),
   proof_class: z.literal("p3"),
@@ -76,6 +84,8 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
   const [coverage, setCoverage] = useState(false)
   const [reason, setReason] = useState("")
   const [source, setSource] = useState<string | null>(null)
+  const [statementScopes, setStatementScopes] = useState<StatementScope[]>([])
+  const [editingStatement, setEditingStatement] = useState(false)
   function scoped<T extends { case_id: string; evidence_file_id: string }>(
     data: T
   ) {
@@ -88,17 +98,32 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
   }
   const preview = useMutation({
     retry: false,
-    mutationFn: async () =>
-      scoped(
+    mutationFn: async () => {
+      const data = scoped(
         previewSchema.parse(
           await fetchAPI<unknown>(
             candidateUrl(
               `candidate-sources/${encodeURIComponent(fileId)}/finalization-preview`,
               caseId
-            )
+            ),
+            statementScopes.length
+              ? { method: "POST", body: { statement_scopes: statementScopes } }
+              : undefined
           )
         )
-      ),
+      )
+      if (
+        !data.applied &&
+        JSON.stringify(data.statement_scopes ?? []) !==
+          JSON.stringify(
+            statementScopes.map((value) => statementScope.parse(value))
+          )
+      )
+        throw new Error(
+          "The preview does not match the reviewed statement controls."
+        )
+      return data
+    },
   })
   const finalize = useMutation({
     retry: false,
@@ -122,6 +147,9 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
                 documentary_financial_rows: documentary,
                 accept_incomplete_coverage: coverage,
                 reason,
+                ...(statementScopes.length
+                  ? { statement_scopes: statementScopes }
+                  : {}),
               },
             }
           )
@@ -183,6 +211,34 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
           ? "Reload finalization preview"
           : "Preview finalization"}
       </Button>
+      {statementScopes.length > 0 && !receipt && (
+        <div className="space-y-2">
+          <p>
+            {statementScopes.length} reviewed statement definitions. Reload the
+            preview after any change.
+          </p>
+          {statementScopes.map((scope, index) => (
+            <div key={index} className="flex flex-wrap items-center gap-2">
+              <span>
+                {scope.start.value} to {scope.end.value} · {scope.currency} ·{" "}
+                {scope.candidate_ids.length} rows
+              </span>
+              <Button
+                variant="outline"
+                disabled={finalize.isPending || blocked}
+                onClick={() => {
+                  setStatementScopes((v) => v.filter((_, i) => i !== index))
+                  preview.reset()
+                  setDocumentary(false)
+                  setCoverage(false)
+                }}
+              >
+                Remove statement {index + 1}
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
       {preview.isPending && (
         <p role="status">Checking saved reviews and source bytes…</p>
       )}
@@ -198,8 +254,39 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
             {ready.rejected_count} rejected readings stay in history. This count
             does not establish complete PDF coverage.
           </p>
+          {ready.readings &&
+            !blocked &&
+            !finalize.isPending &&
+            statementScopes.length < 16 &&
+            (editingStatement ? (
+              <StatementScopeEditor
+                caseId={caseId}
+                fileId={fileId}
+                readings={ready.readings.filter(
+                  (row) =>
+                    !statementScopes.some((scope) =>
+                      scope.candidate_ids.includes(row.candidate_id)
+                    )
+                )}
+                onClose={() => setEditingStatement(false)}
+                onSave={(scope) => {
+                  setStatementScopes((v) => [...v, scope])
+                  setEditingStatement(false)
+                  preview.reset()
+                  setDocumentary(false)
+                  setCoverage(false)
+                }}
+              />
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => setEditingStatement(true)}
+              >
+                Add printed statement controls
+              </Button>
+            ))}
           <fieldset
-            disabled={blocked || finalize.isPending}
+            disabled={blocked || finalize.isPending || editingStatement}
             className="space-y-3"
           >
             <label className="flex items-start gap-2">

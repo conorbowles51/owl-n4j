@@ -21,6 +21,7 @@ from services.financial.candidate_overlap import _claim, _comparison
 from services.financial.candidate_reviews import CandidateResolvedReading
 from services.financial.candidate_source_bytes import verify_candidate_source_bytes
 from services.financial.candidate_store import CandidateStoreError
+from services.financial.candidate_statement_scopes import StatementScopesRequest, attach_statement_scopes, record_reviewed_statement_scopes
 from services.financial.decisions import Actor
 from services.financial.documents import SourceDocumentDraft, record_source_document
 from services.financial.locators import Locator, SourceRectangle
@@ -31,7 +32,7 @@ from services.financial.runs import ingestion_run
 from services.financial.transactions import TransactionDraft, record_transactions
 
 
-class CandidateFinalizationRequest(_Contract):
+class CandidateFinalizationRequest(StatementScopesRequest):
     expected_revision: _Digest
     documentary_financial_rows: Annotated[bool, Field(strict=True)]
     accept_incomplete_coverage: Annotated[bool, Field(strict=True)]
@@ -46,6 +47,12 @@ class CandidateFinalizationRequest(_Contract):
         return self
 
 
+def _request_json(request):
+    # Keep old sealed request bodies byte-for-byte comparable when no statement
+    # controls were supplied. Existing receipts predate this optional field.
+    return request.model_dump(mode="json", exclude={"statement_scopes"} if not request.statement_scopes else set())
+
+
 def _existing(session, case_id, file_id):
     return session.scalar(select(FinancialCandidateFinalization).where(
         FinancialCandidateFinalization.case_id == case_id,
@@ -55,7 +62,7 @@ def _existing(session, case_id, file_id):
 def _receipt(session, receipt, request=None):
     if _digest(receipt.snapshot) != receipt.snapshot_sha256:
         raise CandidateStoreError("Finalization receipt is inconsistent.")
-    if request is not None and receipt.snapshot.get("request") != request.model_dump(mode="json"):
+    if request is not None and receipt.snapshot.get("request") != _request_json(request):
         raise CandidateStoreError("This PDF was finalized with a different request. Use ledger correction history.")
     links = session.execute(select(FinancialCandidateTransaction, FinancialTransaction)
         .join(FinancialTransaction, FinancialTransaction.id == FinancialCandidateTransaction.transaction_id)
@@ -179,6 +186,7 @@ def _prepare(session, *, case_id, evidence_file_id, resolve_path):
     for item in prepared:
         reading = item["reading"]
         account = accounts[reading.account_id]
+        item["account_label"] = (account.metadata_ or {}).get("display_label") or account.identifier_as_printed or account.holder_name or "Unidentified account"
         provisional_source = (account.metadata_ or {}).get("candidate_account_source_file_id")
         if (account.currency is not None and account.currency != reading.currency) or (
             provisional_source is not None and provisional_source != str(evidence_file_id)):
@@ -193,14 +201,21 @@ def _prepare(session, *, case_id, evidence_file_id, resolve_path):
     return None, manifest, prepared, verified
 
 
-def preview_candidate_finalization(session, *, case_id, evidence_file_id, resolve_path):
+def preview_candidate_finalization(session, *, case_id, evidence_file_id, resolve_path, statement_scopes=()):
     """Read-only locked snapshot; caller closes its transaction after display."""
     with session.no_autoflush:
         existing, manifest, prepared, verified = _prepare(session, case_id=case_id,
             evidence_file_id=evidence_file_id, resolve_path=resolve_path)
         if existing is not None:
             return _receipt(session, existing)
+        manifest = attach_statement_scopes(session, manifest, prepared, statement_scopes,
+            case_id=case_id, evidence_file_id=evidence_file_id)
         return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), applied=False,
+            statement_scopes=manifest.get('statement_scopes', []),
+            readings=[dict(candidate_id=item['row']['id'], account_id=str(item['reading'].account_id),
+                currency=item['reading'].currency, account_label=item['account_label'], booking_date=item['reading'].booking_date,
+                transaction_date=item['reading'].transaction_date, description=item['reading'].description)
+                for item in prepared],
             revision=_digest(manifest), resolved_count=len(prepared),
             rejected_count=sum(row["status"] == "rejected" for row in manifest["readings"]),
             proof_class="p3", included_in_default_totals=False, file_bytes_verified=True,
@@ -221,7 +236,7 @@ def finalize_candidates(*, session_factory, case_id, evidence_file_id, request, 
             return _receipt(session, existing, request)
     with ingestion_run(case_id=case_id, actor=SimpleNamespace(id=actor.user_id, email=actor.email),
         session_factory=session_factory, config=dict(operation="candidate_materialization",
-            evidence_file_id=str(evidence_file_id), request=request.model_dump(mode="json"), actor_name=actor.name)) as run:
+            evidence_file_id=str(evidence_file_id), request=_request_json(request), actor_name=actor.name)) as run:
         with session_factory() as session:
             try:
                 existing, manifest, prepared, verified = _prepare(session, case_id=case_id,
@@ -230,19 +245,25 @@ def finalize_candidates(*, session_factory, case_id, evidence_file_id, request, 
                     result = _receipt(session, existing, request)
                     session.rollback()
                     return result
+                manifest = attach_statement_scopes(session, manifest, prepared, request.statement_scopes,
+                    case_id=case_id, evidence_file_id=evidence_file_id)
                 if _digest(manifest) != request.expected_revision:
                     raise CandidateStoreError("Saved readings or accounts changed. Reload the finalization preview.")
-                snapshot = dict(manifest=manifest, verified_source=verified, request=request.model_dump(mode="json"))
+                snapshot = dict(manifest=manifest, verified_source=verified, request=_request_json(request))
                 document = record_source_document(session, run, SourceDocumentDraft(
                     evidence_file_id=evidence_file_id, sha256_at_ingestion=manifest["source_sha256"],
                     document_type="pdf_selected_rows", shape=SourceShape.selected_document_rows,
                     extraction_layer=ExtractionLayer.investigator_review,
                     parser_name="candidate_review", parser_version="1",
                     metadata=dict(coverage="selected_rows_only", finalization_revision=request.expected_revision)))
+                period_links, periods = record_reviewed_statement_scopes(session, run, document, request.statement_scopes)
+                if periods:
+                    snapshot['statement_periods'] = periods
                 drafts = []
                 for index, item in enumerate(prepared):
                     value = item["reading"]
                     drafts.append(TransactionDraft(row_index=index, account_id=value.account_id,
+                        statement_period_id=period_links.get(item['row']['id']),
                         locator=item["locator"], reading=RowReading(currency=value.currency,
                             amount_minor=int(value.amount_minor), direction=TransactionDirection(value.direction),
                             posted_date=date.fromisoformat(value.booking_date) if value.booking_date else None,

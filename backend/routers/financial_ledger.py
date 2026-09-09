@@ -41,6 +41,7 @@ from services.financial.candidate_assessment import assess_candidate_amounts, as
 from services.financial.candidate_reviews import read_candidate_review
 from services.financial.candidate_overlap import check_candidate_source_reuse
 from services.financial.candidate_materialization import preview_candidate_finalization
+from services.financial.candidate_statement_scopes import StatementScopesRequest
 from routers.evidence import _resolve_stored_path
 from services.financial.ledger_snapshot import capture_ledger_export, ledger_export_archive
 from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
@@ -733,6 +734,19 @@ async def get_candidate_source_reuse(evidence_file_id: UUID, case_id: UUID = Que
     except Exception:
         logger.exception("Source reuse check failed")
         raise HTTPException(status_code=500, detail="Source reuse check could not be completed.")
+
+
+@router.post("/candidate-sources/{evidence_file_id}/finalization-preview")
+async def preview_candidate_statement_scopes(evidence_file_id: UUID, body: StatementScopesRequest,
+                                            case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return preview_candidate_finalization(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            resolve_path=_resolve_stored_path, statement_scopes=body.statement_scopes)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Statement scope preview failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Statement controls could not be previewed.")
 
 
 @router.get("/candidate-sources/{evidence_file_id}/finalization-preview")

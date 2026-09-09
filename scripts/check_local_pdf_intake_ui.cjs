@@ -1,8 +1,8 @@
 // Upload one supplied PDF into a new isolated review case; never alter the original.
 const path=require('path'),fs=require('fs'),crypto=require('crypto');const root=path.resolve(__dirname,'..');
 const {chromium}=require(path.join(root,'frontend_v2/node_modules/playwright'));
-const sample=process.argv[2]||'first';if(!['first','second'].includes(sample))throw Error('Choose first or second supplied PDF');
-const reportPath=path.join(root,`data/local-runtime/${sample==='first'?'real-pdf-intake-check':'second-real-pdf-intake-check'}.json`);
+const sample=process.argv[2]||'first';if(!['first','second','statement-controls'].includes(sample))throw Error('Choose first, second, or statement-controls supplied PDF sample');
+const reportPath=path.join(root,`data/local-runtime/${sample==='first'?'real-pdf-intake-check':sample==='second'?'second-real-pdf-intake-check':'statement-controls-pdf-intake-check'}.json`);
 (async()=>{const previous=fs.existsSync(reportPath)?JSON.parse(fs.readFileSync(reportPath)):null;if(previous&&previous.preparation)throw Error("Preparation already submitted; inspect saved job without resubmission");const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage({viewport:{width:1600,height:1100}});page.setDefaultTimeout(30000);
  await page.goto('http://127.0.0.1:55174/login');await page.getByPlaceholder('Enter your username').fill('loupe-local@example.com');await page.getByPlaceholder('Enter your password').fill('Loupe-local-test-2026');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL(u=>!u.pathname.includes('login'));
