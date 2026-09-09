@@ -25,7 +25,10 @@ separate Loupes collection design are not by themselves an agreed financial layo
 - [x] Repeat source/review acceptance on the second supplied PDF: 108 pages prepared, two page 3 rows reviewed and exported with exact credit/debit readings, source history and P3 exclusions.
 - [x] Resolve a bounded, manually checked real-PDF sample, preserve source
   and decision history, and finalize it without implying complete extraction.
-- [ ] Correct a sample, verify analysis eligibility and exact export contents.
+- [x] Correct a deliberately misstated reading in a separate real-PDF test case,
+  verify preserved source/decision history, unchanged P3 eligibility and exact
+  export contents. $61.26 test entry corrected to printed $61.62; no original PDF
+  edited. Case ea81df83-814c-4f9e-b3a8-3a989190b920 (9 September).
 - [x] Give Neil one clear entry point and repeatable steps through the sample journey:
   docs/loupe-review-2026-09-09.md. Full-statement acceptance remains; bounded PDF review history export is verified.
 
@@ -67,3 +70,9 @@ Backend test counts do not establish completion of these user journeys.
 - [x] Optional original source files included in the ledger ZIP with fresh byte
   hashes and explicit complete-file scope; verified independently on both real PDFs
   (5eeda00). Default export stays metadata/history only.
+
+- [x] Review printed statement controls before finalization and assign explicit rows.
+  Real credit-card sample reports the deliberately omitted $56.16 interest while
+  retaining P3 exclusions; original PDF unchanged (d45fb02).
+- [x] Inspect retained dates/balances beside original PDF cell highlights after
+  finalization; readable export includes controls and source pages (7716d86, 79e1ee8).

@@ -6,6 +6,83 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Real-PDF correction journey verified — 9 September 2026
+
+Fresh isolated case ea81df83-814c-4f9e-b3a8-3a989190b920, evidence
+be641df2-c498-4f92-91bd-8abab499b1e4. Test deliberately entered purchase $61.26
+rather than the original PDF page 3's $61.62; reasons explicitly identify this
+as a test error. UI preview/record correction restores $61.62, original reading
+remains superseded, replacement P3 excluded. Original transaction
+aa0dd4e9-3345-4df2-99e1-12fac552e1ac, replacement
+016a65e8-794c-4440-8b4c-0bc4fd888a4a, decision
+bfd114f9-a143-4df2-8fac-95f15188efc5. No source file edits or changes to earlier
+finalized samples. Independent export verification checks 6126 → 6162 exact values,
+original candidate cell $61.62, identical page-3 locator, before/after decision,
+snapshot/report hashes, 0 included / 3 excluded (including the superseded reading).
+
+Original-source navigation from Decisions verified read-only with actual PDF
+page 3 rendered. Found/fixed long correction reasons forcing decision columns
+outside desktop viewport: fixed table layout and wrapping keep all four desktop
+columns visible; narrow view retains contained horizontal scroll. 24 targeted UI
+tests pass; TypeScript and scoped ESLint pass. Read-only check
+check_local_real_pdf_correction_history.cjs safe to repeat. **Do not rerun writers**
+prepare_local_real_pdf_correction.cjs or check_local_real_pdf_correction.cjs.
+Artifacts correction-pdf-{intake,setup}-check.json, real-pdf-correction-check.json,
+real-pdf-corrected-export.zip, real-pdf-correction-{export-verification,history-check}.json
+in data/local-runtime. Independent verifier verify_local_real_pdf_correction.py.
+
+Backend now session 99026, /tmp/loupe-neilbyrne-controls-report-runtime.out, includes
+readable-control report. Practical bounded upload → review → finalization → ledger
+correction → retained source/decision → exact export journey is now checked against
+supplied real PDFs. This does not finish full-statement extraction/coverage,
+full printed-control revalidation, or wider analytical UI. Retain all checklist
+items; do not treat the bounded sample as a whole-document accuracy claim.
+
+### Reviewed statement controls completed — 9 September 2026
+
+d45fb02 connects optional reviewed statement bounds/balances to PDF finalization.
+Explicit candidate assignment, account/currency, original stored control cells,
+reviewed dates/exact signed balances, balance convention and reason are bound into
+a fresh preview digest. Finalization rechecks sources, creates periods and row
+links atomically, preserves P3/incomplete coverage and legacy receipts. Blank
+balances stay unknown; credit-card amounts owed convert to negative ledger signs
+while original printed values survive in the receipt. Rollback/stale source,
+assignment/scope and old-finalization regression tests pass (26 at initial check).
+20 targeted UI tests, TypeScript and scoped lint pass.
+
+Fresh real-PDF case c1453d2f-c2ff-47c6-a58a-1a9786803f44, evidence
+300c464c-5a53-4d2e-94fc-03420880f374, receipt
+5badfcc6-47a2-4808-bd6a-d991a60649c2. Two payment/purchase rows on PDF page 3;
+page 1 printed May 12–June 11 2020, opening $6,700.18, closing $6,637.96,
+liability owed. Deliberately omits $56.16 interest: current check correctly reports
+5616 minor-unit difference. 0 included / 2 P3-excluded rows; original PDF hash
+unchanged. Period f3a9c1ae-3c97-41fb-9fcf-7ef5488d7dbf. Existing finalized real
+cases untouched. **Do not rerun writer check_local_statement_controls_review.cjs.**
+Artifacts statement-controls-{pdf-intake-check,review-check,export-verification}.json
+and statement-controls-sample-export.zip in data/local-runtime.
+
+7716d86 adds retained control inspection to the Statements source dialog: exact
+original cell highlights, dates/balances/reason, explicit liability sign explanation.
+Checks sealed digest and period/account/document binding; no invented legacy
+controls. Read-only browser check reopens all four controls on original page 1,
+zero financial writes; desktop/narrow source views verified. 20 backend and 15 UI
+tests pass, TypeScript/scoped lint pass. Verification details/review reason are
+collapsible to keep the actual source prominent. Script
+check_local_statement_control_sources.cjs is read-only and repeatable.
+
+79e1ee8 adds readable statement-control tables to the HTML export, retaining raw
+source text, exact reviewed printed values, PDF pages, convention and review reason.
+Unknown controls stay explicit, source text HTML-escaped; full raw receipt remains.
+38 targeted backend tests pass. Real snapshot rendered to
+ data/local-runtime/statement-controls-readable-report.html.
+
+Backend session 66028 currently serves source-inspection changes; restart to pick
+up the newest readable-report change. Log
+/tmp/loupe-neilbyrne-retained-controls-runtime.out. Existing worker/engine/frontend
+remain running. No schedule resumed. Continue the practical journey, including a
+real-PDF ledger correction acceptance in a separate explicitly labelled test case;
+full-statement extraction/coverage/admission and broader analysis remain incomplete.
+
 ### Original-source export verified — 9 September 2026
 
 5eeda00 adds optional original-file bundling to ledger exports. Default remains

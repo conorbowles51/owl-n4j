@@ -1,0 +1,12 @@
+// Read-only source and layout acceptance for the completed real-PDF correction.
+const fs=require('fs'),path=require('path'),root=path.resolve(__dirname,'..');const {chromium}=require(path.join(root,'frontend_v2/node_modules/playwright'));
+(async()=>{const r=JSON.parse(fs.readFileSync(path.join(root,'data/local-runtime/real-pdf-correction-check.json')));const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage({viewport:{width:1600,height:1100}});let writes=0;await page.route('**/api/financial/**',async route=>{if(!['GET','HEAD'].includes(route.request().method())){writes++;await route.abort()}else await route.continue()});
+ await page.goto('http://127.0.0.1:55174/login');await page.getByPlaceholder('Enter your username').fill('loupe-local@example.com');await page.getByPlaceholder('Enter your password').fill('Loupe-local-test-2026');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL(u=>!u.pathname.includes('login'));
+ await page.goto(`http://127.0.0.1:55174/cases/${r.case_id}/financial`);await page.getByRole('tab',{name:'Decisions',exact:true}).click();const row=page.locator(`[data-decision-id="${r.result.adjudication_id}"]`);await row.getByText('Original and replacement readings',{exact:true}).click();
+ const table=page.getByTestId('decisions-table');if(!await table.evaluate(el=>el.getBoundingClientRect().right<=innerWidth))throw Error('Decision columns extend beyond desktop viewport');
+ await page.screenshot({path:'/tmp/loupe-neilbyrne-real-correction-history-fitted.png'});
+ await row.getByRole('button',{name:'View original source',exact:true}).click();await page.getByText('This is an original reading that has been replaced.').waitFor();const image=page.getByAltText('Page 3 of the source document',{exact:true});await image.waitFor();await image.evaluate(img=>img.decode());await page.screenshot({path:'/tmp/loupe-neilbyrne-real-correction-original-source.png'});await page.keyboard.press('Escape');
+ await page.setViewportSize({width:850,height:1100});await page.screenshot({path:'/tmp/loupe-neilbyrne-real-correction-history-narrow.png'});
+ if(writes)throw Error('Unexpected write');const result={case_id:r.case_id,source_page:3,desktop_columns_fit:true,financial_writes:writes};fs.writeFileSync(path.join(root,'data/local-runtime/real-pdf-correction-history-check.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+ }finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

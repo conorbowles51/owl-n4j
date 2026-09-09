@@ -61,3 +61,26 @@ hash checks** before downloading the ledger snapshot. The ZIP then contains the
 complete referenced PDF alongside the report, snapshot and verification manifest.
 Missing or changed files stop that export. This option was checked on both supplied
 PDFs, whose originals remain unchanged.
+
+## Statement controls sample
+
+Open http://127.0.0.1:55174/cases/c1453d2f-c2ff-47c6-a58a-1a9786803f44/financial
+and choose **Statements**, then **Check statement balances**. This isolated real-PDF
+sample deliberately contains only the payment and purchase from page 3. It leaves
+out $56.16 of interest, so the balance difference should be $56.16. It remains
+outside verified totals.
+
+Choose **Inspect statement source**, then **Inspect opening** or **Inspect closing**
+to see the original value highlighted on PDF page 1. The printed positive amounts
+are credit-card amounts owed; the ledger therefore uses negative balance signs.
+Review reason and verification details can be expanded. The original PDFs and
+previously finalized test cases are unchanged.
+
+## Correction and audit history sample
+
+Open http://127.0.0.1:55174/cases/ea81df83-814c-4f9e-b3a8-3a989190b920/financial
+and choose **Decisions**. Expand **Original and replacement readings**. The test
+intentionally entered $61.26 and then corrected it to the actual $61.62 on PDF
+page 3. **View original source** reopens that page. The original reading remains
+visible and the corrected replacement stays outside verified totals. The ledger
+export preserves both amounts, the correction reason and original source cells.

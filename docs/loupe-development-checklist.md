@@ -25,6 +25,7 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Real-PDF ledger correction acceptance: intentionally misstated test purchase $61.26 corrected to printed $61.62 in a separate case; original source/history and exact export preserved, P3 unchanged. Fixed long decision-reason layout during walkthrough.
    - [x] Second supplied PDF: prepare 108 pages, visually review a payment and purchase, finalize as an incomplete P3 sample and verify exact source/history export (f6220fa). All originals unchanged; full-statement accuracy remains.
    - [x] Interrupted PDF preparation marks unfinished jobs failed and propagates cancellation; 13 targeted engine tests pass (f6220fa).
    - [x] Source beside row selection with clickable cell locations, bounded source-page list and narrow stacking; 19 UI tests plus real-PDF browser check pass (5f5a2a9).
@@ -83,6 +84,8 @@ feature below is complete at the start of this window.
 3. **Complete financial accuracy checks — partial**
    - [x] Statements workspace displays current balance identity and conditional running-balance checks, exact discrepancies and source navigation without overwriting prior results or changing admission (84cd821). Both possible source-row orders remain explicit.
    - [x] Account/currency timeline shows eligible and excluded bounds, internal gaps and separate overlapping statements; select a period to inspect its registered source (84cd821). This does not prove complete transaction extraction.
+   - [x] Bind manually reviewed statement dates and opening/closing controls to selected PDF rows, preserving original cells and liability sign convention (d45fb02). Fresh real-PDF test correctly exposes omitted $56.16 interest; P3 remains excluded.
+   - [x] Reopen saved controls beside highlighted original PDF cells and include readable controls in the export report (7716d86, 79e1ee8).
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [ ] Check running balances from one transaction to the next.
    - [ ] Repeat all affected checks after a correction, including native controls and running balances.

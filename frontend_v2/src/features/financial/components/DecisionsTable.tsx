@@ -92,7 +92,7 @@ function DecisionRow({ record }: { record: DecisionRecord }) {
 
   return (
     <TableRow data-testid="decision-row" data-decision-id={record.id}>
-      <TableCell className="align-top">
+      <TableCell className="align-top whitespace-normal break-words">
         <div className="flex flex-col items-start gap-1">
           <Badge
             variant={decisionUnrecognised ? UNRECOGNISED_VARIANT : decision.variant}
@@ -132,7 +132,7 @@ function DecisionRow({ record }: { record: DecisionRecord }) {
         </div>
       </TableCell>
 
-      <TableCell className="align-top">
+      <TableCell className="align-top whitespace-normal break-words">
         <div className="flex flex-col items-start gap-1">
           <span
             className="text-sm"
@@ -161,7 +161,7 @@ function DecisionRow({ record }: { record: DecisionRecord }) {
         </div>
       </TableCell>
 
-      <TableCell className="align-top">
+      <TableCell className="align-top whitespace-normal break-words">
         <div className="flex flex-col items-start gap-1">
           <span
             className="text-sm"
@@ -182,7 +182,7 @@ function DecisionRow({ record }: { record: DecisionRecord }) {
         </div>
       </TableCell>
 
-      <TableCell className="align-top whitespace-nowrap">
+      <TableCell className="align-top whitespace-normal break-words">
         <div className="font-mono text-xs" data-testid="decision-recorded-at">
           {formatDecisionTime(record.recorded_at)}
         </div>
@@ -196,10 +196,10 @@ const COLUMN_COUNT = 4
 export function DecisionsTable({ decisions }: { decisions: DecisionRecord[] }) {
   return (
     <div className="space-y-2">
-      <Table data-testid="decisions-table">
+      <Table data-testid="decisions-table" className="table-fixed min-w-[720px]">
         <TableHeader>
           <TableRow>
-            <TableHead>Decision</TableHead>
+            <TableHead className="w-1/2">Decision</TableHead>
             <TableHead>About</TableHead>
             <TableHead>Decided by</TableHead>
             <TableHead>Recorded</TableHead>
