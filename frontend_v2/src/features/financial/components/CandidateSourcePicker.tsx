@@ -1,3 +1,4 @@
+import { CandidateRowSuggestions } from "./CandidateRowSuggestions"
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -414,6 +415,7 @@ function SourceSelection({
             </label>
           ))}
         </div>
+        <CandidateRowSuggestions source={source} columns={columns} onSelect={(rows) => setSelected((current) => [...new Set([...current, ...rows])])} />
         <div className="overflow-auto">
           <table className="w-full text-left text-xs">
             <thead>

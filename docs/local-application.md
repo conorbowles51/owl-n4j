@@ -718,3 +718,22 @@ PYTHON_DOTENV_DISABLED=1 ../data/local-runtime/backend-venv/bin/python -m unitte
 
 24targeted tests passed on9September2026. Restart the local backend to load the
 new parser if it was left running from the previous session.
+
+## Source-bound row suggestion review
+
+Choose PDF rows, explicitly identify date and amount column meanings, then use
+Suggest rows for review with your currency context. Inspect all suggested/nonmatching
+rows and uncertainty before using Add suggested rows to review selection. This
+only changes selection; saving pending readings remains a separate explicit action.
+Column/source/input changes invalidate the suggestion view. Suggestions do not
+establish transaction identity, complete extraction, account, direction or admission.
+
+```sh
+node scripts/check_local_row_suggestions_ui.cjs
+```
+
+Existing synthetic header PDF:3checked rows,2suggested data rows, header unselected,
+no automatic selection and0candidate writes.25targeted UI tests, TypeScript and
+scoped ESLint passed; source/scope/text mismatch checks refuse results. Backend
+service36tests and1route test passed. Local services restarted on9September:
+backend58002, engine58003 and frontend55174, using existing isolated data/venvs.
