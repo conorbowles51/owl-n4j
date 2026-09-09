@@ -6,6 +6,78 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Second PDF acceptance and source selection layout — 9 September 2026
+
+Latest local commits: f6220fa (interrupted preparation and second-PDF acceptance),
+5f5a2a9 (source beside row selection). Continue without requesting another prompt.
+The earlier source zoom and PDF review export changes are committed as 359f821
+and dc1526d. Completed entries remain in the checklist.
+
+Both supplied originals are unchanged. The second PDF was uploaded through the UI
+into isolated case 4d897cb5-b9e4-4df7-9a21-b1ba4b8bf5d7, evidence file
+64a25fe8-980f-4a35-a5d1-84c10e558154. Preparation completed all 108 pages using
+97 native text pages and 11 local OCR pages. This is not a claim of OCR accuracy.
+Page 3 source rows 9 and 12 (UI 10 and 13) were visually checked and reviewed:
+USD 180.00 payment/credit on 2020-05-30 and USD 61.62 purchase/debit on 2020-05-29.
+Year came from the printed statement header. Printed totals were not nominated.
+A provisional account was used. Finalization 6c34cefb-817d-4c68-9b8b-b90a52bdfdc0
+remains P3, with 0 included and 2 excluded rows. Original negative payment text,
+review reasons, exact amounts/directions/dates and finalization links survive the
+schema 3 export; snapshot/HTML hashes and unchanged original PDF hash verified.
+Reports: second-real-pdf-intake-check.json, second-real-pdf-review-check.json,
+second-real-pdf-sample-export.zip, second-review-history-export-verification.json
+under data/local-runtime. Acceptance writers refuse repeat writes; do not rerun.
+
+PDF preparation now catches cancellation, marks unfinished batch jobs failed with
+an interruption reason, and re-raises cancellation. 13 targeted engine tests pass.
+This verifies cancellation handling, not every hard-crash/retry condition.
+
+Row selection now shows the original page beside the stored grid on desktop,
+stacks at narrow widths, and lets a cell locate its original rectangle without
+selecting a row or enabling save. Source page list has a bounded scroll area.
+19 targeted UI tests, TypeScript and scoped ESLint pass. Read-only browser check
+on the second PDF verified desktop/narrow layout and zero financial writes;
+screenshots inspected. Report source-selection-layout-check.json.
+
+Runtime backend session 39538 now includes final export count/link checks; worker
+49063 includes cancellation handling. Engine 85887 and frontend 21189 unchanged.
+Logs remain /tmp/loupe-neilbyrne-review-export-backend.out and
+/tmp/loupe-neilbyrne-pdf-prep-worker.out. Old heartbeat remains paused.
+
+Next: complete statement controls/coverage and practical correction/analysis
+acceptance. Do not fabricate a wrong reading in these real-PDF samples merely to
+exercise correction; use explicit synthetic fixtures for deliberate errors.
+Full statements, account identity and the wider analytical UI remain incomplete.
+
+### Continue autonomously: source zoom and PDF history export — 9 September 2026
+
+Neil explicitly said continue without asking. Continue across tested units; do not
+pause for another keep-going prompt. Keep practical workflow/UI priorities.
+
+359f821 adds100–400%source zoom, fit-width and highlight focus. Same page/image and
+normalized box scale together; page changes reset zoom.19source tests,TS/scopedlint
+and read-only real-PDF300%zoom/focus browser check pass. Screenshot inspected.
+Also fixed three unsupported testing-library exact options introduced in the prior
+intake test. Reports source-zoom-check.json; scriptcheck_local_source_zoom.cjs.
+
+PDF history export now captures mappings/original cells, all review events and
+current states, finalization snapshots and original transaction links for referenced
+source files. Uses samePGrepeatable-read transaction; file context can exceed row
+filter scope but never enters totals. Schemasnapshot3, separate manifest PDFreview/
+candidate/receipt counts; HTML readable decisions plus complete details. Count/digest/
+chain/link failures and10kcombined record limit refuse incomplete exports.50backend
+snapshot/history/tracing tests,9frontendexport/intake tests,TS/scopedlint pass.
+Realcase export downloaded and independently verified:2candidateoriginals,2reviews,
+1receipt,0adjudications,0included/2excluded. Oldschema2 ZIP preserved; current
+real-pdf-history-export.zip and review-history-export-verification.json.
+Backend63339 /tmp/loupe-neilbyrne-review-export-backend.out runs the earlier version
+of this unit before final count/link validation; restart before next live export.
+Engine85887/worker45023 remain. No evidence/ledger decisions changed in this unit.
+
+Next: second supplied PDF upload/preparation/source review acceptance; continue
+statement coverage/accuracy and workflow failures. Do not call the full financial
+application complete. FirstPDFsample account stillprovisional,P3,incomplete.
+
 ### Real PDF two-row review and export verified — 9 September 2026
 
 The uploaded real PDF now completed a bounded actual UI workflow: stored source

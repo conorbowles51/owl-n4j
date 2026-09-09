@@ -30,9 +30,19 @@ refuse blind repetition:
 
 Outstanding near-term usability/workflow gaps:
 
-- Source image zoom/readability on dense real statements.
-- Include structured candidate review history in exports, beyond finalization
-  references. Current ledger manifest has0adjudication decisions for this sample;
-  that does not mean no candidate-review decisions exist.
+- [x] Source image zoom100–400%, fit-width and highlight focus.
+- [x] Structured candidate review history now included in schema3exports, with
+  2PDFreview decisions/1receipt recorded separately from0ledger adjudications.
 - Complete-statement controls and reconciliation; verify more than a two-row sample.
-- Repeat the journey on the second supplied PDF and exercise interrupted preparation.
+- [x] Repeat the journey on the second supplied PDF. Cancellation handling also has a targeted engine test; complete hard-crash/retry acceptance remains.
+
+The [second PDF sample](http://127.0.0.1:55174/cases/4d897cb5-b9e4-4df7-9a21-b1ba4b8bf5d7/financial)
+contains two reviewed page 3 rows: a USD 180.00 payment (credit) and USD 61.62
+purchase (debit). Open PDF readings and the saved batch to inspect rows 10 and 13.
+Both remain P3 and excluded from verified totals. Its exported originals, decisions,
+amounts, directions and dates were independently checked, including file hashes.
+
+Choose PDF rows now puts the source image beside the selection grid. Click a table
+value to highlight its location; use the checkbox separately to nominate a row.
+The source has zoom and the layout stacks on narrower screens. Looking at a value
+does not save anything. Avoid saving another copy of these already reviewed rows.

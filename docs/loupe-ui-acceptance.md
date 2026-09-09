@@ -22,12 +22,12 @@ separate Loupes collection design are not by themselves an agreed financial layo
   a column to highlight without first requesting a numeric/date assessment.
   Desktop side-by-side and narrow stacking checked against a synthetic PDF.
 - [x] Verify source/review interaction on the first supplied real PDF (page4, two purchases).
-- [ ] Repeat source/review acceptance on the second supplied PDF.
+- [x] Repeat source/review acceptance on the second supplied PDF: 108 pages prepared, two page 3 rows reviewed and exported with exact credit/debit readings, source history and P3 exclusions.
 - [x] Resolve a bounded, manually checked real-PDF sample, preserve source
   and decision history, and finalize it without implying complete extraction.
 - [ ] Correct a sample, verify analysis eligibility and exact export contents.
 - [x] Give Neil one clear entry point and repeatable steps through the sample journey:
-  docs/loupe-review-2026-09-09.md. Fullstatement and complete history export remain.
+  docs/loupe-review-2026-09-09.md. Full-statement acceptance remains; bounded PDF review history export is verified.
 
 ## Full analytical UI (retained beyond the first milestone)
 
@@ -49,3 +49,13 @@ separate Loupes collection design are not by themselves an agreed financial layo
 
 Current visual state is functional, not final. The existing Loupe shell is retained.
 Backend test counts do not establish completion of these user journeys.
+
+## Verified refinements — 9 September 2026
+
+- [x] Source zoom100–400%, fit width and highlight focus, verified on the real PDF.
+- [x] Structured PDF original readings/review decisions/finalization receipts in
+  schema3ledger exports, with separate counts and hash verification on the real sample.
+
+- [x] Show the source beside row selection; clicking a value highlights its stored
+  location without nominating or saving the row. Desktop and narrow layout verified
+  on the second real PDF with no financial writes (5f5a2a9).

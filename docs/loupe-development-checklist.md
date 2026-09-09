@@ -25,6 +25,9 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Second supplied PDF: prepare 108 pages, visually review a payment and purchase, finalize as an incomplete P3 sample and verify exact source/history export (f6220fa). All originals unchanged; full-statement accuracy remains.
+   - [x] Interrupted PDF preparation marks unfinished jobs failed and propagates cancellation; 13 targeted engine tests pass (f6220fa).
+   - [x] Source beside row selection with clickable cell locations, bounded source-page list and narrow stacking; 19 UI tests plus real-PDF browser check pass (5f5a2a9).
    - [x] Upload a supplied real PDF through the application and queue local source preparation without AI, then reach source selection (213ed7e).56pages prepared; original unchanged. Financial reading accuracy and fullstatement coverage remain unverified.
    - [x] Inspect source-bound date/amount row suggestions and explicitly add them to pending review selection (35b6ccb).25UI tests and live3-row/2-suggestion/0-write check pass. Automatic acceptance/classification remains excluded.
    - [x] Source-bound backend date/amount row suggestions preserve uncertainty and all checked rows, with explicit columns/currency and no automatic admission (ea125fd).36tests plus route test pass; UI integration next.
@@ -125,6 +128,7 @@ feature below is complete at the start of this window.
    - [ ] Connect comparisons between financial records and statements or claims about payments.
 
 8. **Produce traceable reports and exports — partial**
+   - [x] Include source-file PDF mappings/originals, review chains and finalization receipts in schema3 snapshot and readable report; separate review/adjudication counts.50backend/9frontend tests and real-sample hash/content verification pass. Original PDF bytes remain outside bundle.
    - [x] Primary Ledger and documentary Transactions export their applied filter scope directly, with case-switch reset and no misleading held-out-only export (51ebd77).44targeted tests and primary browser ZIP/hash checks pass.
    - [x] Format report money exactly in currency units while preserving minor units, and verify exported totals/exclusions against the summary API across case/account/date/empty scopes (96f3a3f).92 targeted tests and live HTTP/hash/layout checks pass; non-member access matrix remains.
    - [x] Bundle a readable HTML report derived from the exact captured snapshot, with scope, totals, included/excluded readings, source references and decision details; independently hash the report (8a1e051). Browser layout/download verified. Amounts use explicit minor units; polished exhibits and PDF pagination remain.
