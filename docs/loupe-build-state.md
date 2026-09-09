@@ -6,6 +6,27 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Row suggestion review UI — 9 September 2026
+
+35b6ccb connects CandidateRowSuggestions to source picker. Explicit nominated date/
+amount columns and currency; response scope/revision/text and full row coverage
+validated. All checked rows and uncertainty displayed25/page. Only explicit Add
+suggested rows changes selection; existing save action remains separate. Source/
+column/input changes discard suggestions.25targeted source-picker/date/suggestion
+UI tests, TypeScript/scoped ESLint passed. Read-only Chromium existing header PDF:
+3checked/2suggested data rows, header unselected,0candidate writes. Screenshot
+inspected and controls restyled; browser rerun passed. Report
+ data/local-runtime/row-suggestions-ui-check.json. Backend now60821, log
+/tmp/loupe-neilbyrne-suggestions-server.out; engine94599/frontend21189 remain.
+No ledger/evidence writes. Provider question remains pending; continue offline.
+
+Next investigate existing tracing/flow/correction cores and choose a bounded
+ledger integration with explicit source/assumption contracts. Do not replace proven
+cores or infer party identities from labels. Account tracing can be a conditional
+scenario only with explicit opening balance, attributed deposits, order and basis;
+no legal-method default or hidden same-day ordering assumption. Continue all
+remaining work, checkpointing each tested unit; old heartbeat remains paused.
+
 ### Continued through remaining work — 9 September 2026
 
 Neil explicitly requested continuation through all remaining work. Continue across

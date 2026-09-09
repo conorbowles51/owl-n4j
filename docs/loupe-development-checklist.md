@@ -22,6 +22,7 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Inspect source-bound date/amount row suggestions and explicitly add them to pending review selection (35b6ccb).25UI tests and live3-row/2-suggestion/0-write check pass. Automatic acceptance/classification remains excluded.
    - [x] Source-bound backend date/amount row suggestions preserve uncertainty and all checked rows, with explicit columns/currency and no automatic admission (ea125fd).36tests plus route test pass; UI integration next.
    - [x] Propose explicit English named-month dates while preserving source text and unresolved year/century/glyph uncertainty (43dbbd5).24targeted tests pass; source review remains required and automatic extraction remains incomplete.
    - [ ] Identify transaction rows and column meanings: dates, amounts, accounts and money coming in or going out.
