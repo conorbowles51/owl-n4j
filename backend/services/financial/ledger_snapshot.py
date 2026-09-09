@@ -218,6 +218,25 @@ def render_ledger_report(snapshot):
             for event in state['history']:
                 parts += [table(['Sequence','Status','Reason','Actor'], [[event['sequence'],event['status'],event['reason'],event['actor'].get('name') or event['actor'].get('email')]]),details('Reviewed values and recorded decision',event)]
             parts += ['</article>']
+        for finalization in history['finalizations']:
+            scopes = finalization['snapshot'].get('manifest', {}).get('statement_scopes', [])
+            for scope in scopes:
+                parts += ['<article><h3>Reviewed statement controls</h3>',
+                    '<p>Retained at finalization. These are selected-row review observations, not a complete-statement certification or a fresh balance check.</p>',
+                    table(['Account', 'Currency', 'Balance convention', 'Assigned rows'], [[scope['account_id'], scope['currency'],
+                        'Amounts owed (converted to negative ledger balances)' if scope['balance_convention'] == 'liability_owed' else 'Money held in account',
+                        len(scope['candidate_ids'])]])]
+                controls = []
+                for role in ('start', 'end', 'opening', 'closing'):
+                    control = scope['bound_controls'][role]
+                    if control is None:
+                        controls.append([role.capitalize(), 'Unknown — not supplied', '—', '—'])
+                    else:
+                        value = control['value'] if role in ('start', 'end') else money_display(control['amount_minor'], scope['currency'])
+                        controls.append([role.capitalize(), value, control['source']['expected_text'], control['source']['page_number']])
+                parts += [table(['Control', 'Reviewed printed value', 'Original source text', 'PDF page'], controls),
+                    '<p>Review reason: ' + text(scope['reason']) + '</p>',
+                    details('Control source locations and selected candidate references', scope), '</article>']
         parts += [details('Original PDF mappings and cells, review chain and finalization receipts',history)]
     parts += ['<h2>Verification</h2><p>This report is derived only from the bundled ledger-snapshot.json. '
         'Its SHA-256 is <code>' + text(snapshot.sha256) + '</code>; its UTF-8 size is ' + text(snapshot.byte_count) +

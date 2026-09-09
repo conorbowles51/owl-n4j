@@ -117,3 +117,19 @@ class StatementScopeTests(MaterializationFixture):
         self.db.execute(update(FinancialCandidateFinalization).where(FinancialCandidateFinalization.id==receipt.id).values(snapshot=changed,snapshot_sha256=_digest(changed)));self.db.expire_all()
         with self.assertRaisesRegex(LedgerSourceError,'inconsistent'):
             statement_source(self.db,case_id=self.case.id,period_id=period)
+    def test_readable_export_preserves_printed_sign_unknown_controls_and_escapes_reason(self):
+        import json
+        from services.financial.ledger_snapshot import capture_ledger_snapshot, _capture_history, render_ledger_report, LedgerSnapshot
+        scope=self.scope();scope['balance_convention']='liability_owed';scope['closing']=None
+        scope['reason']='<script>untrusted evidence</script>'
+        self.finalize(self.scoped_request(scope))
+        captured=capture_ledger_snapshot(self.db,case_id=self.case.id)
+        document=_capture_history(self.db,json.loads(captured.content),case_id=self.case.id)
+        report=render_ledger_report(LedgerSnapshot(json.dumps(document),'test',0))
+        self.assertIn('Reviewed statement controls',report)
+        self.assertIn('12.34 GBP',report)
+        self.assertIn('Unknown — not supplied',report)
+        self.assertIn('Amounts owed (converted to negative ledger balances)',report)
+        self.assertIn('&lt;script&gt;untrusted evidence&lt;/script&gt;',report)
+        self.assertNotIn('<script>',report)
+        self.assertIn('not a complete-statement certification',report)
