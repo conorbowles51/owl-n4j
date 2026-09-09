@@ -47,6 +47,7 @@ feature below is complete at the start of this window.
    - [x] Column suggestion aid: propose exact supported labels from the first ten stored rows, require explicit acceptance, and preserve a separate transaction-date role (aac46b0). No automatic transaction classification or row selection is claimed.
 
 2. **Review uncertain readings before they enter the ledger — partial**
+   - [x] Saved batch review progress, pending-only filter and next-pending-row navigation; reopened real-PDF decisions verified. First Alex case-work milestone documented in docs/loupe-alex-casework-preview.md.
    - [x] Show all saved original cells and switch source highlights beside the review form without requesting amount/date assessments. Source binding and UI scope validated; synthetic desktop/narrow browser check and 31 targeted tests pass. Real-PDF acceptance remains.
    - [x] Save deliberately selected rows from stored PDF tables separately until they are ready for use (9ddfe63). Automatic extraction/nomination remains under feature 1.
    - [ ] Show questionable amounts, dates and account details alongside the source.

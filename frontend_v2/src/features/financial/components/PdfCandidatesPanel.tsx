@@ -164,6 +164,7 @@ function CandidateRows({
 }) {
   const [selected, setSelected] = useState<string | null>(initialCandidateId)
   const [page, setPage] = useState(0)
+  const [pendingOnly, setPendingOnly] = useState(false)
   const mapping = useQuery({
     queryKey: ["financial-candidates", caseId, "mapping", mappingId],
     retry: false,
@@ -197,17 +198,27 @@ function CandidateRows({
     )
   if (mapping.isPending) return <p role="status">Loading original readings…</p>
   const data = mapping.data
+  const pending = data.candidates.filter((row) => row.status === "pending")
+  const resolvedCount = data.candidates.filter((row) => row.status === "resolved").length
+  const rejectedCount = data.candidates.filter((row) => row.status === "rejected").length
+  const visible = pendingOnly ? pending : data.candidates
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(visible.length / 25) - 1))
   return (
     <div className="space-y-3">
-      <CandidateReuseCheck
-        caseId={caseId}
-        fileId={data.evidence_file_id}
-        onOpenReading={onOpenReading}
-      />
-      <CandidateFinalizationPanel caseId={caseId} fileId={data.evidence_file_id} />
+      <section aria-label="Saved review progress" className="space-y-2 rounded border p-3">
+        <h3 className="font-semibold">Review progress for this batch</h3>
+        <p role="status">{pending.length} awaiting review · {resolvedCount} resolved · {rejectedCount} rejected</p>
+        <p className="text-xs text-muted-foreground">Recorded decisions are saved to this case. You can return to this batch later. These counts cover selected rows, not every transaction in the PDF.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button disabled={pending.length === 0} onClick={() => setSelected(pending[0].id)}>Review next pending row</Button>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={pendingOnly} onChange={(event) => { setPendingOnly(event.target.checked); setPage(0) }} />Show only rows awaiting review</label>
+        </div>
+        {pending.length === 0 && <p>Every selected row in this batch has a recorded decision. Check other batches before finalizing this PDF.</p>}
+      </section>
       <h3 className="font-semibold">Saved original readings</h3>
+      {visible.length === 0 && <p>No rows awaiting review in this batch.</p>}
       <ul className="space-y-2">
-        {data.candidates.slice(page * 25, page * 25 + 25).map((row) => (
+        {visible.slice(currentPage * 25, currentPage * 25 + 25).map((row) => (
           <li key={row.id} className="rounded border p-3">
             <p>
               Source row {row.row_index + 1} · <strong>{row.status}</strong>
@@ -227,14 +238,14 @@ function CandidateRows({
           </li>
         ))}
       </ul>
-      {data.candidates.length > 25 && (
+      {visible.length > 25 && (
         <div className="flex gap-2">
-          <Button disabled={page === 0} onClick={() => setPage((n) => n - 1)}>
+          <Button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>
             Previous readings
           </Button>
           <Button
-            disabled={(page + 1) * 25 >= data.candidates.length}
-            onClick={() => setPage((n) => n + 1)}
+            disabled={(currentPage + 1) * 25 >= visible.length}
+            onClick={() => setPage(currentPage + 1)}
           >
             Next readings
           </Button>
@@ -250,6 +261,12 @@ function CandidateRows({
           onClose={() => setSelected(null)}
         />
       )}
+      <CandidateReuseCheck
+        caseId={caseId}
+        fileId={data.evidence_file_id}
+        onOpenReading={onOpenReading}
+      />
+      <CandidateFinalizationPanel caseId={caseId} fileId={data.evidence_file_id} />
     </div>
   )
 }

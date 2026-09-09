@@ -6,6 +6,31 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Alex case-work preview milestone — 9 September 2026
+
+Neil asked to keep developing and select a useful point for Alex to start a case.
+Chosen handoff: create/upload/manual PDF review/save/resume, then optional bounded
+finalization/correction/statement checks/export. Do not wait for all automatic
+extraction or money-flow analysis. Guide: docs/loupe-alex-casework-preview.md.
+
+Added server-backed current batch review progress (pending/resolved/rejected),
+pending-only filtering and next-pending-row action. Pagination clamps after review
+updates. Review work now appears before reuse/finalization actions to avoid
+encouraging premature sealing. 16 targeted UI tests pass, TypeScript/scoped lint
+pass; read-only browser reopened saved real-PDF batch twice, 2 resolved / 0 pending,
+zero writes. Script check_local_review_progress.cjs, report
+ data/local-runtime/review-progress-check.json. No draft-persistence claim: only
+recorded decisions survive; unsubmitted forms/statement previews are not saved.
+
+Release preparation found remote integration branch now f76524e, four commits
+beyond old remote tip. Local branch retains 317 earlier unpublished commits before
+this segment. Merge-tree check (no working-tree merge performed) reports five
+conflicts: EvidenceContextSidebar.tsx, FileListPanel.tsx, FileListToolbar.tsx,
+FileRow.tsx, vitest.config.ts. Production frontend build at 2ce6604 passed; Alembic
+has one head 20260907_candidate_finalizations. No push/deploy performed. Watched
+branch/site URL still unconfirmed; do not assume local sample records go to server.
+Current user priority is continued development toward Alex's case-work handoff.
+
 ### Real-PDF correction journey verified — 9 September 2026
 
 Fresh isolated case ea81df83-814c-4f9e-b3a8-3a989190b920, evidence
