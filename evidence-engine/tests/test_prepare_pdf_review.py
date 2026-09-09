@@ -36,3 +36,13 @@ async def test_review_batch_bypasses_ai_policy_embedding_and_graph_pipeline():
     with patch('app.pipeline.prepare_pdf_review.prepare_pdf_review',AsyncMock()) as prepare, patch.object(batch,'load_ai_model_policy',AsyncMock()) as policy, patch.object(batch,'_extract_file',AsyncMock()) as extract:
         await batch.run_batch_pipeline('batch','case',db)
         prepare.assert_awaited_once();policy.assert_not_awaited();extract.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_cancelled_review_batch_marks_unfinished_jobs_and_reraises():
+    import asyncio
+    from app.pipeline import batch_orchestrator as batch
+    job=SimpleNamespace(job_type='pdf_review',status=JobStatus.PENDING,id='job')
+    db=SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(scalars=lambda:SimpleNamespace(all=lambda:[job]))))
+    with patch('app.pipeline.prepare_pdf_review.prepare_pdf_review',AsyncMock(side_effect=asyncio.CancelledError)), patch.object(batch,'_force_fail_unfinished_batch_rows',AsyncMock()) as failed:
+        with pytest.raises(asyncio.CancelledError):await batch.run_batch_pipeline('batch','case',db)
+        failed.assert_awaited_once_with('batch','PDF preparation was interrupted before completion')

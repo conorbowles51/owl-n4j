@@ -424,15 +424,19 @@ async def run_batch_pipeline(
             await _force_fail_unfinished_batch_rows(batch_id, "Mixed preparation modes are not supported")
             return
         from app.pipeline.prepare_pdf_review import prepare_pdf_review
-        for job in review_jobs:
-            if job.status == JobStatus.COMPLETED:
-                continue
-            try:
-                await prepare_pdf_review(job, _update_job_status)
-            except Exception:
-                logger.exception("PDF source preparation failed for job %s", job.id)
-                await _update_job_status(job.id, JobStatus.FAILED, 0.0,
-                    "PDF source preparation failed", error_message="PDF source preparation failed; inspect the document and retry.")
+        try:
+            for job in review_jobs:
+                if job.status == JobStatus.COMPLETED:
+                    continue
+                try:
+                    await prepare_pdf_review(job, _update_job_status)
+                except Exception:
+                    logger.exception("PDF source preparation failed for job %s", job.id)
+                    await _update_job_status(job.id, JobStatus.FAILED, 0.0,
+                        "PDF source preparation failed", error_message="PDF source preparation failed; inspect the document and retry.")
+        except asyncio.CancelledError:
+            await _force_fail_unfinished_batch_rows(batch_id, "PDF preparation was interrupted before completion")
+            raise
         return
 
     await load_ai_model_policy(db)
