@@ -4,7 +4,7 @@ import { useGraphStore } from "@/stores/graph.store"
 import { applyNodeSearch, buildEntityFuse } from "../lib/entity-search"
 
 export function useGraphSearch(data: GraphData | undefined) {
-  const { appliedSearchQuery, searchMode, filters } = useGraphStore()
+  const { appliedSearchQuery, searchMode, selectedEntityTypes } = useGraphStore()
 
   const fuse = useMemo(
     () => (data ? buildEntityFuse(data.nodes) : null),
@@ -18,12 +18,8 @@ export function useGraphSearch(data: GraphData | undefined) {
     let edges = data.edges
 
     // Apply entity type filters
-    const activeFilters = Object.entries(filters)
-      .filter(([, active]) => active)
-      .map(([type]) => type)
-
-    if (activeFilters.length > 0) {
-      nodes = nodes.filter((n) => activeFilters.includes(n.type))
+    if (selectedEntityTypes !== null) {
+      nodes = nodes.filter((node) => selectedEntityTypes.has(node.type))
     }
 
     // Apply search term (fuzzy + alias-aware)
@@ -40,7 +36,7 @@ export function useGraphSearch(data: GraphData | undefined) {
     }
 
     return { nodes, edges }
-  }, [data, appliedSearchQuery, searchMode, filters, fuse])
+  }, [data, appliedSearchQuery, searchMode, selectedEntityTypes, fuse])
 
   return {
     filteredData,

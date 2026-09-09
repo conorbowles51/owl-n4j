@@ -5,11 +5,7 @@ export type DisplayProcessingStatus =
   | "processing"
   | "processed"
   | "failed"
-  | "stale"
 
-export function getDisplayStatus(file: Pick<EvidenceFileRecord, "status" | "processing_stale">): DisplayProcessingStatus {
-  if (file.processing_stale && file.status === "processed") {
-    return "stale"
-  }
+export function getDisplayStatus(file: Pick<EvidenceFileRecord, "status">): DisplayProcessingStatus {
   return file.status
 }

@@ -1,6 +1,7 @@
 import { fetchAPI } from "@/lib/api-client"
 import type {
   EvidenceFile,
+  EvidenceFileRecord,
   EvidenceSummary,
   VideoFrame,
   IngestionLog,
@@ -31,6 +32,9 @@ export interface EvidenceUploadOptions {
 }
 
 export const evidenceAPI = {
+  get: (evidenceId: string) =>
+    fetchAPI<EvidenceFileRecord>(`/api/evidence/${evidenceId}`),
+
   list: async (caseId: string, status?: string) => {
     const qs = new URLSearchParams({ case_id: caseId })
     if (status) qs.set("status", status)
@@ -124,6 +128,14 @@ export const evidenceAPI = {
     fetchAPI<RouteCheckResponse>("/api/evidence/route-check", {
       method: "POST",
       body: { case_id: caseId, file_ids: fileIds },
+    }),
+
+  // Offline source preparation only: this cannot request general document/AI processing.
+  preparePdfReview: (caseId: string, fileId: string) =>
+    fetchAPI("/api/evidence/process/background", {
+      method: "POST",
+      body: { case_id: caseId, file_ids: [fileId], preparation_mode: "pdf_review" },
+      timeout: 120000,
     }),
 
   processBackground: (

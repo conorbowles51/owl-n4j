@@ -1,17 +1,17 @@
-"""Service layer for the case notebook."""
+"""Compatibility service for the case Notebook backed by canonical entries."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import desc, or_
 from sqlalchemy.orm import Session, selectinload
 
-from postgres.models.notebook import NotebookNote, NotebookNoteLink
 from postgres.models.user import User
+from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
 from services.system_log_service import LogOrigin, LogType, system_log_service
+from services.workspace_entry_service import create_entry, soft_delete_entry, update_entry
 
 
 NOTEBOOK_TARGET_TYPES = {
@@ -24,11 +24,7 @@ NOTEBOOK_TARGET_TYPES = {
 
 
 class NotebookNoteNotFound(Exception):
-    """Raised when a notebook note does not exist in the requested case."""
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    """Raised when a canonical Notebook note is absent from the requested case."""
 
 
 def _clean_text(value: str | None) -> str | None:
@@ -62,9 +58,10 @@ def _clean_tags(tags: list[str] | None) -> list[str]:
 
 
 def _sanitize_links(links: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Validate the legacy Notebook link shape without writing legacy rows."""
+
     sanitized: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
-
     for link in links or []:
         target_type = _clean_text(str(link.get("target_type") or "")) or ""
         target_id = _clean_text(str(link.get("target_id") or "")) or ""
@@ -72,12 +69,10 @@ def _sanitize_links(links: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
             raise ValueError(f"Unsupported note link type: {target_type}")
         if not target_id:
             raise ValueError("Note link target_id is required")
-
         key = (target_type, target_id)
         if key in seen:
             continue
         seen.add(key)
-
         raw_label = link.get("target_label")
         target_label = _clean_text(str(raw_label)) if raw_label is not None else None
         metadata = link.get("metadata")
@@ -86,34 +81,58 @@ def _sanitize_links(links: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
                 "target_type": target_type,
                 "target_id": target_id[:512],
                 "target_label": target_label[:512] if target_label else None,
-                "metadata": metadata if isinstance(metadata, dict) else {},
+                "metadata": dict(metadata) if isinstance(metadata, dict) else {},
             }
         )
-
     return sanitized
 
 
-def _link_to_dict(link: NotebookNoteLink) -> dict[str, Any]:
+def _to_canonical_links(links: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    canonical: list[dict[str, Any]] = []
+    for link in _sanitize_links(links):
+        metadata = dict(link["metadata"])
+        canonical.append(
+            {
+                "target_type": {
+                    "entity": "graph_entity",
+                    "document": "evidence",
+                }.get(link["target_type"], link["target_type"]),
+                "target_id": link["target_id"],
+                "target_label": link["target_label"],
+                "relationship": metadata.get("relationship", "unclassified"),
+                "source_anchor": metadata.get("source_anchor", {}),
+                "metadata": metadata,
+            }
+        )
+    return canonical
+
+
+def _link_to_dict(link: WorkspaceEntryLink) -> dict[str, Any]:
+    metadata = dict(link.link_metadata or {})
+    if link.relationship_type != "unclassified":
+        metadata["relationship"] = link.relationship_type
+    if link.source_anchor:
+        metadata["source_anchor"] = dict(link.source_anchor)
     return {
         "id": str(link.id),
-        "note_id": str(link.note_id),
+        "note_id": str(link.entry_id),
         "case_id": str(link.case_id),
-        "target_type": link.target_type,
+        "target_type": "entity" if link.target_type == "graph_entity" else link.target_type,
         "target_id": link.target_id,
         "target_label": link.target_label,
-        "metadata": dict(link.link_metadata or {}),
+        "metadata": metadata,
         "created_at": link.created_at.isoformat() if link.created_at else None,
     }
 
 
-def note_to_dict(note: NotebookNote) -> dict[str, Any]:
+def note_to_dict(note: WorkspaceEntry) -> dict[str, Any]:
     return {
         "id": str(note.id),
         "case_id": str(note.case_id),
         "title": note.title,
         "body": note.body,
         "tags": list(note.tags or []),
-        "visibility": note.visibility,
+        "visibility": "case",
         "author_user_id": str(note.author_user_id) if note.author_user_id else None,
         "author_email": note.author_email,
         "author_name": note.author_name,
@@ -123,15 +142,22 @@ def note_to_dict(note: NotebookNote) -> dict[str, Any]:
     }
 
 
-def _get_note(db: Session, case_id: UUID, note_id: UUID) -> NotebookNote:
-    note = (
-        db.query(NotebookNote)
-        .options(selectinload(NotebookNote.links))
+def _base_query(db: Session, case_id: UUID):
+    return (
+        db.query(WorkspaceEntry)
+        .options(selectinload(WorkspaceEntry.links))
         .filter(
-            NotebookNote.id == note_id,
-            NotebookNote.case_id == case_id,
-            NotebookNote.deleted_at.is_(None),
+            WorkspaceEntry.case_id == case_id,
+            WorkspaceEntry.entry_type == "note",
+            WorkspaceEntry.legacy_source == "notebook_note",
         )
+    )
+
+
+def _get_note(db: Session, case_id: UUID, note_id: UUID) -> WorkspaceEntry:
+    note = (
+        _base_query(db, case_id)
+        .filter(WorkspaceEntry.id == note_id, WorkspaceEntry.deleted_at.is_(None))
         .first()
     )
     if not note:
@@ -151,42 +177,41 @@ def list_notes(
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
-    query = (
-        db.query(NotebookNote)
-        .options(selectinload(NotebookNote.links))
-        .filter(NotebookNote.case_id == case_id, NotebookNote.deleted_at.is_(None))
-    )
-
+    query = _base_query(db, case_id).filter(WorkspaceEntry.deleted_at.is_(None))
     if mine:
-        query = query.filter(NotebookNote.author_user_id == current_user.id)
-
+        query = query.filter(WorkspaceEntry.author_user_id == current_user.id)
     if linked_type or linked_id:
         if linked_type not in NOTEBOOK_TARGET_TYPES or not linked_id:
             raise ValueError("Both linked_type and linked_id are required for link filtering")
-        query = query.join(NotebookNoteLink).filter(
-            NotebookNoteLink.target_type == linked_type,
-            NotebookNoteLink.target_id == linked_id,
+        canonical_type = {
+            "entity": "graph_entity",
+            "document": "evidence",
+        }.get(linked_type, linked_type)
+        query = query.join(WorkspaceEntryLink).filter(
+            WorkspaceEntryLink.target_type == canonical_type,
+            WorkspaceEntryLink.target_id == linked_id,
         )
-
     search = _clean_text(query_text)
     if search:
         pattern = f"%{search}%"
         query = query.filter(
             or_(
-                NotebookNote.title.ilike(pattern),
-                NotebookNote.body.ilike(pattern),
-                NotebookNote.links.any(NotebookNoteLink.target_label.ilike(pattern)),
+                WorkspaceEntry.title.ilike(pattern),
+                WorkspaceEntry.body.ilike(pattern),
+                WorkspaceEntry.links.any(WorkspaceEntryLink.target_label.ilike(pattern)),
             )
         )
-
     total = query.count()
     notes = (
-        query.order_by(desc(NotebookNote.updated_at), desc(NotebookNote.created_at), desc(NotebookNote.id))
+        query.order_by(
+            desc(WorkspaceEntry.updated_at),
+            desc(WorkspaceEntry.created_at),
+            desc(WorkspaceEntry.id),
+        )
         .offset(max(offset, 0))
         .limit(max(1, min(limit, 200)))
         .all()
     )
-
     return {"notes": [note_to_dict(note) for note in notes], "total": total}
 
 
@@ -200,44 +225,31 @@ def create_note(
     tags: list[str] | None = None,
     links: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    note = NotebookNote(
+    note_id = uuid4()
+    created = create_entry(
+        db,
         case_id=case_id,
-        author_user_id=current_user.id,
-        author_email=current_user.email,
-        author_name=current_user.name,
+        current_user=current_user,
+        entry_id=note_id,
+        entry_type="note",
         title=_clean_title(title),
         body=_clean_body(body),
         tags=_clean_tags(tags),
-        visibility="case",
+        links=_to_canonical_links(links),
+        legacy_source="notebook_note",
+        legacy_id=str(note_id),
     )
-    db.add(note)
-    db.flush()
-
-    sanitized_links = _sanitize_links(links)
-    for link in sanitized_links:
-        db.add(
-            NotebookNoteLink(
-                note_id=note.id,
-                case_id=case_id,
-                target_type=link["target_type"],
-                target_id=link["target_id"],
-                target_label=link["target_label"],
-                link_metadata=link["metadata"],
-            )
-        )
-
-    db.flush()
     system_log_service.log(
         log_type=LogType.CASE_OPERATION,
         origin=LogOrigin.FRONTEND,
         action="Create Notebook Note",
-        details={"case_id": str(case_id), "note_id": str(note.id), "links": len(sanitized_links)},
+        details={"case_id": str(case_id), "note_id": str(note_id), "links": len(created["links"])},
         user=current_user.email,
         success=True,
         db=db,
     )
     db.commit()
-    return note_to_dict(_get_note(db, case_id, note.id))
+    return note_to_dict(_get_note(db, case_id, note_id))
 
 
 def update_note(
@@ -253,55 +265,39 @@ def update_note(
 ) -> dict[str, Any]:
     note = _get_note(db, case_id, note_id)
     before = note_to_dict(note)
-
+    changes: dict[str, Any] = {}
     if title is not None:
-        note.title = _clean_title(title)
+        changes["title"] = _clean_title(title)
     if body is not None:
-        note.body = _clean_body(body)
+        changes["body"] = _clean_body(body)
     if tags is not None:
-        note.tags = _clean_tags(tags)
-
+        changes["tags"] = _clean_tags(tags)
     if links is not None:
-        note.links.clear()
-        db.flush()
-        for link in _sanitize_links(links):
-            note.links.append(
-                NotebookNoteLink(
-                    note_id=note.id,
-                    case_id=case_id,
-                    target_type=link["target_type"],
-                    target_id=link["target_id"],
-                    target_label=link["target_label"],
-                    link_metadata=link["metadata"],
-                )
-            )
-
-    db.flush()
-    after = note_to_dict(note)
+        changes["links"] = _to_canonical_links(links)
+    updated = update_entry(
+        db,
+        case_id=case_id,
+        entry_id=note_id,
+        current_user=current_user,
+        expected_version=note.version,
+        **changes,
+    )
     system_log_service.log(
         log_type=LogType.CASE_OPERATION,
         origin=LogOrigin.FRONTEND,
         action="Update Notebook Note",
         details={
             "case_id": str(case_id),
-            "note_id": str(note.id),
-            "before": {
-                "title": before["title"],
-                "body": before["body"],
-                "links": before["links"],
-            },
-            "after": {
-                "title": after["title"],
-                "body": after["body"],
-                "links": after["links"],
-            },
+            "note_id": str(note_id),
+            "before": {"title": before["title"], "body": before["body"], "links": before["links"]},
+            "after": {"title": updated["title"], "body": updated["body"], "links": updated["links"]},
         },
         user=current_user.email,
         success=True,
         db=db,
     )
     db.commit()
-    return note_to_dict(_get_note(db, case_id, note.id))
+    return note_to_dict(_get_note(db, case_id, note_id))
 
 
 def delete_note(
@@ -312,8 +308,13 @@ def delete_note(
     current_user: User,
 ) -> None:
     note = _get_note(db, case_id, note_id)
-    note.deleted_at = _now()
-    db.flush()
+    soft_delete_entry(
+        db,
+        case_id=case_id,
+        entry_id=note_id,
+        current_user=current_user,
+        expected_version=note.version,
+    )
     system_log_service.log(
         log_type=LogType.CASE_OPERATION,
         origin=LogOrigin.FRONTEND,

@@ -13,6 +13,7 @@ const graphMocks = vi.hoisted(() => ({
   startTracking: vi.fn(),
   clearJob: vi.fn(),
   rejectMergePair: vi.fn(),
+  startScan: vi.fn(),
 }))
 
 vi.mock("../hooks/use-similar-entities", () => ({
@@ -32,7 +33,7 @@ vi.mock("../hooks/use-similar-entities", () => ({
       },
     ],
     error: null,
-    startScan: vi.fn(),
+    startScan: graphMocks.startScan,
     cancel: vi.fn(),
   }),
 }))
@@ -94,6 +95,7 @@ describe("SimilarEntitiesView", () => {
     graphMocks.startTracking.mockReset()
     graphMocks.clearJob.mockReset()
     graphMocks.rejectMergePair.mockReset()
+    graphMocks.startScan.mockReset()
   })
 
   it("refreshes on completed merge without closing the dialog directly", async () => {
@@ -118,6 +120,29 @@ describe("SimilarEntitiesView", () => {
     expect(onRefresh).toHaveBeenCalledTimes(1)
     await waitFor(() => {
       expect(graphMocks.latestDialogProps?.open).toBe(true)
+    })
+  })
+
+  it("deselects all types before selecting one for the duplicate scan", () => {
+    render(
+      <SimilarEntitiesView
+        caseId="case-1"
+        graphData={graphData}
+        onRefresh={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /^Types$/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Deselect All" }))
+
+    expect(screen.getByRole("button", { name: /^Scan$/ })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /organization/i }))
+    fireEvent.click(screen.getByRole("button", { name: /^Scan$/ }))
+
+    expect(graphMocks.startScan).toHaveBeenCalledWith({
+      entityTypes: ["organization"],
+      similarityThreshold: 0.7,
     })
   })
 })

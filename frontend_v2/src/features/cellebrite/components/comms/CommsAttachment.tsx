@@ -1,4 +1,6 @@
 import { useState, type SyntheticEvent } from "react"
+import { useParams } from "react-router-dom"
+import { readText } from "../shared/cellebrite-format"
 import { AlertCircle, FileText, Film, Music, Paperclip, Play } from "lucide-react"
 
 import { DocumentViewer } from "@/components/ui/document-viewer"
@@ -35,6 +37,8 @@ export function CommsAttachment({
   attachment: Attachment
   fallbackName?: string
 }) {
+  const { id: caseId } = useParams()
+  const evidenceId = readText(attachment, ["evidence_id", "evidenceId", "evidence_uuid"])
   const [viewerOpen, setViewerOpen] = useState(false)
 
   if (!attachment) return null
@@ -72,6 +76,8 @@ export function CommsAttachment({
         </button>
         {viewerOpen && (
           <DocumentViewer
+            caseId={caseId}
+            evidenceId={evidenceId || undefined}
             open={viewerOpen}
             onOpenChange={setViewerOpen}
             documentUrl={url}
@@ -127,6 +133,8 @@ export function CommsAttachment({
         </button>
         {viewerOpen && (
           <DocumentViewer
+            caseId={caseId}
+            evidenceId={evidenceId || undefined}
             open={viewerOpen}
             onOpenChange={setViewerOpen}
             documentUrl={url}
@@ -155,6 +163,8 @@ export function CommsAttachment({
       </button>
       {viewerOpen && (
         <DocumentViewer
+          caseId={caseId}
+          evidenceId={evidenceId || undefined}
           open={viewerOpen}
           onOpenChange={setViewerOpen}
           documentUrl={url}

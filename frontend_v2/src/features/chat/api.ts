@@ -10,6 +10,16 @@ import type {
   ChatMessageData,
   ResultGraph,
 } from "./types"
+import type { MandateVersion } from "@/features/workspace/api"
+
+export interface MandateUsage {
+  version?: MandateVersion | null
+  active_version_id?: string | null
+  active_version_number?: number | null
+  is_stale: boolean
+  is_incomplete: boolean
+  temporary_override?: boolean
+}
 
 export interface ChatRequest {
   question: string
@@ -22,6 +32,7 @@ export interface ChatRequest {
   provider?: string
   confidence_threshold?: number
   persist?: boolean
+  mandate_override?: Record<string, unknown>
 }
 
 export interface ChatSuggestion {
@@ -38,6 +49,7 @@ export interface ChatResponse {
   result_graph?: ResultGraph
   provenance: ChatProvenance
   suggestions: ChatSuggestion[]
+  mandate: MandateUsage
 }
 
 interface ChatSuggestionsResponse {
@@ -84,6 +96,7 @@ interface ChatHistoryResponse {
   case_id: string
   case_revision_id?: string | null
   message_count: number
+  mandate_version_id?: string | null
 }
 
 interface ChatHistorySummaryResponse {
@@ -97,6 +110,7 @@ interface ChatHistorySummaryResponse {
   owner_user_id: string
   case_id: string
   message_count: number
+  mandate_version_id?: string | null
 }
 
 function toConversation(r: ChatHistoryResponse): Conversation {
@@ -114,6 +128,7 @@ function toConversation(r: ChatHistoryResponse): Conversation {
     case_id: r.case_id,
     case_revision_id: r.case_revision_id,
     message_count: r.message_count,
+    mandate_version_id: r.mandate_version_id,
   }
 }
 
@@ -137,6 +152,7 @@ export const chatHistoryAPI = {
         owner_user_id: item.owner_user_id,
         case_id: item.case_id,
         message_count: item.message_count,
+        mandate_version_id: item.mandate_version_id,
       }))
     )
   },
@@ -166,4 +182,9 @@ export const chatHistoryAPI = {
       `/api/chat-history/${chatId}`,
       { method: "DELETE" }
     ),
+
+  adoptCurrentMandate: (chatId: string) =>
+    fetchAPI<MandateUsage>(`/api/chat-history/${chatId}/adopt-current-mandate`, {
+      method: "POST",
+    }),
 }

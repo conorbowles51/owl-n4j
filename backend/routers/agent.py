@@ -57,6 +57,20 @@ async def get_agent_thread(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/threads/{thread_id}/adopt-current-mandate")
+async def adopt_current_agent_mandate(
+    thread_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        return agent_service.adopt_current_mandate(db=db, user=current_user, thread_id=thread_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except CaseNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CaseAccessDenied as exc:

@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.users import get_current_db_user
-from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access, get_case_if_allowed
+from services.case_service import CaseAccessDenied, CaseNotFound
+from routers.case_access import authorize_case_edit, authorize_case_view
 from services.notebook_service import (
     NOTEBOOK_TARGET_TYPES,
     NotebookNoteNotFound,
@@ -89,11 +90,11 @@ def _handle_notebook_error(exc: Exception) -> None:
 
 
 def _require_case_view(db: Session, case_id: UUID, current_user: User) -> None:
-    get_case_if_allowed(db=db, case_id=case_id, user=current_user)
+    authorize_case_view(db, case_id, current_user)
 
 
 def _require_case_edit(db: Session, case_id: UUID, current_user: User) -> None:
-    check_case_access(db=db, case_id=case_id, user=current_user, required_permission=("case", "edit"))
+    authorize_case_edit(db, case_id, current_user)
 
 
 @router.get("/{case_id}/notes", response_model=NotebookListResponse)

@@ -96,6 +96,7 @@ export function TablePage() {
 
   const setSearchTerm = useTableStore((s) => s.setSearchTerm)
   const toggleType = useTableStore((s) => s.toggleType)
+  const selectAllTypes = useTableStore((s) => s.selectAllTypes)
   const clearTypes = useTableStore((s) => s.clearTypes)
   const toggleSort = useTableStore((s) => s.toggleSort)
   const setPageSize = useTableStore((s) => s.setPageSize)
@@ -464,8 +465,13 @@ export function TablePage() {
 
   // Type filter helpers
   const handleSelectAllTypes = useCallback(() => {
-    clearTypes()
-  }, [clearTypes])
+    selectAllTypes()
+  }, [selectAllTypes])
+
+  const handleToggleType = useCallback(
+    (type: string) => toggleType(type, Array.from(typeCounts.keys())),
+    [toggleType, typeCounts]
+  )
 
   // Keyboard navigation
   useKeyboardNavigation({
@@ -508,7 +514,7 @@ export function TablePage() {
         onTypeFilterOpenChange={setTypeFilterOpen}
         typeCounts={typeCounts}
         selectedTypes={selectedTypes}
-        onToggleType={toggleType}
+        onToggleType={handleToggleType}
         onSelectAllTypes={handleSelectAllTypes}
         onClearTypes={() => clearTypes()}
         columns={columnConfigs}
@@ -553,7 +559,7 @@ export function TablePage() {
             description={
               isExploring
                 ? `${currentParent?.nodeLabel ?? "This entity"} has no connections`
-                : searchTerm || selectedTypes.size > 0
+                : searchTerm || selectedTypes !== null
                   ? "Try adjusting your filters"
                   : "No data available"
             }

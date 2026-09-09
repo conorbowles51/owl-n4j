@@ -73,7 +73,7 @@ it("fetches the resolved evidence page, draws its stored rectangle and opens the
   fireEvent.click(screen.getByRole("button", { name: "Open source file" }))
   await screen.findByRole("heading", { name: "synthetic.pdf" })
   await vi.waitFor(() =>
-    expect(screen.getByTitle("synthetic.pdf").getAttribute("src")).toMatch(
+    expect(screen.getAllByTitle("synthetic.pdf").find((element) => element.tagName === "IFRAME")?.getAttribute("src")).toMatch(
       /^blob:.*#page=2$/
     )
   )

@@ -38,7 +38,7 @@ export function useGlobalShortcuts(caseIdOverride?: string | null) {
         "table",
         "financial",
         "cellebrite",
-        "profiles",
+        "dossiers",
         "evidence",
       ]
 

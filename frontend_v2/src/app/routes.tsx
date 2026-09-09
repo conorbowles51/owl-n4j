@@ -40,9 +40,9 @@ const CellebritePage = lazy(() =>
     default: m.CellebritePage,
   }))
 )
-const CaseProfilesPage = lazy(() =>
-  import("@/features/case-profiles/components/CaseProfilesPage").then((m) => ({
-    default: m.CaseProfilesPage,
+const DossiersPage = lazy(() =>
+  import("@/features/dossiers/components/DossiersPage").then((m) => ({
+    default: m.DossiersPage,
   }))
 )
 
@@ -154,14 +154,15 @@ export function AppRoutes() {
 
           {/* Case routes */}
           <Route path="/cases/:id" element={<CaseLayout />}>
-            <Route index element={<Navigate to="graph" replace />} />
+            <Route index element={<Navigate to="workspace" replace />} />
             <Route path="graph" element={<LazyPage><GraphPage /></LazyPage>} />
             <Route path="timeline" element={<LazyPage><TimelinePage /></LazyPage>} />
             <Route path="map" element={<LazyPage><MapPage /></LazyPage>} />
             <Route path="table" element={<LazyPage><TablePage /></LazyPage>} />
             <Route path="financial" element={<LazyPage><FinancialPage /></LazyPage>} />
             <Route path="cellebrite" element={<LazyPage><CellebritePage /></LazyPage>} />
-            <Route path="profiles" element={<LazyPage><CaseProfilesPage /></LazyPage>} />
+            <Route path="profiles" element={<Navigate to="../dossiers" replace />} />
+            <Route path="dossiers" element={<LazyPage><DossiersPage /></LazyPage>} />
             <Route path="evidence" element={<EvidenceExplorer />} />
             <Route path="chat" element={<LazyPage><ChatPage /></LazyPage>} />
             <Route path="agent" element={<LazyPage><AgentPage /></LazyPage>} />

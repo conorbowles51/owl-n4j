@@ -33,7 +33,7 @@ export function CreateCaseDialog({
     setTitle("")
     setDescription("")
     onOpenChange(false)
-    navigate(`/cases/${result.id}/graph`)
+    navigate(`/cases/${result.id}`)
   }
 
   return (

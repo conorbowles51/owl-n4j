@@ -42,9 +42,9 @@ export function MultiNodePanel({
   }, {})
 
   return (
-    <div className={cn("flex flex-col gap-3", className)}>
+    <div className={cn("flex min-h-0 flex-1 flex-col gap-3 overflow-hidden", className)}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex shrink-0 items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold text-foreground">
             {nodes.length} nodes selected
@@ -66,7 +66,7 @@ export function MultiNodePanel({
       <Separator />
 
       {/* Bulk actions */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid shrink-0 grid-cols-2 gap-2">
         {significantMode && onRemoveFromSignificant ? (
           <Button
             variant="outline"
@@ -119,12 +119,12 @@ export function MultiNodePanel({
       <Separator />
 
       {/* Selected nodes list */}
-      <div>
-        <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <h4 className="mb-1.5 shrink-0 text-xs font-medium text-muted-foreground">
           Selected Entities
         </h4>
-        <ScrollArea className="max-h-[300px]">
-          <div className="space-y-0.5">
+        <ScrollArea type="auto" className="min-h-0 flex-1">
+          <div className="space-y-0.5 pr-3">
             {nodes.map((node) => (
               <div
                 key={node.key}

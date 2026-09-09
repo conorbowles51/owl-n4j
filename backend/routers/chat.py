@@ -36,6 +36,10 @@ from services.cost_tracking_service import CostJobType, record_cost
 from services.rag_service import rag_service
 from services.system_log_service import LogOrigin, LogType, system_log_service
 from services.significant_service import get_significant_entity_keys
+from services.mandate_context_service import (
+    CaseContextValidationError,
+    mandate_context_service,
+)
 from utils.prompt_trace import log_section, start_trace
 
 backend_dir = Path(__file__).parent.parent
@@ -57,6 +61,7 @@ class ChatRequest(BaseModel):
     confidence_threshold: Optional[float] = None
     persist: bool = True
     view_context: Optional[Dict[str, Any]] = None
+    mandate_override: Optional[Dict[str, Any]] = None
 
 
 class ChatSource(BaseModel):
@@ -106,6 +111,7 @@ class ChatResponse(BaseModel):
     debug_log: Optional[Dict[str, Any]] = None
     used_node_keys: Optional[List[str]] = None
     document_summary: Optional[str] = None
+    mandate: Dict[str, Any]
 
 
 class SuggestionsRequest(BaseModel):
@@ -165,12 +171,30 @@ async def chat(
         )
         conversation_history = conversation_prompt_history(conversation)
     elif request.persist:
+        active_mandate = mandate_context_service.active_version(db, case_id=request.case_id)
         conversation = create_conversation(
             db=db,
             user=current_user,
             case_id=request.case_id,
             title=summarize_title(question),
+            mandate_version_id=active_mandate.id if active_mandate else None,
         )
+    anchored_version_id = (
+        conversation.mandate_version_id
+        if conversation is not None
+        else (
+            active.id if (active := mandate_context_service.active_version(db, case_id=request.case_id)) else None
+        )
+    )
+    try:
+        mandate_context = mandate_context_service.resolve(
+            db,
+            case_id=request.case_id,
+            version_id=anchored_version_id,
+            override=request.mandate_override,
+        )
+    except CaseContextValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if request.scope == "significant":
         # A conversation may contain earlier full-case turns. They are not
         # admissible context once the caller selects the strict Significant scope.
@@ -284,6 +308,7 @@ async def chat(
                 llm_context=llm,
                 view_context=request.view_context,
                 scope_entity_keys=significant_entity_keys,
+                mandate_context_block=mandate_context.block,
             )
 
         cost_record = None
@@ -334,6 +359,8 @@ async def chat(
                 model_id=llm.model_id,
                 result_graph=result.get("result_graph"),
                 cost_record=cost_record,
+                mandate_version_id=anchored_version_id,
+                mandate_override=mandate_context.override,
             )
             assistant_message_id = str(assistant_message.id)
             db.commit()
@@ -401,6 +428,12 @@ async def chat(
             debug_log=result.get("debug_log"),
             used_node_keys=result.get("used_node_keys"),
             document_summary=result.get("document_summary"),
+            mandate={
+                **mandate_context_service.metadata(
+                    db, case_id=request.case_id, version_id=anchored_version_id
+                ),
+                "temporary_override": bool(mandate_context.override),
+            },
         )
     except Exception as exc:
         db.rollback()

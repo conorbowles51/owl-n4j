@@ -21,7 +21,7 @@ import {
   fileParentLabel,
   fileSize,
   fileTags,
-  linkedEntityIds,
+  linkedDossierIds,
   reportKeyOfFile,
   videoFrameUrl,
 } from "./filesUtils"
@@ -122,7 +122,7 @@ export function FileThumbnail({
           {showPhoneChip ? <PhoneReportChip reportKey={reportKey} reports={reports} className="max-w-32" /> : null}
           {file.is_relevant ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : null}
           {fileTags(file).length ? <Tag className="size-3.5 text-amber-500" /> : null}
-          {linkedEntityIds(file).length ? <User className="size-3.5 text-blue-500" /> : null}
+          {linkedDossierIds(file).length ? <User className="size-3.5 text-blue-500" /> : null}
         </span>
       </button>
     )

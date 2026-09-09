@@ -31,7 +31,6 @@ from services.case_service import (
     is_super_admin,
 )
 from services.deadline_service import get_next_deadline_for_cases
-from services.evidence_db_storage import EvidenceDBStorage
 from services.processing_profile_service import (
     get_case_processing_config,
     get_processing_profile,
@@ -437,7 +436,6 @@ def update_case_processing_profile(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    EvidenceDBStorage.mark_case_files_stale(db, case_id)
     db.commit()
     db.refresh(config)
 

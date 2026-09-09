@@ -433,7 +433,7 @@ export function AISettingsPage() {
                         const available = settings.models.filter((model) => {
                           if (model.provider_configured === false) return false
                           if (workload === "agent" && model.supports_agent === false) return false
-                          if (workload.startsWith("ingestion_") && model.supports_structured_output === false) return false
+                          if ((workload.startsWith("ingestion_") || workload === "workspace_analysis") && model.supports_structured_output === false) return false
                           return true
                         })
                         return (

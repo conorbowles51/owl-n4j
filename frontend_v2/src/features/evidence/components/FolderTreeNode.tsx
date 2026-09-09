@@ -1,8 +1,11 @@
+import { useEvidenceMoves, useEvidenceDropTarget } from "../hooks/use-evidence-moves"
+import type { MoveSource } from "../utils/move-targets"
 import {
   ChevronRight,
   Folder,
   FolderOpen,
   FolderPlus,
+  FolderInput,
   Settings,
   Play,
   Pencil,
@@ -48,6 +51,9 @@ export function FolderTreeNode({
     expandFolder,
   } = useEvidenceStore()
 
+  const moves = useEvidenceMoves()
+  const drop = useEvidenceDropTarget(node.id, true)
+  const source: MoveSource = { kind: "folder", id: node.id, name: node.name, parent_id: node.parent_id }
   const renameMutation = useRenameFolder(caseId)
   const processMutation = useProcessFolder(caseId)
 
@@ -98,9 +104,14 @@ export function FolderTreeNode({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
+            aria-label={node.name}
+            {...drop}
+            draggable={Boolean(moves?.canMove)}
+            onDragStart={(event) => moves?.startDrag(event, source)}
+            onDragEnd={() => moves?.endDrag()}
             onClick={handleClick}
             className={cn(
-              "group flex w-full items-center gap-1 rounded-md py-1 pr-2 text-sm transition-colors",
+              "data-[drop-active=true]:bg-primary/15 data-[drop-active=true]:outline-2 data-[drop-active=true]:outline-primary group flex w-full items-center gap-1 rounded-md py-1 pr-2 text-sm transition-colors",
               isActive
                 ? "bg-amber-500/10 text-amber-500 font-medium"
                 : "text-foreground/80 hover:bg-muted hover:text-foreground"
@@ -169,6 +180,7 @@ export function FolderTreeNode({
             Process All
           </ContextMenuItem>
           <ContextMenuSeparator />
+          <ContextMenuItem disabled={!moves?.canMove} onClick={() => moves?.openMove(source)}><FolderInput className="size-4" />Move to…</ContextMenuItem>
           <ContextMenuItem onClick={handleRename}>
             <Pencil className="size-4" />
             Rename

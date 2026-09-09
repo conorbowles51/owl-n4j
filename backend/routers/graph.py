@@ -9,7 +9,7 @@ import json
 import asyncio
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import select, text
 
@@ -82,6 +82,13 @@ class ExpandNodesRequest(BaseModel):
     case_id: str  # REQUIRED: Filter to case-specific data
 
 
+class GraphSearchResponse(BaseModel):
+    """Stable graph-search contract shared by all frontend consumers."""
+
+    nodes: List[Dict[str, Any]]
+    links: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class PageRankRequest(BaseModel):
     """Request model for PageRank endpoint."""
     case_id: str  # REQUIRED: Filter to case-specific data
@@ -129,6 +136,10 @@ MERGE_RELATIONSHIP_IDENTITY_FIELDS = frozenset(
 )
 MERGE_RELATIONSHIP_PROVENANCE_FIELDS = frozenset(
     {"source_files", "source_quotes", "source_claim_ids", "source_locations"}
+)
+from services.dossier_service import (
+    restore_dossier_after_entity_restore,
+    suspend_dossier_for_entity_delete,
 )
 
 
@@ -579,7 +590,7 @@ async def expand_nodes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/search")
+@router.get("/search", response_model=GraphSearchResponse)
 async def search_nodes(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, ge=1, le=100),
@@ -597,6 +608,7 @@ async def search_nodes(
     """
     try:
         results = neo4j_service.search_nodes(q, limit, case_id=case_id)
+        response = {"nodes": results, "links": []}
         
         # Log the search operation
         system_log_service.log(
@@ -606,13 +618,13 @@ async def search_nodes(
             details={
                 "query": q,
                 "limit": limit,
-                "results_count": len(results.get("nodes", [])) if isinstance(results, dict) else 0,
+                "results_count": len(results),
             },
             user=user.get("username", "unknown"),
             success=True,
         )
         
-        return results
+        return response
     except Exception as e:
         # Log the error
         system_log_service.log(
@@ -2057,6 +2069,7 @@ async def delete_node(
         Dict with success status and deletion info
     """
     membership_suspended = False
+    dossier_suspended = False
     try:
         membership_suspended = suspend_significant_entity_for_delete(
             db,
@@ -2064,6 +2077,9 @@ async def delete_node(
             entity_key=node_key,
             current_user=current_user,
         )
+        dossier_suspended = bool(suspend_dossier_for_entity_delete(
+            db, case_id=UUID(case_id), entity_key=node_key,
+        ))
         if permanent:
             result = neo4j_service.delete_node(node_key, case_id=case_id)
             action = "Node Permanently Deleted"
@@ -2101,6 +2117,8 @@ async def delete_node(
 
         return result
     except ValueError as e:
+        if dossier_suspended:
+            restore_dossier_after_entity_restore(db, case_id=UUID(case_id), entity_key=node_key)
         if membership_suspended:
             try:
                 restore_significant_entity_after_restore(
@@ -2114,6 +2132,8 @@ async def delete_node(
         status_code = 409 if "already exists" in message else 404
         raise HTTPException(status_code=status_code, detail=message)
     except Exception as e:
+        if dossier_suspended:
+            restore_dossier_after_entity_restore(db, case_id=UUID(case_id), entity_key=node_key)
         if membership_suspended:
             try:
                 restore_significant_entity_after_restore(
@@ -2398,6 +2418,9 @@ async def restore_recycled_entity(
                 db,
                 case_id=UUID(case_id),
                 entity_key=restored_key,
+            )
+            restore_dossier_after_entity_restore(
+                db, case_id=UUID(case_id), entity_key=restored_key,
             )
 
         system_log_service.log(

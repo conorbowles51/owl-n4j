@@ -399,6 +399,8 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
     >
       {content}
       <DocumentViewer
+        caseId={caseId}
+        evidenceId={viewerTarget?.evidenceId}
         open={viewerTarget !== null}
         onOpenChange={(open) => !open && setViewerTarget(null)}
         documentUrl={

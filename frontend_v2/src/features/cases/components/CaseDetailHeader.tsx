@@ -1,7 +1,6 @@
 import { useNavigate } from "react-router-dom"
 import {
   ExternalLink,
-  Layout,
   Upload,
   Users,
   Calendar,
@@ -66,18 +65,10 @@ export function CaseDetailHeader({
         <Button
           variant="primary"
           size="sm"
-          onClick={() => navigate(`/cases/${caseData.id}/graph`)}
+          onClick={() => navigate(`/cases/${caseData.id}`)}
         >
           <ExternalLink className="size-3.5" />
           Open Case
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate(`/cases/${caseData.id}/workspace`)}
-        >
-          <Layout className="size-3.5" />
-          Workspace
         </Button>
         {permissions.canUploadEvidence && (
           <Button

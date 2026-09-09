@@ -3,12 +3,14 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from postgres.base import Base
 from postgres.models.mixins import TimestampMixin
+
+JSON_DOCUMENT = JSONB().with_variant(JSON(), "sqlite")
 
 
 class CaseRevision(Base):
@@ -26,7 +28,7 @@ class CaseRevision(Base):
     )
     revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
     source: Mapped[str] = mapped_column(String(64), nullable=False, default="chat_turn")
-    extra_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    extra_metadata: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -61,6 +63,9 @@ class ChatConversation(Base, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    mandate_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("case_mandate_versions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     last_message_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -70,6 +75,7 @@ class ChatConversation(Base, TimestampMixin):
 
     case = relationship("Case", foreign_keys=[case_id])
     owner = relationship("User", foreign_keys=[owner_user_id])
+    mandate_version = relationship("CaseMandateVersion", foreign_keys=[mandate_version_id])
     messages = relationship(
         "ChatMessage",
         back_populates="conversation",
@@ -95,8 +101,8 @@ class ChatMessage(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     context_scope: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    selected_entity_keys: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    source_payload: Mapped[list | dict | None] = mapped_column(JSONB, nullable=True)
+    selected_entity_keys: Mapped[list | None] = mapped_column(JSON_DOCUMENT, nullable=True)
+    source_payload: Mapped[list | dict | None] = mapped_column(JSON_DOCUMENT, nullable=True)
     model_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     model_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     cost_record_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -105,7 +111,7 @@ class ChatMessage(Base):
         nullable=True,
         index=True,
     )
-    result_graph_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    result_graph_json: Mapped[dict | None] = mapped_column(JSON_DOCUMENT, nullable=True)
     case_revision_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("case_revisions.id", ondelete="SET NULL"),
@@ -113,6 +119,10 @@ class ChatMessage(Base):
         index=True,
     )
     snapshot_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mandate_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("case_mandate_versions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    mandate_override: Mapped[dict | None] = mapped_column(JSON_DOCUMENT, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -122,3 +132,4 @@ class ChatMessage(Base):
     conversation = relationship("ChatConversation", back_populates="messages")
     cost_record = relationship("CostRecord", foreign_keys=[cost_record_id])
     case_revision = relationship("CaseRevision", foreign_keys=[case_revision_id])
+    mandate_version = relationship("CaseMandateVersion", foreign_keys=[mandate_version_id])

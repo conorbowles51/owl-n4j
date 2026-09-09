@@ -1,12 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   workspaceAPI,
-  type Theory,
-  type InvestigationTask,
-  type Witness,
-  type InvestigativeNote,
-  type Finding,
-  type CaseContext,
+  type InvestigationTaskCreate,
+  type TaskStatus,
+  type CaseContextUpdate,
+  type MandateVersionCreate,
 } from "../api"
 
 // ---------------------------------------------------------------------------
@@ -14,74 +12,51 @@ import {
 // ---------------------------------------------------------------------------
 
 const keys = {
-  all: (caseId: string) => ["workspace", caseId] as const,
-  theories: (caseId: string) => ["workspace", caseId, "theories"] as const,
   tasks: (caseId: string) => ["workspace", caseId, "tasks"] as const,
-  witnesses: (caseId: string) => ["workspace", caseId, "witnesses"] as const,
-  notes: (caseId: string) => ["workspace", caseId, "notes"] as const,
-  findings: (caseId: string) => ["workspace", caseId, "findings"] as const,
+  work: (caseId: string) => ["workspace", caseId, "work"] as const,
   context: (caseId: string) => ["workspace", caseId, "context"] as const,
+  mandates: (caseId: string) => ["workspace", caseId, "context", "mandates"] as const,
   pinned: (caseId: string) => ["workspace", caseId, "pinned"] as const,
-  presence: (caseId: string) => ["workspace", caseId, "presence"] as const,
-  timeline: (caseId: string) => ["workspace", caseId, "timeline"] as const,
+  overview: (caseId: string, timezoneName: string) =>
+    ["workspace", caseId, "overview", timezoneName] as const,
 }
 
 export { keys as workspaceKeys }
 
-// ---------------------------------------------------------------------------
-// Theories
-// ---------------------------------------------------------------------------
+function browserTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+  } catch {
+    return "UTC"
+  }
+}
 
-export function useTheories(caseId: string) {
+export function useWorkspaceOverview(caseId: string) {
+  const timezoneName = browserTimezone()
   return useQuery({
-    queryKey: keys.theories(caseId),
-    queryFn: () => workspaceAPI.getTheories(caseId),
+    queryKey: keys.overview(caseId, timezoneName),
+    queryFn: () => workspaceAPI.getOverview(caseId, timezoneName),
   })
 }
 
-export function useCreateTheory(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (theory: Omit<Theory, "id">) =>
-      workspaceAPI.createTheory(caseId, theory),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.theories(caseId) }),
-  })
-}
-
-export function useUpdateTheory(caseId: string) {
+export function useSetAttentionState(caseId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({
-      theoryId,
-      updates,
+      attentionKey,
+      action,
+      snoozedUntil,
     }: {
-      theoryId: string
-      updates: Partial<Theory>
-    }) => workspaceAPI.updateTheory(caseId, theoryId, updates),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.theories(caseId) }),
-  })
-}
-
-export function useDeleteTheory(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (theoryId: string) =>
-      workspaceAPI.deleteTheory(caseId, theoryId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.theories(caseId) }),
-  })
-}
-
-export function useBuildTheoryGraph(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({
-      theoryId,
-      options,
-    }: {
-      theoryId: string
-      options?: Record<string, unknown>
-    }) => workspaceAPI.buildTheoryGraph(caseId, theoryId, options),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.theories(caseId) }),
+      attentionKey: string
+      action: "dismiss" | "snooze"
+      snoozedUntil?: string
+    }) =>
+      workspaceAPI.setAttentionState(caseId, attentionKey, {
+        action,
+        snoozed_until: snoozedUntil,
+      }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
   })
 }
 
@@ -99,9 +74,13 @@ export function useTasks(caseId: string) {
 export function useCreateTask(caseId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (task: Omit<InvestigationTask, "id">) =>
+    mutationFn: (task: InvestigationTaskCreate) =>
       workspaceAPI.createTask(caseId, task),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.tasks(caseId) }),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: keys.tasks(caseId) }),
+      qc.invalidateQueries({ queryKey: keys.work(caseId) }),
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
+    ]),
   })
 }
 
@@ -113,9 +92,13 @@ export function useUpdateTask(caseId: string) {
       updates,
     }: {
       taskId: string
-      updates: Partial<InvestigationTask>
+      updates: Partial<InvestigationTaskCreate>
     }) => workspaceAPI.updateTask(caseId, taskId, updates),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.tasks(caseId) }),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: keys.tasks(caseId) }),
+      qc.invalidateQueries({ queryKey: keys.work(caseId) }),
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
+    ]),
   })
 }
 
@@ -123,138 +106,25 @@ export function useDeleteTask(caseId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (taskId: string) => workspaceAPI.deleteTask(caseId, taskId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.tasks(caseId) }),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: keys.tasks(caseId) }),
+      qc.invalidateQueries({ queryKey: keys.work(caseId) }),
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
+    ]),
   })
 }
 
-// ---------------------------------------------------------------------------
-// Witnesses
-// ---------------------------------------------------------------------------
-
-export function useWitnesses(caseId: string) {
+export function useWork(
+  caseId: string,
+  filters: { taskStatus?: TaskStatus | "all"; assigneeUserId?: string } = {},
+) {
   return useQuery({
-    queryKey: keys.witnesses(caseId),
-    queryFn: () => workspaceAPI.getWitnesses(caseId),
-  })
-}
-
-export function useCreateWitness(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (witness: Omit<Witness, "id">) =>
-      workspaceAPI.createWitness(caseId, witness),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: keys.witnesses(caseId) }),
-  })
-}
-
-export function useUpdateWitness(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({
-      witnessId,
-      updates,
-    }: {
-      witnessId: string
-      updates: Partial<Witness>
-    }) => workspaceAPI.updateWitness(caseId, witnessId, updates),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: keys.witnesses(caseId) }),
-  })
-}
-
-export function useDeleteWitness(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (witnessId: string) =>
-      workspaceAPI.deleteWitness(caseId, witnessId),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: keys.witnesses(caseId) }),
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Notes
-// ---------------------------------------------------------------------------
-
-export function useNotes(caseId: string) {
-  return useQuery({
-    queryKey: keys.notes(caseId),
-    queryFn: () => workspaceAPI.getNotes(caseId),
-  })
-}
-
-export function useCreateNote(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (note: Omit<InvestigativeNote, "id">) =>
-      workspaceAPI.createNote(caseId, note),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.notes(caseId) }),
-  })
-}
-
-export function useUpdateNote(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({
-      noteId,
-      updates,
-    }: {
-      noteId: string
-      updates: Partial<InvestigativeNote>
-    }) => workspaceAPI.updateNote(caseId, noteId, updates),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.notes(caseId) }),
-  })
-}
-
-export function useDeleteNote(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (noteId: string) => workspaceAPI.deleteNote(caseId, noteId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.notes(caseId) }),
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Findings
-// ---------------------------------------------------------------------------
-
-export function useFindings(caseId: string) {
-  return useQuery({
-    queryKey: keys.findings(caseId),
-    queryFn: () => workspaceAPI.getFindings(caseId),
-  })
-}
-
-export function useCreateFinding(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (finding: Omit<Finding, "id">) =>
-      workspaceAPI.createFinding(caseId, finding),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.findings(caseId) }),
-  })
-}
-
-export function useUpdateFinding(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({
-      findingId,
-      updates,
-    }: {
-      findingId: string
-      updates: Partial<Finding>
-    }) => workspaceAPI.updateFinding(caseId, findingId, updates),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.findings(caseId) }),
-  })
-}
-
-export function useDeleteFinding(caseId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (findingId: string) =>
-      workspaceAPI.deleteFinding(caseId, findingId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.findings(caseId) }),
+    queryKey: [...keys.work(caseId), filters],
+    queryFn: () => workspaceAPI.getWork(caseId, {
+      taskStatus: filters.taskStatus,
+      assigneeUserId: filters.assigneeUserId,
+      limit: 250,
+    }),
   })
 }
 
@@ -272,22 +142,34 @@ export function useCaseContext(caseId: string) {
 export function useUpdateCaseContext(caseId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (context: Partial<CaseContext>) =>
+    mutationFn: (context: CaseContextUpdate) =>
       workspaceAPI.updateCaseContext(caseId, context),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.context(caseId) }),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: keys.context(caseId) }),
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
+    ]),
   })
 }
 
-export function useBuildWorkspaceGraph(caseId: string) {
+export function useMandateVersions(caseId: string) {
+  return useQuery({
+    queryKey: keys.mandates(caseId),
+    queryFn: () => workspaceAPI.listMandateVersions(caseId),
+  })
+}
+
+export function useCreateMandateVersion(caseId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (request: {
-      source_type: "theory" | "witness" | "note"
-      source_id: string
-      include_attached_items?: boolean
-      top_k?: number
-    }) => workspaceAPI.buildWorkspaceGraph(caseId, request),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.all(caseId) }),
+    mutationFn: (mandate: MandateVersionCreate) =>
+      workspaceAPI.createMandateVersion(caseId, mandate),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: keys.context(caseId) }),
+        qc.invalidateQueries({ queryKey: keys.mandates(caseId) }),
+        qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
+      ])
+    },
   })
 }
 
@@ -314,7 +196,30 @@ export function usePinItem(caseId: string) {
       itemId: string
       annotationsCount?: number
     }) => workspaceAPI.pinItem(caseId, itemType, itemId, annotationsCount),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.pinned(caseId) }),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: keys.pinned(caseId) }),
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
+    ]),
+  })
+}
+
+export function useBulkPinItems(caseId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (evidenceFileIds: string[]) =>
+      workspaceAPI.bulkPinItems(caseId, evidenceFileIds),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: keys.pinned(caseId) }),
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
+    ]),
+  })
+}
+
+export function usePinStatus(caseId: string, evidenceFileIds: string[]) {
+  return useQuery({
+    queryKey: [...keys.pinned(caseId), "status", evidenceFileIds],
+    queryFn: () => workspaceAPI.getPinStatus(caseId, evidenceFileIds),
+    enabled: Boolean(caseId) && evidenceFileIds.length > 0,
   })
 }
 
@@ -322,29 +227,9 @@ export function useUnpinItem(caseId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (pinId: string) => workspaceAPI.unpinItem(caseId, pinId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.pinned(caseId) }),
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Presence
-// ---------------------------------------------------------------------------
-
-export function usePresence(caseId: string) {
-  return useQuery({
-    queryKey: keys.presence(caseId),
-    queryFn: () => workspaceAPI.getPresence(caseId),
-    refetchInterval: 30_000,
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Investigation Timeline
-// ---------------------------------------------------------------------------
-
-export function useInvestigationTimeline(caseId: string) {
-  return useQuery({
-    queryKey: keys.timeline(caseId),
-    queryFn: () => workspaceAPI.getInvestigationTimeline(caseId),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: keys.pinned(caseId) }),
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
+    ]),
   })
 }

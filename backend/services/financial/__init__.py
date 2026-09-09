@@ -1871,3 +1871,11 @@ from services.financial.candidate_overlap import check_candidate_source_reuse
 from services.financial.candidate_materialization import CandidateFinalizationRequest, preview_candidate_finalization, finalize_candidates
 
 from services.financial.ledger_tracing import LedgerTraceInput, TraceAttributionInput, ledger_trace_inputs, evaluate_ledger_trace
+
+from services.financial.candidate_statement_scopes import ReviewedStatementScope
+from services.financial.export_sources import capture_export_sources
+from services.financial.ledger_review_history import capture_pdf_review_history
+from services.financial.statement_balances import capture_statement_running_balances
+from services.financial.statement_checks import capture_statement_checks
+
+__all__ += ["ReviewedStatementScope", "capture_export_sources", "capture_pdf_review_history", "capture_statement_running_balances", "capture_statement_checks"]

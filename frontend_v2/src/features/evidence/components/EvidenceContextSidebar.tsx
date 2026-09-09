@@ -47,6 +47,7 @@ import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { evidenceAPI } from "../api"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { ProcessHoldDialog } from "./ProcessHoldDialog"
+import { useEvidenceFile } from "../hooks/use-evidence-detail"
 import { useFileEntities, useFileRelationships } from "../hooks/use-file-entities"
 import { getDisplayStatus } from "../utils/display-status"
 import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
@@ -434,12 +435,15 @@ function TranscriptionPanel({
 function DetailsPanelContent({
   file,
   caseId,
+  anchor,
 }: {
   file: EvidenceFileRecord
   caseId: string
+  anchor: ReturnType<typeof useEvidenceStore.getState>["detailAnchor"]
 }) {
   const [viewerOpen, setViewerOpen] = useState(false)
   const [viewerPage, setViewerPage] = useState(1)
+  const [viewerTime, setViewerTime] = useState<number | undefined>()
   const [transcriptSpeakers, setTranscriptSpeakers] = useState(
     file.transcription_speakers || {}
   )
@@ -455,7 +459,6 @@ function DetailsPanelContent({
   const isProcessing = file.status === "processing"
   const isFailed = file.status === "failed"
   const isUnprocessed = file.status === "unprocessed"
-  const isStale = displayStatus === "stale"
 
   // `isProcessing` above is this file's own status, so the gate's two busy
   // flags are renamed rather than shadowing it.
@@ -469,6 +472,13 @@ function DetailsPanelContent({
     isProcessing: isSending,
   } = gate
   const processBusy = isChecking || isSending
+
+  useEffect(() => {
+    if (!anchor) return
+    setViewerPage(anchor.page ?? 1)
+    setViewerTime(anchor.startSeconds)
+    setViewerOpen(true)
+  }, [anchor, file.id])
 
   useEffect(() => {
     setTranscriptSpeakers(file.transcription_speakers || {})
@@ -593,36 +603,6 @@ function DetailsPanelContent({
                   )}
                   Process this file
                 </Button>
-              </div>
-            </div>
-          )}
-
-          {isStale && (
-            <div className="overflow-hidden rounded-lg border border-orange-500/20 bg-orange-500/5">
-              <div className="flex items-start gap-3 p-4">
-                <AlertCircle className="mt-0.5 size-4 shrink-0 text-orange-500" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium text-orange-600 dark:text-orange-400">
-                    Processing context changed
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    This file was already processed, but its case or folder profile changed after that run. Reprocess it to refresh the extracted data.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-3"
-                    onClick={handleProcess}
-                    disabled={processBusy}
-                  >
-                    {processBusy ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <RotateCcw className="size-3.5" />
-                    )}
-                    Reprocess with current profile
-                  </Button>
-                </div>
               </div>
             </div>
           )}
@@ -822,12 +802,15 @@ function DetailsPanelContent({
 
       {/* Document Viewer modal */}
       <DocumentViewer
+        caseId={caseId}
+        evidenceId={file.id}
         open={viewerOpen}
         onOpenChange={setViewerOpen}
         documentUrl={fileUrl}
         documentName={file.original_filename}
         initialPage={viewerPage}
-        navigationKey={`${file.id}:${viewerPage}`}
+        initialTime={viewerTime}
+        navigationKey={`${file.id}:${viewerPage}:${viewerTime ?? ""}`}
         transcription={file.transcription}
         transcriptionSegments={file.transcription_segments || []}
         transcriptSpeakers={transcriptSpeakers}
@@ -853,6 +836,7 @@ export function EvidenceContextSidebar({
     sidebarTab,
     setSidebarTab,
     detailFileId,
+    detailAnchor,
     currentFolderId,
     textSearchOverlayOpen,
     closeTextSearch,
@@ -861,7 +845,11 @@ export function EvidenceContextSidebar({
 
   // Resolve detail file internally
   const { data: folderContents } = useFolderContents(caseId, currentFolderId)
-  const detailFile = folderContents?.files.find((f) => f.id === detailFileId) ?? null
+  const folderDetailFile = folderContents?.files.find((f) => f.id === detailFileId) ?? null
+  const { data: deepLinkedFile } = useEvidenceFile(
+    detailFileId && !folderDetailFile ? detailFileId : null
+  )
+  const detailFile = folderDetailFile ?? deepLinkedFile ?? null
   const { data: jobs } = useJobs(caseId, true)
   const hasActiveJobs = useMemo(
     () =>
@@ -955,7 +943,7 @@ export function EvidenceContextSidebar({
           <TextSearchPanel caseId={caseId} />
         ) : sidebarTab === "details" && (
           detailFile ? (
-            <DetailsPanelContent file={detailFile} caseId={caseId} />
+            <DetailsPanelContent file={detailFile} caseId={caseId} anchor={detailAnchor} />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
               <Info className="size-8 text-muted-foreground/40" />

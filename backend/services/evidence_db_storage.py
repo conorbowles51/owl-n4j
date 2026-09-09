@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-from sqlalchemy import func, select, and_, or_
+from sqlalchemy import func, select, or_
 from sqlalchemy.orm import Session
 
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog
@@ -72,6 +72,33 @@ def _file_type_condition(category: str):
     return or_(*(filename.like(f"%.{ext}") for ext in sorted(exts)))
 
 
+def evidence_ordering(model, sort_by="name", sort_direction="asc"):
+    """One deterministic order for browsing, searching and locating a file."""
+    name = func.lower(model.original_filename if model is EvidenceFile else model.name)
+    primary = model.created_at if sort_by == "date" else name
+    ordered = primary.desc() if sort_direction == "desc" else primary.asc()
+    return [ordered.nulls_last(), name.asc(), model.id.asc()]
+
+
+def _file_filters(search=None, status=None, type_category=None):
+    conditions = []
+    if search:
+        conditions.append(func.lower(EvidenceFile.original_filename).contains(search.lower(), autoescape=True))
+    if status and status != "all":
+        # Deprecated stale filter is treated as processed for older clients.
+        conditions.append(EvidenceFile.status == ("processed" if status == "stale" else status))
+    type_condition = _file_type_condition(type_category or "")
+    if type_condition is not None:
+        conditions.append(type_condition)
+    return conditions
+
+
+class EvidenceMoveError(ValueError):
+    def __init__(self, message, status_code=400):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 # ---------------------------------------------------------------------------
 # Folder operations
 # ---------------------------------------------------------------------------
@@ -89,6 +116,9 @@ class EvidenceDBStorage:
         parent_id: Optional[uuid.UUID] = None,
         created_by_id: Optional[uuid.UUID] = None,
     ) -> EvidenceFolder:
+        EvidenceDBStorage._lock_case(db, case_id)
+        EvidenceDBStorage._validate_destination(db, case_id, parent_id)
+        EvidenceDBStorage._validate_folder_name(db, case_id, parent_id, name)
         folder = EvidenceFolder(
             case_id=case_id,
             name=name,
@@ -133,6 +163,9 @@ class EvidenceDBStorage:
         folder = db.get(EvidenceFolder, folder_id)
         if not folder:
             raise ValueError(f"Folder {folder_id} not found")
+        EvidenceDBStorage._lock_case(db, folder.case_id)
+        db.refresh(folder)
+        EvidenceDBStorage._validate_folder_name(db, folder.case_id, folder.parent_id, new_name, folder.id)
         folder.name = new_name
         db.flush()
         return folder
@@ -171,12 +204,50 @@ class EvidenceDBStorage:
         return stored_paths
 
     @staticmethod
-    def move_folder(
-        db: Session, folder_id: uuid.UUID, new_parent_id: Optional[uuid.UUID]
-    ) -> EvidenceFolder:
+    def _lock_case(db, case_id):
+        # Serialize hierarchy changes within a case, including concurrent cycle checks.
+        from postgres.models.case import Case
+        db.execute(select(Case.id).where(Case.id == case_id).with_for_update()).first()
+
+    @staticmethod
+    def _validate_destination(db, case_id, folder_id):
+        if folder_id is None:
+            return None
+        folder = db.scalar(select(EvidenceFolder).where(EvidenceFolder.id == folder_id)
+                           .with_for_update().execution_options(populate_existing=True))
+        if not folder or folder.case_id != case_id:
+            raise EvidenceMoveError("Destination folder not found in this case. Choose another folder.", 404)
+        return folder
+
+    @staticmethod
+    def _validate_folder_name(db, case_id, parent_id, name, exclude_id=None):
+        conflict = db.scalar(select(EvidenceFolder.id).where(
+            EvidenceFolder.case_id == case_id, EvidenceFolder.parent_id == parent_id,
+            EvidenceFolder.name == name, EvidenceFolder.id != exclude_id,
+        ).limit(1))
+        if conflict:
+            raise EvidenceMoveError("A folder with this name already exists in the destination. Rename it or choose another folder.", 409)
+
+    @staticmethod
+    def move_folder(db: Session, folder_id: uuid.UUID, new_parent_id: Optional[uuid.UUID]) -> EvidenceFolder:
         folder = db.get(EvidenceFolder, folder_id)
         if not folder:
-            raise ValueError(f"Folder {folder_id} not found")
+            raise EvidenceMoveError("Folder no longer exists. Refresh and try again.", 404)
+        EvidenceDBStorage._lock_case(db, folder.case_id)
+        folder = db.scalar(select(EvidenceFolder).where(EvidenceFolder.id == folder_id)
+                           .with_for_update().execution_options(populate_existing=True))
+        if not folder:
+            raise EvidenceMoveError("Folder no longer exists. Refresh and try again.", 404)
+        target = EvidenceDBStorage._validate_destination(db, folder.case_id, new_parent_id)
+        seen = set()
+        while target:
+            if target.id == folder_id or target.id in seen:
+                raise EvidenceMoveError("Cannot move a folder into itself or one of its subfolders.")
+            seen.add(target.id)
+            target = db.get(EvidenceFolder, target.parent_id) if target.parent_id else None
+        if folder.parent_id == new_parent_id:
+            return folder
+        EvidenceDBStorage._validate_folder_name(db, folder.case_id, new_parent_id, folder.name, folder.id)
         folder.parent_id = new_parent_id
         db.flush()
         return folder
@@ -194,6 +265,7 @@ class EvidenceDBStorage:
         folders if they don't exist and return the deepest one. When parent_id
         is provided, the path is created under that existing folder.
         """
+        EvidenceDBStorage._lock_case(db, case_id)
         parts = [
             part for part in PurePosixPath(relative_path).parts
             if part not in ("", ".", "..")
@@ -268,6 +340,8 @@ class EvidenceDBStorage:
         search: Optional[str] = None,
         status: Optional[str] = None,
         type_category: Optional[str] = None,
+        sort_by: str = "name",
+        sort_direction: str = "asc",
     ) -> Dict[str, Any]:
         """Return folders + files at a given level, plus file/subfolder counts."""
         if folder_id:
@@ -287,27 +361,11 @@ class EvidenceDBStorage:
         ]
 
         if search:
-            search_l = f"%{search.strip().lower()}%"
-            folder_conditions.append(func.lower(EvidenceFolder.name).like(search_l))
-            file_conditions.append(func.lower(EvidenceFile.original_filename).like(search_l))
-
-        if status and status != "all":
-            if status == "stale":
-                file_conditions.extend([
-                    EvidenceFile.status == "processed",
-                    EvidenceFile.processing_stale.is_(True),
-                ])
-            else:
-                file_conditions.append(EvidenceFile.status == status)
-                if status == "processed":
-                    file_conditions.append(EvidenceFile.processing_stale.is_(False))
-
-        type_condition = _file_type_condition(type_category or "")
-        if type_condition is not None:
-            file_conditions.append(type_condition)
+            folder_conditions.append(func.lower(EvidenceFolder.name).contains(search.lower(), autoescape=True))
+        file_conditions.extend(_file_filters(search, status, type_category))
 
         folders = list(db.scalars(
-            select(EvidenceFolder).where(*folder_conditions).order_by(EvidenceFolder.name)
+            select(EvidenceFolder).where(*folder_conditions).order_by(*evidence_ordering(EvidenceFolder, sort_by, sort_direction))
         ).all())
 
         safe_limit = max(1, min(int(limit or 250), 1000))
@@ -319,7 +377,7 @@ class EvidenceDBStorage:
         files = list(db.scalars(
             select(EvidenceFile)
             .where(*file_conditions)
-            .order_by(EvidenceFile.original_filename)
+            .order_by(*evidence_ordering(EvidenceFile, sort_by, sort_direction))
             .offset(safe_offset)
             .limit(safe_limit)
         ).all())
@@ -355,6 +413,77 @@ class EvidenceDBStorage:
             "file_limit": safe_limit,
             "file_offset": safe_offset,
         }
+
+    @staticmethod
+    def get_file_location(
+        db: Session, case_id: uuid.UUID, file_id: uuid.UUID, *, limit: int = 250,
+        sort_by: str = "name", sort_direction: str = "asc",
+    ) -> Optional[Dict[str, Any]]:
+        """Locate a file in the unfiltered folder listing without loading its siblings."""
+        file = db.execute(
+            select(EvidenceFile.id, EvidenceFile.folder_id, EvidenceFile.original_filename)
+            .where(EvidenceFile.id == file_id, EvidenceFile.case_id == case_id)
+        ).first()
+        if file is None:
+            return None
+        ranked = select(
+            EvidenceFile.id,
+            (func.row_number().over(order_by=evidence_ordering(EvidenceFile, sort_by, sort_direction)) - 1).label("position"),
+        ).where(EvidenceFile.case_id == case_id, EvidenceFile.folder_id == file.folder_id).subquery()
+        preceding = db.scalar(select(ranked.c.position).where(ranked.c.id == file_id)) or 0
+        safe_limit = max(1, min(int(limit), 1000))
+        ancestors = (
+            EvidenceDBStorage.get_folder_breadcrumbs(db, file.folder_id)
+            if file.folder_id else []
+        )
+        return {
+            "file_id": str(file.id),
+            "folder_id": str(file.folder_id) if file.folder_id else None,
+            "ancestor_ids": [str(folder.id) for folder in ancestors],
+            "file_offset": (preceding // safe_limit) * safe_limit,
+            "file_limit": safe_limit,
+        }
+
+    @staticmethod
+    def search_files(db, case_id, query, *, scope="case", folder_id=None,
+                     status=None, type_category=None, sort_by="name", sort_direction="asc",
+                     limit=250, offset=0):
+        # Load the case hierarchy once, both for subtree membership and result paths.
+        folders = db.execute(select(EvidenceFolder.id, EvidenceFolder.parent_id, EvidenceFolder.name)
+                             .where(EvidenceFolder.case_id == case_id)).all()
+        by_id = {folder.id: folder for folder in folders}
+        if scope == "subtree" and folder_id is not None and folder_id not in by_id:
+            raise EvidenceMoveError("Folder not found in this case", 404)
+        conditions = [EvidenceFile.case_id == case_id, *_file_filters(query, status, type_category)]
+        if scope == "subtree" and folder_id is not None:
+            children = {}
+            for folder in folders:
+                children.setdefault(folder.parent_id, []).append(folder.id)
+            included, pending = set(), [folder_id]
+            while pending:
+                current = pending.pop()
+                if current not in included:
+                    included.add(current)
+                    pending.extend(children.get(current, []))
+            conditions.append(EvidenceFile.folder_id.in_(included))
+        total = db.scalar(select(func.count()).select_from(EvidenceFile).where(*conditions)) or 0
+        limit, offset = max(1, min(limit, 1000)), max(0, offset)
+        files = db.scalars(select(EvidenceFile).where(*conditions)
+                          .order_by(*evidence_ordering(EvidenceFile, sort_by, sort_direction))
+                          .limit(limit).offset(offset)).all()
+        paths = {None: []}
+        def path(folder_id):
+            if folder_id not in paths:
+                trail, seen, current = [], set(), folder_id
+                while current in by_id and current not in seen:
+                    seen.add(current)
+                    folder = by_id[current]
+                    trail.append({"id": str(folder.id), "name": folder.name})
+                    current = folder.parent_id
+                paths[folder_id] = list(reversed(trail))
+            return paths[folder_id]
+        return {"files": [{**EvidenceDBStorage._file_to_dict(file), "folder_path": path(file.folder_id)} for file in files],
+                "file_total": total, "file_limit": limit, "file_offset": offset}
 
     @staticmethod
     def get(db: Session, file_id: uuid.UUID) -> Optional[EvidenceFile]:
@@ -413,7 +542,6 @@ class EvidenceDBStorage:
                 cellebrite_model_id=fd.get("cellebrite_model_id"),
                 cellebrite_category=fd.get("cellebrite_category"),
                 tags=_clean_string_list(fd.get("tags")),
-                linked_entity_ids=_clean_string_list(fd.get("linked_entity_ids")),
                 metadata_=fd.get("metadata") or {},
             )
             db.add(ef)
@@ -472,7 +600,6 @@ class EvidenceDBStorage:
                 longitude=fd.get("longitude"),
                 has_geotag=bool(fd.get("has_geotag")),
                 tags=_clean_string_list(fd.get("tags")),
-                linked_entity_ids=_clean_string_list(fd.get("linked_entity_ids")),
                 metadata_=fd.get("metadata") or {},
             )
             db.add(ef)
@@ -606,75 +733,6 @@ class EvidenceDBStorage:
         ]
 
     @staticmethod
-    def link_entities(
-        db: Session,
-        evidence_ids: Sequence[Any],
-        entity_ids: Sequence[str],
-    ) -> int:
-        clean = _clean_string_list(entity_ids)
-        if not clean:
-            return 0
-        updated = 0
-        for ef in EvidenceDBStorage._files_for_ids(db, evidence_ids):
-            merged = _clean_string_list([*(ef.linked_entity_ids or []), *clean])
-            if merged != (ef.linked_entity_ids or []):
-                ef.linked_entity_ids = merged
-                updated += 1
-        if updated:
-            db.flush()
-        return updated
-
-    @staticmethod
-    def unlink_entities(
-        db: Session,
-        evidence_ids: Sequence[Any],
-        entity_ids: Sequence[str],
-    ) -> int:
-        remove = set(_clean_string_list(entity_ids))
-        if not remove:
-            return 0
-        updated = 0
-        for ef in EvidenceDBStorage._files_for_ids(db, evidence_ids):
-            existing = set(ef.linked_entity_ids or [])
-            if existing & remove:
-                ef.linked_entity_ids = sorted(existing - remove)
-                updated += 1
-        if updated:
-            db.flush()
-        return updated
-
-    @staticmethod
-    def list_by_entity(db: Session, case_id: uuid.UUID, entity_id: str) -> List[Dict[str, Any]]:
-        if not entity_id:
-            return []
-        rows = db.scalars(
-            select(EvidenceFile).where(EvidenceFile.case_id == case_id)
-        ).all()
-        return [
-            EvidenceDBStorage._file_to_dict(row)
-            for row in rows
-            if entity_id in (row.linked_entity_ids or [])
-        ]
-
-    @staticmethod
-    def unlink_entities_from_all(db: Session, case_id: uuid.UUID, entity_id: str) -> int:
-        if not entity_id:
-            return 0
-        updated = 0
-        rows = db.scalars(
-            select(EvidenceFile).where(EvidenceFile.case_id == case_id)
-        ).all()
-        for row in rows:
-            existing = set(row.linked_entity_ids or [])
-            if entity_id in existing:
-                existing.discard(entity_id)
-                row.linked_entity_ids = sorted(existing)
-                updated += 1
-        if updated:
-            db.flush()
-        return updated
-
-    @staticmethod
     def _files_for_ids(db: Session, evidence_ids: Sequence[Any]) -> List[EvidenceFile]:
         ids = [file_id for file_id in (_coerce_uuid(value) for value in evidence_ids) if file_id]
         if not ids:
@@ -717,26 +775,32 @@ class EvidenceDBStorage:
         return ef
 
     @staticmethod
-    def move_file(
-        db: Session, file_id: uuid.UUID, new_folder_id: Optional[uuid.UUID]
-    ) -> EvidenceFile:
-        ef = db.get(EvidenceFile, file_id)
-        if not ef:
-            raise ValueError(f"Evidence file {file_id} not found")
-        ef.folder_id = new_folder_id
-        db.flush()
-        return ef
+    def move_file(db: Session, file_id: uuid.UUID, new_folder_id: Optional[uuid.UUID]) -> EvidenceFile:
+        EvidenceDBStorage.move_files(db, [file_id], new_folder_id)
+        return db.get(EvidenceFile, file_id)
 
     @staticmethod
-    def move_files(
-        db: Session, file_ids: List[uuid.UUID], new_folder_id: Optional[uuid.UUID]
-    ) -> List[EvidenceFile]:
-        moved = []
-        for fid in file_ids:
-            ef = db.get(EvidenceFile, fid)
-            if ef:
-                ef.folder_id = new_folder_id
-                moved.append(ef)
+    def move_files(db: Session, file_ids: List[uuid.UUID], new_folder_id: Optional[uuid.UUID]) -> List[EvidenceFile]:
+        ids = set(file_ids)
+        if not ids:
+            raise EvidenceMoveError("Select at least one file to move.")
+        files = list(db.scalars(select(EvidenceFile).where(EvidenceFile.id.in_(ids))).all())
+        if len(files) != len(ids):
+            raise EvidenceMoveError("One or more files no longer exist. Refresh and try again.", 404)
+        cases = {file.case_id for file in files}
+        if len(cases) != 1:
+            raise EvidenceMoveError("All files must belong to the same case.")
+        case_id = files[0].case_id
+        EvidenceDBStorage._lock_case(db, case_id)
+        EvidenceDBStorage._validate_destination(db, case_id, new_folder_id)
+        files = list(db.scalars(select(EvidenceFile).where(EvidenceFile.id.in_(ids))
+                               .order_by(EvidenceFile.id).with_for_update()
+                               .execution_options(populate_existing=True)).all())
+        if len(files) != len(ids):
+            raise EvidenceMoveError("One or more files no longer exist. Refresh and try again.", 404)
+        moved = [file for file in files if file.folder_id != new_folder_id]
+        for file in moved:
+            file.folder_id = new_folder_id
         db.flush()
         return moved
 
@@ -749,7 +813,7 @@ class EvidenceDBStorage:
             # Skip files already being processed; skip processed files unless force=True
             if ef.status == "processing":
                 continue
-            if ef.status == "processed" and not force and not ef.processing_stale:
+            if ef.status == "processed" and not force:
                 continue
             ef.status = "processing"
             ef.last_error = None
@@ -799,37 +863,6 @@ class EvidenceDBStorage:
         if not file_ids:
             return []
         return list(db.scalars(select(EvidenceFile).where(EvidenceFile.id.in_(file_ids))).all())
-
-    @staticmethod
-    def mark_files_stale(db: Session, file_ids: List[uuid.UUID]) -> int:
-        updated = 0
-        for fid in file_ids:
-            ef = db.get(EvidenceFile, fid)
-            if not ef or ef.status != "processed":
-                continue
-            ef.processing_stale = True
-            updated += 1
-        if updated:
-            db.flush()
-        return updated
-
-    @staticmethod
-    def mark_case_files_stale(db: Session, case_id: uuid.UUID) -> int:
-        file_ids = list(
-            db.scalars(
-                select(EvidenceFile.id).where(
-                    EvidenceFile.case_id == case_id,
-                    EvidenceFile.status == "processed",
-                )
-            ).all()
-        )
-        return EvidenceDBStorage.mark_files_stale(db, file_ids)
-
-    @staticmethod
-    def mark_folder_subtree_stale(db: Session, folder_id: uuid.UUID) -> int:
-        return EvidenceDBStorage.mark_files_stale(
-            db, EvidenceDBStorage.collect_recursive_file_ids(db, folder_id)
-        )
 
     @staticmethod
     def set_relevance(
@@ -1009,7 +1042,7 @@ class EvidenceDBStorage:
             "size": ef.size,
             "sha256": ef.sha256,
             "status": ef.status,
-            "processing_stale": ef.processing_stale,
+            "processing_stale": False,
             "is_duplicate": ef.is_duplicate,
             "duplicate_of": str(ef.duplicate_of_id) if ef.duplicate_of_id else None,
             "is_relevant": ef.is_relevant,
@@ -1040,7 +1073,6 @@ class EvidenceDBStorage:
             "longitude": ef.longitude,
             "has_geotag": ef.has_geotag,
             "tags": list(ef.tags or []),
-            "linked_entity_ids": list(ef.linked_entity_ids or []),
             "metadata": dict(ef.metadata_ or {}),
         }
 

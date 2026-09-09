@@ -28,6 +28,7 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
   const [contextMode, setContextMode] = useState<ContextMode>("full")
   const [input, setInput] = useState("")
   const [viewerDoc, setViewerDoc] = useState<{
+    evidenceId: string
     url: string
     name: string
     page?: number
@@ -111,6 +112,7 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
       }
 
       setViewerDoc({
+        evidenceId: result.evidence_id,
         url: evidenceAPI.getFileUrl(result.evidence_id),
         name: filename,
         page,
@@ -255,6 +257,8 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
       </div>
 
       <DocumentViewer
+        caseId={caseId}
+        evidenceId={viewerDoc?.evidenceId}
         open={!!viewerDoc}
         onOpenChange={(open) => {
           if (!open) setViewerDoc(null)

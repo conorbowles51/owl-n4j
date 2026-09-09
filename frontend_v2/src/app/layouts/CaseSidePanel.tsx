@@ -76,6 +76,7 @@ export function CaseSidePanelRail() {
           <Button
             variant="ghost"
             size="icon-sm"
+            aria-label="Open case details"
             className={cn(
               "relative",
               isDetailsActive && "text-foreground"
@@ -96,6 +97,7 @@ export function CaseSidePanelRail() {
             <Button
               variant="ghost"
               size="icon-sm"
+              aria-label="Open evidence processing"
               className={cn(
                 "relative",
                 isProcessingActive && "text-foreground"
@@ -116,6 +118,7 @@ export function CaseSidePanelRail() {
           <Button
             variant="ghost"
             size="icon-sm"
+            aria-label="Open AI chat"
             className={cn(
               "relative",
               isChatActive && "text-foreground"
@@ -135,6 +138,7 @@ export function CaseSidePanelRail() {
           <Button
             variant="ghost"
             size="icon-sm"
+            aria-label="Open Notebook"
             className={cn(
               "relative",
               isNotebookActive && "text-foreground"
@@ -215,6 +219,7 @@ export function CaseSidePanelContent() {
               <Button
                 variant="ghost"
                 size="icon-sm"
+                aria-label="Collapse side panel"
                 onClick={() => setCollapsed(true)}
               >
                 <PanelRightClose className="size-3.5" />

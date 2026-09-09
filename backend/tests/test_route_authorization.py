@@ -96,6 +96,45 @@ class GraphLocationAuthorizationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         get_summary.assert_not_called()
 
+    def test_search_returns_the_graph_data_contract_for_a_permitted_member(self):
+        membership = SimpleNamespace(
+            permissions={"case": {"view": True, "edit": False}}
+        )
+        current_user = SimpleNamespace(
+            id=uuid4(),
+            global_role="user",
+            is_active=True,
+        )
+        db = _CaseAccessDb(membership=membership)
+        self.app.dependency_overrides[graph.get_current_db_user] = lambda: current_user
+        self.app.dependency_overrides[graph.get_db] = lambda: db
+        self.app.dependency_overrides[graph.get_current_user] = lambda: {
+            "username": "viewer@example.test"
+        }
+        nodes = [
+            {
+                "key": "person-1",
+                "name": "Henry Walsh",
+                "type": "Person",
+                "summary": "Named in the transfer records",
+                "notes": None,
+            }
+        ]
+
+        with patch.object(
+            graph.neo4j_service,
+            "search_nodes",
+            return_value=nodes,
+        ) as search_nodes:
+            response = self.client.get(
+                "/api/graph/search",
+                params={"case_id": str(db.case.id), "q": "Henry", "limit": 8},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"nodes": nodes, "links": []})
+        search_nodes.assert_called_once_with("Henry", 8, case_id=str(db.case.id))
+
     def test_locations_preserves_the_complete_payload_for_a_permitted_member(self):
         membership = SimpleNamespace(
             permissions={"case": {"view": True, "edit": False}}

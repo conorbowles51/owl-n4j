@@ -1,6 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { evidenceAPI } from "../api"
 
+export function useEvidenceFile(evidenceId: string | null) {
+  return useQuery({
+    queryKey: ["evidence-file", evidenceId],
+    queryFn: () => evidenceAPI.get(evidenceId!),
+    enabled: Boolean(evidenceId),
+  })
+}
+
 export function useEvidenceSummary(filename: string | undefined, caseId: string | undefined) {
   return useQuery({
     queryKey: ["evidence-summary", filename, caseId],

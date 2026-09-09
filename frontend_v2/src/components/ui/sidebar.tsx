@@ -14,7 +14,7 @@ import {
   ClipboardList,
   Settings,
   Smartphone,
-  UserRoundSearch,
+  ContactRound,
   Users,
   Sliders,
   ShieldCheck,
@@ -34,6 +34,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useMediaQuery } from "@/hooks/use-media-query"
 
 interface NavItem {
   label: string
@@ -61,7 +62,6 @@ function getFullDataCaseNav(caseId: string): NavItem[] {
   return [
     { label: "Financial", icon: DollarSign, to: `/cases/${caseId}/financial`, shortcut: "5" },
     { label: "Cellebrite", icon: Smartphone, to: `/cases/${caseId}/cellebrite`, shortcut: "6" },
-    { label: "Profiles", icon: UserRoundSearch, to: `/cases/${caseId}/profiles`, shortcut: "7" },
     { label: "Evidence", icon: FileText, to: `/cases/${caseId}/evidence`, shortcut: "8" },
   ]
 }
@@ -76,6 +76,7 @@ function getCaseAiNav(caseId: string): NavItem[] {
 function getCaseWorkspaceNav(caseId: string): NavItem[] {
   return [
     { label: "Workspace", icon: Briefcase, to: `/cases/${caseId}/workspace` },
+    { label: "Dossiers", icon: ContactRound, to: `/cases/${caseId}/dossiers` },
     { label: "Reports", icon: ClipboardList, to: `/cases/${caseId}/reports` },
   ]
 }
@@ -252,7 +253,9 @@ function LogoMark({ expanded }: { expanded: boolean }) {
 export function AppSidebar() {
   const { id: caseId } = useParams()
   const { pathname } = useLocation()
-  const { sidebarExpanded, toggleSidebar } = useAppStore()
+  const { sidebarExpanded: storedSidebarExpanded, toggleSidebar } = useAppStore()
+  const narrowViewport = useMediaQuery("(max-width: 767px)")
+  const sidebarExpanded = storedSidebarExpanded && !narrowViewport
   const user = useAuthStore((s) => s.user)
   const role = user?.global_role ?? user?.role
   const canSeeAdmin = role === "admin" || role === "super_admin"
@@ -311,6 +314,19 @@ export function AppSidebar() {
         </SidebarSection>
 
         {caseId && (
+          <SidebarSection label="Workspace" expanded={sidebarExpanded} separated>
+            {getCaseWorkspaceNav(caseId).map((item) => (
+              <SidebarLink
+                key={item.to}
+                item={item}
+                expanded={sidebarExpanded}
+                active={isItemActive(pathname, item)}
+              />
+            ))}
+          </SidebarSection>
+        )}
+
+        {caseId && (
           <SidebarSection label="Case views" expanded={sidebarExpanded} separated>
             <CaseLayerSwitcher caseId={caseId} expanded={sidebarExpanded} />
             {getLayerAwareCaseNav(caseId).map((item) => (
@@ -340,19 +356,6 @@ export function AppSidebar() {
         {caseId && (
           <SidebarSection label="AI" expanded={sidebarExpanded} separated>
             {getCaseAiNav(caseId).map((item) => (
-              <SidebarLink
-                key={item.to}
-                item={item}
-                expanded={sidebarExpanded}
-                active={isItemActive(pathname, item)}
-              />
-            ))}
-          </SidebarSection>
-        )}
-
-        {caseId && (
-          <SidebarSection label="Workspace" expanded={sidebarExpanded} separated>
-            {getCaseWorkspaceNav(caseId).map((item) => (
               <SidebarLink
                 key={item.to}
                 item={item}

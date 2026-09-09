@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -19,6 +20,7 @@ import {
 import { openProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
 import { cn } from "@/lib/cn"
 import { AudioTranscriptViewer } from "@/features/evidence/components/AudioTranscriptViewer"
+import { OpenFileLocationButton } from "@/features/evidence/components/OpenFileLocationButton"
 import type {
   TranscriptSegment,
   TranscriptSpeakerSettings,
@@ -48,11 +50,14 @@ const FILE_ICONS: Record<string, typeof FileText> = {
 }
 
 interface DocumentViewerProps {
+  caseId?: string
+  evidenceId?: string
   open: boolean
   onOpenChange: (open: boolean) => void
   documentUrl?: string
   documentName?: string
   initialPage?: number
+  initialTime?: number
   navigationKey?: string
   transcription?: string | null
   transcriptionSegments?: TranscriptSegment[]
@@ -64,11 +69,14 @@ interface DocumentViewerProps {
 }
 
 export function DocumentViewer({
+  caseId,
+  evidenceId,
   open,
   onOpenChange,
   documentUrl,
   documentName,
   initialPage = 1,
+  initialTime,
   navigationKey,
   transcription,
   transcriptionSegments,
@@ -183,6 +191,7 @@ export function DocumentViewer({
             segments={transcriptionSegments}
             speakers={transcriptSpeakers}
             speakerMerges={transcriptSpeakerMerges}
+            initialTime={initialTime}
             onSpeakerSettingsChange={onTranscriptSpeakerSettingsChange}
             onCanPlay={() => setLoading(false)}
             onError={() => {
@@ -249,19 +258,24 @@ export function DocumentViewer({
         className={cn(
           "h-[90vh] flex flex-col p-0 gap-0",
           fileType === "audio"
-            ? "w-[88vw] sm:max-w-[88vw]"
-            : "w-[65vw] sm:max-w-[65vw]"
+            ? "w-[calc(100vw-2rem)] sm:w-[88vw] sm:max-w-[88vw]"
+            : "w-[calc(100vw-2rem)] sm:w-[85vw] sm:max-w-[85vw] lg:w-[65vw] lg:max-w-[65vw]"
         )}
         showCloseButton={false}
       >
         <DialogHeader className="flex-row items-center justify-between border-b border-border px-4 py-3 space-y-0">
-          <div className="flex items-center gap-3">
-            <IconComp className="size-5 text-muted-foreground" />
-            <DialogTitle className="text-base">
-              {documentName || "Document Viewer"}
-            </DialogTitle>
+          <div className="flex min-w-0 items-center gap-3">
+            <IconComp className="size-5 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              <DialogTitle className="truncate text-base" title={documentName}>
+                {documentName || "Document Viewer"}
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                Review this evidence file and any available source location or transcript.
+              </DialogDescription>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             {isPdf && (
               <div className="flex items-center gap-1 mr-2">
                 <Button
@@ -282,6 +296,13 @@ export function DocumentViewer({
                   <ChevronRight className="size-4" />
                 </Button>
               </div>
+            )}
+            {caseId && evidenceId && (
+              <OpenFileLocationButton
+                caseId={caseId}
+                evidenceId={evidenceId}
+                onNavigate={() => onOpenChange(false)}
+              />
             )}
             <Button variant="ghost" size="icon-sm" onClick={handleOpenInNewTab} title="Open in new tab">
               <ExternalLink className="size-4" />

@@ -12,6 +12,7 @@ function renderToolbar() {
         scope="all"
         filteredNodes={3}
         totalNodes={10}
+        typeCounts={new Map([["Person", 2], ["Location", 1]])}
       />
     </TooltipProvider>
   )
@@ -25,6 +26,7 @@ describe("GraphToolbar", () => {
       searchDraft: "",
       appliedSearchQuery: "",
       graphDimension: "2d",
+      selectedEntityTypes: null,
     })
   })
 
@@ -90,5 +92,16 @@ describe("GraphToolbar", () => {
       screen.getByRole("button", { name: "Switch to 2D graph view" })
     ).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "Drag select" })).toBeDisabled()
+  })
+
+  it("can deselect all graph entity types and then select one", () => {
+    renderToolbar()
+    fireEvent.click(screen.getByRole("button", { name: /^Types$/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Deselect All" }))
+
+    expect(useGraphStore.getState().selectedEntityTypes).toEqual(new Set())
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Person/ }))
+    expect(useGraphStore.getState().selectedEntityTypes).toEqual(new Set(["Person"]))
   })
 })

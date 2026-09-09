@@ -42,6 +42,7 @@ export interface ConversationSummary {
   owner_user_id: string
   case_id: string
   message_count: number
+  mandate_version_id?: string | null
 }
 
 export interface Conversation {
@@ -58,6 +59,7 @@ export interface Conversation {
   case_id: string
   case_revision_id?: string | null
   message_count: number
+  mandate_version_id?: string | null
 }
 
 export interface CreateChatHistory {
@@ -83,6 +85,8 @@ export interface ChatMessageData {
   model_info?: ChatModelInfo | null
   resultGraph?: ResultGraph
   provenance?: ChatProvenance | null
+  mandate_version_id?: string | null
+  mandate_override?: Record<string, unknown> | null
 }
 
 export interface ResultGraphNode {

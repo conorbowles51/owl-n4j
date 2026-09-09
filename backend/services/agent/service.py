@@ -36,6 +36,7 @@ from services.ai_provider_credentials import get_provider_api_key
 from services.case_service import check_case_access
 from services.system_log_service import LogOrigin, LogType, system_log_service
 from services.significant_service import get_significant_entity_keys
+from services.mandate_context_service import mandate_context_service
 
 
 DEFAULT_AGENT_MAX_TOOL_CALLS = 28
@@ -79,6 +80,12 @@ class AgentService:
             )
 
         thread = self._resolve_thread(db, user=user, request=request)
+        mandate_context = mandate_context_service.resolve(
+            db,
+            case_id=request.case_id,
+            version_id=thread.mandate_version_id,
+            override=request.mandate_override,
+        )
         user_message = storage.append_message(
             db,
             thread=thread,
@@ -96,6 +103,7 @@ class AgentService:
                 "artifact_preference": request.artifact_preference,
                 "case_layer": request.case_layer,
             },
+            mandate_override=mandate_context.override,
         )
         db.commit()
         db.refresh(thread)
@@ -145,6 +153,7 @@ class AgentService:
                 ),
                 should_cancel=lambda: is_cancelled(run_id),
                 allowed_entity_keys=allowed_entity_keys,
+                mandate_context_block=mandate_context.block,
             ):
                 if event.get("type") == "final":
                     final_result = event.get("result") or {}
@@ -262,6 +271,12 @@ class AgentService:
                 else None,
                 clarification=runner_clarification,
                 status="clarification_required" if runner_clarification else "completed",
+                mandate={
+                    **mandate_context_service.metadata(
+                        db, case_id=request.case_id, version_id=thread.mandate_version_id
+                    ),
+                    "temporary_override": bool(mandate_context.override),
+                },
             )
             clear_cancel(run_id)
             yield {"type": "done", "response": response.model_dump(mode="json")}
@@ -347,6 +362,12 @@ class AgentService:
             )
 
         thread = self._resolve_thread(db, user=user, request=request)
+        mandate_context = mandate_context_service.resolve(
+            db,
+            case_id=request.case_id,
+            version_id=thread.mandate_version_id,
+            override=request.mandate_override,
+        )
         user_message = None
         if request.persist:
             user_message = storage.append_message(
@@ -367,6 +388,7 @@ class AgentService:
                 "artifact_preference": request.artifact_preference,
                 "case_layer": request.case_layer,
             },
+            mandate_override=mandate_context.override,
         )
         db.flush()
         self._log_agent_event(
@@ -397,6 +419,7 @@ class AgentService:
                     else self._available_artifacts_for_runner(thread)
                 ),
                 allowed_entity_keys=allowed_entity_keys,
+                mandate_context_block=mandate_context.block,
             )
             runner_clarification = self._clarification_from_runner(
                 result.get("clarification"),
@@ -508,6 +531,12 @@ class AgentService:
                 else None,
                 clarification=runner_clarification,
                 status="clarification_required" if runner_clarification else "completed",
+                mandate={
+                    **mandate_context_service.metadata(
+                        db, case_id=request.case_id, version_id=thread.mandate_version_id
+                    ),
+                    "temporary_override": bool(mandate_context.override),
+                },
             )
         except Exception as exc:
             db.rollback()
@@ -572,6 +601,15 @@ class AgentService:
 
     def get_thread(self, *, db: Session, user: User, thread_id: UUID) -> AgentThreadDetail:
         return storage.get_thread_detail(db, thread_id=thread_id, user=user)
+
+    def adopt_current_mandate(self, *, db: Session, user: User, thread_id: UUID) -> dict[str, Any]:
+        thread = storage.get_thread_for_user(db, thread_id=thread_id, user=user)
+        active = mandate_context_service.active_version(db, case_id=thread.case_id)
+        thread.mandate_version_id = active.id if active else None
+        db.commit()
+        return mandate_context_service.metadata(
+            db, case_id=thread.case_id, version_id=thread.mandate_version_id
+        )
 
     def get_run(self, *, db: Session, user: User, run_id: UUID) -> AgentRunDetail:
         return storage.get_run_detail(db, run_id=run_id, user=user)
@@ -639,6 +677,11 @@ class AgentService:
             user=user,
             case_id=request.case_id,
             title=storage.summarize_title(request.message),
+            mandate_version_id=(
+                active.id
+                if (active := mandate_context_service.active_version(db, case_id=request.case_id))
+                else None
+            ),
         )
 
     def _build_history(self, db: Session, *, thread: AgentThread) -> list[HumanMessage | AIMessage]:

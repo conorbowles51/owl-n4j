@@ -11,6 +11,7 @@ import type { CaseDeadline } from "@/types/case.types"
 
 interface DeadlinesSectionProps {
   caseId: string
+  canEdit?: boolean
 }
 
 function getDeadlineBadge(dueDateStr: string) {
@@ -46,7 +47,7 @@ function getDeadlineBadge(dueDateStr: string) {
   )
 }
 
-export function DeadlinesSection({ caseId }: DeadlinesSectionProps) {
+export function DeadlinesSection({ caseId, canEdit = true }: DeadlinesSectionProps) {
   const { data: deadlines, isLoading } = useDeadlines(caseId)
   const deleteDeadline = useDeleteDeadline(caseId)
   const [addOpen, setAddOpen] = useState(false)
@@ -62,12 +63,12 @@ export function DeadlinesSection({ caseId }: DeadlinesSectionProps) {
 
   return (
     <div>
-      <div className="mb-2 flex items-center justify-end">
+      {canEdit && <div className="mb-2 flex items-center justify-end">
         <Button variant="ghost" size="sm" onClick={() => setAddOpen(true)}>
           <Plus className="mr-1 size-3" />
           Add Deadline
         </Button>
-      </div>
+      </div>}
 
       {!deadlines?.length ? (
         <EmptyState
@@ -92,7 +93,7 @@ export function DeadlinesSection({ caseId }: DeadlinesSectionProps) {
                   {getDeadlineBadge(d.due_date)}
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+              {canEdit && <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -109,19 +110,19 @@ export function DeadlinesSection({ caseId }: DeadlinesSectionProps) {
                 >
                   <Trash2 className="size-3" />
                 </Button>
-              </div>
+              </div>}
             </div>
           ))}
         </div>
       )}
 
-      <AddDeadlineDialog
+      {canEdit && <AddDeadlineDialog
         open={addOpen}
         onOpenChange={setAddOpen}
         caseId={caseId}
-      />
+      />}
 
-      {editing && (
+      {canEdit && editing && (
         <EditDeadlineDialog
           open={!!editing}
           onOpenChange={(open) => !open && setEditing(null)}

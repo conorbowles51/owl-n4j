@@ -81,7 +81,7 @@ async def process_db_files(
         if ef.status == "processing":
             skipped_processing += 1
             continue
-        if ef.status == "processed" and not ef.processing_stale and not force_reprocess:
+        if ef.status == "processed" and not force_reprocess:
             skipped_processing += 1
             continue
         if preparation_mode == "pdf_review" and Path(ef.original_filename).suffix.lower() != ".pdf":

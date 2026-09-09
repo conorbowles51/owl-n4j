@@ -43,7 +43,11 @@ interface AudioTranscriptViewerProps {
   ) => Promise<TranscriptSpeakerSettings | void>
   onCanPlay?: () => void
   onError?: () => void
+  initialTime?: number
 }
+
+const EMPTY_SEGMENTS: TranscriptSegment[] = []
+const EMPTY_SPEAKER_MAP: Record<string, string> = {}
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "00:00"
@@ -85,12 +89,13 @@ export function AudioTranscriptViewer({
   audioUrl,
   documentName,
   transcription,
-  segments = [],
-  speakers = {},
-  speakerMerges = {},
+  segments = EMPTY_SEGMENTS,
+  speakers = EMPTY_SPEAKER_MAP,
+  speakerMerges = EMPTY_SPEAKER_MAP,
   onSpeakerSettingsChange,
   onCanPlay,
   onError,
+  initialTime,
 }: AudioTranscriptViewerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const segmentRefs = useRef<Array<HTMLDivElement | null>>([])
@@ -160,6 +165,13 @@ export function AudioTranscriptViewer({
   useEffect(() => {
     setMatchPosition(0)
   }, [query])
+
+  useEffect(() => {
+    if (initialTime === undefined || !Number.isFinite(initialTime)) return
+    const nextTime = Math.max(0, initialTime)
+    if (audioRef.current) audioRef.current.currentTime = nextTime
+    setCurrentTime(nextTime)
+  }, [audioUrl, initialTime])
 
   useEffect(() => {
     if (!followPlayback || activeSegmentIndex < 0) return

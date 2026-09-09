@@ -22,12 +22,15 @@ describe("useGraphSearch", () => {
       searchMode: "filter",
       searchDraft: "",
       appliedSearchQuery: "",
-      filters: {},
+      selectedEntityTypes: null,
     })
   })
 
   it("combines text and entity-type filters and prunes orphaned edges", () => {
-    useGraphStore.setState({ appliedSearchQuery: "Ali OR Dublin", filters: { Person: true } })
+    useGraphStore.setState({
+      appliedSearchQuery: "Ali OR Dublin",
+      selectedEntityTypes: new Set(["Person"]),
+    })
     const { result } = renderHook(() => useGraphSearch(data))
     expect(result.current.filteredData?.nodes.map((node) => node.key)).toEqual(["p1"])
     expect(result.current.filteredData?.edges).toEqual([])
@@ -41,5 +44,12 @@ describe("useGraphSearch", () => {
     const { result } = renderHook(() => useGraphSearch(data))
     expect(result.current.filteredData).toEqual(data)
   })
-})
 
+  it("returns no graph nodes when all entity types are deselected", () => {
+    useGraphStore.setState({ selectedEntityTypes: new Set() })
+    const { result } = renderHook(() => useGraphSearch(data))
+
+    expect(result.current.filteredData).toEqual({ nodes: [], edges: [] })
+    expect(result.current.filteredNodes).toBe(0)
+  })
+})

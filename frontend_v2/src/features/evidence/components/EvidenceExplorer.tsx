@@ -1,5 +1,8 @@
+import { EvidenceMoveProvider } from "./EvidenceMoveProvider"
 import { useEffect, useState } from "react"
-import { useParams } from "react-router-dom"
+import { useLocation, useParams, useSearchParams } from "react-router-dom"
+import { foldersAPI } from "../folders.api"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -22,16 +25,72 @@ import type { EvidenceFile } from "@/types/evidence.types"
 
 export function EvidenceExplorer() {
   const { id: caseId } = useParams()
+  const [searchParams] = useSearchParams()
+  const location = useLocation()
+  const queryClient = useQueryClient()
   const {
     currentFolderId,
     selectedFileIds,
     clearSelection,
   } = useEvidenceStore()
   const resetForCase = useEvidenceStore((s) => s.resetForCase)
+  const openDetail = useEvidenceStore((s) => s.openDetail)
+  const revealFile = useEvidenceStore((s) => s.revealFile)
 
   useEffect(() => {
     if (caseId) resetForCase(caseId)
   }, [caseId, resetForCase])
+
+  useEffect(() => {
+    const fileId = searchParams.get("file")
+    if (!caseId || !fileId) return
+    if (searchParams.get("reveal") === "1") {
+      const controller = new AbortController()
+      const toastId = toast.loading("Opening file location…")
+      const locate = async () => {
+        // A sort can change while the lookup is in flight. Resolve its page again
+        // before revealing, so the response always matches the rendered order.
+        while (!controller.signal.aborted) {
+          const { sortBy, sortDirection } = useEvidenceStore.getState()
+          const target = await foldersAPI.getFileLocation(caseId, fileId, controller.signal, { sort_by: sortBy, sort_direction: sortDirection })
+          const current = useEvidenceStore.getState()
+          if (current.sortBy === sortBy && current.sortDirection === sortDirection) return target
+        }
+        throw new DOMException("Aborted", "AbortError")
+      }
+      void locate().then(
+        (target) => {
+          if (controller.signal.aborted) return
+          toast.dismiss(toastId)
+          void queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId, target.folder_id] })
+          void queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
+          revealFile(target)
+        },
+        () => {
+          if (controller.signal.aborted) return
+          toast.dismiss(toastId)
+          toast.error("Could not open file location. The file may have been removed or you may no longer have access.")
+        },
+      )
+      return () => {
+        controller.abort()
+        toast.dismiss(toastId)
+      }
+    }
+    const finiteNumber = (name: string) => {
+      const raw = searchParams.get(name)
+      if (raw === null) return undefined
+      const value = Number(raw)
+      return Number.isFinite(value) ? value : undefined
+    }
+    const page = finiteNumber("page")
+    openDetail(fileId, {
+      page: page === undefined ? undefined : Math.max(1, Math.floor(page)),
+      startSeconds: finiteNumber("start_seconds"),
+      endSeconds: finiteNumber("end_seconds"),
+      startChar: finiteNumber("start_char"),
+    })
+  }, [caseId, openDetail, revealFile, searchParams, location.key, queryClient])
 
   // Dialog state
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
@@ -115,6 +174,7 @@ export function EvidenceExplorer() {
   }
 
   return (
+    <EvidenceMoveProvider key={caseId} caseId={caseId!}>
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full flex-col overflow-hidden bg-background">
         <ResizablePanelGroup orientation="horizontal" className="flex-1">
@@ -193,5 +253,6 @@ export function EvidenceExplorer() {
         />
       </div>
     </TooltipProvider>
+    </EvidenceMoveProvider>
   )
 }

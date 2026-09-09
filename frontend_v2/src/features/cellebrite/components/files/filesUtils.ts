@@ -28,7 +28,7 @@ export type CellebriteFileRecord = CellebriteRecord & {
   sha256?: string
   status?: string
   tags?: string[]
-  linked_entity_ids?: string[]
+  linked_dossier_ids?: string[]
   is_relevant?: boolean
   cellebrite_category?: string
   cellebrite_report_key?: string
@@ -117,8 +117,8 @@ export function fileTags(file: CellebriteFileRecord): string[] {
   return readList(file, ["tags"])
 }
 
-export function linkedEntityIds(file: CellebriteFileRecord): string[] {
-  return readList(file, ["linked_entity_ids"])
+export function linkedDossierIds(file: CellebriteFileRecord): string[] {
+  return readList(file, ["linked_dossier_ids"])
 }
 
 export function reportKeyOfFile(file: CellebriteFileRecord): string {
@@ -161,6 +161,6 @@ export function fileBadges(file: CellebriteFileRecord) {
   return [
     file.is_relevant ? { key: "relevant", label: "Relevant", icon: CheckCircle2, color: "text-emerald-500" } : null,
     fileTags(file).length ? { key: "tags", label: "Tagged", icon: Tag, color: "text-amber-500" } : null,
-    linkedEntityIds(file).length ? { key: "entities", label: "Linked", icon: User, color: "text-blue-500" } : null,
+    linkedDossierIds(file).length ? { key: "dossiers", label: "In Dossier", icon: User, color: "text-blue-500" } : null,
   ].filter(Boolean)
 }

@@ -20,7 +20,6 @@ import {
   fileName,
   fileSize,
   fileTags,
-  linkedEntityIds,
 } from "./filesUtils"
 import type { EvidenceTagCount } from "./filesUtils"
 import { FileEntityLinker } from "./FileEntityLinker"
@@ -114,12 +113,13 @@ export function FileDetailPanel({
           />
         </div>
         <div className="border-b border-border px-3 py-2">
-          <SectionLabel>Linked entities</SectionLabel>
+          <SectionLabel>Dossiers</SectionLabel>
           <FileEntityLinker
             caseId={caseId}
             evidenceId={id}
-            entityIds={linkedEntityIds(file)}
-            onChange={(entityIds) => onFileChanged({ ...file, linked_entity_ids: entityIds })}
+            onChange={(dossierIds) =>
+              onFileChanged({ ...file, linked_dossier_ids: dossierIds })
+            }
           />
         </div>
         <div className="border-b border-border px-3 py-2 text-[11px]">

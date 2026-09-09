@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { useGraphStore } from "@/stores/graph.store"
@@ -13,6 +13,8 @@ import { Separator } from "@/components/ui/separator"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { DocumentViewer } from "@/components/ui/document-viewer"
 import { MarkdownSummary } from "@/components/ui/markdown-summary"
+import { collectSummarySources } from "@/lib/summary-sources"
+import { SummarySources } from "./SummarySources"
 import { ConnectionsList } from "./ConnectionsList"
 import { MultiNodePanel } from "./MultiNodePanel"
 import { NodePropertiesTable } from "./NodePropertiesTable"
@@ -25,7 +27,7 @@ import {
   XCircle,
   ChevronDown,
   ChevronRight,
-  Eye,
+  ContactRound,
 } from "lucide-react"
 import { graphAPI } from "../api"
 import {
@@ -49,6 +51,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { useCreateDossier } from "@/features/dossiers"
+import { useCase } from "@/features/cases/hooks/use-cases"
+import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 
 interface NodeDetailSheetProps {
   caseId: string
@@ -78,15 +83,22 @@ export function NodeDetailSheet({
   const { entityKeySet: significantEntityKeys } = useSignificantManifest(caseId)
   const addSignificant = useAddSignificantEntities(caseId)
   const removeSignificant = useRemoveSignificantEntities(caseId)
+  const createDossier = useCreateDossier(caseId)
+  const caseQuery = useCase(caseId)
+  const { canEdit } = useCasePermissions(caseQuery.data)
 
   const firstKey = Array.from(selectedNodeKeys)[0] ?? null
   const { data: detail, isLoading } = useNodeDetails(firstKey, caseId)
   const queryClient = useQueryClient()
+  const summaryCitations = useMemo(
+    () => collectSummarySources(detail?.summary ?? ""),
+    [detail?.summary],
+  )
 
   const [factsExpanded, setFactsExpanded] = useState(true)
   const [insightsExpanded, setInsightsExpanded] = useState(true)
   const [showAllFacts, setShowAllFacts] = useState(false)
-  const [viewerDoc, setViewerDoc] = useState<{ url: string; name: string; page?: number } | null>(null)
+  const [viewerDoc, setViewerDoc] = useState<{ evidenceId: string; url: string; name: string; page?: number } | null>(null)
   const [bulkRemoveOpen, setBulkRemoveOpen] = useState(false)
 
   const nodeQueryKey = ["graph", "node", firstKey, caseId]
@@ -134,7 +146,7 @@ export function NodeDetailSheet({
         return
       }
       const url = evidenceAPI.getFileUrl(result.evidence_id)
-      setViewerDoc({ url, name: fileName, page })
+      setViewerDoc({ evidenceId: result.evidence_id, url, name: fileName, page })
     } catch {
       toast.error("Failed to load source file")
     }
@@ -189,7 +201,7 @@ export function NodeDetailSheet({
 
     return (
       <>
-        <div className="flex h-full flex-col border-l border-border bg-card">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden border-l border-border bg-card">
           <MultiNodePanel
             nodes={selectedNodes}
             onMerge={selectedNodeKeys.size >= 2 ? onMergeSelected : undefined}
@@ -260,7 +272,6 @@ export function NodeDetailSheet({
   const facts = detail.verified_facts ?? []
   const insights = detail.ai_insights ?? []
   const connections = detail.connections ?? []
-  const sources = detail.sources ?? []
   const properties = detail.properties ?? {}
   const visibleFacts = showAllFacts ? facts : facts.slice(0, 5)
 
@@ -329,6 +340,25 @@ export function NodeDetailSheet({
             surface="entity_detail"
             compact
           />
+          {canEdit ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Add to Dossiers"
+              title="Add to Dossiers"
+              disabled={createDossier.isPending}
+              onClick={async () => {
+                try {
+                  await createDossier.mutateAsync({ canonical_entity_key: detail.key, display_name: detail.label })
+                  toast.success("Added to Dossiers")
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Could not create Dossier")
+                }
+              }}
+            >
+              <ContactRound className="size-3.5" />
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -365,7 +395,11 @@ export function NodeDetailSheet({
                 </Button>
               </div>
               <div className="min-w-0 overflow-hidden" style={{ overflowWrap: "anywhere" }}>
-                <MarkdownSummary content={detail.summary} onOpenFile={openDocument} />
+                <MarkdownSummary
+                  content={summaryCitations.content}
+                  sourceNumbers={summaryCitations.numbers}
+                  onOpenFile={openDocument}
+                />
               </div>
             </div>
             <Separator />
@@ -582,33 +616,17 @@ export function NodeDetailSheet({
           <NodePropertiesTable properties={properties} />
         </div>
 
-        <Separator />
-
-        {/* Sources */}
-        <div className="px-4 py-3">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Sources
-          </h4>
-          {sources.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No sources</p>
-          ) : (
-            <div className="space-y-1.5">
-              {sources.map((src) => (
-                <button
-                  key={src.fileId}
-                  className="flex w-full items-center gap-2 text-xs rounded-md px-1.5 py-1 -mx-1.5 hover:bg-muted/50 transition-colors text-left"
-                  onClick={() => openDocument(src.fileName)}
-                >
-                  <Eye className="size-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate hover:underline">{src.fileName}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {summaryCitations.sources.length > 0 && (
+          <>
+            <Separator />
+            <SummarySources sources={summaryCitations.sources} onOpenFile={openDocument} />
+          </>
+        )}
       </ScrollArea>
 
       <DocumentViewer
+        caseId={caseId}
+        evidenceId={viewerDoc?.evidenceId}
         open={!!viewerDoc}
         onOpenChange={(open) => { if (!open) setViewerDoc(null) }}
         documentUrl={viewerDoc?.url}

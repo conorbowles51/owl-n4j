@@ -12,6 +12,8 @@ from routers import financial_ledger as router
 class StatementSourceTests(fixture.DuplicateTestCase):
     def setUp(self):
         super().setUp()
+        from postgres.models.financial_candidates import FinancialCandidateFinalization
+        FinancialCandidateFinalization.__table__.create(self.engine, checkfirst=True)
         self.document = self.make_copy()
         self.period = self.db.scalar(select(FinancialStatementPeriod))
         self.file = self.db.get(EvidenceFile, self.document.evidence_file_id)

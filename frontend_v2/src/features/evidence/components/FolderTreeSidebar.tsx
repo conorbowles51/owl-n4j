@@ -1,3 +1,4 @@
+import { useEvidenceDropTarget } from "../hooks/use-evidence-moves"
 import { FolderPlus, PanelLeftClose, Play, Settings2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -31,6 +32,7 @@ export function FolderTreeSidebar({
   onEditFolderProfile,
   onEditCaseProfile,
 }: FolderTreeSidebarProps) {
+  const rootDrop = useEvidenceDropTarget(null)
   const { data: tree, isLoading } = useFolderTree(caseId)
   const { data: caseProfile } = useCaseProcessingProfile(caseId)
   const { currentFolderId, setCurrentFolder } = useEvidenceStore()
@@ -96,15 +98,16 @@ export function FolderTreeSidebar({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
+            {...rootDrop}
             onClick={() => setCurrentFolder(null)}
-            className={`mx-2 mt-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+            className={`data-[drop-active=true]:bg-primary/15 data-[drop-active=true]:outline-2 data-[drop-active=true]:outline-primary mx-2 mt-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
               currentFolderId === null
                 ? "bg-amber-500/10 text-amber-500 font-medium"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             {hasCaseProfile ? <Settings2 className="size-3.5 shrink-0" /> : null}
-            <span className="text-xs">All Files</span>
+            <span className="text-xs">Evidence root</span>
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent>

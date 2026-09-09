@@ -1,3 +1,4 @@
+import { evidenceAPI } from "@/features/evidence/api"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -110,15 +111,7 @@ export function PdfReviewIntake({
         setFileId(id)
       }
       const result = started.parse(
-        await fetchAPI("/api/evidence/process/background", {
-          method: "POST",
-          body: {
-            case_id: caseId,
-            file_ids: [id],
-            preparation_mode: "pdf_review",
-          },
-          timeout: 120000,
-        })
+        await evidenceAPI.preparePdfReview(caseId, id)
       )
       if (result.job_ids?.length !== 1)
         throw Error(

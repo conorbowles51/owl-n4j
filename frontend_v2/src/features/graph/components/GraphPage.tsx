@@ -57,12 +57,14 @@ export function GraphPage() {
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const selectNodes = useGraphStore((s) => s.selectNodes)
   const clearSearch = useGraphStore((s) => s.clearSearch)
+  const setSelectedEntityTypes = useGraphStore((s) => s.setSelectedEntityTypes)
   const graphDimension = useGraphStore((s) => s.graphDimension)
   const hasSelection = selectedNodeKeys.size > 0
 
   useEffect(() => {
     clearSearch()
-  }, [caseId, clearSearch])
+    setSelectedEntityTypes(null)
+  }, [caseId, clearSearch, setSelectedEntityTypes])
 
   /* ---- Spotlight state ---- */
   const spotlightVisible = useGraphStore((s) => s.spotlightVisible)
@@ -255,6 +257,11 @@ export function GraphPage() {
 
   const displayData = filteredData ?? graphData
 
+  const graphTypeCounts = new Map<string, number>()
+  for (const node of graphData.nodes) {
+    graphTypeCounts.set(node.type, (graphTypeCounts.get(node.type) ?? 0) + 1)
+  }
+
   /* Toggle helper for toolbar tool buttons */
   const toggleToolOverlay = (name: typeof graphPanelToolOverlay) =>
     setGraphPanelToolOverlay(graphPanelToolOverlay === name ? null : name)
@@ -286,6 +293,7 @@ export function GraphPage() {
         scope={caseLayer}
         filteredNodes={filteredNodes}
         totalNodes={totalNodes}
+        typeCounts={graphTypeCounts}
       />
 
       <div className="flex flex-1 overflow-hidden">
