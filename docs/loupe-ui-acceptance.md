@@ -13,10 +13,11 @@ separate Loupes collection design are not by themselves an agreed financial layo
 
 ## Practical journey
 
-- [ ] Upload a copy of a supplied real PDF through the application and follow its
+- [x] Upload a copy of a supplied real PDF through the application and follow its
   processing state. Preserve original files. Keep testing isolated and offline
   until a provider setup is explicitly selected.
-- [ ] Reach stored source rows from that upload without fixture database seeding.
+- [x] Reach stored source rows from that upload without fixture database seeding.
+  Verified 9 September with the 56-page PDF, isolated case c06c264c-a402-4895-a696-be634fe23629. Original hash unchanged; no admitted transactions.
 - [x] Review existing saved candidate values beside their source image; choose
   a column to highlight without first requesting a numeric/date assessment.
   Desktop side-by-side and narrow stacking checked against a synthetic PDF.

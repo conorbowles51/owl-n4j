@@ -6,6 +6,37 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Real PDF upload reaches source review — 9 September 2026
+
+Implementation213ed7e adds preparation_mode=pdf_review to explicit processing,
+engine job_type pdf_review and a batch branch that bypasses AI policy/summary,
+embeddings/entities/graph. PDF text/local Tesseract and geometry are saved by the
+existing services; source-only quality report and message, no admitted rows.
+Mixed mode batches refused; native generic processing gate retained. UI uploads
+one PDF, queues/previews progress, opens source selection, and can reuse uploaded
+files after interrupted requests. Scope/file/job/result validation retained.
+
+Real supplied56-page PDF uploaded through application into isolated case
+c06c264c-a402-4895-a696-be634fe23629, evidence1cf0de89-8d40-482a-90a5-38619c0a493f,
+job62c9eea8-b3ed-4f1f-ac54-32ccd0de390b. Preparation completed in about5seconds,
+56native text pages, source selection reached, original hash unchanged. The first
+UI attempt exposed filename/original_filename contract mismatch; fixed and resumed
+same uploaded file. Do not reupload. Report data/local-runtime/real-pdf-intake-check.json.
+No reviews or ledger transactions created yet. The PDF contains embedded text
+noise/duplication; native text extraction must not be equated with correct readings.
+
+Tests:19engine (includes no-AI branch, upload modes, queue and normal batch regression),
+25admission gate,1backend response-recovery,18frontend tests, TS/scopedESLint pass.
+Backend17624,engine85887,worker45023; logs /tmp/loupe-neilbyrne-pdf-prep-{backend,engine,worker}.out.
+Backend has latestmode implementation except harmless moved case check; restart
+before more backend edits. Frontend remains21189. Old heartbeat paused.
+
+Current next: small manually verified sample on PDFpage4: two purchase rows printed
+04/22 amount14.00,04/23 amount100.00; year2021 supplied from statementheader. Rendered
+page visually checked at /tmp/loupe-neilbyrne-real-statement-page4.png. Inspect stored
+cells before creating candidates; do not assume header rows are transactions or
+that a two-row subset proves fullstatement coverage. PDFskill read in this session.
+
 ### Product focus and source-beside-review UI — 9 September 2026
 
 Neil raised elapsed time and concern that UI discussions were forgotten. He agreed
