@@ -125,3 +125,6 @@ __all__ = [
     "WorkspaceTask", "WorkspaceNote", "WorkspaceFinding", "WorkspacePinnedItem",
     "WorkspaceDeadlineConfig",
 ]
+
+from postgres.models.financial_pdf_nominations import FinancialPdfNomination
+__all__ += ["FinancialPdfNomination"]

@@ -1954,3 +1954,6 @@ __all__ += ['IndirectReviewInput', 'indirect_methods', 'evaluate_indirect_review
 
 from services.financial.statement_layout_context import statement_layout_context
 __all__ += ["statement_layout_context"]
+
+from services.financial.model_pdf_nomination import PdfModelNominationRequest, run_pdf_model_nomination, read_pdf_model_nomination, list_pdf_model_nominations
+__all__ += ["PdfModelNominationRequest", "run_pdf_model_nomination", "read_pdf_model_nomination", "list_pdf_model_nominations"]

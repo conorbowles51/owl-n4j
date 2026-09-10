@@ -424,3 +424,38 @@ def record_counterparty_party(body: CounterpartyPartyRequest, case_id: UUID = Qu
     except Exception:
         logger.exception('Counterparty identity decision failed for case %s',case_id)
         raise HTTPException(status_code=500,detail='Counterparty identity change could not be confirmed. Reload before retrying.')
+
+
+from services.financial.model_pdf_nomination import PdfModelNominationRequest, run_pdf_model_nomination
+
+@router.post("/candidate-sources/{evidence_file_id}/model-nominations")
+def request_pdf_model_nomination(evidence_file_id: UUID, body: PdfModelNominationRequest,
+        case_id: UUID = Query(...), current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    # Synchronous provider work runs in FastAPI's thread pool, not its event loop.
+    from services.financial.pdf_candidates import PdfMappingError
+    try:
+        return run_pdf_model_nomination(db,case_id=case_id,evidence_file_id=evidence_file_id,
+            request=body,actor=actor_from_user(current_user),user_id=current_user.id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+    except ActorError as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception("PDF model nomination could not finish for case %s",case_id)
+        raise HTTPException(status_code=500,detail="The model attempt could not be read or completed. Check the saved attempt before creating another request.")
+
+
+@router.post("/model-nominations/{nomination_id}/abandon")
+def abandon_pdf_nomination(nomination_id: UUID, case_id: UUID = Query(...), current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.model_pdf_nomination import abandon_pdf_model_nomination
+    from services.financial.pdf_candidates import PdfMappingError
+    try:
+        return abandon_pdf_model_nomination(db,case_id=case_id,nomination_id=nomination_id,actor=actor_from_user(current_user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+    except ActorError as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500,detail="Attempt could not be abandoned. Check its saved status before making another request.")

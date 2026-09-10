@@ -129,7 +129,13 @@ def candidate_source_readings(session, *, case_id, candidate_id):
         cells.append(dict(column_index=cell.column_index, proposed_meaning=cell.proposed_meaning,
             text=raw, locator=locator))
     layout = None
+    model_nomination = None
     if grid:
+        snapshot = bound.nomination_snapshot
+        if snapshot:
+            model_row = next(row for row in snapshot["result"]["rows"] if row["row_index"] == typed.row_index)
+            model_nomination = dict(id=snapshot["id"], request={key: snapshot["request"][key] for key in ("provider", "model_id", "schema_version", "execution_mode")}, actor=snapshot["actor"],
+                created_at=snapshot["created_at"], row=model_row)
         from services.financial.candidate_sources import read_candidate_source
         proposal = saved['original']['proposal']
         try:
@@ -146,4 +152,4 @@ def candidate_source_readings(session, *, case_id, candidate_id):
                 layout = None
     return dict(case_id=str(case_id), candidate_id=str(candidate_id), mapping_id=saved['id'],
         evidence_file_id=saved['evidence_file_id'], review_revision=candidate['review_revision'],
-        cells=cells, layout_context=layout, applied=False)
+        cells=cells, layout_context=layout, model_nomination=model_nomination, applied=False)

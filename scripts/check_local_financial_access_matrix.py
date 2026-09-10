@@ -32,11 +32,13 @@ reads += [('GET','indirect-review-methods',case,{},None),
  ('GET',f'ledger/{row}/source',case,{},None),
  ('GET','candidates/bc574f1c-576d-469a-acbe-af84a2ece523/source-readings',case,{},None),
  ('GET',f'candidate-sources/{file}/page-scan',case,dict(start_page=3,end_page=3,auto_columns='true',currency='USD'),None),
+ ('GET',f'candidate-sources/{file}/model-nominations',case,{},None),
  ('POST','network-trace',network_case,{},network['inputs'])]
 # Invalid bodies are intentional: permission denial must precede payload validation.
 mutations=[('POST',name) for name in (
  f'transactions/{row}/quarantine',f'transactions/{row}/release',f'transactions/{row}/correction',
  f'transactions/{row}/correction-preview',f'candidate-sources/{file}/finalize',
+ f'candidate-sources/{file}/model-nominations',f'model-nominations/{uuid4()}/abandon',
  'candidate-mappings','account-parties','counterparty-parties',f'candidates/{uuid4()}/review')]
 mutations += [('PUT',f'candidate-sources/{file}/statement-draft')]
 engine=create_engine('postgresql+psycopg://loupe_local:loupe_local_dev@127.0.0.1:55434/loupe_local')

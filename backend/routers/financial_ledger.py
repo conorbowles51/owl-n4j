@@ -1048,3 +1048,28 @@ def run_indirect_review(body: IndirectReviewInput,case_id: UUID = Query(...),db:
     except Exception:
         logger.exception('Indirect workpaper calculation failed')
         raise HTTPException(status_code=500,detail='The indirect workpaper could not be calculated.')
+
+
+from services.financial.model_pdf_nomination import read_pdf_model_nomination, list_pdf_model_nominations
+
+@router.get("/model-nominations/{nomination_id}")
+async def get_pdf_model_nomination(nomination_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.pdf_candidates import PdfMappingError
+    try:
+        return read_pdf_model_nomination(db,case_id=case_id,nomination_id=nomination_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Model nomination lookup failed for case %s",case_id)
+        raise HTTPException(status_code=500,detail="Saved model nomination could not be read.")
+
+@router.get("/candidate-sources/{evidence_file_id}/model-nominations")
+async def get_pdf_model_nominations(evidence_file_id: UUID, case_id: UUID = Query(...), limit: int = Query(20,ge=1,le=50), offset: int = Query(0,ge=0), page_number: int | None = Query(None,ge=1), table_index: int | None = Query(None,ge=0,le=63), db: Session = Depends(get_db)):
+    from services.financial.pdf_candidates import PdfMappingError
+    try:
+        return list_pdf_model_nominations(db,case_id=case_id,evidence_file_id=evidence_file_id,limit=limit,offset=offset,page_number=page_number,table_index=table_index)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Model nomination list failed for case %s",case_id)
+        raise HTTPException(status_code=500,detail="Saved model nominations could not be listed.")

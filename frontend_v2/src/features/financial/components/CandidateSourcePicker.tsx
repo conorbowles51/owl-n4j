@@ -1,3 +1,4 @@
+import { PdfModelNominationPanel } from "./PdfModelNominationPanel"
 import { StatementLayoutContextPanel } from "./StatementLayoutContextPanel"
 import { sourceTable } from "../lib/pdf-source-table"
 import { proposePdfAccountReferences } from "../lib/pdf-account-references"
@@ -429,6 +430,7 @@ function SourceSelection({
             </div>
           )}
 
+          <PdfModelNominationPanel source={source} onSaved={onSaved} onSource={setFocusedCell}/>
           {source.layout_context && (
             <StatementLayoutContextPanel
               context={source.layout_context}

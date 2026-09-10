@@ -228,3 +228,19 @@ acceptance remain the source of the other checked items.
 
 965financial UI tests and production build pass; TypeScript and scoped lint pass.
 Repeatable new check: `node scripts/check_local_transfer_graph.cjs` (zero writes).
+
+
+## Model-assisted PDF fallback — 10 September
+
+- [x] Optional source-page proposal request and paged saved-attempt history beside
+  the original PDF; no automatic call on opening the panel.
+- [x] Lost-response recovery preserves the request ID. Checking saved status is
+  read-only; retry after a confirmed missing record uses the same ID.
+- [x] Interrupted attempts can be closed, retaining their outcome and actor;
+  an already-sent request may still incur provider usage.
+- [x] Selected proposals remain pending; original model roles are visible separately
+  from investigator review choices. Source changes and invented positions are refused.
+- [x] Live local source-panel screenshot inspected; financial writes blocked in this
+  browser check. Service save/review acceptance uses simulated output and rollback.
+- [ ] Actual provider-backed acceptance with a working project key. Known401 key
+  has not been retried; simulated checks do not satisfy this item.

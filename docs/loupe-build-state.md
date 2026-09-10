@@ -1,3 +1,38 @@
+## Model-assisted PDF nomination connected — 10 September
+
+The optional per-table fallback now requests only existing row/column positions,
+checks all returned positions against stored source cells, and never normalizes or
+admits transactions. Requests have durable UUIDs reserved before provider calls;
+checking/retrying the same ID does not generate another provider call. Interrupted
+attempts can be closed with a recorded actor. Original input, exact successful
+response, requested model, prompt version/digest, source revision, reported usage,
+and terminal outcome remain immutable. Selected row groups save as pending reviews
+with the original model proposal retained separately from investigator choices.
+Legacy mappings omit the optional fields and retain their old revisions.
+
+The source picker contains optional proposals/history/recovery controls. Saved
+review shows the original model role proposals. Shifted column layouts remain
+separate review groups. Uncertain HTTP outcomes retain their attempt ID; a confirmed
+missing record can be retried using that same ID. No automatic provider retries.
+
+Local migration 20260910_pdf_nominations applied. Six PostgreSQL guard checks and
+an end-to-end real-source/simulated-model/save/review check pass; all their writes
+were rolled back. Browser screenshot inspected beside the real PDF; browser test
+blocked all financial mutations and made no provider requests.120 live permission
+checks pass, temporary user removed. Unit coverage includes fabricated positions,
+source drift, immutable history, interrupted outcomes, exact retries, usage records,
+legacy binding and saved review provenance. Final gates:4273backend tests,989financial UI tests, TypeScript, scoped lint and production build pass. Engine baseline remains330passing tests.
+
+IMPORTANT: provider output in service acceptance was explicitly simulated. The
+known401 project key has not been retried. Actual provider acceptance remains
+unverified pending a working connection; Feature1 and Feature10 retain that
+limitation. No push/deploy. No real-file test fixture was finalized or reprepared.
+
+Repeatable checks: scripts/check_local_pdf_model_nomination_guards.py,
+scripts/check_local_pdf_model_nomination_flow.py (both rollback-only), and
+scripts/check_local_pdf_model_nomination_ui.cjs (all financial writes blocked).
+Runtime backend is on58002. Existing engine/worker services remain unchanged.
+
 ## Separate shifted row layouts in the scan queue — 10 September
 
 The queue now groups selected source rows by their nominated date/amount positions,

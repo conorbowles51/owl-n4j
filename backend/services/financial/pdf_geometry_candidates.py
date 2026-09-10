@@ -9,7 +9,7 @@ import re
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, model_serializer
 from sqlalchemy import select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
@@ -50,6 +50,13 @@ class PdfGridMapping(_Contract):
     columns: Annotated[tuple[PdfGridColumn, ...], Field(min_length=1, max_length=64)]
     rows: Annotated[tuple[PdfGridRow, ...], Field(min_length=1, max_length=1000)]
     context: PdfContextProposal = Field(default_factory=PdfContextProposal)
+    nomination_id: UUID | None = None
+
+    @model_serializer(mode="wrap")
+    def retain_legacy_shape(self, handler):
+        data=handler(self)
+        if self.nomination_id is None:data.pop('nomination_id',None)
+        return data
 
     @model_validator(mode="after")
     def ordered_unique_grid(self):
@@ -88,6 +95,14 @@ class PdfGridBoundMapping(_Contract):
     geometry_source: GeometrySource
     table_locator: Locator
     candidates: tuple[PdfGridCandidate, ...]
+    nomination_snapshot: dict | None = None
+
+    @model_serializer(mode="wrap")
+    def retain_legacy_shape(self, handler):
+        data=handler(self)
+        if self.nomination_snapshot is None:data.pop('nomination_snapshot',None)
+        return data
+
     file_bytes_verified: Literal[False] = False
     applied: Literal[False] = False
 
@@ -225,6 +240,10 @@ def bind_pdf_grid_mapping(session, *, case_id, proposal):
                 proposed_meaning=meanings[cell.column_index], text=stored[0], locator=stored[1], origin=origin))
         candidates.append(PdfGridCandidate(row_index=row.row_index, cells=tuple(bound_cells),
             candidate_key=_digest(dict(mapping_revision=mapping_revision, row_index=row.row_index))))
-    return PdfGridBoundMapping(proposal=proposal, mapping_revision=mapping_revision,
+    nomination = None
+    if proposal.nomination_id is not None:
+        from services.financial.model_pdf_nomination import nomination_snapshot_for_mapping
+        nomination=nomination_snapshot_for_mapping(session,case_id=case_id,proposal=proposal)
+    return PdfGridBoundMapping(proposal=proposal, mapping_revision=mapping_revision,nomination_snapshot=nomination,
         file_sha256=file_hash, content_sha256=text_hash, table_source=table_source,
         geometry_source=geometry_source, table_locator=table_locator, candidates=tuple(candidates))

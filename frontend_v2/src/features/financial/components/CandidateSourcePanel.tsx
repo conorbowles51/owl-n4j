@@ -17,6 +17,29 @@ const source = z.object({
   evidence_file_id: z.string(),
   review_revision: z.string(),
   layout_context: layoutContext.nullable().optional(),
+  model_nomination: z
+    .object({
+      id: z.string().uuid(),
+      request: z.object({
+        provider: z.string(),
+        model_id: z.string(),
+        schema_version: z.string(),
+        execution_mode: z.enum(["configured_provider", "simulated_test"]),
+      }),
+      created_at: z.string(),
+      row: z.object({
+        row_index: z.number().int(),
+        reason: z.string(),
+        cells: z.array(
+          z.object({
+            column_index: z.number().int(),
+            proposed_meaning: z.string(),
+          })
+        ),
+      }),
+    })
+    .nullable()
+    .optional(),
   applied: z.literal(false),
   cells: z.array(
     z.object({
@@ -114,6 +137,33 @@ export function CandidateSourcePanel({
       )}
       {query.data && !query.isError && !query.isFetching && (
         <>
+          {query.data.model_nomination && (
+            <details className="rounded border p-3">
+              <summary>Original model proposal</summary>
+              <p>
+                Requested model: {query.data.model_nomination.request.provider}{" "}
+                / {query.data.model_nomination.request.model_id}. Prompt:{" "}
+                {query.data.model_nomination.request.schema_version}.
+              </p>
+              {query.data.model_nomination.request.execution_mode ===
+                "simulated_test" && (
+                <p>SIMULATED acceptance data: no external model ran.</p>
+              )}
+              <p>{query.data.model_nomination.row.reason}</p>
+              <ul>
+                {query.data.model_nomination.row.cells.map((c) => (
+                  <li key={c.column_index}>
+                    Column {c.column_index + 1}:{" "}
+                    {c.proposed_meaning.replaceAll("_", " ")}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                These are the model’s saved proposals. Review choices and
+                confirmed values are recorded separately.
+              </p>
+            </details>
+          )}
           {query.data.layout_context && (
             <StatementLayoutContextPanel
               context={query.data.layout_context}
