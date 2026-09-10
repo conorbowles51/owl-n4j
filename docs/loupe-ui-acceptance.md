@@ -34,24 +34,26 @@ separate Loupes collection design are not by themselves an agreed financial layo
 
 ## Full analytical UI (retained beyond the first milestone)
 
-- [ ] Ledger: full filtering/sorting, visible reliability and corrected/original
+- [x] Ledger: full filtering/sorting, visible reliability and corrected/original
   distinction, totals with their included population, reproducible export state.
 - [x] Account continuity timeline: verified periods, held periods, gaps/overlaps
   visible together with navigation to the relevant statement.
-- [ ] Quantitative money flow: select parties or a group; incoming/outgoing and
+- [x] Quantitative money flow: select parties or a group; incoming/outgoing and
   internal transfers, internal counted once; divergent counterparty chart.
-- [ ] Relationship graph: connected payment paths, complementary to amount charts.
-- [ ] Tracing: method comparison, expansion across accounts, source-row/page
-  navigation, explicit assumptions and missing evidence. Single-account initial
-  UI exists; this does not complete the planned trace view.
-- [ ] Case timeline: transactions correlated with events from other evidence.
-- [ ] Pattern hypotheses: attached supporting rows, no automatic conclusions.
-- [ ] From every total to rows, and from rows to source images when a measured
+- [x] Relationship graph: connected payment paths, complementary to amount charts.
+- [x] Tracing: method comparison, expansion across accounts, source-row/page
+  navigation, explicit assumptions and missing evidence. Single-account and network
+  method comparisons, backward timing, asset purchases/resale and indirect workpapers
+  now have recorded browser acceptance, with their explicit scenario limits.
+- [x] Case timeline: transactions correlated with events from other evidence.
+- [x] Pattern hypotheses: attached supporting rows, no automatic conclusions.
+- [x] From every total to rows, and from rows to source images when a measured
   location exists. Missing locators must remain explicit.
 - [x] Export: same scope/values, originals and decisions, appropriate limitations.
 
-Current visual state is functional, not final. The existing Loupe shell is retained.
-Backend test counts do not establish completion of these user journeys.
+The existing Loupe shell is retained. Core analytical journeys above now have the
+recorded source/navigation, calculation and export acceptance below. These checks
+do not establish automatic extraction accuracy or external AI availability.
 
 ## Verified OCR source review — 10 September 2026
 
@@ -204,3 +206,25 @@ available in both tracing forms. Read-only synthetic browser checks cover12GBP+8
 purchases,30.01GBPresale, method-dependent allocations, both source views, exact
 downloads and stale clearing. Cash calculations remain unchanged. Screenshots
 inspected. Full4248backend/957UI/build gate passes, plus the new paired-receipt test.
+
+## Connected relationships and current UI audit — 10 September
+
+Transfers now includes a stable, zoomable account relationship diagram built only
+from explicitly calculated pairs. Choosing an account/arrow filters the paired
+movement list; both outgoing and incoming source postings open. Unpaired rows stay
+outside this conditional diagram and remain available in the posting graph.
+The synthetic three-account walkthrough verifies two edges, both original sources,
+160GBPinternal counted once,200GBPincoming,20GBPoutgoing and180GBPnet.
+Chart totals now open all selected incoming/outgoing contributors; the same browser
+checks their three source rows. Final screenshot inspected after fixing clipping.
+
+Current repeat checks also pass real-statement table filtering/sorting and exact
+export scope, plus seven synthetic postings beside a stored case event, event
+inspection, filtered capture download and verified-population exclusion. Pattern
+theory save/source metadata acceptance is retained in pattern-theory-ui-check.json
+(status verified, entry610fb970-13fc-48e9-8c7e-cfcf8e1ccc8d); no writer was rerun.
+The earlier real PDF corrections,104-reading total drilldown and export history
+acceptance remain the source of the other checked items.
+
+965financial UI tests and production build pass; TypeScript and scoped lint pass.
+Repeatable new check: `node scripts/check_local_transfer_graph.cjs` (zero writes).

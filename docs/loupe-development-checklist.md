@@ -11,7 +11,7 @@ Final scheduled handoff:7September2026. The authorized cutoff was
 that cutoff, confirmed by automation_update. No further automatic segments are
 expected. Earlier ACTIVE/time-window statements below are retained history.
 
-**Current overall: seven completed workflows (2,3,4,5,6,8,9); three features retain
+**Current overall: eight completed workflows (2,3,4,5,6,7,8,9); two features retain
 outstanding work.** Completion here means the stated investigator-review,
 authoritative-view and recorded-coverage workflows, with their explicit evidence
 limitations preserved. The historical handoff tables below remain unchanged. See [the review and testing guide](loupe-review-2026-09-07.md).

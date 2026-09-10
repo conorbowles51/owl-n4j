@@ -1,3 +1,4 @@
+import { ConditionalTransferGraph } from "./ConditionalTransferGraph"
 import { AccountPartyDirectory } from "./AccountPartyDirectory"
 import type { AccountParties } from "../lib/account-parties"
 import { useState } from "react"
@@ -75,6 +76,14 @@ export function AccountFlowPerspective({
           ? "Their saved reasoning and source snapshot are included in the perspective download."
           : "Calculate the selected transfer scenario above to apply pairings; selecting a checkbox alone does not apply it."}
       </p>
+      {scenario && (
+        <ConditionalTransferGraph
+          key={scenarioJson}
+          scope={scope}
+          pairs={pairs}
+          onSource={onSource}
+        />
+      )}
       <Button onClick={() => setShowParties((v) => !v)}>
         {showParties
           ? "Hide account party links"

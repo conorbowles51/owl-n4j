@@ -1,3 +1,4 @@
+import { flowBarPercent } from "../lib/flow-bar-percent"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { correctionMoney } from "../lib/correction-contract"
@@ -8,10 +9,6 @@ export type FlowGroup = {
   credits_minor: string
   debits_minor: string
   transaction_ids: string[]
-}
-// Only the bounded 0–100 bar width becomes a Number; money stays exact BigInt.
-export function flowBarPercent(amount: string, maximum: bigint) {
-  return maximum === 0n ? 0 : Number((BigInt(amount) * 10000n) / maximum) / 100
 }
 export function LedgerFlowChart({
   groups,
@@ -51,7 +48,8 @@ function Chart({
     [chosen, setChosen] = useState<string[] | null>(null),
     [page, setPage] = useState(0),
     [inspecting, setInspecting] = useState<string | null>(null),
-    [sourcePage, setSourcePage] = useState(0)
+    [sourcePage, setSourcePage] = useState(0),
+    [inspectTotals, setInspectTotals] = useState(false)
   const scoped = groups.filter((g) => g.currency === currency),
     selected = scoped.filter((g) => chosen === null || chosen.includes(g.id))
   const credits = selected.reduce((n, g) => n + BigInt(g.credits_minor), 0n),
@@ -63,7 +61,18 @@ function Chart({
       ),
     0n
   )
-  const inspected = scoped.find((g) => g.id === inspecting)
+  const inspected = inspectTotals
+    ? {
+        label: "Selected chart totals",
+        transaction_ids: [
+          ...new Set(selected.flatMap((g) => g.transaction_ids)),
+        ],
+      }
+    : scoped.find((g) => g.id === inspecting)
+  const sourceIndex = Math.min(
+    sourcePage,
+    Math.max(0, Math.ceil((inspected?.transaction_ids.length ?? 0) / 25) - 1)
+  )
   return (
     <section
       aria-label={title}
@@ -82,6 +91,7 @@ function Chart({
               setChosen(null)
               setPage(0)
               setInspecting(null)
+              setInspectTotals(false)
             }}
           >
             {currencies.map((c) => (
@@ -123,7 +133,18 @@ function Chart({
         {selected.reduce((n, g) => n + g.transaction_ids.length, 0)}{" "}
         contributing postings.
       </p>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          disabled={!selected.length}
+          onClick={() => {
+            setInspectTotals(true)
+            setInspecting(null)
+            setSourcePage(0)
+          }}
+        >
+          Inspect selected chart totals
+        </Button>
         <Button variant="outline" onClick={() => setChosen(null)}>
           Select all chart groups
         </Button>
@@ -161,6 +182,7 @@ function Chart({
                 variant="ghost"
                 onClick={() => {
                   setInspecting(g.id)
+                  setInspectTotals(false)
                   setSourcePage(0)
                 }}
               >
@@ -222,29 +244,34 @@ function Chart({
           <h4 className="font-semibold">
             {inspected.label} · {inspected.transaction_ids.length} postings
           </h4>
-          <p>Each button opens the source for a contributing ledger reading.</p>
+          <p>
+            {inspectTotals
+              ? "These sources cover the selected incoming and outgoing groups together; their difference produces the selected net. "
+              : ""}
+            Each button opens the source for a contributing ledger reading.
+          </p>
           <div className="flex flex-wrap gap-2">
             {inspected.transaction_ids
-              .slice(sourcePage * 25, sourcePage * 25 + 25)
+              .slice(sourceIndex * 25, sourceIndex * 25 + 25)
               .map((id, i) => (
                 <Button key={id} variant="outline" onClick={() => onSource(id)}>
-                  Open chart posting {sourcePage * 25 + i + 1}
+                  Open chart posting {sourceIndex * 25 + i + 1}
                 </Button>
               ))}
           </div>
           {inspected.transaction_ids.length > 25 && (
             <div className="flex gap-2">
               <Button
-                disabled={!sourcePage}
-                onClick={() => setSourcePage(sourcePage - 1)}
+                disabled={!sourceIndex}
+                onClick={() => setSourcePage(sourceIndex - 1)}
               >
                 Previous chart sources
               </Button>
               <Button
                 disabled={
-                  (sourcePage + 1) * 25 >= inspected.transaction_ids.length
+                  (sourceIndex + 1) * 25 >= inspected.transaction_ids.length
                 }
-                onClick={() => setSourcePage(sourcePage + 1)}
+                onClick={() => setSourcePage(sourceIndex + 1)}
               >
                 Next chart sources
               </Button>

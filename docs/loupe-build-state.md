@@ -1,3 +1,28 @@
+## Connected transfer graph and analytical UI audit — 10 September
+
+Added a connected account graph to the captured transfer/account perspective.
+Only calculated pairings become arrows; selecting an account or arrow exposes both
+source postings. Layout is stable, with pan/zoom and Fit graph, and all nodes remain
+visible in the inspected final screenshot. Unlike the existing posting graph, this
+connects accounts through the investigator's explicit transfer assumptions. Unpaired
+postings are not silently made into relationships.
+
+Read-only browser:3accounts/2pairs, outgoing+incoming source inspection, internal
+160GBPcounted once, incoming200GBP/outgoing20GBP/net180GBP, exact perspective download.
+A new selected-chart-total source control opens all contributing incoming/outgoing
+rows; its three source readings were also checked. Existing real-statement table
+filter/sort/export and synthetic case timeline/event/export repeat checks pass.
+The full analytical UI checklist is now checked against these and retained earlier
+source, correction, tracing, pattern-note and export acceptances. It is not a claim
+of automatic PDF identification accuracy or external AI availability.
+
+965financial UI tests/build pass; TypeScript/scoped lint pass. No backend behavior
+changed in this segment (last full backend4248plus subsequent paired-receipt test).
+Repeat `node scripts/check_local_transfer_graph.cjs`; report at
+connected-transfer-graph-check.json. No financial writes or deployment.
+Next: close the remaining PDF identification and complete-workflow acceptance gaps;
+external AI still awaits replacement of the rejected project.env key.
+
 ## Optional identity spelling/formatting proposals — 10 September
 
 Payment identity review can optionally include punctuation, accent, word-order and

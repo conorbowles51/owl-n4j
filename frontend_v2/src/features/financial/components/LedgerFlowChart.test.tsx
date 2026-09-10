@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
-import { LedgerFlowChart, flowBarPercent } from "./LedgerFlowChart"
+import { LedgerFlowChart } from "./LedgerFlowChart"
+import { flowBarPercent } from "../lib/flow-bar-percent"
 const groups = [
   {
     id: "a",
@@ -62,4 +63,31 @@ it("scales only bounded bar percentages and handles zero totals", () => {
   expect(flowBarPercent("9007199254740993", 9007199254740993n)).toBe(100)
   expect(flowBarPercent("0", 0n)).toBe(0)
   expect(flowBarPercent("1", 9007199254740993n)).toBe(0)
+})
+it("opens all selected total contributors and keeps changes scoped to the selected currency", () => {
+  const source = vi.fn()
+  render(
+    <LedgerFlowChart groups={groups} title="Comparison" onSource={source} />
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Inspect selected chart totals" })
+  )
+  expect(
+    screen.getByText("Selected chart totals · 2 postings")
+  ).toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Open chart posting 2" }))
+  expect(source).toHaveBeenCalledWith("two")
+  fireEvent.click(screen.getByLabelText("Include chart group Printed B"))
+  expect(
+    screen.getByText("Selected chart totals · 1 postings")
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: "Open chart posting 2" })
+  ).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText("Comparison currency"), {
+    target: { value: "USD" },
+  })
+  expect(
+    screen.queryByRole("region", { name: "Chart contributing sources" })
+  ).not.toBeInTheDocument()
 })

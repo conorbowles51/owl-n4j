@@ -4,15 +4,29 @@ import { Button } from "@/components/ui/button"
 import type { PostingGraph } from "../lib/ledger-graph"
 import { correctionMoney } from "../lib/correction-contract"
 type Node = PostingGraph["nodes"][number]
-type Edge = PostingGraph["edges"][number]
+type Edge = Pick<
+  PostingGraph["edges"][number],
+  | "id"
+  | "source"
+  | "target"
+  | "transaction_id"
+  | "amount_minor"
+  | "currency"
+  | "ordering_date"
+  | "description"
+>
 export default function LedgerGraphCanvas({
   data,
   onNode,
   onSource,
+  spreadAccounts,
+  instructions = "Drag to move; scroll to zoom. Select a node to list its postings, or an arrow to inspect its source.",
 }: {
-  data: PostingGraph
+  data: { nodes: Node[]; edges: Edge[] }
   onNode: (id: string) => void
   onSource: (id: string) => void
+  instructions?: string
+  spreadAccounts?: boolean
 }) {
   const container = useRef<HTMLDivElement>(null),
     graph = useRef<ForceGraphMethods<Node, Edge> | undefined>(undefined)
@@ -20,10 +34,18 @@ export default function LedgerGraphCanvas({
   const fitted = useRef(false)
   const graphData = useMemo(
     () => ({
-      nodes: data.nodes.map((n) => ({ ...n })),
+      nodes: data.nodes.map((n, i) => ({
+        ...n,
+        ...(spreadAccounts
+          ? {
+              fx: 180 * Math.cos((2 * Math.PI * i) / data.nodes.length),
+              fy: 140 * Math.sin((2 * Math.PI * i) / data.nodes.length),
+            }
+          : {}),
+      })),
       links: data.edges.map((e) => ({ ...e })),
     }),
-    [data]
+    [data, spreadAccounts]
   )
   useEffect(() => {
     const el = container.current
@@ -43,10 +65,7 @@ export default function LedgerGraphCanvas({
   return (
     <div ref={container} className="overflow-hidden rounded border">
       <div className="flex items-center justify-between gap-2 p-2">
-        <p>
-          Drag to move; scroll to zoom. Select a node to list its postings, or
-          an arrow to inspect its source.
-        </p>
+        <p>{instructions}</p>
         <Button
           variant="outline"
           onClick={() => graph.current?.zoomToFit(300, 40)}
@@ -68,7 +87,7 @@ export default function LedgerGraphCanvas({
           )
         }
         nodeColor={(n) => (n.kind === "account" ? "#ef5269" : "#7abaf5")}
-        nodeVal={(n) => (n.kind === "account" ? 8 : 4)}
+        nodeVal={(n) => (spreadAccounts ? 1 : n.kind === "account" ? 8 : 4)}
         linkColor={() => "#8e9caf"}
         linkDirectionalArrowLength={5}
         linkDirectionalArrowRelPos={0.85}
