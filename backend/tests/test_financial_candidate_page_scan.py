@@ -59,6 +59,20 @@ class PageScanTests(unittest.TestCase):
         self.assertEqual(len(hints[1]['amount_sources']),2)
         self.assertIn('no amount or date is selected',hints[1]['reason'])
 
+    def test_decimal_amount_that_also_looks_like_a_date_is_not_silently_lost(self):
+        from services.financial.candidate_page_scan import suggest_undated_charges
+        def row(i, *texts):
+            return dict(row_index=i, cells=[dict(column_index=n, expected_text=t, locator={'page':4}) for n,t in enumerate(texts)])
+        source = dict(rows=[row(0, 'Interest Charge on Purchases', '11.18'),
+                           row(1, '09/25', 'Interest Charge on Purchases', '11.18'),
+                           row(2, '09.25', 'Interest Charge on Purchases', '11.18')])
+        hints = suggest_undated_charges(source, 'USD')
+        self.assertEqual([h['row_index'] for h in hints], [0, 2])
+        self.assertEqual(hints[0]['amount_sources'], [source['rows'][0]['cells'][1]])
+        self.assertEqual(len(hints[1]['amount_sources']), 2)
+        self.assertTrue(all(h['date_unknown'] for h in hints))
+        self.assertIn('no amount or date is selected', hints[1]['reason'])
+
     def test_undated_screen_survives_unavailable_dated_columns(self):
         from services.financial.candidate_page_scan import suggest_undated_charges
         with patch('services.financial.candidate_page_scan.propose_scan_columns',return_value=(None,'No dates')), patch('services.financial.candidate_page_scan.suggest_undated_charges',return_value=[{'row_index':0}]):
@@ -91,3 +105,35 @@ class PageScanTests(unittest.TestCase):
         source={'rows':[dict(row_index=i,cells=[dict(column_index=c,expected_text=t) for c,t in enumerate(row)]) for i,row in enumerate(rows)]}
         chosen,reason=propose_scan_columns(source,'GBP')
         self.assertIsNone(chosen);self.assertIn('conflicting positions',reason)
+
+    def test_exact_transaction_section_keeps_summary_rows_out_of_automatic_nomination(self):
+        from copy import deepcopy
+        payload = deepcopy(self.f.payload)
+        values = [('2026-01-01', '10.00'), ('Transactions', ''),
+                  ('Date', 'Amount'), ('2026-01-02', '20.00'),
+                  ('Interest Charge on Purchases', '11.18'),
+                  ('2026 Totals Year-to-Date', ''), ('2026-01-03', '99.00')]
+        payload[0]['table']['values'] = [dict(row=r, column=c, text=text,
+            locator=fixture.rectangle(20+r*20,x=20+c*50))
+            for r,row in enumerate(values) for c,text in enumerate(row) if text]
+        self.f.update_geometry(payload)
+        page = self.scan(auto_columns=True,date_column=None,amount_column=None,end_page=1)['pages'][0]
+        self.assertEqual([r['row_index'] for r in page['suggestions']], [3])
+        self.assertEqual([r['row_index'] for r in page['undated_charges']], [4])
+        self.assertEqual(page['checked_rows'], 3)
+        self.assertEqual(page['source_section']['omitted_rows'], 4)
+        self.assertEqual(page['source_section']['start_source']['expected_text'], 'Transactions')
+        manual = self.scan(end_page=1)['pages'][0]
+        self.assertIsNone(manual['source_section'])
+        self.assertEqual([r['row_index'] for r in manual['suggestions']], [0,3,6])
+
+    def test_ambiguous_or_unbounded_sections_do_not_silently_hide_rows(self):
+        from services.financial.candidate_page_scan import _transaction_section
+        def source(labels):
+            return dict(rows=[dict(row_index=i,cells=[dict(column_index=0,expected_text=t)]) for i,t in enumerate(labels)])
+        for labels in [('Transactions', 'date'), ('Transactions','Transactions','date','Totals Year-to-Date'),
+                       ('Transactions','date','Totals Year-to-Date','Totals Year-to-Date')]:
+            original = source(labels)
+            selected, section = _transaction_section(original)
+            self.assertIs(selected, original)
+            self.assertIsNone(section)

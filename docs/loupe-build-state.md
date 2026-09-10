@@ -1,3 +1,30 @@
+## Scanned-PDF nomination fixes —10September, about10:30Dublin
+
+The56-page sample exposed a charge-screen bug:11.18could parse as both money
+and a date, causing a labelled interest reading to disappear. The screen now
+retains money-shaped alternatives while still excluding a separate unambiguous
+date. Ambiguous date/amount cells remain multiple choices with no date inferred.
+
+Automatic scans can use a uniquely bounded exact Transactions/Transactions,
+Payments and Credits section ending at Totals Year-to-Date. Original heading
+cells, boundary row numbers and omitted-row counts are retained and displayed.
+Dated/undated suggestions outside that section are excluded from this scope;
+manual fixed-column scans remain whole-page. Repeated/missing boundaries keep
+the original whole-page path. No complete-extraction or direction confirmation.
+
+Both PDFs verified read-only through the browser,164pages total. First56:
+42bounded sections,24supported dated layouts,111dated/17undated suggestions.
+Page4now nominates its two dated zero-interest rows (NOT its OCR-damaged purchase
+rows); page11's11.18interest is retained. Page15's former two whole-page matches
+are no longer nominated after section scoping; unresolved layouts stay manual.
+Second108:27bounded sections;23dated/81undated nominations unchanged.
+Reportsection-page-scan-check.json, screenshot/tmp/loupe-ocr-section-scan.png
+visually checked. Repeatable check_local_section_page_scan.cjs blocks financialwrites.
+
+4212financial backend tests,932financial UI tests and production build pass;
+TypeScript/scopedlint pass. Backend27456,/tmp/loupe-section-runtime.out.
+No push. Continue OCR/import gaps: firstPDFpages51–52contain dense corrupt text
+but current engine only OCRs suspicious text when it is sparse; investigate next.
 ## Full supplied108-page document acceptance —10September, about10:23Dublin
 
 Fresh UI upload/preparation casea2dae109-477c-4526-8642-c6a358a73479,

@@ -51,10 +51,12 @@ function mount(value: unknown = data) {
   )
   return { fetch, onPage }
 }
-async function scan() {
+async function scan(automatic = false) {
   fireEvent.click(
     screen.getByRole("button", { name: "Find possible rows across PDF pages" })
   )
+  if (automatic)
+    fireEvent.click(screen.getByLabelText("Propose columns on each page"))
   fireEvent.change(screen.getByLabelText("Scan through page"), {
     target: { value: "2" },
   })
@@ -186,4 +188,43 @@ it("retains both labelled amount columns for source review", async () => {
   expect(
     screen.getByText(/source header “Money out” \(review direction\)/)
   ).toBeInTheDocument()
+})
+
+const section = {
+  start_row: 1,
+  end_row: 4,
+  start_source: { column_index: 0, expected_text: "Transactions" },
+  end_source: { column_index: 0, expected_text: "Totals Year-to-Date" },
+  omitted_rows: 10,
+  limitation: "Outside rows remain unchecked.",
+}
+it("shows the printed section boundaries and rows left outside the scan", async () => {
+  mount({
+    ...data,
+    auto_columns: true,
+    date_column: null,
+    amount_column: null,
+    pages: [{ ...data.pages[0], source_section: section }, data.pages[1]],
+  })
+  await scan(true)
+  expect(await screen.findByText(/Printed section:/)).toHaveTextContent(
+    "10 other rows remain outside this scan"
+  )
+})
+it("refuses a suggestion outside its declared printed section", async () => {
+  mount({
+    ...data,
+    auto_columns: true,
+    date_column: null,
+    amount_column: null,
+    pages: [
+      {
+        ...data.pages[0],
+        source_section: { ...section, start_row: 2, end_row: 5 },
+      },
+      data.pages[1],
+    ],
+  })
+  await scan(true)
+  expect(await screen.findByRole("alert")).toHaveTextContent("incomplete scope")
 })

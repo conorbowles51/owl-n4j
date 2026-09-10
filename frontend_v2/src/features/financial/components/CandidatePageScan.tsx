@@ -36,6 +36,18 @@ const resultSchema = z.object({
             header_support: index.optional(),
           })
           .optional(),
+        source_section: z
+          .object({
+            start_row: index,
+            end_row: index,
+            start_source: cell,
+            end_source: cell,
+            omitted_rows: index,
+            limitation: z.string(),
+          })
+          .refine((v) => v.end_row > v.start_row + 1)
+          .nullable()
+          .optional(),
         other_tables: index.optional(),
         source_revision: z.string().optional(),
         undated_checked_rows: index.optional(),
@@ -106,7 +118,17 @@ export function CandidatePageScan({
           ([k, v]) => data[k as keyof typeof data] !== v
         ) ||
         data.pages.length !== params.end_page - params.start_page + 1 ||
-        data.pages.some((p, i) => p.page_number !== params.start_page + i) ||
+        data.pages.some(
+          (p, i) =>
+            p.page_number !== params.start_page + i ||
+            (p.source_section &&
+              (!automatic ||
+                [...p.suggestions, ...p.undated_charges].some(
+                  (r) =>
+                    r.row_index <= p.source_section!.start_row ||
+                    r.row_index >= p.source_section!.end_row
+                )))
+        ) ||
         data.undated_charge_rows !==
           data.pages.reduce((n, p) => n + p.undated_charges.length, 0) ||
         data.suggested_rows !==
@@ -248,6 +270,17 @@ export function CandidatePageScan({
                         ? `${p.suggestions.length} possible rows from ${p.checked_rows} rows checked`
                         : p.reason}
                     </p>
+                    {p.source_section && (
+                      <p>
+                        Printed section: “
+                        {p.source_section.start_source.expected_text}” (row{" "}
+                        {p.source_section.start_row + 1}) through “
+                        {p.source_section.end_source.expected_text}” (row{" "}
+                        {p.source_section.end_row + 1}).{" "}
+                        {p.source_section.omitted_rows} other rows remain
+                        outside this scan. {p.source_section.limitation}
+                      </p>
+                    )}
                     {p.chosen_columns && (
                       <p>
                         Date column {p.chosen_columns.date_column + 1}, amount

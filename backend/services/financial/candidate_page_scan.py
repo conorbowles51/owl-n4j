@@ -86,7 +86,7 @@ def suggest_undated_charges(source, currency):
     hints = []
     for row in source['rows']:
         labels = [c for c in row['cells'] if ' '.join(c['expected_text'].lower().split()).rstrip(':') in _UNDATED_CHARGE_LABELS]
-        if len(labels) != 1 or any(assess_date_text(c['expected_text'],'unknown')['proposals'] for c in row['cells']):
+        if len(labels) != 1:
             continue
         amounts = []
         for cell in row['cells']:
@@ -98,13 +98,53 @@ def suggest_undated_charges(source, currency):
                 continue
             if 'minor_units' in reading or reading.get('proposals'):
                 amounts.append(cell)
-        if not amounts:
+        # A decimal charge (for example 11.18) can also parse as a
+        # month/day date. Do not discard a labelled charge merely because its
+        # amount has that shape. A separate unambiguous date still excludes it;
+        # overlapping interpretations stay unresolved for source review.
+        amount_columns = {cell['column_index'] for cell in amounts}
+        if not amounts or any(
+            cell['column_index'] not in amount_columns
+            and cell['column_index'] != labels[0]['column_index']
+            and assess_date_text(cell['expected_text'], 'unknown')['proposals']
+            for cell in row['cells']
+        ):
             continue
         hints.append(dict(row_index=row['row_index'], label_source=labels[0], amount_sources=amounts,
-            date_unknown=True, reason='Recognised charge label without a source date. Review the amount, direction and statement scope; no date is inferred.' if len(amounts)==1 else
-                'Recognised charge label without a source date and several possible amount cells. Inspect the source; no amount or date is selected.'))
+            date_unknown=True, reason='Recognised charge label without an unambiguous source date. Review the amount, direction and statement scope; no date is inferred.' if len(amounts)==1 else
+                'Recognised charge label without an unambiguous source date and several possible amount cells. Inspect the source; no amount or date is selected.'))
     return hints
 
+
+
+def _transaction_section(source):
+    """Use only an exact, uniquely bounded printed transaction section.
+
+    This is a nomination scope, never a declaration that other rows are not
+    transactions. Unsupported or repeated headings retain the whole-page scan.
+    """
+    import re
+    def label(text):
+        return ' '.join(text.lower().split())
+    starts = [(row, cell) for row in source['rows'] for cell in row['cells']
+              if label(cell['expected_text']) in ('transactions', 'transactions, payments and credits')]
+    if len(starts) != 1:
+        return source, None
+    start_row, start_cell = starts[0]
+    ends = [(row, cell) for row in source['rows'] for cell in row['cells']
+            if row['row_index'] > start_row['row_index']
+            and re.fullmatch(r'(?:20[0-9]{2} )?totals year-to-date', label(cell['expected_text']))]
+    if len(ends) != 1:
+        return source, None
+    end_row, end_cell = ends[0]
+    selected = [row for row in source['rows'] if start_row['row_index'] < row['row_index'] < end_row['row_index']]
+    if not selected:
+        return source, None
+    return {**source, 'rows': selected}, dict(
+        start_row=start_row['row_index'], end_row=end_row['row_index'],
+        start_source=start_cell, end_source=end_cell,
+        omitted_rows=len(source['rows']) - len(selected),
+        limitation='Suggestions cover only rows between these exact printed headings. Other rows remain unchecked by this nomination scope; this does not establish complete extraction.')
 
 def scan_candidate_pages(session, *, case_id, evidence_file_id, start_page, end_page, date_column, amount_column, currency, table_index=0, auto_columns=False):
     if type(auto_columns) is not bool or any(type(v) is not int for v in (start_page,end_page,table_index)) or start_page<1 or end_page<start_page or end_page-start_page+1>MAX_SCAN_PAGES:
@@ -122,9 +162,10 @@ def scan_candidate_pages(session, *, case_id, evidence_file_id, start_page, end_
     for page in range(start_page,end_page+1):
         try:
             source=read_candidate_source(session,case_id=case_id,evidence_file_id=evidence_file_id,page_number=page,table_index=table_index)
-            undated=suggest_undated_charges(source,currency)
-            supplement=dict(undated_charges=undated,undated_checked_rows=len(source['rows']),source_revision=source['source_revision'],other_tables=max(0,source['table_count']-1))
-            chosen,reason=propose_scan_columns(source,currency) if auto_columns else (dict(date_column=date_column,amount_column=amount_column),None)
+            nomination_source, section = _transaction_section(source) if auto_columns else (source, None)
+            undated=suggest_undated_charges(nomination_source,currency)
+            supplement=dict(undated_charges=undated,undated_checked_rows=len(nomination_source['rows']),source_section=section,source_revision=source['source_revision'],other_tables=max(0,source['table_count']-1))
+            chosen,reason=propose_scan_columns(nomination_source,currency) if auto_columns else (dict(date_column=date_column,amount_column=amount_column),None)
             if chosen is None:
                 pages.append(dict(page_number=page,checked=False,reason=reason,checked_rows=0,suggestions=[],**supplement))
                 continue
@@ -134,7 +175,7 @@ def scan_candidate_pages(session, *, case_id, evidence_file_id, start_page, end_
                     expected_revision=source['source_revision'],date_column=chosen['date_column'],amount_column=amount_position,currency=currency)
                 header=next((h for h in chosen.get('amount_headers',[]) if h['column_index']==amount_position),None)
                 for r in result['rows']:
-                    if r['suggested']:
+                    if r['suggested'] and (section is None or section['start_row'] < r['row_index'] < section['end_row']):
                         item=dict(row_index=r['row_index'],date_source=r['date_source'],amount_source=r['amount_source'])
                         if header:item['amount_header_source']=header
                         suggestions.append(item)
@@ -145,7 +186,7 @@ def scan_candidate_pages(session, *, case_id, evidence_file_id, start_page, end_
             continue
         total+=len(suggestions)
         if total>MAX_SUGGESTED_ROWS:raise PdfMappingError('More than 1,000 suggested rows. Narrow the page range; no partial scan was returned.',422)
-        pages.append(dict(page_number=page,checked=True,reason=None,checked_rows=result['checked_rows'],suggestions=suggestions,chosen_columns=chosen,**supplement))
+        pages.append(dict(page_number=page,checked=True,reason=None,checked_rows=len(nomination_source['rows']) if section is not None else result['checked_rows'],suggestions=suggestions,chosen_columns=chosen,**supplement))
     undated_total=sum(len(p.get('undated_charges',[])) for p in pages)
     if undated_total>MAX_SUGGESTED_ROWS:raise PdfMappingError('More than1,000undated charge suggestions. Narrow the page range; no partial scan was returned.',422)
     if version()!=before:raise PdfMappingError('PDF preparation changed during the scan. Reload before reviewing suggestions.',409)
