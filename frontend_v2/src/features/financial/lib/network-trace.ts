@@ -264,3 +264,5 @@ export async function verifyNetworkTrace(
   }
   return { envelope, value }
 }
+
+export { resultSchema as networkTraceScenarioSchema }

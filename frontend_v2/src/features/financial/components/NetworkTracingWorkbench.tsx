@@ -1,3 +1,4 @@
+import { TraceReportDownload } from "./TraceReportDownload"
 import { TraceAssetFields, TraceAssetResultsPanel } from "./TraceAssetFields"
 import type { TraceAssetUse } from "../lib/trace-assets"
 import { useState } from "react"
@@ -790,6 +791,10 @@ function NetworkForm({
             )
           )}
           <Button onClick={download}>Download cross-account scenario</Button>
+          <TraceReportDownload
+            key={calculate.data.envelope.scenario_sha256}
+            trace={calculate.data}
+          />
         </section>
       )}
       {source && (

@@ -54,6 +54,13 @@ const prefix=multiple?'multiple-':partial?'partial-':'';
   await page.getByRole('region',{name:'Conditional tracing results',exact:true}).waitFor();
   const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Download conditional scenario',exact:true}).click();
   const destination=path.join(root,`data/local-runtime/${prefix}conditional-trace-asset-check.json`);await (await pending).saveAs(destination);
+  if(process.argv.includes('--readable')){
+    const htmlDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Download readable tracing report',exact:true}).click();
+    await(await htmlDownload).saveAs('/tmp/loupe-readable-single-report.html');
+    const html=fs.readFileSync('/tmp/loupe-readable-single-report.html','utf8');if(!html.includes('Conditional tracing report')||!html.includes('Captured source readings'))throw Error('Readable source report missing');
+    const view=await browser.newPage({viewport:{width:1440,height:1100}});await view.setContent(html);await view.screenshot({path:'/tmp/loupe-readable-single-report.png'});await view.close();
+  }
+
   const bytes=fs.readFileSync(destination),scenario=JSON.parse(bytes);
   if(crypto.createHash('sha256').update(bytes).digest('hex')!==envelope.scenario_sha256||bytes.length!==envelope.scenario_byte_count)throw Error('Downloaded bytes differ');
   if(scenario.comparison.results.first_in_first_out.outcomes['synthetic-claim'].surviving.minor_units!=='4000')throw Error('Unexpected conditional result');

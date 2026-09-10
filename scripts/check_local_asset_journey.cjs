@@ -90,6 +90,12 @@ const prefix=resale?'resale-':partial?'partial-':'';
     if(resale){const receiptRead=page.waitForResponse(r=>r.url().includes('/source?'));await results.getByRole('button',{name:'Inspect resale receipt 1',exact:true}).first().click();const receiptResponse=await receiptRead;if(!receiptResponse.ok()||(await receiptResponse.json()).transaction_id!=='6e52ccbc-5905-4b95-8c7b-2c657694536e')throw Error('Resale source differs');await page.keyboard.press('Escape');}
     const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download cross-account scenario',exact:true}).click();
     const output=path.join(root,`data/local-runtime/${prefix}asset-trace-scenario.json`);await(await download).saveAs(output);
+    if(process.argv.includes('--readable')){
+      const ready=page.waitForEvent('download');await page.getByRole('button',{name:'Download readable tracing report',exact:true}).click();
+      const reportPath='/tmp/loupe-readable-network-report.html';await(await ready).saveAs(reportPath);
+      const html=fs.readFileSync(reportPath,'utf8');if(!html.includes('Conditional tracing report')||!html.includes('Separate asset interpretations')||!html.includes('Original scenario SHA-256'))throw Error('Readable report omitted required context');
+      const reportPage=await browser.newPage({viewport:{width:1440,height:1100}});await reportPage.setContent(html);await reportPage.screenshot({path:'/tmp/loupe-readable-network-report.png'});await reportPage.close();
+    }
     console.log('Downloaded');await page.screenshot({path:`/tmp/loupe-${prefix}asset-trace-results.png`});
     if(fs.readFileSync(output,'utf8')!==envelope.scenario_json) throw Error('Download mismatch');
     await page.getByLabel('Opening amount account 1',{exact:true}).fill('1.00');

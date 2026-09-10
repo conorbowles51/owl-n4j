@@ -181,6 +181,7 @@ feature below is complete at the start of this window.
    - [x] Connect comparisons between financial records and statements or claims about payments. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 8. **Produce traceable reports and exports — operational exports complete; full expert packet partial**
+   - [x] Download readable single-account and cross-account tracing reports with method alternatives, assumptions, source references and asset/resale allocation tables. Original scenario bytes are reverified before rendering; both live read-only browser journeys and final layouts pass. The original JSON remains alongside the HTML report.
    - [x] Capture recorded financial processing runs, source parser versions and evidence registration metadata in a consistent export, preserving unknown historical versions and excluding raw configuration, private error text and local paths. Case/run/source mismatches are refused.
    - [x] Record the authenticated exporter and generation timestamp. Explicit export markings are retained in snapshot/manifest and repeated on every PDF page; the download verifies the returned marking. The marking is the user's selection, not a legal privilege determination.
    - [x] Package expert-support.json with a separate manifest hash and captured-snapshot reference, inventorying available source/decision/version support and explicitly identifying missing material.

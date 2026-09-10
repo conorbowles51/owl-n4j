@@ -1,3 +1,23 @@
+## Readable conditional tracing reports — 10 September
+
+Both single-account and cross-account workbenches now download a standalone HTML
+report with selected method comparisons, captured assumptions, source-row/page
+references and separately tabulated asset/resale allocations. Original scenario
+JSON remains the audit download. Report creation rechecks its hash and byte count,
+reparses original captured bytes rather than mutable display state, escapes source
+text and preserves exact large money values. User-selected markings and print
+styles are included; this is not a newly tested server PDF renderer.
+
+992 financial UI tests, production build and scoped lint passed. Final asset-table
+formatting then passed focused renderer tests, TypeScript and lint. Read-only live
+single-account multiple-asset and cross-account resale downloads pass; final layouts
+visually inspected. No financial writes, provider calls or push.
+
+Configuration check: root .env is the only existing project/backend/engine dotenv
+file and has an OpenAI credential, with no alternative provider credential there
+or in the current shell. Values were not printed. The local launcher deliberately
+uses its offline dummy. The known failed root credential was not retried.
+
 ## Recorded processing, export actor and page markings — 10 September
 
 The export now captures case-scoped financial ingestion runs (historical code and

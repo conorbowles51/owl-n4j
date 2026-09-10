@@ -1,3 +1,4 @@
+import { TraceReportDownload } from "./TraceReportDownload"
 import { IndirectReviewWorkbench } from "./IndirectReviewWorkbench"
 import { TraceAssetFields, TraceAssetResultsPanel } from "./TraceAssetFields"
 import type { TraceAssetUse } from "../lib/trace-assets"
@@ -492,6 +493,10 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
             )
           )}
           <Button onClick={download}>Download conditional scenario</Button>
+          <TraceReportDownload
+            key={result.envelope.scenario_sha256}
+            trace={result}
+          />
           <p>
             Includes captured ledger readings and history, explicit assumptions
             and calculation details. SHA-256: {result.envelope.scenario_sha256}

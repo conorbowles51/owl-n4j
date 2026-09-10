@@ -166,3 +166,5 @@ export async function verifyTraceResponse(
   }
   return { envelope, value }
 }
+
+export { scenario as traceScenarioSchema }
