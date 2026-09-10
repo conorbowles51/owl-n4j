@@ -18,6 +18,8 @@ from services.financial.reconcile import total_transactions, evaluate_identity
 from services.financial.transaction_query import to_view
 from services.financial.correction_verification import correction_verification
 from services.financial.correction_balances import correction_running_balances
+from services.financial.printed_totals import compare_printed_totals, retained_total_controls
+from services.financial.ledger_source import LedgerSourceError
 from services.financial.documents import UnknownSourceShapeError
 from postgres.models.enums import ReconciliationStatus
 
@@ -81,6 +83,8 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
         "limitation": "No linked statement period; statement balance impact is unavailable.",
         "applied": False,
         "native_controls_rechecked": False,
+        "printed_totals": None,
+        "printed_totals_error": None,
         "proof_class_changed": False,
     }
     statuses = []
@@ -113,6 +117,13 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
         statuses.append(ReconciliationStatus(projected["status"]))
         if affected:
             result["statement_identity"] = {"period_id": str(period.id), "current": identity(totals), "proposed": projected}
+            try:
+                controls = retained_total_controls(session, period, document)
+                result["printed_totals"] = dict(
+                    current=compare_printed_totals(controls, credits=totals.credits.minor_units, debits=totals.debits.minor_units),
+                    proposed=compare_printed_totals(controls, credits=credits, debits=debits))
+            except (LedgerSourceError, ValueError) as exc:
+                result["printed_totals_error"] = str(exc)
             result["running_balances"] = correction_running_balances(period, period_rows,
                 transaction_id=row.id, amount_minor=amount_minor, direction=direction)
             result["limitation"] = "Statement balance checked; running-balance comparisons are conditional on source order and balance convention. Native controls are not revalidated. Existing quarantine is preserved."

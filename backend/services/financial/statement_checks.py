@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from postgres.models.financial import (
     FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction,
 )
+from services.financial.printed_totals import compare_printed_totals, retained_total_controls
+from services.financial.ledger_source import LedgerSourceError
 from services.financial.money import MoneyError
 from services.financial.periods import PeriodError, read_opening, read_closing
 from services.financial.reconcile import ReconciliationError, evaluate_identity, total_transactions
@@ -47,7 +49,7 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25):
             recorded_status=period.reconciliation_status,
             recorded_at=period.reconciled_at.isoformat() if period.reconciled_at else None,
             status='refused', reason=None, amounts=None, counted_rows=None, excluded_rows=None,
-            independent=None)
+            independent=None, printed_totals=None, printed_totals_error=None)
         try:
             outcome = evaluate_identity(opening=read_opening(period), closing=read_closing(period),
                 totals=total_transactions(session, period_id=period.id, currency=period.currency), currency=period.currency)
@@ -60,6 +62,12 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25):
                 independent=outcome.independent)
         except (MoneyError, PeriodError, ReconciliationError) as exc:
             item['reason'] = str(exc)
+        if item['amounts'] is not None:
+            try:
+                item['printed_totals'] = compare_printed_totals(retained_total_controls(session, period, document),
+                    credits=int(item['amounts']['credits']), debits=int(item['amounts']['debits']))
+            except (LedgerSourceError, ValueError) as exc:
+                item['printed_totals_error'] = str(exc)
         items.append(item)
     return dict(case_id=str(case_id), offset=offset, has_more=len(periods) > limit, items=items,
         applied=False, limitation='Current opening + admitted row credits − admitted row debits compared with the recorded closing balance. This does not check every printed control, prove complete extraction, or change proof class or admission. Source exclusions still apply.')

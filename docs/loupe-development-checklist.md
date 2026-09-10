@@ -87,6 +87,7 @@ feature below is complete at the start of this window.
    - [x] Source date assessment: display alternative numeric dates, unresolved years/centuries, invalid dates and original citations without selecting a reading (46a3417). Automatic date/context resolution and account uncertainty work remain.
 
 3. **Complete financial accuracy checks — partial**
+   - [x] Source-bound printed total money in/out saved through PDF review and drafts, separately checked against current admitted rows, compared before/after corrections and retained in history/reports. Synthetic browser100in/30out/70closing passes; proposed30.01out shows1minor discrepancy. Older receipt identities preserved. Native format controls remain separate.
    - [x] First complete printed statement in the supplied 108-page PDF: payment, purchase and undated interest reconcile opening $6,700.18 to closing $6,637.96 owed. Other statements remain outside this acceptance (10 September).
    - [x] Undated fee/interest review preserves unknown row dates; explicit statement-end ordering requires a matching source-bound end control at finalization, retains provenance and remains P3.
    - [x] Document-wide saved review overview shows pending/resolved/rejected rows per page, unselected pages, preparation gaps and direct batch resume; it does not label selections as complete extraction.

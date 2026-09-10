@@ -6,7 +6,7 @@ or change the selected-document proof class.
 from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, model_serializer
 from services.financial.pdf_candidates import _Contract, _Digest, PdfMappingError
 from services.financial.candidate_store import CandidateStoreError
 from services.financial.candidate_sources import read_candidate_source
@@ -44,6 +44,14 @@ class ReviewedBalanceControl(_Contract):
         return self
 
 
+class ReviewedTotalControl(ReviewedBalanceControl):
+    @model_validator(mode='after')
+    def nonnegative(self):
+        if int(self.amount_minor) < 0:
+            raise ValueError('A direction total must be a nonnegative magnitude.')
+        return self
+
+
 class ReviewedStatementScope(_Contract):
     account_id: UUID
     currency: Annotated[str, Field(strict=True, min_length=3, max_length=3)]
@@ -52,8 +60,18 @@ class ReviewedStatementScope(_Contract):
     end: ReviewedDateControl
     opening: ReviewedBalanceControl | None = None
     closing: ReviewedBalanceControl | None = None
+    credits_total: ReviewedTotalControl | None = None
+    debits_total: ReviewedTotalControl | None = None
     balance_convention: Literal['asset_balance', 'liability_owed']
     reason: Annotated[str, Field(strict=True, min_length=1, max_length=4096)]
+
+    @model_serializer(mode='wrap')
+    def preserve_existing_receipts(self, handler):
+        value = handler(self)
+        for role in ('credits_total', 'debits_total'):
+            if value.get(role) is None:
+                value.pop(role, None)
+        return value
 
     @model_validator(mode='after')
     def coherent(self):
@@ -112,9 +130,11 @@ def attach_statement_scopes(session, manifest, prepared, scopes, *, case_id, evi
                 raise CandidateStoreError("Statement-end ordering date differs from the assigned printed end date.", 422)
             assigned.add(candidate_id)
         controls = {}
-        for role in ('start', 'end', 'opening', 'closing'):
+        for role in ('start', 'end', 'opening', 'closing', 'credits_total', 'debits_total'):
             control = getattr(scope, role)
             if control is None:
+                if role in ('credits_total', 'debits_total'):
+                    continue
                 controls[role] = None
                 continue
             cell = control.source

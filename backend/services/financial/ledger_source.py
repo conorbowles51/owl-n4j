@@ -108,9 +108,9 @@ def _statement_controls(session, period, document, evidence):
                 raw = matches[0]
                 reviewed = ReviewedStatementScope.model_validate({key: value for key, value in raw.items() if key != 'bound_controls'})
                 controls = []
-                for role in ('start', 'end', 'opening', 'closing'):
+                for role in ('start', 'end', 'opening', 'closing', 'credits_total', 'debits_total'):
                     reading = getattr(reviewed, role)
-                    bound = raw['bound_controls'][role]
+                    bound = raw['bound_controls'].get(role) if role.endswith('_total') else raw['bound_controls'][role]
                     if reading is None:
                         if bound is not None:
                             raise ValueError('Unexpected absent control')

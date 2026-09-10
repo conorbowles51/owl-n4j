@@ -24,13 +24,20 @@ const retainedControls = z.object({
   controls: z
     .array(
       z.object({
-        role: z.enum(["start", "end", "opening", "closing"]),
+        role: z.enum([
+          "start",
+          "end",
+          "opening",
+          "closing",
+          "credits_total",
+          "debits_total",
+        ]),
         original_text: z.string(),
         reviewed_value: z.string(),
         locator: z.unknown(),
       })
     )
-    .max(4),
+    .max(6),
 })
 const source = z.object({
   case_id: z.string(),
@@ -135,9 +142,10 @@ export function StatementSourceButton({
                         className="h-auto whitespace-normal text-left"
                         onClick={() => setControlRole(control.role)}
                       >
-                        Inspect {control.role}:{" "}
+                        Inspect {control.role === "credits_total" ? "total money in" : control.role === "debits_total" ? "total money out" : control.role}:{" "}
                         {control.role === "opening" ||
-                        control.role === "closing"
+                        control.role === "closing" ||
+                        control.role.endsWith("_total")
                           ? correctionMoney(
                               control.reviewed_value,
                               query.data.reviewed_controls!.currency

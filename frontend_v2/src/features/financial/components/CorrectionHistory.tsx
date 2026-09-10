@@ -1,3 +1,5 @@
+import { PrintedTotalChecks } from "./PrintedTotalChecks"
+import { printedTotalComparison } from "../lib/printed-total-checks"
 import { z } from "zod"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -10,6 +12,8 @@ import {
 
 const snapshot = z.object({
   running_balance_comparison: z.unknown().optional(),
+  printed_total_comparison: z.unknown().optional(),
+  printed_total_error: z.string().nullable().optional(),
   row: z.object({
     key: z.string(),
     ref_id: z.string(),
@@ -39,6 +43,9 @@ export function CorrectionHistory({
         Correction reading history is unavailable or unrecognised.
       </p>
     )
+  const totals = printedTotalComparison.safeParse(
+    replacement.data.printed_total_comparison
+  )
   const recorded = replacement.data.running_balance_comparison
   const comparison = runningBalanceComparison.safeParse(recorded)
   const comparisonValid =
@@ -66,6 +73,33 @@ export function CorrectionHistory({
         These are the readings recorded at this decision, not a claim about
         their current status.
       </p>
+      {totals.success && (
+        <>
+          <p>
+            Printed totals recorded with this correction; not recalculated
+            against later changes.
+          </p>
+          <PrintedTotalChecks
+            title="Historical printed totals before correction"
+            checks={totals.data.current}
+            currency={old.data.row.currency}
+          />
+          <PrintedTotalChecks
+            title="Historical printed totals after correction"
+            checks={totals.data.proposed}
+            currency={replacement.data.row.currency}
+          />
+        </>
+      )}
+      {replacement.data.printed_total_comparison != null && !totals.success && (
+        <p>Saved printed total comparison is inconsistent.</p>
+      )}
+      {replacement.data.printed_total_error && (
+        <p>
+          Printed total check was unavailable:{" "}
+          {replacement.data.printed_total_error}
+        </p>
+      )}
       {recorded == null ? (
         <p>No running-balance comparison was recorded with this correction.</p>
       ) : comparisonValid ? (

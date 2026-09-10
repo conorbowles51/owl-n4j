@@ -1916,3 +1916,6 @@ __all__ += ['screen_ledger_patterns']
 
 from services.financial.claim_comparison import ClaimComparisonInput, compare_ledger_claim
 __all__ += ['ClaimComparisonInput', 'compare_ledger_claim']
+
+from services.financial.printed_totals import compare_printed_totals
+__all__ += ['compare_printed_totals']

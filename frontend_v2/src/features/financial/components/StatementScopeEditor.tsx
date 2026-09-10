@@ -17,6 +17,8 @@ const labels = {
   end: "statement end",
   opening: "opening balance",
   closing: "closing balance",
+  credits_total: "total money in",
+  debits_total: "total money out",
 } as const
 type Role = keyof typeof labels
 export function StatementScopeEditor({
@@ -38,6 +40,8 @@ export function StatementScopeEditor({
     [end, setEnd] = useState(""),
     [opening, setOpening] = useState(""),
     [closing, setClosing] = useState(""),
+    [credits, setCredits] = useState(""),
+    [debits, setDebits] = useState(""),
     [convention, setConvention] = useState(""),
     [reason, setReason] = useState("")
   const [cells, setCells] = useState<Partial<Record<Role, ControlCell>>>({}),
@@ -73,6 +77,18 @@ export function StatementScopeEditor({
           source: cells.closing,
         }
       : null,
+    credits_total: credits
+      ? {
+          amount_minor: signedControlMinor(credits, account?.currency ?? ""),
+          source: cells.credits_total,
+        }
+      : undefined,
+    debits_total: debits
+      ? {
+          amount_minor: signedControlMinor(debits, account?.currency ?? ""),
+          source: cells.debits_total,
+        }
+      : undefined,
     balance_convention: convention,
     reason,
   })
@@ -91,6 +107,8 @@ export function StatementScopeEditor({
           end,
           opening,
           closing,
+          credits_total: credits,
+          debits_total: debits,
           convention: convention as EditorDraft["convention"],
           reason,
           cells,
@@ -102,6 +120,8 @@ export function StatementScopeEditor({
           setEnd(saved.end)
           setOpening(saved.opening)
           setClosing(saved.closing)
+          setCredits(saved.credits_total ?? "")
+          setDebits(saved.debits_total ?? "")
           setConvention(saved.convention)
           setReason(saved.reason)
           setCells(saved.cells)
@@ -132,6 +152,8 @@ export function StatementScopeEditor({
             setSelected([])
             setOpening("")
             setClosing("")
+            setCredits("")
+            setDebits("")
           }}
           className="block w-full rounded border bg-background p-2"
         >
@@ -211,6 +233,34 @@ export function StatementScopeEditor({
           />
         </label>
       </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label>
+          Printed total money in
+          <input
+            aria-label="Printed total money in"
+            value={credits}
+            onChange={(e) => setCredits(e.target.value)}
+            inputMode="decimal"
+            className="block w-full rounded border bg-background p-2"
+          />
+        </label>
+        <label>
+          Printed total money out
+          <input
+            aria-label="Printed total money out"
+            value={debits}
+            onChange={(e) => setDebits(e.target.value)}
+            inputMode="decimal"
+            className="block w-full rounded border bg-background p-2"
+          />
+        </label>
+      </div>
+      <p className="text-sm">
+        Optional direction totals must cover all money in or out in this
+        statement period. A subtotal such as purchases alone must not be used as
+        total money out when fees or interest are separate. Enter nonnegative
+        magnitudes; leave absent controls blank.
+      </p>
       <p className="text-sm">
         Leave an unprinted balance blank. Blank means unknown, not zero. Enter
         decimal amounts without currency symbols or thousands separators,
@@ -241,7 +291,14 @@ export function StatementScopeEditor({
             (role) =>
               role === "start" ||
               role === "end" ||
-              (role === "opening" ? opening : closing)
+              {
+                opening,
+                closing,
+                credits_total: credits,
+                debits_total: debits,
+              }[
+                role as "opening" | "closing" | "credits_total" | "debits_total"
+              ]
           )
           .map((role) => (
             <div key={role} className="space-y-1">

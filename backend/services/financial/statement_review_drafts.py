@@ -3,7 +3,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 from uuid import UUID
-from pydantic import Field
+from pydantic import Field, model_serializer
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialAccount
@@ -21,9 +21,19 @@ class StatementEditorDraft(_Contract):
     end: Annotated[str, Field(strict=True, max_length=32)]
     opening: Annotated[str, Field(strict=True, max_length=128)]
     closing: Annotated[str, Field(strict=True, max_length=128)]
+    credits_total: Annotated[str, Field(strict=True, max_length=128)] = ''
+    debits_total: Annotated[str, Field(strict=True, max_length=128)] = ''
     convention: Literal['', 'asset_balance', 'liability_owed']
     reason: Annotated[str, Field(strict=True, max_length=4096)]
-    cells: dict[Literal['start','end','opening','closing'], ControlCell]
+    cells: dict[Literal['start','end','opening','closing','credits_total','debits_total'], ControlCell]
+
+    @model_serializer(mode='wrap')
+    def preserve_older_drafts(self, handler):
+        value = handler(self)
+        for role in ('credits_total', 'debits_total'):
+            if not value.get(role):
+                value.pop(role, None)
+        return value
 
 class StatementDraftRequest(StatementScopesRequest):
     editor_draft: StatementEditorDraft | None = None

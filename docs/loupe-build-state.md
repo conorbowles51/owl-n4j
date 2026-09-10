@@ -53,6 +53,42 @@ classes;23focused backend and12UI tests pass. Multiple-claim working-population 
 downloaded scenario hashes and clearing results when assumptions change. No full-feature completion claim. Continue through remaining
 PDF extraction, review persistence, cross-case duplicates, tracing and reporting.
 
+### Printed incoming/outgoing controls — 10 September, about06:45 Dublin
+
+b358fbe1 saves automatic PDF columns and split-payment screening locally. No push.
+Printed total money in/out now bind to exact PDF cells through statement review,
+unfinished editor drafts, sealed finalization, source inspection and HTML/PDF export.
+Optional fields preserve older receipt/draft serialization and retry identities.
+Totals are nonnegative magnitudes, independent of liability balance convention;
+UI explicitly excludes partial purchase subtotals from whole outgoing totals.
+Current admitted-side checks show exact differences and unknown controls separately.
+Correction preview computes both sides before/after; the append-only correction
+audit retains these comparisons and the history UI displays them. P3 is unchanged;
+this does not claim native control verification or complete extraction.
+
+Generated synthetic statement, visibly labelled NOT BANK EVIDENCE, uploaded and
+prepared through the browser into cased72a4ac0-f990-415e-be89-838f955e6af2,
+file0ac7ff2d-a188-4448-9a93-2eebafa8e441,
+account239d5270-3671-4cbc-a730-445baf1b552e. Two reviewed rows:GBP100in/30out;
+opening0,closing70; all six controls saved/source-bound/finalized. Browser current
+checks balanced, proposed30.01out gives1minor discrepancy; no correction written
+in this browser case. Read-only source highlight/export passed. Four-page PDF and
+JSON/HTML/PDF hashes verified; printed direction controls visible on page4.
+Reports data/local-runtime/printed-totals-{intake,journey,analysis,export}-check.json,
+printed-totals-export.zip. Completed intake/journey writers refuse reruns; the
+journey resumed once from its untouched review checkpoint after test selector fixes.
+Do not reuse its resume flag after verified status. Original supplied PDFs untouched.
+
+Validation:98targeted backend checks initially found/fixed old-draft serialization
+and legacy-period test assumptions;49focused correction checks then passed.
+41existing UI plus7new/updated UI checks passed. Integrated4116backend run found
+one missing public-package export; fixed and rerun package/printed checks.891financial
+UI tests, production build and scoped ESLint passed (removed an unused schema export
+from the component for fast-refresh lint). Native controls remain explicitly pending.
+Current backend88942, /tmp/loupe-printed-totals-runtime.out. Continue full scope;
+no early handoff or deployment. Git stale empty Aug30index.lock was verified unowned
+and removed during the previous local commit; normal index operations work again.
+
 ### Automatic PDF columns and split-payment screen — 10 September, about06:26 Dublin
 
 bc1ef447 saves payment-claim review locally; no push. Automatic per-page PDF

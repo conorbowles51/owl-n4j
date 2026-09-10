@@ -1,3 +1,5 @@
+import { printedTotalChecks } from "../lib/printed-total-checks"
+import { PrintedTotalChecks } from "./PrintedTotalChecks"
 import { StatementRunningBalances } from "./StatementRunningBalances"
 import { StatementSourceButton } from "./StatementSourceButton"
 import { useState } from "react"
@@ -43,6 +45,8 @@ const item = z
     counted_rows: count.nullable(),
     excluded_rows: count.nullable(),
     independent: z.boolean().nullable(),
+    printed_totals: printedTotalChecks.nullable().optional(),
+    printed_totals_error: z.string().nullable().optional(),
   })
   .refine((v) => {
     if (v.status === "refused") return v.amounts === null && v.reason !== null
@@ -172,6 +176,18 @@ export function StatementChecksPanel({
                   {period.proof_class.toUpperCase()}. These checks do not change
                   source eligibility.
                 </p>
+                {period.printed_totals && (
+                  <PrintedTotalChecks
+                    checks={period.printed_totals}
+                    currency={period.currency}
+                  />
+                )}
+                {period.printed_totals_error && (
+                  <p role="alert">
+                    Printed totals could not be checked:{" "}
+                    {period.printed_totals_error}
+                  </p>
+                )}
                 {period.reason && <p>{period.reason}</p>}
                 {period.amounts && (
                   <>

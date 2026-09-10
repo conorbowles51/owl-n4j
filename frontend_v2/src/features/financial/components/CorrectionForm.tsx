@@ -1,3 +1,4 @@
+import { PrintedTotalChecks } from "./PrintedTotalChecks"
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { ApiError, fetchAPI } from "@/lib/api-client"
@@ -121,7 +122,7 @@ export function CorrectionForm({
       <h3 className="font-semibold">Correct ledger amount</h3>
       <p className="text-sm">
         The original reading and citation stay in the ledger. A correction
-        creates a replacement and records your reason. The graph is not updated.
+        creates a replacement and records your reason.
       </p>
       <label className="block text-sm">
         Proposed amount ({currency})
@@ -215,6 +216,26 @@ export function CorrectionForm({
             </p>
           )}
           <p>{reviewed.limitation}</p>
+          {reviewed.printed_totals && (
+            <>
+              <PrintedTotalChecks
+                title="Printed totals before correction"
+                checks={reviewed.printed_totals.current}
+                currency={currency}
+              />
+              <PrintedTotalChecks
+                title="Printed totals after proposed correction"
+                checks={reviewed.printed_totals.proposed}
+                currency={currency}
+              />
+            </>
+          )}
+          {reviewed.printed_totals_error && (
+            <p role="alert">
+              Printed totals could not be checked:{" "}
+              {reviewed.printed_totals_error}
+            </p>
+          )}
           {reviewed.running_balances && (
             <RunningBalanceComparisonPanel
               caseId={caseId}

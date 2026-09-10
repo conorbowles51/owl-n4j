@@ -40,6 +40,12 @@ export const statementScope = z
     end: dateControl,
     opening: balanceControl.nullable(),
     closing: balanceControl.nullable(),
+    credits_total: balanceControl
+      .refine((v) => BigInt(v.amount_minor) >= 0n)
+      .optional(),
+    debits_total: balanceControl
+      .refine((v) => BigInt(v.amount_minor) >= 0n)
+      .optional(),
     balance_convention: z.enum(["asset_balance", "liability_owed"]),
     reason: z.string().trim().min(1).max(4096),
   })

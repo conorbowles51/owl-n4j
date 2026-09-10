@@ -247,13 +247,13 @@ def render_ledger_report(snapshot):
                         'Amounts owed (converted to negative ledger balances)' if scope['balance_convention'] == 'liability_owed' else 'Money held in account',
                         len(scope['candidate_ids'])]])]
                 controls = []
-                for role in ('start', 'end', 'opening', 'closing'):
-                    control = scope['bound_controls'][role]
+                for role in ('start', 'end', 'opening', 'closing', 'credits_total', 'debits_total'):
+                    control = scope['bound_controls'].get(role)
                     if control is None:
-                        controls.append([role.capitalize(), 'Unknown — not supplied', '—', '—'])
+                        controls.append([{'credits_total': 'Total money in', 'debits_total': 'Total money out'}.get(role, role.capitalize()), 'Unknown — not supplied', '—', '—'])
                     else:
                         value = control['value'] if role in ('start', 'end') else money_display(control['amount_minor'], scope['currency'])
-                        controls.append([role.capitalize(), value, control['source']['expected_text'], control['source']['page_number']])
+                        controls.append([{'credits_total': 'Total money in', 'debits_total': 'Total money out'}.get(role, role.capitalize()), value, control['source']['expected_text'], control['source']['page_number']])
                 parts += [table(['Control', 'Reviewed printed value', 'Original source text', 'PDF page'], controls),
                     '<p>Review reason: ' + text(scope['reason']) + '</p>',
                     details('Control source locations and selected candidate references', scope), '</article>']

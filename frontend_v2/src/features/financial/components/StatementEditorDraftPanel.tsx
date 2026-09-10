@@ -5,22 +5,32 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl } from "../lib/candidate-contract"
 import { controlCell, statementScope } from "../lib/statement-scope-contract"
-export const editorDraft = z.object({
-  group: z.string().max(128),
-  selected: z.array(z.string().uuid()).max(1000),
-  start: z.string().max(32),
-  end: z.string().max(32),
-  opening: z.string().max(128),
-  closing: z.string().max(128),
-  convention: z.enum(["", "asset_balance", "liability_owed"]),
-  reason: z.string().max(4096),
-  cells: z.object({
-    start: controlCell.optional(),
-    end: controlCell.optional(),
-    opening: controlCell.optional(),
-    closing: controlCell.optional(),
-  }),
-})
+const editorDraft = z
+  .object({
+    group: z.string().max(128),
+    selected: z.array(z.string().uuid()).max(1000),
+    start: z.string().max(32),
+    end: z.string().max(32),
+    opening: z.string().max(128),
+    closing: z.string().max(128),
+    credits_total: z.string().max(128).optional(),
+    debits_total: z.string().max(128).optional(),
+    convention: z.enum(["", "asset_balance", "liability_owed"]),
+    reason: z.string().max(4096),
+    cells: z.object({
+      start: controlCell.optional(),
+      end: controlCell.optional(),
+      opening: controlCell.optional(),
+      closing: controlCell.optional(),
+      credits_total: controlCell.optional(),
+      debits_total: controlCell.optional(),
+    }),
+  })
+  .transform((value) => {
+    if (!value.credits_total) delete value.credits_total
+    if (!value.debits_total) delete value.debits_total
+    return value
+  })
 export type EditorDraft = z.infer<typeof editorDraft>
 const envelope = z.object({
   case_id: z.string(),
