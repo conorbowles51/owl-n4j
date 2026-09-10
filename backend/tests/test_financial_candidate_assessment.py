@@ -155,6 +155,22 @@ class CandidateAssessmentTests(unittest.TestCase):
         self.assertNotIn("locator", source)
 
 
+    def test_source_context_is_limited_to_saved_row_and_rechecks_revision(self):
+        from services.financial.candidate_assessment import candidate_source_readings
+        saved=self.save();f=self.fixture
+        source={'source_revision':saved['original']['proposal']['source_revision'],
+                'layout_context':{'version':1,'rows':[{'row_index':0},{'row_index':1}]}}
+        with patch('services.financial.candidate_sources.read_candidate_source',return_value=source):
+            result=candidate_source_readings(f.db,case_id=f.case,candidate_id=self.candidate_id)
+            self.assertEqual(result['layout_context']['rows'],[{'row_index':0}])
+            self.assertFalse(result['applied'])
+        source['source_revision']='f'*64
+        with patch('services.financial.candidate_sources.read_candidate_source',return_value=source):
+            with self.assertRaises(CandidateStoreError) as caught:
+                candidate_source_readings(f.db,case_id=f.case,candidate_id=self.candidate_id)
+            self.assertEqual(caught.exception.status_code,409)
+
+
 class CandidateAssessmentRouterTests(unittest.IsolatedAsyncioTestCase):
     async def test_case_and_currency_are_forwarded_under_read_permission(self):
         from routers import financial_ledger as router

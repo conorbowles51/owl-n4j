@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { layoutContext } from "./statement-layout-context"
 const index = z.number().int().nonnegative()
 export const sourceTable = z.object({
   case_id: z.string(),
@@ -28,5 +29,6 @@ export const sourceTable = z.object({
       })
     )
     .max(1000),
+  layout_context: layoutContext.nullable().optional(),
   applied: z.literal(false),
 })

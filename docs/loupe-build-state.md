@@ -1,3 +1,35 @@
+## Printed statement layout context — 10 September
+
+A narrow version1Capital One layout recognizer supports both observed printed-card
+heading variants and cycle/day-count text split across adjacent stored cells. It
+requires an exact institution marker, unique valid cycle with consistent day count,
+printed card heading and coherent Date/Description/Amount or TransDate/PostDate
+headers. Row sections retain their own four-digit card ending; totals/fees/endings
+stop inherited section context. Transaction and posting dates stay separate. Full
+dates are proposals constrained to the printed cycle; out-of-cycle or unsupported
+dates remain unresolved. It does not confirm identity, currency or money direction.
+
+Source selection and saved original-row review expose the current layout context
+with exact source links. Saved review first rebinds the immutable original and then
+checks the source revision again before returning only that row's context. The
+recognizer's version is displayed, but this is a current read-only aid, not a claim
+that earlier saved readings were extracted by this template. No fields are filled.
+
+Read-only real108-page acceptance:27matched statement pages,19dated context rows,
+19within-cycle proposals.11pages with no stored table are explicitly recorded.
+Fees/interest and unrecognized layouts remain outside this narrow context matcher.
+Original section and cycle highlights verified visually, including reopened saved
+payment review. Repeat `node scripts/check_local_statement_layout_context.cjs`;
+report statement-layout-context-check.json. No financial writes.
+
+4260backend and978financialUI tests, TypeScript, scoped lint and production build
+pass.330engine tests remain passing from the atomic-preparation change.110live
+permission checks now include candidate source/context and immediate revocation;
+temporary tester removed. All prior completed checklist items remain visible.
+Overall PDF identification and external AI acceptance remain partial. Continue with
+unclassified-date handling in queued readings and remaining extraction work; no
+push/deploy performed.
+
 ## Atomic PDF preparation recovery — 10 September
 
 PDF review preparation now saves canonical text and page locations in one database

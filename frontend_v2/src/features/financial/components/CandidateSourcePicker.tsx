@@ -1,3 +1,4 @@
+import { StatementLayoutContextPanel } from "./StatementLayoutContextPanel"
 import { sourceTable } from "../lib/pdf-source-table"
 import { proposePdfAccountReferences } from "../lib/pdf-account-references"
 import { CandidatePageScan } from "./CandidatePageScan"
@@ -427,6 +428,19 @@ function SourceSelection({
             </div>
           )}
 
+          {source.layout_context && (
+            <StatementLayoutContextPanel
+              context={source.layout_context}
+              onSource={(cell) =>
+                setFocusedCell({
+                  row: cell.row_index,
+                  column: cell.column_index,
+                  text: cell.expected_text,
+                  locator: cell.locator,
+                })
+              }
+            />
+          )}
           <Button variant="outline" onClick={() => setShowAccounts((v) => !v)}>
             {showAccounts
               ? "Hide printed account references"

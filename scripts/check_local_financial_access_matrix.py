@@ -30,6 +30,7 @@ reads=[('GET',name,case,{},None) for name in (
 reads += [('GET','indirect-review-methods',case,{},None),
  ('POST','indirect-review',case,{},dict(method='cash_t',currency='USD',start_date='2026-01-01',end_date='2026-12-31',subject='SYNTHETIC permission check',entries={},requirements={})),
  ('GET',f'ledger/{row}/source',case,{},None),
+ ('GET','candidates/bc574f1c-576d-469a-acbe-af84a2ece523/source-readings',case,{},None),
  ('GET',f'candidate-sources/{file}/page-scan',case,dict(start_page=3,end_page=3,auto_columns='true',currency='USD'),None),
  ('POST','network-trace',network_case,{},network['inputs'])]
 # Invalid bodies are intentional: permission denial must precede payload validation.

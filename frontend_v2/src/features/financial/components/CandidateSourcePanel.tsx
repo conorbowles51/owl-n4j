@@ -1,3 +1,8 @@
+import { StatementLayoutContextPanel } from "./StatementLayoutContextPanel"
+import {
+  layoutContext,
+  type LayoutCitation,
+} from "../lib/statement-layout-context"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -11,6 +16,7 @@ const source = z.object({
   mapping_id: z.string(),
   evidence_file_id: z.string(),
   review_revision: z.string(),
+  layout_context: layoutContext.nullable().optional(),
   applied: z.literal(false),
   cells: z.array(
     z.object({
@@ -32,6 +38,7 @@ export function CandidateSourcePanel({
   fileId: string
   review: CandidateReview
 }) {
+  const [contextCell, setContextCell] = useState<LayoutCitation | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
   const query = useQuery({
     queryKey: [
@@ -78,9 +85,14 @@ export function CandidateSourcePanel({
       return data
     },
   })
-  const cell =
-    query.data?.cells.find((c) => c.column_index === selected) ??
-    query.data?.cells[0]
+  const cell = contextCell
+    ? {
+        column_index: contextCell.column_index,
+        text: contextCell.expected_text,
+        locator: contextCell.locator,
+      }
+    : (query.data?.cells.find((c) => c.column_index === selected) ??
+      query.data?.cells[0])
   return (
     <section
       aria-label="Original document beside review"
@@ -102,17 +114,28 @@ export function CandidateSourcePanel({
       )}
       {query.data && !query.isError && !query.isFetching && (
         <>
+          {query.data.layout_context && (
+            <StatementLayoutContextPanel
+              context={query.data.layout_context}
+              onSource={setContextCell}
+            />
+          )}
           <div className="flex flex-wrap gap-2">
             {query.data.cells.map((c) => (
               <Button
                 key={c.column_index}
                 variant={
-                  cell?.column_index === c.column_index
+                  !contextCell && cell?.column_index === c.column_index
                     ? "secondary"
                     : "outline"
                 }
-                aria-pressed={cell?.column_index === c.column_index}
-                onClick={() => setSelected(c.column_index)}
+                aria-pressed={
+                  !contextCell && cell?.column_index === c.column_index
+                }
+                onClick={() => {
+                  setContextCell(null)
+                  setSelected(c.column_index)
+                }}
               >
                 Source column {c.column_index + 1}:{" "}
                 {c.proposed_meaning.replaceAll("_", " ")}
@@ -125,7 +148,7 @@ export function CandidateSourcePanel({
                 <strong>Original text:</strong> {cell.text}
               </p>
               <TransactionSourceHighlight
-                  sourceDocumentId={fileId}
+                sourceDocumentId={fileId}
                 locatorPayload={cell.locator}
                 valueLabel={cell.text}
               />

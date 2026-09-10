@@ -1,4 +1,5 @@
 """Assess saved original cells against a fresh source binding, without writes."""
+from uuid import UUID
 from pydantic import ValidationError
 from sqlalchemy import select
 
@@ -127,6 +128,22 @@ def candidate_source_readings(session, *, case_id, candidate_id):
             if cell.page_number else {'kind': 'unlocated'})
         cells.append(dict(column_index=cell.column_index, proposed_meaning=cell.proposed_meaning,
             text=raw, locator=locator))
+    layout = None
+    if grid:
+        from services.financial.candidate_sources import read_candidate_source
+        proposal = saved['original']['proposal']
+        try:
+            source = read_candidate_source(session, case_id=case_id, evidence_file_id=UUID(saved['evidence_file_id']),
+                page_number=proposal['page_number'], table_index=proposal['table_index'])
+        except PdfMappingError as exc:
+            raise CandidateStoreError(str(exc), exc.status_code) from exc
+        if source['source_revision'] != proposal['source_revision']:
+            raise CandidateStoreError('Source changed while reading statement context. Reload the review.', 409)
+        layout = source.get('layout_context')
+        if layout:
+            layout = {**layout, 'rows': [row for row in layout['rows'] if row['row_index'] == typed.row_index]}
+            if not layout['rows']:
+                layout = None
     return dict(case_id=str(case_id), candidate_id=str(candidate_id), mapping_id=saved['id'],
         evidence_file_id=saved['evidence_file_id'], review_revision=candidate['review_revision'],
-        cells=cells, applied=False)
+        cells=cells, layout_context=layout, applied=False)

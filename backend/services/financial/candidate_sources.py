@@ -41,11 +41,14 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
                                              locator=cell_locator.to_json()))
     if len(columns) > 64 or len(rows) > 1000:
         raise PdfMappingError("Stored table exceeds candidate review limits; no rows were truncated.", 422)
+    from services.financial.statement_layout_context import statement_layout_context
+    source_rows = [dict(row_index=row, cells=values) for row, values in rows.items()]
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), page_number=page_number,
         table_index=table_index, table_count=len(payload), source_revision=revision,
         table_source=source.value, geometry_source=geometry.value, locator=locator.to_json(),
         text_origin=_page_origin(content, locations, page_number).value,
-        columns=sorted(columns), rows=[dict(row_index=row, cells=values) for row, values in rows.items()],
+        columns=sorted(columns), rows=source_rows,
+        layout_context=statement_layout_context(source_rows),
         applied=False)
 
 
