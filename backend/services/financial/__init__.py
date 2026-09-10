@@ -2012,3 +2012,6 @@ __all__ += ["CustodyRequest", "record_custody", "source_custody", "capture_case_
 
 from services.financial.review_package_report import render_review_package_report
 __all__ += ["render_review_package_report"]
+
+from services.financial.periodic_audit_anchor import anchor_financial_case_once
+__all__ += ["anchor_financial_case_once"]

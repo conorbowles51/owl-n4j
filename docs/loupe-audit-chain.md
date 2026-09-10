@@ -213,3 +213,52 @@ or proof of every earlier transfer. Exact request retries do not append twice.
 Source exports capture source reports; optional wider-case exports capture all
 reports including removed registrations. Rollback-only local acceptance verifies
 atomic audit inclusion and immutable enforcement; no synthetic reports persist.
+
+## Operator-started periodic case anchors
+
+The new runner captures selected cases consistently and submits only RFC3161
+imprint requests. It is not started by the application, and has no default authority,
+trust roots, case selection or output store. Its database connection must be supplied
+through an explicitly set environment variable (DATABASE_URL by default).
+
+```sh
+data/local-runtime/backend-venv/bin/python scripts/anchor_financial_cases.py \
+  --once --case-id SELECTED_CASE_UUID \
+  --output /private/retained-financial-anchors \
+  --tsa-url https://your-selected-authority.example/timestamp \
+  --ca-file selected-trusted-roots.pem --openssl /path/to/openssl
+```
+
+After reviewing a successful run, use `--watch --interval-seconds 3600` in place of
+`--once` under the operator's chosen service manager. Intervals are bounded between
+5 minutes and24hours. Repeat `--case-id` for each explicitly selected case. Use
+`--untrusted` for required signer intermediates. No real authority configuration or
+case submission was activated during development.
+
+Each case has a filesystem lock and separately retained attempt directories with
+captured-ledger.zip, query, checkpoint, trust copies, response and verification.
+Use a single shared output store across processes; separate hosts/storage need one
+designated runner. Source PDF files are not bundled by this runner. The local ledger
+capture contains sensitive case data and needs the same access/backup controls as
+the case. Retain verified outputs independently of the database/server to preserve
+tamper evidence; deleting every retained pointer/receipt removes this continuity
+reference. Signer/revocation/trust policy remains an operator responsibility.
+
+Every pass verifies the retained response cryptographically against the explicitly
+selected current trust before skipping an unchanged head. A shortened/rewritten
+chain that no longer extends the retained head is refused. A capture/size-limit
+failure produces no partial success. Current whole-case export/audit limits apply.
+The runner does not write case/ledger/audit records or claim export delivery.
+
+An uncertain attempt leaves pending.json and does not trigger another scheduled
+submission. A complete retained response can be verified/recovered without a new
+request. Otherwise inspect its directory and the cause before explicitly invoking
+`--once --retry-failed`; this retains the prior attempt and may send a new request.
+The CLI refuses `--watch --retry-failed`, preventing an endless retry loop. The
+one-shot command exits2 for failures or attention-required cases and prints compact
+per-case statuses without database credentials or raw provider errors.
+
+Acceptance: a real local capture of the existing synthetic case, actual OpenSSL
+signatures/nonces and an in-memory TSA transport passed; the next pass skipped the
+unchanged head and the database audit count stayed unchanged. No external request,
+real trust configuration, case mutation or automatic process was started.

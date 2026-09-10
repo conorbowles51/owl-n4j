@@ -15,6 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('archive', type=Path)
     parser.add_argument('--openssl', default='/opt/homebrew/opt/openssl@3/bin/openssl')
+    parser.add_argument('--check-local-runner', action='store_true', help='Also exercise the periodic runner read-only against the fixed synthetic local case, using only this in-memory test TSA.')
     args = parser.parse_args()
     with tempfile.TemporaryDirectory() as temporary:
         base = Path(temporary)
@@ -87,6 +88,28 @@ ess_cert_id_alg=sha256
         assert not (base / 'failed-submission' / 'verification.json').exists()
         failed = json.loads((base / 'failed-submission' / 'submission.json').read_text())
         assert failed['status'] == 'submission_started' and failed['failure_type'] == 'ValueError'
+        if args.check_local_runner:
+            from sqlalchemy import create_engine, text
+            from uuid import UUID
+            from services.financial.periodic_audit_anchor import anchor_financial_case_once
+            scope=UUID('3dfbafe7-fa6b-4bdd-9af5-0e97975447b9')
+            engine=create_engine('postgresql+psycopg://loupe_local:loupe_local_dev@127.0.0.1:55434/loupe_local')
+            try:
+                with engine.connect() as connection:
+                    before=connection.scalar(text('SELECT count(*) FROM financial_audit_events WHERE case_id=:case'),{'case':scope})
+                calls_before=len(posted)
+                runner_client=httpx.Client(transport=httpx.MockTransport(responder))
+                options=dict(case_id=scope,output=base/'periodic-runner',tsa_url='https://synthetic.example.test/tsa',ca_file=base/'root.pem',openssl=args.openssl)
+                with patch('httpx.Client',return_value=runner_client):
+                    first=anchor_financial_case_once(engine,**options)
+                    second=anchor_financial_case_once(engine,**options)
+                assert first['status']=='timestamp_verified' and second['status']=='unchanged_verified_head'
+                assert len(posted)==calls_before+1 and len(posted[-1])<128
+                with engine.connect() as connection:
+                    assert connection.scalar(text('SELECT count(*) FROM financial_audit_events WHERE case_id=:case'),{'case':scope})==before
+                print(json.dumps(dict(periodic_runner_real_local_capture=True,signature_and_nonce_verified=True,
+                    unchanged_head_skipped=True,audit_database_unchanged=True,authority='in_memory_synthetic_only')))
+            finally:engine.dispose()
         refused = []
         def reject(name, callback):
             try:

@@ -1,3 +1,24 @@
+## Periodic selected-case timestamp runner — 10 September
+
+Added anchor_financial_case_once and operator CLI anchor_financial_cases.py. No
+application auto-start/default TSA or case selection. Explicit --once/--watch,
+authority/trust/files/case IDs and database URL environment required. Common output
+store supplies per-case process locks. Retains every full ledger/audit capture and
+request/response/trust; current trust re-verifies prior response before skip.
+Current and later export histories must extend the prior anchored/preflight heads.
+Shortened/rewritten history is refused. Failures retain a pending attempt; no blind
+scheduled retry. A completed response recovers after interruption without network;
+--once --retry-failed permits a reviewed retry, while watch+retry is refused.
+
+27unit/audit/package tests pass; additional CLI guard test added. Real read-only
+capture of the existing synthetic asset case with actual OpenSSL signing through
+in-memory HTTP transport passes: one request, valid signature/nonce, unchanged
+second pass skipped, database audit count unchanged. No external request or case
+mutation. Existing bad nonce/imprint/trust/truncation checks still pass. Documented
+whole-case capture limits, shared-store requirement, independent retention and
+operator-selected authority/revocation policy. Corrected exported coverage migration
+list to include20260910_custody. Production runner is not enabled. Backend84344.
+
 ## Readable review-package contents — 10 September
 
 New review packages include a manifest-hashed review-index.html: authenticated
