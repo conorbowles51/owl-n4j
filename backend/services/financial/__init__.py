@@ -1972,3 +1972,9 @@ __all__ += ["build_expert_support"]
 
 from services.financial.processing_provenance import capture_processing_provenance
 __all__ += ["capture_processing_provenance"]
+
+from services.financial.trace_replay import replay_trace
+__all__ += ["replay_trace"]
+
+from services.financial.trace_support_archive import build_trace_support_archive
+__all__ += ["build_trace_support_archive"]

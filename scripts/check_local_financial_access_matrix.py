@@ -33,7 +33,8 @@ reads += [('GET','indirect-review-methods',case,{},None),
  ('GET','candidates/bc574f1c-576d-469a-acbe-af84a2ece523/source-readings',case,{},None),
  ('GET',f'candidate-sources/{file}/page-scan',case,dict(start_page=3,end_page=3,auto_columns='true',currency='USD'),None),
  ('GET',f'candidate-sources/{file}/model-nominations',case,{},None),
- ('POST','network-trace',network_case,{},network['inputs'])]
+ ('POST','network-trace',network_case,{},network['inputs']),
+ ('POST','trace-support-export',network_case,{},dict(scenarios=[json.dumps(network,sort_keys=True,separators=(',',':'),ensure_ascii=False)]))]
 # Invalid bodies are intentional: permission denial must precede payload validation.
 mutations=[('POST',name) for name in (
  f'transactions/{row}/quarantine',f'transactions/{row}/release',f'transactions/{row}/correction',
@@ -56,9 +57,16 @@ try:
   client.headers['Authorization']='Bearer '+login.json()['access_token']
   def check(stage,expected,check_edits=True):
    outcomes={}
+   fresh_scenario=None
    for method,path,scope,params,body in reads:
+    if stage=='view_only' and path=='network-trace':
+     fresh=client.get('/api/financial/network-trace-inputs',params={'case_id':scope,**{key:body[key] for key in ('start_date','end_date','population','tolerance_days') if key in body}});fresh.raise_for_status()
+     body={**body,'expected_snapshot_sha256':fresh.json()['snapshot_sha256']}
+    if stage=='view_only' and path=='trace-support-export':
+     require(fresh_scenario is not None,'Fresh read-only scenario missing');body={'scenarios':[fresh_scenario]}
     response=client.request(method,'/api/financial/'+path,params={'case_id':scope,**params},**({'json':body} if body is not None else {}))
     require(response.status_code==expected,f'{stage}: {method} {path}: expected {expected}, got {response.status_code}')
+    if stage=='view_only' and path=='network-trace':fresh_scenario=response.json()['scenario_json']
     outcomes[f'{method} {path}']=response.status_code
    if check_edits:
     for method,path in mutations:

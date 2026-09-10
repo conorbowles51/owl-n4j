@@ -16,7 +16,7 @@ const prefix=resale?'resale-':partial?'partial-':'';
     page.on('console',m=>{if(m.type()==='error'||m.text().includes('vite'))console.log('Browser',m.text())});
     let writes = 0;
     await page.route('**/api/financial/**', async route => {
-      if (!['GET','HEAD'].includes(route.request().method()) && !route.request().url().includes('/network-trace?')) { writes++; await route.abort(); }
+      if (!['GET','HEAD'].includes(route.request().method()) && !route.request().url().includes('/network-trace?') && !route.request().url().includes('/trace-support-export?')) { writes++; await route.abort(); }
       else await route.continue();
     });
     await page.goto('http://127.0.0.1:55174/login');
@@ -96,6 +96,7 @@ const prefix=resale?'resale-':partial?'partial-':'';
       const html=fs.readFileSync(reportPath,'utf8');if(!html.includes('Conditional tracing report')||!html.includes('Separate asset interpretations')||!html.includes('Original scenario SHA-256'))throw Error('Readable report omitted required context');
       const reportPage=await browser.newPage({viewport:{width:1440,height:1100}});await reportPage.setContent(html);await reportPage.screenshot({path:'/tmp/loupe-readable-network-report.png'});await reportPage.close();
     }
+    if(process.argv.includes('--audit')){const pendingAudit=page.waitForEvent('download');await page.getByRole('button',{name:'Download tracing audit bundle',exact:true}).click();await(await pendingAudit).saveAs('/tmp/loupe-browser-tracing-audit.zip');}
     console.log('Downloaded');await page.screenshot({path:`/tmp/loupe-${prefix}asset-trace-results.png`});
     if(fs.readFileSync(output,'utf8')!==envelope.scenario_json) throw Error('Download mismatch');
     await page.getByLabel('Opening amount account 1',{exact:true}).fill('1.00');

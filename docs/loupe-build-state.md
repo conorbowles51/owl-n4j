@@ -1,3 +1,34 @@
+## Captured tracing replay and audit bundles — 10 September
+
+Added offline replay of single-account and cross-account scenario JSON. It verifies
+case/snapshot bindings and optional separately retained digest, then recalculates
+with the installed code without a database/provider. Exact changed output paths
+are reported, with both code fingerprints. Duplicate JSON keys and changed source
+bindings fail. Different output can mean added metadata rather than changed cash;
+an older asset fixture correctly reports18new allocation fields/explanations.
+Original files remain unchanged. Replay reports are not source authentication.
+
+A selected-scenario support assembler preserves original scenario bytes, per-scenario
+scope, recalculation report and recorded expert support in a hashed ZIP. Optional
+supplied corpus labels/measurements remain explicitly declared (including synthetic
+status); no case/version equivalence or independent validation is invented. Full
+custody/history/toolchain remains unavailable. Browser workbenches now offer this
+single-scenario audit ZIP alongside original JSON and readable HTML. The endpoint
+requires case:view, binds the case and authenticated preparing user, and the browser
+checks scenario/marking/archive hashes before download. No financial state changes.
+
+4299backend tests passed before the final route checks; final suite4301passed.
+997financial UI tests, production build and scoped lint passed (a test-only generic
+type was corrected during the build check; focused5tests also pass). Read-only
+asset-resale browser ZIP preserves exact original JSON, all entry hashes and exporter;
+124live permission checks pass with temporary user removed. Permission fixtures now
+capture fresh read-only tracing input hashes rather than relying on stale snapshots.
+Offline single-account/multiple-asset and cross-account/resale scenarios both match.
+
+Guide: docs/loupe-tracing-reproducibility.md. Local backend session11266 on58002,
+/tmp/loupe-trace-audit-runtime.out. No provider call, push or deployment. Continue the
+remaining case-history/custody/validation and broader extraction requirements.
+
 ## Readable conditional tracing reports — 10 September
 
 Both single-account and cross-account workbenches now download a standalone HTML

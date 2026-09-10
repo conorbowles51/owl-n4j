@@ -28,7 +28,7 @@ belongs with the reads.
 """
 
 from datetime import date
-from typing import Optional, Literal
+from typing import Optional, Literal, Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -203,6 +203,37 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
     except Exception:
         logger.exception("Ledger export failed for case %s",case_id)
         raise HTTPException(status_code=500,detail="Ledger export could not be prepared.")
+
+
+class TraceSupportDownload(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    scenarios: list[Annotated[str, Field(strict=True, min_length=1, max_length=16 * 1024 * 1024)]] = Field(min_length=1, max_length=8)
+    privilege_marking: Literal['unmarked', 'confidential', 'privileged_confidential'] = 'unmarked'
+
+
+@router.post('/trace-support-export')
+def download_trace_support(body: TraceSupportDownload, case_id: UUID = Query(...), current_user=Depends(get_current_db_user)):
+    """Recompute submitted captures and package support under the case-view bar."""
+    import hashlib
+    from datetime import datetime, timezone
+    from services.financial.trace_support_archive import build_trace_support_archive
+    try:
+        content = build_trace_support_archive([value.encode('utf-8') for value in body.scenarios],
+            expected_case_id=case_id, preparation=dict(generated_at=datetime.now(timezone.utc).isoformat(),
+                generated_by=dict(id=str(current_user.id), name=current_user.name, email=current_user.email),
+                privilege_marking=body.privilege_marking,
+                basis='Authenticated bundle preparation from submitted historical captures; not authentication of their original authorship or a legal privilege determination.'))
+        return Response(content=content, media_type='application/zip', headers={
+            'Content-Disposition':'attachment; filename="loupe-tracing-audit.zip"',
+            'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff',
+            'X-Loupe-Case-Id':str(case_id), 'X-Loupe-Privilege-Marking':body.privilege_marking,
+            'X-Loupe-Archive-Sha256':hashlib.sha256(content).hexdigest(),
+            'X-Loupe-Scenario-Sha256':hashlib.sha256(body.scenarios[0].encode('utf-8')).hexdigest() if len(body.scenarios) == 1 else ''})
+    except (LedgerSummaryError, TracingError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Tracing support export failed')
+        raise HTTPException(status_code=500, detail='Tracing support could not be prepared.')
 
 
 @router.get("/ledger-counterparties")
