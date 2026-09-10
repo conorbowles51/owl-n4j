@@ -53,6 +53,7 @@ export const scope = networkInputs.parse({
 const request = {
   expected_snapshot_sha256: scope.snapshot_sha256,
   currency: "GBP",
+  ordered_transaction_ids: ["root", "debit", "credit"],
   doctrines: ["first_in_first_out"],
   openings: [{ account_id: "a" }, { account_id: "b" }],
   pairs: [{ debit_id: "debit", credit_id: "credit" }],
@@ -137,4 +138,49 @@ it("rejects internally balanced root figures that disagree with the account outc
   await expect(
     verifyNetworkTrace(await report("99", "1"), scope, request)
   ).rejects.toThrow("conservation")
+})
+
+it("requires explicit backward assumptions and verifies dependency order and hop flags", async () => {
+  const backward = {
+    ...request,
+    ordered_transaction_ids: ["credit", "root", "debit"],
+    allow_backward: true,
+    backward_basis: "Synthetic earlier receipt linked to later debit.",
+  }
+  async function capture(hopFlag = true, order = ["a", "b"]) {
+    const original = await report(),
+      doc = JSON.parse(original.scenario_json)
+    doc.inputs = backward
+    doc.backward_timing_used = true
+    doc.calculation_account_order = order
+    doc.results.first_in_first_out.hops[0].backward_timing = hopFlag
+    const scenario_json = JSON.stringify(doc),
+      bytes = new TextEncoder().encode(scenario_json)
+    const scenario_sha256 = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+      (b) => b.toString(16).padStart(2, "0")
+    ).join("")
+    return {
+      ...original,
+      scenario_json,
+      scenario_sha256,
+      scenario_byte_count: bytes.length,
+    }
+  }
+  expect(
+    (await verifyNetworkTrace(await capture(), scope, backward)).value
+      .backward_timing_used
+  ).toBe(true)
+  await expect(
+    verifyNetworkTrace(await capture(false), scope, backward)
+  ).rejects.toThrow("hop")
+  await expect(
+    verifyNetworkTrace(await capture(true, ["b", "a"]), scope, backward)
+  ).rejects.toThrow("hop")
+  await expect(
+    verifyNetworkTrace(await capture(), scope, {
+      ...backward,
+      allow_backward: false,
+    })
+  ).rejects.toThrow("inputs")
 })

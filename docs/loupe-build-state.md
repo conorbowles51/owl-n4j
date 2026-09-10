@@ -1,3 +1,27 @@
+## Explicit backward timing — 10 September, about09:01Dublin
+
+Cross-account tracing now offers an off-by-default backward timing option with
+mandatory investigator basis. It permits an earlier receiving credit to carry
+an allocation from its selected later debit. Recorded dates and chronology
+within each account are unchanged; account dependencies determine calculation
+order. Circular account dependencies are refused in this mode. Forward results
+remain unchanged when no backward pair is used. This is a conditional timing
+assumption, not a legal-applicability or payment-causation conclusion.
+
+Every affected hop is flagged and the exact basis/calculation order are captured.
+Frontend independently checks those flags, account order, source pairs and claim
+conservation. Unsupported cycles, missing basis and stale scope return no trace.
+4182backend tests,913financialUI tests, TypeScript/build/scopedlint pass.
+Synthetic case3dfbafe7-fa6b-4bdd-9af5-0e97975447b9: January1receiving credit linked
+toJanuary5payer debit; sevenpostings/threeaccounts/twohops. Browser default422
+refusal, explicit basis, FIFO80GBP/pro-rata90/LIFO100remaining from100claim,
+source navigation, exact download and stale-result clearing pass with0financial
+writes. prepare_local_backward_review.py guarded seed completed; read-only
+check_local_backward_journey.cjs canrerun. Reports:backward-trace-ui-check.json
+and backward-trace-scenario.json underdata/local-runtime. Current backend59951,
+log/tmp/loupe-backward-runtime.out. No push. Asset interpretation and remaining
+extraction/identity/integrated acceptance continue.
+
 ## Repeatable local application checks — 10 September, about08:48Dublin
 
 New local_app.py setup verifies the existing tester or creates it only on an

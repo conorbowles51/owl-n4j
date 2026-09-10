@@ -177,6 +177,7 @@ feature below is complete at the start of this window.
    - [x] Record which evidence and decisions supported an exported result. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 9. **Complete funds tracing — partial**
+   - [x] Explicit backward timing, off by default and requiring a basis, with unchanged source dates and acyclic account dependency checks. Synthetic earlier-credit/later-debit browser scenario conserves each method, flags the backward hop and preserves source/download; circular backward dependencies are refused. Asset substitution remains separate.
    - [x] Forward tracing across 2–10 accounts, selected source-bound transfer pairs, all scoped readings, explicit openings/order/root claims and per-method conservation. Three-account browser test verifies FIFO £80, pro rata £90 and LIFO £100 remaining from a synthetic £100 claim; exact download and stale-result clearing pass. Backward tracing and asset substitution remain unsupported.
    - [x] Decimal currency entry converts exactly to minor-unit requests; readable movement amounts and source buttons. Multiple-claim browser results preserved.
    - [x] Multiple explicit deposit/claim attributions and working/verified population selection preserve original proof classes; reject excess attribution and export all assumptions. Focused23backend/12UI and working-population multiple-claim browser checks pass. Cross-account propagation remains.

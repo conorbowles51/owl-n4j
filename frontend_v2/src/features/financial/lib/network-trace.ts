@@ -24,6 +24,8 @@ const resultSchema = z.object({
   case_id: z.string(),
   applied: z.literal(false),
   assumptions_verified: z.literal(false),
+  backward_timing_used: z.boolean().default(false),
+  calculation_account_order: z.array(z.string()).default([]),
   inputs: z.record(z.string(), z.unknown()),
   limitations: z.array(z.string()),
   results: z.record(
@@ -44,6 +46,7 @@ const resultSchema = z.object({
       ),
       hops: z.array(
         z.object({
+          backward_timing: z.boolean().default(false),
           debit_id: z.string(),
           credit_id: z.string(),
           from_account: z.string(),
@@ -130,6 +133,30 @@ export async function verifyNetworkTrace(
     canonical(Object.keys(value.results).sort())
   )
     throw Error("Different tracing methods returned.")
+  const ordered = z.array(z.string()).parse(request.ordered_transaction_ids)
+  const backward = (d: string, c: string) =>
+    ordered.indexOf(c) <= ordered.indexOf(d)
+  const expectedBackward = pairs.some((p) => backward(p.debit_id, p.credit_id))
+  if (
+    new Set(ordered).size !== ordered.length ||
+    ordered.length !==
+      scope.rows.filter((r) => r.currency === currency).length ||
+    scope.rows
+      .filter((r) => r.currency === currency)
+      .some((r) => !ordered.includes(r.key)) ||
+    value.backward_timing_used !== expectedBackward ||
+    (expectedBackward &&
+      (request.allow_backward !== true ||
+        typeof request.backward_basis !== "string" ||
+        !request.backward_basis.trim()))
+  )
+    throw Error("Backward timing differs from the explicit assumptions.")
+  if (
+    expectedBackward &&
+    canonical([...value.calculation_account_order].sort()) !==
+      canonical(openings.map((o) => o.account_id).sort())
+  )
+    throw Error("Backward calculation account order differs.")
   const roots = new Map<string, bigint>()
   attributions.forEach((a) =>
     roots.set(
@@ -171,6 +198,10 @@ export async function verifyNetworkTrace(
       if (
         !d ||
         !c ||
+        h.backward_timing !== backward(h.debit_id, h.credit_id) ||
+        (expectedBackward &&
+          value.calculation_account_order.indexOf(h.from_account) >=
+            value.calculation_account_order.indexOf(h.to_account)) ||
         !pairs.some(
           (p) => p.debit_id === h.debit_id && p.credit_id === h.credit_id
         ) ||

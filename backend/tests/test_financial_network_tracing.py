@@ -45,3 +45,45 @@ class NetworkTracingTests(LedgerSummaryTests):
         with self.assertRaises(LedgerSummaryError):evaluate_network_trace(export,{**request,'attributions':[wrong]})
         with patch('services.financial.network_tracing.MAX_NETWORK_ROWS',2):
             with self.assertRaises(LedgerSummaryError):evaluate_network_trace(export,request)
+
+    def recapture(self):
+        snapshot=capture_ledger_snapshot(self.db,case_id=self.case.id,start_date=date(2026,1,1),end_date=date(2026,1,31))
+        document=_capture_history(self.db,json.loads(snapshot.content),case_id=self.case.id)
+        content=json.dumps(document,sort_keys=True,separators=(',',':'))
+        return LedgerExport(LedgerSnapshot(content,hashlib.sha256(content.encode()).hexdigest(),len(content.encode())),'{}')
+
+    def test_explicit_backward_timing_conserves_each_method_without_redating_rows(self):
+        export,request,rows=self.network()
+        for row,day in zip(rows,[4,4,5,1,2,2,3]):
+            row.transaction_date=row.ordering_date=date(2026,1,day)
+            row.value_date=row.posted_date=row.effective_date=None
+        self.db.commit();export=self.recapture()
+        request.update(expected_snapshot_sha256=export.snapshot.sha256,tolerance_days=7,
+            ordered_transaction_ids=[str(rows[i].id) for i in (3,4,5,6,0,1,2)])
+        with self.assertRaisesRegex(LedgerSummaryError,'Forward tracing'):evaluate_network_trace(export,request)
+        with self.assertRaisesRegex(LedgerSummaryError,'Explain the basis'):evaluate_network_trace(export,{**request,'allow_backward':True})
+        result=evaluate_network_trace(export,{**request,'allow_backward':True,'backward_basis':'Synthetic earlier receiving credit linked explicitly to a later payer debit.'})
+        captured=json.loads(result['scenario_json'])
+        self.assertTrue(captured['backward_timing_used'])
+        self.assertEqual(captured['ledger_snapshot'],json.loads(export.snapshot.content))
+        self.assertEqual(captured['results']['first_in_first_out']['claims']['claim']['reported_remaining_minor'],'8000')
+        self.assertEqual(captured['results']['pro_rata']['claims']['claim']['reported_remaining_minor'],'9000')
+        for method in captured['results'].values():
+            claim=method['claims']['claim'];self.assertEqual(int(claim['reported_remaining_minor'])+int(claim['withdrawn_without_selected_transfer_minor']),10000)
+            self.assertEqual([h['backward_timing'] for h in method['hops']],[True,False])
+        self.assertTrue(all(r.proof_class=='p3' for r in rows))
+        self.assertFalse(self.db.new or self.db.dirty)
+
+    def test_backward_account_cycle_is_refused_without_a_partial_trace(self):
+        export,request,rows=self.network()
+        rows[0].amount_minor=2000;self.db.commit();export=self.recapture()
+        request.update(expected_snapshot_sha256=export.snapshot.sha256,allow_backward=True,backward_basis='Synthetic circular dependency')
+        request['pairs'].append(dict(debit_id=str(rows[6].id),credit_id=str(rows[0].id)))
+        with self.assertRaisesRegex(LedgerSummaryError,'circular account dependency'):evaluate_network_trace(export,request)
+
+    def test_enabling_backward_option_without_using_it_keeps_forward_results(self):
+        export,request,rows=self.network()
+        forward=json.loads(evaluate_network_trace(export,request)['scenario_json'])
+        enabled=json.loads(evaluate_network_trace(export,{**request,'allow_backward':True,'backward_basis':'No backward pair is actually selected.'})['scenario_json'])
+        self.assertFalse(enabled['backward_timing_used'])
+        self.assertEqual(forward['results'],enabled['results'])

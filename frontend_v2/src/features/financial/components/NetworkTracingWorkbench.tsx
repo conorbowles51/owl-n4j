@@ -186,6 +186,8 @@ function NetworkForm({
     [chosen, setChosen] = useState<number[]>([]),
     [selectedMethods, setSelectedMethods] = useState<string[]>([]),
     [basis, setBasis] = useState(""),
+    [allowBackward, setAllowBackward] = useState(false),
+    [backwardBasis, setBackwardBasis] = useState(""),
     [orderBasis, setOrderBasis] = useState(""),
     [pairPage, setPairPage] = useState(0),
     [source, setSource] = useState<string | null>(null)
@@ -210,6 +212,8 @@ function NetworkForm({
         })),
         basis,
         order_basis: orderBasis,
+        allow_backward: allowBackward,
+        backward_basis: allowBackward ? backwardBasis : "",
         ordered_transaction_ids: ordered.map((r) => r.key),
         doctrines: selectedMethods,
         openings: openings.map(({ amount_input, ...o }) => ({
@@ -455,11 +459,43 @@ function NetworkForm({
               setAttributions(v)
             }}
           />
+          <fieldset className="space-y-2 rounded border p-3">
+            <legend>Optional backward timing</legend>
+            <label className="block">
+              <input
+                aria-label="Allow backward transfer timing"
+                type="checkbox"
+                checked={allowBackward}
+                onChange={(e) => setAllowBackward(e.target.checked)}
+              />{" "}
+              Allow a receiving credit before its selected debit
+            </label>
+            <p>
+              Off by default. This assumes an earlier receiving entry is linked
+              to a later payment; it does not establish causation or legal
+              applicability. Circular account dependencies are refused. Recorded
+              dates stay unchanged.
+            </p>
+            {allowBackward && (
+              <label className="block">
+                Basis for backward timing
+                <textarea
+                  aria-label="Basis for backward timing"
+                  required
+                  maxLength={4096}
+                  className="block w-full border bg-background p-2"
+                  value={backwardBasis}
+                  onChange={(e) => setBackwardBasis(e.target.value)}
+                />
+              </label>
+            )}
+          </fieldset>
           <h3 className="font-semibold">Review the movement order</h3>
           <p>
             All current readings in this currency are included. Same-day order
-            is an assumption; each receiving credit must follow its selected
-            debit.
+            is an assumption. Forward mode requires each receiving credit after
+            its selected debit; backward timing requires the explicit option and
+            basis above.
           </p>
           <ol className="max-h-96 overflow-auto rounded border p-3">
             {ordered.map((r, i) => (
@@ -590,6 +626,12 @@ function NetworkForm({
               </tbody>
             </table>
           </div>
+          {calculate.data.value.backward_timing_used && (
+            <p className="font-semibold">
+              Backward timing used — allocations to earlier receiving entries
+              are conditional on your stated basis.
+            </p>
+          )}
           {calculate.data.value.limitations.map((note) => (
             <p key={note}>{note}</p>
           ))}
@@ -624,6 +666,12 @@ function NetworkForm({
                       Hop {i + 1}: {accountLabel(h.from_account)} →{" "}
                       {accountLabel(h.to_account)}
                     </p>
+                    {h.backward_timing && (
+                      <p>
+                        Earlier receiving entry — explicit backward timing
+                        assumption.
+                      </p>
+                    )}
                     {Object.entries(h.propagated_by_claim).map(
                       ([claim, amount]) => (
                         <p key={claim}>
