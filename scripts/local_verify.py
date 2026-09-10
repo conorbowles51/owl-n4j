@@ -55,8 +55,8 @@ def check(client, case_id):
         response=client.get(url,**kwargs);response.raise_for_status();return response
     def backend():
         value=get('/health').json()
-        require(value['neo4j']=='connected' and value['evidence_engine']=='ok','Backend graph/engine dependencies are unavailable.')
-        return 'Backend, graph and evidence engine connected.'
+        require(value['status']=='ok' and value['neo4j']=='connected' and value['evidence_engine']=='ok' and value.get('postgres')=='connected' and value.get('database_schema')=='current','Backend database/schema, graph or engine dependencies are unavailable.')
+        return 'Backend database/schema, graph and evidence engine ready.'
     def engine():
         value=get('http://127.0.0.1:58003/health',headers={'X-API-Key':'loupe-local-service'}).json()
         required=('postgres','neo4j','chromadb','redis','ocr','storage')

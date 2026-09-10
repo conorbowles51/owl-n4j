@@ -1,3 +1,22 @@
+## Clean migration and runtime readiness acceptance — 10 September
+
+Added a repeatable disposable-local-database migration check: full upgrade to
+20260910_audit_graph_jobs,103tables and23capture triggers; repeated upgrade is safe.
+The generated database was removed; existing case databases were untouched.
+
+Public /health now includes PostgreSQL connection and migration-head readiness.
+A missing/unavailable/outdated database produces overall degraded status, rather
+than passing deployment while financial storage cannot run. Driver details are
+not returned publicly. Database queries run read-only with a2second statement
+limit.7focused readiness/endpoint tests pass, including failure/sanitization paths.
+The deploy script itself was not run or changed.
+
+Live local_app.py check for sealed108-page case a2dae109-477c-4526-8642-c6a358a73479
+passes all14checks: services/OCR/worker/auth/schema, unchanged financial totals,
+export hashes and case-scoped analyses. The normal export adds its audit receipt;
+source/ledger rows are unchanged. No provider or push. Backend59127
+(/tmp/loupe-database-readiness-runtime.out), engine62038/worker73588.
+
 ## Case UI assembly of selected review support — 10 September
 
 Added TraceSupportAssembly and case-view-protected multipart assembly endpoint.

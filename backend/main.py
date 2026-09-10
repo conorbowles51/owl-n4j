@@ -236,7 +236,7 @@ async def health():
         neo4j_status = "connected"
         node_count = summary["total_nodes"] if summary else 0
     except Exception as e:
-        neo4j_status = f"error: {str(e)}"
+        neo4j_status = "error: unavailable"
         node_count = 0
 
     # Test evidence engine connection
@@ -244,10 +244,15 @@ async def health():
         ee_health = await evidence_engine_client.health_check()
         evidence_engine_status = ee_health.get("status", "unknown")
     except Exception as e:
-        evidence_engine_status = f"error: {str(e)}"
+        evidence_engine_status = "error: unavailable"
 
+    from starlette.concurrency import run_in_threadpool
+    from services.runtime_readiness import database_readiness, overall_readiness
+    database = await run_in_threadpool(database_readiness)
     return {
-        "status": "ok",
+        "status": overall_readiness(neo4j_status, evidence_engine_status, database),
+        "postgres": database['status'],
+        "database_schema": database['schema'],
         "neo4j": neo4j_status,
         "nodes": node_count,
         "evidence_engine": evidence_engine_status,
