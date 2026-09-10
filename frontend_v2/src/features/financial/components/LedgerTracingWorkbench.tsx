@@ -1,3 +1,4 @@
+import { IndirectReviewWorkbench } from "./IndirectReviewWorkbench"
 import { TraceAssetFields, TraceAssetResultsPanel } from "./TraceAssetFields"
 import type { TraceAssetUse } from "../lib/trace-assets"
 import { useState } from "react"
@@ -40,8 +41,16 @@ export function LedgerTracingWorkbench({
         >
           Trace between accounts
         </Button>
+        <Button
+          variant={mode === "indirect" ? "primary" : "outline"}
+          onClick={() => setMode("indirect")}
+        >
+          Indirect review methods
+        </Button>
       </div>
-      {mode === "single" ? (
+      {mode === "indirect" ? (
+        <IndirectReviewWorkbench key={caseId} caseId={caseId} />
+      ) : mode === "single" ? (
         <CaseTracing key={caseId} caseId={caseId} />
       ) : (
         <NetworkTracingWorkbench key={caseId} caseId={caseId} />

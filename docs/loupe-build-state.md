@@ -1,3 +1,28 @@
+## Guided indirect workpapers — 10 September
+
+The financial tracing area now offers net worth, bank deposits, expenditure and
+cash-T procedures. Amounts are investigator-assessed, with case-file references,
+locations and bases. Required starting-position, alternative-source, lead-followup
+and applicability reviews must be documented before a difference is displayed.
+Unknown amounts remain unknown. Calculations use exact integers; the client checks
+the captured inputs, source scope, arithmetic, completeness and SHA-256 envelope.
+The reference is IRS IRM9.5.9; completion of form fields is explicitly not an
+independent source verification, tax conclusion or finding of wrongdoing.
+
+Each method retains its draft when switching. Download/restore and one guarded
+synthetic Workspace save/reopen pass for all four methods, including source viewing,
+stale-result clearing and incomplete-result withholding. Saved entry:
+6e926411-1be5-4ddb-b378-395be306ec99 in synthetic case
+e9cafc92-85a7-497c-aec8-049157e823d0. Repeat only
+`node scripts/check_local_indirect_review.cjs --read-only`; no repeat writer.
+The saved source is a reference to synthetic evidence, not proof of imposed values.
+
+106 live permission checks pass, with temporary-user cleanup and no financial
+mutations. Full gates:4246backend tests,955financial UI tests and production build
+pass. New source-inspection controls use readable labels; screenshot inspected.
+JSON restoration is available; Workspace keeps the readable note and exact envelope.
+No deployment or push. Remaining multiple-purchase/resale scope stays open.
+
 ## Partial-withdrawal asset purchase assumptions — 10 September
 
 Single-account and network tracing can attribute an explicitly selected portion

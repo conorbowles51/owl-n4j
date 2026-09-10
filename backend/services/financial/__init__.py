@@ -1948,3 +1948,6 @@ __all__.extend(["counterparty_parties", "set_counterparty_party"])
 
 from services.financial.summary_contributions import summary_contributions
 __all__ += ["summary_contributions"]
+
+from services.financial.indirect_review import IndirectReviewInput, indirect_methods, evaluate_indirect_review
+__all__ += ['IndirectReviewInput', 'indirect_methods', 'evaluate_indirect_review']

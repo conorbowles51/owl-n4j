@@ -1024,3 +1024,27 @@ def get_counterparty_party_analysis(case_id: UUID = Query(...),account_id: Optio
     except Exception:
         logger.exception('Reviewed counterparty analysis failed for case %s',case_id)
         raise HTTPException(status_code=500,detail='Reviewed counterparty analysis could not be prepared.')
+
+from services.financial.indirect_review import IndirectReviewInput, indirect_methods, evaluate_indirect_review
+
+@router.get('/indirect-review-methods')
+def get_indirect_review_methods(case_id: UUID = Query(...)):
+    return dict(case_id=str(case_id), **indirect_methods())
+
+@router.post('/indirect-review')
+def run_indirect_review(body: IndirectReviewInput,case_id: UUID = Query(...),db: Session = Depends(get_db)):
+    from postgres.models.evidence import EvidenceFile
+    ids={item.source_file_id for item in [*body.entries.values(),*body.requirements.values()] if item.source_file_id}
+    sources=[]
+    for id in sorted(ids,key=str):
+        source=db.get(EvidenceFile,id)
+        if source is None or source.case_id!=case_id:
+            raise HTTPException(status_code=404,detail='A workpaper source is unavailable in this case.')
+        sources.append(dict(id=str(source.id),case_id=str(case_id),filename=source.original_filename,sha256=source.sha256))
+    try:
+        return evaluate_indirect_review(case_id,body,sources)
+    except (LedgerSummaryError,MoneyError) as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Indirect workpaper calculation failed')
+        raise HTTPException(status_code=500,detail='The indirect workpaper could not be calculated.')

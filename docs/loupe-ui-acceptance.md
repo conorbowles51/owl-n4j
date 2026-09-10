@@ -187,3 +187,12 @@ See build-state for guarded writer and repeatable read-only script names.
   portion in currency units. Results show source amount, asset amount, remainder
   and separate per-method claim allocations. Synthetic12of20GBP browser checks
   preserve cash figures, exact downloads and original source navigation.
+
+## Indirect workpaper acceptance — 10 September
+
+All four guided methods pass a synthetic live walkthrough: unknown amounts withhold
+results, method switching keeps drafts, source files open, download/restore preserves
+exact contents, and one Workspace note reopens with matching envelope and case.
+The repeat run made zero writes. Readable source buttons and spaced download/restore
+controls replace internal field names in visible copy. Screenshot inspected.
+106case-access checks,4246backend tests,955financial UI tests and build pass.
