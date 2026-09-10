@@ -765,3 +765,28 @@ async def test_real_tesseract_recovers_rotated_scanned_pdf(tmp_path, rotation) -
     assert "INVESTIGATION REPORT" in normalized
     assert "ACME" in normalized
     assert "4821" in normalized
+
+
+@pytest.mark.parametrize("bad_glyph", ["\x01", "\ufffd"])
+def test_dense_corrupt_text_layer_uses_ocr_despite_many_words(bad_glyph) -> None:
+    document = fitz.open()
+    try:
+        page = document.new_page()
+        text = ("Account transaction details " + bad_glyph * 4 + " ") * 30
+        alnum, tokens = pdf_extraction._native_text_stats(text)
+        assert alnum > pdf_extraction.MIN_MEANINGFUL_ALNUM
+        assert len(tokens) > pdf_extraction.MIN_MEANINGFUL_WORDS
+        assert pdf_extraction._ocr_detection_reason(page, text) == "suspicious_text_layer"
+    finally:
+        document.close()
+
+
+def test_dense_legible_text_and_single_character_tables_do_not_force_ocr() -> None:
+    document = fitz.open()
+    try:
+        page = document.new_page()
+        for text in ["Readable account description and transaction date " * 30,
+                     "A B C D E F G H I J " * 30]:
+            assert pdf_extraction._ocr_detection_reason(page, text) is None
+    finally:
+        document.close()

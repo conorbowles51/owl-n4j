@@ -1,3 +1,27 @@
+## Dense corrupt PDF text recovery —10September, about10:35Dublin
+
+Engine now detects excessive control/replacement characters even when an
+embedded layer contains many words. Previously the suspicious-text fallback was
+only reached for sparse text, so dense broken font encodings bypassed OCR.
+The weaker single-character-token heuristic remains sparse-only to avoid forcing
+ordinary dense tables through OCR.26PDF extraction tests pass.
+
+Read-only full56-page extraction using local Tesseract now OCRs exactly pages51
+and52, recovering Payment History text; confidence94.7/89.8at300DPI, explicitly
+recognised_glyphs. These are OCR confidence values, not financial accuracy.
+OriginalSHA5a3ad9...unchanged; no database/case-source/financial writes. Page51
+original image visually inspected. Reports dense-ocr-pdf-extraction.json and
+dense-ocr-check.json. Repeatable check_local_dense_pdf_ocr.py; --verify-saved
+checks retained output without rerunning OCR. Diagnostic checker corrected its
+page metadata key after extraction; saved output then verified successfully.
+
+The engine service has NOT yet been restarted with this change. Next required
+work: OCR word geometry so recovered values can be selected at exact source
+locations. Current OCR output contains canonical text/provenance but no table
+geometry for these pages. Never reprepare the already-finalized sample sources;
+use a fresh local case for end-to-end acceptance once geometry is connected.
+No push. Backend27456 remains; broader financial work continues.
+
 ## Scanned-PDF nomination fixes —10September, about10:30Dublin
 
 The56-page sample exposed a charge-screen bug:11.18could parse as both money

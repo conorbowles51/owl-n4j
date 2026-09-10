@@ -84,16 +84,21 @@ def _native_text_stats(text: str) -> tuple[int, list[str]]:
     return sum(character.isalnum() for character in text or ""), tokens
 
 
-def _native_text_is_suspicious(text: str, tokens: list[str]) -> bool:
+def _native_text_has_invalid_characters(text: str) -> bool:
     non_whitespace = [character for character in text if not character.isspace()]
-    if non_whitespace:
-        invalid = sum(
-            character == "\ufffd"
-            or (ord(character) < 32 and character not in "\t\n\r")
-            for character in non_whitespace
-        )
-        if invalid / len(non_whitespace) > 0.02:
-            return True
+    if not non_whitespace:
+        return False
+    invalid = sum(
+        character == "\ufffd"
+        or (ord(character) < 32 and character not in "\t\n\r")
+        for character in non_whitespace
+    )
+    return invalid / len(non_whitespace) > 0.02
+
+
+def _native_text_is_suspicious(text: str, tokens: list[str]) -> bool:
+    if _native_text_has_invalid_characters(text):
+        return True
 
     if len(tokens) >= 20:
         single_character_tokens = sum(
@@ -125,6 +130,12 @@ def _ocr_detection_reason(page: fitz.Page, native_text: str) -> str | None:
     alnum_count, tokens = _native_text_stats(native_text)
     if alnum_count == 0:
         return "no_native_text"
+
+    # A broken font encoding can yield thousands of alphanumeric characters
+    # alongside control/replacement glyphs. Text quantity is not evidence that
+    # such a layer is usable. Keep the weaker token-shape heuristic gated below.
+    if _native_text_has_invalid_characters(native_text):
+        return "suspicious_text_layer"
 
     weak_native_text = (
         alnum_count < MIN_MEANINGFUL_ALNUM
