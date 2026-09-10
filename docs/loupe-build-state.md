@@ -1,3 +1,21 @@
+## Reference-review reconciliation and measurement binding — 10 September
+
+Two-reader reference records now compare exact source hashes, row IDs and fields.
+No ground truth is emitted while disagreements remain. Resolutions bind the exact
+reader records, retain both alternatives and require a row-specific reason;
+explicit exclusion is supported. Predictions cannot replace reviewed labels.
+The measurement CLI recomputes reconciliation, checks source inventory and retains
+the review digest plus an optional exact prepared corpus for support packaging.
+Duplicate JSON keys, non-finite values, synthetic-label promotion, tampered truth,
+stale resolutions and overwritten outputs are refused.
+
+4323financial backend tests pass (/tmp/loupe-reference-review-backend-full.out),
+including10new reconciliation/CLI tests. No UI changes; the prior1002UI/build
+baseline remains applicable. No provider, database writes or push. The326active
+legacy extraction files have no identified independent ground-truth declarations;
+they were not promoted to reference labels. Actual independent review, corpus
+approval and release-gate adoption remain incomplete. See loupe-extraction-validation.md.
+
 ## Verified saved-export comparison — 10 September
 
 Main ledger export panel now accepts two saved Loupe ZIPs for read-only comparison.
@@ -19,9 +37,9 @@ stale result clears and0financial writes. Offline self-comparison and the same r
 filtered comparison also pass. Original source files were not modified.
 
 Guide: docs/loupe-export-comparison.md. Repeatable browser check:
-scripts/check_local_export_comparison.cjs. Current runtime session81574,
-/tmp/loupe-export-comparison-runtime.out, predates the final diagnostic-only wording
-and manifest-path fields; restart before final runtime check. No provider or push.
+scripts/check_local_export_comparison.cjs. Current runtime session43082,
+/tmp/loupe-export-comparison-final-runtime.out, includes the committed diagnostics.
+The final live real-account comparison passed again without writes. No provider or push.
 Remaining full custody/audit-spine, independent corpus/release gate and broader
 extraction/live-provider acceptance remain explicit; continue remaining development.
 

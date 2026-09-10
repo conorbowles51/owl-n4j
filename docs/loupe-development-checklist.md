@@ -225,6 +225,7 @@ feature below is complete at the start of this window.
    - [x] Preserve the basis for each tracing result so it can be reviewed. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 10. **Test the complete application locally — partial**
+    - [x] Reconcile two separately supplied reference reviews before measurement: retain disagreements, require explicit row-level resolutions, bind predictions to the completed review record and reject changed labels or source inventory. Synthetic CLI and tamper checks pass; independent reviewers and a representative corpus remain required below.
     - [x] Add offline row/field/direction and admitted-error measurements against supplied reviewed labels, with exact ratios, unavailable states and regression comparison. Synthetic coverage and CLI nonzero regression behavior are tested; no provider calls.
     - [ ] Establish the original specification’s independently reviewed representative corpus and publish versioned extraction measurements. The runner and existing control-block census do not establish independent ground truth. See loupe-extraction-validation.md.
     - [ ] Connect the approved corpus run to the release regression gate after the labels and storage location are established.

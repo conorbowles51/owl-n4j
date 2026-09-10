@@ -1984,3 +1984,6 @@ __all__ += ["capture_case_financial_history"]
 
 from services.financial.export_comparison import compare_ledger_exports, read_verified_ledger_archive
 __all__ += ["compare_ledger_exports", "read_verified_ledger_archive"]
+
+from services.financial.reference_reviews import reconcile_reference_reviews, evaluation_from_reference_reviews, parse_review_json
+__all__ += ["reconcile_reference_reviews", "evaluation_from_reference_reviews", "parse_review_json"]
