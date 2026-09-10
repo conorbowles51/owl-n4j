@@ -891,3 +891,27 @@ def get_candidate_page_scan(evidence_file_id: UUID, case_id: UUID = Query(...), 
     except Exception:
         logger.exception("PDF page scan failed")
         raise HTTPException(status_code=500,detail="PDF page scan could not be completed.")
+
+
+from services.financial.network_tracing import NetworkTraceInput, network_trace_inputs, evaluate_network_trace
+
+@router.get("/network-trace-inputs")
+def get_network_trace_inputs(case_id: UUID = Query(...),start_date: date = Query(...),end_date: date = Query(...),
+        population: str = Query("verified"),tolerance_days: int = Query(3),db: Session = Depends(get_db)):
+    try:
+        return network_trace_inputs(capture_ledger_export(db.get_bind(),case_id=case_id,start_date=start_date,end_date=end_date),population=population,tolerance_days=tolerance_days)
+    except (LedgerSummaryError,TracingError) as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Cross-account tracing capture failed")
+        raise HTTPException(status_code=500,detail="Cross-account tracing inputs could not be captured.")
+
+@router.post("/network-trace")
+def run_network_trace(body: NetworkTraceInput,case_id: UUID = Query(...),db: Session = Depends(get_db)):
+    try:
+        return evaluate_network_trace(capture_ledger_export(db.get_bind(),case_id=case_id,start_date=body.start_date,end_date=body.end_date),body)
+    except (LedgerSummaryError,TracingError) as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Cross-account tracing failed")
+        raise HTTPException(status_code=500,detail="Cross-account scenario could not be calculated.")

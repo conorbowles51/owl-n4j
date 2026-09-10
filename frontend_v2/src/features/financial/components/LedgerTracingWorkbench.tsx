@@ -10,6 +10,8 @@ import {
 } from "../lib/ledger-trace"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { LedgerFilters } from "./LedgerFilters"
+import { NetworkTracingWorkbench } from "./NetworkTracingWorkbench"
+import { TraceAttributionFields } from "./TraceAttributionFields"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { correctionMinor, correctionMoney } from "../lib/correction-contract"
 import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
@@ -19,8 +21,31 @@ export function LedgerTracingWorkbench({
 }: {
   caseId: string | undefined
 }) {
+  const [mode, setMode] = useState("single")
   if (!caseId) return <p>Choose a case for tracing.</p>
-  return <CaseTracing key={caseId} caseId={caseId} />
+  return (
+    <div>
+      <div className="flex gap-2 p-4">
+        <Button
+          variant={mode === "single" ? "primary" : "outline"}
+          onClick={() => setMode("single")}
+        >
+          Trace one account
+        </Button>
+        <Button
+          variant={mode === "network" ? "primary" : "outline"}
+          onClick={() => setMode("network")}
+        >
+          Trace between accounts
+        </Button>
+      </div>
+      {mode === "single" ? (
+        <CaseTracing key={caseId} caseId={caseId} />
+      ) : (
+        <NetworkTracingWorkbench key={caseId} caseId={caseId} />
+      )}
+    </div>
+  )
 }
 function CaseTracing({ caseId }: { caseId: string }) {
   const [params, setParams] = useState<LedgerQueryParams>({})
@@ -138,15 +163,6 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
   const [attributions, setAttributions] = useState([
     { transaction_id: "", claim_id: "", amount_input: "", basis: "" },
   ])
-  const changeAttribution = (
-    index: number,
-    field: keyof (typeof attributions)[number],
-    value: string
-  ) => {
-    setAttributions((old) =>
-      old.map((a, i) => (i === index ? { ...a, [field]: value } : a))
-    )
-  }
   const [selected, setSelected] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("")
@@ -302,124 +318,21 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
               onChange={(e) => setOrderBasis(e.target.value)}
             />
           </label>
-          <p>
-            Attribute one or more deposits to claims. A deposit can be split
-            between claims, up to its recorded amount. Opening funds remain
-            unattributed.
-          </p>
-          {attributions.map((attribution, index) => (
-            <fieldset className="space-y-2 rounded border p-3" key={index}>
-              <legend>Deposit attribution {index + 1}</legend>
-              <label className="block">
-                Attributed deposit
-                <select
-                  aria-label={
-                    index === 0
-                      ? "Attributed deposit"
-                      : `Attributed deposit ${index + 1}`
-                  }
-                  className="border p-1"
-                  required
-                  value={attribution.transaction_id}
-                  onChange={(e) =>
-                    changeAttribution(index, "transaction_id", e.target.value)
-                  }
-                >
-                  <option value="">Choose a credit reading</option>
-                  {rows
-                    .filter((r) => r.row.direction === "credit")
-                    .map((r) => (
-                      <option key={r.row.key} value={r.row.key}>
-                        {r.row.ordering_date} —{" "}
-                        {correctionMoney(r.row.amount_minor, inputs.currency)} —{" "}
-                        {r.row.key}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label className="block">
-                Claim label
-                <input
-                  aria-label={
-                    index === 0 ? "Claim label" : `Claim label ${index + 1}`
-                  }
-                  className="border p-1"
-                  required
-                  maxLength={128}
-                  value={attribution.claim_id}
-                  onChange={(e) =>
-                    changeAttribution(index, "claim_id", e.target.value)
-                  }
-                />
-              </label>
-              <label className="block">
-                Attributed amount ({inputs.currency})
-                <input
-                  aria-label={
-                    index === 0
-                      ? `Attributed amount (${inputs.currency})`
-                      : `Attributed amount ${index + 1} (${inputs.currency})`
-                  }
-                  className="border p-1"
-                  required
-                  inputMode="decimal"
-                  maxLength={32}
-                  value={attribution.amount_input}
-                  onChange={(e) =>
-                    changeAttribution(index, "amount_input", e.target.value)
-                  }
-                />
-              </label>
-              <label className="block">
-                Attribution basis
-                <textarea
-                  aria-label={
-                    index === 0
-                      ? "Attribution basis"
-                      : `Attribution basis ${index + 1}`
-                  }
-                  className="block w-full border p-1"
-                  required
-                  maxLength={4096}
-                  value={attribution.basis}
-                  onChange={(e) =>
-                    changeAttribution(index, "basis", e.target.value)
-                  }
-                />
-              </label>
-              {attributions.length > 1 && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setResult(null)
-                    setAttributions((old) => old.filter((_, i) => i !== index))
-                  }}
-                >
-                  Remove attribution {index + 1}
-                </Button>
-              )}
-            </fieldset>
-          ))}
-          <Button
-            type="button"
-            variant="outline"
-            disabled={attributions.length >= 50}
-            onClick={() => {
+          <TraceAttributionFields
+            currency={inputs.currency}
+            credits={rows
+              .filter((r) => r.row.direction === "credit")
+              .map((r) => ({
+                id: r.row.key,
+                label: `${r.row.ordering_date} — ${correctionMoney(r.row.amount_minor, inputs.currency)} — ${r.row.key}`,
+              }))}
+            value={attributions}
+            onChange={(next) => {
+              setAttributions(next)
               setResult(null)
-              setAttributions((old) => [
-                ...old,
-                {
-                  transaction_id: "",
-                  claim_id: "",
-                  amount_input: "",
-                  basis: "",
-                },
-              ])
+              setError("")
             }}
-          >
-            Add deposit attribution
-          </Button>
+          />
           <p>
             Choose calculation methods explicitly. No method is recommended by
             this screen.

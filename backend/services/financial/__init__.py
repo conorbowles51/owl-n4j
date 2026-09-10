@@ -1904,3 +1904,6 @@ __all__ += ['compare_case_documents', 'render_ledger_pdf']
 
 from services.financial.candidate_page_scan import scan_candidate_pages
 __all__ += ['scan_candidate_pages']
+
+from services.financial.network_tracing import network_trace_inputs, evaluate_network_trace
+__all__ += ['network_trace_inputs', 'evaluate_network_trace']

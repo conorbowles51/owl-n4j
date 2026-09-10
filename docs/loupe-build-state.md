@@ -53,6 +53,28 @@ classes;23focused backend and12UI tests pass. Multiple-claim working-population 
 downloaded scenario hashes and clearing results when assumptions change. No full-feature completion claim. Continue through remaining
 PDF extraction, review persistence, cross-case duplicates, tracing and reporting.
 
+### Latest cross-account continuation — 10 September, about05:30 Dublin
+
+552986db saved exact charts, ledger browsing and decimal tracing inputs locally.
+Forward cross-account tracing now implemented: explicit selected transfer pairs,
+all selected-currency current readings, 2–10 account openings, root deposit claims,
+reviewed chronological order, five core methods and root-claim conservation.
+Source-only statement-end dates are excluded from transfer nomination but remain
+in account calculation with an explicit timing warning. No proof-class changes.
+
+Verified three-account synthetic browser case7d7d04f7-012f-4dc4-bc03-30351f3db15a:
+7postings,2hops,rootGBP100,remainingFIFO80/pro-rata90/LIFO100. Downloaded scenario
+hash and exact bytes verified; changed assumptions remove stale results;0ledger
+writes. Fixture writer scripts/prepare_local_network_review.py refuses reruns.
+Reports data/local-runtime/network-review-check.json,network-trace-ui-check.json,
+network-trace-scenario.json. This is synthetic evidence, not a real-bank transfer.
+
+Integrated4064financial backend tests and874financial UI tests passed; production
+build passed. Final comparison-table/source-date warning polish:8focused UI tests,
+TypeScript and lint pass. Backend current session54918, log /tmp/loupe-network-runtime.out.
+No push. Continue full scope, especially timeline/correlation, perspective selection
+and evidence-linked hypotheses; never treat this checkpoint as a preview handoff.
+
 ### Further full-scope work — 10 September
 
 Local commit c39d23ca saves working analysis, posting graph, control drafts,

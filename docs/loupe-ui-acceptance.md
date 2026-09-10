@@ -86,5 +86,9 @@ Backend test counts do not establish completion of these user journeys.
 - [x] Multiple-claim tracing uses decimal currency inputs and source buttons.
 - [x] Paginated PDF export alongside the captured HTML/JSON and originals option.
 
-These implement parts of the full design above. Cross-account tracing, timeline
-correlation and evidence-linked hypotheses remain active development.
+- [x] Forward cross-account tracing with source-linked hops, explicit assumptions,
+  per-account coverage checks and method comparison. Three-account synthetic browser
+  journey and exact download verified. No claim of real-PDF transfer verification.
+
+These implement parts of the full design above. Timeline correlation, perspective
+flow selection and evidence-linked hypotheses remain active development.
