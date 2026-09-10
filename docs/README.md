@@ -10,6 +10,13 @@
 
   Current incorporation checklist, Alex/founder structure options, advisor brief, and Irish grants/state-support roadmap for forming the company in Ireland.
 
+## Financial User Guide
+
+- [Step-by-step financial user guide](user-guide/financial-user-guide.md)
+- [Portable browser version with embedded screenshots](user-guide/financial-user-guide.html)
+
+The application opens the guide from the always-visible **Financial guide** button above its financial tabs.
+
 ## Financial Forensics
 
 - [Re-extraction Is Not Improvement](financial-forensics/re-extraction-regression-2026-04.md)

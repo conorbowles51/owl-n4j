@@ -1,3 +1,30 @@
+## Financial user guide and persistent modal access, 10 September
+
+Added a beginner guide with 25 sections and ten synthetic-case screenshots. It covers
+PDF preparation/selection, review/drafts/finalization, source custody, ledger and
+statement review, duplicates, identities, analysis, transfer/tracing/asset scenarios,
+indirect workpapers, exports, comparison/verification and resuming/troubleshooting.
+Source: docs/user-guide/financial-user-guide.md. The builder produces portable HTML
+and the public Markdown/images deployed with frontend_v2.
+
+FinancialGuide is mounted above the financial tabs, outside their scroll content.
+It loads documentation only when opened, renders in an accessible modal with linked
+contents and retry, and leaves current case forms mounted. Desktop/mobile browser
+checks pass across all 13 tabs, including image/anchor loading, Escape/focus return
+and an unchanged unsaved transfer-date field. No financial writes. Production build,
+37 FinancialPage tests and scoped lint pass. Browser check retained in
+scripts/check_local_financial_guide.cjs.
+
+User asked to fetch/merge remote updates while documenting. git fetch origin
+completed. origin/integration/evidence-main-reunion remains f76524e8, committed
+7 September 21:17 Dublin, with no incoming commits. origin/main has a distinct
+393-commit history not on this branch (latest 141f0cc0, 27 July); an async branch
+clarification is pending before merging that different history. Nothing pushed.
+
+The previous unfinished runtime_manifest service/migration and four associated
+backend changes remain uncommitted and were not included in this documentation/UI
+change. They still require export integration, tests and migration acceptance.
+
 ## Periodic selected-case timestamp runner — 10 September
 
 Added anchor_financial_case_once and operator CLI anchor_financial_cases.py. No

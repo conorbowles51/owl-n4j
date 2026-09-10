@@ -1,4 +1,5 @@
 import { FinancialPatternReview } from "./FinancialPatternReview"
+import { FinancialGuide } from "./FinancialGuide"
 import { FinancialCaseTimeline } from "./FinancialCaseTimeline"
 import { LedgerPostingGraph } from "./LedgerPostingGraph"
 import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
@@ -470,6 +471,9 @@ export function FinancialPage() {
 
   return (
     <div className="flex h-full flex-col bg-background">
+      <div className="flex shrink-0 justify-end border-b border-border bg-card px-4 py-2">
+        <FinancialGuide />
+      </div>
       <Tabs
         value={store.mainView}
         onValueChange={(value) => store.setMainView(value as FinancialMainView)}
