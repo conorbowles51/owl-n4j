@@ -1,3 +1,36 @@
+## Multi-page pending review and measured amount alignment — 10 September
+
+Selected page-scan proposals can now be saved to pending review without repeatedly
+setting up each page. Undated fee/interest proposals require explicit opt-in. The
+queue checks all chosen source revisions and original cell text before its first
+save, then the existing transactional writer checks each page again. Confirmed
+saves remain visible if a later request fails; the UI stops and asks the user to
+inspect the uncertain page before retrying. Leaving the view stops later requests.
+No dates, amounts, account association or direction are confirmed by this action.
+
+The real56-page PDF acceptance saved seven pending readings across pages4/6/10,
+reloaded each mapping and reopened the original page beside review. No ledger
+transactions were admitted. The writer checkpoint is guarded: repeat only
+`node scripts/check_local_scanned_queue.cjs --read-only`. Its original seven rows
+are intentionally unchanged after the scanner correction below.
+
+Visual acceptance exposed purchases missed because the extracted amount index
+shifted from2to3 while both occupied the same printed Amount column. The scanner
+now extends a uniquely selected layout only with measured right-edge alignment
+under one exact heading in the same PDF coordinate frame. It retains that heading,
+checks each nominated amount against it, and leaves missing/conflicting geometry
+unextended. Real page4 now returns14.00/100.00/0.00/0.00 with measured citations.
+`check_local_shifted_amount_scan.cjs` is read-only. All108pages of the other supplied
+PDF still return23dated/81undated proposals; unchecked layouts remain explicit.
+
+Full4250backend tests and975financial UI tests, TypeScript, scoped lint and production
+build pass. One additional stored-grid integration test and one amount/header-conflict
+UI test pass in focused reruns after those full gates. Both final source-review and
+scanner screenshots inspected. The overall feature list remains eight completed
+workflows and two partial features; automatic PDF interpretation/model fallback and
+external AI acceptance are not claimed complete. Continue complete-workflow failure,
+permission and document acceptance. No push/deploy performed.
+
 ## Printed account-reference identification aid — 10 September
 
 PDF source review now finds explicitly labelled account/card references in the first

@@ -8,6 +8,20 @@ MAX_SCAN_PAGES = 50
 MAX_SUGGESTED_ROWS = 1000
 
 
+def _under_amount_header(cell, header):
+    """Require measured right-edge alignment in the same displayed PDF frame."""
+    from services.financial.locators import Locator, LocatorCoherenceError
+    try:
+        value = Locator.from_json(cell.get('locator', {})).rectangle
+        label = Locator.from_json(header.get('locator', {})).rectangle
+    except (LocatorCoherenceError, TypeError, ValueError):
+        return False
+    return bool(value and label
+        and (value.page_number, value.page_width, value.page_height)
+            == (label.page_number, label.page_width, label.page_height)
+        and value.y0 >= label.y1 and label.x0 <= value.x1 <= label.x1)
+
+
 def propose_scan_columns(source, currency):
     """Rank source-backed co-occurrence; ties are explicitly unresolved."""
     from services.financial.source_dates import assess_date_text
@@ -68,6 +82,26 @@ def propose_scan_columns(source, currency):
         return None,'Only one row supports a layout and its column labels are not both recognised. Choose the positions manually.'
     if len(ranked)>1 and (ranked[1]['supporting_rows'],ranked[1]['header_support'])==(first['supporting_rows'],first['header_support']):
         return None,'Several date-and-amount column pairs have equal support. Inspect the page and choose the positions manually.'
+    # Extracted column indices can shift when reference/description cells split.
+    # Extend only one unambiguous winning layout, using a single measured Amount
+    # header. Every supporting amount in both positions must align underneath it.
+    generic_headers = [cell for row in source['rows'][:10] for cell in row['cells']
+        if cell['expected_text'].strip().lower() == 'amount']
+    if len(generic_headers) == 1:
+        header = generic_headers[0]
+        aligned = []
+        for proposal in ranked:
+            if proposal['date_column'] != first['date_column']:
+                continue
+            cells = [cell for row in source['rows']
+                if any(c['column_index'] == first['date_column'] and dates.get(c['expected_text']) for c in row['cells'])
+                for cell in row['cells'] if cell['column_index'] == proposal['amount_column'] and amounts.get(cell['expected_text'])]
+            if cells and all(_under_amount_header(cell, header) for cell in cells):
+                aligned.append(proposal['amount_column'])
+        if first['amount_column'] in aligned and 1 < len(aligned) <= 8:
+            first = {**first, 'additional_amount_columns': sorted(set(aligned) - {first['amount_column']}),
+                'alignment_source': header,
+                'supporting_rows': sum(pairs[(first['date_column'], a)] for a in aligned)}
     return first,None
 
 
@@ -175,7 +209,7 @@ def scan_candidate_pages(session, *, case_id, evidence_file_id, start_page, end_
                     expected_revision=source['source_revision'],date_column=chosen['date_column'],amount_column=amount_position,currency=currency)
                 header=next((h for h in chosen.get('amount_headers',[]) if h['column_index']==amount_position),None)
                 for r in result['rows']:
-                    if r['suggested'] and (section is None or section['start_row'] < r['row_index'] < section['end_row']):
+                    if r['suggested'] and (not chosen.get('alignment_source') or _under_amount_header(r['amount_source'], chosen['alignment_source'])) and (section is None or section['start_row'] < r['row_index'] < section['end_row']):
                         item=dict(row_index=r['row_index'],date_source=r['date_source'],amount_source=r['amount_source'])
                         if header:item['amount_header_source']=header
                         suggestions.append(item)

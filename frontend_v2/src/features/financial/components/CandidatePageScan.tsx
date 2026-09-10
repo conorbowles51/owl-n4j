@@ -1,87 +1,20 @@
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { z } from "zod"
+import { resultSchema } from "../lib/pdf-page-scan"
+import { QueueScannedReadings } from "./QueueScannedReadings"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl } from "../lib/candidate-contract"
-const index = z.number().int().nonnegative(),
-  cell = z.object({ expected_text: z.string(), column_index: index })
-const resultSchema = z.object({
-  case_id: z.string(),
-  evidence_file_id: z.string(),
-  start_page: index,
-  end_page: index,
-  table_index: index,
-  date_column: index.nullable(),
-  amount_column: index.nullable(),
-  auto_columns: z.boolean().default(false),
-  currency: z.string(),
-  applied: z.literal(false),
-  limitation: z.string(),
-  suggested_rows: index,
-  undated_charge_rows: index.default(0),
-  pages: z
-    .array(
-      z.object({
-        page_number: index,
-        checked: z.boolean(),
-        reason: z.string().nullable(),
-        checked_rows: index,
-        chosen_columns: z
-          .object({
-            date_column: index,
-            amount_column: index,
-            additional_amount_columns: z.array(index).max(1).default([]),
-            supporting_rows: index.optional(),
-            header_support: index.optional(),
-          })
-          .optional(),
-        source_section: z
-          .object({
-            start_row: index,
-            end_row: index,
-            start_source: cell,
-            end_source: cell,
-            omitted_rows: index,
-            limitation: z.string(),
-          })
-          .refine((v) => v.end_row > v.start_row + 1)
-          .nullable()
-          .optional(),
-        other_tables: index.optional(),
-        source_revision: z.string().optional(),
-        undated_checked_rows: index.optional(),
-        undated_charges: z
-          .array(
-            z.object({
-              row_index: index,
-              label_source: cell,
-              amount_sources: z.array(cell).min(1),
-              date_unknown: z.literal(true),
-              reason: z.string(),
-            })
-          )
-          .default([]),
-        suggestions: z.array(
-          z.object({
-            row_index: index,
-            date_source: cell,
-            amount_source: cell,
-            amount_header_source: cell.optional(),
-          })
-        ),
-      })
-    )
-    .max(50),
-})
 export function CandidatePageScan({
   caseId,
   fileId,
   onPage,
+  onSaved,
 }: {
   caseId: string
   fileId: string
   onPage: (page: number) => void
+  onSaved?: (mappingId: string) => void
 }) {
   const [opened, setOpened] = useState(false),
     [automatic, setAutomatic] = useState(false),
@@ -89,7 +22,8 @@ export function CandidatePageScan({
     [end, setEnd] = useState("10"),
     [date, setDate] = useState("1"),
     [amount, setAmount] = useState("2"),
-    [currency, setCurrency] = useState("")
+    [currency, setCurrency] = useState(""),
+    [queueBusy, setQueueBusy] = useState(false)
   const scan = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -143,7 +77,11 @@ export function CandidatePageScan({
       aria-label="Scan PDF pages for possible transactions"
       className="space-y-3 rounded border p-3"
     >
-      <Button variant="outline" onClick={() => setOpened((v) => !v)}>
+      <Button
+        variant="outline"
+        disabled={queueBusy}
+        onClick={() => setOpened((v) => !v)}
+      >
         {opened
           ? "Hide page-range scan"
           : "Find possible rows across PDF pages"}
@@ -164,7 +102,7 @@ export function CandidatePageScan({
             onChange={() => scan.reset()}
           >
             <fieldset
-              disabled={scan.isPending}
+              disabled={scan.isPending || queueBusy}
               className="flex flex-wrap gap-3"
             >
               <label className="w-full">
@@ -252,7 +190,7 @@ export function CandidatePageScan({
           {scan.isError && (
             <p role="alert">Page scan unavailable. {scan.error.message}</p>
           )}
-          {scan.data && (
+          {scan.data && !scan.isPending && (
             <>
               <p>
                 {scan.data.suggested_rows} possible rows across{" "}
@@ -261,6 +199,13 @@ export function CandidatePageScan({
                 checked.
               </p>
               <p>{scan.data.limitation}</p>
+              <QueueScannedReadings
+                key={JSON.stringify(scan.data)}
+                scan={scan.data}
+                onBusy={setQueueBusy}
+                onSaved={onSaved}
+              />
+
               <ul className="max-h-96 space-y-3 overflow-auto">
                 {scan.data.pages.map((p) => (
                   <li key={p.page_number} className="rounded border p-2">
@@ -291,6 +236,8 @@ export function CandidatePageScan({
                         {p.chosen_columns.supporting_rows !== undefined &&
                           ` · ${p.chosen_columns.supporting_rows} supporting rows; ${p.chosen_columns.header_support ?? 0} recognised column labels`}
                         . Review these positions before selecting readings.
+                        {p.chosen_columns.alignment_source &&
+                          ` Amount positions are grouped by measured alignment under the printed “${p.chosen_columns.alignment_source.expected_text}” heading; confirm their meaning against the original.`}
                       </p>
                     )}
                     {!!p.other_tables && (
@@ -343,6 +290,7 @@ export function CandidatePageScan({
                     ))}
                     <Button
                       variant="outline"
+                      disabled={queueBusy}
                       onClick={() => onPage(p.page_number)}
                     >
                       Inspect PDF page {p.page_number}

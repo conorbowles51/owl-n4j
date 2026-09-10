@@ -137,3 +137,54 @@ class PageScanTests(unittest.TestCase):
             selected, section = _transaction_section(original)
             self.assertIs(selected, original)
             self.assertIsNone(section)
+
+    def test_shifted_amount_positions_require_measured_shared_header(self):
+        from copy import deepcopy
+        from services.financial.candidate_page_scan import propose_scan_columns
+        def cell(column, text, x, y, page=1):
+            return dict(column_index=column, expected_text=text, locator={
+                'kind':'page_rectangle','page':page,'rect':[x,y,x+10000,y+5000],
+                'page_size':[612000,792000],'units':'millipoints','space':'pdf_displayed'})
+        source = dict(rows=[dict(row_index=0,cells=[cell(0,'Date',10000,10000),cell(2,'Amount',480000,10000)]),
+            *[dict(row_index=i,cells=[cell(0,f'2026-01-0{i}',10000,10000+i*10000),
+                cell(3 if i < 3 else 2, f'{i*10}.00',480000,10000+i*10000)]) for i in range(1,5)]])
+        choice, reason = propose_scan_columns(source,'GBP')
+        self.assertIsNone(reason)
+        self.assertEqual(choice['amount_column'],2)
+        self.assertEqual(choice['additional_amount_columns'],[3])
+        self.assertEqual(choice['supporting_rows'],4)
+        self.assertEqual(choice['alignment_source'],source['rows'][0]['cells'][1])
+        for change in ('missing','wrong_page','misaligned','above','invalid'):
+            broken = deepcopy(source)
+            value = broken['rows'][1]['cells'][1]
+            if change == 'missing': value.pop('locator')
+            elif change == 'wrong_page': value['locator']['page'] = 2
+            elif change == 'misaligned': value['locator']['rect'] = [500000,20000,510000,25000]
+            elif change == 'above': value['locator']['rect'] = [480000,0,490000,5000]
+            else: value['locator']['rect'] = [1,2]
+            with self.subTest(change=change):
+                choice, _ = propose_scan_columns(broken,'GBP')
+                self.assertNotIn('additional_amount_columns',choice)
+        conflicting = deepcopy(source)
+        for row in conflicting['rows'][1:]:
+            row['cells'].append(cell(1,row['cells'][0]['expected_text'],100000,20000))
+        conflicting['rows'][0]['cells'].append(cell(1,'Date',100000,10000))
+        choice, reason = propose_scan_columns(conflicting,'GBP')
+        self.assertIsNone(choice)
+        self.assertIn('equal support',reason)
+
+    def test_shifted_scan_keeps_both_positions_with_measured_sources(self):
+        from copy import deepcopy
+        payload = deepcopy(self.f.payload)
+        values = [(0,0,'Date',20,20),(0,2,'Amount',140,20),
+                  (1,0,'2026-01-01',20,40),(1,3,'14.00',140,40),
+                  (2,0,'2026-01-02',20,60),(2,3,'100.00',140,60),
+                  (3,0,'2026-01-03',20,80),(3,2,'0.00',140,80),
+                  (4,0,'2026-01-04',20,100),(4,2,'0.00',140,100)]
+        payload[0]['table']['values'] = [dict(row=r,column=c,text=t,locator=fixture.rectangle(y,x=x)) for r,c,t,x,y in values]
+        self.f.update_geometry(payload)
+        page = self.scan(auto_columns=True,end_page=1)['pages'][0]
+        self.assertEqual([r['amount_source']['expected_text'] for r in page['suggestions']], ['14.00','100.00','0.00','0.00'])
+        self.assertEqual(page['chosen_columns']['additional_amount_columns'],[3])
+        self.assertTrue(all(r['amount_source']['locator']['kind']=='page_rectangle' for r in page['suggestions']))
+        self.assertFalse(self.f.db.new or self.f.db.dirty)
