@@ -461,10 +461,13 @@ class UserDirectoryAuthorizationTests(unittest.TestCase):
             is_active=True,
         )
         self.app.dependency_overrides[get_current_db_user] = lambda: current_user
+        db = MagicMock()
+        self.app.dependency_overrides[get_db] = lambda: db
 
         response = self.client.get("/api/users")
 
         self.assertEqual(response.status_code, 403)
+        db.query.assert_not_called()
 
 
 if __name__ == "__main__":

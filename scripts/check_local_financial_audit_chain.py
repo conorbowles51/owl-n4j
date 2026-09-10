@@ -21,6 +21,8 @@ case, other, mapping, candidate = uuid4(), uuid4(), uuid4(), uuid4()
 path = Path(__file__).resolve().parents[1] / 'backend/postgres/alembic/versions/20260910_financial_audit_chain.py'
 spec = importlib.util.spec_from_file_location('audit_migration',path)
 migration = importlib.util.module_from_spec(spec); spec.loader.exec_module(migration)
+state_spec=importlib.util.spec_from_file_location('audit_states',path.with_name('20260910_audit_state_changes.py'))
+state_migration=importlib.util.module_from_spec(state_spec);state_spec.loader.exec_module(state_migration)
 
 
 def configure(connection):
@@ -39,12 +41,13 @@ try:
     with engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA {schema}'))
         configure(connection)
-        for table, _, _ in migration.TARGETS:
+        for table in [item[0] for item in migration.TARGETS]+[item[0] for item in state_migration.TARGETS]:
             connection.execute(text(f'''CREATE TABLE {table} (id uuid PRIMARY KEY, case_id uuid,
               actor jsonb, actor_name text, actor_email text, actor_user_id uuid, outcome_actor jsonb,
-              reason text, status text, candidate_id uuid, config jsonb, error text, notes text, started_by_user_id uuid, started_by_email text)'''))
+              reason text, status text, candidate_id uuid, config jsonb, error text, notes text, started_by_user_id uuid, started_by_email text, stored_path text, metadata jsonb, last_error text, last_processed_profile_snapshot jsonb)'''))
         connection.execute(text('CREATE TABLE financial_extraction_candidates (id uuid PRIMARY KEY, mapping_id uuid NOT NULL)'))
-        with Operations.context(MigrationContext.configure(connection)): migration.upgrade()
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade();state_migration.upgrade()
     with engine.begin() as connection:
         configure(connection)
         with Session(bind=connection) as db:
@@ -105,6 +108,54 @@ try:
         with Session(bind=connection) as db:
             assert capture_financial_audit_chain(db,case_id=other)['verification']['event_count']==20
             assert capture_financial_audit_chain(db,case_id=case)['verification']['event_count']==8
+    state_case=uuid4()
+    with engine.begin() as connection:
+        configure(connection)
+        expected=0
+        for table, operations in state_migration.TARGETS:
+            identity=insert(connection,table,scope=state_case,stored_path='PRIVATE_LOCAL_PATH',last_error='PRIVATE_EVIDENCE_ERROR')
+            expected+=1
+            if 'UPDATE' in operations:
+                connection.execute(text(f"UPDATE {table} SET status='changed' WHERE id=:id"),dict(id=identity));expected+=1
+            if 'DELETE' in operations:
+                connection.execute(text(f'DELETE FROM {table} WHERE id=:id'),dict(id=identity));expected+=1
+        with Session(bind=connection) as db:
+            captured=capture_financial_audit_chain(db,case_id=state_case)
+            assert captured['verification']['event_count']==expected==26
+            events=[json.loads(row['payload_text']) for row in captured['entries']]
+            evidence=[event for event in events if event['source_table']=='evidence_files']
+            assert 'PRIVATE_LOCAL_PATH' not in str(evidence) and 'PRIVATE_EVIDENCE_ERROR' not in str(evidence)
+            assert evidence[-1]['before']['id'] and evidence[-1]['after'] is None
+    from postgres.audit_context import set_authorized_audit_context
+    from types import SimpleNamespace
+    context_case,unrelated_case=uuid4(),uuid4()
+    user=SimpleNamespace(id=uuid4(),name='Synthetic authorized operator',email='synthetic@example.invalid')
+    with Session(engine) as db:
+        db.execute(text(f'SET LOCAL search_path TO {schema}'))
+        set_authorized_audit_context(db,case_id=context_case,user=user)
+        insert(db.connection(),'financial_transactions',scope=context_case)
+        db.commit()
+        db.execute(text(f'SET LOCAL search_path TO {schema}'))
+        insert(db.connection(),'financial_transactions',scope=context_case)
+        insert(db.connection(),'financial_transactions',scope=unrelated_case)
+        captured=capture_financial_audit_chain(db,case_id=context_case)
+        assert len(captured['entries'])==2
+        for entry in captured['entries']:
+            value=json.loads(entry['payload_text'])
+            assert value['actor_basis']=='authorized_request' and value['actor']['user_id']==str(user.id)
+        assert json.loads(capture_financial_audit_chain(db,case_id=unrelated_case)['entries'][0]['payload_text'])['actor_basis']=='not_recorded'
+        db.commit()
+    with engine.begin() as connection:
+        assert connection.scalar(text("SELECT current_setting('loupe.audit_context',true)")) in (None,'')
+        configure(connection)
+        identity=insert(connection,'financial_transactions',scope=context_case)
+    try:
+        with engine.begin() as connection:
+            configure(connection)
+            connection.execute(text('UPDATE financial_transactions SET case_id=:case WHERE id=:id'),dict(case=unrelated_case,id=identity))
+    except DBAPIError:pass
+    else:raise AssertionError('In-place case ownership change bypassed the audit boundary')
+    print('PASS: ten additional state targets,26events; deletion before-state; private evidence fields excluded; authorized actor retained across commits, scoped to its case and cleared from pooled connections; in-place case ownership change refused.')
     print('PASS: all six trigger targets; exact hash verification; source-derived actor and before/after; no-op exclusion; update/delete/truncate/bad append refused; atomic rollback and injected-failure rollback; two concurrent writers, twenty ordered events; case isolation.')
 finally:
     with engine.begin() as connection:connection.execute(text(f'DROP SCHEMA IF EXISTS {schema} CASCADE'))

@@ -1,3 +1,31 @@
+## Expanded state audit and authenticated attribution — 10 September
+
+Migration20260910_audit_state_changes extends the prospective chain to ledger
+transactions/accounts/periods/source documents/statement drafts, evidence file
+registration, Workspace entries/links and revision/event inserts. Delete events
+retain before-state. Source paths/private evidence metadata are represented by
+hashes. In-place case ownership changes on tracked records are refused, preventing
+an old case's before-state from silently entering another case's audit stream.
+
+Successful shared case authorization binds user identity to transaction-local
+PostgreSQL context. It follows later commits in the same request, applies only to
+the authorized case and does not leak to pooled connections. Denied access never
+sets attribution. Worker/direct-SQL changes retain source-record or unknown actor
+semantics. Earlier events retain their original capture policy and bytes.
+
+4333financial backend tests,26shared/Workspace authorization checks,128live
+permission checks and10rollback-only finalization guards pass. Disposable-schema
+acceptance covers all16targets,26new insert/update/delete events, actor continuity
+and isolation, concurrency and rollback. One unrelated user-directory test lacked
+a database override; its fixture now checks denial without opening a real database.
+UI export wording includes recorded case audit events; formatting passes.
+
+Migration applied locally; backend9118 (/tmp/loupe-state-audit-runtime.out).
+Engine62038/worker73588 unchanged. No existing case/source changes, external provider
+or push. Original-specification coverage still lacks source preparation replacement,
+graph/entity merges, export events, full historical custody and external anchoring.
+Continue those development items; independent corpus/provider acceptance also remains.
+
 ## PDF preparation versions retained with reviews — 10 September
 
 New PDF preparations retain a bounded, hashed record of Python/package versions,

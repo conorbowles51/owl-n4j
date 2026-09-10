@@ -33,7 +33,7 @@ def capture_case_financial_history(session, *, case_id):
     reviews['scope'] = 'All recorded PDF candidate mappings and finalizations in this case, including pending and rejected readings outside the exported ledger scope.'
     machine_email = _machine_actor_email()
     return dict(schema_version='loupe.financial.case_review_history/1', case_id=str(case_id),
-        scope='All recorded financial adjudication events and saved PDF candidate review history for this case at capture time. Account/date/table filters do not limit this appendix.',
+        scope='All recorded financial adjudication events and saved PDF candidate review history, plus available case audit events at capture time. Account/date/table filters do not limit this appendix.',
         decisions=[to_record(event, machine_email=machine_email).as_dict() for event in events],
         decision_order='Per-subject sequence only; ordering across subjects does not establish chronology.',
         pdf_review_history=reviews,

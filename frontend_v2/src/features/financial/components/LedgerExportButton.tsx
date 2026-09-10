@@ -156,7 +156,7 @@ function ScopedExport({
         onChange={(event) => setIncludeCaseHistory(event.target.checked)}
       />
       Include wider case financial review history (all accounts and dates,
-      including pending PDF readings)
+      including pending PDF readings and recorded case audit events)
     </label>
   )
   if (tableView)

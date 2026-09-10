@@ -74,6 +74,8 @@ def authorize_case(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         ) from exc
+    from postgres.audit_context import set_authorized_audit_context
+    set_authorized_audit_context(db, case_id=case_uuid, user=current_user)
     return case_uuid
 
 

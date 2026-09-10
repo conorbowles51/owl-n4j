@@ -10,11 +10,22 @@ record, not a reconstruction of events that occurred before installation.
 | PDF mappings, review decisions and finalization receipts | Insert |
 | Model nomination attempts | Insert and update |
 | Financial ingestion runs | Insert and update |
+| Ledger transactions, accounts, periods and source documents | Insert, update and delete |
+| Statement review drafts | Insert, update and delete |
+| Evidence file registration | Insert, update and delete |
+| Workspace entries and links | Insert, update and delete |
+| Workspace revisions and events | Insert |
+
+The additional state targets begin at migration `20260910_audit_state_changes`;
+they are not backfilled. The captured policy is retained in new event payloads.
+In-place case ownership changes on tracked rows are refused so a before-state
+cannot silently be written into a different case's chain.
 
 Each event retains its source table, row identity, database transaction, UTC capture
 time, operation, before/after state, recorded actor and reason when present. A run's
 initiator is explicitly distinguished from whoever caused a later status update.
-Private run configuration, errors and notes are hashed together instead of copied
+Private run configuration/errors/notes and evidence storage paths/profile metadata/
+document text/error details are hashed instead of copied
 into exported text. Source records can have no recorded actor; the database role
 is retained separately and is not presented as an investigator's identity.
 
@@ -22,7 +33,10 @@ The hash is SHA-256 of the previous hash decoded to32bytes followed by the exact
 UTF-8 payload text. The initial previous hash is32zero bytes. Exact text is retained
 because reformatting JSON can change its bytes. A transaction-level advisory lock
 serializes each case's appends; transaction rollback removes both source changes
-and the corresponding events. PostgreSQL rejects ordinary update, delete, truncate
+and the corresponding events. Successful shared case authorization sets transaction-local
+user attribution, scoped to that case and restored after commits in the same request.
+It is cleared before a pooled connection is reused; it does not infer a human actor
+for background changes. PostgreSQL rejects ordinary update, delete, truncate
 and inconsistent append attempts. A database owner can disable these controls.
 Concurrent transactions that take other row locks in conflicting order can still
 be aborted by PostgreSQL's ordinary deadlock protection; no failed transaction is
@@ -47,8 +61,7 @@ at capture time. A head copied from the same untrusted archive adds no independe
 assurance. Verification checks every declared ZIP member first. Outputs must be new
 files. Nothing is sent to a provider or written to the case database.
 
-This is not yet the full audit spine in the original specification. Evidence intake,
-all raw state changes/deletions, entity merges, Workspace activity, export events,
+This is not yet the full audit spine in the original specification. Full source-preparation replacement history, graph/entity merges, export events,
 and external RFC3161 timestamp anchoring are not covered. Internally consistent
 hashes alone cannot detect replacement of the whole chain or removal of its tail.
 Older decisions/reviews retain their existing history separately and are not
@@ -56,7 +69,8 @@ retroactively authenticated by this mechanism.
 
 Repeatable synthetic PostgreSQL acceptance:
 `scripts/check_local_financial_audit_chain.py` creates and removes an isolated
-schema, checks all trigger targets, concurrency, atomic rollback and mutation
+schema, checks all16trigger targets, case-bound request attribution across commits,
+concurrency, atomic rollback and mutation
 guards without editing existing cases. The source-bound simulated nomination
 acceptance in `scripts/check_local_pdf_model_nomination_flow.py` additionally checks
 three audit events and rolls back its entire transaction.
