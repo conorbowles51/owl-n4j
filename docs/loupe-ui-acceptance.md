@@ -92,3 +92,8 @@ Backend test counts do not establish completion of these user journeys.
 
 These implement parts of the full design above. Timeline correlation, perspective
 flow selection and evidence-linked hypotheses remain active development.
+
+- [x] Case context timeline displays ledger postings beside case events, explicit
+  value/transaction/fallback dates and unknown-date warnings. Synthetic browser
+  verifies event-detail navigation, display search, exact capture and P3 exclusion
+  under verified population. Persistent correlation decisions remain separate work.

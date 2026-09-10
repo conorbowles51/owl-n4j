@@ -302,6 +302,7 @@ describe("FinancialPage", () => {
       "Counterparties",
       "Posting graph",
       "Transfers",
+      "Case context",
       "Conditional tracing",
       "Trends",
     ])
@@ -358,7 +359,7 @@ describe("FinancialPage", () => {
     graphEmpty()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(11)
+    expect(screen.getAllByRole("tab")).toHaveLength(12)
     expect(
       screen.getByText(/No admitted rows in the ledger/i)
     ).toBeInTheDocument()
@@ -368,7 +369,7 @@ describe("FinancialPage", () => {
     graphLoading()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(11)
+    expect(screen.getAllByRole("tab")).toHaveLength(12)
     expect(
       screen.getByText(/No admitted rows in the ledger/i)
     ).toBeInTheDocument()

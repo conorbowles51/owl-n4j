@@ -915,3 +915,18 @@ def run_network_trace(body: NetworkTraceInput,case_id: UUID = Query(...),db: Ses
     except Exception:
         logger.exception("Cross-account tracing failed")
         raise HTTPException(status_code=500,detail="Cross-account scenario could not be calculated.")
+
+
+@router.get('/ledger-timeline')
+def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db)):
+    from services.financial.ledger_timeline import ledger_timeline
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+        return ledger_timeline(captured, population=population)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Ledger timeline failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='Ledger timeline could not be prepared.')

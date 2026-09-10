@@ -1,3 +1,4 @@
+import { FinancialCaseTimeline } from "./FinancialCaseTimeline"
 import { LedgerPostingGraph } from "./LedgerPostingGraph"
 import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
 import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
@@ -534,6 +535,7 @@ export function FinancialPage() {
             </TabsTrigger>
             <TabsTrigger value="posting-graph">Posting graph</TabsTrigger>
             <TabsTrigger value="transfers">Transfers</TabsTrigger>
+            <TabsTrigger value="case-context">Case context</TabsTrigger>
             <TabsTrigger value="tracing">Conditional tracing</TabsTrigger>
             <TabsTrigger value="trends">
               <BarChart3 className="size-3.5" />
@@ -823,6 +825,14 @@ export function FinancialPage() {
           )}
         </TabsContent>
 
+        <TabsContent
+          value="case-context"
+          className="min-h-0 flex-1 overflow-auto"
+        >
+          <ErrorBoundary level="section">
+            <FinancialCaseTimeline key={caseId} caseId={caseId} />
+          </ErrorBoundary>
+        </TabsContent>
         <TabsContent value="tracing" className="min-h-0 flex-1 overflow-auto">
           <ErrorBoundary level="section">
             <LedgerTracingWorkbench key={caseId} caseId={caseId} />

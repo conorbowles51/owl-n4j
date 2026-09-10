@@ -75,6 +75,25 @@ TypeScript and lint pass. Backend current session54918, log /tmp/loupe-network-r
 No push. Continue full scope, especially timeline/correlation, perspective selection
 and evidence-linked hypotheses; never treat this checkpoint as a preview handoff.
 
+### Case-context timeline — 10 September, about05:37 Dublin
+
+e744bbe3 saves cross-account tracing locally. No push. Added captured ledger
+chronology and Case context tab: value-date-first with labelled fallbacks,
+statement-end-only caveats, separate wider case events, search/type filters,
+source/event details, bounded completeness states and captured JSON export.
+Graph/ledger fetched separately; no simultaneous cross-database snapshot claim,
+no amounts from case events enter ledger totals, proximity is not correlation.
+
+Focused3backend tests and39UI tests passed. Syntheticnetworkcase nowhasone
+clearly labelled Meeting event. Browser verifies7postings+1event,detailpanel,
+search,downloadscope/hashreference,verified0/P3excluded7,0financialwrites.
+Fixture writer scripts/prepare_local_financial_context.py refuses repeats;
+read-only check scripts/check_local_financial_context.cjs. Reports in
+ data/local-runtime/financial-context-{fixture,ui-check,export}.json.
+Backend current session87014, log /tmp/loupe-timeline-runtime.out.
+Continue full scope: perspective flow and persistent evidence-linked hypotheses
+and correlation decisions remain. Do not stop after this unit.
+
 ### Further full-scope work — 10 September
 
 Local commit c39d23ca saves working analysis, posting graph, control drafts,
