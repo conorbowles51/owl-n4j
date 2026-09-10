@@ -94,6 +94,28 @@ Backend current session87014, log /tmp/loupe-timeline-runtime.out.
 Continue full scope: perspective flow and persistent evidence-linked hypotheses
 and correlation decisions remain. Do not stop after this unit.
 
+### Account-group perspective — 10 September, about05:44 Dublin
+
+309f3bd7 saves case-context timeline locally. Added account-group flow in Transfers:
+selected explicit scenario pairs count once, internal movements stay outside the
+external-flow chart, unpaired labels remain local to each account. Exact BigInt
+net must agree with selected original postings. Snapshot/assumptions/result export
+captures the selected account set. Changing pair assumptions falls back visibly to
+unpaired readings until recalculated. No party identity assertion or ledger writes.
+
+Synthetic3-account browser passed GBP200in/20out/180net/160internal,2internalpairs;
+changing account selection recalculates and downloaded source scope matches.
+Script scripts/check_local_account_perspective.cjs, reports
+ data/local-runtime/account-perspective-{ui-check,export}.json. Backend session60692
+log /tmp/loupe-perspective-runtime.out. Original real PDFs and prior cases preserved.
+
+42focused backend and11UI tests passed; integrated880financial UI and production
+build passed. Integrated4067backend tests found one old export test decoding native
+PDF bytes as HTML. Corrected that format assumption;38export-manifest tests pass
+with native PDF libraries. Full backend rerun will accompany next integration gate.
+No push; keep working through remaining hypotheses/correlation and complete PDF
+review/analysis acceptance. This is a development checkpoint, not a handoff.
+
 ### Further full-scope work — 10 September
 
 Local commit c39d23ca saves working analysis, posting graph, control drafts,

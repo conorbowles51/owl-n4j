@@ -111,6 +111,7 @@ feature below is complete at the start of this window.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
 5. **Make every financial view use the authoritative ledger — partial**
+   - [x] Account-group perspective with exact incoming/outgoing/net figures, explicit internal transfers counted once and excluded from the external chart, currency separation, source drill-down and captured assumptions export. Synthetic3-account browser acceptance:GBP200in,20out,180net,160internal across2pairs; changing selected accounts recalculates. Party identity resolution remains separate.
    - [x] Exact incoming/outgoing charts for date and source-label groups, selected-group totals, separate currencies and chart-to-source links; real-statement browser verified.
    - [x] Ledger table search, direction/currency/proof display filters, exact single-currency sorting and50-row pages, explicitly separate from analysis/export scope; browser verified.
    - [x] Working/verified Trends and Counterparties share captured current readings; real-statement date and label totals verified.

@@ -17,10 +17,12 @@ export function LedgerFlowChart({
   groups,
   title,
   onSource,
+  explanation,
 }: {
   groups: FlowGroup[]
   title: string
   onSource: (id: string) => void
+  explanation?: string
 }) {
   if (!groups.length) return null
   return (
@@ -29,6 +31,7 @@ export function LedgerFlowChart({
       groups={groups}
       title={title}
       onSource={onSource}
+      explanation={explanation}
     />
   )
 }
@@ -36,10 +39,12 @@ function Chart({
   groups,
   title,
   onSource,
+  explanation,
 }: {
   groups: FlowGroup[]
   title: string
   onSource: (id: string) => void
+  explanation?: string
 }) {
   const currencies = [...new Set(groups.map((g) => g.currency))]
   const [currency, setCurrency] = useState(currencies[0]),
@@ -86,11 +91,13 @@ function Chart({
         </label>
       </div>
       <p className="text-sm text-muted-foreground">
-        Outgoing postings extend left; incoming postings extend right. Select
-        groups to compare their totals. Internal transfers remain two postings
-        here; explicit pairing is available in Transfers.
+        {explanation ??
+          "Outgoing postings extend left; incoming postings extend right. Select groups to compare their totals. Internal transfers remain two postings here; explicit pairing is available in Transfers."}
       </p>
-      <p className="text-xs text-muted-foreground">Chart selection changes this comparison. Ledger downloads use the applied account and date filters.</p>
+      <p className="text-xs text-muted-foreground">
+        Chart selection changes this comparison. Ledger downloads use the
+        applied account and date filters.
+      </p>
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded border p-3">
           <p className="text-xs text-muted-foreground">Selected incoming</p>

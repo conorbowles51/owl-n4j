@@ -1,3 +1,4 @@
+import { AccountFlowPerspective } from "./AccountFlowPerspective"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -395,6 +396,14 @@ function TransferScope({
             Download scenario with source references
           </Button>
         </section>
+      )}
+      {load.data && !load.isPending && (
+        <AccountFlowPerspective
+          key={load.data.snapshot_sha256}
+          scope={load.data}
+          scenarioJson={scenario.data?.scenario_json}
+          onSource={setSource}
+        />
       )}
       {source && (
         <LedgerSourceDialog

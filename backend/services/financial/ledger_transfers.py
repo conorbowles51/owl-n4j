@@ -26,6 +26,8 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
         raise LedgerSummaryError('Transfer comparison requires all accounts in the selected case and date scope.')
     summary = working_totals_from_readings(ledger) if population == 'working' else ledger
     rows = [r['row'] for r in ledger['readings'] if (r['exclusion_reason'] in (None, 'proof_class_not_included') if population == 'working' else r['included'])]
+    labels = {r['row']['account_id']: r.get('account', {}).get('label') for r in ledger['readings']}
+    rows = [{**r, 'account_label': labels.get(r['account_id']) or 'Account ' + r['account_id'][:8]} for r in rows]
     if len(rows) > MAX_TRANSFER_ROWS:
         raise LedgerSummaryError('More than 500 current rows match. Narrow the date scope; no partial transfer comparison was made.')
     observations = []

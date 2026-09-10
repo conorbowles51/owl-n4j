@@ -571,7 +571,13 @@ class RenderedExportTests(unittest.TestCase):
         rows = [transaction("k"), transaction("k", name="same key again")]
         rendered = render_financial_export(rows, CASE, FILTERS)
         self.assertEqual(rendered["manifest"].transaction_count, 1)
-        self.assertIn(">1<", rendered["content"].decode("utf-8"))
+        # The renderer may deliver PDF bytes when native libraries are present.
+        # The manifest's count and digest describe the source HTML in either format.
+        html = build_financial_export_html(
+            transactions=rows, case_name=CASE, filters_description=FILTERS
+        )
+        self.assertIn(">1<", html)
+        self.assertTrue(describes(rendered["manifest"], html))
 
     def test_two_renders_produce_equal_digests(self):
         first = render_financial_export([transaction()], CASE, FILTERS)["manifest"]

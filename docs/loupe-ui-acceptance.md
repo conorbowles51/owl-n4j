@@ -97,3 +97,9 @@ flow selection and evidence-linked hypotheses remain active development.
   value/transaction/fallback dates and unknown-date warnings. Synthetic browser
   verifies event-detail navigation, display search, exact capture and P3 exclusion
   under verified population. Persistent correlation decisions remain separate work.
+
+- [x] Select an account group in Transfers, calculate explicit pairings, view
+  external incoming/outgoing bars ordered by net and internal movements counted
+  once, with both source links. Synthetic browser verifies exact totals, selection
+  changes and captured assumptions. This is account perspective, not resolved-party
+  identity; unidentified internal movements remain explicit.

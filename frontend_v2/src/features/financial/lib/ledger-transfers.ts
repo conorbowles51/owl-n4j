@@ -5,6 +5,8 @@ const row = z.object({
   key: z.string(),
   case_id: z.string(),
   account_id: z.string(),
+  account_label: z.string().optional(),
+  counterparty_raw: z.string().nullable().optional(),
   source_document_id: z.string(),
   amount_minor: money,
   currency: z.string(),
