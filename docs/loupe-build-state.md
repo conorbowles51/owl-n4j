@@ -1,3 +1,19 @@
+## Complete support ZIP verification — 10 September
+
+Added verify_trace_support_archive and scripts/verify_financial_trace_support.py.
+The verifier checks every declared member, rejects duplicate/unsafe/missing/unlisted
+files and ambiguous manifests, then rebuilds scenarios, reference validation and
+optional captured ledger support. Whole-package and member limits are enforced.
+The builder now also refuses a combined package beyond256MiB.
+
+A supplied independently retained digest detects whole-archive replacement.
+Rehashed derived-content changes produce a named rebuild difference (CLI exit2).
+A replay-code-revision-only change is reported separately with both revisions;
+matching calculations are not misreported as changed financial results. Existing
+saved resale support passes with that explicit provenance-only difference.
+22focused archive/package checks and all4354financial backend tests pass.
+Full output: /tmp/loupe-support-verifier-full.out. No case writes/provider/push.
+
 ## Pinned extraction release check — 10 September
 
 Added scripts/check_financial_extraction_release.py. It requires a retained review

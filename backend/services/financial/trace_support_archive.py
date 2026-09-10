@@ -131,10 +131,106 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
     if captured_ledger is not None:
         manifest['captured_ledger'] = captured_ledger
     add_json('manifest.json', manifest)
+    if sum(map(len, entries.values())) > MAX_SUPPORT_ARCHIVE_BYTES:
+        raise LedgerSummaryError('Combined support content exceeds 256 MiB.')
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         for name, content in sorted(entries.items()):
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, content)
-    return stream.getvalue()
+    content = stream.getvalue()
+    if len(content) > MAX_SUPPORT_ARCHIVE_BYTES:
+        raise LedgerSummaryError('Compressed support archive exceeds 256 MiB.')
+    return content
+
+
+MAX_SUPPORT_ARCHIVE_BYTES = 256 * 1024 * 1024
+
+
+def verify_trace_support_archive(content, *, expected_sha256=None):
+    """Check captured bytes and compare a rebuild without overwriting originals."""
+    from pathlib import PurePosixPath
+    from services.financial.reference_reviews import parse_review_json
+    if not isinstance(content, bytes) or len(content) > MAX_SUPPORT_ARCHIVE_BYTES:
+        raise LedgerSummaryError('Support archive exceeds 256 MiB or is not bytes.')
+    digest = hashlib.sha256(content).hexdigest()
+    if expected_sha256 is not None and expected_sha256 != digest:
+        raise LedgerSummaryError('Support archive differs from the supplied independent digest.')
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            infos = archive.infolist()
+            names = {info.filename for info in infos}
+            if len(infos) != len(names) or len(infos) > 64 or sum(i.file_size for i in infos) > MAX_SUPPORT_ARCHIVE_BYTES:
+                raise ValueError('Duplicate members or archive limits exceeded.')
+            for name in names:
+                if PurePosixPath(name).is_absolute() or '..' in PurePosixPath(name).parts or '\\' in name:
+                    raise ValueError('Unsafe archive path.')
+            def read(name, limit):
+                if archive.getinfo(name).file_size > limit:
+                    raise ValueError('Member limit exceeded.')
+                with archive.open(name) as source:
+                    data = source.read(limit + 1)
+                if len(data) > limit:
+                    raise ValueError('Member limit exceeded.')
+                return data
+            manifest = parse_review_json(read('manifest.json', 1024 * 1024))
+            if manifest['schema_version'] != 'loupe.financial.trace_support_archive/1':
+                raise ValueError('Unsupported support schema.')
+            members = {}
+            for item in manifest['files']:
+                name = item['filename']
+                if name == 'manifest.json' or name in members:
+                    raise ValueError('Repeated declared member.')
+                limit = 128 * 1024 * 1024 if name == 'ledger/original-export.zip' else 64 * 1024 * 1024
+                data = read(name, limit)
+                if type(item['byte_count']) is not int or len(data) != item['byte_count'] or hashlib.sha256(data).hexdigest() != item['sha256']:
+                    raise ValueError('Member digest or size differs.')
+                members[name] = data
+            if names != set(members) | {'manifest.json'}:
+                raise ValueError('Missing or unlisted members.')
+        options = dict(expected_case_id=manifest['case_id'], preparation=manifest.get('preparation'))
+        validation = manifest['validation']
+        if validation['status'] == 'reconciled_reference_measurement_context':
+            options['reference_review'] = parse_review_json(members[validation['reference_review_reference']])
+            options['validation_predictions'] = parse_review_json(members[validation['predictions_reference']])
+        elif validation['status'] == 'supplied_measurement_context':
+            options['validation_corpus'] = parse_review_json(members[validation['corpus_reference']])
+        elif validation['status'] != 'unavailable':
+            raise ValueError('Unsupported validation context.')
+        if 'captured_ledger' in manifest:
+            options['ledger_archive'] = members[manifest['captured_ledger']['archive_reference']]
+        rebuilt = build_trace_support_archive([members[s['scenario_reference']] for s in manifest['scenarios']], **options)
+        with zipfile.ZipFile(io.BytesIO(rebuilt)) as archive:
+            rebuilt_members = {name: archive.read(name) for name in archive.namelist() if name != 'manifest.json'}
+            rebuilt_manifest = parse_review_json(archive.read('manifest.json'))
+        changed = sorted(name for name in members.keys() | rebuilt_members.keys()
+                         if members.get(name) != rebuilt_members.get(name))
+        replay_version_changes = []
+        for name in list(changed):
+            if name.endswith('/replay.json') and name in members and name in rebuilt_members:
+                saved_replay = parse_review_json(members[name])
+                current_replay = parse_review_json(rebuilt_members[name])
+                saved_version = saved_replay.pop('replay_code_version', None)
+                current_version = current_replay.pop('replay_code_version', None)
+                if saved_replay == current_replay and saved_version != current_version:
+                    replay_version_changes.append(dict(member=name, captured_replay_code_version=saved_version,
+                        current_replay_code_version=current_version))
+                    changed.remove(name)
+        # Manifest member digests are already checked; compare remaining metadata
+        # separately so pretty-printing the original JSON does not create a mismatch.
+        metadata_changed = ({k:v for k,v in manifest.items() if k != 'files'} !=
+                            {k:v for k,v in rebuilt_manifest.items() if k != 'files'})
+    except (KeyError, TypeError, ValueError, UnicodeError, RecursionError, OSError, RuntimeError, zipfile.BadZipFile) as exc:
+        raise LedgerSummaryError('Support archive is inconsistent or cannot be recalculated.') from exc
+    return dict(schema_version='loupe.financial.trace_support_verification/1',
+        archive_sha256=digest, case_id=manifest['case_id'], member_count=len(members),
+        status=('verified_bytes_different_rebuild' if changed or metadata_changed else
+                'verified_bytes_matching_calculations' if replay_version_changes else 'verified_bytes_matching_rebuild'),
+        replay_version_changes=replay_version_changes,
+        changed_members=changed, manifest_metadata_changed=metadata_changed,
+        checkpoint_status='matches_supplied_digest' if expected_sha256 is not None else 'not_supplied',
+        limitation='Checks internal file consistency and a rebuild using the current installed code. '
+        'Differences can reflect changed code or changed derived content and require review. '
+        'Without an independently retained digest, consistent rewriting is not detected. '
+        'Matching calculations do not establish authorship, reviewer independence, custody completeness or evidence truth.')

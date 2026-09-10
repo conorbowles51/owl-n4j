@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from tests import test_financial_trace_replay as scenario_fixture
 from tests import test_financial_extraction_evaluation as corpus_fixture
-from services.financial.trace_support_archive import build_trace_support_archive
+from services.financial.trace_support_archive import build_trace_support_archive, verify_trace_support_archive
 from services.financial.ledger_summary import LedgerSummaryError
 
 
@@ -22,6 +22,7 @@ class TraceSupportArchiveTests(unittest.TestCase):
     def test_original_bytes_hashes_and_conditional_support_preserved(self):
         content = build_trace_support_archive([self.f.content])
         self.assertEqual(content, build_trace_support_archive([self.f.content]))
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             manifest = json.loads(archive.read('manifest.json'))
             self.assertEqual(archive.read('scenarios/01/scenario.json'), self.f.content)
@@ -77,6 +78,7 @@ class TraceSupportArchiveTests(unittest.TestCase):
     def test_reference_evidence_retained_and_linked_from_each_expert_index(self):
         record, predictions = self.review_inputs()
         content = build_trace_support_archive([self.f.content], reference_review=record, validation_predictions=predictions)
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             manifest = json.loads(archive.read('manifest.json'))
             self.assertEqual(json.loads(archive.read('validation/reference-review.json')), record)
@@ -116,6 +118,7 @@ class TraceSupportArchiveTests(unittest.TestCase):
         document['ledger']['case_id'] = json.loads(self.f.content)['ledger_snapshot']['ledger']['case_id']
         original = fixture.archive(document)
         content = build_trace_support_archive([self.f.content], ledger_archive=original)
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             self.assertEqual(archive.read('ledger/original-export.zip'), original)
             manifest = json.loads(archive.read('manifest.json'))
@@ -138,6 +141,7 @@ class TraceSupportArchiveTests(unittest.TestCase):
         document['case_financial_history'] = {'audit_chain': {'entries': [],
             'verification': verify_financial_audit_chain([], case_id=case_id)}}
         content = build_trace_support_archive([self.f.content], ledger_archive=fixture.archive(document))
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             captured = json.loads(archive.read('manifest.json'))['captured_ledger']
             self.assertEqual(captured['wider_case_history'], 'included')
@@ -145,3 +149,68 @@ class TraceSupportArchiveTests(unittest.TestCase):
         document['case_financial_history']['audit_chain']['verification']['event_count'] = 1
         with self.assertRaisesRegex(ValueError, 'summary differs'):
             build_trace_support_archive([self.f.content], ledger_archive=fixture.archive(document))
+
+    def rewrite_archive(self, content, change):
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            files = {name: archive.read(name) for name in archive.namelist()}
+        change(files)
+        target = io.BytesIO()
+        with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, data in files.items():
+                archive.writestr(name, data)
+        return target.getvalue()
+
+    def test_verifier_refuses_missing_extra_changed_and_unsafe_members(self):
+        content = build_trace_support_archive([self.f.content])
+        for change in (lambda files: files.pop('scenarios/01/replay.json'),
+                       lambda files: files.update({'extra.txt': b'unlisted'}),
+                       lambda files: files.update({'../escape': b'unsafe'}),
+                       lambda files: files.update({'scenarios/01/replay.json': b'{}'})):
+            with self.assertRaises(ValueError):
+                verify_trace_support_archive(self.rewrite_archive(content, change))
+        with self.assertRaises(ValueError):
+            verify_trace_support_archive(content, expected_sha256='0'*64)
+        result = verify_trace_support_archive(content, expected_sha256=hashlib.sha256(content).hexdigest())
+        self.assertEqual(result['checkpoint_status'], 'matches_supplied_digest')
+
+    def test_rehashed_derived_content_is_reported_as_rebuild_difference(self):
+        content = build_trace_support_archive([self.f.content])
+        def change(files):
+            name = 'scenarios/01/expert-support.json'
+            support = json.loads(files[name]); support['completeness'] = 'invented-completeness-claim'
+            files[name] = json.dumps(support).encode()
+            manifest = json.loads(files['manifest.json'])
+            for item in manifest['files']:
+                if item['filename'] == name:
+                    item.update(byte_count=len(files[name]), sha256=hashlib.sha256(files[name]).hexdigest())
+            files['manifest.json'] = json.dumps(manifest).encode()
+        result = verify_trace_support_archive(self.rewrite_archive(content, change))
+        self.assertEqual(result['status'], 'verified_bytes_different_rebuild')
+        self.assertEqual(result['changed_members'], ['scenarios/01/expert-support.json'])
+
+    def test_verifier_refuses_duplicate_members_and_manifest_keys(self):
+        content = build_trace_support_archive([self.f.content])
+        target = io.BytesIO(content)
+        with zipfile.ZipFile(target, 'a') as archive:
+            archive.writestr('scenarios/01/replay.json', '{}')
+        with self.assertRaises(ValueError):
+            verify_trace_support_archive(target.getvalue())
+        def change(files):
+            files['manifest.json'] = b'{"case_id":"one","case_id":"two"}'
+        with self.assertRaises(ValueError):
+            verify_trace_support_archive(self.rewrite_archive(content, change))
+
+    def test_changed_replay_code_version_is_explicit_without_false_calculation_failure(self):
+        with patch('services.financial.version.code_version', return_value='captured-code'):
+            content = build_trace_support_archive([self.f.content])
+        with patch('services.financial.version.code_version', return_value='current-code'):
+            result = verify_trace_support_archive(content)
+        self.assertEqual(result['status'], 'verified_bytes_matching_calculations')
+        self.assertEqual(result['changed_members'], [])
+        self.assertEqual(result['replay_version_changes'], [dict(member='scenarios/01/replay.json',
+            captured_replay_code_version='captured-code', current_replay_code_version='current-code')])
+
+    def test_combined_archive_size_limit_is_enforced_on_build(self):
+        with patch('services.financial.trace_support_archive.MAX_SUPPORT_ARCHIVE_BYTES', 10):
+            with self.assertRaisesRegex(ValueError, 'Combined support'):
+                build_trace_support_archive([self.f.content])

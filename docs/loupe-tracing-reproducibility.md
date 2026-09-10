@@ -49,8 +49,9 @@ data/local-runtime/backend-venv/bin/python scripts/assemble_financial_trace_supp
 
 Each retains its own snapshot and filter scope. They are not combined into a new
 ledger. Duplicate scenarios and cross-case combinations are refused. Original
-source PDFs are not included by this assembler; the ledger export offers those
-separately with source-byte checks.
+source PDFs are not added individually by this assembler. Optional `--ledger-export`
+retains an existing verified ledger ZIP unchanged, including any source PDFs that
+were selected in that ledger export. Its captured scope remains separate.
 
 Optional `--validation-corpus /path/to/reviewed-evaluation.json` includes the supplied
 labels and recalculated measurements using the contract in
@@ -62,3 +63,30 @@ coverage are not inferred. No validation is claimed when none is supplied.
 This remains expert preparation support. Complete case custody, every human
 decision, the complete historical component manifest, independent validation,
 and a signed expert opinion are not established by assembling these files.
+
+## Verify a complete saved support package
+
+```sh
+data/local-runtime/backend-venv/bin/python scripts/verify_financial_trace_support.py \
+  /path/to/saved-tracing-support.zip --output /path/to/new-verification.json
+```
+
+The verifier checks every declared file's size and SHA-256, rejects unsafe paths,
+duplicate/missing/unlisted entries and ambiguous manifest JSON, and rebuilds the
+support using the current installed code. It recalculates scenario results and
+attached measurements, reconciles retained reader records and checks an attached
+ledger archive and its recorded audit chain. Nothing is extracted to disk or
+written into the original package. The combined compressed/uncompressed limit is
+256 MiB, with tighter limits on individual members.
+
+A matching rebuild returns exit0. When only the replay code revision changed,
+`verified_bytes_matching_calculations` retains both revisions explicitly. Other
+derived-content or manifest changes return exit2 with named differences for review;
+malformed inputs fail without a success report. Earlier exports can differ because
+support metadata changed between software revisions; differences are not silently
+rewritten or presented as a matching export.
+
+Optional `--expected-sha256` checks an archive digest retained independently at
+capture. A digest derived from the same untrusted file adds no independent proof.
+Internal hashes and recalculation cannot authenticate authorship, evidence truth,
+reviewer independence or complete custody.

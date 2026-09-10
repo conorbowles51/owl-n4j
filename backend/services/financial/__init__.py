@@ -2000,3 +2000,6 @@ __all__ += ["record_prepared_export"]
 from services.financial.audit_timestamp import prepare_financial_audit_timestamp_request
 from services.financial.audit_timestamp import verify_financial_audit_timestamp_response
 __all__ += ['prepare_financial_audit_timestamp_request', 'verify_financial_audit_timestamp_response']
+
+from services.financial.trace_support_archive import verify_trace_support_archive
+__all__ += ['verify_trace_support_archive']
