@@ -59,3 +59,76 @@ it("requires a reviewed supporting payment and retains more than100 candidates",
     paymentIdentitySuggestions([anchor, ...rows])[0].readings
   ).toHaveLength(101)
 })
+
+it("offers optional formatting and spelling alternatives while preserving their raw sources", () => {
+  const reviewed = { ...anchor, counterparty_raw: "José OBrien Ltd" }
+  const candidate = { ...base, counterparty_raw: "Ltd Jose OBrien" }
+  const typo = {
+    ...base,
+    transaction_id: "typo",
+    counterparty_raw: "Jose OBrlen Ltd",
+  }
+  expect(paymentIdentitySuggestions([reviewed, candidate, typo])).toEqual([])
+  const result = paymentIdentitySuggestions([reviewed, candidate, typo], true)
+  expect(result).toHaveLength(2)
+  expect(result.flatMap((g) => g.readings)).toEqual(
+    expect.arrayContaining([candidate, typo])
+  )
+  expect(
+    result.flatMap((g) => g.alternatives.flatMap((a) => a.reasons ?? []))
+  ).toEqual(
+    expect.arrayContaining([
+      "Similar after punctuation, accents or word-order normalization",
+      "One character differs after formatting normalization",
+    ])
+  )
+  expect(result.every((g) => g.alternatives[0].anchors[0] === reviewed)).toBe(
+    true
+  )
+  expect(candidate.party).toBeNull()
+})
+it("retains ambiguity and cleared decisions in variant mode", () => {
+  const other = {
+    ...anchor,
+    transaction_id: "other",
+    counterparty_raw: "Acme, Ltd",
+    party: { id: "other-party", name: "Separate business" },
+  }
+  const candidate = { ...base, counterparty_raw: "ACME. LTD" }
+  const result = paymentIdentitySuggestions(
+    [
+      anchor,
+      other,
+      candidate,
+      {
+        ...candidate,
+        transaction_id: "cleared",
+        decision_transaction_id: "decision",
+      },
+    ],
+    true
+  )
+  expect(result).toHaveLength(1)
+  expect(result[0].readings).toEqual([candidate])
+  expect(result[0].alternatives.map((a) => a.party.id)).toEqual([
+    "other-party",
+    "party-a",
+  ])
+})
+it("does not fuzz short names, different numeric identifiers or two unrelated character changes", () => {
+  for (const [known, unknown] of [
+    ["Ann", "Ana"],
+    ["Company 123", "Company 124"],
+    ["Longname Trading", "Longnome Troding"],
+  ]) {
+    expect(
+      paymentIdentitySuggestions(
+        [
+          { ...anchor, counterparty_raw: known },
+          { ...base, counterparty_raw: unknown },
+        ],
+        true
+      )
+    ).toEqual([])
+  }
+})

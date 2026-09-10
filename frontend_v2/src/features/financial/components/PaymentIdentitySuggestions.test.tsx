@@ -78,7 +78,7 @@ it("keeps conflicting choices visible and refuses selection during saving", () =
     screen.getByRole("button", { name: "Find possible identity links" })
   )
   expect(
-    screen.getByText(/Conflicting reviewed identities/)
+    screen.getByText(/More than one reviewed identity/)
   ).toBeInTheDocument()
   view.rerender(<PaymentIdentitySuggestions {...props} disabled={true} />)
   expect(
@@ -87,4 +87,40 @@ it("keeps conflicting choices visible and refuses selection during saving", () =
     })
   ).toBeDisabled()
   expect(props.onSelect).not.toHaveBeenCalled()
+})
+
+it("requires opting into weaker name variants and retains explicit selection", () => {
+  const onSelect = vi.fn()
+  render(
+    <PaymentIdentitySuggestions
+      readings={[
+        { ...anchor, counterparty_raw: "Longname Trading" },
+        { ...row, counterparty_raw: "Longnane Trading" },
+      ]}
+      disabled={false}
+      onSelect={onSelect}
+      onSource={vi.fn()}
+    />
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible identity links" })
+  )
+  expect(
+    screen.queryByRole("button", {
+      name: "Review 1 possible links to ACME reviewed",
+    })
+  ).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByLabelText("Include possible spelling and formatting variants")
+  )
+  expect(
+    screen.getByText(/Why suggested: One character differs/)
+  ).toBeInTheDocument()
+  expect(onSelect).not.toHaveBeenCalled()
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Review 1 possible links to ACME reviewed",
+    })
+  )
+  expect(onSelect).toHaveBeenCalledWith(["one"], "party")
 })

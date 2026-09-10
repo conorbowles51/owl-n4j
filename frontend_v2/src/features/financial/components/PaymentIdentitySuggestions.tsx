@@ -16,10 +16,11 @@ export function PaymentIdentitySuggestions({
   disabled: boolean
 }) {
   const [opened, setOpened] = useState(false),
-    [page, setPage] = useState(0)
+    [page, setPage] = useState(0),
+    [includeVariants, setIncludeVariants] = useState(false)
   const suggestions = useMemo(
-    () => (opened ? paymentIdentitySuggestions(readings) : []),
-    [opened, readings]
+    () => (opened ? paymentIdentitySuggestions(readings, includeVariants) : []),
+    [opened, readings, includeVariants]
   )
   const safePage = Math.min(
     page,
@@ -47,6 +48,26 @@ export function PaymentIdentitySuggestions({
             suggestions, not identity decisions. Explicitly cleared links stay
             cleared.
           </p>
+          <label className="block">
+            <input
+              type="checkbox"
+              checked={includeVariants}
+              disabled={disabled}
+              onChange={(e) => {
+                setIncludeVariants(e.target.checked)
+                setPage(0)
+              }}
+            />{" "}
+            Include possible spelling and formatting variants
+          </label>
+          {includeVariants && (
+            <p>
+              Also compare punctuation, accents, word order and one-character
+              differences in longer names. These weaker matches can refer to
+              different people or organisations. Numeric identifiers must agree;
+              inspect every supporting source.
+            </p>
+          )}
           <p>
             {suggestions.length} name groups with possible links. Review
             originals and enter your reason before saving.
@@ -66,8 +87,8 @@ export function PaymentIdentitySuggestions({
                 </p>
                 {group.alternatives.length > 1 && (
                   <p>
-                    Conflicting reviewed identities share this name. Choose only
-                    after inspecting their sources.
+                    More than one reviewed identity matches these names. Choose
+                    only after inspecting their sources.
                   </p>
                 )}
                 {group.alternatives.map((alternative) => (
@@ -76,6 +97,11 @@ export function PaymentIdentitySuggestions({
                       {alternative.party.name} · {alternative.anchors.length}{" "}
                       reviewed supporting readings
                     </p>
+                    {alternative.reasons?.map((reason) => (
+                      <p key={reason} className="text-sm">
+                        Why suggested: {reason}
+                      </p>
+                    ))}
                     <div className="flex flex-wrap gap-2">
                       <Button
                         variant="outline"

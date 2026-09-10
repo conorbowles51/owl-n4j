@@ -1,3 +1,21 @@
+## Optional identity spelling/formatting proposals — 10 September
+
+Payment identity review can optionally include punctuation, accent, word-order and
+one-character spelling variants of already reviewed source names. Numeric strings
+must agree; short names are not fuzzed. The original strict case/spacing comparison
+remains the default. Every alternative retains its source anchors and explains why
+it was suggested; ambiguous parties remain separate, explicitly cleared readings
+stay cleared, and newly imported readings need an explicit reviewed link and reason.
+An indexed comparison bounds candidate lookup rather than all-pairs edit-distance.
+
+15focused UI tests, TypeScript and scoped lint pass. Browser acceptance deliberately
+simulates SYNTHETIC ACME/ACNE names without altering the source or stored identities.
+The weaker suggestion appears only after opt-in, selects one unlinked reading and
+requires a fresh reason before saving; zero writes. Screenshot inspected. Repeat:
+`node scripts/check_local_identity_suggestions.cjs --variants`.
+Full analytical UI acceptance remains a separate recorded checklist; do not equate
+backend completion or this simulated-name check with the whole financial journey.
+
 ## Explicit resale value substitution — 10 September
 
 Both asset interpretation forms can link a full disposal to a later same-currency
