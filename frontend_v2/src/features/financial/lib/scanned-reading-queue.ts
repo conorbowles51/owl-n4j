@@ -68,7 +68,14 @@ export function scannedPageProposal(
   if (page.suggestions.some((r) => amounts.has(r.date_source.column_index)))
     throw Error("Conflicting date and amount columns need manual page review.")
   const dates = new Set(page.suggestions.map((r) => r.date_source.column_index))
-  const headers = proposePdfHeaders(source.rows).proposals
+  const scopedRows = page.source_section
+    ? source.rows.filter(
+        (r) =>
+          r.row_index > page.source_section!.start_row &&
+          r.row_index < page.source_section!.end_row
+      )
+    : source.rows
+  const headers = proposePdfHeaders(scopedRows).proposals
   return {
     schema_version: "pdf-grid-mapping-v1",
     case_id: scan.case_id,
@@ -103,7 +110,8 @@ export function scannedPageProposal(
                 ].includes(meanings[0])
                 ? meanings[0]
                 : "date"
-              : meanings.length === 1
+              : meanings.length === 1 &&
+                  !["amount", "debit", "credit"].includes(meanings[0])
                 ? meanings[0]
                 : "unknown",
         }
@@ -185,4 +193,59 @@ export function verifyQueuedMapping(
       "Saved candidate source text or proposed roles differ. Check saved PDF readings before retrying."
     )
   return data
+}
+
+/** Keep shifted row layouts separate: a description column on one row must not
+ * become an amount column merely because another row's amount moved there. */
+export function scannedPageProposals(
+  scan: PdfPageScan,
+  page: PdfPageScan["pages"][number],
+  raw: unknown,
+  includeUndated: boolean
+) {
+  const roles = new Map<number, { dates: Set<number>; amounts: Set<number> }>()
+  const rowRoles = (index: number) => {
+    let entry = roles.get(index)
+    if (!entry) {
+      entry = { dates: new Set(), amounts: new Set() }
+      roles.set(index, entry)
+    }
+    return entry
+  }
+  for (const row of page.suggestions) {
+    const entry = rowRoles(row.row_index)
+    entry.dates.add(row.date_source.column_index)
+    entry.amounts.add(row.amount_source.column_index)
+  }
+  if (includeUndated)
+    for (const row of page.undated_charges) {
+      const entry = rowRoles(row.row_index)
+      for (const cell of row.amount_sources)
+        entry.amounts.add(cell.column_index)
+    }
+  const groups = new Map<string, Set<number>>()
+  for (const [index, entry] of roles) {
+    const key = JSON.stringify({
+      dates: [...entry.dates].sort((a, b) => a - b),
+      amounts: [...entry.amounts].sort((a, b) => a - b),
+    })
+    const group = groups.get(key) ?? new Set<number>()
+    group.add(index)
+    groups.set(key, group)
+  }
+  if (!groups.size) throw Error("No selected proposals on this page.")
+  return [...groups.values()].map((indices) =>
+    scannedPageProposal(
+      scan,
+      {
+        ...page,
+        suggestions: page.suggestions.filter((r) => indices.has(r.row_index)),
+        undated_charges: page.undated_charges.filter((r) =>
+          indices.has(r.row_index)
+        ),
+      },
+      raw,
+      includeUndated
+    )
+  )
 }

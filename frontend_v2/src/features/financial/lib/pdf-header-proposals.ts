@@ -5,6 +5,8 @@ const labels: Record<string, [string, string]> = {
   debits: ["debit", "Money out"],
   credit: ["credit", "Money in"],
   credits: ["credit", "Money in"],
+  "money in": ["credit", "Money in"],
+  "money out": ["debit", "Money out"],
   date: ["date", "Date (type not identified)"],
   "trans date": ["transaction_date", "Transaction date"],
   "post date": ["booking_date", "Booking date"],

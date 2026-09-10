@@ -1,3 +1,34 @@
+## Separate shifted row layouts in the scan queue — 10 September
+
+The queue now groups selected source rows by their nominated date/amount positions,
+including separate dated and undated groups. This prevents a column containing a
+purchase description from inheriting the amount meaning of an interest row whose
+columns shifted. Header proposals are taken from the explicit scanned transaction
+section when present. Non-nominated amount headers stay unidentified in that group;
+exact money-in/out header variants retain their separate meanings. All source pages
+are still preflighted before the first group saves; later failure stops the queue and
+identifies the uncertain group/page, retaining confirmed earlier groups.
+
+Real56-page PDF page4: two groups/four pending readings saved and reopened. Purchase
+rows40/41 retain description column2as unknown and amount column3; interest45/46
+uses amount column2. Generic date0assessment preserves missing year and unknown date
+type. Original screenshots inspected after page decoding. No transactions admitted.
+The groups are intentionally separate from earlier test mappings; page4interest
+source overlap with the earlier seven-row fixture remains visible. Do not finalize
+this unfinished acceptance case or rerun either writer.
+
+New guarded script:`check_local_shifted_queue_groups.cjs --read-only` for repeat
+checks. Report:shifted-queue-groups-check.json. Mapping IDs:
+17e3333b-c3df-447e-ba61-c7b13a6babf4(purchases),
+bace69dc-4422-4d46-b775-cc4cda69791c(interest).
+982financial UI tests, TypeScript, scoped lint and production build pass. Backend
+baseline4260plus54focused generic-date/binding checks;330engine tests unchanged.
+No push/deploy. Remaining automatic PDF interpretation/model-grounded nomination
+is not connected or called complete; external-provider acceptance still lacks a
+working key. Local redacted settings show only an environment-configured connection,
+not a separately stored validated alternative. Continue the remaining extraction
+implementation without retrying the known401credential.
+
 ## Generic date proposals retain unknown date type — 10 September
 
 PDF mappings now accept a generic date column meaning without calling it a booking,

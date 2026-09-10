@@ -5,7 +5,7 @@ import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl } from "../lib/candidate-contract"
 import type { PdfPageScan } from "../lib/pdf-page-scan"
 import {
-  scannedPageProposal,
+  scannedPageProposals,
   verifyQueuedMapping,
   type ScannedPageProposal,
 } from "../lib/scanned-reading-queue"
@@ -22,9 +22,9 @@ export function QueueScannedReadings({
     [undated, setUndated] = useState(false),
     [phase, setPhase] = useState("idle"),
     [message, setMessage] = useState(""),
-    [saved, setSaved] = useState<{ page: number; id: string; count: number }[]>(
-      []
-    )
+    [saved, setSaved] = useState<
+      { page: number; id: string; count: number; group: number }[]
+    >([])
   const active = useRef(true),
     lock = useRef(false),
     client = useQueryClient()
@@ -56,6 +56,7 @@ export function QueueScannedReadings({
     onBusy(true)
     setPhase("checking")
     let attemptedPage: number | null = null
+    let attemptedGroup: number | null = null
     try {
       const plans: ScannedPageProposal[] = []
       for (const page of chosen) {
@@ -67,14 +68,17 @@ export function QueueScannedReadings({
             scan.case_id
           ) + `&table_index=${scan.table_index}`
         )
-        plans.push(scannedPageProposal(scan, page, source, undated))
+        plans.push(...scannedPageProposals(scan, page, source, undated))
       }
       if (!active.current) return
       setPhase("saving")
-      for (const proposal of plans) {
+      for (const [groupIndex, proposal] of plans.entries()) {
         if (!active.current) return
         attemptedPage = proposal.page_number
-        setMessage(`Adding page ${attemptedPage} to pending review…`)
+        attemptedGroup = groupIndex + 1
+        setMessage(
+          `Adding review group ${groupIndex + 1} of ${plans.length} (page ${attemptedPage})…`
+        )
         const raw = await fetchAPI(
           candidateUrl("candidate-mappings", scan.case_id),
           { method: "POST", body: proposal }
@@ -85,6 +89,7 @@ export function QueueScannedReadings({
           ...old,
           {
             page: proposal.page_number,
+            group: groupIndex + 1,
             id: mapping.id,
             count: mapping.candidates.length,
           },
@@ -99,7 +104,7 @@ export function QueueScannedReadings({
       if (active.current) {
         setPhase("stopped")
         setMessage(
-          `${error instanceof Error ? error.message : "The queue stopped."} ${attemptedPage === null ? "No further pages will be added. Review the saved pages below and scan again before continuing." : `The save outcome for page ${attemptedPage} must be checked in saved PDF readings before retrying. Earlier saved pages remain available; later pages were not attempted.`}`
+          `${error instanceof Error ? error.message : "The queue stopped."} ${attemptedPage === null ? "No further pages will be added. Review the saved pages below and scan again before continuing." : `The save outcome for review group ${attemptedGroup} on page ${attemptedPage} must be checked in saved PDF readings before retrying. Earlier saved groups remain available; later groups were not attempted.`}`
         )
       }
     } finally {
@@ -119,9 +124,10 @@ export function QueueScannedReadings({
       <p>
         Choose pages to avoid setting up each table again. All selected source
         revisions and cells are checked before the first save, then checked
-        again by each page’s save. Each page is saved separately. Column
-        meanings remain proposals; account, dates, amounts and direction still
-        need review before admission.
+        again by each page’s save. Each distinct row layout is saved separately,
+        including when columns shift on one page. Column meanings remain
+        proposals; account, dates, amounts and direction still need review
+        before admission.
       </p>
       <fieldset disabled={phase !== "idle"} className="space-y-2">
         <label className="block">
@@ -205,14 +211,14 @@ export function QueueScannedReadings({
         <ul className="space-y-2">
           {saved.map((p) => (
             <li key={p.id}>
-              Page {p.page}: {p.count} saved readings.{" "}
+              Page {p.page}, review group {p.group}: {p.count} saved readings.{" "}
               {onSaved && (
                 <Button
                   variant="outline"
                   disabled={running}
                   onClick={() => onSaved(p.id)}
                 >
-                  Open saved review for page {p.page}
+                  Open saved review group {p.group} for page {p.page}
                 </Button>
               )}
             </li>
