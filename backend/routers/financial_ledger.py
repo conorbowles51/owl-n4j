@@ -243,6 +243,27 @@ async def compare_saved_ledger_exports(case_id: UUID = Query(...), before: Uploa
         await after.close()
 
 
+@router.post('/trace-support-verification')
+async def verify_saved_trace_support(case_id: UUID = Query(...), archive: UploadFile = File(...),
+                                     expected_sha256: Optional[str] = Query(None, pattern=r'^[a-f0-9]{64}$')):
+    import json
+    from starlette.concurrency import run_in_threadpool
+    from services.financial.trace_support_archive import verify_trace_support_archive, MAX_SUPPORT_ARCHIVE_BYTES
+    try:
+        content = await archive.read(MAX_SUPPORT_ARCHIVE_BYTES + 1)
+        result = await run_in_threadpool(verify_trace_support_archive, content,
+            expected_case_id=case_id, expected_sha256=expected_sha256)
+        return Response(content=json.dumps(result), media_type='application/json',
+            headers={'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff'})
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Saved tracing support verification failed')
+        raise HTTPException(status_code=500, detail='Saved support could not be verified.')
+    finally:
+        await archive.close()
+
+
 @router.post('/trace-support-export')
 def download_trace_support(body: TraceSupportDownload, case_id: UUID = Query(...), current_user=Depends(get_current_db_user), db: Session=Depends(get_db)):
     """Recompute submitted captures and package support under the case-view bar."""

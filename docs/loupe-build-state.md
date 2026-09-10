@@ -1,3 +1,24 @@
+## Investigator-facing saved package verification — 10 September
+
+Added TraceSupportVerification to the ledger analysis export panel and a
+case-view-protected multipart endpoint. It bounds uploads, closes files on all
+outcomes, avoids cached responses and binds verification to the authorized case.
+The browser checks the returned case/archive digest, optionally rejects a supplied
+independent digest before upload, displays rebuilt differences and downloads JSON.
+Changed inputs clear results; pending requests abort on unmount.
+
+Live browser acceptance found CaseLayout remounted its Outlet when crossing the
+mobile breakpoint, clearing unfinished UI state. Refactored the layout to preserve
+the same case content tree while moving the side panel between desktop and mobile
+presentation. State-preservation test and real desktop-to-mobile verification pass.
+
+4357financial backend and1007financial UI tests pass, plus focused layout tests,
+production build/scoped lint and132live permissions. Retained synthetic resale ZIP
+verified; downloaded result/hash, pre-upload digest mismatch and cross-case refusal
+checked with zero financial writes. Permission checks append only normal prepared
+export audit receipts and remove their temporary user. No provider or push.
+Backend93914 (/tmp/loupe-package-verification-runtime.out), engine62038/worker73588.
+
 ## Complete support ZIP verification — 10 September
 
 Added verify_trace_support_archive and scripts/verify_financial_trace_support.py.

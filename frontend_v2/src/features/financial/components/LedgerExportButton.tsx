@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { candidateUrl } from "../lib/candidate-contract"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
+import { TraceSupportVerification } from "./TraceSupportVerification"
 import { LedgerExportComparison } from "./LedgerExportComparison"
 
 export function LedgerExportButton({
@@ -220,6 +221,7 @@ function ScopedExport({
       {markingControl}
       {historyControl}
       <LedgerExportComparison key={caseId} caseId={caseId} />
+      <TraceSupportVerification key={`support-${caseId}`} caseId={caseId} />
       <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"

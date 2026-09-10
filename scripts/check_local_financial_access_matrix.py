@@ -35,7 +35,7 @@ reads += [('GET','indirect-review-methods',case,{},None),
  ('GET',f'candidate-sources/{file}/model-nominations',case,{},None),
  ('POST','network-trace',network_case,{},network['inputs']),
  ('POST','trace-support-export',network_case,{},dict(scenarios=[json.dumps(network,sort_keys=True,separators=(',',':'),ensure_ascii=False)]))]
-reads += [('POST','ledger-export-comparison',case,{},None)]
+reads += [('POST','ledger-export-comparison',case,{},None), ('POST','trace-support-verification',network_case,{},None)]
 # Invalid bodies are intentional: permission denial must precede payload validation.
 mutations=[('POST',name) for name in (
  f'transactions/{row}/quarantine',f'transactions/{row}/release',f'transactions/{row}/correction',
@@ -60,6 +60,7 @@ try:
    outcomes={}
    fresh_scenario=None
    fresh_ledger_export=None
+   fresh_support=None
    for method,path,scope,params,body in reads:
     if stage=='view_only' and path=='network-trace':
      fresh=client.get('/api/financial/network-trace-inputs',params={'case_id':scope,**{key:body[key] for key in ('start_date','end_date','population','tolerance_days') if key in body}});fresh.raise_for_status()
@@ -70,9 +71,13 @@ try:
     if stage=='view_only' and path=='ledger-export-comparison':
      require(fresh_ledger_export is not None,'Fresh ledger export missing')
      options={'files':{'before':('before.zip',fresh_ledger_export,'application/zip'),'after':('after.zip',fresh_ledger_export,'application/zip')}}
+    if stage=='view_only' and path=='trace-support-verification':
+     require(fresh_support is not None,'Fresh support export missing')
+     options={'files':{'archive':('support.zip',fresh_support,'application/zip')}}
     response=client.request(method,'/api/financial/'+path,params={'case_id':scope,**params},**options)
     require(response.status_code==expected,f'{stage}: {method} {path}: expected {expected}, got {response.status_code}')
     if stage=='view_only' and path=='ledger-export':fresh_ledger_export=response.content
+    if stage=='view_only' and path=='trace-support-export':fresh_support=response.content
     if stage=='view_only' and path=='network-trace':fresh_scenario=response.json()['scenario_json']
     outcomes[f'{method} {path}']=response.status_code
    if check_edits:

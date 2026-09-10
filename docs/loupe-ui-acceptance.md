@@ -244,3 +244,27 @@ Repeatable new check: `node scripts/check_local_transfer_graph.cjs` (zero writes
   browser check. Service save/review acceptance uses simulated output and rollback.
 - [ ] Actual provider-backed acceptance with a working project key. Known401 key
   has not been retried; simulated checks do not satisfy this item.
+
+
+## Saved support verification and resize persistence — 10 September
+
+- [x] In Transactions' export panel, open **Check a saved tracing audit package**,
+  select a previously captured ZIP and optionally enter its separately retained
+  SHA-256. The case-view-protected endpoint verifies the package without editing
+  ledger/source state. The browser also checks the returned file digest and case.
+- [x] Show clean recalculation, code-revision-only changes and named rebuild
+  differences separately; download the checked verification JSON.
+- [x] Reject a different case's package and a saved-digest mismatch. The latter
+  fails before upload. Files close on backend success/failure; interrupted browser
+  requests are cancelled, and changed inputs clear stale results.
+- [x] Preserve case-page state across the desktop/mobile breakpoint and side-panel
+  toggles. CaseLayout previously mounted a different Outlet tree when resized,
+  discarding selected files/results and potentially unfinished forms. The content
+  tree now stays mounted; regression and real browser resize checks pass.
+
+Acceptance: retained synthetic resale ZIP, zero case mutations; desktop/narrow
+screenshots and downloaded JSON verified.132live case-permission checks pass,
+including allowed view-only verification and rejected/revoked access.4357financial
+backend tests,1007financial UI tests, focused layout tests and production build
+pass. The permission script prepares its existing test exports, which retain
+prospective export audit receipts; it does not mutate financial source/ledger rows.

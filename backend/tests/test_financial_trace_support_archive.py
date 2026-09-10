@@ -214,3 +214,10 @@ class TraceSupportArchiveTests(unittest.TestCase):
         with patch('services.financial.trace_support_archive.MAX_SUPPORT_ARCHIVE_BYTES', 10):
             with self.assertRaisesRegex(ValueError, 'Combined support'):
                 build_trace_support_archive([self.f.content])
+
+    def test_case_binding_is_checked_before_rebuild(self):
+        content = build_trace_support_archive([self.f.content])
+        with patch('services.financial.trace_support_archive.build_trace_support_archive') as rebuild:
+            with self.assertRaises(ValueError):
+                verify_trace_support_archive(content, expected_case_id='another-case')
+        rebuild.assert_not_called()

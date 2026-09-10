@@ -148,7 +148,7 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
 MAX_SUPPORT_ARCHIVE_BYTES = 256 * 1024 * 1024
 
 
-def verify_trace_support_archive(content, *, expected_sha256=None):
+def verify_trace_support_archive(content, *, expected_sha256=None, expected_case_id=None):
     """Check captured bytes and compare a rebuild without overwriting originals."""
     from pathlib import PurePosixPath
     from services.financial.reference_reviews import parse_review_json
@@ -177,6 +177,8 @@ def verify_trace_support_archive(content, *, expected_sha256=None):
             manifest = parse_review_json(read('manifest.json', 1024 * 1024))
             if manifest['schema_version'] != 'loupe.financial.trace_support_archive/1':
                 raise ValueError('Unsupported support schema.')
+            if expected_case_id is not None and manifest['case_id'] != str(expected_case_id):
+                raise ValueError('Support archive belongs to a different case.')
             members = {}
             for item in manifest['files']:
                 name = item['filename']
