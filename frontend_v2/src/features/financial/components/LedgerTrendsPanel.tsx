@@ -1,3 +1,4 @@
+import { LedgerFlowChart } from "./LedgerFlowChart"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -224,6 +225,15 @@ function TrendScope({
                   {query.data.excluded_rows} excluded. See Current ledger
                   summary for exclusion reasons.
                 </p>
+                <LedgerFlowChart
+                  title="Money by ordering date"
+                  groups={points.map((p) => ({
+                    ...p,
+                    id: `${p.date}:${p.currency}`,
+                    label: grouping === "monthly" ? `${p.date.slice(0, 7)} (month)` : p.date,
+                  }))}
+                  onSource={setSource}
+                />
                 {points.length === 0 && (
                   <p>
                     No eligible postings for these dates. Evidence coverage may

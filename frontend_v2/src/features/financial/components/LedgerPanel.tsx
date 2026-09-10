@@ -36,7 +36,7 @@ import {
   type LedgerQueryParams,
 } from "../hooks/use-ledger-transactions"
 import { readLedgerStatus } from "../lib/ledger-format"
-import { LedgerTable } from "./LedgerTable"
+import { LedgerRowBrowser } from "./LedgerRowBrowser"
 
 /** The endpoint's default when no status is sent. See the module docstring. */
 const DEFAULT_LEDGER_STATUS = "admitted"
@@ -162,7 +162,8 @@ export function LedgerPanel({
           }
         />
       ) : (
-        <LedgerTable
+        <LedgerRowBrowser
+          key={JSON.stringify([caseId, params])}
           transactions={rows}
           onAdjudicate={onAdjudicate}
           onCorrect={onCorrect}

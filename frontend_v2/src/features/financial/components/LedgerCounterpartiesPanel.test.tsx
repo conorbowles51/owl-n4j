@@ -137,8 +137,8 @@ it.each([
     screen.getByRole("button", { name: "Read ledger counterparty totals" })
   )
   expect(
-    await screen.findByText(new RegExp(String(expected)))
-  ).toBeInTheDocument()
+    await screen.findAllByText(new RegExp(String(expected)))
+  ).not.toHaveLength(0)
 })
 
 it("pages label groups without changing their reconciled total", async () => {

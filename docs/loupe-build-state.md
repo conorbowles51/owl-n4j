@@ -82,6 +82,30 @@ Current backend session72261, log /tmp/loupe-page-scan-runtime.out; latest sessi
 live tools. PDF migration and script cache paths are local only. Full scope remains
 active; no early-preview stopping point or deployment blocker.
 
+### Visual analysis continuation — 10 September, about05:05 Dublin
+
+adfa960f saved cross-case comparison, unfinished editor persistence, PDF export
+and page-range nomination locally. No push. Following visual work is now tested:
+- Incoming/outgoing diverging bars for exact date/source-label groups, explicit
+  currency separation, selectable group totals and chart-to-source navigation.
+  Month buckets label the month rather than suggesting a first-of-month posting.
+  Chart selection is explicitly separate from exported account/date scope.
+- Tracing accepts decimal currency amounts, converts exactly to minor-unit API
+  inputs, displays readable amounts and offers per-movement source buttons.
+  Multiple-claim working-population browser acceptance preserves exact results.
+- Ledger table search, currency/direction/proof filters, exact single-currency
+  amount sorting and50-row display pages. Default ledger order preserved. Table
+  search is explicitly a view over loaded rows, not the exported analysis scope.
+  Real-statement search, sorting, direction filtering, chart sources and PDF
+  download all passed without financial writes.
+Verification:871financial UI tests and production build pass; backend unchanged
+since page scanner (4042integrated +11targeted page-scan/package checks). Current
+runtime backend72261 /tmp/loupe-page-scan-runtime.out.
+Next: cross-account conditional tracing over explicit transfer pairings, preserving
+per-hop source rows, proof classes, opening/attribution/order assumptions and
+alternative-method results. No silent graph-path or backward-tracing assumptions.
+Continue through remaining full scope; do not stop at this intermediate unit.
+
 ### Working totals and usable manual-preview checkpoint — 10 September 2026
 
 Neil explicitly clarified: deployment is not blocked; pushing triggers the existing

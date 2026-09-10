@@ -1,3 +1,4 @@
+import { LedgerFlowChart } from "./LedgerFlowChart"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -228,6 +229,20 @@ function CounterpartyScope({
                   {query.data.excluded_rows} excluded. See Current ledger
                   summary for exclusion reasons.
                 </p>
+                <LedgerFlowChart
+                  title="Money by source label"
+                  groups={counterparties.map((p) => ({
+                    ...p,
+                    id: JSON.stringify([p.label, p.currency]),
+                    label:
+                      p.label === null
+                        ? "Counterparty not recorded"
+                        : p.label === ""
+                          ? "Blank source label"
+                          : p.label.trim() === p.label ? p.label : JSON.stringify(p.label),
+                  }))}
+                  onSource={setSource}
+                />
                 {counterparties.length === 0 && (
                   <p>
                     No eligible postings for these filters. Evidence coverage

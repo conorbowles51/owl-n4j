@@ -111,6 +111,8 @@ feature below is complete at the start of this window.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
 5. **Make every financial view use the authoritative ledger — partial**
+   - [x] Exact incoming/outgoing charts for date and source-label groups, selected-group totals, separate currencies and chart-to-source links; real-statement browser verified.
+   - [x] Ledger table search, direction/currency/proof display filters, exact single-currency sorting and50-row pages, explicitly separate from analysis/export scope; browser verified.
    - [x] Working/verified Trends and Counterparties share captured current readings; real-statement date and label totals verified.
    - [x] Authoritative Posting graph with per-posting source arrows, account/date/population scope and distinct account/currency label groups; real-statement browser rendering verified.
    - [x] Separate working totals include current admitted P3 readings while preserving verified totals. Exact currencies, correction exclusions, account/date scope and matching JSON/HTML exports verified on two real-PDF cases (10 September).
@@ -161,6 +163,7 @@ feature below is complete at the start of this window.
    - [ ] Record which evidence and decisions supported an exported result.
 
 9. **Complete funds tracing — partial**
+   - [x] Decimal currency entry converts exactly to minor-unit requests; readable movement amounts and source buttons. Multiple-claim browser results preserved.
    - [x] Multiple explicit deposit/claim attributions and working/verified population selection preserve original proof classes; reject excess attribution and export all assumptions. Focused23backend/12UI and working-population multiple-claim browser checks pass. Cross-account propagation remains.
    - [x] Conditional single-account tracing captures reviewed ledger/history, explicit opening/deposit/order assumptions and selected methods. Invalid/stale inputs fail without writes. Existing core and bridge tests pass.
    - [x] Conditional tracing screen compares selected methods and downloads exact hash-verified scenario bytes. 45 frontend tests, TypeScript/scoped ESLint and read-only synthetic browser acceptance pass. Unidentified withdrawals remain visible; changing assumptions clears results. Current UI supports one attributed deposit; broader multi-deposit and cross-account work remain.

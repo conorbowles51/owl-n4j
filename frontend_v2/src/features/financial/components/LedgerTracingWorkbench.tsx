@@ -10,6 +10,8 @@ import {
 } from "../lib/ledger-trace"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { LedgerFilters } from "./LedgerFilters"
+import { LedgerSourceDialog } from "./LedgerSourceDialog"
+import { correctionMinor, correctionMoney } from "../lib/correction-contract"
 import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
 
 export function LedgerTracingWorkbench({
@@ -129,11 +131,12 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
       a.row.ordering_date.localeCompare(b.row.ordering_date)
     )
   )
+  const [source, setSource] = useState<string | null>(null)
   const [opening, setOpening] = useState(""),
     [openingBasis, setOpeningBasis] = useState("")
   const [orderBasis, setOrderBasis] = useState("")
   const [attributions, setAttributions] = useState([
-    { transaction_id: "", claim_id: "", amount_minor: "", basis: "" },
+    { transaction_id: "", claim_id: "", amount_input: "", basis: "" },
   ])
   const changeAttribution = (
     index: number,
@@ -160,14 +163,26 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
       start_date: inputs.start_date,
       end_date: inputs.end_date,
       expected_snapshot_sha256: inputs.snapshot_sha256,
-      opening_balance_minor: opening,
+      opening_balance_minor: correctionMinor(opening, inputs.currency),
       opening_basis: openingBasis,
       order_basis: orderBasis,
       ordered_transaction_ids: rows.map((r) => r.row.key),
-      attributions,
+      attributions: attributions.map(({ amount_input, ...a }) => ({
+        ...a,
+        amount_minor: correctionMinor(amount_input, inputs.currency),
+      })),
       doctrines: selected,
     }
     try {
+      if (
+        request.opening_balance_minor === null ||
+        request.attributions.some(
+          (a) => a.amount_minor === null || a.amount_minor === "0"
+        )
+      )
+        throw Error(
+          `Enter valid ${inputs.currency} amounts without separators; attributed amounts must be greater than zero.`
+        )
       setResult(
         await verifyTraceResponse(
           await fetchAPI(candidateUrl("ledger-trace", inputs.case_id), {
@@ -201,8 +216,8 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
       <p>
         {inputs.included_rows} {inputs.population} scenario readings;{" "}
         {inputs.excluded_rows} excluded readings. Currency: {inputs.currency}.
-        Amount inputs below use whole minor units (for example, 100 pence = GBP
-        1).
+        Enter amounts in currency units, using a decimal point where needed and
+        no thousands separators.
       </p>
       <form
         onSubmit={(e) => {
@@ -219,11 +234,12 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
             Record your scenario assumptions
           </legend>
           <label className="block">
-            Opening balance in minor units{" "}
+            Opening balance ({inputs.currency}){" "}
             <input
               className="border p-1"
               required
-              pattern="0|[1-9][0-9]{0,18}"
+              inputMode="decimal"
+              maxLength={32}
               value={opening}
               onChange={(e) => setOpening(e.target.value)}
             />
@@ -246,10 +262,17 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
             {rows.map((r, i) => (
               <li className="border-b py-2" key={r.row.key}>
                 {i + 1}. {r.row.ordering_date} — {r.row.direction}{" "}
-                {r.row.amount_minor} {inputs.currency} minor units —{" "}
+                {correctionMoney(r.row.amount_minor, inputs.currency)} —{" "}
                 {r.row.description}
                 <br />
                 <small>Ledger reading: {r.row.key}</small>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSource(r.row.key)}
+                >
+                  Open tracing source {i + 1}
+                </Button>
                 {i > 0 &&
                   rows[i - 1].row.ordering_date === r.row.ordering_date && (
                     <Button
@@ -307,7 +330,8 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
                     .filter((r) => r.row.direction === "credit")
                     .map((r) => (
                       <option key={r.row.key} value={r.row.key}>
-                        {r.row.ordering_date} — {r.row.amount_minor} —{" "}
+                        {r.row.ordering_date} —{" "}
+                        {correctionMoney(r.row.amount_minor, inputs.currency)} —{" "}
                         {r.row.key}
                       </option>
                     ))}
@@ -329,19 +353,20 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
                 />
               </label>
               <label className="block">
-                Attributed amount in minor units
+                Attributed amount ({inputs.currency})
                 <input
                   aria-label={
                     index === 0
-                      ? "Attributed amount in minor units"
-                      : `Attributed amount in minor units ${index + 1}`
+                      ? `Attributed amount (${inputs.currency})`
+                      : `Attributed amount ${index + 1} (${inputs.currency})`
                   }
                   className="border p-1"
                   required
-                  pattern="[1-9][0-9]{0,18}"
-                  value={attribution.amount_minor}
+                  inputMode="decimal"
+                  maxLength={32}
+                  value={attribution.amount_input}
                   onChange={(e) =>
-                    changeAttribution(index, "amount_minor", e.target.value)
+                    changeAttribution(index, "amount_input", e.target.value)
                   }
                 />
               </label>
@@ -387,7 +412,7 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
                 {
                   transaction_id: "",
                   claim_id: "",
-                  amount_minor: "",
+                  amount_input: "",
                   basis: "",
                 },
               ])
@@ -421,6 +446,13 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
         </fieldset>
       </form>
       {error && <p role="alert">{error}</p>}
+      {source && (
+        <LedgerSourceDialog
+          caseId={inputs.case_id}
+          transactionId={source}
+          onClose={() => setSource(null)}
+        />
+      )}
       {result && (
         <section aria-label="Conditional tracing results" className="space-y-3">
           <h3 className="font-semibold">
@@ -435,10 +467,22 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
                 <h4>{method.replaceAll("_", " ")}</h4>
                 {Object.entries(output.outcomes).map(([id, outcome]) => (
                   <p key={id}>
-                    {id}: attributed {outcome.deposited.minor_units}; surviving{" "}
-                    {outcome.surviving.minor_units}; withdrawn{" "}
-                    {outcome.withdrawn.minor_units} ({inputs.currency} minor
-                    units).
+                    {id}: attributed{" "}
+                    {correctionMoney(
+                      outcome.deposited.minor_units,
+                      inputs.currency
+                    )}
+                    ; surviving{" "}
+                    {correctionMoney(
+                      outcome.surviving.minor_units,
+                      inputs.currency
+                    )}
+                    ; withdrawn{" "}
+                    {correctionMoney(
+                      outcome.withdrawn.minor_units,
+                      inputs.currency
+                    )}
+                    .
                   </p>
                 ))}
                 <p>

@@ -58,7 +58,7 @@ describe("conditional tracing workbench", () => {
     expect(
       screen.getByLabelText("Attributed deposit").querySelectorAll("option")
     ).toHaveLength(2)
-    expect(screen.getByLabelText("Opening balance in minor units")).toHaveValue(
+    expect(screen.getByLabelText("Opening balance (GBP)")).toHaveValue(
       ""
     )
     expect(
@@ -111,4 +111,19 @@ it("changing tracing population discards the old assumptions", async () => {
     target: { value: "working" },
   })
   expect(screen.queryByLabelText("Claim label")).not.toBeInTheDocument()
+})
+
+it("converts decimal currency inputs exactly before submitting the scenario", async () => {
+  vi.mocked(fetchAPI).mockClear()
+  vi.mocked(fetchAPI).mockResolvedValueOnce(inputs).mockRejectedValueOnce(new Error("Synthetic response"))
+  render(<LedgerTracingWorkbench caseId="case" />)
+  fireEvent.click(screen.getByRole("button",{name:"Apply scope"}))
+  fireEvent.click(screen.getByRole("button",{name:"Load tracing inputs"}))
+  await screen.findByLabelText("Opening balance (GBP)")
+  for(const [label,value] of [["Opening balance (GBP)","90071992547409.93"],["Opening balance basis","Explicit assumption"],["Basis for accepting this movement order","Checked source"],["Attributed deposit","row"],["Claim label","Claim"],["Attributed amount (GBP)","0.50"],["Attribution basis","Explicit attribution"]])fireEvent.change(screen.getByLabelText(label),{target:{value}})
+  fireEvent.click(screen.getByLabelText("first in first out"))
+  fireEvent.click(screen.getByRole("button",{name:"Calculate conditional scenario"}))
+  await screen.findByText("Synthetic response")
+  const call=vi.mocked(fetchAPI).mock.calls.find(([url])=>String(url).includes('/ledger-trace?'))!
+  expect(call[1]?.body).toMatchObject({opening_balance_minor:"9007199254740993",attributions:[{transaction_id:"row",claim_id:"Claim",amount_minor:"50"}]})
 })

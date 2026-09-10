@@ -76,3 +76,15 @@ Backend test counts do not establish completion of these user journeys.
   retaining P3 exclusions; original PDF unchanged (d45fb02).
 - [x] Inspect retained dates/balances beside original PDF cell highlights after
   finalization; readable export includes controls and source pages (7716d86, 79e1ee8).
+
+## Verified visual analysis — 10 September
+
+- [x] Authoritative ledger posting graph with working/verified scope and source arrows.
+- [x] Diverging money charts for date/source-label groups; exact selected totals,
+  currency separation and direct contributing-source navigation.
+- [x] Search and sort the loaded ledger rows, with50-row paging and clear scope.
+- [x] Multiple-claim tracing uses decimal currency inputs and source buttons.
+- [x] Paginated PDF export alongside the captured HTML/JSON and originals option.
+
+These implement parts of the full design above. Cross-account tracing, timeline
+correlation and evidence-linked hypotheses remain active development.
