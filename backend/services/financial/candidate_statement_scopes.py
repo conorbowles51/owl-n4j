@@ -80,8 +80,12 @@ class StatementScopesRequest(_Contract):
     statement_scopes: Annotated[list[ReviewedStatementScope], Field(max_length=16)] = Field(default_factory=list)
 
 
-def attach_statement_scopes(session, manifest, prepared, scopes, *, case_id, evidence_file_id):
+def attach_statement_scopes(session, manifest, prepared, scopes, *, case_id, evidence_file_id, require_statement_dates=False):
     """Rebind every control and row assignment before hashing the preview or writing."""
+    dated_by_statement = {UUID(item["row"]["id"]) for item in prepared if item["reading"].statement_end_date}
+    assigned_scope_ids = {cid for scope in scopes for cid in scope.candidate_ids}
+    if require_statement_dates and not dated_by_statement <= assigned_scope_ids:
+        raise CandidateStoreError("Assign every statement-dated reading to its printed statement end control before finalizing.", 422)
     if not scopes:
         return manifest
     by_id = {UUID(item['row']['id']): item['reading'] for item in prepared}
@@ -104,6 +108,8 @@ def attach_statement_scopes(session, manifest, prepared, scopes, *, case_id, evi
             # printed bounds on real statements and are not silently substituted.
             if reading.booking_date and not scope.start.value <= reading.booking_date <= scope.end.value:
                 raise CandidateStoreError('A reviewed booking date lies outside its assigned statement.', 422)
+            if reading.statement_end_date and reading.statement_end_date != scope.end.value:
+                raise CandidateStoreError("Statement-end ordering date differs from the assigned printed end date.", 422)
             assigned.add(candidate_id)
         controls = {}
         for role in ('start', 'end', 'opening', 'closing'):

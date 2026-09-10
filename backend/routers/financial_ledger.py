@@ -739,6 +739,18 @@ async def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id
         raise HTTPException(status_code=500, detail="Stored PDF table could not be loaded.")
 
 
+@router.get("/candidate-sources/{evidence_file_id}/progress")
+async def get_candidate_document_progress(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.candidate_progress import candidate_document_progress
+    try:
+        return candidate_document_progress(db, case_id=case_id, evidence_file_id=evidence_file_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Failed to read document review progress")
+        raise HTTPException(status_code=500, detail="Document review progress could not be loaded.")
+
+
 @router.get("/candidate-sources/{evidence_file_id}/reuse-check")
 async def get_candidate_source_reuse(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:

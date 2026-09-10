@@ -83,6 +83,9 @@ feature below is complete at the start of this window.
    - [x] Source date assessment: display alternative numeric dates, unresolved years/centuries, invalid dates and original citations without selecting a reading (46a3417). Automatic date/context resolution and account uncertainty work remain.
 
 3. **Complete financial accuracy checks — partial**
+   - [x] First complete printed statement in the supplied 108-page PDF: payment, purchase and undated interest reconcile opening $6,700.18 to closing $6,637.96 owed. Other statements remain outside this acceptance (10 September).
+   - [x] Undated fee/interest review preserves unknown row dates; explicit statement-end ordering requires a matching source-bound end control at finalization, retains provenance and remains P3.
+   - [x] Document-wide saved review overview shows pending/resolved/rejected rows per page, unselected pages, preparation gaps and direct batch resume; it does not label selections as complete extraction.
    - [x] Statements workspace displays current balance identity and conditional running-balance checks, exact discrepancies and source navigation without overwriting prior results or changing admission (84cd821). Both possible source-row orders remain explicit.
    - [x] Account/currency timeline shows eligible and excluded bounds, internal gaps and separate overlapping statements; select a period to inspect its registered source (84cd821). This does not prove complete transaction extraction.
    - [x] Bind manually reviewed statement dates and opening/closing controls to selected PDF rows, preserving original cells and liability sign convention (d45fb02). Fresh real-PDF test correctly exposes omitted $56.16 interest; P3 remains excluded.

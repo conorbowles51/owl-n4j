@@ -304,7 +304,9 @@ function LedgerRow({
   const status = readLedgerStatus(transaction.ledger_status)
   const proofClass = readProofClass(transaction.proof_class)
   const layer = readExtractionLayer(transaction.extraction_layer)
-  const dateSource = readDateSource(transaction.ordering_date_source)
+  const dateSource = transaction.ordering_date_context === "statement_end_ordering_only"
+    ? { value: "effective", label: "Statement end · ordering only", description: "The row has no printed transaction date. Ordered using the bound statement end date; transaction timing remains unknown." }
+    : readDateSource(transaction.ordering_date_source)
   const quarantineReason =
     transaction.quarantine_reason === null || showQuarantineGrounds
       ? null

@@ -411,3 +411,18 @@ it("shows saved progress, filters pending rows and keeps reviewed rows available
   fireEvent.click(screen.getByLabelText("Show only rows awaiting review"))
   expect(screen.getByRole("button", { name: "Review source row 2" })).toBeVisible()
 })
+
+it("records explicit statement-end ordering while leaving transaction dates unknown", async () => {
+  const fetch = mockServer()
+  mountForm()
+  await fill()
+  fireEvent.change(screen.getByLabelText("Booking date"), { target: { value: "" } })
+  fireEvent.change(screen.getByLabelText("Statement end date (ordering only)"), { target: { value: "2026-02-28" } })
+  fireEvent.click(screen.getByRole("button", { name: "Record resolved reading" }))
+  await waitFor(() => expect(fetch.mock.calls.some(([, options]) => options?.method === "POST")).toBe(true))
+  const call = fetch.mock.calls.find(([, options]) => options?.method === "POST")!
+  const reading = JSON.parse(String(call[1]?.body)).reading
+  expect(reading.statement_end_date).toBe("2026-02-28")
+  expect(reading.booking_date).toBeNull()
+  expect(reading.transaction_date).toBeNull()
+})

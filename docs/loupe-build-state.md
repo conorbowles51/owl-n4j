@@ -6,6 +6,34 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Active full-scope development — 10 September, continued
+
+Neil explicitly rejected early-preview handoffs: finish the complete agreed
+financial application and UI, keep working across intermediate units. No push yet.
+Current work: document-wide review progress, undated interest support, then consistent
+working-population analysis and the remaining full checklist. Do not end the task
+because a small unit or manual-preview test passed.
+
+Document progress API/UI added: page preparation, saved counts across batches,
+unselected/missing pages, direct pending-row resume. First full printed statement
+(PDF pages 1–3) now reconciles exactly: 18000 credit, 6162 purchase debit, 5616
+interest debit; opening owed670018 to closing owed663796. Statement-end ordering
+for undated interest preserves null transaction/posted/value dates and records
+provenance, requires assigned matching printed end control at finalization. P3
+unchanged. Other statements in the 108-page PDF are not covered by this acceptance.
+
+New isolated case e8ecc646-7b29-49d6-b64d-7086a9a14ad4; file
+f256eda2-7ac7-46e9-855b-01a0ed0d7785; account262dd88c-5437-47c2-a235-da147ce0f634.
+Reports full-statement-{pdf-intake,review}-check.json and full-statement-export.zip
+in data/local-runtime. Writer check_local_full_statement_review.cjs finished;
+do not rerun or use --resume-interest (checkpoint already passed). Browser label
+issue fixed with explicit accessible name, then resumed only pending interest.
+All original PDFs and previous test cases preserved. Current backend session11556
+/tmp/loupe-statement-end-runtime.out predates final ordering-context display change;
+restart before checking its final ledger/report label.
+3,967 financial backend tests and838financial UI tests passed; additional explicit
+statement-end UI test added afterward and needs targeted run. Continue development.
+
 ### Working totals and usable manual-preview checkpoint — 10 September 2026
 
 Neil explicitly clarified: deployment is not blocked; pushing triggers the existing
@@ -32,8 +60,10 @@ Acceptance script scripts/check_local_working_totals.cjs; logs
 Workspace/Dossier/source-viewer tests remain valid. The existing local preview is
 usable for bounded manual PDF review, corrections, statement checks and exports;
 full-statement extraction and broader analysis remain on the checklist. No claim
-of full financial feature completion or deployment. Stop at this limited-preview
-checkpoint as Neil requested; no background schedule started.
+of full financial feature completion or deployment. The instruction to stop at this limited-preview
+checkpoint was superseded by Neil: continue through the complete agreed financial
+application, including the UI. Do not stop at preview or intermediate milestones.
+No background schedule started.
 
 ### Limited-preview local release candidate — integrated checkpoint
 

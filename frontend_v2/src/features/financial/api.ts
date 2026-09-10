@@ -214,6 +214,7 @@ export interface LedgerTransaction {
    */
   ordering_date: string
   ordering_date_source: string
+  ordering_date_context?: "statement_end_ordering_only"
   description: string | null
   counterparty_raw: string | null
   transaction_type: string | null

@@ -21,6 +21,7 @@ const readySchema = z.object({
   revision,
   statement_scopes: z.array(statementScope).max(16).optional(),
   readings: z.array(scopeReading).max(1000).optional(),
+  unbound_statement_dates: z.number().int().nonnegative().optional(),
   resolved_count: z.number().int().min(1).max(1000),
   rejected_count: z.number().int().min(0).max(1000),
   proof_class: z.literal("p3"),
@@ -250,6 +251,9 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
       {ready && !receipt && (
         <div className="space-y-3">
           <p>
+            {ready.unbound_statement_dates
+              ? `${ready.unbound_statement_dates} undated readings need matching printed statement end controls before finalization. `
+              : ""}
             {ready.resolved_count} resolved rows will become transactions;{" "}
             {ready.rejected_count} rejected readings stay in history. This count
             does not establish complete PDF coverage.
@@ -318,7 +322,12 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
               />
             </label>
             <Button
-              disabled={!documentary || !coverage || !reason.trim()}
+              disabled={
+                !documentary ||
+                !coverage ||
+                !reason.trim() ||
+                Boolean(ready.unbound_statement_dates)
+              }
               onClick={() => {
                 if (lock.current || blocked || finalize.isPending) return
                 lock.current = true

@@ -134,6 +134,7 @@ class TransactionView:
     quarantine_reason: Optional[str]
     superseded_by_id: Optional[str]
     locator: Optional[Any]
+    ordering_date_context: Optional[str] = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -155,6 +156,7 @@ class TransactionView:
             "effective_date": self.effective_date,
             "ordering_date": self.ordering_date,
             "ordering_date_source": self.ordering_date_source,
+            **({"ordering_date_context": self.ordering_date_context} if self.ordering_date_context else {}),
             "description": self.description,
             "counterparty_raw": self.counterparty_raw,
             "transaction_type": self.transaction_type,
@@ -203,6 +205,7 @@ def to_view(row: FinancialTransaction) -> TransactionView:
         effective_date=_isoformat(row.effective_date),
         ordering_date=_isoformat(row.ordering_date),
         ordering_date_source=row.ordering_date_source,
+        ordering_date_context=("statement_end_ordering_only" if (row.provenance or {}).get("date_basis") == "statement_end_ordering_only" else None),
         description=row.description,
         counterparty_raw=row.counterparty_raw,
         transaction_type=row.transaction_type,

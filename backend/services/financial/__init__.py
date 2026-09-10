@@ -1882,3 +1882,6 @@ __all__ += ["ReviewedStatementScope", "capture_export_sources", "capture_pdf_rev
 
 from services.financial.working_totals import working_ledger_summary
 __all__ += ["working_ledger_summary"]
+
+from services.financial.candidate_progress import candidate_document_progress
+__all__ += ["candidate_document_progress"]

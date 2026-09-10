@@ -1,3 +1,4 @@
+import { CandidateDocumentProgress } from "./CandidateDocumentProgress"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -215,6 +216,7 @@ function CandidateRows({
         </div>
         {pending.length === 0 && <p>Every selected row in this batch has a recorded decision. Check other batches before finalizing this PDF.</p>}
       </section>
+      <CandidateDocumentProgress key={data.evidence_file_id} caseId={caseId} fileId={data.evidence_file_id} onOpenReading={onOpenReading} />
       <h3 className="font-semibold">Saved original readings</h3>
       {visible.length === 0 && <p>No rows awaiting review in this batch.</p>}
       <ul className="space-y-2">

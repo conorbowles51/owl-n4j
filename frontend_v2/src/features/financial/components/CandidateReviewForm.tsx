@@ -106,6 +106,9 @@ function ReviewFields({
   const [accountBusy, setAccountBusy] = useState(false)
   const accountBusyRef = useRef(false)
   const [direction, setDirection] = useState(previous?.direction ?? "")
+  const [statementEndDate, setStatementEndDate] = useState(
+    previous?.statement_end_date ?? ""
+  )
   const [bookingDate, setBookingDate] = useState(previous?.booking_date ?? "")
   const [valueDate, setValueDate] = useState(previous?.value_date ?? "")
   const [transactionDate, setTransactionDate] = useState(
@@ -209,8 +212,12 @@ function ReviewFields({
     selectedAccount &&
     (!selectedAccount.currency || selectedAccount.currency === currency) &&
     direction &&
-    [bookingDate, valueDate, transactionDate].some(Boolean) &&
-    [bookingDate, valueDate, transactionDate].every(
+    [bookingDate, valueDate, transactionDate, statementEndDate].some(Boolean) &&
+    !(
+      statementEndDate &&
+      [bookingDate, valueDate, transactionDate].some(Boolean)
+    ) &&
+    [bookingDate, valueDate, transactionDate, statementEndDate].every(
       (value) => !value || /^\d{4}-\d{2}-\d{2}$/.test(value)
     )
   )
@@ -235,6 +242,9 @@ function ReviewFields({
             booking_date: bookingDate || null,
             value_date: valueDate || null,
             transaction_date: transactionDate || null,
+            ...(statementEndDate
+              ? { statement_end_date: statementEndDate }
+              : {}),
             description,
           }
         : null
@@ -384,6 +394,21 @@ function ReviewFields({
               value={transactionDate}
               onChange={(e) => setTransactionDate(e.target.value)}
             />
+          </label>
+          <label className="sm:col-span-2">
+            Statement end date (ordering only)
+            <input
+              className={fieldClass}
+              type="date"
+              aria-label="Statement end date (ordering only)"
+              value={statementEndDate}
+              onChange={(e) => setStatementEndDate(e.target.value)}
+            />
+            <span className="block text-xs text-muted-foreground">
+              For undated fees or interest only. Leave the row dates empty. This
+              does not assert a transaction date; finalization requires the
+              matching printed statement end control.
+            </span>
           </label>
           <label>
             Description
@@ -583,7 +608,10 @@ function ReviewFields({
                   · {event.reading.direction} ·{" "}
                   {event.reading.booking_date ??
                     event.reading.value_date ??
-                    event.reading.transaction_date}
+                    event.reading.transaction_date ??
+                    (event.reading.statement_end_date
+                      ? `${event.reading.statement_end_date} (statement end; ordering only)`
+                      : null)}
                 </p>
               )}
             </div>

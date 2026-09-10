@@ -212,9 +212,10 @@ def preview_candidate_finalization(session, *, case_id, evidence_file_id, resolv
             case_id=case_id, evidence_file_id=evidence_file_id)
         return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), applied=False,
             statement_scopes=manifest.get('statement_scopes', []),
+            unbound_statement_dates=sum(bool(item['reading'].statement_end_date) and UUID(item['row']['id']) not in {cid for scope in statement_scopes for cid in scope.candidate_ids} for item in prepared),
             readings=[dict(candidate_id=item['row']['id'], account_id=str(item['reading'].account_id),
                 currency=item['reading'].currency, account_label=item['account_label'], booking_date=item['reading'].booking_date,
-                transaction_date=item['reading'].transaction_date, description=item['reading'].description)
+                transaction_date=item['reading'].transaction_date, statement_end_date=item['reading'].statement_end_date, description=item['reading'].description)
                 for item in prepared],
             revision=_digest(manifest), resolved_count=len(prepared),
             rejected_count=sum(row["status"] == "rejected" for row in manifest["readings"]),
@@ -246,7 +247,7 @@ def finalize_candidates(*, session_factory, case_id, evidence_file_id, request, 
                     session.rollback()
                     return result
                 manifest = attach_statement_scopes(session, manifest, prepared, request.statement_scopes,
-                    case_id=case_id, evidence_file_id=evidence_file_id)
+                    case_id=case_id, evidence_file_id=evidence_file_id, require_statement_dates=True)
                 if _digest(manifest) != request.expected_revision:
                     raise CandidateStoreError("Saved readings or accounts changed. Reload the finalization preview.")
                 snapshot = dict(manifest=manifest, verified_source=verified, request=_request_json(request))
@@ -269,7 +270,9 @@ def finalize_candidates(*, session_factory, case_id, evidence_file_id, request, 
                             posted_date=date.fromisoformat(value.booking_date) if value.booking_date else None,
                             transaction_date=date.fromisoformat(value.transaction_date) if value.transaction_date else None,
                             value_date=date.fromisoformat(value.value_date) if value.value_date else None,
+                            effective_date=date.fromisoformat(value.statement_end_date) if value.statement_end_date else None,
                             description=value.description), provenance=dict(candidate_id=item["row"]["id"],
+                                **({"date_basis": "statement_end_ordering_only", "statement_end_date": value.statement_end_date} if value.statement_end_date else {}),
                                 candidate_original=item["row"]["original"], review_revision=item["row"]["review_revision"])))
                 transactions = record_transactions(session, run, document, drafts)
                 receipt = FinancialCandidateFinalization(case_id=case_id, evidence_file_id=evidence_file_id,

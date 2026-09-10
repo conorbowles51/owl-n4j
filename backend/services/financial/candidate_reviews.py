@@ -24,6 +24,7 @@ class CandidateResolvedReading(_Contract):
     booking_date: Optional[str] = None
     value_date: Optional[str] = None
     transaction_date: Optional[str] = None
+    statement_end_date: Optional[str] = None
     description: Annotated[str, Field(strict=True, max_length=4096)]
 
     @model_validator(mode="after")
@@ -34,7 +35,9 @@ class CandidateResolvedReading(_Contract):
             get_currency(self.currency)
         except MoneyError as exc:
             raise ValueError(str(exc)) from exc
-        dates = [self.booking_date, self.value_date, self.transaction_date]
+        dates = [self.booking_date, self.value_date, self.transaction_date, self.statement_end_date]
+        if self.statement_end_date and any((self.booking_date, self.value_date, self.transaction_date)):
+            raise ValueError("Statement-end ordering is only for rows without a printed row date.")
         if not any(dates):
             raise ValueError("At least one explicitly identified date is required.")
         for value in dates:
@@ -138,6 +141,8 @@ def review_candidate(session, *, case_id, candidate_id, request, actor):
         if request.expected_revision != state["review_revision"]:
             raise CandidateStoreError("Candidate review changed. Reload before deciding.")
         reading = request.reading.model_dump(mode="json") if request.reading is not None else None
+        if reading is not None and reading.get("statement_end_date") is None:
+            reading.pop("statement_end_date", None)
         if state["status"] == request.status and state["reading"] == reading:
             raise CandidateStoreError("This candidate already has that review state.")
         if request.reading is not None:

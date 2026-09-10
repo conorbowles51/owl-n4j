@@ -207,7 +207,7 @@ def render_ledger_report(snapshot):
         parts += ['<article><h3>Reading ' + text(row['key']) + '</h3>',
             table(['Included in verified totals', 'Ordering date', 'Description', 'Direction', 'Currency', 'Amount (exact minor units in brackets)'],
                   [['Yes' if reading['included'] else 'No: ' + str(reading['exclusion_reason']),
-                    row['ordering_date'], row['description'], row['direction'], row['currency'], money_display(row['amount_minor'], row['currency'])]]),
+                    row['ordering_date'] + (' (statement end; ordering only, transaction date unknown)' if row.get('ordering_date_context') == 'statement_end_ordering_only' else ''), row['description'], row['direction'], row['currency'], money_display(row['amount_minor'], row['currency'])]]),
             details('Source reference and recorded ingestion digest', reading['source']),
             details('Original captured row, dates and source locator', row),
             details('Preserved transaction provenance', reading['provenance']), '</article>']

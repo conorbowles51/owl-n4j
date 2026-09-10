@@ -15,6 +15,7 @@ export const candidateReading = z.object({
   booking_date: z.string().nullable(),
   value_date: z.string().nullable(),
   transaction_date: z.string().nullable(),
+  statement_end_date: z.string().nullable().optional(),
   description: z.string(),
 })
 const original = z.object({

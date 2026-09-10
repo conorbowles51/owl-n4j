@@ -133,3 +133,31 @@ class StatementScopeTests(MaterializationFixture):
         self.assertIn('&lt;script&gt;untrusted evidence&lt;/script&gt;',report)
         self.assertNotIn('<script>',report)
         self.assertIn('not a complete-statement certification',report)
+
+class StatementEndOrderingTests(StatementScopeTests):
+    def undated(self):
+        self.decide(self.candidates[0], 'resolved', booking_date=None, transaction_date=None,
+            value_date=None, statement_end_date='2026-02-03')
+    def test_statement_ordering_preserves_unknown_transaction_date(self):
+        self.undated()
+        self.assertEqual(self.preview()['unbound_statement_dates'], 1)
+        with self.assertRaisesRegex(CandidateStoreError, 'printed statement end'): self.finalize()
+        self.assertEqual(self.transactions(), [])
+        self.finalize(self.scoped_request())
+        row = self.transactions()[0]
+        self.assertIsNone(row.transaction_date)
+        self.assertIsNone(row.posted_date)
+        self.assertIsNone(row.value_date)
+        self.assertEqual(str(row.effective_date), '2026-02-03')
+        self.assertEqual(row.ordering_date_source, 'effective')
+        self.assertEqual(row.provenance['date_basis'], 'statement_end_ordering_only')
+        self.assertEqual(row.proof_class, 'p3')
+    def test_wrong_statement_date_and_unassigned_row_refused(self):
+        self.undated()
+        wrong = self.scope(); wrong['end']['value'] = '2026-02-04'
+        with self.assertRaisesRegex(CandidateStoreError, 'differs'): self.scoped_request(wrong)
+        missing = self.scope(); missing['candidate_ids'] = [str(self.candidates[1])]
+        with self.assertRaisesRegex(CandidateStoreError, 'printed statement end'): self.finalize(self.scoped_request(missing))
+    def test_statement_ordering_cannot_replace_known_row_dates(self):
+        with self.assertRaises(ValidationError):
+            self.decide(self.candidates[0], 'resolved', statement_end_date='2026-02-03')
