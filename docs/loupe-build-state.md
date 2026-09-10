@@ -1,3 +1,18 @@
+## External provider check — 10 September, about09:35Dublin
+
+One capped synthetic-only request through the engine's actual OpenAI adapter
+using the existing project.env OpenAI key/model(gpt-5.1) reached the provider
+and failed with AuthenticationError HTTP401. No retries, real documents, case
+records, database configuration or financial writes. Credentials/response bodies
+are not printed or saved. This is an observed connection issue, not a deployment
+blocker or evidence that the local offline review path fails. Full AI pipeline
+acceptance remains unvalidated; a working provider connection is required.
+
+Reportsynthetic-financial-provider-check.json; check_synthetic_financial_provider.py
+performs an external request and must not be included in automatic/offline checks.
+Do not repeat against the same rejected key. Runtime26460 retains its intentionally
+invalid offline credentials. Other development continues; no push.
+
 ## Printed-control candidate navigation — 10 September, about09:33Dublin
 
 Statement control selection can find exact supported opening/closing/whole-total

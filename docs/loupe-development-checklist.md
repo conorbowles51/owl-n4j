@@ -199,7 +199,7 @@ feature below is complete at the start of this window.
     - [x] Integrated post-migration baseline:3,827backend tests,1,032frontend unit tests,11Chromium tests, TypeScript and full ESLint pass (09c341c). Full real-PDF/AI journey and all broader features remain incomplete.
     - [x] Verify actual export membership permissions and immediate revocation with a temporary ordinary local user (cc96526): non-member/no-view denied, view-only allowed, revoked same-token denied, test user removed.
     - [x] Exercise the full journey from document upload through review, analysis and export. Both real PDFs and the complete first printed statement are recorded above; generated printed-controls journey adds six source controls, correction propagation and preserved audit exports.
-    - [ ] Validate external AI processing that has not yet been tested.
+    - [ ] Validate external AI processing.10September: one capped synthetic-only request with the existing project.env OpenAI configuration returned401AuthenticationError. No retries or real documents sent; a working provider connection is needed for full AI acceptance.
     - [ ] Test interrupted processing, retries, permissions and larger document sets across the completed workflow.
     - [x] Consolidated startup/testing guide in docs/loupe-local-testing.md, idempotent local tester setup and14repeatable service/migration/financial-read/export checks. Actual supplied-statement case passes; writer fixtures are explicitly separate and external AI remains unvalidated.
     - [x] Foundation: separate persistent backend/engine venvs, isolated services and synthetic HTTP/PostgreSQL/UI checks. Setup and repeatable partial-workflow scripts are documented in docs/local-application.md.
