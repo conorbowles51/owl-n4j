@@ -1,3 +1,4 @@
+import { TransferReferenceEvidence } from "./TransferReferenceEvidence"
 import { AccountFlowPerspective } from "./AccountFlowPerspective"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
@@ -210,6 +211,11 @@ function TransferScope({
             excluded · {load.data.candidates.length} possible pairs
           </p>
           <p className="text-muted-foreground">{load.data.limitation}</p>
+          <TransferReferenceEvidence
+            key={load.data.snapshot_sha256}
+            data={load.data}
+            onSource={setSource}
+          />
           {load.data.date_unavailable_ids.length > 0 && (
             <p>
               {load.data.date_unavailable_ids.length} readings use statement-end
@@ -263,7 +269,9 @@ function TransferScope({
                       <span>
                         {pair.outcome === "ambiguous"
                           ? "Multiple possible partners — inspect alternatives"
-                          : "Unique amount/date candidate"}
+                          : pair.match_basis === "exact_reference"
+                            ? "Matching recorded identifier"
+                            : "Unique amount/date candidate"}
                       </span>
                     </label>
                     <div className="grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
@@ -304,9 +312,13 @@ function TransferScope({
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {pair.date_gap_days} days apart using{" "}
-                      {pair.compared_date_field}. Matching values alone do not
-                      establish a transfer.
+                      {pair.reference
+                        ? `Shared ${pair.reference.kind}: ${pair.reference.value}. `
+                        : ""}
+                      {pair.compared_date_field
+                        ? `${pair.date_gap_days} days apart using ${pair.compared_date_field}. `
+                        : "No date-tolerance match is asserted. "}
+                      Matching values alone do not establish a transfer.
                     </p>
                   </li>
                 )

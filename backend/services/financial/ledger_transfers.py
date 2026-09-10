@@ -1,4 +1,5 @@
 """Reproducible transfer hypotheses over captured current ledger readings."""
+from dataclasses import replace
 import hashlib
 import json
 from datetime import date
@@ -7,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from postgres.models.enums import DateSource, TransactionDirection, LinkRelation
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.working_totals import working_totals_from_readings
-from services.financial.linkage import LinkObservation, link_composite
+from services.financial.linkage import LinkObservation, link_composite, link_exact_identifiers, references_from_bank_reference
 from services.financial.money import Money
 from services.financial.ledger_snapshot import MAX_EXPORT_BYTES
 
@@ -30,17 +31,31 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
     rows = [{**r, 'account_label': labels.get(r['account_id']) or 'Account ' + r['account_id'][:8]} for r in rows]
     if len(rows) > MAX_TRANSFER_ROWS:
         raise LedgerSummaryError('More than 500 current rows match. Narrow the date scope; no partial transfer comparison was made.')
+    parsers = {r["row"]["key"]: r["source"].get("parser_name") for r in ledger["readings"]}
     observations = []
+    exact_observations = []
+    unscoped_references = []
     unavailable = []
     for row in rows:
-        if row.get('ordering_date_context') == 'statement_end_ordering_only':
-            unavailable.append(row['key'])
-            continue
         dates = {name: date.fromisoformat(row[name]) if row[name] else None for name in ('transaction_date', 'posted_date', 'value_date', 'effective_date')}
-        observations.append(LinkObservation(transaction_id=UUID(row['key']), account_id=UUID(row['account_id']),
+        observation = LinkObservation(transaction_id=UUID(row['key']), account_id=UUID(row['account_id']),
             source_document_id=UUID(row['source_document_id']), amount=Money(int(row['amount_minor']), row['currency']),
             direction=TransactionDirection(row['direction']), ordering_date=date.fromisoformat(row['ordering_date']),
-            ordering_date_source=DateSource(row['ordering_date_source']), **dates))
+            ordering_date_source=DateSource(row['ordering_date_source']), **dates)
+        references = references_from_bank_reference(row.get("bank_reference"), parser_name=parsers[row["key"]] or "unknown")
+        # ACH identifiers can be reused: require a recorded ACH effective date,
+        # never inferred ordering or a bare 15-digit string from another format.
+        references = tuple(replace(ref, scope_key=ref.scope_key + ":" + row["effective_date"])
+            if ref.kind == "nacha_trace" else ref for ref in references
+            if (ref.kind != "nacha_trace" or row.get("effective_date"))
+            and (ref.kind != "uuid" or UUID(ref.value).version == 4))
+        if row.get("bank_reference") and not references:
+            unscoped_references.append(row["key"])
+        exact_observations.append(replace(observation, references=references))
+        if row.get("ordering_date_context") == "statement_end_ordering_only":
+            unavailable.append(row["key"])
+        else:
+            observations.append(observation)
     linked = link_composite(observations, tolerance_days=tolerance_days)
     by_id = {row['key']: row for row in rows}
     pairs = []
@@ -50,16 +65,53 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
         left, right = by_id[str(link.left_id)], by_id[str(link.right_id)]
         debit, credit = (left, right) if left['direction'] == 'debit' else (right, left)
         pairs.append(dict(debit_id=debit['key'], credit_id=credit['key'], currency=debit['currency'],
-            amount_minor=debit['amount_minor'], outcome=link.outcome.value,
+            amount_minor=debit['amount_minor'], outcome=link.outcome.value, match_basis='amount_date', reference=None,
             date_gap_days=link.date_agreement.gap_days if link.date_agreement else None,
             compared_date_field=link.date_agreement.field if link.date_agreement else None))
+    exact = link_exact_identifiers(exact_observations)
+    evidence = []
+    indexed = {(p['debit_id'], p['credit_id']): p for p in pairs}
+    def reference_json(ref):
+        return dict(kind=ref.kind, value=ref.value, scope=ref.scope.value, scope_key=ref.scope_key)
+    for link in exact.links:
+        left, right = by_id[str(link.left_id)], by_id[str(link.right_id)]
+        compatible = left['currency'] == right['currency'] and left['amount_minor'] == right['amount_minor']
+        reference = reference_json(link.reference)
+        evidence.append(dict(left_id=left['key'], right_id=right['key'], reference=reference,
+            relation=link.relation.value, amounts_agree=compatible,
+            reason='Matching recorded identifier; verify the original identifier meaning and both sources.' if compatible else
+                'Matching identifier but amounts or currencies differ. This cannot be selected as an equal-value transfer.'))
+        if link.relation != LinkRelation.counterparty or not compatible:
+            continue
+        debit, credit = (left, right) if left['direction'] == 'debit' else (right, left)
+        pair = indexed.get((debit['key'], credit['key']))
+        if pair is None:
+            pair = dict(debit_id=debit['key'], credit_id=credit['key'], currency=debit['currency'],
+                amount_minor=debit['amount_minor'], outcome='resolved', date_gap_days=None, compared_date_field=None)
+            pairs.append(pair)
+        pair.update(match_basis='exact_reference', reference=reference)
+    for conflict in exact.conflicts:
+        evidence.append(dict(left_id=str(conflict.left_id), right_id=str(conflict.right_id),
+            reference=reference_json(conflict.reference), relation='conflict', amounts_agree=False, reason=conflict.reason))
+    if len(evidence) > MAX_TRANSFER_PAIRS:
+        raise LedgerSummaryError('More than 1,000 identifier comparisons. Narrow the date scope; no partial comparison was returned.')
+    # An identifier may span intermediaries. Preserve every possible partner,
+    # and do not let the stronger label conceal ambiguity in the selected pairs.
+    partners = {}
+    for pair in pairs:
+        for key in ('debit_id', 'credit_id'):
+            partners[pair[key]] = partners.get(pair[key], 0) + 1
+    for pair in pairs:
+        if partners[pair['debit_id']] > 1 or partners[pair['credit_id']] > 1:
+            pair['outcome'] = 'ambiguous'
+    pairs.sort(key=lambda p: (p['debit_id'], p['credit_id']))
     if len(pairs) > MAX_TRANSFER_PAIRS:
         raise LedgerSummaryError('More than 1,000 transfer candidates match. Narrow the date scope; no truncated comparison was returned.')
     return dict(case_id=ledger['case_id'], start_date=ledger['start_date'], end_date=ledger['end_date'],
         population=population, tolerance_days=tolerance_days, snapshot_sha256=export.snapshot.sha256,
-        rows=rows, candidates=pairs, currencies=summary['currencies'], excluded_rows=summary['excluded_rows'],
+        rows=rows, candidates=pairs, reference_evidence=evidence, unscoped_reference_ids=unscoped_references, currencies=summary['currencies'], excluded_rows=summary['excluded_rows'],
         date_unavailable_ids=unavailable, applied=False,
-        limitation='Equal amounts, currency and compatible dates across different accounts suggest possible transfers; they do not prove a match. Multiple possible partners remain explicit. Statement-end-only dates are not used as transaction timing. Original postings remain unchanged; any pairing is a separate investigator hypothesis.')
+        limitation='Recorded UUID references are compared as identifiers, not asserted UETRs. Native ACH traces require the same recorded effective date and routing prefix; unscoped bank/check references are not matched. Identifier equality alone does not prove payment identity. Equal amounts, currency and compatible dates across different accounts suggest possible transfers; they do not prove a match. Multiple possible partners remain explicit. Statement-end-only dates are not used as transaction timing. Original postings remain unchanged; any pairing is a separate investigator hypothesis.')
 
 
 class TransferPairChoice(BaseModel):

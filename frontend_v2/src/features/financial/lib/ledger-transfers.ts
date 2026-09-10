@@ -1,6 +1,20 @@
 import { z } from "zod"
 const money = z.string().regex(/^(0|[1-9][0-9]*)$/)
 const count = z.number().int().nonnegative()
+const reference = z
+  .object({
+    kind: z.enum(["uuid", "nacha_trace"]),
+    value: z.string().min(1),
+    scope: z.enum(["global", "institution"]),
+    scope_key: z.string().nullable(),
+  })
+  .refine(
+    (r) =>
+      r.kind === "uuid"
+        ? r.scope === "global" && r.scope_key === null
+        : r.scope === "institution" && !!r.scope_key,
+    "Reference scope is inconsistent."
+  )
 const row = z.object({
   key: z.string(),
   case_id: z.string(),
@@ -27,6 +41,20 @@ export const transferInputs = z
     excluded_rows: count,
     rows: z.array(row).max(500),
     date_unavailable_ids: z.array(z.string()),
+    unscoped_reference_ids: z.array(z.string()).default([]),
+    reference_evidence: z
+      .array(
+        z.object({
+          left_id: z.string(),
+          right_id: z.string(),
+          reference,
+          relation: z.enum(["same_side", "counterparty", "conflict"]),
+          amounts_agree: z.boolean(),
+          reason: z.string(),
+        })
+      )
+      .max(1000)
+      .default([]),
     candidates: z
       .array(
         z.object({
@@ -34,6 +62,10 @@ export const transferInputs = z
           credit_id: z.string(),
           currency: z.string(),
           amount_minor: money,
+          match_basis: z
+            .enum(["amount_date", "exact_reference"])
+            .default("amount_date"),
+          reference: reference.nullable().default(null),
           outcome: z.enum(["resolved", "ambiguous"]),
           date_gap_days: count.nullable(),
           compared_date_field: z.string().nullable(),
@@ -52,7 +84,38 @@ export const transferInputs = z
         code: "custom",
         message: "Reading scope is inconsistent.",
       })
+    for (const item of data.reference_evidence) {
+      if (
+        !rows.has(item.left_id) ||
+        !rows.has(item.right_id) ||
+        item.left_id === item.right_id
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "Identifier evidence does not match its source readings.",
+        })
+    }
     for (const p of data.candidates) {
+      if ((p.match_basis === "exact_reference") !== (p.reference !== null))
+        ctx.addIssue({
+          code: "custom",
+          message: "Identifier match is missing its recorded reference.",
+        })
+      if (
+        p.reference &&
+        !data.reference_evidence.some(
+          (e) =>
+            e.relation === "counterparty" &&
+            e.amounts_agree &&
+            [e.left_id, e.right_id].includes(p.debit_id) &&
+            [e.left_id, e.right_id].includes(p.credit_id) &&
+            JSON.stringify(e.reference) === JSON.stringify(p.reference)
+        )
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "Identifier candidate lacks supporting source comparison.",
+        })
       const d = rows.get(p.debit_id),
         c = rows.get(p.credit_id),
         key = `${p.debit_id}:${p.credit_id}`

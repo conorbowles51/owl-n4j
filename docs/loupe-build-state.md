@@ -1,3 +1,29 @@
+## Payment identifier review — 10 September, about08:21Dublin
+
+Transfers now connects the existing exact-identifier comparison to captured
+current ledger readings. Recorded version4UUID equality is explicitly not a
+claim that the source field is UETR. Native NACHA trace comparison requires its
+parser provenance, routing prefix and the same recorded effective date. Bare
+bank/check references and unscoped/undated ACH references remain unmatched.
+
+Equal-value opposite postings may be proposed outside the date tolerance, with
+identifier evidence retained in the scenario. Amount/currency conflicts and
+same-side sightings remain separate source comparisons. All possible partners
+stay visible, no posting may be selected twice, and no ledger status/proof class
+changes.500rows/1000comparisons bounds refuse partial results; evidence pages10.
+
+4172backend tests,906financialUI tests, TypeScript, production build and scoped
+lint pass. Synthetic case310e8139-1957-4cf8-999c-45c40bd0b2d2 verified in browser:
+100GBPdebit January1 and100GBPcredit January20 share a UUID; a101GBPcredit with
+the same UUID remains separate. Zero-day tolerance still offers the identifier
+pair, all3reference comparisons remain visible, both source links open, and the
+scenario retains3readings represented as2conditional movements. No financial
+writes in browser acceptance. Guarded seedprepare_local_reference_review.py
+completed; readonlycheck_local_reference_review.cjs canrerun. Reports:
+data/local-runtime/reference-browser-check.json,reference-transfer-scenario.json.
+Current backend73115, log/tmp/loupe-reference-runtime.out. No push. Broader
+identity resolution, extraction, tracing and integrated acceptance continue.
+
 ## Statement discrepancy leads — 10 September
 
 Statements now screens a nonzero balance difference against the current admitted

@@ -98,3 +98,48 @@ it("rejects a hash-valid internally balanced report with the wrong money", async
     verifyTransferScenario(await report("9007199254740992"), scope, request)
   ).rejects.toThrow("selected source readings")
 })
+
+it("requires source evidence and consistent scope for identifier candidates", () => {
+  const reference = {
+    kind: "uuid",
+    value: "28a7c567-7115-4462-958a-e6db7e3a9552",
+    scope: "global",
+    scope_key: null,
+  }
+  const candidates = [
+    { ...scope.candidates[0], match_basis: "exact_reference", reference },
+  ]
+  expect(transferInputs.safeParse({ ...scope, candidates }).success).toBe(false)
+  const reference_evidence = [
+    {
+      left_id: "d",
+      right_id: "c",
+      reference,
+      relation: "counterparty",
+      amounts_agree: true,
+      reason: "Synthetic equality",
+    },
+  ]
+  expect(
+    transferInputs.safeParse({ ...scope, candidates, reference_evidence })
+      .success
+  ).toBe(true)
+  expect(
+    transferInputs.safeParse({
+      ...scope,
+      candidates,
+      reference_evidence: [{ ...reference_evidence[0], left_id: "foreign" }],
+    }).success
+  ).toBe(false)
+  expect(
+    transferInputs.safeParse({
+      ...scope,
+      reference_evidence: [
+        {
+          ...reference_evidence[0],
+          reference: { ...reference, scope: "institution" },
+        },
+      ],
+    }).success
+  ).toBe(false)
+})
