@@ -199,3 +199,17 @@ received response and verification. Keep the original archive separately. A fail
 attempt may have reached the authority, so inspect its journal before deliberately
 retrying into a new directory. This command enables an explicitly selected operation;
 it does not install a periodic job or choose production trust on your behalf.
+
+### Structured custody reports
+
+Migration20260910_custody adds financial_custody_events to INSERT audit coverage.
+Reports retain signed-in actor, server recording time, separately reported event
+time (timezone required when supplied), source registration hash, reported receipt/
+transfer/acquisition/native status and optional same-case certification hash.
+Corrections reference an earlier event in the same source/case. No receipt events
+are backfilled. UPDATE, DELETE and TRUNCATE are refused, with no cascading foreign
+keys to deletable subjects. The history records reports, not verified authenticity
+or proof of every earlier transfer. Exact request retries do not append twice.
+Source exports capture source reports; optional wider-case exports capture all
+reports including removed registrations. Rollback-only local acceptance verifies
+atomic audit inclusion and immutable enforcement; no synthetic reports persist.

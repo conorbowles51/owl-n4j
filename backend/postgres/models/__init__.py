@@ -1,3 +1,4 @@
+from postgres.models.financial_custody import FinancialCustodyEvent
 from postgres.models.financial_audit import FinancialAuditEvent
 # Postgres/models/__init__.py
 from postgres.models.user import User

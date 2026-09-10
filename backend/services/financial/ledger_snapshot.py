@@ -211,6 +211,28 @@ def render_ledger_report(snapshot):
             '</tr></thead><tbody>' + ''.join('<tr>' + ''.join('<td>' + text(v) + '</td>' for v in row)
             + '</tr>' for row in rows) + '</tbody></table>')
 
+    def custody_entries(events):
+        rendered = []
+        for event in events:
+            report = event['report']
+            rendered += ['<h4>Custody report ' + text(event['id']) + '</h4>',
+                table(['Recorded field', 'Value'], [
+                    ['Source file', event['evidence_file_id']],
+                    ['Registered source SHA-256', event['evidence_sha256']],
+                    ['Report type', report['event_kind']],
+                    ['Reported event time', report['occurred_at'] or 'Unknown'],
+                    ['Recorded at', event['recorded_at']],
+                    ['Recorded by', event['actor']['name'] + ' (' + event['actor']['email'] + ')'],
+                    ['Received from', report['from_person_or_organisation'] or 'Unknown'],
+                    ['Received by', report['received_by'] or 'Unknown'],
+                    ['How obtained', report['acquisition_method']],
+                    ['Native file availability', report['native_file_status']],
+                    ['Certification file', report['certification_file_id'] or 'None attached'],
+                    ['Registered certification SHA-256', report['certification_sha256'] or 'Not recorded'],
+                    ['Corrects earlier report', report['corrects_event_id'] or 'Not a correction'],
+                    ['Details and reason', report['reason']]], widths=[28,72])]
+        return rendered
+
     parts = ['<!doctype html><html lang="en"><head><meta charset="utf-8">',
         '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; base-uri \'none\'; form-action \'none\'">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
@@ -367,6 +389,14 @@ def render_ledger_report(snapshot):
         parts += ['<h2>Recorded processing versions</h2><p>' + text(processing['limitation']) + '</p>',
             table(['Run', 'Code version', 'Ruleset', 'Started', 'Completed'], [[r['id'],r['code_version'] or 'Unknown',r['ruleset_version'] or 'Unknown',r['started_at'] or 'Unknown',r['completed_at'] or 'Unknown'] for r in processing['runs']]),
             details('Recorded source registration, parsers and processing operators',processing)]
+    if processing and processing.get('custody_reports'):
+        parts += ['<h2>Reported source custody</h2>']
+        for custody in processing['custody_reports']:
+            parts += ['<h3>Source ' + text(custody['evidence_file_id']) + '</h3><p>' + text(custody['limitation']) + '</p>']
+            if not custody['events']:
+                parts += ['<p>No custody reports recorded for this source. Earlier history is unknown.</p>']
+            else:
+                parts += custody_entries(custody['events'])
     case_history = document.get('case_financial_history')
     if case_history is not None:
         reviews = case_history['pdf_review_history']
@@ -375,6 +405,14 @@ def render_ledger_report(snapshot):
             '<p>' + text(case_history['limitation']) + '</p>',
             '<p>Exact wider history is retained in the accompanying HTML and JSON. It is not added to the filtered ledger totals.</p>',
             details('Full recorded case financial decision and PDF review appendix', case_history)]
+        case_custody = case_history.get('custody_reports')
+        if case_custody:
+            parts += ['<h3>Wider case custody reports</h3><p>' + text(case_custody['scope']) + '</p>',
+                '<p>' + text(case_custody['limitation']) + '</p>']
+            captured_ids = {event['id'] for source in (processing or {}).get('custody_reports', []) for event in source['events']}
+            additional = [event for event in case_custody['events'] if event['id'] not in captured_ids]
+            parts += ['<p>Total case custody reports: ' + text(len(case_custody['events'])) + '. Reports already printed above are not repeated.</p>']
+            parts += custody_entries(additional)
         chain = case_history.get('audit_chain')
         if chain:
             checked = chain['verification']

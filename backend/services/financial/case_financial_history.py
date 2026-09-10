@@ -1,5 +1,6 @@
 """Optional case-wide financial review history, separate from ledger totals."""
 from sqlalchemy import select
+from services.financial.custody import capture_case_custody
 from services.financial.audit_chain import capture_financial_audit_chain
 from postgres.models.financial import AdjudicationEvent
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialCandidateFinalization
@@ -37,5 +38,6 @@ def capture_case_financial_history(session, *, case_id):
         decisions=[to_record(event, machine_email=machine_email).as_dict() for event in events],
         decision_order='Per-subject sequence only; ordering across subjects does not establish chronology.',
         pdf_review_history=reviews,
+        custody_reports=capture_case_custody(session, case_id=case_id),
         audit_chain=capture_financial_audit_chain(session, case_id=case_id),
-        limitation='Separate review context, never additional ledger totals. This does not contain all Workspace, entity-merge, custody, or other application history, and does not establish a complete case audit spine.')
+        limitation='Separate review context, never additional ledger totals. This does not contain all Workspace, entity-merge, historical custody, or other application history, and does not establish a complete case audit spine.')

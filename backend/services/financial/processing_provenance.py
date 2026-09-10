@@ -1,5 +1,6 @@
 """Case-scoped recorded processing history; never inferred historical versions."""
 from uuid import UUID
+from services.financial.custody import source_custody
 from sqlalchemy import select
 from postgres.models.financial import FinancialSourceDocument, FinancialIngestionRun
 from postgres.models.evidence import EvidenceFile
@@ -27,5 +28,6 @@ def capture_processing_provenance(session, *, case_id, readings):
     return dict(schema_version='loupe.financial.processing_provenance/1',case_id=str(case_id),
         source_documents=[record(d,('id','evidence_file_id','ingestion_run_id','sha256_at_ingestion','document_type','extraction_layer','parser_name','parser_version')) for d in sorted(documents,key=lambda d:str(d.id))],
         runs=[record(r,('id','code_version','ruleset_version','started_by_user_id','started_by_email','started_at','completed_at')) for r in sorted(runs,key=lambda r:str(r.id))],
-        evidence_registrations=[record(f,('id','sha256','created_at','created_by_id','processed_at')) for f in sorted(files,key=lambda f:str(f.id))],
+        custody_reports=[source_custody(session, case_id=case_id, file_id=f.id) for f in sorted(files,key=lambda f:str(f.id))],
+        evidence_registrations=[record(f,('id','original_filename','size','source_type','sha256','created_at','created_by_id','processed_at')) for f in sorted(files,key=lambda f:str(f.id))],
         limitation='Recorded database registration and financial processing metadata for captured sources only. Null versions/times are unknown. These records do not establish all custody transfers or the versions of every upstream component. Stored file hashes are not fresh byte checks.')

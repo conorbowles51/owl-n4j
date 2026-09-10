@@ -1226,3 +1226,12 @@ async def get_pdf_model_nominations(evidence_file_id: UUID, case_id: UUID = Quer
     except Exception:
         logger.exception("Model nomination list failed for case %s",case_id)
         raise HTTPException(status_code=500,detail="Saved model nominations could not be listed.")
+
+
+@router.get('/sources/{file_id}/custody')
+def read_source_custody(file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.custody import source_custody
+    try:
+        return source_custody(db, case_id=case_id, file_id=file_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

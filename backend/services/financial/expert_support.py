@@ -16,7 +16,7 @@ def build_expert_support(document, *, snapshot_sha256, code_version=None, source
         sources[source['id']]=source
     history=document.get('pdf_review_history')
     methods=pdf_review_methods(document)
-    return dict(schema_version='loupe.financial.expert_support/1',
+    support = dict(schema_version='loupe.financial.expert_support/1',
         derived_from_sha256=snapshot_sha256,
         case_id=document['ledger']['case_id'],preparation=document.get('export_context'),
         purpose='Preparation support for expert review. Not an expert opinion, signature, complete custody certification or legal admissibility determination.',
@@ -45,3 +45,11 @@ def build_expert_support(document, *, snapshot_sha256, code_version=None, source
         tracing=dict(status='not_selected',
             reason='This ledger export does not capture a tracing scenario. Export the selected scenario separately with its source readings, assumptions and method comparisons.'),
         completeness='incomplete_expert_packet')
+
+    case_custody = (document.get('case_financial_history') or {}).get('custody_reports')
+    source_custody = (document.get('processing_provenance') or {}).get('custody_reports')
+    if case_custody is not None or source_custody is not None:
+        support['source_records']['case_custody_reports'] = case_custody
+        support['source_records']['limitation'] = ('Attributed custody reports are included where recorded; missing earlier history remains unknown. '
+            'Recorded source hashes and optional fresh byte checks do not establish authenticity or all custody transfers.')
+    return support

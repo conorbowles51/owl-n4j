@@ -1,3 +1,38 @@
+## Structured custody reports — 10 September
+
+Implemented append-only source custody reports and corrections with source hash
+preconditions, same-case certification binding, explicit reported timezone or
+unknown time, captured signed-in actor and server recording time. Exact retries
+retain one event; conflicting event identifiers are refused. Receipt/transfer
+reports require a receiving party. PostgreSQL refuses UPDATE, DELETE and TRUNCATE;
+source/case deletion cannot cascade away retained reports. Every INSERT joins the
+prospective financial audit chain atomically. No historical backfill or authenticity
+finding is inferred.
+
+UI is available from PDF row selection, ledger source and statement source views.
+It includes a case-file certification picker, optional native-file status, explicit
+unknown-history messaging and preserved corrections. Source processing export and
+wider-case history include reports; wider scope also retains reports for removed
+sources and sources outside ledger filters. Expert support references the reports.
+
+Fresh and repeated migration checks passed (104 tables, 24 capture triggers), then
+local database upgraded to 20260910_custody. Rollback-only PostgreSQL acceptance
+verifies two reports, exact retry, correction, source/case export inclusion, two
+verified audit entries, mutation refusal and invisibility before commit. No test
+custody reports remain. Live permission matrix: 143 checks pass, temporary tester
+removed. All 1014 financial UI tests and production build pass; 12 focused custody/
+provenance/history tests pass. Full backend run found only two exhaustive route/
+package integration lists; corrected and all 29 relevant checks pass. Full backend
+rerun passes all4368checks. Later readable-report changes pass28focused export/
+custody tests; the additional picker regression passes (4custody UI tests). Build
+and scoped lint pass. Desktop/mobile browser check passes with financial writes
+blocked, preserving unsaved fields. Synthetic two-page PDF rendered and visually
+inspected; complete readable custody fields are present on page2. Prior retained
+review package still verifies with matching calculations (code-version difference
+only). No source fixture was changed. Final local readiness passes14checks, including
+unchanged full real-PDF totals/export. Current backend session2413.
+No push, external provider call, private-source change or automatic TSA submission.
+
 ## Explicit retained timestamp submission — 10 September
 
 Added submit_financial_audit_timestamp and CLI submit command. It generates a

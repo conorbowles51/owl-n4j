@@ -85,7 +85,10 @@ from services.financial.periods import (
 from services.financial.reconcile import total_transactions
 from services.financial.runs import open_ingestion_run
 
+from postgres.models.financial_custody import FinancialCustodyEvent
+
 TABLES = [
+    FinancialCustodyEvent.__table__,
     User.__table__,
     Case.__table__,
     EvidenceFolder.__table__,

@@ -459,3 +459,27 @@ def abandon_pdf_nomination(nomination_id: UUID, case_id: UUID = Query(...), curr
     except Exception:
         db.rollback()
         raise HTTPException(status_code=500,detail="Attempt could not be abandoned. Check its saved status before making another request.")
+
+
+from services.financial.custody import CustodyRequest, record_custody
+
+
+@router.post('/sources/{file_id}/custody')
+def append_source_custody(file_id: UUID, body: CustodyRequest, case_id: UUID = Query(...),
+                          current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        person = actor_from_user(current_user)
+        result = record_custody(db, case_id=case_id, file_id=file_id, request=body,
+            actor=dict(name=person.name, email=person.email, user_id=str(person.user_id) if person.user_id else None))
+        db.commit()
+        return result
+    except CandidateStoreError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ActorError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Custody report could not be recorded')
+        raise HTTPException(status_code=500, detail='Custody report could not be recorded. Reload before retrying.')

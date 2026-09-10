@@ -1,3 +1,4 @@
+import { SourceCustodyPanel } from "./SourceCustodyPanel"
 import { PdfModelNominationPanel } from "./PdfModelNominationPanel"
 import { StatementLayoutContextPanel } from "./StatementLayoutContextPanel"
 import { sourceTable } from "../lib/pdf-source-table"
@@ -147,6 +148,13 @@ export function CandidateSourcePicker({
             </Button>
           </div>
         </>
+      )}
+      {selected && (
+        <SourceCustodyPanel
+          key={`${caseId}:${selected.file}:custody`}
+          caseId={caseId}
+          fileId={selected.file}
+        />
       )}
       {selected && (
         <CandidatePageScan
@@ -430,7 +438,11 @@ function SourceSelection({
             </div>
           )}
 
-          <PdfModelNominationPanel source={source} onSaved={onSaved} onSource={setFocusedCell}/>
+          <PdfModelNominationPanel
+            source={source}
+            onSaved={onSaved}
+            onSource={setFocusedCell}
+          />
           {source.layout_context && (
             <StatementLayoutContextPanel
               context={source.layout_context}

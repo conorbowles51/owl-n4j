@@ -1,3 +1,4 @@
+import { SourceCustodyPanel } from "./SourceCustodyPanel"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -90,6 +91,10 @@ export function LedgerSourceDialog({
           {source.isError && <p role="alert">{source.error.message}</p>}
           {data && !source.isError && (
             <>
+              <SourceCustodyPanel
+                caseId={caseId}
+                fileId={data.evidence_file_id}
+              />
               <p className="font-medium">
                 {data.ref_id} · {data.filename}
               </p>

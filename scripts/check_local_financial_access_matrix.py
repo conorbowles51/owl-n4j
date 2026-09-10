@@ -27,6 +27,7 @@ reads=[('GET',name,case,{},None) for name in (
  'ledger-export','ledger-working-summary','ledger-summary','ledger-working-analysis',
  'ledger-posting-graph','ledger-transfer-candidates','statement-checks','statement-coverage',
  'ledger-accounts','account-parties','candidate-mappings','candidate-sources','counterparty-parties','counterparty-party-analysis')]
+reads += [('GET',f'sources/{file}/custody',case,{},None)]
 reads += [('GET','indirect-review-methods',case,{},None),
  ('POST','indirect-review',case,{},dict(method='cash_t',currency='USD',start_date='2026-01-01',end_date='2026-12-31',subject='SYNTHETIC permission check',entries={},requirements={})),
  ('GET',f'ledger/{row}/source',case,{},None),
@@ -42,6 +43,7 @@ mutations=[('POST',name) for name in (
  f'transactions/{row}/correction-preview',f'candidate-sources/{file}/finalize',
  f'candidate-sources/{file}/model-nominations',f'model-nominations/{uuid4()}/abandon',
  'candidate-mappings','account-parties','counterparty-parties',f'candidates/{uuid4()}/review')]
+mutations += [('POST',f'sources/{file}/custody')]
 mutations += [('PUT',f'candidate-sources/{file}/statement-draft')]
 engine=create_engine('postgresql+psycopg://loupe_local:loupe_local_dev@127.0.0.1:55434/loupe_local')
 user_id=uuid4();email=f'local-financial-access-{user_id}@example.invalid';report={}

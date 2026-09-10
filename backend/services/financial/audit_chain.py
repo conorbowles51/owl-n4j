@@ -11,6 +11,7 @@ MAX_AUDIT_EVENTS = 10000
 MAX_AUDIT_BYTES = 64 * 1024 * 1024
 _HASH = re.compile(r'^[a-f0-9]{64}$')
 AUDIT_COVERAGE = {
+    'financial_custody_events': ['INSERT'],
     'jobs': ['INSERT','UPDATE','DELETE'],
     'merge_jobs': ['INSERT','UPDATE','DELETE'],
     'graph_recycle_bin_items': ['INSERT','UPDATE','DELETE'],

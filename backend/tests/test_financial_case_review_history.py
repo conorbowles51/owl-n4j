@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 from postgres.base import Base
+from postgres.models.financial_custody import FinancialCustodyEvent
 from postgres.models.financial_audit import FinancialAuditEvent
 from postgres.models.financial import AdjudicationEvent
 from services.financial.case_financial_history import capture_case_financial_history
@@ -13,7 +14,7 @@ class CaseReviewHistoryTests(unittest.TestCase):
     def setUp(self):
         self.f = fixture.CandidateReviewTests()
         self.f.setUp()
-        Base.metadata.create_all(self.f.fixture.engine, tables=[AdjudicationEvent.__table__, FinancialAuditEvent.__table__])
+        Base.metadata.create_all(self.f.fixture.engine, tables=[FinancialCustodyEvent.__table__, AdjudicationEvent.__table__, FinancialAuditEvent.__table__])
 
     def tearDown(self):
         self.f.tearDown()

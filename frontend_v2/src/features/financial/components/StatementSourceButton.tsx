@@ -1,3 +1,4 @@
+import { SourceCustodyPanel } from "./SourceCustodyPanel"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -106,6 +107,10 @@ export function StatementSourceButton({
             <p role="alert">Source unavailable. {query.error.message}</p>
           ) : (
             <>
+              <SourceCustodyPanel
+                caseId={caseId}
+                fileId={query.data.evidence_file_id}
+              />
               <p>{query.data.filename}</p>
               <details className="text-sm text-muted-foreground">
                 <summary>Source verification details</summary>
@@ -142,7 +147,13 @@ export function StatementSourceButton({
                         className="h-auto whitespace-normal text-left"
                         onClick={() => setControlRole(control.role)}
                       >
-                        Inspect {control.role === "credits_total" ? "total money in" : control.role === "debits_total" ? "total money out" : control.role}:{" "}
+                        Inspect{" "}
+                        {control.role === "credits_total"
+                          ? "total money in"
+                          : control.role === "debits_total"
+                            ? "total money out"
+                            : control.role}
+                        :{" "}
                         {control.role === "opening" ||
                         control.role === "closing" ||
                         control.role.endsWith("_total")

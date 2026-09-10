@@ -290,3 +290,12 @@ prospective export audit receipts; it does not mutate financial source/ledger ro
 permission checks pass. Existing ledger/source rows were unchanged; normal export
 receipts were recorded. This is complete selected-input assembly, not a signed
 expert opinion or certification of historical custody or corpus independence.
+
+## Source custody — 10 September
+
+- [x] Open custody history from ledger/statement source and PDF row selection.
+- [x] Record unknown earlier history explicitly; receipt/transfer and append-only corrections have source hash and authenticated author binding.
+- [x] Choose a certification file by its case filename; original source is excluded.
+- [x] Browser desktop/mobile check preserves unsaved input and fits the viewport; financial writes blocked during acceptance.
+- [x] Readable synthetic custody PDF inspected, with receiving parties, acquisition/native status, certification references and correction IDs outside hidden raw JSON appendices.
+- [x]143live permission checks pass; immutable PostgreSQL reports/audit tested entirely within rolled-back transactions.
