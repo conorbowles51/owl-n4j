@@ -84,12 +84,21 @@ class SourceBoundNativeTests(unittest.TestCase):
         self.rows.append(replacement)
         self.assertIn('ownership', self.check()['reason'])
 
+    def test_readonly_source_query_does_not_take_a_row_lock(self):
+        result=correction_native_controls(self.session,self.document,self.rows,
+            transaction_id=self.rows[0].id,amount_minor=self.rows[0].amount_minor,
+            direction=self.rows[0].direction,resolve_path=lambda path:path,lock_source=False)
+        self.assertTrue(result['available'])
+        self.assertIsNone(self.session.scalar.call_args.args[0]._for_update_arg)
+        self.assertEqual(result['current'],result['proposed'])
+
 from sqlalchemy import select
 from postgres.models.financial import AdjudicationEvent
 from services.financial.correction_preview import preview_amount_correction
 from services.financial.corrections import correct_transaction
 from services.financial.quarantine_row import actor_from_user
 from tests.test_financial_native_ingest import NativeIngestTestCase
+
 
 
 class NativeCorrectionIntegrationTests(NativeIngestTestCase):

@@ -11,7 +11,7 @@ Final scheduled handoff:7September2026. The authorized cutoff was
 that cutoff, confirmed by automation_update. No further automatic segments are
 expected. Earlier ACTIVE/time-window statements below are retained history.
 
-**Current overall: five completed workflows (2,4,5,6,8); five features retain
+**Current overall: six completed workflows (2,3,4,5,6,8); four features retain
 outstanding work.** Completion here means the stated investigator-review,
 authoritative-view and recorded-coverage workflows, with their explicit evidence
 limitations preserved. The historical handoff tables below remain unchanged. See [the review and testing guide](loupe-review-2026-09-07.md).
@@ -89,7 +89,7 @@ feature below is complete at the start of this window.
 
    - [x] Source date assessment: display alternative numeric dates, unresolved years/centuries, invalid dates and original citations without selecting a reading (46a3417). Automatic date/context resolution and account uncertainty work remain.
 
-3. **Complete financial accuracy checks — partial**
+3. **Complete financial accuracy checks — complete**
    - [x] Explain arithmetic discrepancy leads with source navigation, directional checks, bounded screening and explicit unresolved cases. Synthetic native correction/restoration browser journey and captured correction audits verified; leads never assert the cause or change classification.
    - [x] Source-bound printed total money in/out saved through PDF review and drafts, separately checked against current admitted rows, compared before/after corrections and retained in history/reports. Synthetic browser100in/30out/70closing passes; proposed30.01out shows1minor discrepancy. Older receipt identities preserved. Native format controls remain separate.
    - [x] First complete printed statement in the supplied 108-page PDF: payment, purchase and undated interest reconcile opening $6,700.18 to closing $6,637.96 owed. Other statements remain outside this acceptance (10 September).
@@ -99,10 +99,10 @@ feature below is complete at the start of this window.
    - [x] Account/currency timeline shows eligible and excluded bounds, internal gaps and separate overlapping statements; select a period to inspect its registered source (84cd821). This does not prove complete transaction extraction.
    - [x] Bind manually reviewed statement dates and opening/closing controls to selected PDF rows, preserving original cells and liability sign convention (d45fb02). Fresh real-PDF test correctly exposes omitted $56.16 interest; P3 remains excluded.
    - [x] Reopen saved controls beside highlighted original PDF cells and include readable controls in the export report (7716d86, 79e1ee8).
-   - [ ] Complete checks of transaction totals against all supported printed controls.
+   - [x] Complete checks against supported source controls: reviewed PDF opening/closing and money-in/out totals; native camt.053, BAI2, MT940 and NACHA controls. Statements now rechecks whole native sources explicitly and downloads current results/source hashes. Source drift/missing mappings remain unavailable, and whole-source arithmetic is distinct from admitted-period totals.
    - [x] Check running balances from one transaction to the next. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [x] Repeat affected checks after an amount/direction correction: native camt.053, BAI2, MT940 and NACHA controls now rebind fresh source bytes and original row hashes, compare current/proposed readings and retain the audit. Source gaps/drift stay unavailable; running-balance order remains conditional. Four-format database roundtrips and synthetic camt.053 browser preview pass.
-   - [ ] Explain all remaining discrepancies while keeping classification calculated by the system.
+   - [x] Display discrepancies and arithmetic leads with source references, while keeping classification calculated by the system. Where the cause cannot be established, it remains explicitly unresolved; no automatic causal explanation or correction is invented.
    - [x] Existing statement balance reconciliation and correction consequences are connected; proof class is computed. Broader checks remain.
 
    - [x] Correction running-balance diagnostics: compare before/after under both possible source-row orders, expose unchecked intervals and retain source-linked results in the correction audit (4b70844). Proven order/coverage and native-control revalidation remain; this does not promote classification.

@@ -1,6 +1,9 @@
 import { render, screen } from "@testing-library/react"
 import { expect, it } from "vitest"
-import { nativeControlComparison } from "../lib/native-control-contract"
+import {
+  nativeControlComparison,
+  currentNativeControls,
+} from "../lib/native-control-contract"
 import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
 const current = {
   format: "nacha",
@@ -86,4 +89,19 @@ it("refuses an unknown status or proof promotion", () => {
       },
     }).success
   ).toBe(false)
+})
+
+it("renders a current check without implying a proposed correction", () => {
+  render(
+    <NativeControlComparisonPanel
+      comparison={currentNativeControls.parse(capture)}
+    />
+  )
+  expect(
+    screen.getByRole("region", { name: "Current native bank-file controls" })
+  ).toBeInTheDocument()
+  expect(screen.getByText("Current source readings")).toBeInTheDocument()
+  expect(
+    screen.queryByText("After proposed correction")
+  ).not.toBeInTheDocument()
 })

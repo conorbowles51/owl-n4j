@@ -44,7 +44,7 @@ def _source_bytes(stored_path, expected, resolve_path):
 
 
 def correction_native_controls(session, document, rows, *, transaction_id,
-                               amount_minor, direction, resolve_path):
+                               amount_minor, direction, resolve_path, lock_source=True):
     """Return current/proposed controls, or an explicit unavailable reason.
 
     Historical originals bind parsed rows; current replacements override only
@@ -69,9 +69,10 @@ def correction_native_controls(session, document, rows, *, transaction_id,
         if any(not isinstance(d, date) for d in dates):
             raise ValueError('Recorded native date context is missing.')
         window = CenturyWindow(min(dates), max(dates))
-        file = session.scalar(select(EvidenceFile).where(
+        file_query = select(EvidenceFile).where(
             EvidenceFile.id == document.evidence_file_id,
-            EvidenceFile.case_id == document.case_id).with_for_update(read=True))
+            EvidenceFile.case_id == document.case_id)
+        file = session.scalar(file_query.with_for_update(read=True) if lock_source else file_query)
         if file is None or file.sha256 != document.sha256_at_ingestion:
             raise ValueError('Native source identity differs from ingestion.')
         data = _source_bytes(file.stored_path, file.sha256, resolve_path)

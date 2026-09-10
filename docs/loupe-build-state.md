@@ -1,3 +1,28 @@
+## Current native statement controls — 10 September, about08:36Dublin
+
+Statements can explicitly recheck native file controls from fresh original bytes,
+without proposing a correction. The read-only repeatable-read transaction takes
+no source row lock; the correction writer retains its existing source lock.
+Repeated periods in one source share one calculation per page. Source/hash/row
+population drift remains unavailable. Controls apply to the whole native source,
+including other periods/accounts and held current readings, and are distinctly
+labelled from admitted period ledger totals. PDF controls stay separate.
+
+The displayed statement-check page downloads its exact results, check time,
+source hashes and period scope. It includes only the displayed25or fewer periods,
+not every page or original files. No classification or reconciliation write.
+4177backend and910financialUI tests, production build and scoped lint pass.
+Final download addition: TypeScript/scopedlint and read-only browser acceptance.
+Synthetic restored camt case e1642248-9df2-48b0-b098-f4ece94b0cf8:3current rows,
+2balanced native checks; original SHAandchecked_at preserved in downloaded JSON.
+No financial writes. Repeatable scriptcheck_local_current_native.cjs; artifacts
+current-native-browser-check.json and current-native-statement-checks.json under
+data/local-runtime. Current backend51333, log/tmp/loupe-current-native-runtime.out.
+No push. Supported accuracy-check workflow3nowcomplete: PDF printed controls and
+four native formats, correction rechecks, discrepancy diagnostics and retained
+unknown causes. This does not establish complete extraction or explain every
+source error causally. Remaining features1,7,9,10continue.
+
 ## Exact ledger amount ranges — 10 September, about08:30Dublin
 
 Main Ledger now filters inclusive minimum/maximum posting amounts in an explicitly

@@ -82,3 +82,16 @@ class StatementCheckTests(fixture.DuplicateTestCase):
 
     def test_capture_refuses_non_postgres_connection(self):
         with self.assertRaises(StatementCheckError): capture_statement_checks(self.db.get_bind(), case_id=self.case.id)
+
+    def test_native_checks_are_explicit_current_only_and_do_not_lock_source(self):
+        from unittest.mock import patch
+        doc=self.make_copy();doc.extraction_layer=0;self.db.commit()
+        with patch('services.financial.correction_native.correction_native_controls',return_value={'available':True,'current':{'checks':[]},'proposed':{'checks':[]},'limitation':'Conditional.'}) as check:
+            self.read();check.assert_not_called()
+            result=self.read(include_native=True,resolve_path=str)
+            self.assertTrue(result['native_controls_requested'])
+            native=result['items'][0]['native_controls']
+            self.assertNotIn('proposed',native)
+            self.assertIn('whole-source',native['limitation'])
+            self.assertFalse(check.call_args.kwargs['lock_source'])
+            self.assertFalse(self.db.new or self.db.dirty)

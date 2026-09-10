@@ -1,3 +1,5 @@
+import { currentNativeControls } from "../lib/native-control-contract"
+import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
 import { statementDeltaHints } from "../lib/statement-delta-hints"
 import { StatementDeltaHintsPanel } from "./StatementDeltaHintsPanel"
 import { printedTotalChecks } from "../lib/printed-total-checks"
@@ -47,6 +49,7 @@ const item = z
     counted_rows: count.nullable(),
     excluded_rows: count.nullable(),
     independent: z.boolean().nullable(),
+    native_controls: currentNativeControls.nullable().optional(),
     delta_hints: statementDeltaHints.nullable().optional(),
     printed_totals: printedTotalChecks.nullable().optional(),
     printed_totals_error: z.string().nullable().optional(),
@@ -89,6 +92,7 @@ const report = z.object({
   has_more: z.boolean(),
   applied: z.literal(false),
   checked_at: z.string(),
+  native_controls_requested: z.boolean().default(false),
   limitation: z.string(),
   items: z.array(item).max(25),
 })
@@ -113,19 +117,29 @@ export function StatementChecksPanel({
   caseId: string | undefined
 }) {
   const [opened, setOpened] = useState(false),
-    [offset, setOffset] = useState(0)
+    [offset, setOffset] = useState(0),
+    [includeNative, setIncludeNative] = useState(false)
   const query = useQuery({
-    queryKey: ["financial-ledger", caseId, "statement-checks", offset],
+    queryKey: [
+      "financial-ledger",
+      caseId,
+      "statement-checks",
+      offset,
+      includeNative,
+    ],
     enabled: opened && Boolean(caseId),
     retry: false,
     queryFn: async () => {
       const data = report.parse(
         await fetchAPI<unknown>(
-          `${candidateUrl("statement-checks", caseId!)}&offset=${offset}`
+          `${candidateUrl("statement-checks", caseId!)}&offset=${offset}&include_native=${includeNative}`
         )
       )
       assertCandidateScope(data, caseId!)
-      if (data.offset !== offset)
+      if (
+        data.offset !== offset ||
+        data.native_controls_requested !== includeNative
+      )
         throw new Error("Statement page changed. Refresh the check.")
       return data
     },
@@ -148,6 +162,18 @@ export function StatementChecksPanel({
       >
         {opened ? "Refresh balance checks" : "Check statement balances"}
       </Button>
+      {opened && (
+        <label className="block">
+          <input
+            aria-label="Recheck native bank-file controls"
+            type="checkbox"
+            checked={includeNative}
+            onChange={(e) => setIncludeNative(e.target.checked)}
+          />{" "}
+          Recheck native bank-file controls against current readings (reads
+          original files)
+        </label>
+      )}
       {opened &&
         (query.isPending ? (
           <p role="status">Checking current statement balances…</p>
@@ -155,6 +181,39 @@ export function StatementChecksPanel({
           <p role="alert">Balance checks unavailable. {query.error.message}</p>
         ) : (
           <>
+            <Button
+              variant="outline"
+              disabled={query.isFetching}
+              onClick={() => {
+                const url = URL.createObjectURL(
+                  new Blob(
+                    [
+                      JSON.stringify(
+                        {
+                          schema: "loupe.financial.statement_checks/1",
+                          ...query.data,
+                        },
+                        null,
+                        2
+                      ),
+                    ],
+                    { type: "application/json" }
+                  )
+                )
+                const link = document.createElement("a")
+                link.href = url
+                link.download = `loupe-statement-checks-page-${Math.floor(offset / 25) + 1}.json`
+                link.click()
+                setTimeout(() => URL.revokeObjectURL(url), 1000)
+              }}
+            >
+              Download this page of statement checks
+            </Button>
+            <p className="text-sm">
+              The download captures these displayed periods only, including any
+              requested whole-source native checks. Other statement pages and
+              source files are not included.
+            </p>
             <p className="text-sm">
               Checked at {query.data.checked_at}. {query.data.limitation}
             </p>
@@ -190,6 +249,11 @@ export function StatementChecksPanel({
                     caseId={caseId}
                     currency={period.currency}
                     hints={period.delta_hints}
+                  />
+                )}
+                {period.native_controls && (
+                  <NativeControlComparisonPanel
+                    comparison={period.native_controls}
                   />
                 )}
                 {period.printed_totals && (

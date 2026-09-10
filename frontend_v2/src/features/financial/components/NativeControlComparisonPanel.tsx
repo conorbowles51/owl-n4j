@@ -1,4 +1,7 @@
-import type { NativeControlComparison } from "../lib/native-control-contract"
+import type {
+  NativeControlComparison,
+  CurrentNativeControls,
+} from "../lib/native-control-contract"
 
 const label = (value: string) => value.replaceAll("_", " ")
 function display(value: unknown): string {
@@ -15,7 +18,7 @@ function display(value: unknown): string {
 export function NativeControlComparisonPanel({
   comparison,
 }: {
-  comparison: NativeControlComparison
+  comparison: NativeControlComparison | CurrentNativeControls
 }) {
   if (!comparison.available)
     return (
@@ -23,9 +26,23 @@ export function NativeControlComparisonPanel({
         Native bank-file checks unavailable: {comparison.reason}
       </p>
     )
+  const populations =
+    "proposed" in comparison
+      ? [
+          { title: "Before correction", calculation: comparison.current },
+          {
+            title: "After proposed correction",
+            calculation: comparison.proposed,
+          },
+        ]
+      : [{ title: "Current source readings", calculation: comparison.current }]
   return (
     <section
-      aria-label="Native bank-file control comparison"
+      aria-label={
+        "proposed" in comparison
+          ? "Native bank-file control comparison"
+          : "Current native bank-file controls"
+      }
       className="space-y-3 rounded border p-3"
     >
       <h4 className="font-medium">Native bank-file controls</h4>
@@ -35,14 +52,10 @@ export function NativeControlComparisonPanel({
         {comparison.current.unmapped_rows_retained} unmapped source records
         retained in the checks.
       </p>
-      {(["current", "proposed"] as const).map((population) => (
-        <div key={population} className="space-y-2">
-          <h5 className="font-medium">
-            {population === "current"
-              ? "Before correction"
-              : "After proposed correction"}
-          </h5>
-          {comparison[population].checks.map((check, index) => (
+      {populations.map(({ title, calculation }) => (
+        <div key={title} className="space-y-2">
+          <h5 className="font-medium">{title}</h5>
+          {calculation.checks.map((check, index) => (
             <details key={index} className="rounded border p-2">
               <summary>
                 {check.scope} · {label(check.kind)}:{" "}

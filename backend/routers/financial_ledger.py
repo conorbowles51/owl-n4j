@@ -308,9 +308,9 @@ async def get_statement_source(period_id: UUID, case_id: UUID = Query(...), db: 
 
 
 @router.get("/statement-checks")
-async def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
+async def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), include_native: bool = False):
     try:
-        return capture_statement_checks(db.get_bind(), case_id=case_id, offset=offset)
+        return capture_statement_checks(db.get_bind(), case_id=case_id, offset=offset, **(dict(include_native=True, resolve_path=_resolve_stored_path) if include_native else {}))
     except StatementCheckError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception:

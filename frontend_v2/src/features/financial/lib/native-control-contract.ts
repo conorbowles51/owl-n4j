@@ -41,3 +41,9 @@ export const nativeControlComparison = z.discriminatedUnion("available", [
   }),
 ])
 export type NativeControlComparison = z.infer<typeof nativeControlComparison>
+
+export const currentNativeControls = z.discriminatedUnion("available", [
+  nativeControlComparison.options[0],
+  nativeControlComparison.options[1].omit({ proposed: true }),
+])
+export type CurrentNativeControls = z.infer<typeof currentNativeControls>

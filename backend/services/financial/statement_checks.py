@@ -20,7 +20,7 @@ class StatementCheckError(ValueError):
     pass
 
 
-def list_statement_checks(session, *, case_id, offset=0, limit=25):
+def list_statement_checks(session, *, case_id, offset=0, limit=25, include_native=False, resolve_path=None):
     if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 25:
         raise StatementCheckError('Invalid statement check page limits.')
     periods = list(session.scalars(select(FinancialStatementPeriod)
@@ -28,6 +28,7 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25):
         .order_by(FinancialStatementPeriod.period_start.asc().nullslast(), FinancialStatementPeriod.id)
         .offset(offset).limit(limit + 1)))
     items = []
+    native_by_document = {}
     for period in periods[:limit]:
         account = session.get(FinancialAccount, period.account_id)
         document = session.get(FinancialSourceDocument, period.source_document_id)
@@ -70,12 +71,29 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25):
                     credits=int(item['amounts']['credits']), debits=int(item['amounts']['debits']))
             except (LedgerSourceError, ValueError) as exc:
                 item['printed_totals_error'] = str(exc)
+        if include_native and document.extraction_layer == 0:
+            if document.id not in native_by_document:
+                from services.financial.correction_native import correction_native_controls
+                rows = list(session.scalars(select(FinancialTransaction).where(
+                    FinancialTransaction.source_document_id == document.id).order_by(FinancialTransaction.row_index, FinancialTransaction.id).limit(2001)))
+                current = next((r for r in rows if not r.superseded_by_id and r.ledger_status != 'superseded'), None)
+                if current is None:
+                    native = dict(available=False, reason='No current native readings are retained.')
+                else:
+                    native = correction_native_controls(session,document,rows,
+                        transaction_id=current.id,amount_minor=current.amount_minor,direction=current.direction,
+                        resolve_path=resolve_path,lock_source=False)
+                    if native and native.get('available'):
+                        native.pop('proposed')
+                        native['limitation'] += ' These are whole-source controls, including other accounts or periods in the same native file. Held current readings remain in source-control arithmetic; this is not an admitted-ledger total.'
+                native_by_document[document.id] = native
+            item['native_controls'] = native_by_document[document.id]
         items.append(item)
     return dict(case_id=str(case_id), offset=offset, has_more=len(periods) > limit, items=items,
-        applied=False, limitation='Current opening + admitted row credits − admitted row debits compared with the recorded closing balance. This does not check every printed control, prove complete extraction, or change proof class or admission. Source exclusions still apply.')
+        applied=False, native_controls_requested=include_native, limitation='Current opening + admitted row credits − admitted row debits compared with the recorded closing balance. This does not check every printed control, prove complete extraction, or change proof class or admission. Source exclusions still apply.')
 
 
-def capture_statement_checks(engine, *, case_id, offset=0):
+def capture_statement_checks(engine, *, case_id, offset=0, include_native=False, resolve_path=None):
     """Balances and transaction totals come from the same read-only database snapshot."""
     if not isinstance(engine, Engine) or engine.dialect.name != 'postgresql':
         raise StatementCheckError('Consistent statement checks require a PostgreSQL engine connection.')
@@ -83,5 +101,5 @@ def capture_statement_checks(engine, *, case_id, offset=0):
         with connection.begin():
             connection.exec_driver_sql('SET TRANSACTION READ ONLY')
             with Session(bind=connection, autoflush=False) as session:
-                result = list_statement_checks(session, case_id=case_id, offset=offset)
+                result = list_statement_checks(session, case_id=case_id, offset=offset, include_native=include_native, resolve_path=resolve_path)
     return {**result, 'checked_at': datetime.now(timezone.utc).isoformat()}

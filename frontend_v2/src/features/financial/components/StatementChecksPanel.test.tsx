@@ -83,7 +83,10 @@ it.each([
   { items: [{ ...period, status: "balanced" }] },
   {
     items: [
-      { ...period, amounts: { ...period.amounts, credits: Number("9007199254740993") } },
+      {
+        ...period,
+        amounts: { ...period.amounts, credits: Number("9007199254740993") },
+      },
     ],
   },
 ])("refuses incorrect scope or arithmetic %j", async (change) => {
@@ -142,4 +145,33 @@ it("keeps refused periods and missing periods explicit", async () => {
   expect(await screen.findByText("Could not check")).toBeVisible()
   expect(screen.getByText("Currency mismatch")).toBeVisible()
   expect(screen.queryByText("Opening balance")).not.toBeInTheDocument()
+})
+
+it("requests fresh native controls explicitly and preserves unavailable reasons", async () => {
+  const { fetch } = mount()
+  open()
+  await screen.findByText("Balance difference")
+  fetch.mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ...answer,
+          native_controls_requested: true,
+          items: [
+            {
+              ...period,
+              native_controls: {
+                available: false,
+                reason: "Native source bytes changed",
+              },
+            },
+          ],
+        })
+      )
+  )
+  fireEvent.click(screen.getByLabelText("Recheck native bank-file controls"))
+  expect(
+    await screen.findByText(/Native source bytes changed/)
+  ).toBeInTheDocument()
+  expect(String(fetch.mock.calls.at(-1)?.[0])).toContain("include_native=true")
 })
