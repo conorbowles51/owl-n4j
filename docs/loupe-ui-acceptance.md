@@ -177,3 +177,8 @@ See build-state for guarded writer and repeatable read-only script names.
 - [x] Reviewed payment identities are reusable in account-link choices. Existing
   synthetic party selected in the browser without saving an ownership assertion;
   source labels unchanged. Independent histories and stale-revision refusal tested.
+
+- [x] Possible payment identity links show original name variants, reviewed
+  supporting sources and competing identities. Selection requires a fresh reason
+  and does not save. Browser acceptance uses an explicit synthetic response;
+  original case names and links remain unchanged.

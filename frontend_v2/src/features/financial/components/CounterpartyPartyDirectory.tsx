@@ -1,3 +1,4 @@
+import { PaymentIdentitySuggestions } from "./PaymentIdentitySuggestions"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -131,6 +132,19 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
           {state && !query.isError && (
             <>
               <p>{state.limitation}</p>
+              <PaymentIdentitySuggestions
+                readings={state.readings}
+                disabled={save.isPending || query.isFetching}
+                onSource={setSource}
+                onSelect={(ids, partyId) => {
+                  setSelected(ids)
+                  setParty(partyId)
+                  setReason("")
+                  setSearch("")
+                  setPage(0)
+                  save.reset()
+                }}
+              />
               <label className="block">
                 Find payment names, descriptions or references
                 <input

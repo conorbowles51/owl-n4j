@@ -144,3 +144,46 @@ it("pages retained decision history without dropping its source bindings", async
   expect(screen.getByText("History reason 26")).toBeInTheDocument()
   expect(screen.queryByText("History reason 1")).not.toBeInTheDocument()
 })
+
+it("a name suggestion prepares explicit review without saving or carrying an old reason", async () => {
+  const anchorId = "10000000-0000-4000-8000-000000000004"
+  const party = { id: partyId, name: "Reviewed recipient" }
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...state,
+    parties: [party],
+    readings: [
+      {
+        ...state.readings[0],
+        transaction_id: anchorId,
+        ref_id: "TX-ANCHOR",
+        party,
+        decision_transaction_id: anchorId,
+      },
+      state.readings[0],
+    ],
+  })
+  mount()
+  await screen.findByLabelText("Link payment TX-TEST")
+  fireEvent.change(screen.getByLabelText("Payment identity reason"), {
+    target: { value: "Old unrelated reason" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible identity links" })
+  )
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Review 1 possible links to Reviewed recipient",
+    })
+  )
+  expect(screen.getByLabelText("Link payment TX-TEST")).toBeChecked()
+  expect(screen.getByLabelText("Link payment TX-ANCHOR")).not.toBeChecked()
+  expect(screen.getByLabelText("Payment identity reason")).toHaveValue("")
+  expect(
+    screen.getByRole("button", { name: "Save payment identity links" })
+  ).toBeDisabled()
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.every(([, options]) => options?.method !== "POST")
+  ).toBe(true)
+})

@@ -1,3 +1,22 @@
+## Review suggestions for repeated payment names — 10 September
+
+Counterparties can now find unlinked names matching already reviewed payment
+names, comparing only case/whitespace. Suggestions retain exact original labels,
+supporting readings and all conflicting party alternatives. Punctuation and
+accents are not stripped; blank names and explicitly cleared decisions are not
+reoffered. New imports remain unlinked until reviewed and saved with a fresh
+reason. Selecting a proposal chooses at most100readings, leaves linked anchors
+unselected and makes no request to change identities.
+
+11 focused UI/contract tests pass, plus TypeScript/scopedlint. Browser verifies
+selection and required reason using an explicitly simulated directory response
+on the existing synthetic case; no financial writes or source alterations. This
+is UI acceptance, not a new real-document identity assertion. Screenshot inspected.
+Repeatable check_local_identity_suggestions.cjs; report identity-suggestions-ui-check.json.
+Earlier integrated gate:4237backend/938financial UI tests, production build pass.
+Backend54157 unchanged. No push. Broader account/party resolution and financial
+scope remain incomplete; continue the saved development checklist.
+
 ## Shared reviewed party choices — 10 September
 
 Payment-created identities are now available when linking source accounts.
