@@ -1,3 +1,27 @@
+## Native correction controls — 10 September, about07:28Dublin
+
+Continued development; no deployment/push. Source-bound native correction checks
+now cover all four supported formats, retaining unmapped records and the actual
+child-trailer basis for higher-level controls. Current/proposed controls appear
+in review and saved correction history. Fresh bytes must match the original SHA;
+all original row hashes and current row/account populations must match. Bounded
+at16MiB/1000originals/2000historical readings. Recorded original ledger dates give
+the explicit century context; an unreproducible original parse is unavailable.
+Human reinterpretations retain P3 reservations even when arithmetic agrees.
+
+Also fixed camt.053 separate credit/debit count checks, including count-only
+summaries. Overall counts can no longer hide an incorrect directional split.
+All4136financial backend tests pass, including four native-format correction
+and audit roundtrips. All896financial frontend tests, the production build and scoped ESLint pass.
+
+Synthetic browser case e1642248-9df2-48b0-b098-f4ece94b0cf8 verifies actual uploaded
+camt.053 ingestion and source-bound correction preview with visible discrepancy;
+no correction saved in that browser case. Source fixture is explicitly synthetic.
+Report:data/local-runtime/native-controls-browser-check.json; guarded writer
+scripts/check_local_native_controls.cjs must not rerun afterverified.
+Backend session56692 uses current implementation; log/tmp/loupe-native-runtime.out.
+Remaining broader application work stays on the retained checklist.
+
 # Loupe build state
 
 ## Current position — 9 September 2026, Codex continuation

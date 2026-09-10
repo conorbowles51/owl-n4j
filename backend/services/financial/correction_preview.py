@@ -2,8 +2,8 @@
 
 This does not record a correction or reuse a persisted reconciliation result.
 Both the current and proposed statement identities are computed from current
-admitted rows. Native file control totals are a different check and are never
-claimed to have been verified by this preview.
+admitted rows. Native file controls are checked separately against fresh source
+bytes when the original row population can be rebound exactly.
 """
 import uuid
 from dataclasses import replace
@@ -17,6 +17,7 @@ from services.financial.periods import read_opening, read_closing
 from services.financial.reconcile import total_transactions, evaluate_identity
 from services.financial.transaction_query import to_view
 from services.financial.correction_verification import correction_verification
+from services.financial.correction_native import correction_native_controls
 from services.financial.correction_balances import correction_running_balances
 from services.financial.printed_totals import compare_printed_totals, retained_total_controls
 from services.financial.ledger_source import LedgerSourceError
@@ -31,7 +32,7 @@ class CorrectionPreviewError(ValueError):
 
 
 def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uuid.UUID,
-                              amount_minor: int, direction: str) -> dict:
+                              amount_minor: int, direction: str, resolve_path=None) -> dict:
     """Preview one magnitude/direction change without changing rows or classes.
 
     Document-first locks match the disposition writers and are held until the
@@ -127,8 +128,14 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
             result["running_balances"] = correction_running_balances(period, period_rows,
                 transaction_id=row.id, amount_minor=amount_minor, direction=direction)
             result["limitation"] = "Statement balance checked; running-balance comparisons are conditional on source order and balance convention. Native controls are not revalidated. Existing quarantine is preserved."
+    result["native_controls"] = correction_native_controls(session, document, rows,
+        transaction_id=row.id, amount_minor=amount_minor, direction=direction,
+        resolve_path=resolve_path)
+    result["native_controls_rechecked"] = bool(result["native_controls"] and result["native_controls"]["available"])
+    if result["native_controls_rechecked"]:
+        result["limitation"] = result["limitation"].replace("Native controls are not revalidated.", "Native controls were recalculated against verified source bytes; interpretation remains conditional.")
     try:
-        result["verification"] = correction_verification(document, rows, statuses)
+        result["verification"] = correction_verification(document, rows, statuses, native_rechecked=result["native_controls_rechecked"])
     except (UnknownSourceShapeError, ValueError):
         result["verification"] = {"can_record": False, "current_proof_class": document.proof_class,
                                   "proposed_proof_class": None, "reservations": [],

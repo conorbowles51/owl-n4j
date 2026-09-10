@@ -1,3 +1,5 @@
+import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
+import { nativeControlComparison } from "../lib/native-control-contract"
 import { PrintedTotalChecks } from "./PrintedTotalChecks"
 import { printedTotalComparison } from "../lib/printed-total-checks"
 import { z } from "zod"
@@ -12,6 +14,7 @@ import {
 
 const snapshot = z.object({
   running_balance_comparison: z.unknown().optional(),
+  native_control_comparison: z.unknown().optional(),
   printed_total_comparison: z.unknown().optional(),
   printed_total_error: z.string().nullable().optional(),
   row: z.object({
@@ -43,6 +46,9 @@ export function CorrectionHistory({
         Correction reading history is unavailable or unrecognised.
       </p>
     )
+  const native = nativeControlComparison.safeParse(
+    replacement.data.native_control_comparison
+  )
   const totals = printedTotalComparison.safeParse(
     replacement.data.printed_total_comparison
   )
@@ -73,6 +79,19 @@ export function CorrectionHistory({
         These are the readings recorded at this decision, not a claim about
         their current status.
       </p>
+      {native.success && (
+        <>
+          <p>
+            Native control results saved with this correction; not recalculated
+            against later changes.
+          </p>
+          <NativeControlComparisonPanel comparison={native.data} />
+        </>
+      )}
+      {replacement.data.native_control_comparison != null &&
+        !native.success && (
+          <p>Saved native control comparison is unrecognised.</p>
+        )}
       {totals.success && (
         <>
           <p>

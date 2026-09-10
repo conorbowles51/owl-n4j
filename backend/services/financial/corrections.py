@@ -2,8 +2,8 @@
 
 Original reading fields and source locators are retained. Repeated edits form a
 supersession chain; reverting a value is another correction, never an overwrite.
-Native mandatory control totals cannot be revalidated from a statement identity:
-those documents receive a durable reservation pending native revalidation.
+Native controls are separately recalculated when source bytes and original rows
+can be rebound. Human interpretation retains a durable proof reservation.
 """
 import copy
 import uuid
@@ -20,13 +20,13 @@ from services.financial.references import RowReading, content_hash, ref_id
 
 
 def correct_transaction(session, *, case_id, transaction_id, amount_minor, direction,
-                        expected_revision, actor, reason):
+                        expected_revision, actor, reason, resolve_path=None):
     """Commit an exact replacement or roll back every effect, including grading."""
     try:
         if not isinstance(actor, Actor) or not isinstance(reason, str) or not reason.strip():
             raise CorrectionPreviewError("A named actor and a stated reason are required.")
         preview = preview_amount_correction(session, case_id=case_id, transaction_id=transaction_id,
-                                            amount_minor=amount_minor, direction=direction)
+                                            amount_minor=amount_minor, direction=direction, resolve_path=resolve_path)
         if preview["document_revision"] != expected_revision:
             raise CorrectionPreviewError("The document changed. Review the correction again.", 409)
         original = session.get(FinancialTransaction, transaction_id)
@@ -69,7 +69,8 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
                                "original_quarantine_reason": original.quarantine_reason,
                                "reviewed_revision": expected_revision,
                                "running_balance_comparison": None,
-                               "printed_total_comparison": None, "printed_total_error": None},
+                               "printed_total_comparison": None, "printed_total_error": None,
+                               "native_control_comparison": None},
                        after={"row": {**preview["original"], **preview["proposed"],
                                        "key": str(replacement_id), "ref_id": reference},
                               "replacement_id": str(replacement_id),
@@ -77,7 +78,8 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
                               "reviewed_revision": expected_revision,
                               "running_balance_comparison": preview["running_balances"],
                               "printed_total_comparison": preview["printed_totals"],
-                              "printed_total_error": preview["printed_totals_error"]})
+                              "printed_total_error": preview["printed_totals_error"],
+                              "native_control_comparison": preview.get("native_controls")})
         session.add(replacement)
         session.flush()
         original.ledger_status = "superseded"
@@ -101,7 +103,7 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
                   "replacement_id": str(replacement_id), "replacement_ref_id": reference,
                   "adjudication_id": str(event.id), "applied": True,
                   "proof_class": document.proof_class, "ledger_status": replacement.ledger_status,
-                  "native_controls_rechecked": False}
+                  "native_controls_rechecked": preview["native_controls_rechecked"]}
         session.commit()
         return result
     except Exception:

@@ -1,3 +1,4 @@
+import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
 import { PrintedTotalChecks } from "./PrintedTotalChecks"
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -216,6 +217,11 @@ export function CorrectionForm({
             </p>
           )}
           <p>{reviewed.limitation}</p>
+          {reviewed.native_controls && (
+            <NativeControlComparisonPanel
+              comparison={reviewed.native_controls}
+            />
+          )}
           {reviewed.printed_totals && (
             <>
               <PrintedTotalChecks

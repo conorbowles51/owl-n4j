@@ -1,3 +1,4 @@
+import { nativeControlComparison } from "./native-control-contract"
 import { printedTotalComparison } from "./printed-total-checks"
 import { z } from "zod"
 import { currencyMinorUnits } from "./ledger-format"
@@ -107,6 +108,7 @@ export const correctionPreview = z.object({
     ledger_status: z.enum(["admitted", "quarantined"]),
   }),
   running_balances: runningBalanceComparison.optional(),
+  native_controls: nativeControlComparison.nullable().optional(),
   printed_totals: printedTotalComparison.nullable().optional(),
   printed_totals_error: z.string().nullable().optional(),
   statement_identity: z

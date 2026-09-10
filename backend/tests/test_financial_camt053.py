@@ -1012,6 +1012,27 @@ class SummaryIdentityTests(Camt053TestCase):
         self.assertEqual(statement.summary_identity.status, ReconciliationStatus.unbalanced)
         self.assertEqual(statement.summary_identity.count_delta, -1)
 
+    def test_direction_counts_cannot_cancel_inside_a_correct_overall_count(self):
+        document = parse_camt053(build(statements=stmt(transactions_summary=summary(credit_count=1, debit_count=2))))
+        identity = document.statements[0].summary_identity
+        self.assertEqual(identity.count_delta, 0)
+        self.assertEqual(identity.credit_count_delta, 1)
+        self.assertEqual(identity.debit_count_delta, -1)
+        self.assertEqual(identity.status, ReconciliationStatus.unbalanced)
+        self.assertEqual(document.proof_class, ProofClass.p3)
+
+    def test_each_direction_count_is_checked_without_amount_or_overall_totals(self):
+        for credit_count, debit_count, status in [(2, None, ReconciliationStatus.balanced),
+                (None, 1, ReconciliationStatus.balanced), (3, None, ReconciliationStatus.unbalanced),
+                (None, 0, ReconciliationStatus.unbalanced)]:
+            block = summary(entries=None, credits=None, credit_count=credit_count,
+                debits=None, debit_count=debit_count, net=None, net_indicator=None)
+            identity = parse_camt053(build(statements=stmt(transactions_summary=block))).statements[0].summary_identity
+            self.assertEqual(identity.status, status)
+            self.assertIsNone(identity.count_delta)
+            self.assertIsNone(identity.credit_delta)
+            self.assertIsNone(identity.debit_delta)
+
     def test_a_wrong_net_amount_demotes_the_document(self):
         statement = parse_camt053(
             build(statements=stmt(transactions_summary=summary(net="2400.00")))

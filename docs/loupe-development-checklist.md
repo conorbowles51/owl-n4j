@@ -99,7 +99,7 @@ feature below is complete at the start of this window.
    - [x] Reopen saved controls beside highlighted original PDF cells and include readable controls in the export report (7716d86, 79e1ee8).
    - [ ] Complete checks of transaction totals against all supported printed controls.
    - [x] Check running balances from one transaction to the next. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
-   - [ ] Repeat all affected checks after a correction, including native controls and running balances.
+   - [x] Repeat affected checks after an amount/direction correction: native camt.053, BAI2, MT940 and NACHA controls now rebind fresh source bytes and original row hashes, compare current/proposed readings and retain the audit. Source gaps/drift stay unavailable; running-balance order remains conditional. Four-format database roundtrips and synthetic camt.053 browser preview pass.
    - [ ] Explain all remaining discrepancies while keeping classification calculated by the system.
    - [x] Existing statement balance reconciliation and correction consequences are connected; proof class is computed. Broader checks remain.
 

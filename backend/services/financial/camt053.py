@@ -612,6 +612,8 @@ class Camt053SummaryIdentity:
     net_delta: Optional[Money]
     count_delta: Optional[int]
     unavailable_reason: Optional[str]
+    credit_count_delta: Optional[int] = None
+    debit_count_delta: Optional[int] = None
 
     @property
     def is_balanced(self) -> bool:
@@ -1261,6 +1263,10 @@ def _check_summary(
         else None
     )
 
+    credit_count_delta = (sum(entry.direction == TransactionDirection.credit for entry in entries) - summary.credit_entries
+                          if summary.credit_entries is not None else None)
+    debit_count_delta = (sum(entry.direction == TransactionDirection.debit for entry in entries) - summary.debit_entries
+                         if summary.debit_entries is not None else None)
     net_delta = None
     if summary.total_net_amount is not None:
         stated = summary.total_net_amount
@@ -1273,7 +1279,8 @@ def _check_summary(
         for value in (credit_delta, debit_delta, net_delta)
         if value is not None
     ]
-    if not checked and count_delta is None:
+    counts = [value for value in (count_delta, credit_count_delta, debit_count_delta) if value is not None]
+    if not checked and not counts:
         return Camt053SummaryIdentity(
             status=ReconciliationStatus.unavailable,
             credit_delta=None,
@@ -1286,9 +1293,7 @@ def _check_summary(
             ),
         )
 
-    agrees = all(value.is_zero for value in checked) and (
-        count_delta is None or count_delta == 0
-    )
+    agrees = all(value.is_zero for value in checked) and all(value == 0 for value in counts)
     return Camt053SummaryIdentity(
         status=(
             ReconciliationStatus.balanced
@@ -1299,6 +1304,8 @@ def _check_summary(
         debit_delta=debit_delta,
         net_delta=net_delta,
         count_delta=count_delta,
+        credit_count_delta=credit_count_delta,
+        debit_count_delta=debit_count_delta,
         unavailable_reason=None,
     )
 

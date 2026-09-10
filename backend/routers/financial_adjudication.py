@@ -312,7 +312,7 @@ async def record_amount_correction(
         return correct_transaction(db, case_id=case_id, transaction_id=transaction_id,
                                    amount_minor=int(payload.amount_minor), direction=payload.direction,
                                    expected_revision=payload.expected_revision, reason=payload.reason,
-                                   actor=actor_from_user(current_user))
+                                   actor=actor_from_user(current_user), resolve_path=_resolve_stored_path)
     except (CorrectionPreviewError, ActorError) as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 422), detail=str(exc))
     except Exception:
@@ -327,7 +327,7 @@ async def amount_correction_preview(
 ):
     try:
         return preview_amount_correction(db, case_id=case_id, transaction_id=transaction_id,
-                                         amount_minor=int(payload.amount_minor), direction=payload.direction)
+                                         amount_minor=int(payload.amount_minor), direction=payload.direction, resolve_path=_resolve_stored_path)
     except CorrectionPreviewError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
     except Exception:

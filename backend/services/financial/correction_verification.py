@@ -4,7 +4,7 @@ from services.financial.proof_class import SourceShape, assign_proof_class, admi
 from postgres.models.enums import ProofClass
 
 
-def correction_verification(document, rows, statuses):
+def correction_verification(document, rows, statuses, *, native_rechecked=False):
     """Compute the class and reservations without modifying any stored object."""
     shape = read_source_shape(document)
     if any(row.proof_class != document.proof_class for row in rows):
@@ -14,8 +14,14 @@ def correction_verification(document, rows, statuses):
         raise ValueError("Source admissibility reservations are malformed.")
     reservations = list(reservations)
     additions = []
-    if shape is SourceShape.native_with_control_totals:
-        additions.append("Corrected ledger reading: native control totals require revalidation.")
+    pending = "Corrected ledger reading: native control totals require revalidation."
+    conditional = "Corrected ledger reading: native controls recalculated; source interpretation still requires review."
+    if native_rechecked:
+        reservations = [r for r in reservations if r != pending]
+        additions.append(conditional)
+    elif shape is SourceShape.native_with_control_totals:
+        reservations = [r for r in reservations if r != conditional]
+        additions.append(pending)
     if any(row.running_balance_minor is not None for row in rows):
         additions.append("Corrected ledger reading: printed running-balance chain requires revalidation.")
     for reason in additions:

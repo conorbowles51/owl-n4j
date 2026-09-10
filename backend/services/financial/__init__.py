@@ -1922,3 +1922,9 @@ __all__ += ['compare_printed_totals']
 
 from services.financial.ledger_table_view import capture_table_view
 __all__ += ['capture_table_view']
+
+from services.financial.native_recheck import recheck_native_controls
+__all__ += ["recheck_native_controls"]
+
+from services.financial.correction_native import correction_native_controls
+__all__ += ["correction_native_controls"]
