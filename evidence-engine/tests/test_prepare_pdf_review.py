@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from app.pipeline.prepare_pdf_review import prepare_pdf_review
 from app.models.job import JobStatus
@@ -9,7 +9,10 @@ async def test_pdf_preparation_persists_sources_and_completes_without_ai():
     job=SimpleNamespace(id='job',source_evidence_file_id='file',file_name='bank.pdf',file_path='/tmp/bank.pdf')
     update=AsyncMock();doc=SimpleNamespace(metadata={'source':'test'})
     with patch('app.pipeline.prepare_pdf_review.extract_text',AsyncMock(return_value=doc)) as extract, patch('app.pipeline.prepare_pdf_review.async_session') as session, patch('app.pipeline.prepare_pdf_review.upsert_evidence_document_text',AsyncMock()) as text, patch('app.pipeline.prepare_pdf_review.replace_evidence_table_geometry',AsyncMock(return_value=SimpleNamespace(entries_invalid=0))) as geometry:
+        session.return_value.__aenter__.return_value.begin = MagicMock(return_value=AsyncMock())
         await prepare_pdf_review(job,update)
+        assert text.call_args.kwargs['commit'] is False
+        assert geometry.call_args.kwargs['commit'] is False
         extract.assert_awaited_once();text.assert_awaited_once();geometry.assert_awaited_once()
         assert update.call_args.args[1] == JobStatus.COMPLETED
         assert update.call_args.kwargs['quality_report']['transactions_admitted']==0
@@ -24,8 +27,11 @@ async def test_refuses_non_pdf_or_unregistered_source(filename,source):
 @pytest.mark.asyncio
 async def test_geometry_failure_never_reports_ready():
     job=SimpleNamespace(id='job',source_evidence_file_id='file',file_name='bank.pdf',file_path='/tmp/bank.pdf');update=AsyncMock()
-    with patch('app.pipeline.prepare_pdf_review.extract_text',AsyncMock(return_value=SimpleNamespace(metadata={}))), patch('app.pipeline.prepare_pdf_review.async_session'), patch('app.pipeline.prepare_pdf_review.upsert_evidence_document_text',AsyncMock()), patch('app.pipeline.prepare_pdf_review.replace_evidence_table_geometry',AsyncMock(return_value=SimpleNamespace(entries_invalid=1))):
+    with patch('app.pipeline.prepare_pdf_review.extract_text',AsyncMock(return_value=SimpleNamespace(metadata={}))), patch('app.pipeline.prepare_pdf_review.async_session') as session, patch('app.pipeline.prepare_pdf_review.upsert_evidence_document_text',AsyncMock()), patch('app.pipeline.prepare_pdf_review.replace_evidence_table_geometry',AsyncMock(return_value=SimpleNamespace(entries_invalid=1))):
+        transaction = AsyncMock()
+        session.return_value.__aenter__.return_value.begin = MagicMock(return_value=transaction)
         with pytest.raises(ValueError):await prepare_pdf_review(job,update)
+        assert transaction.__aexit__.call_args.args[0] is ValueError
         assert all(call.args[1]!=JobStatus.COMPLETED for call in update.call_args_list)
 
 @pytest.mark.asyncio

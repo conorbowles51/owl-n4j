@@ -43,7 +43,7 @@ def test_digital_page_origin_is_measured(tmp_path):
 def test_successful_ocr_always_records_recognised_origin(tmp_path, monkeypatch):
     path = tmp_path / "scan.pdf"
     _pdf(path, image_only=True)
-    monkeypatch.setattr(pdf_extraction, "_ocr_page", lambda page: ("1234", 99.0, 150))
+    monkeypatch.setattr(pdf_extraction, "_ocr_page", lambda page: ("1234", 99.0, 150, None))
     result = pdf_extraction._extract_pdf_sync(str(path))
     assert result.metadata["page_spans"][0]["text_origin"] == "recognised_glyphs"
     assert result.text == "1234"

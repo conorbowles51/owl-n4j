@@ -54,6 +54,7 @@ class GeometryPersistenceResult:
 
 def group_per_table_by_page(
     metadata: dict[str, Any] | None,
+    commit: bool = True,
 ) -> tuple[dict[int, list[dict[str, Any]]], int, int]:
     """Group geometry-bearing ``per_table`` entries by the page they sit on.
 
@@ -93,6 +94,7 @@ async def replace_evidence_table_geometry(
     evidence_file_id: uuid.UUID | str,
     engine_job_id: uuid.UUID | str | None,
     metadata: dict[str, Any] | None,
+    commit: bool = True,
 ) -> GeometryPersistenceResult:
     """Replace the stored geometry for one evidence file with this run's.
 
@@ -123,7 +125,8 @@ async def replace_evidence_table_geometry(
             )
         )
         entries_written += len(entries)
-    await db.commit()
+    if commit:
+        await db.commit()
 
     return GeometryPersistenceResult(
         pages_written=len(by_page),

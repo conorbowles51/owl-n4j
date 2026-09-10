@@ -142,6 +142,7 @@ async def upsert_evidence_document_text(
     evidence_file_id: uuid.UUID | str,
     engine_job_id: uuid.UUID | str | None,
     doc: ExtractedDocument,
+    commit: bool = True,
 ) -> CanonicalDocumentText:
     canonical = build_canonical_document_text(doc)
     evidence_uuid = uuid.UUID(str(evidence_file_id))
@@ -167,5 +168,6 @@ async def upsert_evidence_document_text(
             },
         )
     )
-    await db.commit()
+    if commit:
+        await db.commit()
     return canonical

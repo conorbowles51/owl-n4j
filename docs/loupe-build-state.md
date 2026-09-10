@@ -1,3 +1,27 @@
+## Atomic PDF preparation recovery — 10 September
+
+PDF review preparation now saves canonical text and page locations in one database
+transaction. Previously each helper committed separately, so a geometry failure
+could leave a newly committed text generation beside old geometry. Helpers retain
+their default commit behavior for existing callers; PDF review explicitly owns the
+transaction and refuses invalid geometry before commit. Cancellation/failure rolls
+back the replacement; completion is reported only after commit.
+
+330engine tests pass. The full run also found an outdated OCR-provenance test mock
+that returned three values after OCR began returning measured words as its fourth;
+the mock now explicitly supplies unknown word geometry and retains origin assertions.
+Repeatable PostgreSQL acceptance injects post-geometry failure, cancellation and
+invalid geometry, checks successful retry and cross-connection isolation, then rolls
+all changes back. `scripts/check_local_pdf_preparation_atomicity.py` touches only the
+existing synthetic resilience source within that outer transaction; never use a
+supplied real PDF as its fixture. Report:pdf-preparation-atomicity-check.json.
+
+106live permission checks and10rollback-only finalization guards pass on the current
+backend. The interrupted/retry/permission/larger-document checklist item is now
+checked against these and retained full108-page acceptance. External AI acceptance
+still awaits a valid project key. Continue PDF automatic identification work; this
+is not full-feature completion and no push/deploy occurred.
+
 ## Multi-page pending review and measured amount alignment — 10 September
 
 Selected page-scan proposals can now be saved to pending review without repeatedly

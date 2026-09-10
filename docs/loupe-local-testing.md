@@ -151,3 +151,17 @@ key, which is not provider connectivity; this checker deliberately excludes it
 from the local-readiness claim. Dependency ranges and Docker image tags are not a
 fully frozen release lock. Deployment is the repository's existing push-triggered
 server process; these commands neither push nor deploy.
+
+## Repeatable PDF preparation recovery check
+
+Run with the engine venv against the isolated PostgreSQL service:
+
+```sh
+PYTHON_DOTENV_DISABLED=1 DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib:/usr/local/lib data/local-runtime/engine-venv/bin/python scripts/check_local_pdf_preparation_atomicity.py
+```
+
+This injects synthetic preparation failures and cancellation, verifies the previous
+text/location generation survives, checks successful retry, then rolls every source
+change back. It requires the existing synthetic resilience fixture; it never prepares
+the supplied real PDFs or admits transactions. The result is written to
+`data/local-runtime/pdf-preparation-atomicity-check.json`.
