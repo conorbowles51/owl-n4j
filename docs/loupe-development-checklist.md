@@ -141,6 +141,7 @@ feature below is complete at the start of this window.
    - [x] Empty ledger answers respect account/date filters, explain that no match does not establish absence of transactions, and retain response-count discrepancy warnings even for zero rows (e13375c). Quantified search coverage and filter controls remain.
 
 7. **Connect transactions and explain money movement — partial**
+   - [x] Pattern review screens repeated equal amounts and nearby equal incoming/outgoing postings, retaining sources and uncertainty. Investigator reasoning can be saved as a proposed Workspace theory with grouped evidence attachments, captured readings and immutable history; synthetic browser save/reopen verified. Other typologies and claim-correlation decisions remain.
    - [x] Case context timeline joins captured ledger chronology with wider case events for review, with explicit date bases, distinct context labels, source/event drill-down, unavailable/incomplete event states, search and captured JSON. Synthetic7-posting/1-event browser journey passes; proximity is not a corroboration decision.
    - [x] Compare cross-account equal-amount/currency postings with compatible dates and preserve ambiguous alternatives.
    - [x] Explicit conditional pairing scenario counts each chosen pair once, forbids reusing a posting and exports the source snapshot and reasoning. Synthetic bigint browser journey verified; this is not a verified transfer assertion.

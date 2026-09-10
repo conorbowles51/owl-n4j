@@ -116,6 +116,27 @@ with native PDF libraries. Full backend rerun will accompany next integration ga
 No push; keep working through remaining hypotheses/correlation and complete PDF
 review/analysis acceptance. This is a development checkpoint, not a handoff.
 
+### Pattern review and persistent theories — 10 September, about05:52 Dublin
+
+aebbd0e4 saves account-group flow locally. Pattern review now screens two explicit
+rules (repeated equal amounts; equal incoming/outgoing amounts within0–30days),
+using exact amounts, account/currency separation, stated date basis and bounded
+complete results. Unknown statement-end-only timing is excluded. No misconduct,
+common-funds or corroboration conclusion is made.
+
+The investigator can save their own reasoning as a proposed Workspace theory.
+Canonical Workspace API preserves source links grouped by evidence file, exact
+captured row/provenance metadata, snapshot reference and revision/event history.
+Synthetic browser saved and independently reread theory610fb970-13fc-48e9-8c7e-cfcf8e1ccc8d
+in case7d7d04f7-012f-4dc4-bc03-30351f3db15a:2evidence links,P3unchanged,0ledgerwrites.
+Script scripts/check_local_pattern_theory.cjs refuses reruns after its persistent
+checkpoint data/local-runtime/pattern-theory-ui-check.json (status verified).
+Nine backend tests (including inherited chronology checks),39UI tests,TypeScript
+and scoped lint pass. Missing tab-content connection was fixed and now tested.
+Backend session7571, log /tmp/loupe-pattern-runtime.out. Full scope continues;
+next payment-claim comparison and broader PDF end-to-end acceptance remain.
+No push/deploy. Do not pause for a preview handoff.
+
 ### Further full-scope work — 10 September
 
 Local commit c39d23ca saves working analysis, posting graph, control drafts,

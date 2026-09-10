@@ -930,3 +930,18 @@ def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] =
     except Exception:
         logger.exception('Ledger timeline failed for case %s', case_id)
         raise HTTPException(status_code=500, detail='Ledger timeline could not be prepared.')
+
+
+@router.get('/pattern-review')
+def get_pattern_review(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        population: Literal['working', 'verified'] = Query('working'), window_days: int = Query(3,ge=0,le=30), db: Session = Depends(get_db)):
+    from services.financial.pattern_review import screen_ledger_patterns
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+        return screen_ledger_patterns(captured, population=population, window_days=window_days)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Pattern review failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='Pattern review could not be prepared.')

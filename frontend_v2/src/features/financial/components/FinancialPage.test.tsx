@@ -302,6 +302,7 @@ describe("FinancialPage", () => {
       "Counterparties",
       "Posting graph",
       "Transfers",
+      "Patterns",
       "Case context",
       "Conditional tracing",
       "Trends",
@@ -355,11 +356,18 @@ describe("FinancialPage", () => {
   })
 
   /** The case that used to be unreachable: ledger rows, no graph. */
+  it("opens the source-linked pattern review screen", () => {
+    graphEmpty()
+    renderPage()
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Patterns" }), { button: 0, ctrlKey: false })
+    expect(screen.getByRole("heading", { name: "Patterns to investigate" })).toBeInTheDocument()
+  })
+
   it("still reaches the ledger when the graph has no rows", () => {
     graphEmpty()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(12)
+    expect(screen.getAllByRole("tab")).toHaveLength(13)
     expect(
       screen.getByText(/No admitted rows in the ledger/i)
     ).toBeInTheDocument()
@@ -369,7 +377,7 @@ describe("FinancialPage", () => {
     graphLoading()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(12)
+    expect(screen.getAllByRole("tab")).toHaveLength(13)
     expect(
       screen.getByText(/No admitted rows in the ledger/i)
     ).toBeInTheDocument()

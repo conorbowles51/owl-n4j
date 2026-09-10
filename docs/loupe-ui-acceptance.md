@@ -103,3 +103,8 @@ flow selection and evidence-linked hypotheses remain active development.
   once, with both source links. Synthetic browser verifies exact totals, selection
   changes and captured assumptions. This is account perspective, not resolved-party
   identity; unidentified internal movements remain explicit.
+
+- [x] Pattern review offers two bounded equal-amount screens and source inspection.
+  A proposed Workspace theory requires investigator wording, carries exact captured
+  supporting rows/source links and retains revision history. Synthetic save/reopen
+  browser check passed; no automatic finding or proof-class promotion.

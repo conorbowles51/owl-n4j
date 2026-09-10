@@ -1,3 +1,4 @@
+import { FinancialPatternReview } from "./FinancialPatternReview"
 import { FinancialCaseTimeline } from "./FinancialCaseTimeline"
 import { LedgerPostingGraph } from "./LedgerPostingGraph"
 import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
@@ -535,6 +536,7 @@ export function FinancialPage() {
             </TabsTrigger>
             <TabsTrigger value="posting-graph">Posting graph</TabsTrigger>
             <TabsTrigger value="transfers">Transfers</TabsTrigger>
+            <TabsTrigger value="patterns">Patterns</TabsTrigger>
             <TabsTrigger value="case-context">Case context</TabsTrigger>
             <TabsTrigger value="tracing">Conditional tracing</TabsTrigger>
             <TabsTrigger value="trends">
@@ -825,6 +827,11 @@ export function FinancialPage() {
           )}
         </TabsContent>
 
+        <TabsContent value="patterns" className="min-h-0 flex-1 overflow-auto">
+          <ErrorBoundary level="section">
+            <FinancialPatternReview key={caseId} caseId={caseId} />
+          </ErrorBoundary>
+        </TabsContent>
         <TabsContent
           value="case-context"
           className="min-h-0 flex-1 overflow-auto"
