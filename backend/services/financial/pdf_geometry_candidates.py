@@ -185,6 +185,17 @@ def _table(payload, index, page):
         raise PdfMappingError("Stored table or cell geometry is missing or inconsistent.", 409) from exc
 
 
+def _page_origin(content, locations, page_number):
+    origin = TextOrigin.unknown
+    pages = [p for p in locations if isinstance(p, dict) and p.get("kind") == "page"
+             and type(p.get("page_number")) is int and p["page_number"] == page_number
+             and type(p.get("start_char")) is int and type(p.get("end_char")) is int
+             and 0 <= p["start_char"] < p["end_char"] <= len(content)] if isinstance(locations, list) else []
+    if len(pages) == 1:
+        origin, _ = source_span_origin(content, locations, pages[0]["start_char"], pages[0]["end_char"])
+    return origin
+
+
 def bind_pdf_grid_mapping(session, *, case_id, proposal):
     """Bind stored cell coordinates without reconstructing canonical text offsets."""
     proposal = PdfGridMapping.model_validate(proposal)
@@ -200,13 +211,7 @@ def bind_pdf_grid_mapping(session, *, case_id, proposal):
         span = getattr(proposal.context, field)
         if span is not None and content[span.start_char:span.end_char] != span.text:
             raise PdfMappingError("Context text does not match its source offsets.", 409)
-    origin = TextOrigin.unknown
-    pages = [p for p in locations if isinstance(p, dict) and p.get("kind") == "page"
-             and type(p.get("page_number")) is int and p["page_number"] == proposal.page_number
-             and type(p.get("start_char")) is int and type(p.get("end_char")) is int
-             and 0 <= p["start_char"] < p["end_char"] <= len(content)] if isinstance(locations, list) else []
-    if len(pages) == 1:
-        origin, _ = source_span_origin(content, locations, pages[0]["start_char"], pages[0]["end_char"])
+    origin = _page_origin(content, locations, proposal.page_number)
     mapping_revision = _digest(proposal.model_dump(mode="json"))
     meanings = {c.column_index: c.meaning for c in proposal.columns}
     candidates = []

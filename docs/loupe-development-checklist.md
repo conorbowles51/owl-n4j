@@ -27,6 +27,7 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Source selection exposes recorded PDF-text/OCR/unknown origin with the same provenance resolution as saved cell binding. Both supplied PDFs checked in the browser; overlapping metadata remains unknown, no automatic confirmation.
    - [x] Automatic paired debit/credit column nominations require coherent exact headers, retain each header and amount locator, and leave conflicting layouts unresolved. Synthetic stored-grid and UI tests plus unchanged real108-page scan verified; no automatic direction confirmation or ledger admission.
    - [x] Separate source-bound undated charge suggestions across page ranges, without inferred dates/direction or automatic admission. Real108-page scan finds81labelled rows on27pages, including56.16USDinterest;62zero-amount rows remain explicit and23dated suggestions unchanged. Ambiguous amounts and unsupported labels remain for manual review.
    - [x] Per-page automatic date/amount column proposals across the supplied108-page PDF:20pages have supported layouts and23dated suggestions;88pages retain explicit unavailable/ambiguous reasons. Manual review and undated interest remain separate; no automatic admission.

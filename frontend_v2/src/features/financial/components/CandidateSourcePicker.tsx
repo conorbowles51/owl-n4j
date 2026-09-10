@@ -35,6 +35,9 @@ const sourceTable = z.object({
   source_revision: z.string().regex(/^[a-f0-9]{64}$/),
   table_source: z.enum(["drawn_geometry", "text_alignment"]),
   geometry_source: z.string(),
+  text_origin: z
+    .enum(["digital_text_layer", "recognised_glyphs", "unknown"])
+    .default("unknown"),
   locator: z.unknown(),
   columns: z.array(index).max(64),
   rows: z
@@ -170,7 +173,14 @@ export function CandidateSourcePicker({
           </div>
         </>
       )}
-      {selected && <CandidatePageScan key={selected.file} caseId={caseId} fileId={selected.file} onPage={page=>setSelected({...selected,page})} />}
+      {selected && (
+        <CandidatePageScan
+          key={selected.file}
+          caseId={caseId}
+          fileId={selected.file}
+          onPage={(page) => setSelected({ ...selected, page })}
+        />
+      )}
       {selected && (
         <SourcePage
           key={`${caseId}:${selected.file}:${selected.page}`}
@@ -358,6 +368,17 @@ function SourceSelection({
         {source.table_source === "text_alignment"
           ? "Rows inferred from text spacing. Check their grouping against the page."
           : "Table found from drawn lines. Check which rows contain transactions."}
+      </p>
+      <p
+        aria-label="Stored page text origin"
+        className="rounded border p-2 text-sm"
+      >
+        {source.text_origin === "digital_text_layer"
+          ? "Stored text came from the PDF text layer. Inspect the original to confirm row grouping and meaning."
+          : source.text_origin === "recognised_glyphs"
+            ? "Stored text was recognised from an image (OCR). Check decimal points, signs, dates and account characters against the original; recognition can omit or misread them."
+            : "Stored text origin is unknown. Check every proposed value against the original; this page is not treated as digitally verified."}{" "}
+        Page origin does not confirm any transaction or promote its reliability.
       </p>
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <section

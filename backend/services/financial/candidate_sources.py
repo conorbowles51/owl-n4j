@@ -6,7 +6,7 @@ letter or disclosure; its presence is never a transaction classification.
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile, EvidenceDocumentText, EvidenceTableGeometry
 from services.financial.pdf_candidates import PdfMappingError
-from services.financial.pdf_geometry_candidates import _snapshot, _table
+from services.financial.pdf_geometry_candidates import _snapshot, _table, _page_origin
 
 
 def list_candidate_sources(session, *, case_id, limit=25, offset=0):
@@ -25,7 +25,7 @@ def list_candidate_sources(session, *, case_id, limit=25, offset=0):
 def read_candidate_source(session, *, case_id, evidence_file_id, page_number, table_index=0):
     if type(table_index) is not int or table_index < 0:
         raise PdfMappingError("Table index must be a nonnegative integer.", 422)
-    _, _, _, _, payload, revision = _snapshot(session, case_id, evidence_file_id, page_number)
+    content, locations, _, _, payload, revision = _snapshot(session, case_id, evidence_file_id, page_number)
     if table_index >= len(payload):
         raise PdfMappingError("No stored table at this position.", 404)
     source, geometry, locator, cells = _table(payload, table_index, page_number)
@@ -44,6 +44,7 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), page_number=page_number,
         table_index=table_index, table_count=len(payload), source_revision=revision,
         table_source=source.value, geometry_source=geometry.value, locator=locator.to_json(),
+        text_origin=_page_origin(content, locations, page_number).value,
         columns=sorted(columns), rows=[dict(row_index=row, cells=values) for row, values in rows.items()],
         applied=False)
 

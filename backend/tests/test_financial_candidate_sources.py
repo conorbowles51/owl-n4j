@@ -45,6 +45,18 @@ class CandidateSourceTests(unittest.TestCase):
         self.assertFalse(source['applied'])
         self.assertFalse(self.f.db.new or self.f.db.dirty or self.f.db.deleted)
 
+    def test_page_origin_matches_bound_cells_and_uncertain_map_stays_unknown(self):
+        self.assertEqual(self.read()['text_origin'],'digital_text_layer')
+        self.f.text.source_locations=[{**self.f.location,'text_origin':'recognised_glyphs'}]
+        self.f.db.commit()
+        self.assertEqual(self.read()['text_origin'],'recognised_glyphs')
+        self.f.text.source_locations=[self.f.location,self.f.location]
+        self.f.db.commit()
+        self.assertEqual(self.read()['text_origin'],'unknown')
+        self.f.text.source_locations=[{**self.f.location,'text_origin':'invented'}]
+        self.f.db.commit()
+        self.assertEqual(self.read()['text_origin'],'unknown')
+
     def test_wrong_case_refused(self):
         with self.assertRaises(PdfMappingError) as caught:
             read_candidate_source(self.f.db, case_id=uuid4(), evidence_file_id=self.f.file, page_number=1)

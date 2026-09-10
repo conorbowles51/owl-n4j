@@ -50,6 +50,7 @@ function json(value: unknown, status = 200) {
   })
 }
 function server({
+  origin = "unknown",
   wrongCase = false,
   stale = false,
   wrongEcho = false,
@@ -98,6 +99,7 @@ function server({
       if (String(url).includes("/pages/"))
         return json({
           ...table,
+          text_origin: origin,
           case_id: wrongCase ? "case-b" : "case-a",
           page_number: wrongPage ? 2 : 1,
         })
@@ -336,3 +338,21 @@ it("locates a cell without nominating or saving its row and resets on source rel
     0
   )
 })
+
+it.each([
+  ["digital_text_layer", "PDF text layer"],
+  ["recognised_glyphs", "recognised from an image (OCR)"],
+  ["unknown", "text origin is unknown"],
+])(
+  "shows %s origin without selecting or verifying rows",
+  async (origin, label) => {
+    const fetch = server({ origin })
+    mount()
+    await open()
+    expect(
+      await screen.findByLabelText("Stored page text origin")
+    ).toHaveTextContent(label)
+    expect(screen.getByLabelText("Select source row 4")).not.toBeChecked()
+    expect(fetch.mock.calls.every(([, o]) => o?.method !== "POST")).toBe(true)
+  }
+)

@@ -1,3 +1,18 @@
+## Source-origin visibility — 10 September, about09:24Dublin
+
+Source row selection now shows the stored page text origin: PDF text layer, OCR,
+or unknown. It reuses exactly the same provenance resolution as immutable grid
+binding; overlapping/malformed page maps remain unknown. This display does not
+change amount proposals, candidate decisions or proof class.49backend source/grid
+and13source-picker UI tests pass, plus TypeScript/scopedlint.
+
+Read-only live checks on both originals: firstPDFpage4 is recorded as recognised
+glyphs (OCR); secondPDFpage3 remains unknown in its saved metadata. The UI does
+not infer a digital origin from appearance. No rows selected and0financialwrites;
+OCR label/layout visually inspected. Repeatable check_local_source_origin.cjs,
+report source-origin-check.json. Backend26460, log/tmp/loupe-origin-runtime.out.
+No push. Remaining practical workflow and completeness work continues.
+
 ## Split amount columns and live access matrix — 10 September, about09:21Dublin
 
 Automatic page nomination now checks both explicitly labelled money-in/out
