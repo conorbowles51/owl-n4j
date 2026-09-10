@@ -1,3 +1,20 @@
+## Paired withdrawal/deposit column coverage — 10 September
+
+Extended exact paired amount headings to Withdrawal/Deposit and plural forms.
+Original header cells, both amount positions and explicit zeros are retained;
+no direction is confirmed or ledger row admitted. Summary/balance phrases are
+not treated as those headers.16scanner tests pass.
+
+Read-only browser scans pass both supplied PDFs with zero financial writes.
+108-page fixture remains23dated/81undated. The older56-page finalized fixture
+currently returns139dated/17undated. A read-only PostgreSQL comparison of old and
+new header sets on that same preparation proves byte-for-byte identical scan
+responses, so the difference from earlier111counts was not caused by this change.
+Do not conflate that preparation with the sealed pending OCR fixture.
+Backend79825 loads all latest changes (/tmp/loupe-withdrawal-header-runtime.out);
+engine62038/worker73588 unchanged. Earlier full4344backend baseline remains valid
+for unaffected code. No source rewrites, provider request or push.
+
 ## Linked validation and captured ledger support — 10 September
 
 Selected tracing support now directly accepts reconciled reference reviews and

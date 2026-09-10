@@ -7,6 +7,9 @@ from services.financial.money import get_currency, MoneyError
 MAX_SCAN_PAGES = 50
 MAX_SUGGESTED_ROWS = 1000
 
+_DEBIT_HEADERS = frozenset(('debit', 'debits', 'money out', 'withdrawal', 'withdrawals'))
+_CREDIT_HEADERS = frozenset(('credit', 'credits', 'money in', 'deposit', 'deposits'))
+
 
 def _under_amount_header(cell, header):
     """Require measured right-edge alignment in the same displayed PDF frame."""
@@ -33,7 +36,7 @@ def propose_scan_columns(source, currency):
             label=' '.join(cell['expected_text'].lower().split())
             if label in ('date','transaction date','trans date','booking date','posting date','posted date','value date'):
                 date_headers.add(cell['column_index'])
-            if label in ('amount','debit','debits','credit','credits','money in','money out'):
+            if label == 'amount' or label in _DEBIT_HEADERS or label in _CREDIT_HEADERS:
                 amount_headers.add(cell['column_index'])
     for row in source['rows']:
         possible_dates, possible_amounts = [], []
@@ -59,8 +62,8 @@ def propose_scan_columns(source, currency):
         labels={}
         for cell in header['cells']:
             label=' '.join(cell['expected_text'].lower().split())
-            role=('debit' if label in ('debit','debits','money out') else
-                  'credit' if label in ('credit','credits','money in') else
+            role=('debit' if label in _DEBIT_HEADERS else
+                  'credit' if label in _CREDIT_HEADERS else
                   'date' if label in ('date','transaction date','trans date','booking date','posting date','posted date','value date') else None)
             if role:labels.setdefault(role,[]).append(cell)
         if all(len(labels.get(role,[]))==1 for role in ('date','debit','credit')):

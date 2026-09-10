@@ -99,6 +99,35 @@ class PageScanTests(unittest.TestCase):
         self.assertNotIn('direction',page['suggestions'][0])
         self.assertFalse(self.f.db.new or self.f.db.dirty)
 
+    def test_withdrawal_deposit_headers_preserve_both_columns_without_admission(self):
+        from copy import deepcopy
+        for debit, credit in (('Withdrawals', 'Deposits'), ('Withdrawal', 'Deposit')):
+            with self.subTest(headers=(debit, credit)):
+                payload = deepcopy(self.f.payload)
+                values = [('Date', debit, credit), ('2026-01-01', '20.00', ''),
+                          ('2026-01-02', '', '30.00'), ('2026-01-03', '0.00', '40.00')]
+                payload[0]['table']['values'] = [dict(row=r, column=c, text=text,
+                    locator=fixture.rectangle(20+r*20, x=20+c*50))
+                    for r,row in enumerate(values) for c,text in enumerate(row) if text]
+                self.f.update_geometry(payload)
+                page = self.scan(auto_columns=True, date_column=None, amount_column=None, end_page=1)['pages'][0]
+                self.assertEqual([(r['row_index'], r['amount_source']['column_index'])
+                    for r in page['suggestions']], [(1,1), (2,2), (3,1), (3,2)])
+                self.assertEqual([r['amount_header_source']['expected_text'] for r in page['suggestions']],
+                    [debit, credit, debit, credit])
+                self.assertTrue(all('direction' not in row for row in page['suggestions']))
+                self.assertFalse(self.f.db.new or self.f.db.dirty)
+
+    def test_deposit_summary_labels_are_not_paired_headers(self):
+        from services.financial.candidate_page_scan import propose_scan_columns
+        for labels in (('Total withdrawals', 'Total deposits'), ('Withdrawal balance', 'Deposit balance')):
+            source = {'rows': [dict(row_index=i, cells=[dict(column_index=c, expected_text=t)
+                for c,t in enumerate(row)]) for i,row in enumerate([
+                    ('Date', *labels), ('2026-01-01', '10.00', '20.00')])]}
+            chosen, reason = propose_scan_columns(source, 'GBP')
+            self.assertIsNone(chosen)
+            self.assertTrue(reason)
+
     def test_conflicting_split_header_positions_are_not_chosen(self):
         from services.financial.candidate_page_scan import propose_scan_columns
         rows=[('Date','Debit','Credit'),('Date','Credit','Debit'),('2026-01-01','10.00','20.00')]
