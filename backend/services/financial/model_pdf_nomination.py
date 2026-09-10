@@ -137,7 +137,32 @@ def _call_model(session,provider,model_id,prompt):
     # Credential lookup is finished before waiting on the provider.
     session.commit()
     text=context.call(prompt,temperature=0,json_mode=True,timeout=90)
-    return text,dict(context.last_usage or {})
+    from pathlib import Path
+    import services.llm_service as adapter
+    transport = dict(schema_version='loupe.pdf_model_transport/1', status='unavailable',
+        limitation='SDK arguments or HTTP JSON body, not raw wire bytes or credentials. Provider-reported model names do not establish immutable weights.')
+    from importlib.metadata import version, PackageNotFoundError
+    import platform
+    package = 'openai' if provider == 'openai' else 'requests'
+    try:
+        package_version = version(package)
+    except (PackageNotFoundError, OSError, ValueError):
+        package_version = None
+    transport['adapter_runtime'] = dict(python=platform.python_version(), package=package, package_version=package_version)
+    try:
+        arguments = context.last_request_arguments
+        encoded = json.dumps(arguments, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
+        if not isinstance(arguments, dict) or len(encoded) > 128 * 1024:
+            raise ValueError('Unavailable request metadata')
+        transport.update(status='captured', request_arguments=arguments,
+            request_arguments_sha256=hashlib.sha256(encoded).hexdigest(),
+            response_metadata=context.last_response_metadata,
+            adapter_sha256=hashlib.sha256(Path(adapter.__file__).read_bytes()).hexdigest())
+    except (AttributeError, OSError, ValueError, TypeError):
+        # A completed provider request must still retain its response and usage
+        # if local provenance capture is unavailable; do not retry the request.
+        transport['reason'] = 'Provider request provenance could not be captured completely.'
+    return text,{**dict(context.last_usage or {}), 'transport':transport}
 
 
 def run_pdf_model_nomination(session,*,case_id,evidence_file_id,request,actor,user_id=None,call_model=None):
@@ -177,6 +202,7 @@ def run_pdf_model_nomination(session,*,case_id,evidence_file_id,request,actor,us
     usage={};result=None;error='provider_failed'
     try:
         raw,usage=(call_model or _call_model)(session,provider,model_id,prompt)
+        transport = usage.get('transport')
         usage={k:v for k,v in usage.items() if k in ('prompt_tokens','completion_tokens','total_tokens') and type(v) is int and 0<=v<=2147483647}
         error='invalid_model_response'
         rows=bind_model_answer(raw,source)
@@ -186,6 +212,8 @@ def run_pdf_model_nomination(session,*,case_id,evidence_file_id,request,actor,us
         if current['source_revision']!=request.source_revision:raise ValueError('Source changed during nomination.')
         result=dict(rows=rows,raw_response=raw,raw_response_sha256=hashlib.sha256(raw.encode()).hexdigest(),usage=usage,
             source_revision=request.source_revision,prompt_version=PROMPT_VERSION)
+        if transport is not None:
+            result['transport'] = transport
     except Exception:
         # Provider errors may contain credentials or source excerpts; neither is a
         # public error message. The durable attempt prevents blind charged retries.

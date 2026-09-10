@@ -27,6 +27,7 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Retain actual provider request arguments, reported model identity and adapter/runtime versions for successful model proposals, with no credentials or headers. Saved review/export preserves the record and checks its digest; older requests retain unknown provenance. Simulated PostgreSQL and browser acceptance pass without external calls.
    - [x] Connect optional model-assisted row/column proposals to pending source review, retaining original cells, exact successful response, model/prompt provenance and investigator decisions separately. Saved request IDs prevent duplicate provider calls; interrupted requests can be checked or closed. Shifted layouts remain separate groups. Local PostgreSQL flow uses explicitly simulated model output and rolls back; browser controls and120live permission checks pass. Actual provider acceptance remains under the unchecked items.
 
    - [x] Split queued rows by their actual nominated date/amount positions. Shifted purchase descriptions remain unidentified text instead of becoming amount columns; dated and undated layouts are separate groups. Real page4 saved/reopened two groups/four pending readings, retaining unknown date type/year.982UI tests and build pass; no ledger admission.

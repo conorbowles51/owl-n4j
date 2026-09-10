@@ -37,3 +37,19 @@ class ReviewMethodsTests(unittest.TestCase):
 
     def test_legacy_snapshot_without_history_does_not_invent_methods(self):
         self.assertIsNone(pdf_review_methods({}))
+
+    def test_transport_metadata_and_argument_digest_are_retained_and_verified(self):
+        import hashlib, json
+        document = self.document(True)
+        record = document['pdf_review_history']['mappings'][0]
+        arguments = {'model':'requested', 'messages':[{'role':'user','content':'Synthetic source'}]}
+        digest = hashlib.sha256(json.dumps(arguments,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+        record['snapshot']['nomination_snapshot']['result'] = {'transport':dict(status='captured',request_arguments=arguments,
+            request_arguments_sha256=digest,adapter_sha256='c'*64,response_metadata={'reported_model':'reported-revision'})}
+        record['snapshot_sha256'] = _digest(record['snapshot'])
+        model = pdf_review_methods(document)['methods'][0]['model']
+        self.assertEqual(model['provider_reported_model'], 'reported-revision')
+        self.assertEqual(model['request_arguments_sha256'], digest)
+        arguments['model'] = 'changed'
+        record['snapshot_sha256'] = _digest(record['snapshot'])
+        with self.assertRaisesRegex(LedgerSummaryError, 'arguments'): pdf_review_methods(document)

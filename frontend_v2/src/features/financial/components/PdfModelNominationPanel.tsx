@@ -301,6 +301,19 @@ export function PdfModelNominationPanel({
                 {run.request.provider} / {run.request.model_id}. Prompt:{" "}
                 {run.request.schema_version}.
               </p>
+              {run.result && (
+                <p>
+                  Provider-reported model:{" "}
+                  {run.result.transport?.status === "captured"
+                    ? (run.result.transport.response_metadata.reported_model ??
+                      "Not reported")
+                    : "Not recorded"}
+                  .
+                  {run.result.transport?.status === "captured"
+                    ? " Provider request settings are retained with this review's export history."
+                    : " A complete provider request record is unavailable for this attempt."}
+                </p>
+              )}
               {run.request.execution_mode === "simulated_test" && (
                 <p>
                   SIMULATED acceptance data: no external model ran for this

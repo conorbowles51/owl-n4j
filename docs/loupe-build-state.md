@@ -1,3 +1,40 @@
+## Provider request provenance and regression repair — 10 September
+
+Model-assisted PDF reviews now retain the actual SDK arguments / HTTP JSON body,
+its canonical digest, provider-reported model/response identifiers when present,
+the LLM adapter source fingerprint, Python version and relevant HTTP/SDK package
+version. Headers and credentials are excluded. Provider-added JSON instructions
+are captured. Records reset between calls and are detached from mutable payloads.
+Missing local provenance remains unavailable while preserving a completed response
+and its usage; it does not cause a repeat provider request.
+
+These records persist in the immutable nomination/review/export snapshot. The
+methods appendix verifies the request-arguments digest, exposes requested versus
+reported model identity and retains adapter/runtime references. Requested/reported
+names do not establish fixed model weights. Older saved reviews remain readable.
+The proposal screen shows provider-reported identity, with explicit simulated data
+labelling in acceptance. A synthetic five-page PDF was rendered and its new metadata
+layout visually checked; no real provider claim is made.
+
+4306financial backend tests and999financial UI tests pass, plus production build,
+scoped lint and67focused shared-LLM/UUID/decision/model checks. Real stored source
+cells passed a PostgreSQL simulated-transport→pending-review→export-history flow;
+all writes rolled back. A browser intercepted only simulated GET history/response
+for display acceptance, blocked financial mutations, and showed reported identity
+beside the requested model. No provider calls. The local credential table was also
+checked for connection metadata only and is empty; no separate local DB key exists.
+
+The first full run exposed an intermittent SQLite fixture bug: numeric-looking
+UUIDs acquired numeric affinity and returned as floats. Commit a8ec0cb6 makes only
+SQLite compile the UUID type as CHAR(32); PostgreSQL keeps native UUID. Deterministic
+bulk-returning regression and complete financial rerun pass. This was a test-database
+identity defect, not a reported extraction failure.
+
+Runtime still session53003 (/tmp/loupe-case-history-final-runtime.out), which predates
+this provider-provenance batch; restart after committing before final live checks.
+No push. Remaining full custody/audit-spine, independent corpus/release measurements
+and broader automatic extraction/live-provider acceptance stay explicitly incomplete.
+
 ## Wider case financial review appendix — 10 September
 
 Optional export checkbox now captures all recorded case adjudication events and

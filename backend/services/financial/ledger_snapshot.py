@@ -346,7 +346,9 @@ def render_ledger_report(snapshot):
                     table(['Requested model', 'Prompt version', 'Execution', 'Attempt recorded at'], [[
                     model['provider'] + ' / ' + model['model_id'], model['schema_version'],
                     'SIMULATED TEST - no external model ran' if model['execution_mode'] == 'simulated_test' else 'Configured provider', model['created_at']]]),
-                    '<p>Prompt SHA-256: <code>' + text(model['prompt_sha256']) + '</code>. The requested model name is not proof of a fixed provider model revision.</p></article>']
+                    '<p>Prompt SHA-256: <code>' + text(model['prompt_sha256']) + '</code>. The requested model name is not proof of a fixed provider model revision.</p>',
+                    '<p>Provider request record: ' + text(model.get('transport_status', 'not_recorded')) + '. Provider-reported model: ' + text(model.get('provider_reported_model')) + '.</p>',
+                    '<p>Adapter SHA-256: <code>' + text(model.get('adapter_sha256')) + '</code>. Request arguments SHA-256: <code>' + text(model.get('request_arguments_sha256')) + '</code>. Exact recorded arguments remain in HTML/JSON; a provider-reported name does not establish immutable model weights.</p></article>']
         parts += [details('Mapping source revisions and model requests', methods['methods'])]
     processing = document.get('processing_provenance')
     if processing:

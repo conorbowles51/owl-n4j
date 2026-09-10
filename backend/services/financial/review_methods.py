@@ -26,6 +26,21 @@ def pdf_review_methods(document):
             model = {key: request[key] for key in ('provider', 'model_id', 'schema_version', 'execution_mode', 'prompt_sha256')}
             model['attempt_id'] = nomination['id']
             model['created_at'] = nomination['created_at']
+            transport = (nomination.get('result') or {}).get('transport')
+            model['transport_status'] = transport.get('status', 'unavailable') if transport else 'not_recorded'
+            if transport:
+                model['adapter_runtime'] = transport.get('adapter_runtime')
+            if transport and transport.get('status') == 'captured':
+                import hashlib
+                import json
+                arguments = transport.get('request_arguments')
+                encoded = json.dumps(arguments, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
+                if not isinstance(arguments, dict) or hashlib.sha256(encoded).hexdigest() != transport.get('request_arguments_sha256'):
+                    raise LedgerSummaryError('Recorded provider request arguments do not match their digest.')
+                model['provider_reported_model'] = transport.get('response_metadata', {}).get('reported_model')
+                model['provider_response_id'] = transport.get('response_metadata', {}).get('response_id')
+                model['request_arguments_sha256'] = transport['request_arguments_sha256']
+                model['adapter_sha256'] = transport.get('adapter_sha256')
         methods.append(dict(mapping_id=mapping['id'], evidence_file_id=mapping['evidence_file_id'],
             source_revision=proposal['source_revision'], schema_version=proposal['schema_version'],
             model=model))

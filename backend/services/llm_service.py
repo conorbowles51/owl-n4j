@@ -52,6 +52,8 @@ class LLMExecutionContext:
         self.last_prompt: str | None = None
         self.last_raw_response: str | None = None
         self.last_usage: dict[str, Any] | None = None
+        self.last_request_arguments: dict[str, Any] | None = None
+        self.last_response_metadata: dict[str, str] = {}
 
     def call(
         self,
@@ -63,6 +65,8 @@ class LLMExecutionContext:
         self.last_prompt = prompt
         self.last_raw_response = None
         self.last_usage = None
+        self.last_request_arguments = None
+        self.last_response_metadata = {}
 
         if self.provider == "openai":
             result = self._call_openai(prompt, temperature, json_mode, timeout)
@@ -127,7 +131,9 @@ class LLMExecutionContext:
             as_json=True,
         )
 
+        self._remember_request(kwargs)
         response = openai_client.chat.completions.create(**kwargs)
+        self._remember_response(response)
         content = response.choices[0].message.content
         if not content:
             raise ValueError("LLM returned empty response")
@@ -162,6 +168,7 @@ class LLMExecutionContext:
         }
         if not self.model_id.startswith(("claude-sonnet-5", "claude-opus-4-8", "claude-fable-5")):
             payload["temperature"] = temperature
+        self._remember_request(payload)
         response = requests.post(
             "https://api.anthropic.com/v1/messages",
             headers={
@@ -174,6 +181,7 @@ class LLMExecutionContext:
         )
         response.raise_for_status()
         data = response.json()
+        self._remember_response(data)
         content = "\n".join(
             str(block.get("text") or "")
             for block in data.get("content", [])
@@ -204,18 +212,21 @@ class LLMExecutionContext:
             generation_config["temperature"] = temperature
         if json_mode:
             generation_config["responseMimeType"] = "application/json"
+        payload = {
+            "systemInstruction": {"parts": [{"text": self.system_context}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": generation_config,
+        }
+        self._remember_request(payload)
         response = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_id}:generateContent",
             headers={"x-goog-api-key": api_key, "content-type": "application/json"},
-            json={
-                "systemInstruction": {"parts": [{"text": self.system_context}]},
-                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": generation_config,
-            },
+            json=payload,
             timeout=(10, timeout),
         )
         response.raise_for_status()
         data = response.json()
+        self._remember_response(data)
         candidates = data.get("candidates") or []
         parts = ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []
         content = "\n".join(str(part.get("text") or "") for part in parts).strip()
@@ -255,6 +266,7 @@ class LLMExecutionContext:
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
+        self._remember_request(payload)
         response = requests.post(
             "https://api.deepseek.com/chat/completions",
             headers={
@@ -266,6 +278,7 @@ class LLMExecutionContext:
         )
         response.raise_for_status()
         data = response.json()
+        self._remember_response(data)
         choices = data.get("choices") or []
         content = str(((choices[0].get("message") or {}).get("content") or "")).strip() if choices else ""
         if not content:
@@ -319,7 +332,9 @@ class LLMExecutionContext:
         openai_client = self._client or client
         if not openai_client:
             raise ValueError("OpenAI client not initialized. OPENAI_API_KEY not set.")
+        self._remember_request(kwargs)
         response = openai_client.responses.create(**kwargs)
+        self._remember_response(response)
         content = self._extract_response_text(response)
         if not content:
             status = getattr(response, "status", None)
@@ -341,6 +356,22 @@ class LLMExecutionContext:
                 "total_tokens": total_tokens,
             }
         return content
+
+    def _remember_request(self, arguments: dict[str, Any]) -> None:
+        # SDK arguments or HTTP JSON body only: never headers or credentials.
+        from copy import deepcopy
+        self.last_request_arguments = deepcopy(arguments)
+
+    def _remember_response(self, response: Any) -> None:
+        fields = (("reported_model", ("model", "modelVersion")), ("response_id", ("id", "responseId")))
+        captured = {}
+        for label, names in fields:
+            for name in names:
+                value = response.get(name) if isinstance(response, dict) else getattr(response, name, None)
+                if isinstance(value, str) and value.strip() and len(value) <= 256:
+                    captured[label] = value
+                    break
+        self.last_response_metadata = captured
 
     @staticmethod
     def _extract_response_text(response: Any) -> str:

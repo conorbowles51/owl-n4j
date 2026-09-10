@@ -45,6 +45,28 @@ export const pdfModelNomination = z
     request_sha256: digest,
     result: z
       .object({
+        transport: z
+          .discriminatedUnion("status", [
+            z.object({
+              schema_version: z.literal("loupe.pdf_model_transport/1"),
+              status: z.literal("captured"),
+              request_arguments: z.record(z.string(), z.unknown()),
+              request_arguments_sha256: digest,
+              adapter_sha256: digest,
+              response_metadata: z.object({
+                reported_model: z.string().max(256).optional(),
+                response_id: z.string().max(256).optional(),
+              }),
+              limitation: z.string(),
+            }),
+            z.object({
+              schema_version: z.literal("loupe.pdf_model_transport/1"),
+              status: z.literal("unavailable"),
+              reason: z.string(),
+              limitation: z.string(),
+            }),
+          ])
+          .optional(),
         rows: z
           .array(
             z.object({

@@ -1,5 +1,5 @@
 """Real stored PDF cells, explicitly simulated model, rollback-only review flow."""
-import sys, json
+import sys, json, hashlib
 from pathlib import Path
 from uuid import UUID, uuid4
 from unittest.mock import patch
@@ -27,9 +27,13 @@ with engine.connect() as connection:
             row=next(r for r in source['rows'] if r['row_index']==40)
             assert next(c for c in row['cells'] if c['column_index']==3)['expected_text']=='14.00'
             request=dict(request_id=str(attempt),page_number=4,source_revision=source['source_revision'])
+            arguments={'model':'synthetic-model','messages':[{'role':'user','content':'SIMULATED provenance fixture, not provider traffic'}]}
+            transport=dict(schema_version='loupe.pdf_model_transport/1',status='captured',request_arguments=arguments,
+                request_arguments_sha256=hashlib.sha256(json.dumps(arguments,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest(),
+                adapter_sha256='a'*64,response_metadata={'reported_model':'synthetic-reported-model'},limitation='SIMULATED transport metadata only; no provider was called.')
             def simulated(*args):
                 calls.append(True)
-                return json.dumps({'rows':[{'row_index':40,'columns':[{'column_index':0,'meaning':'date'},{'column_index':3,'meaning':'amount'}],'reason':'SIMULATED transport acceptance; not an external model conclusion.'}]}),{}
+                return json.dumps({'rows':[{'row_index':40,'columns':[{'column_index':0,'meaning':'date'},{'column_index':3,'meaning':'amount'}],'reason':'SIMULATED transport acceptance; not an external model conclusion.'}]}),{'transport':transport}
             with patch('services.ai_model_policy.get_workload_model',return_value=('test','synthetic-model')):
                 run=run_pdf_model_nomination(db,case_id=case,evidence_file_id=file,request=request,actor=actor,call_model=simulated)
                 assert run['status']=='completed' and run['request']['execution_mode']=='simulated_test'
@@ -45,8 +49,13 @@ with engine.connect() as connection:
             history=capture_pdf_review_history(db,case_id=case,evidence_file_ids=[file])
             exported=next(m for m in history['mappings'] if m['id']==saved['id'])
             model=exported['snapshot']['nomination_snapshot']
+            assert model['result']['transport']==transport
+            from services.financial.review_methods import pdf_review_methods
+            methods=pdf_review_methods({'pdf_review_history':{'mappings':[exported]}})
+            assert methods['methods'][0]['model']['provider_reported_model']=='synthetic-reported-model'
             assert model['result']['raw_response']==run['result']['raw_response']
             assert model['request']['system_context']==run['request']['system_context']
+            Path('/tmp/loupe-simulated-nomination-response.json').write_text(json.dumps(run))
             assert len(calls)==1
             print('PASS: real source cells; simulated transport once; durable result; pending review; retained provenance and export snapshot; idempotent save; unchanged ledger')
     finally: outer.rollback()

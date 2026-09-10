@@ -129,10 +129,32 @@ class ModelNominationTests(unittest.TestCase):
         context=MagicMock()
         context.call.return_value=self.answer()
         context.last_usage={'total_tokens':3}
+        context.last_request_arguments={'model':'synthetic-model','messages':[{'role':'user','content':'synthetic prompt'}]}
+        context.last_response_metadata={'reported_model':'synthetic-model-revision','response_id':'synthetic-response'}
         with patch('services.ai_provider_credentials.get_provider_api_key',return_value='synthetic-not-a-key'), patch('services.llm_service.LLMService') as service:
             service.return_value.create_context.return_value=context
             raw,usage=_call_model(self.f.db,'openai','synthetic-model','synthetic prompt')
         self.assertEqual(context.system_context,SYSTEM_CONTEXT)
         context.call.assert_called_once_with('synthetic prompt',temperature=0,json_mode=True,timeout=90)
         self.assertEqual(raw,self.answer())
-        self.assertEqual(usage,{'total_tokens':3})
+        self.assertEqual(usage['total_tokens'],3)
+        self.assertEqual(usage['transport']['status'],'captured')
+        self.assertEqual(usage['transport']['request_arguments'],context.last_request_arguments)
+        self.assertEqual(usage['transport']['response_metadata']['reported_model'],'synthetic-model-revision')
+        self.assertEqual(len(usage['transport']['adapter_sha256']),64)
+        self.assertEqual(usage['transport']['adapter_runtime']['package'],'openai')
+
+    def test_provider_usage_and_response_survive_unavailable_local_provenance(self):
+        from services.financial.model_pdf_nomination import _call_model
+        from unittest.mock import MagicMock
+        context = MagicMock()
+        context.call.return_value = self.answer()
+        context.last_usage = {'total_tokens':3}
+        context.last_request_arguments = None
+        with patch('services.ai_provider_credentials.get_provider_api_key', return_value='synthetic-not-a-key'), patch('services.llm_service.LLMService') as service:
+            service.return_value.create_context.return_value = context
+            raw, usage = _call_model(self.f.db, 'openai', 'synthetic-model', 'synthetic prompt')
+        self.assertEqual(raw, self.answer())
+        self.assertEqual(usage['total_tokens'], 3)
+        self.assertEqual(usage['transport']['status'], 'unavailable')
+        context.call.assert_called_once()
