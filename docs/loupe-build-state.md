@@ -1,3 +1,21 @@
+## Printed-control candidate navigation — 10 September, about09:33Dublin
+
+Statement control selection can find exact supported opening/closing/whole-total
+and period labels in the loaded source table. Candidates retain exact cells and
+locations, require inspection before use, and do not fill numeric/date values.
+Repeated labels/multiple adjacent values stay separate choices with10-row paging.
+Intervening labels stop the search: the real statement's side-by-side New Balance
+and Other Credits panels must not associate0.00with the balance heading.
+Purchase/interest subtotals are not nominated as whole-statement money-out totals.
+
+16targeted UI/helper/editor tests, TypeScript/scopedlint pass. The shipped helper
+was checked against real saved page1cells: one opening6,700.18USDand one closing
+source'= $6,637.96', preserving exact strings/locators and excluding unrelated
+credits/subtotals. This is live source-data acceptance plus component interaction
+tests, not a new full browser finalization. Scriptcheck_local_control_proposal_sources.cjs
+is read-only/repeatable; reportcontrol-proposal-source-check.json,0financialwrites.
+No push. Runtime26460 unchanged; development continues.
+
 ## Current-schema save/finalization resilience — 10 September, about09:27Dublin
 
 Fresh labelled synthetic casee9cafc92-85a7-497c-aec8-049157e823d0 verifies actual

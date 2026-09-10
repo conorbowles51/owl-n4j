@@ -1,3 +1,4 @@
+import { proposeStatementControls } from "../lib/statement-control-proposals"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -134,6 +135,7 @@ export function StatementControlPicker({
           <ControlTable
             key={`${page}:${table}:${query.data.source_revision}`}
             fileId={fileId}
+            label={label}
             data={query.data}
             onSelected={onSelected}
           />
@@ -144,10 +146,12 @@ export function StatementControlPicker({
 }
 function ControlTable({
   fileId,
+  label,
   data,
   onSelected,
 }: {
   fileId: string
+  label: string
   data: z.infer<typeof tableSchema>
   onSelected: (cell: ControlCell) => void
 }) {
@@ -156,6 +160,26 @@ function ControlTable({
     cell: ControlCell
     locator: unknown
   } | null>(null)
+  const [showProposals, setShowProposals] = useState(false)
+  const [proposalPage, setProposalPage] = useState(0)
+  const proposals = proposeStatementControls(data.rows, label)
+  const inspect = (
+    row: number,
+    cell: { column_index: number; expected_text: string; locator: unknown }
+  ) => {
+    setSelected({
+      cell: {
+        page_number: data.page_number,
+        table_index: data.table_index,
+        row_index: row,
+        column_index: cell.column_index,
+        source_revision: data.source_revision,
+        expected_text: cell.expected_text,
+      },
+      locator: cell.locator,
+    })
+    setRowPage(Math.floor(data.rows.findIndex((r) => r.row_index === row) / 25))
+  }
   return (
     <div className="grid items-start gap-3 lg:grid-cols-2">
       <div className="min-w-0 space-y-2 lg:sticky lg:top-4">
@@ -176,6 +200,67 @@ function ControlTable({
         className="max-h-[650px] space-y-1 overflow-auto"
         aria-label="Stored control cells"
       >
+        <Button variant="outline" onClick={() => setShowProposals((v) => !v)}>
+          {showProposals
+            ? "Hide labelled control candidates"
+            : "Find labelled control candidates"}
+        </Button>
+        {showProposals && (
+          <section
+            aria-label="Labelled control candidates"
+            className="space-y-2 rounded border p-2"
+          >
+            <p>
+              Exact printed labels only. Review the account, period and meaning
+              on the original. Several values or repeated labels remain separate
+              choices; no reading is filled in.
+            </p>
+            {!proposals.length && (
+              <p>
+                No supported label and value found on this table. Inspect the
+                stored cells manually.
+              </p>
+            )}
+            <p>
+              {proposals.length} labelled rows; page {proposalPage + 1} of{" "}
+              {Math.max(1, Math.ceil(proposals.length / 10))}.
+            </p>
+            {proposals
+              .slice(proposalPage * 10, proposalPage * 10 + 10)
+              .map((p) => (
+                <div key={p.row} className="space-y-1 border-t pt-1">
+                  <p>
+                    Row {p.row + 1}: {p.label.expected_text}
+                  </p>
+                  {p.values.map((c) => (
+                    <Button
+                      key={c.column_index}
+                      variant="outline"
+                      className="max-w-full whitespace-normal"
+                      onClick={() => inspect(p.row, c)}
+                    >
+                      Inspect control candidate row {p.row + 1}, column{" "}
+                      {c.column_index + 1}: {c.expected_text}
+                    </Button>
+                  ))}
+                </div>
+              ))}
+            <Button
+              variant="outline"
+              disabled={!proposalPage}
+              onClick={() => setProposalPage((p) => p - 1)}
+            >
+              Previous control candidates
+            </Button>
+            <Button
+              variant="outline"
+              disabled={(proposalPage + 1) * 10 >= proposals.length}
+              onClick={() => setProposalPage((p) => p + 1)}
+            >
+              Next control candidates
+            </Button>
+          </section>
+        )}
         {data.rows.slice(rowPage * 25, rowPage * 25 + 25).map((row) => (
           <div
             key={row.row_index}

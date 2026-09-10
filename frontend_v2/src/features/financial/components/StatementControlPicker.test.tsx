@@ -109,3 +109,45 @@ it("clears a selected control when a new page cannot be loaded", async () => {
   )
   expect(await screen.findByRole("alert")).toBeVisible()
 })
+
+it("finds a labelled candidate and requires source inspection before using it", async () => {
+  const { selected } = mount({
+    ...answer,
+    rows: [
+      {
+        row_index: 30,
+        cells: [
+          { column_index: 0, expected_text: "Previous Balance", locator: {} },
+          {
+            column_index: 1,
+            expected_text: "$100.00",
+            locator: { page: 1, rect: [5, 6, 7, 8] },
+          },
+        ],
+      },
+    ],
+  })
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Find labelled control candidates",
+    })
+  )
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Inspect control candidate row 31, column 2: $100.00",
+    })
+  )
+  expect(selected).not.toHaveBeenCalled()
+  expect(screen.getByTestId("control-locator")).toHaveTextContent(
+    '"rect":[5,6,7,8]'
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Use this control cell" }))
+  expect(selected).toHaveBeenCalledWith(
+    expect.objectContaining({
+      row_index: 30,
+      column_index: 1,
+      expected_text: "$100.00",
+      source_revision: answer.source_revision,
+    })
+  )
+})
