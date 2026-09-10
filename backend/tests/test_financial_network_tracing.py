@@ -22,6 +22,12 @@ class NetworkTracingTests(LedgerSummaryTests):
             openings=[dict(account_id=str(a.id),amount_minor='0',basis='Synthetic zero opening') for a in [self.account,b,c]],
             ordered_transaction_ids=[str(r.id) for r in ordered],order_basis='Explicit synthetic order',attributions=[dict(transaction_id=str(root.id),claim_id='claim',amount_minor='10000',basis='Synthetic root attribution')],doctrines=[d.value for d in Doctrine])
         return export,request,ordered
+    def test_resale_receipt_cannot_be_a_paired_transfer_credit(self):
+        export,request,rows=self.network()
+        use=dict(transaction_id=str(rows[-1].id),asset_label='Synthetic equipment',basis='Synthetic use',resale=dict(transaction_id=str(rows[3].id),proceeds_minor='1',basis='Synthetic disposal',allocation_basis='proportional_cost_share'))
+        with self.assertRaisesRegex(LedgerSummaryError,'not a paired transfer receipt'):
+            evaluate_network_trace(export,{**request,'asset_uses':[use]})
+
     def test_asset_use_preserves_network_cash_and_rejects_paired_debits(self):
         export,request,rows=self.network()
         baseline=json.loads(evaluate_network_trace(export,request)['scenario_json'])

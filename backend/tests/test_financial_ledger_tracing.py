@@ -86,6 +86,30 @@ class LedgerTracingTests(LedgerSummaryTests):
         for invalid in [uses+[uses[1]], [uses[0],uses[1].model_copy(update={'asset_amount_minor':None,'allocation_basis':None})]]:
             with self.assertRaises(LedgerSummaryError):evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':invalid}))
 
+    def test_resale_substitution_preserves_cash_and_allocates_gains_losses_and_rounding(self):
+        from services.financial.trace_assets import TraceAssetUseInput
+        _, request, first, withdrawal = self.scenario()
+        receipt,_=self.add(700001)
+        export=self.captured()
+        request=request.model_copy(update={'expected_snapshot_sha256':export.snapshot.sha256,'ordered_transaction_ids':[*request.ordered_transaction_ids,receipt.id]})
+        baseline=json.loads(evaluate_ledger_trace(export,request)['scenario_json'])
+        for proceeds in ['700001','300001']:
+            use=TraceAssetUseInput(transaction_id=withdrawal.id,asset_label='Synthetic asset',basis='Synthetic acquisition',resale=dict(transaction_id=receipt.id,proceeds_minor=proceeds,basis='Synthetic full disposal; proportional cost share explicitly assumed',allocation_basis='proportional_cost_share'))
+            actual=json.loads(evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':[use]}))['scenario_json'])
+            self.assertEqual(actual['comparison'],baseline['comparison'])
+            for method,expected in [('first_in_first_out',int(proceeds)),('pro_rata',(int(proceeds)+1)//2),('last_in_first_out',0)]:
+                sale=actual['asset_uses'][method][0]['resale']
+                self.assertEqual(int(sale['allocated_by_claim'].get('claim-a','0')),expected)
+                self.assertEqual(int(sale['outside_claims_minor'])+expected,int(proceeds))
+                self.assertEqual(sale['receipt_minor'],'700001')
+                self.assertFalse(sale['changes_cash_results'])
+        for sale in [dict(transaction_id=first.id,proceeds_minor='1'),dict(transaction_id=withdrawal.id,proceeds_minor='1'),dict(transaction_id=receipt.id,proceeds_minor='700002')]:
+            invalid=use.model_copy(update={'resale':use.resale.model_copy(update=sale)})
+            with self.assertRaises(LedgerSummaryError):evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':[invalid]}))
+        partial=use.model_copy(update={'asset_amount_minor':'250000','allocation_basis':'proportional_share'})
+        with self.assertRaisesRegex(LedgerSummaryError,'cannot be reused'):
+            evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':[partial,partial]}))
+
     def test_working_population_keeps_p3_class_and_requires_explicit_selection(self):
         _, request, first, _ = self.scenario()
         first.proof_class = 'p3'

@@ -196,3 +196,11 @@ exact contents, and one Workspace note reopens with matching envelope and case.
 The repeat run made zero writes. Readable source buttons and spaced download/restore
 controls replace internal field names in visible copy. Screenshot inspected.
 106case-access checks,4246backend tests,955financial UI tests and build pass.
+
+## Asset substitution acceptance — 10 September
+
+Multiple purchases sharing one withdrawal and explicit full-disposal resale are
+available in both tracing forms. Read-only synthetic browser checks cover12GBP+8GBP
+purchases,30.01GBPresale, method-dependent allocations, both source views, exact
+downloads and stale clearing. Cash calculations remain unchanged. Screenshots
+inspected. Full4248backend/957UI/build gate passes, plus the new paired-receipt test.

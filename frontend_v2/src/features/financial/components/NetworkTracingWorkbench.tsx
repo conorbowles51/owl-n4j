@@ -215,8 +215,21 @@ function NetworkForm({
         })),
         basis,
         order_basis: orderBasis,
-        asset_uses: assetUses.map(({ asset_amount_input, ...use }) => ({
+        asset_uses: assetUses.map(({ asset_amount_input, resale, ...use }) => ({
           ...use,
+          ...(resale
+            ? {
+                resale: {
+                  transaction_id: resale.transaction_id,
+                  basis: resale.basis,
+                  allocation_basis: resale.allocation_basis,
+                  proceeds_minor: correctionMinor(
+                    resale.proceeds_input,
+                    currency
+                  ),
+                },
+              }
+            : {}),
           ...(asset_amount_input === undefined
             ? {}
             : {
@@ -511,6 +524,17 @@ function NetworkForm({
               setAssetUses(v)
               reset()
             }}
+            receipts={ordered
+              .filter(
+                (r) =>
+                  r.direction === "credit" &&
+                  BigInt(r.amount_minor) > 0n &&
+                  !used.has(r.key)
+              )
+              .map((r) => ({
+                id: r.key,
+                label: `${accountLabel(r.account_id)} · ${r.ordering_date} · ${correctionMoney(r.amount_minor, currency)}`,
+              }))}
             withdrawals={ordered
               .filter(
                 (r) =>

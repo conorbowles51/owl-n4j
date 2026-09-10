@@ -5,10 +5,12 @@ export function TraceAssetFields({
   value,
   onChange,
   withdrawals,
+  receipts = [],
 }: {
   value: TraceAssetUse[]
   onChange: (value: TraceAssetUse[]) => void
   withdrawals: Array<{ id: string; label: string }>
+  receipts?: Array<{ id: string; label: string }>
 }) {
   return (
     <fieldset className="space-y-3 rounded border p-3">
@@ -124,6 +126,123 @@ export function TraceAssetFields({
               }
             />
           </label>
+          <label className="block">
+            <input
+              type="checkbox"
+              aria-label={`Interpret full resale ${i + 1}`}
+              checked={!!use.resale}
+              onChange={(e) =>
+                onChange(
+                  value.map((v, n) =>
+                    n === i
+                      ? {
+                          ...v,
+                          resale: e.target.checked
+                            ? {
+                                transaction_id: "",
+                                proceeds_input: "",
+                                basis: "",
+                                allocation_basis: "proportional_cost_share",
+                              }
+                            : undefined,
+                        }
+                      : v
+                  )
+                )
+              }
+            />{" "}
+            Interpret a later receipt as proceeds from full disposal of this
+            asset
+          </label>
+          {use.resale && (
+            <div className="space-y-2 rounded border p-3">
+              <p>
+                Proceeds are allocated in proportion to each method’s
+                acquisition-cost components, including any gain or loss. This is
+                a value-substitution assumption. The receipt is already counted
+                in the cash scenario; this does not add cash or change its
+                attribution.
+              </p>
+              <label className="block">
+                Resale receipt
+                <select
+                  aria-label={`Asset resale receipt ${i + 1}`}
+                  required
+                  className="block max-w-full border bg-background p-2"
+                  value={use.resale.transaction_id}
+                  onChange={(e) =>
+                    onChange(
+                      value.map((v, n) =>
+                        n === i
+                          ? {
+                              ...v,
+                              resale: {
+                                ...v.resale!,
+                                transaction_id: e.target.value,
+                              },
+                            }
+                          : v
+                      )
+                    )
+                  }
+                >
+                  <option value="">Choose a later receipt</option>
+                  {receipts.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                Proceeds attributed to the full disposal (currency units)
+                <input
+                  aria-label={`Asset resale proceeds ${i + 1}`}
+                  required
+                  inputMode="decimal"
+                  className="block w-full border bg-background p-2"
+                  value={use.resale.proceeds_input}
+                  onChange={(e) =>
+                    onChange(
+                      value.map((v, n) =>
+                        n === i
+                          ? {
+                              ...v,
+                              resale: {
+                                ...v.resale!,
+                                proceeds_input: e.target.value,
+                              },
+                            }
+                          : v
+                      )
+                    )
+                  }
+                />
+              </label>
+              <label className="block">
+                Evidence for full disposal and basis for proportional allocation
+                <textarea
+                  aria-label={`Asset resale basis ${i + 1}`}
+                  required
+                  maxLength={4096}
+                  className="block w-full border bg-background p-2"
+                  value={use.resale.basis}
+                  onChange={(e) =>
+                    onChange(
+                      value.map((v, n) =>
+                        n === i
+                          ? {
+                              ...v,
+                              resale: { ...v.resale!, basis: e.target.value },
+                            }
+                          : v
+                      )
+                    )
+                  }
+                />
+              </label>
+            </div>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -205,6 +324,64 @@ export function TraceAssetResultsPanel({
             {correctionMoney(item.unfunded_minor, item.currency)}.
           </p>
           <p className="text-sm">{item.limitation}</p>
+          {item.resale && (
+            <section
+              aria-label={`Conditional resale ${i + 1}`}
+              className="space-y-1 rounded border p-3"
+            >
+              <h5 className="font-semibold">
+                Conditional resale value substitution
+              </h5>
+              <p>
+                Selected receipt:{" "}
+                {correctionMoney(
+                  item.resale.receipt_minor,
+                  item.resale.currency
+                )}
+                ; attributed disposal proceeds:{" "}
+                {correctionMoney(
+                  item.resale.proceeds_minor,
+                  item.resale.currency
+                )}
+                .
+              </p>
+              <p>{item.resale.basis}</p>
+              {Object.entries(item.resale.allocated_by_claim).map(
+                ([claim, amount]) => (
+                  <p key={claim}>
+                    {claim}: {correctionMoney(amount, item.resale!.currency)} of
+                    disposal proceeds under this cost-share assumption
+                  </p>
+                )
+              )}
+              <p>
+                Outside attributed claims:{" "}
+                {correctionMoney(
+                  item.resale.outside_claims_minor,
+                  item.resale.currency
+                )}
+                ; of which unidentified:{" "}
+                {correctionMoney(
+                  item.resale.unidentified_minor,
+                  item.resale.currency
+                )}
+                ; unfunded:{" "}
+                {correctionMoney(
+                  item.resale.unfunded_minor,
+                  item.resale.currency
+                )}
+                .
+              </p>
+              <p>{item.resale.limitation}</p>
+              <Button
+                variant="outline"
+                onClick={() => onSource(item.resale!.transaction_id)}
+              >
+                Inspect resale receipt {i + 1}
+              </Button>
+            </section>
+          )}
+
           <Button
             variant="outline"
             onClick={() => onSource(item.transaction_id)}

@@ -117,7 +117,7 @@ def evaluate_ledger_trace(export, request: LedgerTraceInput):
     dates = [date.fromisoformat(indexed[key]['ordering_date']) for key in ordered]
     if dates != sorted(dates):
         raise LedgerSummaryError('Explicit order cannot reverse the recorded ordering dates.')
-    validate_asset_uses(request.asset_uses,indexed)
+    validate_asset_uses(request.asset_uses,indexed,ordered_transaction_ids=ordered)
     currency = scope['currency']
     movements = [Movement(transaction_id=UUID(key), ordering_date=dates[index], row_index=index,
         amount=Money(int(indexed[key]['amount_minor']), currency),

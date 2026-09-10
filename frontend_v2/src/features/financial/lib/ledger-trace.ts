@@ -142,7 +142,8 @@ export async function verifyTraceResponse(
       value.asset_uses[method] ?? [],
       request.asset_uses,
       scope.readings.map((r) => r.row),
-      result.draws
+      result.draws,
+      request.ordered_transaction_ids
     )
     const amounts = [
       ...Object.values(result.outcomes).flatMap((o) => [

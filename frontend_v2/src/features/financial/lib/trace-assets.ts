@@ -6,7 +6,29 @@ export interface TraceAssetUse {
   asset_label: string
   basis: string
   asset_amount_input?: string
+  resale?: {
+    transaction_id: string
+    proceeds_input: string
+    basis: string
+    allocation_basis: "proportional_cost_share"
+  }
 }
+const resaleInput = z.object({
+  transaction_id: z.string(),
+  proceeds_minor: minor,
+  basis: z.string().min(1),
+  allocation_basis: z.literal("proportional_cost_share"),
+})
+const resaleResult = resaleInput.extend({
+  receipt_minor: minor,
+  currency: z.string(),
+  allocated_by_claim: z.record(z.string(), minor),
+  outside_claims_minor: minor,
+  unidentified_minor: minor,
+  unfunded_minor: minor,
+  changes_cash_results: z.literal(false),
+  limitation: z.string(),
+})
 export const traceAssetDraw = z.object({
   transaction_id: z.string().optional(),
   amount: money.optional(),
@@ -22,6 +44,7 @@ export const traceAssetResults = z
       transaction_id: z.string(),
       asset_label: z.string(),
       basis: z.string(),
+      resale: resaleResult.optional(),
       amount_minor: minor,
       asset_amount_minor: minor.optional(),
       remaining_withdrawal_minor: minor.optional(),
@@ -50,7 +73,8 @@ export function verifyTraceAssets(
     amount_minor: string
     currency: string
   }>,
-  draws: z.infer<typeof traceAssetDraw>[]
+  draws: z.infer<typeof traceAssetDraw>[],
+  orderedTransactionIds: unknown = []
 ) {
   const uses = z
     .array(
@@ -60,12 +84,15 @@ export function verifyTraceAssets(
         basis: z.string(),
         asset_amount_minor: minor.nullable().optional(),
         allocation_basis: z.literal("proportional_share").optional(),
+        resale: resaleInput.optional(),
       })
     )
     .max(50)
     .parse(requested ?? [])
   if (actual.length !== uses.length)
     throw Error("Asset interpretation scope differs.")
+  const receipts = new Set<string>()
+  const order = z.array(z.string()).parse(orderedTransactionIds)
   const remaining = new Map<string, bigint[]>()
   const sequences = new Map<string, number>()
   for (const [i, asset] of actual.entries()) {
@@ -82,6 +109,8 @@ export function verifyTraceAssets(
     let remainingAmount =
       BigInt(row?.amount_minor ?? "0") -
       BigInt(use.asset_amount_minor ?? row?.amount_minor ?? "0")
+    let assetParts: bigint[] | undefined
+    let claimKeys: string[] = []
     let claims = Object.fromEntries(
       Object.entries(draw?.by_claim ?? {}).map(([claim, amount]) => [
         claim,
@@ -119,6 +148,8 @@ export function verifyTraceAssets(
       if (BigInt(use.asset_amount_minor!) > weights.reduce((n, v) => n + v, 0n))
         throw Error("Combined purchases exceed the remaining withdrawal.")
       const parts = proportionalParts(BigInt(use.asset_amount_minor!), weights)
+      assetParts = parts
+      claimKeys = keys
       const residual = weights.map((w, i) => w - parts[i])
       remaining.set(use.transaction_id, residual)
       remainingAmount = residual.reduce((n, v) => n + v, 0n)
@@ -173,6 +204,74 @@ export function verifyTraceAssets(
         BigInt(assetAmount ?? "0")
     )
       throw Error("Asset allocation differs from its source withdrawal.")
+    if (Boolean(asset.resale) !== Boolean(use.resale))
+      throw Error("Resale scope differs.")
+    if (use.resale && asset.resale) {
+      const sale = use.resale,
+        actualSale = asset.resale
+      const receipt = rows.find((r) => r.key === sale.transaction_id)
+      if (
+        !receipt ||
+        receipt.direction !== "credit" ||
+        receipt.currency !== row.currency ||
+        receipts.has(receipt.key) ||
+        !sale.basis.trim() ||
+        BigInt(sale.proceeds_minor) <= 0n ||
+        BigInt(sale.proceeds_minor) > BigInt(receipt.amount_minor) ||
+        order.indexOf(use.transaction_id) < 0 ||
+        order.indexOf(receipt.key) <= order.indexOf(use.transaction_id)
+      )
+        throw Error("Invalid resale receipt, scope or movement order.")
+      receipts.add(receipt.key)
+      if (!assetParts) {
+        if (
+          !draw.from_untainted ||
+          !draw.from_opening ||
+          draw.from_untainted.currency !== row.currency ||
+          draw.from_opening.currency !== row.currency
+        )
+          throw Error("Missing acquisition components.")
+        claimKeys = Object.keys(claims).sort(unicodeOrder)
+        assetParts = [
+          ...claimKeys.map((k) => BigInt(claims[k])),
+          BigInt(draw.from_untainted.minor_units),
+          BigInt(draw.from_opening.minor_units),
+          BigInt(draw.unidentified.minor_units),
+          BigInt(draw.unfunded.minor_units),
+        ]
+      }
+      if (assetParts.reduce((n, v) => n + v, 0n) !== BigInt(assetAmount!))
+        throw Error("Acquisition components do not conserve the purchase.")
+      const saleParts = proportionalParts(
+        BigInt(sale.proceeds_minor),
+        assetParts
+      )
+      const expectedClaims = Object.fromEntries(
+        claimKeys.map((key, index) => [key, String(saleParts[index])])
+      )
+      if (
+        actualSale.transaction_id !== sale.transaction_id ||
+        actualSale.proceeds_minor !== sale.proceeds_minor ||
+        actualSale.basis !== sale.basis ||
+        actualSale.allocation_basis !== sale.allocation_basis ||
+        actualSale.receipt_minor !== receipt.amount_minor ||
+        actualSale.currency !== row.currency ||
+        actualSale.unidentified_minor !== String(saleParts.at(-2)) ||
+        actualSale.unfunded_minor !== String(saleParts.at(-1)) ||
+        actualSale.outside_claims_minor !==
+          String(
+            saleParts.slice(claimKeys.length).reduce((n, v) => n + v, 0n)
+          ) ||
+        Object.keys(actualSale.allocated_by_claim).length !==
+          claimKeys.length ||
+        Object.entries(actualSale.allocated_by_claim).some(
+          ([key, value]) => expectedClaims[key] !== value
+        )
+      )
+        throw Error(
+          "Resale allocation differs from the explicit cost-share assumption."
+        )
+    }
   }
 }
 

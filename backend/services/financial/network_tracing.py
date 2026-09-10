@@ -91,7 +91,7 @@ def evaluate_network_trace(export, request):
             raise LedgerSummaryError('Forward tracing requires each selected receiving credit after its debit. Review same-day order; backward tracing is not assumed.')
         if positions[credit]<=positions[debit]:backward_pairs.append((debit,credit))
         used.update((debit,credit));receiving.add(credit);links[debit]=credit
-    validate_asset_uses(request.asset_uses,rows,links)
+    validate_asset_uses(request.asset_uses,rows,links,ordered_transaction_ids=ordered,transfer_credits=receiving)
     account_order=[]
     if backward_pairs:
         dependencies={a:set() for a in accounts}

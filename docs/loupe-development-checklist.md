@@ -11,7 +11,7 @@ Final scheduled handoff:7September2026. The authorized cutoff was
 that cutoff, confirmed by automation_update. No further automatic segments are
 expected. Earlier ACTIVE/time-window statements below are retained history.
 
-**Current overall: six completed workflows (2,3,4,5,6,8); four features retain
+**Current overall: seven completed workflows (2,3,4,5,6,8,9); three features retain
 outstanding work.** Completion here means the stated investigator-review,
 authoritative-view and recorded-coverage workflows, with their explicit evidence
 limitations preserved. The historical handoff tables below remain unchanged. See [the review and testing guide](loupe-review-2026-09-07.md).
@@ -188,10 +188,10 @@ feature below is complete at the start of this window.
    - [x] Ensure exported totals agree with the application. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [x] Record which evidence and decisions supported an exported result. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
-9. **Complete funds tracing — partial**
+9. **Complete funds tracing — completed within the explicit scenario scope below**
    - [x] One partial-withdrawal asset purchase with explicit proportional assumption, exact per-method allocations, preserved remaining withdrawal and unchanged cash results. Both synthetic browser forms/source/downloads pass; no financial writes.
    - [x] Multiple purchases from one withdrawal, with explicit amounts/bases and listed-order proportional allocation of remaining components. Exact residual checks prevent double counting; live12GBP+8GBP synthetic browser/source/download acceptance passes with cash results unchanged.
-   - [ ] Complete resale asset substitution with explicit evidence and method allocations.
+   - [x] Full-disposal resale value substitution with explicit later same-currency receipt, proceeds and evidence basis. Per-method proportional cost-share allocations preserve gains/losses and rounding; receipt reuse/overspend/earlier timing/paired transfers refused. Live source/download acceptance passes with cash results unchanged. No automatic reinvestment or ownership/legal determination.
    - [x] Connect the saved indirect-method scope (net worth, deposits, expenditure and cash-T) to case-file references and explicit investigator assumptions. Required review fields withhold incomplete results; exact calculations, source viewing, draft switching, download/restore and synthetic Workspace save/reopen verified. References and completed fields do not independently establish financial facts.
    - [x] Optional whole-withdrawal asset interpretation in single-account and network scenarios, with per-method allocation and source/basis retained; cash figures unchanged. Both browser forms/source/download verified with zero ledger writes. Partial purchases, ownership, valuation and resale substitution remain outside this calculation.
    - [x] Explicit backward timing, off by default and requiring a basis, with unchanged source dates and acyclic account dependency checks. Synthetic earlier-credit/later-debit browser scenario conserves each method, flags the backward hop and preserves source/download; circular backward dependencies are refused. Asset substitution remains separate.

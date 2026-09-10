@@ -1,3 +1,28 @@
+## Explicit resale value substitution — 10 September
+
+Both asset interpretation forms can link a full disposal to a later same-currency
+receipt, with an explicit proceeds amount, evidence basis and proportional
+acquisition-cost-share assumption. Exact allocation carries the method's purchase
+components into proceeds, including gains/losses and largest-remainder rounding.
+Receipts cannot exceed their recorded amount, precede the purchase, be reused for
+two assets, or be a selected internal-transfer credit. Source cash calculations and
+ledger proof classes are unchanged: output clearly states the receipt is already
+counted and no new deposit attribution is introduced automatically.
+
+Read-only three-account browser acceptance uses a synthetic12GBPpurchase and
+30.01GBPfull-disposal interpretation within a100GBPreceipt. FIFO/pro-rata/LIFO
+attribute30.01/15.01/0GBPof proceeds while cash remains80/90/100GBP. Both purchase
+and resale sources open; exact download and stale clearing pass. Screenshot
+inspected. Repeat `node scripts/check_local_asset_journey.cjs --resale`; no writers.
+
+Full gates:4248backend tests,957financial UI tests and production build pass.
+One additional paired-transfer-receipt refusal test passes; scoped lint is clean.
+This is an explicit full-disposal, same-currency scenario, not valuation, partial
+ownership disposal, automatic reinvestment, tax or legal-entitlement determination.
+Checklist feature9 now has all its recorded work items checked, with these limits.
+No push or deployment. Broader identity proposals, extraction identification and
+whole-workflow/AI acceptance remain open.
+
 ## Multiple purchases from one withdrawal — 10 September
 
 Both tracing forms accept multiple explicitly priced purchases from one selected

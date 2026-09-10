@@ -176,7 +176,8 @@ export async function verifyNetworkTrace(
       result.asset_uses,
       request.asset_uses,
       scope.rows,
-      Object.values(result.accounts).flatMap((a) => a.draws)
+      Object.values(result.accounts).flatMap((a) => a.draws),
+      request.ordered_transaction_ids
     )
     if (
       canonical(openings.map((o) => o.account_id).sort()) !==

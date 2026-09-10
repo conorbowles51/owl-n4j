@@ -226,3 +226,98 @@ it("allocates repeated withdrawals from remaining components without double coun
     )
   ).toThrow()
 })
+
+it("verifies resale cost-share arithmetic and refuses reused, earlier or inflated receipts", () => {
+  const purchase = {
+    ...use,
+    asset_amount_minor: "2",
+    allocation_basis: "proportional_share",
+    resale: {
+      transaction_id: "receipt",
+      proceeds_minor: "5",
+      basis: "Synthetic full disposal",
+      allocation_basis: "proportional_cost_share" as const,
+    },
+  }
+  const smallRows = [
+    { ...rows[0], amount_minor: "4" },
+    { ...rows[0], key: "receipt", direction: "credit", amount_minor: "7" },
+  ]
+  const smallDraw = {
+    ...draw,
+    amount: money("4"),
+    by_claim: { claim: money("2") },
+    from_untainted: money("2"),
+    from_opening: money("0"),
+    unidentified: money("0"),
+    unfunded: money("0"),
+  }
+  const sale = {
+    ...purchase.resale,
+    receipt_minor: "7",
+    currency: "GBP",
+    allocated_by_claim: { claim: "3" },
+    outside_claims_minor: "2",
+    unidentified_minor: "0",
+    unfunded_minor: "0",
+    changes_cash_results: false as const,
+    limitation: "Synthetic hypothesis",
+  }
+  const asset = {
+    ...item,
+    amount_minor: "4",
+    asset_amount_minor: "2",
+    remaining_withdrawal_minor: "2",
+    allocation_sequence: 1,
+    allocation_basis: "proportional_share" as const,
+    allocated_by_claim: { claim: "1" },
+    outside_claims_minor: "1",
+    unidentified_minor: "0",
+    resale: sale,
+  }
+  expect(() =>
+    verifyTraceAssets(
+      [asset],
+      [purchase],
+      smallRows,
+      [smallDraw],
+      ["withdrawal", "receipt"]
+    )
+  ).not.toThrow()
+  for (const changed of [
+    { allocated_by_claim: { claim: "4" }, outside_claims_minor: "1" },
+    { receipt_minor: "8" },
+    { basis: "Changed" },
+    { proceeds_minor: "8" },
+  ])
+    expect(() =>
+      verifyTraceAssets(
+        [{ ...asset, resale: { ...sale, ...changed } }],
+        [purchase],
+        smallRows,
+        [smallDraw],
+        ["withdrawal", "receipt"]
+      )
+    ).toThrow()
+  expect(() =>
+    verifyTraceAssets(
+      [asset],
+      [purchase],
+      smallRows,
+      [smallDraw],
+      ["receipt", "withdrawal"]
+    )
+  ).toThrow()
+  expect(() =>
+    verifyTraceAssets(
+      [
+        asset,
+        { ...asset, allocation_sequence: 2, remaining_withdrawal_minor: "0" },
+      ],
+      [purchase, purchase],
+      smallRows,
+      [smallDraw],
+      ["withdrawal", "receipt"]
+    )
+  ).toThrow()
+})

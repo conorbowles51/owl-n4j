@@ -199,8 +199,21 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
         ...a,
         amount_minor: correctionMinor(amount_input, inputs.currency),
       })),
-      asset_uses: assetUses.map(({ asset_amount_input, ...use }) => ({
+      asset_uses: assetUses.map(({ asset_amount_input, resale, ...use }) => ({
         ...use,
+        ...(resale
+          ? {
+              resale: {
+                transaction_id: resale.transaction_id,
+                basis: resale.basis,
+                allocation_basis: resale.allocation_basis,
+                proceeds_minor: correctionMinor(
+                  resale.proceeds_input,
+                  inputs.currency
+                ),
+              },
+            }
+          : {}),
         ...(asset_amount_input === undefined
           ? {}
           : {
@@ -349,6 +362,16 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
               setResult(null)
               setError("")
             }}
+            receipts={rows
+              .filter(
+                (r) =>
+                  r.row.direction === "credit" &&
+                  BigInt(r.row.amount_minor) > 0n
+              )
+              .map(({ row: r }) => ({
+                id: r.key,
+                label: `${r.ordering_date} · ${correctionMoney(r.amount_minor, inputs.currency)}`,
+              }))}
             withdrawals={rows
               .filter(
                 (r) =>
