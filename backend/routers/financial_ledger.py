@@ -31,7 +31,7 @@ from datetime import date
 from typing import Optional, Literal, Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, File, UploadFile
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
@@ -212,6 +212,24 @@ class TraceSupportDownload(BaseModel):
     model_config = ConfigDict(extra='forbid')
     scenarios: list[Annotated[str, Field(strict=True, min_length=1, max_length=16 * 1024 * 1024)]] = Field(min_length=1, max_length=8)
     privilege_marking: Literal['unmarked', 'confidential', 'privileged_confidential'] = 'unmarked'
+
+
+@router.post('/ledger-export-comparison')
+async def compare_saved_ledger_exports(case_id: UUID = Query(...), before: UploadFile = File(...), after: UploadFile = File(...)):
+    from starlette.concurrency import run_in_threadpool
+    from services.financial.export_comparison import compare_ledger_exports, MAX_ARCHIVE_BYTES
+    try:
+        first = await before.read(MAX_ARCHIVE_BYTES + 1)
+        second = await after.read(MAX_ARCHIVE_BYTES + 1)
+        return await run_in_threadpool(compare_ledger_exports, first, second, expected_case_id=case_id)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Saved ledger export comparison failed')
+        raise HTTPException(status_code=500, detail='Saved exports could not be compared.')
+    finally:
+        await before.close()
+        await after.close()
 
 
 @router.post('/trace-support-export')

@@ -1,3 +1,30 @@
+## Verified saved-export comparison — 10 September
+
+Main ledger export panel now accepts two saved Loupe ZIPs for read-only comparison.
+All declared members (snapshot, HTML, optional PDF/support/source bytes) are verified
+against the manifest. Duplicate/unsafe paths, unlisted members, case mismatches and
+wrong digests/sizes fail; uploaded files are closed, never added to evidence storage.
+Scope changes are separated from captured-content changes and preparation/packaging.
+Stable reading/decision/review IDs and bounded exact field paths identify differences;
+manifest paths also explain report/version/packaging changes. Original copies remain
+untouched. Changing a selected file clears the prior result; the complete comparison
+can be downloaded. A duplicate control in the compact table export was removed.
+
+4313financial backend and1002financial UI tests pass, with production build and
+scoped lint. Final diagnostic metadata additions pass7focused backend checks.
+128live authorization checks pass; temporary user removed. Real full104-reading
+export versus a fresh account-filtered capture correctly reports a scope change,
+61absent readings and0changed readings. Browser download is exact, layout inspected,
+stale result clears and0financial writes. Offline self-comparison and the same real
+filtered comparison also pass. Original source files were not modified.
+
+Guide: docs/loupe-export-comparison.md. Repeatable browser check:
+scripts/check_local_export_comparison.cjs. Current runtime session81574,
+/tmp/loupe-export-comparison-runtime.out, predates the final diagnostic-only wording
+and manifest-path fields; restart before final runtime check. No provider or push.
+Remaining full custody/audit-spine, independent corpus/release gate and broader
+extraction/live-provider acceptance remain explicit; continue remaining development.
+
 ## Provider request provenance and regression repair — 10 September
 
 Model-assisted PDF reviews now retain the actual SDK arguments / HTTP JSON body,

@@ -1981,3 +1981,6 @@ __all__ += ["build_trace_support_archive"]
 
 from services.financial.case_financial_history import capture_case_financial_history
 __all__ += ["capture_case_financial_history"]
+
+from services.financial.export_comparison import compare_ledger_exports, read_verified_ledger_archive
+__all__ += ["compare_ledger_exports", "read_verified_ledger_archive"]
