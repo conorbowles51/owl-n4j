@@ -192,6 +192,7 @@ feature below is complete at the start of this window.
    - [x] Preserve the basis for each tracing result so it can be reviewed. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 10. **Test the complete application locally — partial**
+    - [x] Fresh current-schema real PostgreSQL concurrency and injected-failure acceptance: two saves/one batch, two finalizers/one receipt, full rollback after flush, idempotent retry and sealed review. Ten database guards and14subsequent application/analysis/export checks pass on the new synthetic case.
     - [x] Integrated4186backend/917financialUI/build gate and87live access checks across15read/scenario and9edit endpoints. Temporary local viewer can calculate conditional scenarios, cannot edit, and loses access immediately on membership removal; test user cleaned up.
     - [x] First real-PDF bounded UI journey: upload/local preparation → select two page4 rows → visually checked review/OCR description correction → finalize → exact export verification.0included/2P3excluded, original unchanged. Fullstatement accuracy and candidate-history export remain.
     - [x] Integrated post-migration baseline:3,827backend tests,1,032frontend unit tests,11Chromium tests, TypeScript and full ESLint pass (09c341c). Full real-PDF/AI journey and all broader features remain incomplete.

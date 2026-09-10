@@ -1,3 +1,22 @@
+## Current-schema save/finalization resilience — 10 September, about09:27Dublin
+
+Fresh labelled synthetic casee9cafc92-85a7-497c-aec8-049157e823d0 verifies actual
+PostgreSQL contention: two source-save waiters produce one immutable candidate
+batch; injected failure after transaction/link flush leaves no document/receipt;
+two finalization waiters produce one receipt and identical transaction IDs.
+Repeated finalization returns that receipt, preserves two1234minorGBP P3debits,
+and finalized review cannot reopen. Ten current PostgreSQL receipt/source/seal
+and downgrade guards pass using rolled-back fixture rows. No existing case edits.
+
+All14local application/service/analysis/export consistency checks then pass for
+that freshly finalized case. Current-schema resilience thus reaches the same
+working totals and captured export. Reports current-resilience-fixture.json,
+current-resilience-check.json and current-resilience-integration.json retained.
+Guarded check_local_current_resilience.py COMPLETED; do not rerun the writer.
+Underlying older scripts now accept optional report names so older acceptance
+reports remain unchanged. Read-only local_app.py check --case-id may repeat.
+No push. Runtime26460 unchanged. Broader extraction and UI acceptance continue.
+
 ## Source-origin visibility — 10 September, about09:24Dublin
 
 Source row selection now shows the stored page text origin: PDF text layer, OCR,

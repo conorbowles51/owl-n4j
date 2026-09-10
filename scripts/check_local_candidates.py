@@ -29,7 +29,7 @@ from services.financial.pdf_geometry_candidates import pdf_grid_source_revision
 from services.financial.pdf_tables import read_tables
 
 
-def main():
+def main(report_name="candidate-check.json"):
     import pymupdf
     application = "loupe-candidate-check-" + uuid4().hex[:12]
     engine = create_engine("postgresql+psycopg://loupe_local:loupe_local_dev@127.0.0.1:55434/loupe_local",
@@ -137,7 +137,7 @@ def main():
     summary = dict(case_id=str(case_id), mapping_id=str(mapping_id), competing_writers=2,
         observed_lock_waiters=waiting, mappings=1, candidates=2, ledger_transactions=0,
         immutable_update_triggers="passed", authenticated_http_assessment="passed", authenticated_http_creation_retry="passed")
-    (ROOT / "data/local-runtime/candidate-check.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (ROOT / "data/local-runtime" / report_name).write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
     engine.dispose()
 

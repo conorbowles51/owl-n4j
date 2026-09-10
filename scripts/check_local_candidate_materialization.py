@@ -23,9 +23,9 @@ from services.financial.candidate_store import CandidateStoreError
 from services.financial.decisions import Actor
 
 
-def main():
-    create_fixture()
-    fixture = json.loads((ROOT / "data/local-runtime/candidate-check.json").read_text())
+def main(fixture_report="candidate-check.json", result_report="candidate-materialization-check.json"):
+    create_fixture(report_name=fixture_report)
+    fixture = json.loads((ROOT / "data/local-runtime" / fixture_report).read_text())
     case_id, mapping_id = UUID(fixture["case_id"]), UUID(fixture["mapping_id"])
     application = "loupe-materialization-" + uuid4().hex[:12]
     engine = create_engine("postgresql+psycopg://loupe_local:loupe_local_dev@127.0.0.1:55434/loupe_local",
@@ -106,7 +106,7 @@ def main():
         else: raise AssertionError("Finalized review reopened")
     report = dict(**repeated,
                   concurrent_waiters=waiting, failure_rolled_back=True)
-    (ROOT / "data/local-runtime/candidate-materialization-check.json").write_text(json.dumps(report, indent=2))
+    (ROOT / "data/local-runtime" / result_report).write_text(json.dumps(report, indent=2))
     print("PASS: atomic rollback; two concurrent waiters; one receipt; two exact P3 transactions; retry and review seal.")
     print(json.dumps(report, indent=2))
     engine.dispose()
