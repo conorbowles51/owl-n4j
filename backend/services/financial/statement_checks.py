@@ -1,7 +1,7 @@
 """Current statement balance checks, without changing stored findings or admission."""
 from datetime import datetime, timezone
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,14 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25, include_nativ
         .where(FinancialStatementPeriod.case_id == case_id)
         .order_by(FinancialStatementPeriod.period_start.asc().nullslast(), FinancialStatementPeriod.id)
         .offset(offset).limit(limit + 1)))
+    # Count zero readings for the same admitted population, in one bounded
+    # query for this page. They remain source readings, not nonzero payments.
+    zero_counts = dict(session.execute(select(
+        FinancialTransaction.statement_period_id, func.count())
+        .where(FinancialTransaction.statement_period_id.in_([p.id for p in periods[:limit]]),
+               FinancialTransaction.ledger_status == 'admitted',
+               FinancialTransaction.amount_minor == 0)
+        .group_by(FinancialTransaction.statement_period_id)).all()) if periods else {}
     items = []
     native_by_document = {}
     for period in periods[:limit]:
@@ -51,7 +59,7 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25, include_nativ
             recorded_status=period.reconciliation_status,
             recorded_at=period.reconciled_at.isoformat() if period.reconciled_at else None,
             status='refused', reason=None, amounts=None, counted_rows=None, excluded_rows=None,
-            independent=None, printed_totals=None, printed_totals_error=None, delta_hints=None)
+            independent=None, zero_amount_rows=None, printed_totals=None, printed_totals_error=None, delta_hints=None)
         try:
             outcome = evaluate_identity(opening=read_opening(period), closing=read_closing(period),
                 totals=total_transactions(session, period_id=period.id, currency=period.currency), currency=period.currency)
@@ -61,7 +69,7 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25, include_nativ
                     ('debits', outcome.totals.debits), ('computed_closing', outcome.computed_closing),
                     ('closing', outcome.printed_closing), ('difference', outcome.delta))},
                 counted_rows=outcome.totals.counted, excluded_rows=outcome.totals.excluded_count,
-                independent=outcome.independent)
+                independent=outcome.independent, zero_amount_rows=zero_counts.get(period.id, 0))
             item["delta_hints"] = statement_delta_hints(session, period, outcome)
         except (MoneyError, PeriodError, ReconciliationError) as exc:
             item['reason'] = str(exc)

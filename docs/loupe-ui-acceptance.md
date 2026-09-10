@@ -141,3 +141,18 @@ No push. Broader asset substitution, extraction and integrated acceptance remain
 ## Reviewed payment identity acceptance —10September
 
 - [x] Counterparties now includes explicit payment identity review, source navigation, retained paged history and optional reviewed-identity amount charts. Synthetic two-row save/reload/source/chart/hash-verified capture passes with unchanged P3 and raw labels. See latest build-state entry for scope and repeatable read-only checks.
+
+## Full-document practical acceptance —10September
+
+- [x] Fresh UI upload/preparation of the108-page suppliedPDF; all27printed periods
+  finalized with104reviewed readings, including62explicit zero-charge lines.
+  Header endings3539/8441kept separate. Dates/amounts/locators remain source-bound;
+  unknown interest dates retained and P3 unchanged. Public APIs perform reviews;
+  this does not claim104manual browser-form submissions or automatic extraction.
+- [x] Full browser verifies ledger50/50/4pagination, statement25/2pagination,
+  all27balances, exact working totals and verified0. Zero-count explanation visible.
+- [x] Full original-inclusive report retains all104reviews/27control scopes with
+  independently checked exact fields and file/report hashes. Wider review-reason
+  columns reduce report108→90pages; rendered opening/middle/tail inspected.
+
+See build-state for guarded writer and repeatable read-only script names.

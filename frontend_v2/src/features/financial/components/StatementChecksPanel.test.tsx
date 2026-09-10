@@ -175,3 +175,18 @@ it("requests fresh native controls explicitly and preserves unavailable reasons"
   ).toBeInTheDocument()
   expect(String(fetch.mock.calls.at(-1)?.[0])).toContain("include_native=true")
 })
+
+it("distinguishes printed zero readings from nonzero payments", async () => {
+  mount({ ...answer, items: [{ ...period, zero_amount_rows: 1 }] })
+  open()
+  expect(
+    await screen.findByText(/Includes 1 zero-amount readings/)
+  ).toHaveTextContent("not nonzero payments")
+})
+it("refuses a zero count larger than the admitted population", async () => {
+  mount({ ...answer, items: [{ ...period, zero_amount_rows: 3 }] })
+  open()
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Balance checks unavailable"
+  )
+})

@@ -27,6 +27,7 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Full supplied108-page document reviewed/finalized through a fresh UI upload and public APIs:27balanced printed periods,104source readings (42nonzero,62explicit zeros), two separate printed-header account perspectives. Browser verifies all ledger/statement pages, exact totals and source-inclusive90-page report; originals/history/hashes preserved. Automatic extraction, wider evidence completeness and account identity remain unconfirmed.
    - [x] Printed-control source finder nominates exact labelled balances/totals for inspection, preserves repeated alternatives and stops at intervening headings. Real opening/closing cells verified; amounts/dates are not filled automatically.
    - [x] Source selection exposes recorded PDF-text/OCR/unknown origin with the same provenance resolution as saved cell binding. Both supplied PDFs checked in the browser; overlapping metadata remains unknown, no automatic confirmation.
    - [x] Automatic paired debit/credit column nominations require coherent exact headers, retain each header and amount locator, and leave conflicting layouts unresolved. Synthetic stored-grid and UI tests plus unchanged real108-page scan verified; no automatic direction confirmation or ledger admission.
@@ -93,6 +94,7 @@ feature below is complete at the start of this window.
    - [x] Source date assessment: display alternative numeric dates, unresolved years/centuries, invalid dates and original citations without selecting a reading (46a3417). Automatic date/context resolution and account uncertainty work remain.
 
 3. **Complete financial accuracy checks — complete**
+   - [x] Statement checks explicitly distinguish counted zero-amount source lines from nonzero payments; full supplied-file browser verifies62zeros across27periods without changing amounts or eligibility.
    - [x] Explain arithmetic discrepancy leads with source navigation, directional checks, bounded screening and explicit unresolved cases. Synthetic native correction/restoration browser journey and captured correction audits verified; leads never assert the cause or change classification.
    - [x] Source-bound printed total money in/out saved through PDF review and drafts, separately checked against current admitted rows, compared before/after corrections and retained in history/reports. Synthetic browser100in/30out/70closing passes; proposed30.01out shows1minor discrepancy. Older receipt identities preserved. Native format controls remain separate.
    - [x] First complete printed statement in the supplied 108-page PDF: payment, purchase and undated interest reconcile opening $6,700.18 to closing $6,637.96 owed. Other statements remain outside this acceptance (10 September).

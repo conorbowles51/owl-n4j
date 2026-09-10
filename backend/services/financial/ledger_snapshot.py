@@ -186,8 +186,9 @@ def render_ledger_report(snapshot):
         except (MoneyError, ValueError, TypeError):
             return value + ' minor units (unscaled: unsupported currency)'
 
-    def table(headers, rows):
-        return '<table><thead><tr>' + ''.join('<th>' + text(h) + '</th>' for h in headers) + (
+    def table(headers, rows, widths=None):
+        columns = ('<colgroup>' + ''.join('<col style="width:' + str(width) + '%">' for width in widths) + '</colgroup>') if widths else ''
+        return '<table>' + columns + '<thead><tr>' + ''.join('<th>' + text(h) + '</th>' for h in headers) + (
             '</tr></thead><tbody>' + ''.join('<tr>' + ''.join('<td>' + text(v) + '</td>' for v in row)
             + '</tr>' for row in rows) + '</tbody></table>')
 
@@ -273,7 +274,7 @@ def render_ledger_report(snapshot):
         for state in history['review_states']:
             parts += ['<article><h3>Candidate ' + text(state['candidate_id']) + '</h3>']
             for event in state['history']:
-                parts += [table(['Sequence','Status','Reason','Actor'], [[event['sequence'],event['status'],event['reason'],event['actor'].get('name') or event['actor'].get('email')]]),details('Reviewed values and recorded decision',event)]
+                parts += [table(['Sequence','Status','Reason','Actor'], [[event['sequence'],event['status'],event['reason'],event['actor'].get('name') or event['actor'].get('email')]], widths=[12, 12, 56, 20]),details('Reviewed values and recorded decision',event)]
             parts += ['</article>']
         for finalization in history['finalizations']:
             scopes = finalization['snapshot'].get('manifest', {}).get('statement_scopes', [])

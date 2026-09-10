@@ -47,6 +47,7 @@ const item = z
     reason: z.string().nullable(),
     amounts: amounts.nullable(),
     counted_rows: count.nullable(),
+    zero_amount_rows: count.nullable().optional(),
     excluded_rows: count.nullable(),
     independent: z.boolean().nullable(),
     native_controls: currentNativeControls.nullable().optional(),
@@ -67,6 +68,8 @@ const item = z
       v.excluded_rows === null ||
       v.independent === null
     )
+      return false
+    if (v.zero_amount_rows != null && v.zero_amount_rows > v.counted_rows)
       return false
     const a = v.amounts
     if (v.status === "unavailable")
@@ -293,6 +296,14 @@ export function StatementChecksPanel({
                       {period.excluded_rows} other rows excluded from this
                       arithmetic.
                     </p>
+                    {period.zero_amount_rows != null &&
+                      period.zero_amount_rows > 0 && (
+                        <p>
+                          Includes {period.zero_amount_rows} zero-amount
+                          readings; these preserve printed lines and are not
+                          nonzero payments.
+                        </p>
+                      )}
                     <p>
                       {period.independent
                         ? "Both balances are sourced from printed statement controls. Ledger signs reflect the recorded balance convention."

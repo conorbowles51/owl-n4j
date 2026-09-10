@@ -24,6 +24,20 @@ class StatementCheckTests(fixture.DuplicateTestCase):
         self.assertEqual(prior, (period.reconciliation_status, period.reconciled_at, doc.proof_class, doc.status))
         self.assertFalse(self.db.dirty or self.db.new)
 
+    def test_zero_readings_count_only_current_admitted_rows_without_changing_money(self):
+        self.make_copy(rows=((0, 'zero-a'), (1234, 'positive'), (0, 'zero-b')))
+        item = self.read()['items'][0]
+        self.assertEqual(item['zero_amount_rows'], 2)
+        self.assertEqual(item['counted_rows'], 3)
+        self.assertEqual(item['amounts']['credits'], '1234')
+        row = self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.amount_minor == 0))
+        row.ledger_status = 'superseded'; self.db.commit()
+        item = self.read()['items'][0]
+        self.assertEqual(item['zero_amount_rows'], 1)
+        self.assertEqual(item['counted_rows'], 2)
+        self.assertEqual(item['excluded_rows'], 1)
+        self.assertEqual(item['amounts']['credits'], '1234')
+
     def test_missing_balance_is_not_zero(self):
         self.make_copy(opening=BalanceObservation.absent())
         item = self.read()['items'][0]

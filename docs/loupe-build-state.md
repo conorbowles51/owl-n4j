@@ -1,3 +1,43 @@
+## Full supplied108-page document acceptance —10September, about10:23Dublin
+
+Fresh UI upload/preparation casea2dae109-477c-4526-8642-c6a358a73479,
+file91705496-fdcc-4ab4-b971-6463d39d4fca; originalSHAf9292c6e6c360b0bb6dc1534019a682bc0e0f04f656a36f723fff60f64a27c7b unchanged.
+Read-only inventory found27printed periods; transaction-page contact sheets were
+visually inspected. The header changes from3539to8441; these remain TWO separate
+provisional perspectives, not an identity/ownership merge. Fresh prepared cells
+were rebound before every public-API mapping/review and printed control.
+
+47saved batches,104reviewed readings:23dated and81undated charge lines, including
+62explicit printed zeros (42nonzero readings). Separate printed posting and
+transaction dates retained where present; interest has statement-end ordering
+only. All27printed date/opening/closing scopes finalized atomically through the
+public API, with P3 and incomplete-wider-evidence limitations retained.
+This is full-file acceptance of the supported reviewed rows, not automatic
+extraction certification, complete historical records or resolved account identity.
+
+Read-only browser verifies ledger pages50/50/4, statement pages25/2 with all27
+balanced, working credits766541/debits120934minorUSD, verified0, source-inclusive
+PDF export. Independent verifier matches all104amounts/dates/sourcepages/account
+assignments,104candidate originals/decisions and27sealed controls; JSON/HTML/PDF
+and original file hashes verified. Original PDFs unchanged.14local integration
+checks pass. Reports full-document-ui-check.json, full-document-export-verification.json,
+full-document-runtime-check.json and full-document-review-check.json retained.
+
+Full-file use exposed two presentation issues, now fixed: statement checks count
+and explicitly identify admitted zero-amount readings (one grouped query/page);
+PDF review reasons receive wider columns, reducing this report108→90pages while
+retaining all content.11statement backend tests,55snapshot/statement-scope tests,
+12statement UI tests, TypeScript/scopedlint pass. Updated full browser acceptance
+passes with62zero readings visible. Report opening/middle/tail visually checked.
+
+Guarded writers check_local_pdf_intake_ui.cjs full-document and
+check_local_full_document_review.py (including --finalize) are COMPLETED: never
+rerun. Read-only check_local_full_document_analysis.cjs and
+verify_local_full_document_export.py may repeat. Backend13050,
+log/tmp/loupe-full-document-final-runtime.out. No push. Continue the56-page PDF,
+remaining automatic import/identity work and saved UI; external AI401 remains
+unresolved and must not be retried against the same key.
+
 ## Reviewed payment counterparties — 10 September, about09:59Dublin
 
 New investigator identity directory under Counterparties links1–100explicit
