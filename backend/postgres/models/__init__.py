@@ -1,3 +1,4 @@
+from postgres.models.financial_audit import FinancialAuditEvent
 # Postgres/models/__init__.py
 from postgres.models.user import User
 from postgres.models.case import Case
@@ -91,6 +92,7 @@ from postgres.models.workspace import (
 )
 
 __all__ = [
+    "FinancialAuditEvent",
     "FinancialStatementReviewDraft", "FinancialCandidateMapping", "FinancialExtractionCandidate", "FinancialCandidateReview", "FinancialCandidateFinalization", "FinancialCandidateTransaction",
     "User", "Case", "CaseMembership", "RejectedMergePair",
     "CostRecord", "CostJobType", "AIPricingRate", "CaseDeadline",

@@ -1,3 +1,30 @@
+## Prospective financial audit chain — 10 September
+
+Migration20260910_financial_audit_chain installs per-case append-only SHA-256
+history for adjudication/mapping/review/finalization inserts and model nomination /
+ingestion-run inserts and updates. The database records events in the originating
+transaction and serializes appends; updates/deletes/truncation and inconsistent
+appends are rejected. Exact PostgreSQL-produced payload text is retained, with
+previous hash as32bytes prepended for hashing. Private run config/errors/notes
+are represented by a digest. Actors are copied from source records, with missing
+identity and run-initiator-versus-update-actor limits explicit.
+
+No historical backfill. Wider case history exports verify and include the chain;
+HTML/PDF show the head/count/limits and expert support indexes verification.
+Offline verify_financial_audit_export.py checks ZIP members and chain, optionally
+against an independently retained head. Full application custody/merge/Workspace/
+export coverage and external timestamps remain incomplete; see loupe-audit-chain.md.
+
+4327financial backend tests pass. Disposable PostgreSQL schema acceptance checks
+all six targets, concurrent writers, rollback, injected audit failure, mutation
+rejection and case isolation, then removes its synthetic schema. Actual stored PDF
+cells with a simulated nomination produce exactly3verified events and fully roll
+back. Read-only pending real-PDF browser export retains12candidates/0ledger rows
+and correctly0prospective events;4-page PDF layout and all ZIP hashes verified.
+No existing case/source mutations, provider calls or push. Local migration applied;
+backend session66743 at /tmp/loupe-audit-runtime.out. The final plain-language
+verification-label change requires the next backend restart to appear live.
+
 ## Reference-review reconciliation and measurement binding — 10 September
 
 Two-reader reference records now compare exact source hashes, row IDs and fields.

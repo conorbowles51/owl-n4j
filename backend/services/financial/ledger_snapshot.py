@@ -363,6 +363,14 @@ def render_ledger_report(snapshot):
             '<p>' + text(case_history['limitation']) + '</p>',
             '<p>Exact wider history is retained in the accompanying HTML and JSON. It is not added to the filtered ledger totals.</p>',
             details('Full recorded case financial decision and PDF review appendix', case_history)]
+        chain = case_history.get('audit_chain')
+        if chain:
+            checked = chain['verification']
+            parts += ['<h3>Recorded financial audit chain</h3>',
+                '<p>Recorded events: ' + text(checked['event_count']) + '. Verification: ' + text('Verified recorded chain' if checked['status'] == 'verified_recorded_chain' else 'No events recorded since audit installation') + '.</p>',
+                '<p>Chain head SHA-256: <code>' + text(checked['head_sha256']) + '</code>.</p>',
+                '<p>' + text(chain['limitation']) + '</p>']
+
     parts += ['<h2>Verification</h2><p>This report is derived only from the bundled ledger-snapshot.json. '
         'Its SHA-256 is <code>' + text(snapshot.sha256) + '</code>; its UTF-8 size is ' + text(snapshot.byte_count) +
         ' bytes. The manifest separately identifies the report bytes.</p></body></html>']

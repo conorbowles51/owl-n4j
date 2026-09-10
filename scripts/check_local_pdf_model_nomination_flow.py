@@ -22,6 +22,8 @@ with engine.connect() as connection:
     outer=connection.begin()
     try:
         with Session(bind=connection,join_transaction_mode='create_savepoint') as db:
+            from services.financial.audit_chain import capture_financial_audit_chain
+            audit_before=capture_financial_audit_chain(db,case_id=case)['verification']['event_count']
             before=db.scalar(select(func.count()).select_from(FinancialTransaction).where(FinancialTransaction.case_id==case))
             source=read_candidate_source(db,case_id=case,evidence_file_id=file,page_number=4)
             row=next(r for r in source['rows'] if r['row_index']==40)
@@ -56,6 +58,9 @@ with engine.connect() as connection:
             assert model['result']['raw_response']==run['result']['raw_response']
             assert model['request']['system_context']==run['request']['system_context']
             Path('/tmp/loupe-simulated-nomination-response.json').write_text(json.dumps(run))
+            chain=capture_financial_audit_chain(db,case_id=case)
+            assert chain['verification']['event_count']==audit_before+3
+            assert {json.loads(entry['payload_text'])['source_id'] for entry in chain['entries'][audit_before:]}=={str(attempt),saved['id']}
             assert len(calls)==1
             print('PASS: real source cells; simulated transport once; durable result; pending review; retained provenance and export snapshot; idempotent save; unchanged ledger')
     finally: outer.rollback()

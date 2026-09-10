@@ -1987,3 +1987,6 @@ __all__ += ["compare_ledger_exports", "read_verified_ledger_archive"]
 
 from services.financial.reference_reviews import reconcile_reference_reviews, evaluation_from_reference_reviews, parse_review_json
 __all__ += ["reconcile_reference_reviews", "evaluation_from_reference_reviews", "parse_review_json"]
+
+from services.financial.audit_chain import capture_financial_audit_chain, verify_financial_audit_chain
+__all__ += ["capture_financial_audit_chain", "verify_financial_audit_chain"]

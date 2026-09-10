@@ -13,6 +13,9 @@ with ZipFile('/tmp/loupe-case-review-export.zip') as archive:
     assert hashlib.sha256(raw).hexdigest() == manifest['document_sha256']
     history = document['case_financial_history']
     reviews = history['pdf_review_history']
+    chain = history['audit_chain']
+    assert chain['verification']['event_count'] == 0 and chain['verification']['status'] == 'no_recorded_events'
+    assert chain['entries'] == []  # Older reviews are not backfilled into prospective history.
     assert history['case_id'] == document['ledger']['case_id'] == '3db2ae11-da7f-405a-a087-b465bdc9f12d'
     assert manifest['case_financial_history_included'] is True
     assert not document['ledger']['readings'] and not document['pdf_review_history']['candidates']
@@ -26,6 +29,7 @@ with ZipFile('/tmp/loupe-case-review-export.zip') as archive:
     pdf = archive.read('ledger-report.pdf')
     reader = PdfReader(io.BytesIO(pdf))
     assert 'Wider case financial review history' in ''.join(page.extract_text() for page in reader.pages)
+    assert 'Recorded financial audit chain' in ''.join(page.extract_text() for page in reader.pages)
     Path('/tmp/loupe-case-review-report.pdf').write_bytes(pdf)
     print(json.dumps(dict(pages=len(reader.pages), ledger_readings=0, wider_pending_candidates=12,
                          all_hashes_verified=True, financial_writes=0)))

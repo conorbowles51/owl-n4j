@@ -28,6 +28,7 @@ def build_expert_support(document, *, snapshot_sha256, code_version=None, source
         human_decisions=dict(status='captured_scope' if document.get('export_ready') else 'unavailable',
             wider_case_financial_history=dict(status='included',snapshot_reference='case_financial_history',
                 decision_count=len(document['case_financial_history']['decisions']),
+                audit_chain_verification=(document['case_financial_history'].get('audit_chain') or {}).get('verification'),
                 pdf_review_count=len(document['case_financial_history']['pdf_review_history']['reviews']),
                 limitation=document['case_financial_history']['limitation']) if 'case_financial_history' in document else dict(status='not_selected'),
             recorded_decisions=len(document.get('decisions',[])),pdf_reviews=len(history['reviews']) if history else 0,
