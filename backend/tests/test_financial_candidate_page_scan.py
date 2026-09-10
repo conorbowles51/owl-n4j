@@ -47,3 +47,24 @@ class PageScanTests(unittest.TestCase):
         source['rows'].insert(0,row(2,'Date','Amount','Balance'))
         choice,reason=propose_scan_columns(source,'GBP');self.assertIsNone(reason);self.assertEqual(choice['amount_column'],1)
         self.assertEqual(choice['header_support'],2)
+
+    def test_undated_charge_labels_preserve_exact_cells_and_unknown_date(self):
+        from services.financial.candidate_page_scan import suggest_undated_charges
+        def row(i,*values):return dict(row_index=i,cells=[dict(column_index=n,expected_text=t,locator={'page':1}) for n,t in enumerate(values)])
+        source=dict(rows=[row(0,'Interest Charge on Purchases','$56.16'),row(1,'Total Interest for This Period','$56.16'),row(2,'Purchases','9.90%','$6679.78','$56.16'),row(3,'Late fee','2026-01-01','$10.00'),row(4,'Annual Fee','$20.00','$30.00')])
+        hints=suggest_undated_charges(source,'USD')
+        self.assertEqual([h['row_index'] for h in hints],[0,4])
+        self.assertEqual(hints[0]['amount_sources'][0],source['rows'][0]['cells'][1])
+        self.assertTrue(hints[0]['date_unknown'])
+        self.assertEqual(len(hints[1]['amount_sources']),2)
+        self.assertIn('no amount or date is selected',hints[1]['reason'])
+
+    def test_undated_screen_survives_unavailable_dated_columns(self):
+        from services.financial.candidate_page_scan import suggest_undated_charges
+        with patch('services.financial.candidate_page_scan.propose_scan_columns',return_value=(None,'No dates')), patch('services.financial.candidate_page_scan.suggest_undated_charges',return_value=[{'row_index':0}]):
+            result=self.scan(auto_columns=True,date_column=None,amount_column=None)
+            self.assertFalse(result['pages'][0]['checked'])
+            self.assertEqual(result['undated_charge_rows'],1)
+            self.assertEqual(result['pages'][0]['undated_checked_rows'],2)
+            with patch('services.financial.candidate_page_scan.MAX_SUGGESTED_ROWS',0):
+                with self.assertRaises(PdfMappingError):self.scan(auto_columns=True,date_column=None,amount_column=None)

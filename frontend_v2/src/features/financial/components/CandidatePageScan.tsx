@@ -19,6 +19,7 @@ const resultSchema = z.object({
   applied: z.literal(false),
   limitation: z.string(),
   suggested_rows: index,
+  undated_charge_rows: index.default(0),
   pages: z
     .array(
       z.object({
@@ -36,6 +37,18 @@ const resultSchema = z.object({
           .optional(),
         other_tables: index.optional(),
         source_revision: z.string().optional(),
+        undated_checked_rows: index.optional(),
+        undated_charges: z
+          .array(
+            z.object({
+              row_index: index,
+              label_source: cell,
+              amount_sources: z.array(cell).min(1),
+              date_unknown: z.literal(true),
+              reason: z.string(),
+            })
+          )
+          .default([]),
         suggestions: z.array(
           z.object({ row_index: index, date_source: cell, amount_source: cell })
         ),
@@ -88,6 +101,8 @@ export function CandidatePageScan({
         ) ||
         data.pages.length !== params.end_page - params.start_page + 1 ||
         data.pages.some((p, i) => p.page_number !== params.start_page + i) ||
+        data.undated_charge_rows !==
+          data.pages.reduce((n, p) => n + p.undated_charges.length, 0) ||
         data.suggested_rows !==
           data.pages.reduce((n, p) => n + p.suggestions.length, 0)
       )
@@ -110,7 +125,8 @@ export function CandidatePageScan({
           <p>
             Scan table 1 on up to 50 pages. Use chosen column positions or
             propose them separately on each page. Inspect each result and its
-            original. Undated fees and interest need separate review.
+            original. Recognised undated fees and interest appear separately for
+            review; no date or direction is inferred.
           </p>
           <form
             onSubmit={(e) => {
@@ -253,6 +269,34 @@ export function CandidatePageScan({
                         page.
                       </p>
                     )}
+                    {p.undated_checked_rows !== undefined && (
+                      <p>
+                        Undated charge screen: {p.undated_charges.length}{" "}
+                        possible rows from {p.undated_checked_rows} stored rows.
+                      </p>
+                    )}
+                    {p.undated_charges.map((r) => (
+                      <div
+                        key={`undated-${r.row_index}`}
+                        className="space-y-1 rounded border p-2"
+                      >
+                        <p>
+                          Undated row {r.row_index + 1}:{" "}
+                          {r.label_source.expected_text}
+                        </p>
+                        <p>
+                          {r.amount_sources
+                            .map(
+                              (c) =>
+                                `Column ${c.column_index + 1}: ${c.expected_text}`
+                            )
+                            .join(" · ")}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {r.reason}
+                        </p>
+                      </div>
+                    ))}
                     <Button
                       variant="outline"
                       onClick={() => onPage(p.page_number)}

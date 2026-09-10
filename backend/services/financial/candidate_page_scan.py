@@ -48,6 +48,41 @@ def propose_scan_columns(source, currency):
     return first,None
 
 
+_UNDATED_CHARGE_LABELS = frozenset((
+    'interest charge on purchases', 'interest charge on cash advances',
+    'interest charge on other balances', 'late payment fee', 'late fee',
+    'annual fee', 'monthly maintenance fee', 'overdraft fee',
+    'returned payment fee', 'cash advance fee', 'foreign transaction fee',
+))
+
+
+def suggest_undated_charges(source, currency):
+    """Exact supported charge labels only; never infer timing or direction."""
+    from services.financial.source_dates import assess_date_text
+    from services.financial.suspect_amounts import read_amount, TextOrigin
+    hints = []
+    for row in source['rows']:
+        labels = [c for c in row['cells'] if ' '.join(c['expected_text'].lower().split()).rstrip(':') in _UNDATED_CHARGE_LABELS]
+        if len(labels) != 1 or any(assess_date_text(c['expected_text'],'unknown')['proposals'] for c in row['cells']):
+            continue
+        amounts = []
+        for cell in row['cells']:
+            if cell['column_index'] == labels[0]['column_index']:
+                continue
+            try:
+                reading = read_amount(cell['expected_text'],currency,TextOrigin.unknown).to_json()
+            except MoneyError:
+                continue
+            if 'minor_units' in reading or reading.get('proposals'):
+                amounts.append(cell)
+        if not amounts:
+            continue
+        hints.append(dict(row_index=row['row_index'], label_source=labels[0], amount_sources=amounts,
+            date_unknown=True, reason='Recognised charge label without a source date. Review the amount, direction and statement scope; no date is inferred.' if len(amounts)==1 else
+                'Recognised charge label without a source date and several possible amount cells. Inspect the source; no amount or date is selected.'))
+    return hints
+
+
 def scan_candidate_pages(session, *, case_id, evidence_file_id, start_page, end_page, date_column, amount_column, currency, table_index=0, auto_columns=False):
     if type(auto_columns) is not bool or any(type(v) is not int for v in (start_page,end_page,table_index)) or start_page<1 or end_page<start_page or end_page-start_page+1>MAX_SCAN_PAGES:
         raise PdfMappingError('Choose an inclusive range of at most 50 PDF pages.',422)
@@ -64,9 +99,11 @@ def scan_candidate_pages(session, *, case_id, evidence_file_id, start_page, end_
     for page in range(start_page,end_page+1):
         try:
             source=read_candidate_source(session,case_id=case_id,evidence_file_id=evidence_file_id,page_number=page,table_index=table_index)
+            undated=suggest_undated_charges(source,currency)
+            supplement=dict(undated_charges=undated,undated_checked_rows=len(source['rows']),source_revision=source['source_revision'],other_tables=max(0,source['table_count']-1))
             chosen,reason=propose_scan_columns(source,currency) if auto_columns else (dict(date_column=date_column,amount_column=amount_column),None)
             if chosen is None:
-                pages.append(dict(page_number=page,checked=False,reason=reason,checked_rows=0,suggestions=[]))
+                pages.append(dict(page_number=page,checked=False,reason=reason,checked_rows=0,suggestions=[],**supplement))
                 continue
             result=suggest_candidate_rows(session,case_id=case_id,evidence_file_id=evidence_file_id,page_number=page,table_index=table_index,
                 expected_revision=source['source_revision'],date_column=chosen['date_column'],amount_column=chosen['amount_column'],currency=currency)
@@ -77,8 +114,10 @@ def scan_candidate_pages(session, *, case_id, evidence_file_id, start_page, end_
         suggestions=[dict(row_index=r['row_index'],date_source=r['date_source'],amount_source=r['amount_source']) for r in result['rows'] if r['suggested']]
         total+=len(suggestions)
         if total>MAX_SUGGESTED_ROWS:raise PdfMappingError('More than 1,000 suggested rows. Narrow the page range; no partial scan was returned.',422)
-        pages.append(dict(page_number=page,checked=True,reason=None,checked_rows=result['checked_rows'],source_revision=result['source_revision'],suggestions=suggestions,chosen_columns=chosen,other_tables=max(0,source['table_count']-1)))
+        pages.append(dict(page_number=page,checked=True,reason=None,checked_rows=result['checked_rows'],suggestions=suggestions,chosen_columns=chosen,**supplement))
+    undated_total=sum(len(p.get('undated_charges',[])) for p in pages)
+    if undated_total>MAX_SUGGESTED_ROWS:raise PdfMappingError('More than1,000undated charge suggestions. Narrow the page range; no partial scan was returned.',422)
     if version()!=before:raise PdfMappingError('PDF preparation changed during the scan. Reload before reviewing suggestions.',409)
     return dict(case_id=str(case_id),evidence_file_id=str(evidence_file_id),start_page=start_page,end_page=end_page,table_index=table_index,
-        date_column=None if auto_columns else date_column,amount_column=None if auto_columns else amount_column,auto_columns=auto_columns,currency=currency,pages=pages,suggested_rows=total,applied=False,
-        limitation=('Per-page column proposals use co-occurring date/amount shapes and recognised labels; they do not establish column meaning or transaction status. Ambiguous layouts remain unchecked. ' if auto_columns else '')+'Review suggestions under the selected column positions only. No rows are saved or admitted. Unchecked pages and undated transactions can be missed. Open each page, inspect the original and explicitly choose readings; source revisions are rechecked on save.')
+        date_column=None if auto_columns else date_column,amount_column=None if auto_columns else amount_column,auto_columns=auto_columns,currency=currency,pages=pages,suggested_rows=total,undated_charge_rows=undated_total,applied=False,
+        limitation=('Per-page column proposals use co-occurring date/amount shapes and recognised labels; they do not establish column meaning or transaction status. Ambiguous layouts remain unchecked. ' if auto_columns else '')+'Review suggestions under the selected column positions only. No rows are saved or admitted. Undated charge suggestions use a limited list of exact labels, separate from dated proposals; dates and directions remain unknown. Summary totals and APR figures are not nominated by this screen. Other undated transactions and unchecked pages can be missed. Open each page, inspect the original and explicitly choose readings; source revisions are rechecked on save.')

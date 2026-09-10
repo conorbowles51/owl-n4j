@@ -27,6 +27,7 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Separate source-bound undated charge suggestions across page ranges, without inferred dates/direction or automatic admission. Real108-page scan finds81labelled rows on27pages, including56.16USDinterest;62zero-amount rows remain explicit and23dated suggestions unchanged. Ambiguous amounts and unsupported labels remain for manual review.
    - [x] Per-page automatic date/amount column proposals across the supplied108-page PDF:20pages have supported layouts and23dated suggestions;88pages retain explicit unavailable/ambiguous reasons. Manual review and undated interest remain separate; no automatic admission.
    - [x] Read-only page-range scan across up to50pages, with exact date/amount citations and explicit unchecked-page results. Real108-page PDF first50pages:40checked,10unchecked,15suggestions; no writes. Undated rows and changing layouts still need review.
    - [x] Save unfinished statement-editor fields and source cells separately, preserving partial amounts and revision conflict protection; five backend/eight UI tests pass.

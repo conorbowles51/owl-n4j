@@ -117,3 +117,40 @@ it("proposes per-page columns without sending fixed positions", async () => {
   expect(String(fetch.mock.calls[0][0])).toContain("auto_columns=true")
   expect(String(fetch.mock.calls[0][0])).not.toContain("date_column=")
 })
+
+it("shows undated charge evidence even when dated column selection is unavailable", async () => {
+  const { onPage } = mount({
+    ...data,
+    suggested_rows: 0,
+    undated_charge_rows: 1,
+    pages: [
+      {
+        ...data.pages[0],
+        checked: false,
+        reason: "No dated layout",
+        suggestions: [],
+        undated_checked_rows: 4,
+        undated_charges: [
+          {
+            row_index: 3,
+            label_source: {
+              column_index: 0,
+              expected_text: "Interest Charge on Purchases",
+            },
+            amount_sources: [{ column_index: 1, expected_text: "$56.16" }],
+            date_unknown: true,
+            reason: "No date is inferred.",
+          },
+        ],
+      },
+      data.pages[1],
+    ],
+  })
+  await scan()
+  expect(
+    await screen.findByText(/Undated row 4: Interest Charge on Purchases/)
+  ).toBeInTheDocument()
+  expect(screen.getByText("Column 2: $56.16")).toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Inspect PDF page 1" }))
+  expect(onPage).toHaveBeenCalledWith(1)
+})

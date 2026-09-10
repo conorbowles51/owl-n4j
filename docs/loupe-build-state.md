@@ -1,3 +1,24 @@
+## Undated PDF charge review — 10 September, about08:26Dublin
+
+Page-range scans now supplement dated proposals with a separate exact-label
+screen for supported undated interest/fee rows. Each result retains original
+label and possible amount cells/locators and the source revision. Multiple
+amounts stay unresolved; no date, direction or admission is inferred. Summary
+and APR labels are not recognised transaction labels. Source-unavailable pages
+remain explicit, and absence of a dated layout does not suppress undated review.
+At most1000undated rows across50pages; excess refuses the whole result.
+
+29targeted backend tests,4page-scan UI tests, TypeScript and scoped lint pass.
+Read-only browser scan of supplied108pagePDF:81undated charge-labelled rows on
+27pages (62display zero amounts), alongside unchanged23dated suggestions on20
+pages. Known page3row22 purchase interest56.16USD found with exact amount cell;
+zero cash-advance/other interest rows remain explicit. Browser panel visually
+inspected, no financial writes. Original file unchanged. Repeatable readonly
+scripts/check_local_undated_page_scan.cjs; results/check JSON under
+ data/local-runtime/undated-page-scan-*.json. Current backend79431,
+log/tmp/loupe-undated-runtime.out. No push. Other extraction layouts and full
+application acceptance remain in progress.
+
 ## Payment identifier review — 10 September, about08:21Dublin
 
 Transfers now connects the existing exact-identifier comparison to captured
