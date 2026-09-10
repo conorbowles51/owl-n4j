@@ -27,6 +27,7 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Capture new PDF preparation package/runtime versions, relevant OCR settings and source-code fingerprints; retain a checked digest in source revisions and immutable review mappings. Earlier sources stay unknown with unchanged revisions. Full backend/engine regression and old real-PDF review reopening pass; complete historical binary/toolchain identity remains unavailable.
    - [x] Retain actual provider request arguments, reported model identity and adapter/runtime versions for successful model proposals, with no credentials or headers. Saved review/export preserves the record and checks its digest; older requests retain unknown provenance. Simulated PostgreSQL and browser acceptance pass without external calls.
    - [x] Connect optional model-assisted row/column proposals to pending source review, retaining original cells, exact successful response, model/prompt provenance and investigator decisions separately. Saved request IDs prevent duplicate provider calls; interrupted requests can be checked or closed. Shifted layouts remain separate groups. Local PostgreSQL flow uses explicitly simulated model output and rolls back; browser controls and120live permission checks pass. Actual provider acceptance remains under the unchecked items.
 

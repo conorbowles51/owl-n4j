@@ -96,11 +96,13 @@ class PdfGridBoundMapping(_Contract):
     table_locator: Locator
     candidates: tuple[PdfGridCandidate, ...]
     nomination_snapshot: dict | None = None
+    processing_manifest: dict | None = None
 
     @model_serializer(mode="wrap")
     def retain_legacy_shape(self, handler):
         data=handler(self)
         if self.nomination_snapshot is None:data.pop('nomination_snapshot',None)
+        if self.processing_manifest is None:data.pop('processing_manifest',None)
         return data
 
     file_bytes_verified: Literal[False] = False
@@ -115,14 +117,14 @@ def _snapshot(session, case_id, evidence_file_id, page_number):
             EvidenceFile.sha256, EvidenceDocumentText.content,
             EvidenceDocumentText.content_sha256, EvidenceDocumentText.source_locations,
             EvidenceDocumentText.engine_job_id, EvidenceTableGeometry.engine_job_id,
-            EvidenceTableGeometry.payload,
+            EvidenceTableGeometry.payload, EvidenceDocumentText.processing_manifest,
         ).join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id)
           .join(EvidenceTableGeometry, EvidenceTableGeometry.evidence_file_id == EvidenceFile.id)
           .where(EvidenceFile.id == evidence_file_id, EvidenceFile.case_id == case_id,
                  EvidenceTableGeometry.page_number == page_number)).one_or_none()
     if row is None:
         raise PdfMappingError("Stored table source not found in this case.", 404)
-    file_hash, content, text_hash, locations, text_job, geometry_job, payload = row
+    file_hash, content, text_hash, locations, text_job, geometry_job, payload, manifest = row
     if not isinstance(file_hash, str) or re.fullmatch(r"[0-9a-f]{64}", file_hash) is None:
         raise PdfMappingError("Source file has no valid recorded digest.", 409)
     if hashlib.sha256(content.encode("utf-8")).hexdigest() != text_hash:
@@ -132,12 +134,15 @@ def _snapshot(session, case_id, evidence_file_id, page_number):
     if not isinstance(payload, list):
         raise PdfMappingError("Stored table geometry is malformed.", 409)
     try:
+        from services.financial.pdf_processing_manifest import validate_pdf_processing_manifest
+        manifest = validate_pdf_processing_manifest(manifest)
         revision = _digest(dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id),
             file_sha256=file_hash, content_sha256=text_hash, source_locations=locations,
-            engine_job_id=str(text_job), page_number=page_number, geometry=payload))
+            engine_job_id=str(text_job), page_number=page_number, geometry=payload,
+            **({"processing_manifest":manifest} if manifest is not None else {})))
     except (ValueError, TypeError) as exc:
         raise PdfMappingError("Stored table provenance is malformed.", 409) from exc
-    return content, locations, file_hash, text_hash, payload, revision
+    return content, locations, file_hash, text_hash, payload, revision, manifest
 
 
 def pdf_grid_source_revision(session, *, case_id, evidence_file_id, page_number):
@@ -216,7 +221,7 @@ def bind_pdf_grid_mapping(session, *, case_id, proposal):
     proposal = PdfGridMapping.model_validate(proposal)
     if proposal.case_id != case_id:
         raise PdfMappingError("Mapping does not belong to this case.", 404)
-    content, locations, file_hash, text_hash, payload, revision = _snapshot(
+    content, locations, file_hash, text_hash, payload, revision, manifest = _snapshot(
         session, case_id, proposal.evidence_file_id, proposal.page_number)
     if proposal.source_revision != revision:
         raise PdfMappingError("Source or geometry changed. Rebuild the mapping.", 409)
@@ -244,6 +249,6 @@ def bind_pdf_grid_mapping(session, *, case_id, proposal):
     if proposal.nomination_id is not None:
         from services.financial.model_pdf_nomination import nomination_snapshot_for_mapping
         nomination=nomination_snapshot_for_mapping(session,case_id=case_id,proposal=proposal)
-    return PdfGridBoundMapping(proposal=proposal, mapping_revision=mapping_revision,nomination_snapshot=nomination,
+    return PdfGridBoundMapping(proposal=proposal, mapping_revision=mapping_revision,nomination_snapshot=nomination,processing_manifest=manifest,
         file_sha256=file_hash, content_sha256=text_hash, table_source=table_source,
         geometry_source=geometry_source, table_locator=table_locator, candidates=tuple(candidates))

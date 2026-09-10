@@ -13,7 +13,7 @@ import re
 from typing import Annotated, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, model_serializer
 from sqlalchemy import select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile
@@ -146,6 +146,14 @@ class PdfBoundMapping(_Contract):
     file_sha256: _Digest
     content_sha256: _Digest
     candidates: tuple[PdfPendingCandidate, ...]
+    processing_manifest: dict | None = None
+
+    @model_serializer(mode="wrap")
+    def retain_legacy_shape(self, handler):
+        data=handler(self)
+        if self.processing_manifest is None:data.pop('processing_manifest',None)
+        return data
+
     file_bytes_verified: Literal[False] = False
     applied: Literal[False] = False
 
@@ -161,20 +169,24 @@ def _source(session, case_id, evidence_file_id):
         row = session.execute(select(
             EvidenceFile.sha256, EvidenceDocumentText.content,
             EvidenceDocumentText.content_sha256, EvidenceDocumentText.source_locations,
-            EvidenceDocumentText.engine_job_id,
+            EvidenceDocumentText.engine_job_id, EvidenceDocumentText.processing_manifest,
         ).join(EvidenceDocumentText, EvidenceFile.id == EvidenceDocumentText.evidence_file_id)
           .where(EvidenceFile.id == evidence_file_id, EvidenceFile.case_id == case_id)).one_or_none()
     if row is None:
         raise PdfMappingError("Source text not found in this case.", 404)
-    file_hash, content, text_hash, locations, job_id = row
+    file_hash, content, text_hash, locations, job_id, manifest = row
     if not isinstance(file_hash, str) or re.fullmatch(r"[0-9a-f]{64}", file_hash) is None:
         raise PdfMappingError("Source file has no valid recorded digest.", 409)
     if hashlib.sha256(content.encode("utf-8")).hexdigest() != text_hash:
         raise PdfMappingError("Stored source text digest is inconsistent.", 409)
+    from services.financial.pdf_processing_manifest import validate_pdf_processing_manifest
+    try: manifest=validate_pdf_processing_manifest(manifest)
+    except (ValueError,TypeError) as error: raise PdfMappingError("Stored processing provenance is inconsistent.",409) from error
     revision = _digest({"case_id": str(case_id), "evidence_file_id": str(evidence_file_id),
                         "file_sha256": file_hash, "content_sha256": text_hash,
-                        "source_locations": locations, "engine_job_id": str(job_id) if job_id else None})
-    return content, locations, file_hash, text_hash, revision
+                        "source_locations": locations, "engine_job_id": str(job_id) if job_id else None,
+                        **({"processing_manifest":manifest} if manifest is not None else {})})
+    return content, locations, file_hash, text_hash, revision, manifest
 
 
 def pdf_mapping_source_revision(session, *, case_id, evidence_file_id):
@@ -191,7 +203,7 @@ def bind_pdf_mapping(session, *, case_id, proposal):
     proposal = PdfMappingProposal.model_validate(proposal)
     if proposal.case_id != case_id:
         raise PdfMappingError("Mapping does not belong to this case.", 404)
-    content, locations, file_hash, text_hash, revision = _source(
+    content, locations, file_hash, text_hash, revision, manifest = _source(
         session, case_id, proposal.evidence_file_id)
     if proposal.source_revision != revision:
         raise PdfMappingError("Source or provenance changed. Rebuild the mapping.", 409)
@@ -218,5 +230,5 @@ def bind_pdf_mapping(session, *, case_id, proposal):
         candidates.append(PdfPendingCandidate(
             candidate_key=_digest({"mapping_revision": mapping_revision, "row_index": row.row_index}),
             mapping_revision=mapping_revision, row_index=row.row_index, cells=tuple(cells)))
-    return PdfBoundMapping(proposal=proposal, mapping_revision=mapping_revision,
+    return PdfBoundMapping(proposal=proposal, mapping_revision=mapping_revision,processing_manifest=manifest,
         file_sha256=file_hash, content_sha256=text_hash, candidates=tuple(candidates))

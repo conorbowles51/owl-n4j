@@ -1,3 +1,29 @@
+## PDF preparation versions retained with reviews — 10 September
+
+New PDF preparations retain a bounded, hashed record of Python/package versions,
+local Tesseract version when used, OCR settings and three on-disk pipeline source
+fingerprints. It contains no credentials, environment dump or source paths.
+Migration20260910_pdf_processing_manifest adds a nullable shared backend/engine
+column. Upsert replaces or clears the record with the source generation; earlier
+files remain null. Grid and text mapping revisions bind new records, while null
+records preserve old revisions and serialized mapping shapes. Saved mappings and
+expert support retain the record; reports verify it and group identical records
+by source file. Historical versions are never filled from the current machine.
+
+4330financial backend and332engine tests pass. Four focused final checks include
+report grouping. Generated native and scanned PDF temporary-table acceptance verifies actual local
+Tesseract version capture, engine write,
+backend validation and clearing on replacement. Existing real shifted groups
+reopen with unknown date role/year intact,0mapping/ledger writes; pending12-reading
+case exports with0ledger/0prospective audit events. Synthetic3-page report layout
+inspected. No external provider or push. Full binary/language-data fingerprints,
+complete audit coverage and independent validation remain separate unfinished work.
+
+Current local services: backend37413 (/tmp/loupe-processing-backend-runtime.out),
+engine62038 (/tmp/loupe-processing-engine-runtime.out), worker73588
+(/tmp/loupe-processing-worker-runtime.out). Both new migrations are applied.
+Backend includes final plain-language audit verification and grouped runtime report.
+
 ## Prospective financial audit chain — 10 September
 
 Migration20260910_financial_audit_chain installs per-case append-only SHA-256

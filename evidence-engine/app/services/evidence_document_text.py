@@ -154,6 +154,7 @@ async def upsert_evidence_document_text(
         content_sha256=canonical.content_sha256,
         character_count=canonical.character_count,
         source_locations=canonical.source_locations,
+        processing_manifest=doc.metadata.get("processing_manifest"),
     )
     await db.execute(
         statement.on_conflict_do_update(
@@ -164,6 +165,7 @@ async def upsert_evidence_document_text(
                 "content_sha256": statement.excluded.content_sha256,
                 "character_count": statement.excluded.character_count,
                 "source_locations": statement.excluded.source_locations,
+                "processing_manifest": statement.excluded.processing_manifest,
                 "extracted_at": func.now(),
             },
         )

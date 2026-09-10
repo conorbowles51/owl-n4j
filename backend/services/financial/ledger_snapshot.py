@@ -339,7 +339,19 @@ def render_ledger_report(snapshot):
             file_id, ', '.join(sorted(group['formats'])), group['count'], group['models']]
             for file_id, group in sorted(by_file.items())], widths=[40, 32, 14, 14]),
             '<p>A mapping without a recorded model nomination does not establish that upstream preparation used no AI. Exact mapping IDs and source revisions remain in the accompanying HTML and JSON.</p>']
+        shown_processing = set()
         for method in methods['methods']:
+            processing = method.get('processing_manifest')
+            processing_key = (method['evidence_file_id'], processing['sha256']) if processing else None
+            if processing and processing_key not in shown_processing:
+                shown_processing.add(processing_key)
+                runtime = processing['content']
+                parts += ['<h3>Recorded PDF preparation for file ' + text(method['evidence_file_id']) + '</h3>',
+                    '<p>Recorded at: ' + text(runtime['recorded_at']) + '. Python: ' + text(runtime['python_version']) + '.</p>',
+                    table(['Component', 'Recorded version'], [[name, version or 'Not recorded'] for name, version in sorted(runtime['packages'].items())]
+                        + [['Tesseract executable', runtime['tesseract']['version'] or ('Not used' if runtime['tesseract']['status'] == 'not_used' else 'Not recorded')]]),
+                    '<p>Processing record SHA-256: <code>' + text(processing['sha256']) + '</code>.</p>',
+                    '<p>' + text(runtime['limitation']) + '</p>']
             model = method['model']
             if model:
                 parts += ['<article><h3>Model proposal for mapping ' + text(method['mapping_id']) + '</h3>',

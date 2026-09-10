@@ -35,6 +35,7 @@ def build_expert_support(document, *, snapshot_sha256, code_version=None, source
             scope=document.get('decision_scope'),snapshot_references=['decisions','pdf_review_history','ledger.readings'],
             limitation='Relevant captured ledger and PDF review decisions only; not all decisions or opinions in the case.'),
         versions=dict(export_code_version=code_version,
+            pdf_processing_manifests=[dict(mapping_id=m['mapping_id'],manifest=m['processing_manifest']) for m in methods['methods'] if m.get('processing_manifest')] if methods else [],
             financial_processing_runs=(document.get("processing_provenance") or {}).get("runs"),
             source_parsers=[dict(source_document_id=key,parser_name=sources[key].get("parser_name"),parser_version=sources[key].get("parser_version")) for key in sorted(sources)],
             model_requests=[m for m in methods['methods'] if m['model']] if methods else [],

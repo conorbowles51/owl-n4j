@@ -772,8 +772,10 @@ def _extract_pdf_sync(
         else:
             extraction_mode = "hybrid"
 
+        from app.pipeline.pdf_processing_manifest import capture_pdf_processing_manifest
         metadata = {
             "file_type": "pdf",
+            "processing_manifest": capture_pdf_processing_manifest(settings=settings, ocr_used=bool(ocr_count)),
             "page_count": len(pages),
             "is_scanned": ocr_count > 0,
             "extraction_mode": extraction_mode,

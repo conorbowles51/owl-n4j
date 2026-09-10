@@ -219,6 +219,7 @@ class EvidenceDocumentText(Base):
         server_default="[]",
         nullable=False,
     )
+    processing_manifest: Mapped[dict | None] = mapped_column(_jsonb_column(), nullable=True)
     extracted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

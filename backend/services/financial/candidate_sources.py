@@ -25,7 +25,7 @@ def list_candidate_sources(session, *, case_id, limit=25, offset=0):
 def read_candidate_source(session, *, case_id, evidence_file_id, page_number, table_index=0):
     if type(table_index) is not int or table_index < 0:
         raise PdfMappingError("Table index must be a nonnegative integer.", 422)
-    content, locations, _, _, payload, revision = _snapshot(session, case_id, evidence_file_id, page_number)
+    content, locations, _, _, payload, revision, manifest = _snapshot(session, case_id, evidence_file_id, page_number)
     if table_index >= len(payload):
         raise PdfMappingError("No stored table at this position.", 404)
     source, geometry, locator, cells = _table(payload, table_index, page_number)
@@ -49,7 +49,7 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
         text_origin=_page_origin(content, locations, page_number).value,
         columns=sorted(columns), rows=source_rows,
         layout_context=statement_layout_context(source_rows),
-        applied=False)
+        processing_manifest=manifest, applied=False)
 
 
 def suggest_candidate_rows(session, *, case_id, evidence_file_id, page_number,

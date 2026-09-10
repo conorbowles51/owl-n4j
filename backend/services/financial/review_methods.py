@@ -13,6 +13,9 @@ def pdf_review_methods(document):
         if _digest(snapshot) != mapping['snapshot_sha256']:
             raise LedgerSummaryError('PDF method history does not match its stored digest.')
         proposal = snapshot['proposal']
+        from services.financial.pdf_processing_manifest import validate_pdf_processing_manifest
+        try: processing = validate_pdf_processing_manifest(snapshot.get('processing_manifest'))
+        except (ValueError, TypeError) as error: raise LedgerSummaryError('PDF processing provenance is inconsistent; report refused.') from error
         nomination = snapshot.get('nomination_snapshot')
         model = None
         if nomination:
@@ -43,7 +46,7 @@ def pdf_review_methods(document):
                 model['adapter_sha256'] = transport.get('adapter_sha256')
         methods.append(dict(mapping_id=mapping['id'], evidence_file_id=mapping['evidence_file_id'],
             source_revision=proposal['source_revision'], schema_version=proposal['schema_version'],
-            model=model))
+            model=model, processing_manifest=processing))
     return dict(methods=methods,
         procedure='Stored PDF text and source locations are bound to saved readings. Investigators record review decisions separately. Model proposals, when present, select existing cells and do not establish financial accuracy or admit transactions.',
         validation='No measured extraction error rate or independently adjudicated evaluation corpus is included in this snapshot. Automated software test counts are not an extraction accuracy measurement.',
