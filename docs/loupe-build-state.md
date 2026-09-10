@@ -1,3 +1,18 @@
+## Real public timestamp interoperability — 10 September
+
+One70-byte synthetic-only RFC3161 request to DigiCert returned6008bytes. Existing
+verifier passes nonce, imprint and signature chain against the self-signed G4 root
+whose DER SHA-256 matches DigiCert's published552f7bdc…0ac89988fingerprint. Signed
+time10September2026 20:48:24GMT, OpenSSL3.6.1. The article's cross-signed certificate
+was first refused against the pin before any request was sent; using the published
+self-signed root then passed. No actual case data/financial documents were sent.
+
+Added an opt-in public acceptance script with no case-file input. It requires
+--submit-synthetic before network/artifact work (guard test passes). Retained files:
+data/local-runtime/public-timestamp-check-20260910-v2. This closes synthetic-only
+real-TSA interoperability, not production authority policy, revocation acceptance,
+periodic anchoring or historical custody. No deployment/provider AI/push.
+
 ## Blank independent-review preparation — 10 September
 
 Added prepare_financial_reference_reviews.py: bounded original-PDF hashing,

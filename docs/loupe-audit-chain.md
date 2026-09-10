@@ -133,9 +133,42 @@ cannot pass merely because its signature is valid. All outputs must be new.
 
 The retained result includes input hashes, OpenSSL version and response details.
 It establishes verification against the supplied trust, not authority independence,
-current revocation status, complete custody or evidence truth. No real external
-response has yet been accepted and no automatic anchoring schedule is configured.
+current revocation status, complete custody or evidence truth. Public-service interoperability on a synthetic checkpoint is now verified as
+recorded below. No production case anchoring schedule is configured.
 The repeatable `scripts/check_financial_audit_timestamp.py saved-ledger.zip` uses
 only a temporary synthetic root/signer and deletes its private keys afterward.
 
 Protocol implementation reference: [OpenSSL timestamp utility documentation](https://docs.openssl.org/3.0/man1/openssl-ts/).
+
+
+## Public TSA interoperability — 10 September 2026
+
+A single synthetic-only request to the published DigiCert RFC3161 endpoint returned
+a signed response that passes the application verifier: signature chain, nonce and
+checkpoint data imprint. The request was70bytes; response6008bytes. The signed time
+is10September2026 at20:48:24GMT, policy2.16.840.1.114412.7.1. OpenSSL3.6.1 performed
+the verification. No actual case archive, source PDF or financial record was sent.
+
+The trust anchor was downloaded over HTTPS from DigiCert's root directory and its
+DER SHA-256 checked against the published fingerprint:
+`552f7bdcf1a7af9e6ce672017f4f12abf77240c78e761ac203d1d9d20ac89988`.
+The timestamp article's similarly named certificate is cross-signed, so it was
+correctly refused against that pin before any request was sent. The subsequent
+request used the matching self-signed root and the published intermediate.
+
+Reference: [DigiCert timestamp instructions](https://knowledge.digicert.com/general-information/rfc3161-compliant-time-stamp-authority-server)
+and [published root fingerprints](https://knowledge.digicert.com/general-information/digicert-trusted-root-authority-certificates).
+
+The opt-in acceptance script accepts no case-file input:
+
+```sh
+data/local-runtime/backend-venv/bin/python scripts/check_public_financial_timestamp.py \
+  --submit-synthetic --output new-synthetic-timestamp-check
+```
+
+Without the explicit flag it exits before creating artifacts or making a request.
+The retained local acceptance artifacts are in
+`data/local-runtime/public-timestamp-check-20260910-v2`. They include the synthetic
+archive, exact request, signed response, downloaded certificates and verification.
+This tests real service interoperability, not qualified timestamp status, current
+revocation checking, production trust policy or periodic anchoring of case events.
