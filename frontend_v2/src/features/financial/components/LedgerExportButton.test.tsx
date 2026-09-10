@@ -12,6 +12,7 @@ function mount(
 ) {
   const headers = {
     "content-type": "application/zip",
+    "X-Loupe-Case-Review-History": "false",
     "X-Loupe-Privilege-Marking": "unmarked",
     "X-Loupe-Case-Id": "case-a",
     "X-Loupe-Account-Id": "account-a",
@@ -61,6 +62,21 @@ it("downloads binary without parsing and sends authenticated applied scope", asy
   })
   expect(makeUrl).toHaveBeenCalledTimes(1)
   expect(click).toHaveBeenCalledTimes(1)
+})
+it("explicitly includes wider review history and checks the returned scope", async () => {
+  const { fetch, click } = mount({ "X-Loupe-Case-Review-History": "true" })
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: /Include wider case financial review history/,
+    })
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Download ledger snapshot" })
+  )
+  await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+  expect(String(fetch.mock.calls[0][0])).toContain(
+    "include_case_financial_history=true"
+  )
 })
 it.each<Record<string, string>>([
   { "X-Loupe-Case-Id": "other" },

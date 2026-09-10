@@ -1,3 +1,30 @@
+## Wider case financial review appendix — 10 September
+
+Optional export checkbox now captures all recorded case adjudication events and
+saved PDF mapping/candidate/review/finalization history inside the same read-only
+repeatable-read capture. Unlike the standard row-bound history, this appendix also
+includes pending/rejected PDF readings outside the ledger/account/date/table scope.
+Record limits, original mapping/review hashes and per-subject adjudication sequence
+checks refuse incomplete output. It is separate context and never enters totals.
+
+The snapshot, manifest and expert-support inventory identify the selected wider
+scope. HTML retains exact details; PDF shows a compact count/scope appendix. The
+browser checks the returned history-selection header. The UI makes all-account/date
+scope explicit. This does not establish every Workspace, merge, custody or application
+event, and no complete case audit spine is claimed.
+
+4304backend/998financial UI tests, production build and scoped lint pass. Read-only
+browser export of the existing scanned real-PDF case3db2ae11… contains12pending
+candidate readings in the wider appendix while both the ledger and normal scoped
+review history remain empty. No finalizations or financial writes. Four-page PDF,
+HTML/snapshot/support hashes and final appendix layout verified. Repeatable scripts:
+check_local_case_review_export.cjs and verify_local_case_review_export.py.
+
+Local backend session53003, /tmp/loupe-case-history-final-runtime.out, restarted
+with the final sequence-gap guard after the regression gate.
+No provider calls or push. Full custody/audit-spine, independent corpus/release
+regression gate and broader extraction/live-provider acceptance remain to assess.
+
 ## Captured tracing replay and audit bundles — 10 September
 
 Added offline replay of single-account and cross-account scenario JSON. It verifies

@@ -79,7 +79,7 @@ def _capture_history(session, document, *, case_id):
     return document
 
 
-def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked"):
+def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False):
     """Own a fresh PostgreSQL repeatable-read read-only transaction for both reads."""
     from datetime import datetime, timezone
     from sqlalchemy.engine import Engine
@@ -101,6 +101,9 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
             with Session(bind=connection,autoflush=False) as session:
                 snapshot=capture_ledger_snapshot(session,case_id=case_id,account_id=account_id,start_date=start_date,end_date=end_date)
                 document=_capture_history(session,json.loads(snapshot.content),case_id=case_id)
+                if include_case_financial_history:
+                    from services.financial.case_financial_history import capture_case_financial_history
+                    document['case_financial_history'] = capture_case_financial_history(session, case_id=case_id)
                 if generated_by is not None or privilege_marking != 'unmarked':
                     document['export_context']=dict(generated_by=generated_by,generated_at=generated_at.astimezone(timezone.utc).isoformat(),privilege_marking=privilege_marking,marking_basis='Selected by the exporting user; not a legal privilege determination.')
                 from services.financial.processing_provenance import capture_processing_provenance
@@ -122,6 +125,7 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
         document_sha256=snapshot.sha256,byte_count=snapshot.byte_count,
         generated_at=generated_at.astimezone(timezone.utc).isoformat(),case_id=str(case_id),
         code_version=code_version(),snapshot_schema=document['schema'],generated_by=generated_by,privilege_marking=privilege_marking,
+        case_financial_history_included='case_financial_history' in document,
         pdf_candidate_review_count=len(document['pdf_review_history']['reviews']),
         pdf_candidate_count=len(document['pdf_review_history']['candidates']),
         pdf_finalization_count=len(document['pdf_review_history']['finalizations']),
@@ -349,6 +353,14 @@ def render_ledger_report(snapshot):
         parts += ['<h2>Recorded processing versions</h2><p>' + text(processing['limitation']) + '</p>',
             table(['Run', 'Code version', 'Ruleset', 'Started', 'Completed'], [[r['id'],r['code_version'] or 'Unknown',r['ruleset_version'] or 'Unknown',r['started_at'] or 'Unknown',r['completed_at'] or 'Unknown'] for r in processing['runs']]),
             details('Recorded source registration, parsers and processing operators',processing)]
+    case_history = document.get('case_financial_history')
+    if case_history is not None:
+        reviews = case_history['pdf_review_history']
+        parts += ['<h2>Wider case financial review history</h2><p>' + text(case_history['scope']) + '</p>',
+            table(['Financial decisions', 'Saved PDF mappings', 'Candidate readings', 'PDF review decisions'], [[len(case_history['decisions']), len(reviews['mappings']), len(reviews['candidates']), len(reviews['reviews'])]]),
+            '<p>' + text(case_history['limitation']) + '</p>',
+            '<p>Exact wider history is retained in the accompanying HTML and JSON. It is not added to the filtered ledger totals.</p>',
+            details('Full recorded case financial decision and PDF review appendix', case_history)]
     parts += ['<h2>Verification</h2><p>This report is derived only from the bundled ledger-snapshot.json. '
         'Its SHA-256 is <code>' + text(snapshot.sha256) + '</code>; its UTF-8 size is ' + text(snapshot.byte_count) +
         ' bytes. The manifest separately identifies the report bytes.</p></body></html>']

@@ -1978,3 +1978,6 @@ __all__ += ["replay_trace"]
 
 from services.financial.trace_support_archive import build_trace_support_archive
 __all__ += ["build_trace_support_archive"]
+
+from services.financial.case_financial_history import capture_case_financial_history
+__all__ += ["capture_case_financial_history"]

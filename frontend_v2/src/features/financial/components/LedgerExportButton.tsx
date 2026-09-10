@@ -40,6 +40,7 @@ function ScopedExport({
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState("")
   const [marking, setMarking] = useState("unmarked")
+  const [includeCaseHistory, setIncludeCaseHistory] = useState(false)
   const [includePdf, setIncludePdf] = useState(false)
   const [includeSourceFiles, setIncludeSourceFiles] = useState(false)
   const active = useRef<AbortController | null>(null)
@@ -62,6 +63,8 @@ function ScopedExport({
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)
+      if (includeCaseHistory)
+        search.set("include_case_financial_history", "true")
       if (includePdf) search.set("include_pdf", "true")
       if (includeSourceFiles) search.set("include_source_files", "true")
       const token = localStorage.getItem("authToken")
@@ -82,6 +85,8 @@ function ScopedExport({
         )
       }
       if (
+        response.headers.get("X-Loupe-Case-Review-History") !==
+          (includeCaseHistory ? "true" : "false") ||
         response.headers.get("X-Loupe-Privilege-Marking") !== marking ||
         !sameTableView(response.headers.get("X-Loupe-Table-View"), tableView) ||
         response.headers.get("content-type")?.split(";")[0] !==
@@ -141,6 +146,18 @@ function ScopedExport({
       </select>
     </label>
   )
+  const historyControl = (
+    <label className="flex items-start gap-2 text-sm">
+      <input
+        type="checkbox"
+        checked={includeCaseHistory}
+        disabled={busy}
+        onChange={(event) => setIncludeCaseHistory(event.target.checked)}
+      />
+      Include wider case financial review history (all accounts and dates,
+      including pending PDF readings)
+    </label>
+  )
   if (tableView)
     return (
       <section
@@ -148,6 +165,7 @@ function ScopedExport({
         className="space-y-2 rounded border p-3"
       >
         {markingControl}
+        {historyControl}
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm">
             Includes recorded review methods and an inventory of available
@@ -199,6 +217,7 @@ function ScopedExport({
       }
     >
       {markingControl}
+      {historyControl}
       <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"
