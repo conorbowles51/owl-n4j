@@ -400,3 +400,14 @@ async def save_statement_review_draft(evidence_file_id: UUID, body: StatementDra
             request=body, actor=actor_from_user(current_user))
     except CandidateStoreError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+from services.financial.account_parties import AccountPartyError, AccountPartyRequest, set_account_party
+
+@router.post("/account-parties")
+def record_account_party(body: AccountPartyRequest, case_id: UUID = Query(...),
+                         db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    try:
+        return set_account_party(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
+    except (AccountPartyError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 422), detail=str(exc))

@@ -43,10 +43,11 @@ def _capture_history(session, document, *, case_id):
     from sqlalchemy import select, and_, or_
     from postgres.models.financial import AdjudicationEvent
     from services.financial.decision_log import to_record, _machine_actor_email
-    scopes = {name:set() for name in ('transaction','source_document','statement_period','evidence_file')}
+    scopes = {name:set() for name in ('transaction','source_document','statement_period','evidence_file','account')}
     for reading in document['ledger']['readings']:
         row, source = reading['row'], reading['source']
         scopes['transaction'].add(UUID(row['key']))
+        scopes['account'].add(UUID(row['account_id']))
         scopes['source_document'].add(UUID(source['id']))
         if row['statement_period_id']:scopes['statement_period'].add(UUID(row['statement_period_id']))
         if source['evidence_file_id']:scopes['evidence_file'].add(UUID(source['evidence_file_id']))
@@ -72,7 +73,7 @@ def _capture_history(session, document, *, case_id):
     document['schema']='loupe.financial.ledger_snapshot/3'
     document['limitations']=[
         'Source digests are recorded ingestion digests; source bytes were not reverified for this snapshot.',
-        'Decision history covers the captured rows and their source documents, statement periods and evidence files. It is not a complete case history.',
+        'Decision history covers the captured rows and their accounts, source documents, statement periods and evidence files. It is not a complete case history.',
         'PDF review history covers all saved candidates for referenced source files, including other rows outside the ledger filters. Review history is context, not additional transactions.',
     ]
     return document

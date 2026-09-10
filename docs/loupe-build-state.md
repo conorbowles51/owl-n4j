@@ -1,3 +1,28 @@
+## Durable account-party links — 10 September, about07:39Dublin
+
+Account-to-party decisions are retained as ordered immutable adjudication events,
+replayed rather than stored by overwriting account names. Case-scoped assignments,
+removals and reassignments require a reason and current revision. Source account
+identifiers/holder names, postings and proof classes stay unchanged. Directory
+limits1000accounts/5000events; batch changes at most100accounts. No automatic name
+matching, LEI lookup or raw-counterparty entity resolution is claimed.
+
+Transfers now opens the party directory, saves/reopens links and selects linked
+accounts into the captured perspective. Download includes the exact party-link
+history/revision. Main ledger export now also captures decisions about referenced
+accounts. Synthetic case7d7d04f7-012f-4dc4-bc03-30351f3db15a: three accounts linked to
+Synthetic account group; browser reloaded and verified selection and both exports.
+No real account-ownership claim is made. Guarded writer:
+scripts/check_local_account_parties.cjs; --read-only repeats acceptance without
+new decisions. Reports and exports:data/local-runtime/account-parties-browser-check.json,
+account-party-perspective.json,account-party-ledger-export.zip. ZIP contains all
+three assignment events and account scope. Local migration20260910_account_parties
+applied; current backend18837, log/tmp/loupe-party-runtime.out.
+
+Five new service tests and34targetedUI tests pass; full899financial UI tests,
+production build and scoped lint pass. Full4141backend run had one expected route
+inventory failure for the new endpoint; inventory updated and26targeted route/service tests pass. No push/deployment. Work continues through remaining scope.
+
 ## Native correction controls — 10 September, about07:28Dublin
 
 Continued development; no deployment/push. Source-bound native correction checks

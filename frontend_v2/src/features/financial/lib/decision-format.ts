@@ -102,8 +102,7 @@ export const DECISION_ORDER_IS_NOT_SEQUENCE =
 const SUBJECT_COPY: Record<AdjudicationSubject, TermCopy> = {
   transaction: {
     label: "Transaction",
-    description:
-      "A single line of a statement, as it stands in the ledger.",
+    description: "A single line of a statement, as it stands in the ledger.",
   },
   statement_period: {
     label: "Statement period",
@@ -191,9 +190,15 @@ const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
     description:
       "How well a document is proved was settled once its figures had been checked, which cannot be known when the document first arrives. Every total filters on this, so the standing before and after is kept here rather than changing quietly.",
   },
+  set_account_party: {
+    label: "Account party link changed",
+    description:
+      "An investigator assigned or removed an account-party link with a reason. Original account details and earlier decisions remain unchanged.",
+  },
   correct_transaction: {
     label: "Ledger amount corrected",
-    description: "The original reading was retained and replaced by a corrected row with a new citation. Verification is recalculated separately.",
+    description:
+      "The original reading was retained and replaced by a corrected row with a new citation. Verification is recalculated separately.",
   },
   admit_financial_document: {
     label: "Sent out for text processing",
@@ -228,6 +233,7 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   explain_balance_failure: "info",
   reclassify_document: "info",
   correct_transaction: "info",
+  set_account_party: "info",
   admit_financial_document: "danger",
 }
 
@@ -259,6 +265,7 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   explain_balance_failure: false,
   reclassify_document: true,
   correct_transaction: true,
+  set_account_party: true,
   admit_financial_document: false,
 }
 

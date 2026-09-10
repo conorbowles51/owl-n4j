@@ -980,3 +980,13 @@ def run_claim_comparison(body: ClaimComparisonInput,case_id: UUID = Query(...),d
     except Exception:
         logger.exception('Claim comparison failed for case %s',case_id)
         raise HTTPException(status_code=500,detail='Claim comparison could not be prepared.')
+
+
+from services.financial.account_parties import AccountPartyError, account_parties
+
+@router.get("/account-parties")
+def get_account_parties(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return account_parties(db, case_id=case_id)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))

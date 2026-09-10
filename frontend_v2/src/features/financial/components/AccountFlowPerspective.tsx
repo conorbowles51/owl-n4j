@@ -1,3 +1,5 @@
+import { AccountPartyDirectory } from "./AccountPartyDirectory"
+import type { AccountParties } from "../lib/account-parties"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { TransferInputs } from "../lib/ledger-transfers"
@@ -13,6 +15,8 @@ export function AccountFlowPerspective({
   scenarioJson?: string
   onSource: (id: string) => void
 }) {
+  const [showParties, setShowParties] = useState(false)
+  const [partyCapture, setPartyCapture] = useState<AccountParties | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const accounts = [
     ...new Map(
@@ -35,6 +39,7 @@ export function AccountFlowPerspective({
       schema: "loupe.financial.account_perspective/1",
       case_id: scope.case_id,
       selected_account_ids: selected,
+      account_party_decisions: partyCapture,
       scope,
       result,
       transfer_scenario: scenario,
@@ -70,6 +75,27 @@ export function AccountFlowPerspective({
           ? "Their saved reasoning and source snapshot are included in the perspective download."
           : "Calculate the selected transfer scenario above to apply pairings; selecting a checkbox alone does not apply it."}
       </p>
+      <Button onClick={() => setShowParties((v) => !v)}>
+        {showParties
+          ? "Hide account party links"
+          : "Review account-to-party links"}
+      </Button>
+      {showParties && (
+        <AccountPartyDirectory
+          caseId={scope.case_id}
+          onChoose={(ids, capture) => {
+            setSelected(ids.filter((id) => accounts.some((a) => a.id === id)))
+            setPartyCapture(capture)
+          }}
+        />
+      )}
+      {partyCapture && (
+        <p>
+          Using saved party links from this capture. Only linked accounts
+          present in the loaded transaction scope are included; the link history
+          is included in the download.
+        </p>
+      )}
       <fieldset className="grid gap-2 sm:grid-cols-2">
         <legend>Accounts in this perspective</legend>
         {accounts.map((a) => (
@@ -78,13 +104,14 @@ export function AccountFlowPerspective({
               type="checkbox"
               aria-label={`Include account ${a.label}`}
               checked={selected.includes(a.id)}
-              onChange={(e) =>
+              onChange={(e) => {
+                setPartyCapture(null)
                 setSelected((v) =>
                   e.target.checked
                     ? [...v, a.id]
                     : v.filter((id) => id !== a.id)
                 )
-              }
+              }}
             />{" "}
             {a.label}
           </label>
