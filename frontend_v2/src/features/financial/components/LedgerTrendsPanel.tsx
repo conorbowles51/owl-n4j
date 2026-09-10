@@ -26,6 +26,7 @@ const response = z.object({
   available: z.boolean(),
   reason: z.string().nullable(),
   applied: z.literal(false),
+  population: z.literal("working").optional(),
   limitation: z.string(),
   included_rows: count.nullable(),
   excluded_rows: count.nullable(),
@@ -41,29 +42,35 @@ const response = z.object({
 export function LedgerTrendsPanel({
   caseId,
   params,
+  population = "verified",
 }: {
   caseId: string
   params: LedgerQueryParams
+  population?: "verified" | "working"
 }) {
   return (
     <TrendScope
       key={JSON.stringify([
         caseId,
+        population,
         params.accountId,
         params.startDate,
         params.endDate,
       ])}
       caseId={caseId}
       params={params}
+      population={population}
     />
   )
 }
 function TrendScope({
   caseId,
   params,
+  population = "verified",
 }: {
   caseId: string
   params: LedgerQueryParams
+  population?: "verified" | "working"
 }) {
   const [grouping, setGrouping] = useState<"daily" | "monthly">("monthly"),
     [opened, setOpened] = useState(false),
@@ -76,6 +83,7 @@ function TrendScope({
     queryKey: [
       "financial-ledger",
       caseId,
+      population,
       "trends",
       account,
       start,
@@ -91,10 +99,12 @@ function TrendScope({
       if (end) search.set("end_date", end)
       const data = response.parse(
         await fetchAPI<unknown>(
-          `${candidateUrl("ledger-trends", caseId)}&${search}`
+          `${candidateUrl(population === "working" ? "ledger-working-analysis" : "ledger-trends", caseId)}&${search}`
         )
       )
       assertCandidateScope(data, caseId)
+      if ((population === "working") !== (data.population === "working"))
+        throw new Error("Analysis returned for a different population.")
       if (
         data.account_id !== account ||
         data.start_date !== start ||
@@ -166,7 +176,10 @@ function TrendScope({
       aria-label="Ledger totals by date"
       className="space-y-2 rounded border p-3"
     >
-      <h3 className="font-semibold">Ledger totals by date</h3>
+      <h3 className="font-semibold">
+        {population === "working" ? "Working analysis" : "Verified analysis"} ·
+        Ledger totals by date
+      </h3>
       <p>
         Uses the applied account/date filters and ledger ordering dates. Missing
         dates are not evidence of no activity. Monthly dates label the start of

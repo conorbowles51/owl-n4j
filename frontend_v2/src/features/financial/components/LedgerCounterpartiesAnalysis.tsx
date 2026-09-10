@@ -15,6 +15,9 @@ export function LedgerCounterpartiesAnalysis({
   return <CaseAnalysis key={caseId} caseId={caseId} />
 }
 function CaseAnalysis({ caseId }: { caseId: string }) {
+  const [population, setPopulation] = useState<"working" | "verified">(
+    "working"
+  )
   const [params, setParams] = useState<LedgerQueryParams>({})
   return (
     <section
@@ -28,11 +31,33 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
         the filters here to choose the account and ordering dates for this
         analysis.
       </p>
+      <label className="flex items-center gap-2">
+        Analysis population
+        <select
+          aria-label="Analysis population"
+          className="rounded border bg-background p-2"
+          value={population}
+          onChange={(e) =>
+            setPopulation(e.target.value as "working" | "verified")
+          }
+        >
+          <option value="working">Working readings, including P3</option>
+          <option value="verified">Verified totals only</option>
+        </select>
+      </label>
       <LedgerFilters caseId={caseId} onApply={setParams} />
       <RequestedCoveragePanel caseId={caseId} params={params} />
-      <LedgerSummaryPanel caseId={caseId} params={params} />
+      <LedgerSummaryPanel
+        caseId={caseId}
+        params={params}
+        population={population}
+      />
       <LedgerExportButton caseId={caseId} params={params} />
-      <LedgerCounterpartiesPanel caseId={caseId} params={params} />
+      <LedgerCounterpartiesPanel
+        caseId={caseId}
+        params={params}
+        population={population}
+      />
     </section>
   )
 }

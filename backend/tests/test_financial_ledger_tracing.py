@@ -31,6 +31,32 @@ class LedgerTracingTests(LedgerSummaryTests):
             doctrines=list(Doctrine))
         return export,request,first,third
 
+    def test_working_population_keeps_p3_class_and_requires_explicit_selection(self):
+        _, request, first, _ = self.scenario()
+        first.proof_class = 'p3'
+        self.db.commit()
+        export = self.captured()
+        self.assertEqual(ledger_trace_inputs(export)['included_rows'], 2)
+        scope = ledger_trace_inputs(export, population='working')
+        self.assertEqual(scope['included_rows'], 3)
+        self.assertFalse(next(r for r in scope['readings'] if r['row']['key'] == str(first.id))['included'])
+        working = request.model_copy(update={'population':'working', 'expected_snapshot_sha256':export.snapshot.sha256})
+        saved = json.loads(evaluate_ledger_trace(export, working)['scenario_json'])
+        self.assertEqual(saved['inputs']['population'], 'working')
+        self.assertIn('p3', saved['comparison']['results']['first_in_first_out']['proof_classes_included'])
+        self.assertEqual(first.proof_class, 'p3')
+        with self.assertRaises(LedgerSummaryError):
+            evaluate_ledger_trace(export, working.model_copy(update={'population':'verified'}))
+
+    def test_multiple_claims_preserve_attribution_and_reject_excess(self):
+        export, request, first, _ = self.scenario()
+        a = request.attributions[0].model_copy(update={'amount_minor':'200000'})
+        b = a.model_copy(update={'claim_id':'claim-b', 'amount_minor':'300000'})
+        saved = json.loads(evaluate_ledger_trace(export, request.model_copy(update={'attributions':[a,b]}))['scenario_json'])
+        self.assertEqual(set(saved['comparison']['claim_ids']), {'claim-a','claim-b'})
+        with self.assertRaises(TracingError):
+            evaluate_ledger_trace(export, request.model_copy(update={'attributions':[a,b.model_copy(update={'amount_minor':'300001'})]}))
+
     def test_methods_compare_exactly_and_preserve_all_assumptions(self):
         export,request,first,third=self.scenario()
         result=evaluate_ledger_trace(export,request)
@@ -94,10 +120,10 @@ class LedgerTraceRouterTests(unittest.TestCase):
         from unittest.mock import Mock
         db=Mock(); case,account=uuid4(),uuid4()
         with patch.object(router,'capture_ledger_export',return_value='captured') as capture, patch.object(router,'ledger_trace_inputs',return_value={'applied':False}):
-            result=router.get_ledger_trace_inputs(case,account,date(2026,1,1),date(2026,1,31),db)
+            result=router.get_ledger_trace_inputs(case,account,date(2026,1,1),date(2026,1,31),"verified",db)
             self.assertFalse(result['applied'])
             capture.assert_called_once_with(db.get_bind(),case_id=case,account_id=account,start_date=date(2026,1,1),end_date=date(2026,1,31))
         with patch.object(router,'capture_ledger_export',side_effect=RuntimeError('private')):
-            with self.assertRaises(HTTPException) as caught:router.get_ledger_trace_inputs(case,account,date(2026,1,1),date(2026,1,31),db)
+            with self.assertRaises(HTTPException) as caught:router.get_ledger_trace_inputs(case,account,date(2026,1,1),date(2026,1,31),"verified",db)
             self.assertEqual(caught.exception.status_code,500)
             self.assertNotIn('private',caught.exception.detail)

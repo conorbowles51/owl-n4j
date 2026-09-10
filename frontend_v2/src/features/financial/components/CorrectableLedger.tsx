@@ -46,10 +46,18 @@ function CorrectableLedgerContent({
         <>
           <LedgerFilters caseId={caseId} onApply={setParams} />
           <RequestedCoveragePanel caseId={caseId} params={params} />
-          <LedgerSummaryPanel caseId={caseId} params={params} population="working" />
+          <LedgerSummaryPanel
+            caseId={caseId}
+            params={params}
+            population="working"
+          />
           <LedgerSummaryPanel caseId={caseId} params={params} />
           <LedgerExportButton caseId={caseId} params={params} />
-          <LedgerTrendsPanel caseId={caseId} params={params} />
+          <LedgerTrendsPanel
+            caseId={caseId}
+            params={params}
+            population="working"
+          />
         </>
       )}
       {source && source.caseId === caseId && (

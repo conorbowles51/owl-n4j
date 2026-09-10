@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { CandidateFinalizationPanel } from "./CandidateFinalizationPanel"
 afterEach(() => vi.restoreAllMocks())
+vi.mock("./StatementDraftPanel", () => ({ StatementDraftPanel: () => null }))
 const ready = {
   case_id: "case-a",
   evidence_file_id: "file-a",

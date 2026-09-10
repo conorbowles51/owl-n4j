@@ -49,6 +49,8 @@ export type FinancialMainView =
   | "counterparties"
   | "trends"
   | "tracing"
+  | "transfers"
+  | "posting-graph"
 export type ChartGroupingOption = "auto" | "daily" | "weekly" | "monthly"
 
 interface FinancialStoreState {
@@ -160,7 +162,8 @@ export const useFinancialStore = create<FinancialStore>()(
         }),
       setSearchQuery: (query) => set({ searchQuery: query, currentPage: 0 }),
 
-      setSelectedTypes: (types) => set({ selectedTypes: types, currentPage: 0 }),
+      setSelectedTypes: (types) =>
+        set({ selectedTypes: types, currentPage: 0 }),
       toggleType: (type) =>
         set((s) => {
           const next = new Set(s.selectedTypes)
@@ -168,8 +171,10 @@ export const useFinancialStore = create<FinancialStore>()(
           else next.add(type)
           return { selectedTypes: next, currentPage: 0 }
         }),
-      selectAllTypes: (types) => set({ selectedTypes: new Set(types), currentPage: 0 }),
-      clearTypes: () => set({ selectedTypes: new Set<string>(), currentPage: 0 }),
+      selectAllTypes: (types) =>
+        set({ selectedTypes: new Set(types), currentPage: 0 }),
+      clearTypes: () =>
+        set({ selectedTypes: new Set<string>(), currentPage: 0 }),
 
       setSelectedCategories: (categories) =>
         set({ selectedCategories: categories, currentPage: 0 }),
@@ -182,11 +187,13 @@ export const useFinancialStore = create<FinancialStore>()(
         }),
       selectAllCategories: (categories) =>
         set({ selectedCategories: new Set(categories), currentPage: 0 }),
-      clearCategories: () => set({ selectedCategories: new Set<string>(), currentPage: 0 }),
+      clearCategories: () =>
+        set({ selectedCategories: new Set<string>(), currentPage: 0 }),
 
       setStartDate: (date) => set({ startDate: date, currentPage: 0 }),
       setEndDate: (date) => set({ endDate: date, currentPage: 0 }),
-      setEntityFilter: (entity) => set({ entityFilter: entity, currentPage: 0 }),
+      setEntityFilter: (entity) =>
+        set({ entityFilter: entity, currentPage: 0 }),
       setMinAmount: (amount) => set({ minAmount: amount, currentPage: 0 }),
       setMaxAmount: (amount) => set({ maxAmount: amount, currentPage: 0 }),
       resetFilters: () =>
@@ -243,7 +250,8 @@ export const useFinancialStore = create<FinancialStore>()(
           for (const k of keys) next.add(k)
           return { checkedKeys: next }
         }),
-      clearChecked: () => set({ checkedKeys: new Set<string>(), lastClickedKey: null }),
+      clearChecked: () =>
+        set({ checkedKeys: new Set<string>(), lastClickedKey: null }),
       setLastClickedKey: (key) => set({ lastClickedKey: key }),
 
       setFilterPanelOpen: (open) => set({ filterPanelOpen: open }),

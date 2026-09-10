@@ -77,7 +77,7 @@ class ReviewedStatementScope(_Contract):
 
 
 class StatementScopesRequest(_Contract):
-    statement_scopes: Annotated[list[ReviewedStatementScope], Field(max_length=16)] = Field(default_factory=list)
+    statement_scopes: Annotated[list[ReviewedStatementScope], Field(max_length=100)] = Field(default_factory=list)
 
 
 def attach_statement_scopes(session, manifest, prepared, scopes, *, case_id, evidence_file_id, require_statement_dates=False):

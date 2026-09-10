@@ -13,6 +13,7 @@ const money = z.object({
 })
 export const traceInputs = z
   .object({
+    population: z.enum(["working", "verified"]).default("verified"),
     case_id: z.string(),
     account_id: z.string(),
     start_date: z.string(),
@@ -25,7 +26,8 @@ export const traceInputs = z
     readings: z
       .array(
         z.object({
-          included: z.literal(true),
+          included: z.boolean(),
+          exclusion_reason: z.string().nullable().optional(),
           row: z.object({
             key: z.string(),
             ordering_date: z.string(),
@@ -42,7 +44,13 @@ export const traceInputs = z
     (v) =>
       v.included_rows === v.readings.length &&
       new Set(v.readings.map((r) => r.row.key)).size === v.readings.length &&
-      v.readings.every((r) => r.row.currency === v.currency)
+      v.readings.every(
+        (r) =>
+          r.row.currency === v.currency &&
+          (r.included ||
+            (v.population === "working" &&
+              r.exclusion_reason === "proof_class_not_included"))
+      )
   )
 export type TraceInputs = z.infer<typeof traceInputs>
 const scenario = z.object({

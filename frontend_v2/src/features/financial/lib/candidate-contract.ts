@@ -17,6 +17,7 @@ export const candidateReading = z.object({
   transaction_date: z.string().nullable(),
   statement_end_date: z.string().nullable().optional(),
   description: z.string(),
+  counterparty_raw: z.string().max(4096).nullable().optional(),
 })
 const original = z.object({
   cells: z.array(

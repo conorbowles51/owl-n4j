@@ -81,3 +81,34 @@ describe("conditional tracing workbench", () => {
     ).not.toBeInTheDocument()
   })
 })
+
+it("adds and removes deposit attributions without losing another claim", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue(inputs)
+  render(<LedgerTracingWorkbench caseId="case" />)
+  fireEvent.click(screen.getByRole("button", { name: "Apply scope" }))
+  fireEvent.click(screen.getByRole("button", { name: "Load tracing inputs" }))
+  await screen.findByLabelText("Claim label")
+  fireEvent.change(screen.getByLabelText("Claim label"), {
+    target: { value: "First claim" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add deposit attribution" })
+  )
+  fireEvent.change(screen.getByLabelText("Claim label 2"), {
+    target: { value: "Second claim" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Remove attribution 1" }))
+  expect(screen.getByLabelText("Claim label")).toHaveValue("Second claim")
+  expect(screen.queryByLabelText("Claim label 2")).not.toBeInTheDocument()
+})
+it("changing tracing population discards the old assumptions", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue(inputs)
+  render(<LedgerTracingWorkbench caseId="case" />)
+  fireEvent.click(screen.getByRole("button", { name: "Apply scope" }))
+  fireEvent.click(screen.getByRole("button", { name: "Load tracing inputs" }))
+  await screen.findByLabelText("Claim label")
+  fireEvent.change(screen.getByLabelText("Tracing population"), {
+    target: { value: "working" },
+  })
+  expect(screen.queryByLabelText("Claim label")).not.toBeInTheDocument()
+})

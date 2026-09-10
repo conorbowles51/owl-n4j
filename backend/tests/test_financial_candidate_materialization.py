@@ -86,6 +86,14 @@ class MaterializationFixture(TransactionPersistenceTestCase):
 
 
 class MaterializationTests(MaterializationFixture):
+    def test_reviewed_counterparty_is_materialized_without_inferred_identity(self):
+        self.decide(self.candidates[0], "resolved", counterparty_raw="Printed & Co.")
+        self.finalize()
+        rows = self.transactions()
+        self.assertEqual(rows[0].counterparty_raw, "Printed & Co.")
+        self.assertIsNone(rows[1].counterparty_raw)
+        self.assertEqual(rows[0].proof_class, "p3")
+
     def test_whole_batch_exact_dates_provenance_and_idempotent_retry(self):
         request = self.request()
         result = self.finalize(request)

@@ -145,10 +145,10 @@ from services.financial.tracing import TracingError
 
 @router.get("/ledger-trace-inputs")
 def get_ledger_trace_inputs(case_id: UUID = Query(...), account_id: UUID = Query(...),
-        start_date: date = Query(...), end_date: date = Query(...), db: Session = Depends(get_db)):
+        start_date: date = Query(...), end_date: date = Query(...), population: str = Query("verified"), db: Session = Depends(get_db)):
     try:
         return ledger_trace_inputs(capture_ledger_export(db.get_bind(), case_id=case_id,
-            account_id=account_id, start_date=start_date, end_date=end_date))
+            account_id=account_id, start_date=start_date, end_date=end_date), population=population)
     except (LedgerSummaryError, TracingError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
@@ -214,6 +214,21 @@ async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUI
     except Exception:
         logger.exception("Ledger trends failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Ledger trends could not be calculated.")
+
+
+@router.get("/ledger-working-analysis")
+async def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        grouping: Literal["daily", "monthly", "counterparty"] = Query("monthly"), db: Session = Depends(get_db)):
+    from services.financial.working_totals import working_ledger_analysis
+    try:
+        return working_ledger_analysis(db, case_id=case_id, account_id=account_id,
+            start_date=start_date, end_date=end_date, grouping=grouping)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Working ledger analysis failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Working analysis could not be calculated.")
 
 
 @router.get("/ledger-working-summary")
@@ -788,3 +803,55 @@ async def get_candidate_finalization_preview(evidence_file_id: UUID, case_id: UU
         raise HTTPException(status_code=500, detail="The finalization preview could not be loaded.")
     finally:
         db.rollback()
+
+
+@router.get("/candidate-sources/{evidence_file_id}/statement-draft")
+async def get_statement_review_draft(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.statement_review_drafts import read_statement_draft
+    try:
+        return read_statement_draft(db, case_id=case_id, evidence_file_id=evidence_file_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+from services.financial.ledger_transfers import ledger_transfer_candidates, evaluate_transfer_scenario, LedgerTransferScenario
+
+@router.get('/ledger-transfer-candidates')
+def get_ledger_transfer_candidates(case_id: UUID = Query(...), start_date: Optional[date] = Query(None),
+        end_date: Optional[date] = Query(None), population: Literal['working', 'verified'] = Query('working'),
+        tolerance_days: int = Query(3, ge=0, le=7), db: Session = Depends(get_db)):
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, start_date=start_date, end_date=end_date)
+        return ledger_transfer_candidates(captured, population=population, tolerance_days=tolerance_days)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Transfer candidates failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='Transfer comparison could not be prepared.')
+
+
+@router.post('/ledger-transfer-scenario')
+def calculate_ledger_transfer_scenario(body: LedgerTransferScenario, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, start_date=body.start_date, end_date=body.end_date)
+        return evaluate_transfer_scenario(captured, body)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Transfer scenario failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='Transfer scenario could not be calculated.')
+
+
+@router.get('/ledger-posting-graph')
+def get_ledger_posting_graph(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db)):
+    from services.financial.ledger_graph import ledger_posting_graph
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+        return ledger_posting_graph(captured, population=population)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Posting graph failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='Posting graph could not be prepared.')

@@ -388,3 +388,15 @@ async def record_candidate_finalization(evidence_file_id: UUID, body: CandidateF
     except Exception:
         logger.exception("Candidate finalization failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Finalization could not be confirmed. Reload the preview before retrying.")
+
+
+from services.financial.statement_review_drafts import StatementDraftRequest, save_statement_draft
+
+@router.put("/candidate-sources/{evidence_file_id}/statement-draft")
+async def save_statement_review_draft(evidence_file_id: UUID, body: StatementDraftRequest,
+        case_id: UUID = Query(...), current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return save_statement_draft(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            request=body, actor=actor_from_user(current_user))
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

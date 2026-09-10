@@ -11,7 +11,7 @@ Final scheduled handoff:7September2026. The authorized cutoff was
 that cutoff, confirmed by automation_update. No further automatic segments are
 expected. Earlier ACTIVE/time-window statements below are retained history.
 
-**Overall: nine partial features (1,2,3,4,5,6,8,9,10), one remaining (7), none
+**Overall: ten partial features, none
 complete end to end.** See [the review and testing guide](loupe-review-2026-09-07.md).
 Completed subitems stay visible. Neil requested mindful usage; valid passing tests
 were reused and targeted checks covered the final small change.
@@ -25,6 +25,7 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Save and reopen added statement-control scopes with revision-conflict protection; live real-PDF save/reload/finalization journey passes. Unsubmitted editor fields remain.
    - [x] Real-PDF ledger correction acceptance: intentionally misstated test purchase $61.26 corrected to printed $61.62 in a separate case; original source/history and exact export preserved, P3 unchanged. Fixed long decision-reason layout during walkthrough.
    - [x] Second supplied PDF: prepare 108 pages, visually review a payment and purchase, finalize as an incomplete P3 sample and verify exact source/history export (f6220fa). All originals unchanged; full-statement accuracy remains.
    - [x] Interrupted PDF preparation marks unfinished jobs failed and propagates cancellation; 13 targeted engine tests pass (f6220fa).
@@ -107,6 +108,8 @@ feature below is complete at the start of this window.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
 5. **Make every financial view use the authoritative ledger — partial**
+   - [x] Working/verified Trends and Counterparties share captured current readings; real-statement date and label totals verified.
+   - [x] Authoritative Posting graph with per-posting source arrows, account/date/population scope and distinct account/currency label groups; real-statement browser rendering verified.
    - [x] Separate working totals include current admitted P3 readings while preserving verified totals. Exact currencies, correction exclusions, account/date scope and matching JSON/HTML exports verified on two real-PDF cases (10 September).
    - [x] Live exclusion acceptance across Transactions, Counterparties, Trends and export (5aff978): synthetic400GBP excluded, all totals2100→1700, restored with originals/history retained and export hashes verified. Broader correction/legacy graph propagation remains.
    - [x] Main documentary Counterparties displays ledger label groups with exact reconciled totals, scoped filters, paged source links and decision refresh (0fe3c69).35page/14panel tests and live source-dialog check pass; equal labels do not prove identity or transfers.
@@ -131,7 +134,9 @@ feature below is complete at the start of this window.
    - [x] Explicit account/date filters on current ledger rows, draft/apply/clear behavior, bounded case-scoped account lookup and case-switch resets (a6ee80c). Requested-interval coverage remains.
    - [x] Empty ledger answers respect account/date filters, explain that no match does not establish absence of transactions, and retain response-count discrepancy warnings even for zero rows (e13375c). Quantified search coverage and filter controls remain.
 
-7. **Connect transactions and explain money movement — remaining**
+7. **Connect transactions and explain money movement — partial**
+   - [x] Compare cross-account equal-amount/currency postings with compatible dates and preserve ambiguous alternatives.
+   - [x] Explicit conditional pairing scenario counts each chosen pair once, forbids reusing a posting and exports the source snapshot and reasoning. Synthetic bigint browser journey verified; this is not a verified transfer assertion.
    - [ ] Link likely transfers between accounts and parties.
    - [ ] Avoid counting both sides of the same transfer as separate money movements.
    - [ ] Show the evidence supporting a match and distinguish exact matches from uncertain ones.
@@ -152,6 +157,7 @@ feature below is complete at the start of this window.
    - [ ] Record which evidence and decisions supported an exported result.
 
 9. **Complete funds tracing — partial**
+   - [x] Multiple explicit deposit/claim attributions and working/verified population selection preserve original proof classes; reject excess attribution and export all assumptions. Focused23backend/12UI and working-population multiple-claim browser checks pass. Cross-account propagation remains.
    - [x] Conditional single-account tracing captures reviewed ledger/history, explicit opening/deposit/order assumptions and selected methods. Invalid/stale inputs fail without writes. Existing core and bridge tests pass.
    - [x] Conditional tracing screen compares selected methods and downloads exact hash-verified scenario bytes. 45 frontend tests, TypeScript/scoped ESLint and read-only synthetic browser acceptance pass. Unidentified withdrawals remain visible; changing assumptions clears results. Current UI supports one attributed deposit; broader multi-deposit and cross-account work remain.
    - [ ] Connect existing tracing calculations to reviewed transaction history.

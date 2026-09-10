@@ -10,29 +10,48 @@ completed-item claims and environment recipes in that history are not current.
 
 Neil explicitly rejected early-preview handoffs: finish the complete agreed
 financial application and UI, keep working across intermediate units. No push yet.
-Current work: document-wide review progress, undated interest support, then consistent
-working-population analysis and the remaining full checklist. Do not end the task
-because a small unit or manual-preview test passed.
+Current work continues through the remaining full checklist. Do not stop because a
+small unit or manual-preview test passed. No push or deployment performed.
 
-Document progress API/UI added: page preparation, saved counts across batches,
-unselected/missing pages, direct pending-row resume. First full printed statement
-(PDF pages 1–3) now reconciles exactly: 18000 credit, 6162 purchase debit, 5616
-interest debit; opening owed670018 to closing owed663796. Statement-end ordering
-for undated interest preserves null transaction/posted/value dates and records
-provenance, requires assigned matching printed end control at finalization. P3
-unchanged. Other statements in the 108-page PDF are not covered by this acceptance.
+Completed in this continuation:
+- Document-wide saved review progress, pending-row resume and explicit unselected pages.
+- First complete printed statement (PDF pages 1–3): payment18000, purchase6162,
+  interest5616 minor USD; owed opening670018 to closing663796 reconciles exactly.
+  Undated interest retains null row dates and uses a source-bound statement-end
+  ordering date only. This does not cover the other statements in the108-page PDF.
+- Trends and Counterparties now offer working P3/verified populations with exact,
+  consistently filtered source readings. Real-statement browser acceptance passed.
+- Statement controls can be saved/reloaded before finalization. Revision conflicts
+  prevent overwriting another reviewer's draft; finalized files refuse edits.
+  Live save/reopen/load/finalize acceptance passed in isolated case
+  2da970d0-b96b-4928-a23d-14f5e03407bb. Only added control scopes are saved;
+  partially filled editor fields are not yet saved. Migration20260910_statement_drafts
+  applied locally only; supports up to100 explicit statement scopes.
+- Transfers tab compares compatible cross-account postings, exposes ambiguous
+  alternatives, prevents source reuse and exports conditional pair-once scenarios.
+  Exact bigint synthetic browser acceptance passed (case28fcae19-9673-4f85-9473-496c5828c85f).
+  Pairings are investigator hypotheses, not verified ledger relationships.
+- Posting graph now uses captured authoritative ledger rows, source-bound arrows,
+  per-account/currency label groups and working/verified filters. Real-statement
+  browser rendering inspected and passed; labels do not establish party identity.
+- Explicit optional counterparty-as-printed review field preserves exact labels
+  through review history and materialization without increasing proof class.
+  Focused backend46tests passed; integration verification follows.
 
-New isolated case e8ecc646-7b29-49d6-b64d-7086a9a14ad4; file
-f256eda2-7ac7-46e9-855b-01a0ed0d7785; account262dd88c-5437-47c2-a235-da147ce0f634.
-Reports full-statement-{pdf-intake,review}-check.json and full-statement-export.zip
-in data/local-runtime. Writer check_local_full_statement_review.cjs finished;
-do not rerun or use --resume-interest (checkpoint already passed). Browser label
-issue fixed with explicit accessible name, then resumed only pending interest.
-All original PDFs and previous test cases preserved. Current backend session11556
-/tmp/loupe-statement-end-runtime.out predates final ordering-context display change;
-restart before checking its final ledger/report label.
-3,967 financial backend tests and838financial UI tests passed; additional explicit
-statement-end UI test added afterward and needs targeted run. Continue development.
+Full-statement case e8ecc646-7b29-49d6-b64d-7086a9a14ad4, file
+f256eda2-7ac7-46e9-855b-01a0ed0d7785. Persistent acceptance reports in
+ data/local-runtime: full-statement-review-check.json,
+ statement-draft-journey-check.json, transfer-review-check.json.
+Completed writer scripts must not be rerun against these saved cases. Originals
+and all previous test cases preserved. Current backend session51672 uses
+/tmp/loupe-working-tracing-runtime.out and includes counterparty and tracing changes.
+
+Verification: integrated4033financial backend and855financial UI tests plus
+production build passed. Subsequent tracing extension adds multiple deposit
+attributions and explicit working/verified population without changing P3 source
+classes;23focused backend and12UI tests pass. Multiple-claim working-population browser acceptance passed, including exact
+downloaded scenario hashes and clearing results when assumptions change. No full-feature completion claim. Continue through remaining
+PDF extraction, review persistence, cross-case duplicates, tracing and reporting.
 
 ### Working totals and usable manual-preview checkpoint — 10 September 2026
 

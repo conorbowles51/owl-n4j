@@ -22,6 +22,9 @@ export function LedgerTracingWorkbench({
 }
 function CaseTracing({ caseId }: { caseId: string }) {
   const [params, setParams] = useState<LedgerQueryParams>({})
+  const [population, setPopulation] = useState<"working" | "verified">(
+    "verified"
+  )
   return (
     <section aria-label="Conditional ledger tracing" className="space-y-4 p-4">
       <h2 className="font-semibold">Conditional account tracing</h2>
@@ -32,8 +35,23 @@ function CaseTracing({ caseId }: { caseId: string }) {
       </p>
       <LedgerFilters caseId={caseId} onApply={setParams} />
       <RequestedCoveragePanel caseId={caseId} params={params} />
+      <label>
+        Tracing population{" "}
+        <select
+          aria-label="Tracing population"
+          className="border bg-background p-2"
+          value={population}
+          onChange={(e) =>
+            setPopulation(e.target.value as "working" | "verified")
+          }
+        >
+          <option value="verified">Verified only</option>
+          <option value="working">Working readings, including P3</option>
+        </select>
+      </label>
       <ScopedTracing
-        key={JSON.stringify(params)}
+        key={JSON.stringify([params, population])}
+        population={population}
         caseId={caseId}
         params={params}
       />
@@ -41,11 +59,13 @@ function CaseTracing({ caseId }: { caseId: string }) {
   )
 }
 function ScopedTracing({
+  population,
   caseId,
   params,
 }: {
   caseId: string
   params: LedgerQueryParams
+  population: "working" | "verified"
 }) {
   const [inputs, setInputs] = useState<TraceInputs | null>(null)
   const [busy, setBusy] = useState(false),
@@ -56,6 +76,7 @@ function ScopedTracing({
     setInputs(null)
     try {
       const search = new URLSearchParams({
+        population,
         account_id: params.accountId!,
         start_date: params.startDate!,
         end_date: params.endDate!,
@@ -67,6 +88,7 @@ function ScopedTracing({
         )
       )
       if (
+        value.population !== population ||
         value.case_id !== caseId ||
         value.account_id !== params.accountId ||
         value.start_date !== params.startDate ||
@@ -109,11 +131,19 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
   )
   const [opening, setOpening] = useState(""),
     [openingBasis, setOpeningBasis] = useState("")
-  const [orderBasis, setOrderBasis] = useState(""),
-    [deposit, setDeposit] = useState("")
-  const [claim, setClaim] = useState(""),
-    [amount, setAmount] = useState(""),
-    [basis, setBasis] = useState("")
+  const [orderBasis, setOrderBasis] = useState("")
+  const [attributions, setAttributions] = useState([
+    { transaction_id: "", claim_id: "", amount_minor: "", basis: "" },
+  ])
+  const changeAttribution = (
+    index: number,
+    field: keyof (typeof attributions)[number],
+    value: string
+  ) => {
+    setAttributions((old) =>
+      old.map((a, i) => (i === index ? { ...a, [field]: value } : a))
+    )
+  }
   const [selected, setSelected] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("")
@@ -125,6 +155,7 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
     setError("")
     setResult(null)
     const request = {
+      population: inputs.population,
       account_id: inputs.account_id,
       start_date: inputs.start_date,
       end_date: inputs.end_date,
@@ -133,14 +164,7 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
       opening_basis: openingBasis,
       order_basis: orderBasis,
       ordered_transaction_ids: rows.map((r) => r.row.key),
-      attributions: [
-        {
-          transaction_id: deposit,
-          claim_id: claim,
-          amount_minor: amount,
-          basis,
-        },
-      ],
+      attributions,
       doctrines: selected,
     }
     try {
@@ -175,9 +199,10 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
   return (
     <div className="space-y-4">
       <p>
-        {inputs.included_rows} included readings; {inputs.excluded_rows}{" "}
-        excluded readings. Currency: {inputs.currency}. Amount inputs below use
-        whole minor units (for example, 100 pence = GBP 1).
+        {inputs.included_rows} {inputs.population} scenario readings;{" "}
+        {inputs.excluded_rows} excluded readings. Currency: {inputs.currency}.
+        Amount inputs below use whole minor units (for example, 100 pence = GBP
+        1).
       </p>
       <form
         onSubmit={(e) => {
@@ -255,57 +280,121 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
             />
           </label>
           <p>
-            This screen supports one attributed deposit per scenario. Opening
-            funds are unattributed.
+            Attribute one or more deposits to claims. A deposit can be split
+            between claims, up to its recorded amount. Opening funds remain
+            unattributed.
           </p>
-          <label className="block">
-            Attributed deposit{" "}
-            <select
-              aria-label="Attributed deposit"
-              className="border p-1"
-              required
-              value={deposit}
-              onChange={(e) => setDeposit(e.target.value)}
-            >
-              <option value="">Choose a credit reading</option>
-              {rows
-                .filter((r) => r.row.direction === "credit")
-                .map((r) => (
-                  <option key={r.row.key} value={r.row.key}>
-                    {r.row.ordering_date} — {r.row.amount_minor} — {r.row.key}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label className="block">
-            Claim label{" "}
-            <input
-              className="border p-1"
-              required
-              maxLength={128}
-              value={claim}
-              onChange={(e) => setClaim(e.target.value)}
-            />
-          </label>
-          <label className="block">
-            Attributed amount in minor units{" "}
-            <input
-              className="border p-1"
-              required
-              pattern="[1-9][0-9]{0,18}"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </label>
-          <label className="block">
-            Attribution basis{" "}
-            <textarea
-              className="block w-full border p-1"
-              required
-              value={basis}
-              onChange={(e) => setBasis(e.target.value)}
-            />
-          </label>
+          {attributions.map((attribution, index) => (
+            <fieldset className="space-y-2 rounded border p-3" key={index}>
+              <legend>Deposit attribution {index + 1}</legend>
+              <label className="block">
+                Attributed deposit
+                <select
+                  aria-label={
+                    index === 0
+                      ? "Attributed deposit"
+                      : `Attributed deposit ${index + 1}`
+                  }
+                  className="border p-1"
+                  required
+                  value={attribution.transaction_id}
+                  onChange={(e) =>
+                    changeAttribution(index, "transaction_id", e.target.value)
+                  }
+                >
+                  <option value="">Choose a credit reading</option>
+                  {rows
+                    .filter((r) => r.row.direction === "credit")
+                    .map((r) => (
+                      <option key={r.row.key} value={r.row.key}>
+                        {r.row.ordering_date} — {r.row.amount_minor} —{" "}
+                        {r.row.key}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="block">
+                Claim label
+                <input
+                  aria-label={
+                    index === 0 ? "Claim label" : `Claim label ${index + 1}`
+                  }
+                  className="border p-1"
+                  required
+                  maxLength={128}
+                  value={attribution.claim_id}
+                  onChange={(e) =>
+                    changeAttribution(index, "claim_id", e.target.value)
+                  }
+                />
+              </label>
+              <label className="block">
+                Attributed amount in minor units
+                <input
+                  aria-label={
+                    index === 0
+                      ? "Attributed amount in minor units"
+                      : `Attributed amount in minor units ${index + 1}`
+                  }
+                  className="border p-1"
+                  required
+                  pattern="[1-9][0-9]{0,18}"
+                  value={attribution.amount_minor}
+                  onChange={(e) =>
+                    changeAttribution(index, "amount_minor", e.target.value)
+                  }
+                />
+              </label>
+              <label className="block">
+                Attribution basis
+                <textarea
+                  aria-label={
+                    index === 0
+                      ? "Attribution basis"
+                      : `Attribution basis ${index + 1}`
+                  }
+                  className="block w-full border p-1"
+                  required
+                  maxLength={4096}
+                  value={attribution.basis}
+                  onChange={(e) =>
+                    changeAttribution(index, "basis", e.target.value)
+                  }
+                />
+              </label>
+              {attributions.length > 1 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setResult(null)
+                    setAttributions((old) => old.filter((_, i) => i !== index))
+                  }}
+                >
+                  Remove attribution {index + 1}
+                </Button>
+              )}
+            </fieldset>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            disabled={attributions.length >= 50}
+            onClick={() => {
+              setResult(null)
+              setAttributions((old) => [
+                ...old,
+                {
+                  transaction_id: "",
+                  claim_id: "",
+                  amount_minor: "",
+                  basis: "",
+                },
+              ])
+            }}
+          >
+            Add deposit attribution
+          </Button>
           <p>
             Choose calculation methods explicitly. No method is recommended by
             this screen.

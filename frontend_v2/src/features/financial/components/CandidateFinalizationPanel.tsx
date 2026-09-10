@@ -1,3 +1,4 @@
+import { StatementDraftPanel } from "./StatementDraftPanel"
 import { StatementScopeEditor } from "./StatementScopeEditor"
 import {
   statementScope,
@@ -19,7 +20,7 @@ const readySchema = z.object({
   evidence_file_id: id,
   applied: z.literal(false),
   revision,
-  statement_scopes: z.array(statementScope).max(16).optional(),
+  statement_scopes: z.array(statementScope).max(100).optional(),
   readings: z.array(scopeReading).max(1000).optional(),
   unbound_statement_dates: z.number().int().nonnegative().optional(),
   resolved_count: z.number().int().min(1).max(1000),
@@ -248,6 +249,20 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
           Finalization preview unavailable. {preview.error.message}
         </p>
       )}
+      {(ready || statementScopes.length > 0) && !receipt && (
+        <StatementDraftPanel
+          caseId={caseId}
+          fileId={fileId}
+          scopes={statementScopes}
+          disabled={blocked || finalize.isPending || editingStatement}
+          onLoad={(scopes) => {
+            setStatementScopes(scopes)
+            preview.reset()
+            setDocumentary(false)
+            setCoverage(false)
+          }}
+        />
+      )}
       {ready && !receipt && (
         <div className="space-y-3">
           <p>
@@ -261,7 +276,7 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
           {ready.readings &&
             !blocked &&
             !finalize.isPending &&
-            statementScopes.length < 16 &&
+            statementScopes.length < 100 &&
             (editingStatement ? (
               <StatementScopeEditor
                 caseId={caseId}

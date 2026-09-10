@@ -50,3 +50,54 @@ def working_totals_from_readings(summary):
 def working_ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None):
     return working_totals_from_readings(ledger_summary(session, case_id=case_id, account_id=account_id,
         start_date=start_date, end_date=end_date, capture_readings=True))
+
+
+def working_ledger_analysis(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping='monthly'):
+    """Analysis and contributing sources use exactly the working-total population."""
+    if grouping not in ('daily', 'monthly', 'counterparty'):
+        raise LedgerSummaryError('Unsupported working analysis grouping.')
+    captured = ledger_summary(session, case_id=case_id, account_id=account_id,
+        start_date=start_date, end_date=end_date, capture_readings=True)
+    result = working_totals_from_readings(captured)
+    counterparty = grouping == 'counterparty'
+    output = 'counterparties' if counterparty else 'points'
+    result[output] = []
+    if counterparty:
+        result.update(label_basis='counterparty_raw_exact',
+            counterparty_limitation='Equal source labels are grouped verbatim within each currency. Missing and blank labels remain separate; this does not resolve identity or match transfers.')
+    else:
+        result.update(grouping=grouping, date_basis='ordering_date')
+    if not result['available']:
+        return result
+    groups = {}
+    for reading in captured['readings']:
+        if reading['exclusion_reason'] not in (None, 'proof_class_not_included'):
+            continue
+        row = reading['row']
+        label = row['counterparty_raw'] if counterparty else row['ordering_date']
+        if counterparty:
+            if label is not None and not isinstance(label, str):
+                raise LedgerSummaryError('A working counterparty label is invalid.')
+        else:
+            from datetime import date
+            try:
+                parsed = date.fromisoformat(label)
+                if parsed.isoformat() != label: raise ValueError('Noncanonical date')
+            except (ValueError, TypeError) as exc:
+                raise LedgerSummaryError('A working ordering date is invalid.') from exc
+            if grouping == 'monthly': label = parsed.replace(day=1).isoformat()
+        currency = get_currency(row['currency']).code
+        group = groups.setdefault((label, currency), dict(currency=currency, rows=0,
+            credits_minor=0, debits_minor=0, transaction_ids=[], source_document_ids=set(),
+            **{'label' if counterparty else 'date': label}))
+        group['rows'] += 1
+        group[row['direction'] + 's_minor'] += int(row['amount_minor'])
+        group['transaction_ids'].append(row['key'])
+        group['source_document_ids'].add(reading['source']['id'])
+    for key in sorted(groups, key=lambda k: (k[0] is not None, k[0] or '', k[1])):
+        group = groups[key]
+        group['net_minor'] = str(group['credits_minor'] - group['debits_minor'])
+        group['credits_minor'], group['debits_minor'] = str(group['credits_minor']), str(group['debits_minor'])
+        group['source_document_ids'] = sorted(group['source_document_ids'])
+        result[output].append(group)
+    return result

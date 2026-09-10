@@ -271,7 +271,7 @@ def finalize_candidates(*, session_factory, case_id, evidence_file_id, request, 
                             transaction_date=date.fromisoformat(value.transaction_date) if value.transaction_date else None,
                             value_date=date.fromisoformat(value.value_date) if value.value_date else None,
                             effective_date=date.fromisoformat(value.statement_end_date) if value.statement_end_date else None,
-                            description=value.description), provenance=dict(candidate_id=item["row"]["id"],
+                            description=value.description, counterparty_raw=value.counterparty_raw), provenance=dict(candidate_id=item["row"]["id"],
                                 **({"date_basis": "statement_end_ordering_only", "statement_end_date": value.statement_end_date} if value.statement_end_date else {}),
                                 candidate_original=item["row"]["original"], review_revision=item["row"]["review_revision"])))
                 transactions = record_transactions(session, run, document, drafts)

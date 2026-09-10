@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { CandidateFinalizationPanel } from "./CandidateFinalizationPanel"
+vi.mock("./StatementDraftPanel", () => ({ StatementDraftPanel: () => null }))
 const fixture = vi.hoisted(() => {
   const cell = {
     page_number: 1,
@@ -80,31 +81,27 @@ const receipt = {
   limitation: "Selected rows only",
 }
 function mount(mismatch = false) {
-  const fetch = vi
-    .spyOn(globalThis, "fetch")
-    .mockImplementation(
-      async (url, options) =>
-        new Response(
-          JSON.stringify(
-            String(url).includes("/finalize?")
-              ? receipt
-              : options?.method === "POST"
-                ? {
-                    ...ready,
-                    revision: "b".repeat(64),
-                    statement_scopes: [
-                      {
-                        ...fixture.scope,
-                        reason: mismatch
-                          ? "Other reason"
-                          : fixture.scope.reason,
-                      },
-                    ],
-                  }
-                : ready
-          )
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(
+    async (url, options) =>
+      new Response(
+        JSON.stringify(
+          String(url).includes("/finalize?")
+            ? receipt
+            : options?.method === "POST"
+              ? {
+                  ...ready,
+                  revision: "b".repeat(64),
+                  statement_scopes: [
+                    {
+                      ...fixture.scope,
+                      reason: mismatch ? "Other reason" : fixture.scope.reason,
+                    },
+                  ],
+                }
+              : ready
         )
-    )
+      )
+  )
   render(
     <QueryClientProvider
       client={

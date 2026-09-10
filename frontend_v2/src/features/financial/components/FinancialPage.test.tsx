@@ -69,10 +69,18 @@ vi.mock("../hooks/use-case-decisions", () => ({
   useCaseDecisions: decisions.useCaseDecisions,
 }))
 
-vi.mock("../hooks/use-proof-standing", () => ({ useProofStanding: standing.useProofStanding }))
+vi.mock("../hooks/use-proof-standing", () => ({
+  useProofStanding: standing.useProofStanding,
+}))
 
 beforeEach(() => {
-  standing.useProofStanding.mockReturnValue({ data: proofStanding(), isPending: false, isError: false, isFetching: false, refetch: vi.fn() })
+  standing.useProofStanding.mockReturnValue({
+    data: proofStanding(),
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  })
 })
 
 function makeGraphRow(): Transaction {
@@ -216,19 +224,21 @@ function runsEmpty() {
 // Keep it stable across rerenders, but isolate its cache between tests.
 let pageQueries: QueryClient
 beforeEach(() => {
-  pageQueries = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  pageQueries = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
 })
 
 function pageTree() {
   return (
     <QueryClientProvider client={pageQueries}>
-    <TooltipProvider>
-      <MemoryRouter initialEntries={["/cases/case-1/financial"]}>
-        <Routes>
-          <Route path="/cases/:id/financial" element={<FinancialPage />} />
-        </Routes>
-      </MemoryRouter>
-    </TooltipProvider>
+      <TooltipProvider>
+        <MemoryRouter initialEntries={["/cases/case-1/financial"]}>
+          <Routes>
+            <Route path="/cases/:id/financial" element={<FinancialPage />} />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>
     </QueryClientProvider>
   )
 }
@@ -290,6 +300,8 @@ describe("FinancialPage", () => {
       "Decisions",
       "Transactions",
       "Counterparties",
+      "Posting graph",
+      "Transfers",
       "Conditional tracing",
       "Trends",
     ])
@@ -300,9 +312,15 @@ describe("FinancialPage", () => {
     graphLoading()
     renderPage()
     selectTab("Statements")
-    expect(screen.getByRole("button", { name: "Check statement balances" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Check statement coverage" })).toBeInTheDocument()
-    expect(screen.queryByText(/No admitted rows in the ledger/i)).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Check statement balances" })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Check statement coverage" })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(/No admitted rows in the ledger/i)
+    ).not.toBeInTheDocument()
   })
 
   it("mounts the ledger panel in the ledger tab", () => {
@@ -310,7 +328,9 @@ describe("FinancialPage", () => {
     renderPage()
 
     expect(ledger.useLedgerTransactions).toHaveBeenCalledWith("case-1", {})
-    expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/No admitted rows in the ledger/i)
+    ).toBeInTheDocument()
   })
 
   /**
@@ -325,8 +345,12 @@ describe("FinancialPage", () => {
 
     selectTab("Transactions")
     expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", {name: "Financial intelligence"}))
-    expect(screen.getByPlaceholderText("Search financial intelligence...")).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Financial intelligence" })
+    )
+    expect(
+      screen.getByPlaceholderText("Search financial intelligence...")
+    ).toBeInTheDocument()
   })
 
   /** The case that used to be unreachable: ledger rows, no graph. */
@@ -334,26 +358,34 @@ describe("FinancialPage", () => {
     graphEmpty()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(9)
-    expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
+    expect(screen.getAllByRole("tab")).toHaveLength(11)
+    expect(
+      screen.getByText(/No admitted rows in the ledger/i)
+    ).toBeInTheDocument()
   })
 
   it("still reaches the ledger while the graph query is in flight", () => {
     graphLoading()
     renderPage()
 
-    expect(screen.getAllByRole("tab")).toHaveLength(9)
-    expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
+    expect(screen.getAllByRole("tab")).toHaveLength(11)
+    expect(
+      screen.getByText(/No admitted rows in the ledger/i)
+    ).toBeInTheDocument()
   })
 
   it("shows the graph's empty state inside the graph tab, not over the page", () => {
     graphEmpty()
     renderPage()
 
-    expect(screen.queryByText("No documentary transactions")).not.toBeInTheDocument()
+    expect(
+      screen.queryByText("No documentary transactions")
+    ).not.toBeInTheDocument()
 
     selectTab("Transactions")
-    fireEvent.click(screen.getByRole("button", {name: "Financial intelligence"}))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Financial intelligence" })
+    )
     expect(screen.getByText("No financial intelligence")).toBeInTheDocument()
     expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
   })
@@ -412,7 +444,9 @@ describe("FinancialPage, the attempts tab", () => {
     expect(
       screen.getByText("No attempts recorded against this case")
     ).toBeInTheDocument()
-    expect(screen.queryByText("No documentary transactions")).not.toBeInTheDocument()
+    expect(
+      screen.queryByText("No documentary transactions")
+    ).not.toBeInTheDocument()
   })
 
   /**
@@ -492,7 +526,9 @@ describe("FinancialPage, the decisions tab", () => {
     expect(
       screen.getByText("Nothing has been decided about this case")
     ).toBeInTheDocument()
-    expect(screen.queryByText("No documentary transactions")).not.toBeInTheDocument()
+    expect(
+      screen.queryByText("No documentary transactions")
+    ).not.toBeInTheDocument()
   })
 
   /**
@@ -578,7 +614,9 @@ describe("FinancialPage, the held-out tab", () => {
     expect(
       screen.getByText(/No rows are currently quarantined/i)
     ).toBeInTheDocument()
-    expect(screen.queryByText("No documentary transactions")).not.toBeInTheDocument()
+    expect(
+      screen.queryByText("No documentary transactions")
+    ).not.toBeInTheDocument()
   })
 })
 
@@ -695,7 +733,9 @@ describe("FinancialPage, the row adjudication dialog", () => {
     ledgerEmpty()
     rerender(pageTree())
 
-    expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/No admitted rows in the ledger/i)
+    ).toBeInTheDocument()
     expect(screen.getByTestId("adjudication-row")).toHaveAttribute(
       "data-row-key",
       "txn-9"
@@ -714,69 +754,123 @@ describe("FinancialPage, the row adjudication dialog", () => {
   })
 })
 
-
 it("shows the classification census even when both the graph and admitted ledger are empty", () => {
   useFinancialStore.getState().reset()
-  graphEmpty(); ledgerEmpty(); runsEmpty(); adjudicationIdle()
+  graphEmpty()
+  ledgerEmpty()
+  runsEmpty()
+  adjudicationIdle()
   renderPage()
-  expect(screen.getByTestId("proof-standing-totals")).toHaveTextContent("5 financial source documents")
+  expect(screen.getByTestId("proof-standing-totals")).toHaveTextContent(
+    "5 financial source documents"
+  )
   expect(standing.useProofStanding).toHaveBeenCalledWith("case-1")
   expect(screen.getByTestId("proof-standing-panel")).toBeInTheDocument()
-  expect(screen.getByRole("region", { name: "Duplicate candidates" })).toBeInTheDocument()
+  expect(
+    screen.getByRole("region", { name: "Duplicate candidates" })
+  ).toBeInTheDocument()
 })
 
-
 vi.mock("../hooks/use-duplicate-candidates", () => ({
-  useDuplicateCandidates: () => ({ isPending: true, isFetching: false, refetch: vi.fn() }),
+  useDuplicateCandidates: () => ({
+    isPending: true,
+    isFetching: false,
+    refetch: vi.fn(),
+  }),
 }))
-
 
 describe("FinancialPage authoritative Trends", () => {
   beforeEach(() => {
     localStorage.clear()
     useFinancialStore.getState().reset()
-    ledgerEmpty(); runsEmpty(); adjudicationIdle()
+    ledgerEmpty()
+    runsEmpty()
+    adjudicationIdle()
   })
-  it.each(["empty", "loading"])("reaches ledger trends with a %s graph", (state) => {
-    if (state === "empty") graphEmpty(); else graphLoading()
-    renderPage(); selectTab("Trends")
-    expect(screen.getByRole("region", {name: "Authoritative ledger trends"})).toBeInTheDocument()
-    expect(screen.getByRole("region", {name: "Current ledger summary"})).toBeInTheDocument()
-    expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
-    expect(screen.queryByText("Money Out")).not.toBeInTheDocument()
-  })
+  it.each(["empty", "loading"])(
+    "reaches ledger trends with a %s graph",
+    (state) => {
+      if (state === "empty") graphEmpty()
+      else graphLoading()
+      renderPage()
+      selectTab("Trends")
+      expect(
+        screen.getByRole("region", { name: "Authoritative ledger trends" })
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole("region", { name: "Working ledger totals" })
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByPlaceholderText(GRAPH_SEARCH)
+      ).not.toBeInTheDocument()
+      expect(screen.queryByText("Money Out")).not.toBeInTheDocument()
+    }
+  )
   it("separates intelligence and always permits returning to ledger analysis", () => {
-    graphEmpty(); renderPage(); selectTab("Trends")
-    fireEvent.click(screen.getByRole("button", {name: "Financial intelligence"}))
-    expect(screen.queryByRole("region", {name: "Authoritative ledger trends"})).not.toBeInTheDocument()
-    expect(screen.getByText(/do not reflect ledger corrections/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", {name: "Ledger postings"}))
-    expect(screen.getByRole("region", {name: "Authoritative ledger trends"})).toBeInTheDocument()
+    graphEmpty()
+    renderPage()
+    selectTab("Trends")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Financial intelligence" })
+    )
+    expect(
+      screen.queryByRole("region", { name: "Authoritative ledger trends" })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/do not reflect ledger corrections/)
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Ledger postings" }))
+    expect(
+      screen.getByRole("region", { name: "Authoritative ledger trends" })
+    ).toBeInTheDocument()
   })
 })
-
 
 describe("FinancialPage authoritative Transactions", () => {
   beforeEach(() => {
     localStorage.clear()
     useFinancialStore.getState().reset()
-    ledgerEmpty(); runsEmpty(); adjudicationIdle()
+    ledgerEmpty()
+    runsEmpty()
+    adjudicationIdle()
   })
-  it.each(["empty", "loading", "populated"])("shows ledger transactions independently of a %s graph", (state) => {
-    if (state === "empty") graphEmpty(); else if (state === "loading") graphLoading(); else graphWithRows()
-    renderPage(); selectTab("Transactions")
-    expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
-    expect(screen.getByRole("region", {name: "Current ledger summary"})).toBeInTheDocument()
-    expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
-    expect(screen.queryByText("Money Out")).not.toBeInTheDocument()
-  })
+  it.each(["empty", "loading", "populated"])(
+    "shows ledger transactions independently of a %s graph",
+    (state) => {
+      if (state === "empty") graphEmpty()
+      else if (state === "loading") graphLoading()
+      else graphWithRows()
+      renderPage()
+      selectTab("Transactions")
+      expect(
+        screen.getByText(/No admitted rows in the ledger/i)
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole("region", { name: "Working ledger totals" })
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByPlaceholderText(GRAPH_SEARCH)
+      ).not.toBeInTheDocument()
+      expect(screen.queryByText("Money Out")).not.toBeInTheDocument()
+    }
+  )
   it("returns from intelligence to current ledger readings", () => {
-    graphEmpty(); renderPage(); selectTab("Transactions")
-    fireEvent.click(screen.getByRole("button", {name: "Financial intelligence"}))
-    expect(screen.queryByText(/No admitted rows in the ledger/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/do not reflect ledger corrections/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", {name: "Ledger postings"}))
-    expect(screen.getByText(/No admitted rows in the ledger/i)).toBeInTheDocument()
+    graphEmpty()
+    renderPage()
+    selectTab("Transactions")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Financial intelligence" })
+    )
+    expect(
+      screen.queryByText(/No admitted rows in the ledger/i)
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/do not reflect ledger corrections/)
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Ledger postings" }))
+    expect(
+      screen.getByText(/No admitted rows in the ledger/i)
+    ).toBeInTheDocument()
   })
 })
 
@@ -784,22 +878,52 @@ describe("FinancialPage authoritative Counterparties", () => {
   beforeEach(() => {
     localStorage.clear()
     useFinancialStore.getState().reset()
-    ledgerEmpty(); runsEmpty(); adjudicationIdle()
+    ledgerEmpty()
+    runsEmpty()
+    adjudicationIdle()
   })
-  it.each(["empty", "loading", "populated"])("shows ledger transactions independently of a %s graph", (state) => {
-    if (state === "empty") graphEmpty(); else if (state === "loading") graphLoading(); else graphWithRows()
-    renderPage(); selectTab("Counterparties")
-    expect(screen.getByRole("region", {name: "Authoritative ledger counterparties"})).toBeInTheDocument()
-    expect(screen.getByRole("region", {name: "Current ledger summary"})).toBeInTheDocument()
-    expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
-    expect(screen.queryByText("Money Out")).not.toBeInTheDocument()
-  })
+  it.each(["empty", "loading", "populated"])(
+    "shows ledger transactions independently of a %s graph",
+    (state) => {
+      if (state === "empty") graphEmpty()
+      else if (state === "loading") graphLoading()
+      else graphWithRows()
+      renderPage()
+      selectTab("Counterparties")
+      expect(
+        screen.getByRole("region", {
+          name: "Authoritative ledger counterparties",
+        })
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole("region", { name: "Working ledger totals" })
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByPlaceholderText(GRAPH_SEARCH)
+      ).not.toBeInTheDocument()
+      expect(screen.queryByText("Money Out")).not.toBeInTheDocument()
+    }
+  )
   it("returns from intelligence to current ledger readings", () => {
-    graphEmpty(); renderPage(); selectTab("Counterparties")
-    fireEvent.click(screen.getByRole("button", {name: "Financial intelligence"}))
-    expect(screen.queryByRole("region", {name: "Authoritative ledger counterparties"})).not.toBeInTheDocument()
-    expect(screen.getByText(/do not reflect ledger corrections/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", {name: "Ledger postings"}))
-    expect(screen.getByRole("region", {name: "Authoritative ledger counterparties"})).toBeInTheDocument()
+    graphEmpty()
+    renderPage()
+    selectTab("Counterparties")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Financial intelligence" })
+    )
+    expect(
+      screen.queryByRole("region", {
+        name: "Authoritative ledger counterparties",
+      })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/do not reflect ledger corrections/)
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Ledger postings" }))
+    expect(
+      screen.getByRole("region", {
+        name: "Authoritative ledger counterparties",
+      })
+    ).toBeInTheDocument()
   })
 })

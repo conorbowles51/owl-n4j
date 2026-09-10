@@ -46,14 +46,21 @@ const answer = {
     },
   ],
 }
-function mount(data: unknown = answer) {
+function mount(
+  data: unknown = answer,
+  population: "working" | "verified" = "verified"
+) {
   const fetch = vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(async () => new Response(JSON.stringify(data)))
   const client = new QueryClient()
   const element = (caseId = "case-a") => (
     <QueryClientProvider client={client}>
-      <LedgerCounterpartiesPanel caseId={caseId} params={{}} />
+      <LedgerCounterpartiesPanel
+        caseId={caseId}
+        params={{}}
+        population={population}
+      />
     </QueryClientProvider>
   )
   const view = render(element())
@@ -135,22 +142,73 @@ it.each([
 })
 
 it("pages label groups without changing their reconciled total", async () => {
-  const group = {...totals, credits_minor:"1", debits_minor:"0", net_minor:"1"}
-  mount({...answer, included_rows:26, currencies:[{...group, rows:26, credits_minor:"26", net_minor:"26"}],
-    counterparties:Array.from({length:26},(_,index)=>({...group,label:`Label ${index}`,transaction_ids:[`tx-${index}`],source_document_ids:[`doc-${index}`]}))})
-  fireEvent.click(screen.getByRole("button",{name:"Read ledger counterparty totals"}))
+  const group = {
+    ...totals,
+    credits_minor: "1",
+    debits_minor: "0",
+    net_minor: "1",
+  }
+  mount({
+    ...answer,
+    included_rows: 26,
+    currencies: [{ ...group, rows: 26, credits_minor: "26", net_minor: "26" }],
+    counterparties: Array.from({ length: 26 }, (_, index) => ({
+      ...group,
+      label: `Label ${index}`,
+      transaction_ids: [`tx-${index}`],
+      source_document_ids: [`doc-${index}`],
+    })),
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Read ledger counterparty totals" })
+  )
   expect(await screen.findByText(/"Label 0"/)).toBeInTheDocument()
   expect(screen.queryByText(/"Label 25"/)).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole("button",{name:"Next counterparty totals"}))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Next counterparty totals" })
+  )
   expect(screen.getByText(/"Label 25"/)).toBeInTheDocument()
   expect(screen.queryByText(/"Label 0"/)).not.toBeInTheDocument()
 })
 it("refreshes after a ledger decision invalidates the shared cache", async () => {
-  const {fetch,client}=mount()
-  fireEvent.click(screen.getByRole("button",{name:"Read ledger counterparty totals"}))
+  const { fetch, client } = mount()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Read ledger counterparty totals" })
+  )
   await screen.findByText(/Credits:/)
-  fetch.mockImplementation(async()=>new Response(JSON.stringify({...answer,included_rows:0,excluded_rows:1,currencies:[],counterparties:[]})))
-  await client.invalidateQueries({queryKey:["financial-ledger","case-a"]})
+  fetch.mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ...answer,
+          included_rows: 0,
+          excluded_rows: 1,
+          currencies: [],
+          counterparties: [],
+        })
+      )
+  )
+  await client.invalidateQueries({ queryKey: ["financial-ledger", "case-a"] })
   expect(await screen.findByText(/No eligible postings/)).toBeInTheDocument()
   expect(screen.queryByText(/Credits:/)).not.toBeInTheDocument()
+})
+
+it("uses the explicit working population and preserves exact amounts", async () => {
+  const { fetch } = mount({ ...answer, population: "working" }, "working")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Read ledger counterparty totals" })
+  )
+  expect(
+    await screen.findByText(/Credits: 90071992547409.93 GBP/)
+  ).toBeInTheDocument()
+  expect(String(fetch.mock.calls[0][0])).toContain("ledger-working-analysis")
+})
+it("refuses verified data returned to a working analysis", async () => {
+  mount(answer, "working")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Read ledger counterparty totals" })
+  )
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "different population"
+  )
 })

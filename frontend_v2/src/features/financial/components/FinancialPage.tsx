@@ -1,3 +1,5 @@
+import { LedgerPostingGraph } from "./LedgerPostingGraph"
+import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
 import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { LedgerCounterpartiesAnalysis } from "./LedgerCounterpartiesAnalysis"
 import { useCallback, useMemo, useState, type ReactNode } from "react"
@@ -83,9 +85,9 @@ export function FinancialPage() {
     transactionsResponse?.uses_legacy_financial_model ?? false
   const isTransactionsMode = store.mode === "transactions"
   const [selectedSenders, setSelectedSenders] = useState<Set<string>>(new Set())
-  const [selectedBeneficiaries, setSelectedBeneficiaries] = useState<Set<string>>(
-    new Set()
-  )
+  const [selectedBeneficiaries, setSelectedBeneficiaries] = useState<
+    Set<string>
+  >(new Set())
 
   const categorize = useCategorize(caseId!)
   const batchCategorize = useBatchCategorize(caseId!)
@@ -121,7 +123,12 @@ export function FinancialPage() {
   })
 
   const senderRows = useMemo(
-    () => buildEntityFlowRows(baseFilteredTransactions, "from", selectedBeneficiaries),
+    () =>
+      buildEntityFlowRows(
+        baseFilteredTransactions,
+        "from",
+        selectedBeneficiaries
+      ),
     [baseFilteredTransactions, selectedBeneficiaries]
   )
   const beneficiaryRows = useMemo(
@@ -153,9 +160,8 @@ export function FinancialPage() {
    * dialog outlives the row's disappearance and closes only when the person
    * closes it.
    */
-  const [adjudicationRow, setAdjudicationRow] = useState<LedgerTransaction | null>(
-    null
-  )
+  const [adjudicationRow, setAdjudicationRow] =
+    useState<LedgerTransaction | null>(null)
 
   const handleCategorize = useCallback(
     (nodeKey: string, category: string) => {
@@ -479,11 +485,17 @@ export function FinancialPage() {
               leave out. A person who has just read a total is one tab away
               from what the total excludes.
             */}
-            <TabsTrigger value="statements" data-testid="financial-tab-statements">
+            <TabsTrigger
+              value="statements"
+              data-testid="financial-tab-statements"
+            >
               <CalendarRange className="size-3.5" />
               Statements
             </TabsTrigger>
-            <TabsTrigger value="quarantine" data-testid="financial-tab-quarantine">
+            <TabsTrigger
+              value="quarantine"
+              data-testid="financial-tab-quarantine"
+            >
               <ShieldAlert className="size-3.5" />
               Held out
             </TabsTrigger>
@@ -505,7 +517,10 @@ export function FinancialPage() {
               it is a tab away from the totals it explains rather than the
               other side of the strip.
             */}
-            <TabsTrigger value="decisions" data-testid="financial-tab-decisions">
+            <TabsTrigger
+              value="decisions"
+              data-testid="financial-tab-decisions"
+            >
               <Gavel className="size-3.5" />
               Decisions
             </TabsTrigger>
@@ -517,6 +532,8 @@ export function FinancialPage() {
               <Users className="size-3.5" />
               Counterparties
             </TabsTrigger>
+            <TabsTrigger value="posting-graph">Posting graph</TabsTrigger>
+            <TabsTrigger value="transfers">Transfers</TabsTrigger>
             <TabsTrigger value="tracing">Conditional tracing</TabsTrigger>
             <TabsTrigger value="trends">
               <BarChart3 className="size-3.5" />
@@ -554,7 +571,11 @@ export function FinancialPage() {
               <PdfCandidatesPanel key={caseId} caseId={caseId} />
             </ErrorBoundary>
             <ErrorBoundary level="section">
-              <CorrectableLedger key={caseId} caseId={caseId} onAdjudicate={setAdjudicationRow} />
+              <CorrectableLedger
+                key={caseId}
+                caseId={caseId}
+                onAdjudicate={setAdjudicationRow}
+              />
             </ErrorBoundary>
           </div>
         </TabsContent>
@@ -566,25 +587,42 @@ export function FinancialPage() {
           and nothing about a failed attempt to load evidence bears on whether
           the rows that did arrive are being held out of the totals.
         */}
-        <TabsContent value="statements" className="flex min-h-0 flex-1 flex-col">
+        <TabsContent
+          value="statements"
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
             <header className="space-y-1">
               <h2 className="text-lg font-semibold">Statements</h2>
-              <p className="text-sm text-muted-foreground">Inspect balances, date coverage and the source documents behind this case's financial records.</p>
+              <p className="text-sm text-muted-foreground">
+                Inspect balances, date coverage and the source documents behind
+                this case's financial records.
+              </p>
             </header>
             <ErrorBoundary level="section">
               <StatementChecksPanel key={`checks:${caseId}`} caseId={caseId} />
             </ErrorBoundary>
             <ErrorBoundary level="section">
-              <StatementCoveragePanel key={`coverage:${caseId}`} caseId={caseId} />
+              <StatementCoveragePanel
+                key={`coverage:${caseId}`}
+                caseId={caseId}
+              />
             </ErrorBoundary>
           </div>
         </TabsContent>
 
-        <TabsContent value="quarantine" className="flex min-h-0 flex-1 flex-col">
+        <TabsContent
+          value="quarantine"
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <div className="min-h-0 flex-1 overflow-auto p-4">
             <ErrorBoundary level="section">
-              <CorrectableLedger key={caseId} caseId={caseId} heldOut onAdjudicate={setAdjudicationRow} />
+              <CorrectableLedger
+                key={caseId}
+                caseId={caseId}
+                heldOut
+                onAdjudicate={setAdjudicationRow}
+              />
             </ErrorBoundary>
           </div>
         </TabsContent>
@@ -623,171 +661,257 @@ export function FinancialPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="transactions" className="flex min-h-0 flex-1 flex-col">
+        <TabsContent
+          value="posting-graph"
+          className="min-h-0 flex-1 overflow-auto"
+        >
+          <ErrorBoundary level="section">
+            <LedgerPostingGraph key={caseId} caseId={caseId} />
+          </ErrorBoundary>
+        </TabsContent>
+
+        <TabsContent value="transfers" className="min-h-0 flex-1 overflow-auto">
+          <ErrorBoundary level="section">
+            <LedgerTransfersWorkbench key={caseId} caseId={caseId} />
+          </ErrorBoundary>
+        </TabsContent>
+
+        <TabsContent
+          value="transactions"
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <div className="flex items-center gap-2 border-b p-3">
-            <Button variant={isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("transactions")}>Ledger postings</Button>
-            <Button variant={!isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("intelligence")}>Financial intelligence</Button>
+            <Button
+              variant={isTransactionsMode ? "secondary" : "outline"}
+              onClick={() => handleModeChange("transactions")}
+            >
+              Ledger postings
+            </Button>
+            <Button
+              variant={!isTransactionsMode ? "secondary" : "outline"}
+              onClick={() => handleModeChange("intelligence")}
+            >
+              Financial intelligence
+            </Button>
           </div>
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto p-4">
               <ErrorBoundary level="section">
-                <CorrectableLedger key={caseId} caseId={caseId} onAdjudicate={setAdjudicationRow} />
+                <CorrectableLedger
+                  key={caseId}
+                  caseId={caseId}
+                  onAdjudicate={setAdjudicationRow}
+                />
               </ErrorBoundary>
             </div>
-          ) : <>
-            <p className="border-b p-3 text-sm">Financial intelligence uses extracted graph records, including claims and valuations. These are separate from ledger posting totals and do not reflect ledger corrections.</p>
-            {graphTab(
+          ) : (
             <>
-              {isTransactionsMode && (
-                <BulkActionsBar
-                  onBulkCategorize={() => setBulkCategorizeOpen(true)}
-                  onBulkSetFrom={handleBulkSetFrom}
-                  onBulkSetTo={handleBulkSetTo}
-                />
-              )}
-
-              <div className="flex min-h-0 flex-1 flex-col">
-                <div className="flex-1 overflow-auto">
-                  <ErrorBoundary level="section">
-                    <TransactionTable
-                      mode={store.mode}
-                      transactions={pageTransactions}
-                      allTransactions={filteredTransactions}
-                      categories={categories}
-                      sortColumns={store.sortColumns}
-                      onCategorize={handleCategorize}
-                      onAmountClick={handleAmountClick}
-                      onEntityEdit={handleEntityEdit}
-                      onGroupSubTransactions={handleGroupSubTransactions}
-                      onRemoveFromGroup={handleRemoveFromGroup}
-                      onSaveDetails={handleSaveDetails}
+              <p className="border-b p-3 text-sm">
+                Financial intelligence uses extracted graph records, including
+                claims and valuations. These are separate from ledger posting
+                totals and do not reflect ledger corrections.
+              </p>
+              {graphTab(
+                <>
+                  {isTransactionsMode && (
+                    <BulkActionsBar
+                      onBulkCategorize={() => setBulkCategorizeOpen(true)}
+                      onBulkSetFrom={handleBulkSetFrom}
+                      onBulkSetTo={handleBulkSetTo}
                     />
-                  </ErrorBoundary>
-                </div>
-
-                <TablePagination
-                  currentPage={store.currentPage}
-                  pageCount={pageCount}
-                  pageSize={store.pageSize}
-                  filteredCount={filteredCount}
-                  onPageChange={store.setCurrentPage}
-                  onPageSizeChange={store.setPageSize}
-                />
-              </div>
-            </>
-          )}</>}
-        </TabsContent>
-
-        <TabsContent value="counterparties" className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 border-b p-3">
-            <Button variant={isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("transactions")}>Ledger postings</Button>
-            <Button variant={!isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("intelligence")}>Financial intelligence</Button>
-          </div>
-          {isTransactionsMode ? (
-            <div className="min-h-0 flex-1 overflow-auto">
-              <ErrorBoundary level="section"><LedgerCounterpartiesAnalysis key={caseId} caseId={caseId}/></ErrorBoundary>
-            </div>
-          ) : <>
-            <p className="border-b p-3 text-sm">Financial intelligence uses extracted graph records, including claims and valuations. These are separate from ledger posting totals and do not reflect ledger corrections.</p>
-            {graphTab(
-            !isTransactionsMode ? (
-              <div className="flex flex-1 items-center justify-center p-4">
-                <EmptyState
-                  icon={Users}
-                  title="Counterparty analysis is only available for transactions"
-                  description="Switch to documentary transactions mode to explore sender and beneficiary relationships."
-                />
-              </div>
-            ) : baseFilteredTransactions.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center p-4">
-                <EmptyState
-                  icon={Users}
-                  title="No counterparties match the current filters"
-                  description="Adjust the active search, category, date, entity, or amount filters to populate the sender and beneficiary analysis."
-                />
-              </div>
-            ) : (
-              <div className="min-h-0 flex-1 overflow-hidden p-4">
-                <EntityFlowTables
-                  className="h-full"
-                  senders={senderRows}
-                  beneficiaries={beneficiaryRows}
-                  selectedSenders={selectedSenders}
-                  selectedBeneficiaries={selectedBeneficiaries}
-                  onSelectedSendersChange={handleSelectedSendersChange}
-                  onSelectedBeneficiariesChange={handleSelectedBeneficiariesChange}
-                />
-              </div>
-            )
-          )}</>}
-        </TabsContent>
-
-        <TabsContent value="tracing" className="min-h-0 flex-1 overflow-auto"><ErrorBoundary level="section"><LedgerTracingWorkbench key={caseId} caseId={caseId} /></ErrorBoundary></TabsContent>
-
-        <TabsContent value="trends" className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 border-b p-3">
-            <Button variant={isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("transactions")}>Ledger postings</Button>
-            <Button variant={!isTransactionsMode ? "secondary" : "outline"} onClick={() => handleModeChange("intelligence")}>Financial intelligence</Button>
-          </div>
-          {isTransactionsMode ? (
-            <div className="min-h-0 flex-1 overflow-auto">
-              <ErrorBoundary level="section"><LedgerAnalysis key={caseId} caseId={caseId}/></ErrorBoundary>
-            </div>
-          ) : <>
-            <p className="border-b p-3 text-sm">Financial intelligence uses extracted graph records, including claims and valuations. These are separate from ledger posting totals and do not reflect ledger corrections.</p>
-            {graphTab(
-            <>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-                <div>
-                  <h2 className="text-sm font-semibold">Trends</h2>
-                  <p className="text-xs text-muted-foreground">
-                    Full-width volume and category views for the current filtered
-                    set.
-                  </p>
-                </div>
-                <div className="flex items-center rounded-md border border-border p-0.5">
-                  {(["auto", "daily", "weekly", "monthly"] as const).map(
-                    (grouping) => (
-                      <button
-                        key={grouping}
-                        className={`rounded px-2 py-1 text-xs transition ${
-                          store.chartGrouping === grouping
-                            ? "bg-secondary text-secondary-foreground"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                        onClick={() => store.setChartGrouping(grouping)}
-                      >
-                        {grouping === "auto"
-                          ? "Auto"
-                          : grouping.charAt(0).toUpperCase() + grouping.slice(1)}
-                      </button>
-                    )
                   )}
-                </div>
-              </div>
 
-              <div className="min-h-0 flex-1 overflow-auto p-4">
-                {filteredTransactions.length === 0 ? (
-                  <div className="flex h-full items-center justify-center">
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="flex-1 overflow-auto">
+                      <ErrorBoundary level="section">
+                        <TransactionTable
+                          mode={store.mode}
+                          transactions={pageTransactions}
+                          allTransactions={filteredTransactions}
+                          categories={categories}
+                          sortColumns={store.sortColumns}
+                          onCategorize={handleCategorize}
+                          onAmountClick={handleAmountClick}
+                          onEntityEdit={handleEntityEdit}
+                          onGroupSubTransactions={handleGroupSubTransactions}
+                          onRemoveFromGroup={handleRemoveFromGroup}
+                          onSaveDetails={handleSaveDetails}
+                        />
+                      </ErrorBoundary>
+                    </div>
+
+                    <TablePagination
+                      currentPage={store.currentPage}
+                      pageCount={pageCount}
+                      pageSize={store.pageSize}
+                      filteredCount={filteredCount}
+                      onPageChange={store.setCurrentPage}
+                      onPageSizeChange={store.setPageSize}
+                    />
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent
+          value="counterparties"
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <div className="flex items-center gap-2 border-b p-3">
+            <Button
+              variant={isTransactionsMode ? "secondary" : "outline"}
+              onClick={() => handleModeChange("transactions")}
+            >
+              Ledger postings
+            </Button>
+            <Button
+              variant={!isTransactionsMode ? "secondary" : "outline"}
+              onClick={() => handleModeChange("intelligence")}
+            >
+              Financial intelligence
+            </Button>
+          </div>
+          {isTransactionsMode ? (
+            <div className="min-h-0 flex-1 overflow-auto">
+              <ErrorBoundary level="section">
+                <LedgerCounterpartiesAnalysis key={caseId} caseId={caseId} />
+              </ErrorBoundary>
+            </div>
+          ) : (
+            <>
+              <p className="border-b p-3 text-sm">
+                Financial intelligence uses extracted graph records, including
+                claims and valuations. These are separate from ledger posting
+                totals and do not reflect ledger corrections.
+              </p>
+              {graphTab(
+                !isTransactionsMode ? (
+                  <div className="flex flex-1 items-center justify-center p-4">
                     <EmptyState
-                      icon={BarChart3}
-                      title="No trend data matches the current filters"
-                      description="Adjust the active filters to restore chart data."
+                      icon={Users}
+                      title="Counterparty analysis is only available for transactions"
+                      description="Switch to documentary transactions mode to explore sender and beneficiary relationships."
+                    />
+                  </div>
+                ) : baseFilteredTransactions.length === 0 ? (
+                  <div className="flex flex-1 items-center justify-center p-4">
+                    <EmptyState
+                      icon={Users}
+                      title="No counterparties match the current filters"
+                      description="Adjust the active search, category, date, entity, or amount filters to populate the sender and beneficiary analysis."
                     />
                   </div>
                 ) : (
-                  <ErrorBoundary level="section">
-                    <FinancialCharts
-                      transactions={filteredTransactions}
-                      categories={categories}
-                      groupingOverride={store.chartGrouping}
+                  <div className="min-h-0 flex-1 overflow-hidden p-4">
+                    <EntityFlowTables
+                      className="h-full"
+                      senders={senderRows}
+                      beneficiaries={beneficiaryRows}
+                      selectedSenders={selectedSenders}
+                      selectedBeneficiaries={selectedBeneficiaries}
+                      onSelectedSendersChange={handleSelectedSendersChange}
+                      onSelectedBeneficiariesChange={
+                        handleSelectedBeneficiariesChange
+                      }
                     />
-                  </ErrorBoundary>
-                )}
-              </div>
+                  </div>
+                )
+              )}
             </>
           )}
-          </>}
+        </TabsContent>
+
+        <TabsContent value="tracing" className="min-h-0 flex-1 overflow-auto">
+          <ErrorBoundary level="section">
+            <LedgerTracingWorkbench key={caseId} caseId={caseId} />
+          </ErrorBoundary>
+        </TabsContent>
+
+        <TabsContent value="trends" className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-2 border-b p-3">
+            <Button
+              variant={isTransactionsMode ? "secondary" : "outline"}
+              onClick={() => handleModeChange("transactions")}
+            >
+              Ledger postings
+            </Button>
+            <Button
+              variant={!isTransactionsMode ? "secondary" : "outline"}
+              onClick={() => handleModeChange("intelligence")}
+            >
+              Financial intelligence
+            </Button>
+          </div>
+          {isTransactionsMode ? (
+            <div className="min-h-0 flex-1 overflow-auto">
+              <ErrorBoundary level="section">
+                <LedgerAnalysis key={caseId} caseId={caseId} />
+              </ErrorBoundary>
+            </div>
+          ) : (
+            <>
+              <p className="border-b p-3 text-sm">
+                Financial intelligence uses extracted graph records, including
+                claims and valuations. These are separate from ledger posting
+                totals and do not reflect ledger corrections.
+              </p>
+              {graphTab(
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+                    <div>
+                      <h2 className="text-sm font-semibold">Trends</h2>
+                      <p className="text-xs text-muted-foreground">
+                        Full-width volume and category views for the current
+                        filtered set.
+                      </p>
+                    </div>
+                    <div className="flex items-center rounded-md border border-border p-0.5">
+                      {(["auto", "daily", "weekly", "monthly"] as const).map(
+                        (grouping) => (
+                          <button
+                            key={grouping}
+                            className={`rounded px-2 py-1 text-xs transition ${
+                              store.chartGrouping === grouping
+                                ? "bg-secondary text-secondary-foreground"
+                                : "text-muted-foreground hover:text-foreground"
+                            }`}
+                            onClick={() => store.setChartGrouping(grouping)}
+                          >
+                            {grouping === "auto"
+                              ? "Auto"
+                              : grouping.charAt(0).toUpperCase() +
+                                grouping.slice(1)}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="min-h-0 flex-1 overflow-auto p-4">
+                    {filteredTransactions.length === 0 ? (
+                      <div className="flex h-full items-center justify-center">
+                        <EmptyState
+                          icon={BarChart3}
+                          title="No trend data matches the current filters"
+                          description="Adjust the active filters to restore chart data."
+                        />
+                      </div>
+                    ) : (
+                      <ErrorBoundary level="section">
+                        <FinancialCharts
+                          transactions={filteredTransactions}
+                          categories={categories}
+                          groupingOverride={store.chartGrouping}
+                        />
+                      </ErrorBoundary>
+                    )}
+                  </div>
+                </>
+              )}
+            </>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -814,7 +938,8 @@ export function FinancialPage() {
         subTransactions={subTransactions}
         allTransactions={filteredTransactions}
         onLink={(childKey) =>
-          subTxParent && linkSub.mutate({ parentKey: subTxParent.key, childKey })
+          subTxParent &&
+          linkSub.mutate({ parentKey: subTxParent.key, childKey })
         }
         onUnlink={(childKey) => unlinkSub.mutate({ childKey })}
       />

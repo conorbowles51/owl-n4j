@@ -26,6 +26,7 @@ const response = z.object({
   available: z.boolean(),
   reason: z.string().nullable(),
   applied: z.literal(false),
+  population: z.literal("working").optional(),
   limitation: z.string(),
   included_rows: count.nullable(),
   excluded_rows: count.nullable(),
@@ -41,29 +42,35 @@ const response = z.object({
 export function LedgerCounterpartiesPanel({
   caseId,
   params,
+  population = "verified",
 }: {
   caseId: string
   params: LedgerQueryParams
+  population?: "verified" | "working"
 }) {
   return (
     <CounterpartyScope
       key={JSON.stringify([
         caseId,
+        population,
         params.accountId,
         params.startDate,
         params.endDate,
       ])}
       caseId={caseId}
       params={params}
+      population={population}
     />
   )
 }
 function CounterpartyScope({
   caseId,
   params,
+  population = "verified",
 }: {
   caseId: string
   params: LedgerQueryParams
+  population?: "verified" | "working"
 }) {
   const [opened, setOpened] = useState(false),
     [page, setPage] = useState(0)
@@ -75,6 +82,7 @@ function CounterpartyScope({
     queryKey: [
       "financial-ledger",
       caseId,
+      population,
       "counterparties",
       account,
       start,
@@ -83,16 +91,20 @@ function CounterpartyScope({
     enabled: opened,
     retry: false,
     queryFn: async () => {
-      const search = new URLSearchParams()
+      const search = new URLSearchParams(
+        population === "working" ? { grouping: "counterparty" } : {}
+      )
       if (account) search.set("account_id", account)
       if (start) search.set("start_date", start)
       if (end) search.set("end_date", end)
       const data = response.parse(
         await fetchAPI<unknown>(
-          `${candidateUrl("ledger-counterparties", caseId)}&${search}`
+          `${candidateUrl(population === "working" ? "ledger-working-analysis" : "ledger-counterparties", caseId)}&${search}`
         )
       )
       assertCandidateScope(data, caseId)
+      if ((population === "working") !== (data.population === "working"))
+        throw new Error("Analysis returned for a different population.")
       if (
         data.account_id !== account ||
         data.start_date !== start ||
@@ -177,7 +189,10 @@ function CounterpartyScope({
       aria-label="Ledger counterparty labels"
       className="space-y-2 rounded border p-3"
     >
-      <h3 className="font-semibold">Ledger counterparty labels</h3>
+      <h3 className="font-semibold">
+        {population === "working" ? "Working analysis" : "Verified analysis"} ·
+        Ledger counterparty labels
+      </h3>
       <p>
         Groups source labels exactly as recorded, separately by currency. Equal
         labels do not establish identity or transfer matches. Missing and blank

@@ -12,6 +12,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from postgres.models.enums import ProofClass, TransactionDirection
 from services.financial.money import Money
+from services.financial.proof_class import DEFAULT_TOTAL_CLASSES
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.ledger_snapshot import MAX_EXPORT_BYTES
 from services.financial.tracing import Movement, Attribution, Doctrine, compare_doctrines
@@ -36,6 +37,7 @@ class TraceAttributionInput(BaseModel):
 
 class LedgerTraceInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
+    population: str = Field(default="verified", pattern=r"^(working|verified)$")
     account_id: UUID
     start_date: date
     end_date: date
@@ -55,22 +57,24 @@ class LedgerTraceInput(BaseModel):
         return value
 
 
-def ledger_trace_inputs(export):
+def ledger_trace_inputs(export, *, population="verified"):
+    if population not in ("working", "verified"):
+        raise LedgerSummaryError("Choose working or verified readings for tracing.")
     document = json.loads(export.snapshot.content)
     ledger = document['ledger']
     if not document.get('export_ready') or not ledger.get('history_captured'):
         raise LedgerSummaryError('Tracing requires a consistent captured ledger and history.')
     if not ledger['account_id'] or not ledger['start_date'] or not ledger['end_date']:
         raise LedgerSummaryError('Choose one account and a closed ordering-date interval for tracing.')
-    rows = [r for r in ledger['readings'] if r['included']]
+    rows = [r for r in ledger['readings'] if r['included'] or (population == 'working' and r['exclusion_reason'] == 'proof_class_not_included')]
     if not rows or len(rows) > MAX_TRACE_ROWS:
         raise LedgerSummaryError('Tracing requires between 1 and 1000 included readings; narrow the scope without omitting relevant activity.')
     currencies = {r['row']['currency'] for r in rows}
     if len(currencies) != 1:
         raise LedgerSummaryError('An account tracing scenario must have one currency; currencies cannot be combined.')
-    return dict(case_id=ledger['case_id'], account_id=ledger['account_id'], start_date=ledger['start_date'],
+    return dict(population=population, case_id=ledger['case_id'], account_id=ledger['account_id'], start_date=ledger['start_date'],
         end_date=ledger['end_date'], currency=next(iter(currencies)), snapshot_sha256=export.snapshot.sha256,
-        included_rows=len(rows), excluded_rows=ledger['excluded_rows'], readings=rows,
+        included_rows=len(rows), excluded_rows=len(ledger['readings'])-len(rows), readings=rows,
         applied=False, limitation='Opening funds, deposit attribution and same-day order require explicit investigator assumptions. This input list does not establish evidence completeness or the applicable tracing method.')
 
 
@@ -95,7 +99,7 @@ def _exact_json(value):
 
 
 def evaluate_ledger_trace(export, request: LedgerTraceInput):
-    scope = ledger_trace_inputs(export)
+    scope = ledger_trace_inputs(export, population=request.population)
     if request.expected_snapshot_sha256 != export.snapshot.sha256:
         raise LedgerSummaryError('Ledger readings or decisions changed. Reload tracing inputs and review assumptions.')
     if (str(request.account_id) != scope['account_id'] or request.start_date.isoformat() != scope['start_date']
@@ -118,11 +122,13 @@ def evaluate_ledger_trace(export, request: LedgerTraceInput):
     attributions = [Attribution(transaction_id=a.transaction_id, claim_id=a.claim_id,
         amount=Money(int(a.amount_minor), currency), basis=a.basis) for a in request.attributions]
     comparison = compare_doctrines(movements, attributions, opening_balance=Money(int(request.opening_balance_minor), currency),
-                                   doctrines=request.doctrines)
+                                   doctrines=request.doctrines,
+                                   proof_classes=DEFAULT_TOTAL_CLASSES | ({ProofClass.p3} if request.population == "working" else set()))
     payload = dict(schema='loupe.financial.conditional_trace/1', case_id=scope['case_id'], account_id=scope['account_id'],
         applied=False, assumptions_verified=False, inputs=request.model_dump(mode='json'),
         ledger_snapshot=json.loads(export.snapshot.content), ledger_manifest=json.loads(export.manifest),
         comparison=_exact_json(comparison), limitations=[
+            'Population: ' + request.population + '. Original proof classes are retained; working P3 readings are assumptions in this scenario, not verified postings.',
             'Conditional scenario only. Opening balance, deposit attributions and same-day order are investigator-supplied assumptions, not verified ledger facts.',
             'The opening balance is treated as unattributed funds before this interval; claims on opening funds are not represented.',
             'Missing evidence and incomplete extraction may change every result. Excluded readings remain outside this scenario and are listed in the captured snapshot.',

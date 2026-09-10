@@ -115,6 +115,9 @@ function ReviewFields({
     previous?.transaction_date ?? ""
   )
   const [description, setDescription] = useState(previous?.description ?? "")
+  const [counterparty, setCounterparty] = useState(
+    previous?.counterparty_raw ?? ""
+  )
   const [reason, setReason] = useState("")
   const [search, setSearch] = useState("")
   const [blocked, setBlocked] = useState(false)
@@ -246,6 +249,7 @@ function ReviewFields({
               ? { statement_end_date: statementEndDate }
               : {}),
             description,
+            ...(counterparty ? { counterparty_raw: counterparty } : {}),
           }
         : null
     record.mutate({ status, reading })
@@ -418,6 +422,20 @@ function ReviewFields({
               maxLength={4096}
               onChange={(e) => setDescription(e.target.value)}
             />
+          </label>
+          <label>
+            Counterparty as printed (optional)
+            <input
+              aria-label="Counterparty as printed (optional)"
+              className={fieldClass}
+              value={counterparty}
+              maxLength={4096}
+              onChange={(e) => setCounterparty(e.target.value)}
+            />
+            <span className="block text-xs text-muted-foreground">
+              Record only the name shown by the source. Leave empty if unknown;
+              this does not establish the party’s identity.
+            </span>
           </label>
           <label className="sm:col-span-2">
             Reason for decision
@@ -599,6 +617,12 @@ function ReviewFields({
                 {new Date(event.created_at).toLocaleString()}
               </p>
               <p>{event.reason}</p>
+              {event.reading?.counterparty_raw != null && (
+                <p>
+                  Counterparty as printed:{" "}
+                  {event.reading.counterparty_raw || "Blank source label"}
+                </p>
+              )}
               {event.reading && (
                 <p>
                   {correctionMoney(

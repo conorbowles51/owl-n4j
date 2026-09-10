@@ -46,14 +46,17 @@ const answer = {
     },
   ],
 }
-function mount(data: unknown = answer) {
+function mount(
+  data: unknown = answer,
+  population: "working" | "verified" = "verified"
+) {
   const fetch = vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(async () => new Response(JSON.stringify(data)))
   const client = new QueryClient()
   const element = (caseId = "case-a") => (
     <QueryClientProvider client={client}>
-      <LedgerTrendsPanel caseId={caseId} params={{}} />
+      <LedgerTrendsPanel caseId={caseId} params={{}} population={population} />
     </QueryClientProvider>
   )
   const view = render(element())
@@ -114,4 +117,24 @@ it("keeps unknown separate from empty activity", async () => {
     await screen.findByText("Date totals unavailable. Too many rows.")
   ).toBeInTheDocument()
   expect(screen.queryByText(/No eligible postings/)).not.toBeInTheDocument()
+})
+
+it("uses the explicit working population and preserves exact amounts", async () => {
+  const { fetch } = mount({ ...answer, population: "working" }, "working")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Read ledger date totals" })
+  )
+  expect(
+    await screen.findByText(/Credits: 90071992547409.93 GBP/)
+  ).toBeInTheDocument()
+  expect(String(fetch.mock.calls[0][0])).toContain("ledger-working-analysis")
+})
+it("refuses verified data returned to a working analysis", async () => {
+  mount(answer, "working")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Read ledger date totals" })
+  )
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "different population"
+  )
 })

@@ -47,7 +47,12 @@ function json(value: unknown, status = 200) {
 }
 function mockServer(
   overrides: {
-    rows?: Array<{ id: string; row_index: number; status: string; original: typeof original }>
+    rows?: Array<{
+      id: string
+      row_index: number
+      status: string
+      original: typeof original
+    }>
     review?: unknown
     writeStatus?: number
     accountCase?: string
@@ -58,10 +63,19 @@ function mockServer(
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (url, options) => {
       const path = String(url)
-      if (path.includes("/source-readings")) return json({
-        case_id: overrides.sourceCase ?? "case-a", candidate_id:"row-a",mapping_id:"mapping-a",evidence_file_id:"file-a",
-        review_revision:base.review_revision,applied:false,cells:original.cells.map(c=>({...c,locator:{kind:"unlocated"}}))
-      })
+      if (path.includes("/source-readings"))
+        return json({
+          case_id: overrides.sourceCase ?? "case-a",
+          candidate_id: "row-a",
+          mapping_id: "mapping-a",
+          evidence_file_id: "file-a",
+          review_revision: base.review_revision,
+          applied: false,
+          cells: original.cells.map((c) => ({
+            ...c,
+            locator: { kind: "unlocated" },
+          })),
+        })
       if (path.includes("ledger-accounts"))
         return json({ ...accounts, case_id: overrides.accountCase ?? "case-a" })
       if (path.includes("/review") && options?.method === "POST") {
@@ -169,12 +183,17 @@ it("records an exact resolved reading with its reviewed revision", async () => {
   const fetch = mockServer()
   mountForm()
   await fill()
+  fireEvent.change(
+    screen.getByLabelText("Counterparty as printed (optional)"),
+    { target: { value: "  Printed & Co.  " } }
+  )
   fireEvent.click(
     screen.getByRole("button", { name: "Record resolved reading" })
   )
   expect(await screen.findByText(/Review recorded/)).toBeInTheDocument()
   const call = fetch.mock.calls.find(([, o]) => o?.method === "POST")!
   const body = JSON.parse(String(call[1]?.body))
+  expect(body.reading.counterparty_raw).toBe("  Printed & Co.  ")
   expect(body.reading.amount_minor).toBe("200")
   expect(body.reading.booking_date).toBe("2026-02-01")
   expect(body.reading.value_date).toBeNull()
@@ -378,13 +397,22 @@ it("refuses a review response that omits its finalization state", async () => {
   ).not.toBeInTheDocument()
 })
 
-it("opens the original beside the form without requesting an assessment",async()=>{
- const fetch=mockServer();mountForm();await screen.findByRole("region",{name:"Original document beside review"});
- await screen.findByRole("button",{name:"Source column 1: amount"});
- expect(fetch.mock.calls.some(([url])=>String(url).includes("assessment"))).toBe(false)
+it("opens the original beside the form without requesting an assessment", async () => {
+  const fetch = mockServer()
+  mountForm()
+  await screen.findByRole("region", { name: "Original document beside review" })
+  await screen.findByRole("button", { name: "Source column 1: amount" })
+  expect(
+    fetch.mock.calls.some(([url]) => String(url).includes("assessment"))
+  ).toBe(false)
 })
-it("refuses a source panel from another case",async()=>{
- mockServer({sourceCase:"other"});mountForm();expect(await screen.findByRole("alert")).toHaveTextContent("do not match");expect(screen.queryByRole("button",{name:"Source column 1: amount"})).not.toBeInTheDocument()
+it("refuses a source panel from another case", async () => {
+  mockServer({ sourceCase: "other" })
+  mountForm()
+  expect(await screen.findByRole("alert")).toHaveTextContent("do not match")
+  expect(
+    screen.queryByRole("button", { name: "Source column 1: amount" })
+  ).not.toBeInTheDocument()
 })
 
 it("shows saved progress, filters pending rows and keeps reviewed rows available", async () => {
@@ -395,32 +423,65 @@ it("shows saved progress, filters pending rows and keeps reviewed rows available
   ]
   mockServer({ rows })
   const client = new QueryClient()
-  render(<QueryClientProvider client={client}><PdfCandidatesPanel caseId="case-a" /></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <PdfCandidatesPanel caseId="case-a" />
+    </QueryClientProvider>
+  )
   fireEvent.click(screen.getByRole("button", { name: "Open PDF readings" }))
   fireEvent.click(await screen.findByRole("button", { name: "Open readings" }))
-  expect(await screen.findByText("1 awaiting review · 1 resolved · 1 rejected")).toBeVisible()
+  expect(
+    await screen.findByText("1 awaiting review · 1 resolved · 1 rejected")
+  ).toBeVisible()
   fireEvent.click(screen.getByLabelText("Show only rows awaiting review"))
-  expect(screen.queryByRole("button", { name: "Review source row 2" })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole("button", { name: "Review next pending row" }))
+  expect(
+    screen.queryByRole("button", { name: "Review source row 2" })
+  ).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review next pending row" })
+  )
   expect(await screen.findByLabelText("Reason for decision")).toBeVisible()
   rows[0].status = "resolved"
-  await client.invalidateQueries({ queryKey: ["financial-candidates", "case-a", "mapping"] })
-  expect(await screen.findByText("0 awaiting review · 2 resolved · 1 rejected")).toBeVisible()
-  expect(screen.getByRole("button", { name: "Review next pending row" })).toBeDisabled()
-  expect(screen.getByText("No rows awaiting review in this batch.")).toBeVisible()
+  await client.invalidateQueries({
+    queryKey: ["financial-candidates", "case-a", "mapping"],
+  })
+  expect(
+    await screen.findByText("0 awaiting review · 2 resolved · 1 rejected")
+  ).toBeVisible()
+  expect(
+    screen.getByRole("button", { name: "Review next pending row" })
+  ).toBeDisabled()
+  expect(
+    screen.getByText("No rows awaiting review in this batch.")
+  ).toBeVisible()
   fireEvent.click(screen.getByLabelText("Show only rows awaiting review"))
-  expect(screen.getByRole("button", { name: "Review source row 2" })).toBeVisible()
+  expect(
+    screen.getByRole("button", { name: "Review source row 2" })
+  ).toBeVisible()
 })
 
 it("records explicit statement-end ordering while leaving transaction dates unknown", async () => {
   const fetch = mockServer()
   mountForm()
   await fill()
-  fireEvent.change(screen.getByLabelText("Booking date"), { target: { value: "" } })
-  fireEvent.change(screen.getByLabelText("Statement end date (ordering only)"), { target: { value: "2026-02-28" } })
-  fireEvent.click(screen.getByRole("button", { name: "Record resolved reading" }))
-  await waitFor(() => expect(fetch.mock.calls.some(([, options]) => options?.method === "POST")).toBe(true))
-  const call = fetch.mock.calls.find(([, options]) => options?.method === "POST")!
+  fireEvent.change(screen.getByLabelText("Booking date"), {
+    target: { value: "" },
+  })
+  fireEvent.change(
+    screen.getByLabelText("Statement end date (ordering only)"),
+    { target: { value: "2026-02-28" } }
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Record resolved reading" })
+  )
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(([, options]) => options?.method === "POST")
+    ).toBe(true)
+  )
+  const call = fetch.mock.calls.find(
+    ([, options]) => options?.method === "POST"
+  )!
   const reading = JSON.parse(String(call[1]?.body)).reading
   expect(reading.statement_end_date).toBe("2026-02-28")
   expect(reading.booking_date).toBeNull()

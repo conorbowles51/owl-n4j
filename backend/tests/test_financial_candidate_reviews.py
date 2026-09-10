@@ -48,6 +48,16 @@ class CandidateReviewTests(unittest.TestCase):
         request.update(updates)
         return review_candidate(f.db, case_id=f.case, candidate_id=self.candidate_id, request=request, actor=f.actor)
 
+    def test_counterparty_preserves_exact_source_label_and_history(self):
+        label = "  Printed & Co.  "
+        saved = self.review("resolved", reading=self.reading(counterparty_raw=label))
+        self.assertEqual(saved["reading"]["counterparty_raw"], label)
+        self.assertEqual(self.read()["history"][-1]["reading"]["counterparty_raw"], label)
+        self.review("pending")
+        saved = self.review("resolved")
+        self.assertNotIn("counterparty_raw", saved["reading"])
+        self.assertEqual(saved["history"][0]["reading"]["counterparty_raw"], label)
+
     def test_initial_state_has_original_and_no_decisions(self):
         state = self.read()
         self.assertEqual(state["status"], "pending")

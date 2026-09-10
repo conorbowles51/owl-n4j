@@ -26,6 +26,7 @@ class CandidateResolvedReading(_Contract):
     transaction_date: Optional[str] = None
     statement_end_date: Optional[str] = None
     description: Annotated[str, Field(strict=True, max_length=4096)]
+    counterparty_raw: Annotated[Optional[str], Field(strict=True, max_length=4096)] = None
 
     @model_validator(mode="after")
     def complete_exact_reading(self):
@@ -141,8 +142,10 @@ def review_candidate(session, *, case_id, candidate_id, request, actor):
         if request.expected_revision != state["review_revision"]:
             raise CandidateStoreError("Candidate review changed. Reload before deciding.")
         reading = request.reading.model_dump(mode="json") if request.reading is not None else None
-        if reading is not None and reading.get("statement_end_date") is None:
-            reading.pop("statement_end_date", None)
+        if reading is not None:
+            for optional in ("statement_end_date", "counterparty_raw"):
+                if reading.get(optional) is None:
+                    reading.pop(optional, None)
         if state["status"] == request.status and state["reading"] == reading:
             raise CandidateStoreError("This candidate already has that review state.")
         if request.reading is not None:

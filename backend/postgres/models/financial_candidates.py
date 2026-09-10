@@ -120,3 +120,15 @@ class FinancialCandidateTransaction(Base):
 def _immutable_original(mapper, connection, target):
     if any(attribute.history.has_changes() for attribute in inspect(target).attrs):
         raise ValueError("Extraction originals are immutable; record a separate review or mapping revision.")
+
+
+class FinancialStatementReviewDraft(Base):
+    """Replaceable working controls, separate from immutable finalized receipts."""
+    __tablename__ = 'financial_statement_review_drafts'
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('evidence_files.id', ondelete='CASCADE'), primary_key=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('cases.id', ondelete='CASCADE'), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    statement_scopes: Mapped[list] = mapped_column(JSONB().with_variant(JSON(), 'sqlite'), nullable=False)
+    actor: Mapped[dict] = mapped_column(JSONB().with_variant(JSON(), 'sqlite'), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (CheckConstraint('version > 0', name='ck_statement_review_draft_version'),)

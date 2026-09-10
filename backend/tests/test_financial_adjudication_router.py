@@ -91,7 +91,7 @@ class PermissionResolverTests(unittest.TestCase):
     def test_the_router_is_mounted_under_the_financial_prefix(self):
         self.assertEqual(financial_adjudication.router.prefix, "/api/financial")
 
-    def test_every_route_is_a_post_against_the_thing_it_adjudicates(self):
+    def test_every_mutation_route_has_its_expected_method(self):
         """Written as an exhaustive comparison rather than a membership check.
 
         A route added to this module inherits ``case:edit`` unconditionally
@@ -110,6 +110,7 @@ class PermissionResolverTests(unittest.TestCase):
                 "/api/financial/candidates/{candidate_id}/review": ["POST"],
                 "/api/financial/candidate-mappings": ["POST"],
                 "/api/financial/candidate-sources/{evidence_file_id}/finalize": ["POST"],
+                "/api/financial/candidate-sources/{evidence_file_id}/statement-draft": ["PUT"],
                 "/api/financial/candidates/{candidate_id}/provisional-account": ["POST"],
                 "/api/financial/transactions/{transaction_id}/quarantine": [
                     "POST"
