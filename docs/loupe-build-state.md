@@ -1,3 +1,27 @@
+## Recorded processing and merge/recovery history — 10 September
+
+Migration20260910_audit_graph_jobs adds prospective job, merge-job, graph recovery
+and rejected-merge-pair events to the same case chain. Private execution inputs,
+recovery snapshots and errors are hashed rather than exported in full. Job updates
+that only change progress/updated_at are omitted; engine legacy non-UUID case labels
+are explicitly outside relational-case scope. In-place case ownership changes and
+truncation remain refused. Requester/rejector references are distinguished from
+worker/current-operator identity. No atomic Neo4j/PostgreSQL commit is asserted.
+
+Disposable-schema PostgreSQL checks add12events across the four tables and exercise
+private-field and legacy/progress handling. The actual engine Job schema produces
+four insert/status/private-state/delete events, then rolls back every change;
+uncommitted events are invisible from another connection. Focused audit/graph-merge
+unit checks pass; preceding4336financial backend/332engine and128live permission
+baselines remain valid for unchanged application behavior. No graph/model operation
+was dispatched and no existing source/ledger state was changed.
+
+Migration applied locally. Backend12092 (/tmp/loupe-graph-audit-runtime.out),
+engine62038/worker73588. No provider or push. Further original-specification work
+includes external audit anchoring and independently reviewed extraction validation;
+historical custody and cross-database atomicity remain explicit evidence limitations.
+Continue development without a handback at this commit.
+
 ## Prepared source and export audit coverage — 10 September
 
 Migration20260910_audit_source_exports factors a shared database append operation,

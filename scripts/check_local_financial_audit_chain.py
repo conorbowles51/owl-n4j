@@ -25,6 +25,8 @@ state_spec=importlib.util.spec_from_file_location('audit_states',path.with_name(
 state_migration=importlib.util.module_from_spec(state_spec);state_spec.loader.exec_module(state_migration)
 source_spec=importlib.util.spec_from_file_location('audit_sources',path.with_name('20260910_audit_source_exports.py'))
 source_migration=importlib.util.module_from_spec(source_spec);source_spec.loader.exec_module(source_migration)
+graph_spec=importlib.util.spec_from_file_location('audit_graphs',path.with_name('20260910_audit_graph_jobs.py'))
+graph_migration=importlib.util.module_from_spec(graph_spec);graph_spec.loader.exec_module(graph_migration)
 
 
 def configure(connection):
@@ -50,8 +52,10 @@ try:
         connection.execute(text('CREATE TABLE financial_extraction_candidates (id uuid PRIMARY KEY, mapping_id uuid NOT NULL)'))
         connection.execute(text('CREATE TABLE evidence_document_texts (evidence_file_id uuid PRIMARY KEY REFERENCES evidence_files(id) ON DELETE CASCADE, content text, content_sha256 text, processing_manifest jsonb)'))
         connection.execute(text('CREATE TABLE evidence_table_geometry (evidence_file_id uuid REFERENCES evidence_files(id) ON DELETE CASCADE, page_number integer, payload jsonb, PRIMARY KEY(evidence_file_id,page_number))'))
+        for table in graph_migration.TARGETS:
+            connection.execute(text(f'CREATE TABLE {table} (id uuid PRIMARY KEY,case_id text,reason text,status text,progress numeric,updated_at timestamptz,file_path text,merge_payload jsonb,snapshot jsonb,error_message text,requested_by_user_id uuid,rejected_by_user_id uuid)'))
         with Operations.context(MigrationContext.configure(connection)):
-            migration.upgrade();state_migration.upgrade();source_migration.upgrade()
+            migration.upgrade();state_migration.upgrade();source_migration.upgrade();graph_migration.upgrade()
     with engine.begin() as connection:
         configure(connection)
         with Session(bind=connection) as db:
@@ -197,6 +201,23 @@ try:
         else:raise AssertionError('Audit failure did not refuse prepared export')
         with Session(scoped_engine) as db:assert capture_financial_audit_chain(db,case_id=export_case)['verification']['event_count']==1
     finally:scoped_engine.dispose()
+    graph_case=uuid4()
+    with engine.begin() as connection:
+        configure(connection)
+        for table in graph_migration.TARGETS:
+            identity=insert(connection,table,scope=str(graph_case),status='pending',file_path='PRIVATE_JOB_PATH',error_message='PRIVATE_JOB_ERROR')
+            connection.execute(text(f"UPDATE {table} SET status='completed' WHERE id=:id"),dict(id=identity))
+            if table=='jobs':
+                connection.execute(text('UPDATE jobs SET progress=0.5,updated_at=now() WHERE id=:id'),dict(id=identity))
+            connection.execute(text(f'DELETE FROM {table} WHERE id=:id'),dict(id=identity))
+        insert(connection,'jobs',scope='legacy-non-case-label',status='pending')
+        with Session(bind=connection) as db:
+            captured=capture_financial_audit_chain(db,case_id=graph_case)
+            assert captured['verification']['event_count']==12
+            jobs=[json.loads(entry['payload_text']) for entry in captured['entries'] if json.loads(entry['payload_text'])['source_table']=='jobs']
+            assert 'PRIVATE_JOB_PATH' not in str(jobs) and 'PRIVATE_JOB_ERROR' not in str(jobs)
+            assert all('not proof of an atomic' in event['limitation'] for event in jobs)
+    print('PASS: four processing/merge/recovery tables;12events; progress-only updates excluded; legacy non-case job label preserved outside case audit; private job fields omitted.')
     print('PASS: prepared text and geometry replacements and cascading deletion; actual omitted-content hashes; prepared-export receipt bytes/actor/head and injected failure rollback.')
     print('PASS: ten additional state targets,26events; deletion before-state; private evidence fields excluded; authorized actor retained across commits, scoped to its case and cleared from pooled connections; in-place case ownership change refused.')
     print('PASS: all six trigger targets; exact hash verification; source-derived actor and before/after; no-op exclusion; update/delete/truncate/bad append refused; atomic rollback and injected-failure rollback; two concurrent writers, twenty ordered events; case isolation.')

@@ -17,10 +17,18 @@ record, not a reconstruction of events that occurred before installation.
 | Workspace revisions and events | Insert |
 | Prepared document text and table geometry | Insert, update and delete |
 | Server ledger ZIP and tracing support ZIP | Export prepared |
+| UUID-scoped engine jobs | Insert, meaningful update and delete |
+| Merge jobs, graph recovery items and merge rejections | Insert, update and delete |
 
 The additional state targets begin at migration `20260910_audit_state_changes`;
 they are not backfilled. Source replacement and export preparation begin at
 `20260910_audit_source_exports`. The captured policy is retained in new event payloads.
+Processing/merge/recovery records begin at `20260910_audit_graph_jobs`. Engine
+legacy non-UUID case labels are outside relational-case scope, and progress-only
+job updates are omitted. Private execution/recovery bodies are represented by a
+digest. A recorded job or recovery state does not prove that PostgreSQL and Neo4j
+committed atomically or establish the actual graph contents.
+
 Text bodies and geometry payloads are represented by hashes; they are not copied
 into audit exports. Cascading file deletion retains the child-source events.
 Truncation of tracked tables is refused because it would bypass row history.
@@ -77,9 +85,9 @@ not inside the archive that caused it. These receipt headers are not a checkpoin
 for that archive's earlier chain head. Offline artifact generation does not append
 a server event.
 
-This is not yet the full audit spine in the original specification. Graph/entity
-merges, historical custody and external RFC3161 timestamp anchoring remain outside
-this coverage. Internally consistent
+This is not yet the full audit spine in the original specification. Historical custody, atomic cross-database graph commits and external RFC3161
+timestamp anchoring remain outside this coverage. Recorded merge/recovery states
+are retained with the limitations above. Internally consistent
 hashes alone cannot detect replacement of the whole chain or removal of its tail.
 Older decisions/reviews retain their existing history separately and are not
 retroactively authenticated by this mechanism.
