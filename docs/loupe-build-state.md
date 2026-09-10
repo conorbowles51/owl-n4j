@@ -1,3 +1,30 @@
+## Measured OCR source selection — 10 September
+
+OCR now retains measured word rectangles from the selected Tesseract orientation,
+projects them onto the original displayed PDF page and stores source table cells.
+Invalid geometry leaves recovered text available but refuses guessed locations.
+Overlapping OCR tokens share their full measured union; adjacent amount and fee
+boxes remain separate. Native text grouping is unchanged.
+
+Fresh UI upload case 3db2ae11-da7f-405a-a087-b465bdc9f12d, file
+ a31e783e-84f8-415b-9d43-b0c481acc43e prepared all 56 pages. Page 51 has
+recognised_glyphs provenance and cell_rectangles geometry. Browser selected
+500.00 separately from 0.00, saved one pending candidate and reopened its original
+PDF highlight. Both source-selection and review screenshots visually inspected.
+Read-only repeat passed with zero financial writes. No amount/date/account/direction
+was confirmed and no ledger admission occurred; this does not complete full-file
+financial review. Source SHA5a3ad9... remains unchanged.
+
+Reports: ocr-located-pdf-intake-check.json and ocr-source-review-check.json.
+Writer check_local_ocr_source_review.cjs is sealed; use --read-only only.
+Earlier fixture 5828f158-f437-4cf4-9236-ec18947e3c39 exposed overlapping OCR boxes;
+its normal reprepare attempt dispatched NO job and changed no financial data.
+Do not reset or reprepare either fixture to repeat acceptance.
+
+43 engine extraction/geometry tests and 109 targeted backend tests pass.
+Engine session32600, worker93712 now run the fix; backend27456 remains.
+Full backend regression passes: 4216 tests. No push. Continue remaining full scope and UI.
+
 ## Dense corrupt PDF text recovery —10September, about10:35Dublin
 
 Engine now detects excessive control/replacement characters even when an

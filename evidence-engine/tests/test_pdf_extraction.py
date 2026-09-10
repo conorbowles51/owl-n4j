@@ -185,6 +185,7 @@ async def test_image_only_pdf_is_ocrd_and_replaces_missing_native_text(
         "ocr_low_confidence": False,
         "ocr_dpi": 300,
         "ocr_language": "eng",
+        "ocr_geometry_status": "unavailable",
     }
 
 
@@ -790,3 +791,22 @@ def test_dense_legible_text_and_single_character_tables_do_not_force_ocr() -> No
             assert pdf_extraction._ocr_detection_reason(page, text) is None
     finally:
         document.close()
+
+
+async def test_ocr_word_boxes_produce_source_cells_with_ocr_provenance(tmp_path, monkeypatch, mock_osd):
+    pdf_path = tmp_path / "located-scan.pdf"
+    _write_scanned_pdf(pdf_path, ["Synthetic source cell coordinates"])
+    monkeypatch.setattr(pytesseract, "image_to_data", lambda *_args, **_kwargs: {
+        "text": ["2026-01-01", "12.34", "2026-01-02", "56.78"],
+        "conf": ["95"] * 4, "block_num": [1] * 4, "par_num": [1] * 4,
+        "line_num": [1,1,2,2], "left": [100,800,100,800], "top": [100,100,200,200],
+        "width": [200,100,200,100], "height": [30] * 4,
+    })
+    result = await extract_text(str(pdf_path), pdf_path.name)
+    assert result.metadata["page_spans"][0]["text_origin"] == "recognised_glyphs"
+    assert result.metadata["page_spans"][0]["ocr_geometry_status"] == "available"
+    tables = result.metadata["table_geometry"]["per_table"]
+    assert len(tables) == 1
+    assert tables[0]["table_source"] == "text_alignment"
+    assert {v["text"] for v in tables[0]["table"]["values"]} == {"2026-01-01", "12.34", "2026-01-02", "56.78"}
+    assert all(v["locator"]["space"] == "pdf_displayed" for v in tables[0]["table"]["values"])

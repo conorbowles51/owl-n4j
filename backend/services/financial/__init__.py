@@ -608,6 +608,7 @@ from services.financial.pdf_tables import (
     chunks_of,
     geometry_summary,
     read_tables,
+    read_positioned_ocr_words,
 )
 from services.financial.proof_class import (
     AUTO_ADMITTED_CLASSES,
@@ -1524,6 +1525,7 @@ __all__ = [
     "chunks_of",
     "geometry_summary",
     "read_tables",
+    "read_positioned_ocr_words",
     # Rows recovered from where the words sit, when nothing was ruled
     "TextRowTable",
     "read_text_rows",

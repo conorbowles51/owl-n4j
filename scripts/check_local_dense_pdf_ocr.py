@@ -34,7 +34,7 @@ async def main():
     report = dict(source_sha256=SHA, pages=len(spans), ocr_pages=result.metadata['ocr_page_count'],
                   recovered_pages=recovered, local_provider='tesseract', financial_writes=0,
                   original_unchanged=True, stored_case_sources_unchanged=True,
-                  limitation='OCR text recovery only. Financial amounts and dates are not automatically verified; OCR pages do not yet have stored table geometry from this diagnostic.')
+                  limitation='Local extraction diagnostic only. Geometry availability is recorded per page when present; financial amounts and dates are not automatically verified. Stored-case source selection is checked separately by check_local_ocr_source_review.cjs.')
     (ROOT / 'data/local-runtime/dense-ocr-check.json').write_text(json.dumps(report, indent=2))
     print(json.dumps({**report, 'recovered_pages':[51,52]}), flush=True)
 

@@ -53,6 +53,14 @@ separate Loupes collection design are not by themselves an agreed financial layo
 Current visual state is functional, not final. The existing Loupe shell is retained.
 Backend test counts do not establish completion of these user journeys.
 
+## Verified OCR source review — 10 September 2026
+
+- [x] Fresh real 56-page PDF upload recovers measured OCR source cells on page51.
+  Amount500.00 and fee0.00 remain separately selectable. Saved pending reading
+  reopens beside the original highlighted amount; desktop screenshots inspected.
+  Repeat inspection makes zero financial writes. Financial interpretation and
+  full-file review remain outstanding.
+
 ## Verified refinements — 9 September 2026
 
 - [x] Source zoom100–400%, fit width and highlight focus, verified on the real PDF.

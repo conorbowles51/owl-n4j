@@ -461,6 +461,35 @@ def read_tables(page: Any, page_number: int) -> tuple[ExtractedTable, ...]:
     return tuple(tables)
 
 
+
+def read_positioned_ocr_words(words, *, page_number, page_width, page_height):
+    """Recover source cells from measured OCR words in displayed PDF points.
+
+    The engine has already undone its orientation and pixel scaling. These are
+    position-based row proposals with separate measured OCR words (overlapping
+    token boxes share their full source span), never native text or verified financial values. Column meanings remain unknown.
+    """
+    import math
+    from types import SimpleNamespace
+    if type(page_number) is not int or page_number < 1:
+        raise ValueError('Invalid OCR page number')
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0 for v in (page_width, page_height)):
+        raise ValueError('Invalid OCR page extent')
+    if len(words) > 100000:
+        raise ValueError('Too many OCR words for source geometry')
+    for word in words:
+        if len(word) != 5 or not isinstance(word[4], str) or not word[4].strip():
+            raise ValueError('Invalid positioned OCR word')
+        x0,y0,x1,y1 = word[:4]
+        if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) for v in word[:4]) or not (0 <= x0 < x1 <= page_width and 0 <= y0 < y1 <= page_height):
+            raise ValueError('Positioned OCR word falls outside its page')
+    table = read_text_rows(SimpleNamespace(get_text=lambda kind: words), word_cells=True)
+    if table is None:
+        return ()
+    return tuple(_build([table], table_source=TableSource.text_alignment,
+        space=CoordinateSpace.pdf_displayed, page_number=page_number,
+        extent_failure=None, rotation=0, page_width=page_width, page_height=page_height))
+
 def chunks_of(tables: Sequence[ExtractedTable]) -> list[str]:
     """The text chunks, in order -- what the pipeline's ``tables`` list holds."""
     return [table.chunk for table in tables]

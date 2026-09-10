@@ -396,7 +396,25 @@ def _bbox_of(rows: Iterable[_Row]) -> Optional[tuple[float, float, float, float]
     )
 
 
-def read_text_rows(page: Any) -> Optional[TextRowTable]:
+
+def _measured_word_cells(line, band):
+    """Only touching/overlapping OCR boxes share a cell; retain their full union."""
+    if not line:
+        return []
+    cells, run = [], [line[0]]
+    right = line[0].x1
+    for word in line[1:]:
+        if word.x0 - right > BAND_SEPARATION:
+            cells.append(_cell_of(run, band))
+            run = [word]
+            right = word.x1
+        else:
+            run.append(word)
+            right = max(right, word.x1)
+    cells.append(_cell_of(run, band))
+    return cells
+
+def read_text_rows(page: Any, *, word_cells: bool = False) -> Optional[TextRowTable]:
     """Every row this page's word positions describe, or ``None`` if too few.
 
     Returns a single table covering the page rather than attempting to find
@@ -422,7 +440,10 @@ def read_text_rows(page: Any) -> Optional[TextRowTable]:
 
     rows: list[_Row] = []
     for line, band in zip(lines, bands):
-        cells = split_cells(line, gap_threshold, band)
+        # OCR recovery can retain every measured word independently. This
+        # avoids merging adjacent amount/fee fields or inventing column meaning.
+        cells = (_measured_word_cells(line, band)
+                 if word_cells else split_cells(line, gap_threshold, band))
         if not cells:
             continue
         rows.append(

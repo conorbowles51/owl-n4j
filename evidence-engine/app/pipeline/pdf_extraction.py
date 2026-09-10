@@ -62,6 +62,7 @@ class _PageResult:
     ocr_confidence: float | None = None
     ocr_dpi: int | None = None
     ocr_language: str | None = None
+    ocr_geometry_status: str | None = None
 
 
 _semaphore_loop: asyncio.AbstractEventLoop | None = None
@@ -441,7 +442,7 @@ def _run_tesseract_data(
     dpi: int,
     deadline: float,
     page_segmentation_mode: int = 1,
-) -> tuple[str, float | None]:
+) -> tuple[str, float | None, dict]:
     data = pytesseract.image_to_data(
         image,
         lang=settings.tesseract_lang,
@@ -449,7 +450,8 @@ def _run_tesseract_data(
         output_type=pytesseract.Output.DICT,
         timeout=_remaining_ocr_timeout(deadline),
     )
-    return _text_and_confidence_from_tesseract(data)
+    text, confidence = _text_and_confidence_from_tesseract(data)
+    return text, confidence, data
 
 
 def _ocr_at_rotation(
@@ -459,7 +461,7 @@ def _ocr_at_rotation(
     dpi: int,
     deadline: float,
     page_segmentation_mode: int = 1,
-) -> tuple[str, float | None]:
+) -> tuple[str, float | None, dict]:
     normalized_rotation = clockwise_rotation % 360
     if normalized_rotation == 0:
         return _run_tesseract_data(
@@ -485,7 +487,7 @@ def _ocr_at_rotation(
         oriented_image.close()
 
 
-def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int]:
+def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None]:
     deadline = time.monotonic() + max(
         1,
         int(settings.pdf_ocr_page_timeout_seconds),
@@ -530,13 +532,14 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int]:
             rotation = 0
             osd_confidence = None
 
-        text, confidence = _ocr_at_rotation(
+        text, confidence, best_data = _ocr_at_rotation(
             image,
             clockwise_rotation=rotation,
             dpi=dpi,
             deadline=deadline,
         )
 
+        best_rotation = rotation
         uncertain_orientation = (
             osd_confidence is not None
             and osd_confidence < MIN_RELIABLE_OSD_CONFIDENCE
@@ -554,7 +557,7 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int]:
         best_score = (confidence if confidence is not None else -1.0, len(text))
         for alternative_rotation in alternative_rotations:
             try:
-                alternative_text, alternative_confidence = _ocr_at_rotation(
+                alternative_text, alternative_confidence, alternative_data = _ocr_at_rotation(
                     image,
                     clockwise_rotation=alternative_rotation,
                     dpi=dpi,
@@ -580,11 +583,20 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int]:
             if alternative_score > best_score:
                 text, confidence = alternative_text, alternative_confidence
                 best_score = alternative_score
+                best_data, best_rotation = alternative_data, alternative_rotation
             if alternative_confidence is not None and alternative_confidence >= 80.0:
                 break
     finally:
         image.close()
-    return text, confidence, dpi
+    from app.pipeline.ocr_geometry import project_ocr_words
+    try:
+        words = project_ocr_words(best_data, rotation=best_rotation,
+            image_width=pixmap.width, image_height=pixmap.height,
+            page_width=page.rect.width, page_height=page.rect.height)
+    except ValueError:
+        logger.warning("OCR word geometry unavailable; retaining recovered text only")
+        words = None
+    return text, confidence, dpi, words
 
 
 def _page_span(page_result: _PageResult, start_char: int) -> dict:
@@ -607,6 +619,7 @@ def _page_span(page_result: _PageResult, start_char: int) -> dict:
                 ),
                 "ocr_dpi": page_result.ocr_dpi,
                 "ocr_language": page_result.ocr_language,
+                "ocr_geometry_status": page_result.ocr_geometry_status,
             }
         )
     return span
@@ -675,7 +688,7 @@ def _extract_pdf_sync(
         for completed, page_index in enumerate(ocr_indexes, start=1):
             page_result = pages[page_index]
             try:
-                text, confidence, dpi = _ocr_page(document[page_index])
+                text, confidence, dpi, words = _ocr_page(document[page_index])
             except PdfOcrError as exc:
                 logger.error(
                     "PDF OCR failed page=%d reason=%s",
@@ -710,6 +723,20 @@ def _extract_pdf_sync(
             page_result.ocr_confidence = confidence
             page_result.ocr_dpi = dpi
             page_result.ocr_language = settings.tesseract_lang
+            page_result.ocr_geometry_status = "unavailable"
+            reader = _load_table_reader()
+            if words is not None and reader is not None:
+                try:
+                    ocr_tables = reader.read_positioned_ocr_words(words,
+                        page_number=page_result.page_number,
+                        page_width=document[page_index].rect.width,
+                        page_height=document[page_index].rect.height)
+                    table_chunks.extend(reader.chunks_of(ocr_tables))
+                    extracted_tables.extend(ocr_tables)
+                    if any(table.geometry_source.value == "cell_rectangles" for table in ocr_tables):
+                        page_result.ocr_geometry_status = "available"
+                except Exception:
+                    logger.warning("OCR source geometry unavailable on page %s", page_result.page_number, exc_info=True)
 
             if report_progress and completed in progress_checkpoints:
                 report_progress(
