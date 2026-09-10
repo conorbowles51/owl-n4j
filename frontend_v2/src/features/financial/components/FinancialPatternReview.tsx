@@ -10,23 +10,26 @@ import {
   patternTheory,
   type PatternReview,
 } from "../lib/pattern-review"
-import { correctionMoney } from "../lib/correction-contract"
+import { correctionMinor, correctionMoney } from "../lib/correction-contract"
 import { LedgerFilters } from "./LedgerFilters"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 function PatternScreen({ caseId }: { caseId: string | undefined }) {
   const [params, setParams] = useState<LedgerQueryParams>({}),
     [population, setPopulation] = useState("working"),
-    [days, setDays] = useState("3")
+    [days, setDays] = useState("3"),
+    [threshold, setThreshold] = useState(""),
+    [currency, setCurrency] = useState("GBP")
   if (!caseId) return <p>Choose a case for pattern review.</p>
   return (
     <section aria-label="Financial pattern review" className="space-y-4 p-4">
       <h2 className="font-semibold">Patterns to investigate</h2>
       <p>
         Screen for repeated equal amounts and nearby equal incoming/outgoing
-        postings. These are review candidates, not alerts or findings. Inspect
-        the attached rows, consider ordinary explanations, and save a theory
-        only with your own reasoning.
+        postings, with an optional split-payment amount threshold. These are
+        review candidates, not alerts or findings. Inspect the attached rows,
+        consider ordinary explanations, and save a theory only with your own
+        reasoning.
       </p>
       <LedgerFilters caseId={caseId} onApply={setParams} />
       <div className="flex gap-3">
@@ -55,12 +58,53 @@ function PatternScreen({ caseId }: { caseId: string | undefined }) {
           />
         </label>
       </div>
+      <fieldset className="space-y-2 rounded border p-3">
+        <legend>Optional split-payment check</legend>
+        <p className="text-sm">
+          Find smaller same-direction payments in one account whose combined
+          amount reaches your threshold within the window. Leave the amount
+          blank to skip this check. This is your screening criterion; it does
+          not establish a reporting obligation or intent.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <label>
+            Threshold amount
+            <input
+              aria-label="Split-payment threshold amount"
+              inputMode="decimal"
+              maxLength={25}
+              className="block border bg-background p-2"
+              value={threshold}
+              onChange={(e) => setThreshold(e.target.value)}
+            />
+          </label>
+          <label>
+            Threshold currency
+            <input
+              aria-label="Split-payment threshold currency"
+              maxLength={3}
+              className="block w-24 border bg-background p-2"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+            />
+          </label>
+        </div>
+      </fieldset>
       <PatternScope
-        key={JSON.stringify([caseId, params, population, days])}
+        key={JSON.stringify([
+          caseId,
+          params,
+          population,
+          days,
+          threshold,
+          currency,
+        ])}
         caseId={caseId}
         params={params}
         population={population}
         days={days}
+        threshold={threshold}
+        currency={currency}
       />
     </section>
   )
@@ -70,18 +114,33 @@ function PatternScope({
   params,
   population,
   days,
+  threshold,
+  currency,
 }: {
   caseId: string
   params: LedgerQueryParams
   population: string
   days: string
+  threshold: string
+  currency: string
 }) {
   const [source, setSource] = useState<string | null>(null),
     [page, setPage] = useState(0)
   const load = useMutation({
     retry: false,
     mutationFn: async () => {
+      const thresholdMinor = threshold.trim()
+        ? correctionMinor(threshold, currency)
+        : null
+      if (threshold.trim() && (!thresholdMinor || BigInt(thresholdMinor) <= 0n))
+        throw Error(
+          "Enter a positive exact threshold amount and a supported currency."
+        )
       const q = new URLSearchParams({ population, window_days: days })
+      if (thresholdMinor) {
+        q.set("threshold_minor", thresholdMinor)
+        q.set("threshold_currency", currency)
+      }
       if (params.accountId) q.set("account_id", params.accountId)
       if (params.startDate) q.set("start_date", params.startDate)
       if (params.endDate) q.set("end_date", params.endDate)
@@ -96,7 +155,9 @@ function PatternScope({
         value.start_date !== (params.startDate ?? null) ||
         value.end_date !== (params.endDate ?? null) ||
         value.population !== population ||
-        value.window_days !== Number(days)
+        value.window_days !== Number(days) ||
+        value.threshold_minor !== thresholdMinor ||
+        value.threshold_currency !== (thresholdMinor ? currency : null)
       )
         throw Error("Pattern review returned a different scope.")
       return value
@@ -125,9 +186,9 @@ function PatternScope({
           </p>
           {!load.data.hypotheses.length && (
             <p>
-              No candidates under these two rules. This is not a finding that no
-              relevant pattern exists; missing evidence and other patterns are
-              not covered.
+              No candidates under the selected rules. This is not a finding that
+              no relevant pattern exists; missing evidence and other patterns
+              are not covered.
             </p>
           )}
           {load.data.hypotheses.slice(page * 10, page * 10 + 10).map((h) => (
@@ -197,10 +258,18 @@ function PatternCard({
       <h3 className="font-semibold">
         {h.kind === "repeated_equal_amount"
           ? "Repeated equal amount"
-          : "Equal amount in and out"}{" "}
+          : h.kind === "equal_amount_in_and_out"
+            ? "Equal amount in and out"
+            : "Smaller payments reach selected threshold"}{" "}
         · {h.account_label} · {correctionMoney(h.amount_minor, h.currency)}
       </h3>
       <p>{h.explanation}</p>
+      {h.kind === "split_payment_threshold" && (
+        <p>
+          {h.sources.length} payments; combined amount shown above. Selected
+          threshold: {correctionMoney(scope.threshold_minor!, h.currency)}.
+        </p>
+      )}
       <p>
         {h.gap_days} days apart. {h.limitation}
       </p>
@@ -208,7 +277,9 @@ function PatternCard({
         <div key={s.row.key}>
           <p>
             {s.row.chronology_date} · {s.row.direction} ·{" "}
-            {s.row.proof_class.toUpperCase()} · {s.row.description}
+            {s.row.proof_class.toUpperCase()} ·{" "}
+            {correctionMoney(s.row.amount_minor, s.row.currency)} ·{" "}
+            {s.row.description}
           </p>
           <Button variant="outline" onClick={() => onSource(s.row.key)}>
             Inspect supporting reading {i + 1} for {h.id.slice(0, 8)}

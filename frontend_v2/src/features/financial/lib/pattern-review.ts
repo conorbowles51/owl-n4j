@@ -20,6 +20,16 @@ export const patternReview = z.object({
   end_date: z.string().nullable(),
   population: z.enum(["working", "verified"]),
   window_days: z.number().int().min(0).max(30),
+  threshold_minor: z
+    .string()
+    .regex(/^[1-9][0-9]*$/)
+    .nullable()
+    .default(null),
+  threshold_currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/)
+    .nullable()
+    .default(null),
   snapshot_sha256: z.string().regex(/^[a-f0-9]{64}$/),
   reviewed_rows: z.number().int().nonnegative(),
   date_unavailable_ids: z.array(z.string()),
@@ -28,14 +38,18 @@ export const patternReview = z.object({
     .array(
       z.object({
         id: z.string(),
-        kind: z.enum(["repeated_equal_amount", "equal_amount_in_and_out"]),
-        transaction_ids: z.array(z.string()).length(2),
+        kind: z.enum([
+          "repeated_equal_amount",
+          "equal_amount_in_and_out",
+          "split_payment_threshold",
+        ]),
+        transaction_ids: z.array(z.string()).min(2).max(50),
         gap_days: z.number().int().nonnegative(),
         account_id: z.string(),
         account_label: z.string(),
         currency: z.string(),
         amount_minor: z.string().regex(/^(0|[1-9][0-9]*)$/),
-        sources: z.array(source).length(2),
+        sources: z.array(source).min(2).max(50),
         explanation: z.string(),
         limitation: z.string(),
       })
@@ -52,7 +66,9 @@ export function patternTheory(
   if (!title.trim() || !reason.trim())
     throw Error("Explain the hypothesis before saving it.")
   if (
-    !scope.hypotheses.some((p) => p.id === h.id) ||
+    !scope.hypotheses.some((p) => JSON.stringify(p) === JSON.stringify(h)) ||
+    h.sources.length !== h.transaction_ids.length ||
+    new Set(h.transaction_ids).size !== h.transaction_ids.length ||
     h.sources.some(
       (s, i) => s.row.key !== h.transaction_ids[i] || !s.source.evidence_file_id
     )
@@ -72,6 +88,7 @@ export function patternTheory(
       "Screening basis: " + h.explanation,
       h.limitation,
       `Population: ${scope.population}. Date window: ${scope.window_days} days. Supporting ledger readings: ${h.transaction_ids.join(", ")}.`,
+      `Optional screening threshold: ${scope.threshold_minor ?? "not selected"} minor units ${scope.threshold_currency ?? ""}. This is an investigator-selected criterion.`,
       `Captured ledger: ${scope.snapshot_sha256}. This theory records the captured readings; later corrections must be reviewed separately.`,
     ].join("\n\n"),
     tags: ["financial", "screening-hypothesis", h.kind],
@@ -88,6 +105,8 @@ export function patternTheory(
         snapshot_sha256: scope.snapshot_sha256,
         population: scope.population,
         window_days: scope.window_days,
+        threshold_minor: scope.threshold_minor,
+        threshold_currency: scope.threshold_currency,
         sources,
       },
     })),

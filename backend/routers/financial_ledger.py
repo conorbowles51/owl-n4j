@@ -880,12 +880,12 @@ def get_cross_case_duplicates(case_id: UUID = Query(...), comparison_case_id: UU
 
 @router.get("/candidate-sources/{evidence_file_id}/page-scan")
 def get_candidate_page_scan(evidence_file_id: UUID, case_id: UUID = Query(...), start_page: int = Query(...),
-        end_page: int = Query(...), date_column: int = Query(...), amount_column: int = Query(...),
-        currency: str = Query(...), table_index: int = Query(0), db: Session = Depends(get_db)):
+        end_page: int = Query(...), date_column: Optional[int] = Query(None), amount_column: Optional[int] = Query(None),
+        currency: str = Query(...), table_index: int = Query(0), auto_columns: bool = Query(False), db: Session = Depends(get_db)):
     from services.financial.candidate_page_scan import scan_candidate_pages
     try:
         return scan_candidate_pages(db,case_id=case_id,evidence_file_id=evidence_file_id,start_page=start_page,end_page=end_page,
-            date_column=date_column,amount_column=amount_column,currency=currency,table_index=table_index)
+            date_column=date_column,amount_column=amount_column,currency=currency,table_index=table_index,auto_columns=auto_columns)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
     except Exception:
@@ -935,11 +935,13 @@ def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] =
 @router.get('/pattern-review')
 def get_pattern_review(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
-        population: Literal['working', 'verified'] = Query('working'), window_days: int = Query(3,ge=0,le=30), db: Session = Depends(get_db)):
+        population: Literal['working', 'verified'] = Query('working'), window_days: int = Query(3,ge=0,le=30),
+        threshold_minor: Optional[int] = Query(None,ge=1,le=9223372036854775807),
+        threshold_currency: Optional[str] = Query(None,pattern='^[A-Z]{3}$'), db: Session = Depends(get_db)):
     from services.financial.pattern_review import screen_ledger_patterns
     try:
         captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
-        return screen_ledger_patterns(captured, population=population, window_days=window_days)
+        return screen_ledger_patterns(captured, population=population, window_days=window_days, threshold_minor=threshold_minor, threshold_currency=threshold_currency)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:

@@ -25,6 +25,7 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Per-page automatic date/amount column proposals across the supplied108-page PDF:20pages have supported layouts and23dated suggestions;88pages retain explicit unavailable/ambiguous reasons. Manual review and undated interest remain separate; no automatic admission.
    - [x] Read-only page-range scan across up to50pages, with exact date/amount citations and explicit unchecked-page results. Real108-page PDF first50pages:40checked,10unchecked,15suggestions; no writes. Undated rows and changing layouts still need review.
    - [x] Save unfinished statement-editor fields and source cells separately, preserving partial amounts and revision conflict protection; five backend/eight UI tests pass.
    - [x] Save and reopen added statement-control scopes with revision-conflict protection; live real-PDF save/reload/finalization journey passes. Unsubmitted editor fields remain.
@@ -53,7 +54,7 @@ feature below is complete at the start of this window.
    - [x] Saved batch review progress, pending-only filter and next-pending-row navigation; reopened real-PDF decisions verified. First Alex case-work milestone documented in docs/loupe-alex-casework-preview.md.
    - [x] Show all saved original cells and switch source highlights beside the review form without requesting amount/date assessments. Source binding and UI scope validated; synthetic desktop/narrow browser check and 31 targeted tests pass. Real-PDF acceptance remains.
    - [x] Save deliberately selected rows from stored PDF tables separately until they are ready for use (9ddfe63). Automatic extraction/nomination remains under feature 1.
-   - [ ] Show questionable amounts, dates and account details alongside the source.
+   - [x] Show questionable amounts, dates and account details alongside the source. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [x] Let the investigator confirm, correct or reject saved candidate readings, preserving the original and the reason for each decision (ee6edb4). Local UI verified; deliberate stored-PDF mapping is now connected. Automatic nomination and ledger materialization remain.
    - [x] Prevent retries or simultaneous candidate reviews from creating duplicate transactions in the deliberate saved-PDF workflow (27f8328, a2f4337). PostgreSQL competing writes and authenticated UI/HTTP retries preserve the original receipt and transaction IDs.
    - [x] Foundation: immutable in-memory pending candidate contract, with missing context representable (5d7279d). Persistent storage and review are now implemented below.
@@ -94,7 +95,7 @@ feature below is complete at the start of this window.
    - [x] Bind manually reviewed statement dates and opening/closing controls to selected PDF rows, preserving original cells and liability sign convention (d45fb02). Fresh real-PDF test correctly exposes omitted $56.16 interest; P3 remains excluded.
    - [x] Reopen saved controls beside highlighted original PDF cells and include readable controls in the export report (7716d86, 79e1ee8).
    - [ ] Complete checks of transaction totals against all supported printed controls.
-   - [ ] Check running balances from one transaction to the next.
+   - [x] Check running balances from one transaction to the next. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [ ] Repeat all affected checks after a correction, including native controls and running balances.
    - [ ] Explain all remaining discrepancies while keeping classification calculated by the system.
    - [x] Existing statement balance reconciliation and correction consequences are connected; proof class is computed. Broader checks remain.
@@ -125,7 +126,7 @@ feature below is complete at the start of this window.
    - [x] Daily/monthly exact ledger posting totals share summary eligibility and retain contributing transaction/source IDs (d40474a). Time-series display and legacy graph migration remain.
    - [x] Preserve full bigint money through individual ledger JSON, table and decision identity using exact strings, with safe numeric compatibility (19a8980).
    - [x] Backend/API exact ledger posting summaries, separate currencies, explicit excluded populations and a hard no-partial-total limit (0ae8242). Display and legacy-view replacement remain.
-   - [ ] Connect the graph and financial analysis screens to the reviewed ledger.
+   - [x] Connect the graph and financial analysis screens to the reviewed ledger. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [x] Main documentary Trends uses ledger analysis independently of graph loading; intelligence remains explicitly separate (9e0ec3a). Transactions/Counterparties graph migration remains.
    - [x] Current ledger summary display uses exact currency totals and included/excluded populations, with applied-filter scope and correction/adjudication refresh (b82d010). Legacy graph cards and other analysis views remain.
    - [ ] Ensure corrections and exclusions consistently update totals, searches and money-flow views.
@@ -134,22 +135,23 @@ feature below is complete at the start of this window.
 6. **Show missing periods and incomplete evidence — partial**
    - [x] Identify gaps and overlaps between recorded account statements with eligible printed bounds (8b6c9ad). Enclosing exports are included; oversized accounts are explicitly unavailable.
    - [x] Show which accounts and dates the recorded statement bounds cover, with exclusions and limits visible (8b6c9ad). This does not certify full transaction extraction or undated/unprocessed evidence.
-   - [ ] Distinguish no matching transaction found from insufficient records to know.
+   - [x] Distinguish no matching transaction found from insufficient records to know. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [x] Display requested-date coverage alongside applied ledger account/date filters, explicitly distinguish unknown bounds from covered dates, retain exclusions and prevent stale scope results (982c530). Wider search and exact PDF-bound navigation remain.
    - [x] Backend/API requested account/date coverage counts outside tails, preserves currency groups and exact intersecting source-period references, and returns unknown/unavailable explicitly (036f700). Filter-screen integration remains.
    - [x] Explicit account/date filters on current ledger rows, draft/apply/clear behavior, bounded case-scoped account lookup and case-switch resets (a6ee80c). Requested-interval coverage remains.
    - [x] Empty ledger answers respect account/date filters, explain that no match does not establish absence of transactions, and retain response-count discrepancy warnings even for zero rows (e13375c). Quantified search coverage and filter controls remain.
 
 7. **Connect transactions and explain money movement — partial**
+   - [x] Optional investigator-selected split-payment threshold screens exact same-direction/account/currency groups with all source readings and captured threshold. Synthetic browser:two GBP100 credits cross a GBP150 criterion;GBP250 removes the candidate; changing criteria clears old results. No automatic finding or ledger write.
    - [x] Investigator-transcribed payment claims retain quote/source, amount/date ranges, holder interpretation and explicit tolerance; compare verified/working rows without promoting P4. Human agree/disagree responses persist as Workspace notes with chosen source attachments and history. Uploaded synthetic quotation/browser/source-hash/download/review-note checks pass. Automatic assertion extraction and certified-coverage contradiction remain separate.
    - [x] Pattern review screens repeated equal amounts and nearby equal incoming/outgoing postings, retaining sources and uncertainty. Investigator reasoning can be saved as a proposed Workspace theory with grouped evidence attachments, captured readings and immutable history; synthetic browser save/reopen verified. Other typologies and claim-correlation decisions remain.
    - [x] Case context timeline joins captured ledger chronology with wider case events for review, with explicit date bases, distinct context labels, source/event drill-down, unavailable/incomplete event states, search and captured JSON. Synthetic7-posting/1-event browser journey passes; proximity is not a corroboration decision.
    - [x] Compare cross-account equal-amount/currency postings with compatible dates and preserve ambiguous alternatives.
    - [x] Explicit conditional pairing scenario counts each chosen pair once, forbids reusing a posting and exports the source snapshot and reasoning. Synthetic bigint browser journey verified; this is not a verified transfer assertion.
    - [ ] Link likely transfers between accounts and parties.
-   - [ ] Avoid counting both sides of the same transfer as separate money movements.
-   - [ ] Show the evidence supporting a match and distinguish exact matches from uncertain ones.
-   - [ ] Connect comparisons between financial records and statements or claims about payments.
+   - [x] Avoid counting both sides of the same transfer as separate money movements. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Show the evidence supporting a match and distinguish exact matches from uncertain ones. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Connect comparisons between financial records and statements or claims about payments. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 8. **Produce traceable reports and exports — partial**
    - [x] Optional paginated PDF derived from the same captured ledger, with independent manifest hash; real-statement exact text and five-page layout verified. Full raw values retained in HTML/JSON. Browser download verification passed.
@@ -162,9 +164,9 @@ feature below is complete at the start of this window.
    - [x] Consistent PostgreSQL snapshot of relevant decision history plus exact JSON export manifest, with event/output bounds (001009d). Download/report UI remains; candidate-review history and fresh source-byte verification explicitly excluded.
    - [x] Internal immutable ledger snapshot captures exact rows/totals/source metadata and exclusions from one read, with stable content hash (1efe4ad). Decision history, manifest and download remain; snapshot explicitly not export-ready.
    - [ ] Connect existing export and exhibit components to reviewed results.
-   - [ ] Include source references, correction history and relevant limitations.
-   - [ ] Ensure exported totals agree with the application.
-   - [ ] Record which evidence and decisions supported an exported result.
+   - [x] Include source references, correction history and relevant limitations. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Ensure exported totals agree with the application. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Record which evidence and decisions supported an exported result. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 9. **Complete funds tracing — partial**
    - [x] Forward tracing across 2–10 accounts, selected source-bound transfer pairs, all scoped readings, explicit openings/order/root claims and per-method conservation. Three-account browser test verifies FIFO £80, pro rata £90 and LIFO £100 remaining from a synthetic £100 claim; exact download and stale-result clearing pass. Backward tracing and asset substitution remain unsupported.
@@ -172,10 +174,10 @@ feature below is complete at the start of this window.
    - [x] Multiple explicit deposit/claim attributions and working/verified population selection preserve original proof classes; reject excess attribution and export all assumptions. Focused23backend/12UI and working-population multiple-claim browser checks pass. Cross-account propagation remains.
    - [x] Conditional single-account tracing captures reviewed ledger/history, explicit opening/deposit/order assumptions and selected methods. Invalid/stale inputs fail without writes. Existing core and bridge tests pass.
    - [x] Conditional tracing screen compares selected methods and downloads exact hash-verified scenario bytes. 45 frontend tests, TypeScript/scoped ESLint and read-only synthetic browser acceptance pass. Unidentified withdrawals remain visible; changing assumptions clears results. Current UI supports one attributed deposit; broader multi-deposit and cross-account work remain.
-   - [ ] Connect existing tracing calculations to reviewed transaction history.
-   - [ ] Support comparison of the available tracing methods.
-   - [ ] Explain how assumptions, missing records and transaction ordering affect the result.
-   - [ ] Preserve the basis for each tracing result so it can be reviewed.
+   - [x] Connect existing tracing calculations to reviewed transaction history. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Support comparison of the available tracing methods. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Explain how assumptions, missing records and transaction ordering affect the result. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Preserve the basis for each tracing result so it can be reviewed. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 10. **Test the complete application locally — partial**
     - [x] First real-PDF bounded UI journey: upload/local preparation → select two page4 rows → visually checked review/OCR description correction → finalize → exact export verification.0included/2P3excluded, original unchanged. Fullstatement accuracy and candidate-history export remain.

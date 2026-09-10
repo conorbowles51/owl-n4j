@@ -30,3 +30,20 @@ class PageScanTests(unittest.TestCase):
             with self.subTest(updates=updates),self.assertRaises(PdfMappingError):self.scan(**updates)
         with patch('services.financial.candidate_page_scan.MAX_SUGGESTED_ROWS',1):
             with self.assertRaises(PdfMappingError):self.scan()
+
+    def test_per_page_proposal_retains_columns_without_writes(self):
+        result=self.scan(auto_columns=True,date_column=None,amount_column=None)
+        self.assertTrue(result['auto_columns']);self.assertIsNone(result['date_column'])
+        self.assertEqual(result['pages'][0]['chosen_columns']['date_column'],0)
+        self.assertEqual(result['pages'][0]['chosen_columns']['amount_column'],1)
+        self.assertEqual(result['suggested_rows'],2)
+        self.assertFalse(self.f.db.new or self.f.db.dirty)
+
+    def test_column_ties_remain_unchecked_and_exact_headers_can_resolve_them(self):
+        from services.financial.candidate_page_scan import propose_scan_columns
+        def row(i,*values):return dict(row_index=i,cells=[dict(column_index=n,expected_text=t) for n,t in enumerate(values)])
+        source=dict(rows=[row(0,'2026-01-01','10.00','100.00'),row(1,'2026-01-02','20.00','120.00')])
+        choice,reason=propose_scan_columns(source,'GBP');self.assertIsNone(choice);self.assertIn('equal support',reason)
+        source['rows'].insert(0,row(2,'Date','Amount','Balance'))
+        choice,reason=propose_scan_columns(source,'GBP');self.assertIsNone(reason);self.assertEqual(choice['amount_column'],1)
+        self.assertEqual(choice['header_support'],2)

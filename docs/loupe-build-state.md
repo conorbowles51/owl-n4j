@@ -53,6 +53,33 @@ classes;23focused backend and12UI tests pass. Multiple-claim working-population 
 downloaded scenario hashes and clearing results when assumptions change. No full-feature completion claim. Continue through remaining
 PDF extraction, review persistence, cross-case duplicates, tracing and reporting.
 
+### Automatic PDF columns and split-payment screen — 10 September, about06:26 Dublin
+
+bc1ef447 saves payment-claim review locally; no push. Automatic per-page PDF
+column proposals now read all108pages in bounded50page batches.20pages have
+supported date/amount layouts,23dated suggestions;88pages retain reasons for no
+accepted layout. Page3 recovers date0/amount2 and both dated rows; undated
+interest remains separate. No rows saved/admitted. Browser report:
+data/local-runtime/automatic-page-scan-check.json and full results beside it.
+Five backend and13UI targeted tests, TypeScript/lint passed.
+
+Added optional split-payment threshold screening: explicit currency/decimal
+amount, same-account/direction exact sum, maximal forward windows, all source
+readings (up to50), overlapping-window caveat and threshold retained in proposed
+Workspace theory. No implicit regulatory amount, misconduct conclusion or proof
+promotion. Synthetic browser7d7d04f7-012f-4dc4-bc03-30351f3db15a:twoGBP100credits
+crossGBP150, failGBP250; changed criteria clear results and0is refused;0ledger
+writes. Report data/local-runtime/split-payment-screen-check.json.13backend and
+4frontend focused tests passed. Subsequent integrated4085backend financial/
+888financial UI tests and production build passed. TypeScript test-fixture literal
+types corrected during the gate; no product failure remained.
+Current backend session90685, /tmp/loupe-threshold-runtime.out. Earlier runtime
+session references below are historical. Native-control revalidation is still
+reserved after corrections, not silently equated with opening/closing arithmetic.
+The retained checklist now checks several older broad subitems whose connected
+acceptance has been completed; original descriptions/history remain visible.
+Continue full development; this checkpoint is not a handoff or completion claim.
+
 ### Latest cross-account continuation — 10 September, about05:30 Dublin
 
 552986db saved exact charts, ledger browsing and decimal tracing inputs locally.

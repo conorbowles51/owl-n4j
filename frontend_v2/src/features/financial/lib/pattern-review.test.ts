@@ -7,12 +7,12 @@ const source = (key: string) => ({
     account_id: "account",
     account_label: "Account",
     chronology_date: "2026-01-01",
-    chronology_basis: "transaction_date",
+    chronology_basis: "transaction_date" as const,
     ordering_date: "2026-01-01",
-    direction: "credit",
+    direction: "credit" as const,
     amount_minor: "100",
     currency: "GBP",
-    proof_class: "p3",
+    proof_class: "p3" as const,
     description: "Original",
   },
   source: {
@@ -83,4 +83,28 @@ it("refuses missing reasoning, missing source links and mismatched support", () 
   expect(() => patternTheory(review, h, "Title", "Reason")).toThrow(
     "inconsistent"
   )
+})
+it("preserves every split-payment source and the exact selected threshold", () => {
+  const value = structuredClone(review)
+  value.threshold_minor = "9007199254740994"
+  value.threshold_currency = "GBP"
+  const h = value.hypotheses[0]
+  h.kind = "split_payment_threshold"
+  h.amount_minor = "9007199254740995"
+  h.transaction_ids.push("three")
+  h.sources.push(source("three"))
+  const parsed = patternReview.parse(value)
+  const saved = patternTheory(parsed, parsed.hypotheses[0], "Review split payments", "Could be separate legitimate purchases.")
+  expect(saved.links?.[0].source_anchor?.financial_transaction_ids).toEqual(["one", "two", "three"])
+  expect(saved.links?.[0].metadata?.threshold_minor).toBe("9007199254740994")
+  expect(saved.body).toContain("investigator-selected criterion")
+})
+it("refuses substituted or duplicate pattern support before saving a theory", () => {
+  const scope = structuredClone(review)
+  const changed = structuredClone(scope.hypotheses[0])
+  changed.sources[0].row.amount_minor = "999"
+  expect(() => patternTheory(scope, changed, "Title", "Reason")).toThrow("inconsistent")
+  scope.hypotheses[0].transaction_ids = ["one", "one"]
+  scope.hypotheses[0].sources = [source("one"), source("one")]
+  expect(() => patternTheory(scope, scope.hypotheses[0], "Title", "Reason")).toThrow("inconsistent")
 })

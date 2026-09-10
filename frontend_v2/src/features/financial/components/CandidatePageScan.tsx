@@ -12,8 +12,9 @@ const resultSchema = z.object({
   start_page: index,
   end_page: index,
   table_index: index,
-  date_column: index,
-  amount_column: index,
+  date_column: index.nullable(),
+  amount_column: index.nullable(),
+  auto_columns: z.boolean().default(false),
   currency: z.string(),
   applied: z.literal(false),
   limitation: z.string(),
@@ -25,6 +26,15 @@ const resultSchema = z.object({
         checked: z.boolean(),
         reason: z.string().nullable(),
         checked_rows: index,
+        chosen_columns: z
+          .object({
+            date_column: index,
+            amount_column: index,
+            supporting_rows: index.optional(),
+            header_support: index.optional(),
+          })
+          .optional(),
+        other_tables: index.optional(),
         source_revision: z.string().optional(),
         suggestions: z.array(
           z.object({ row_index: index, date_source: cell, amount_source: cell })
@@ -43,6 +53,7 @@ export function CandidatePageScan({
   onPage: (page: number) => void
 }) {
   const [opened, setOpened] = useState(false),
+    [automatic, setAutomatic] = useState(false),
     [start, setStart] = useState("1"),
     [end, setEnd] = useState("10"),
     [date, setDate] = useState("1"),
@@ -54,8 +65,12 @@ export function CandidatePageScan({
       const params = {
         start_page: Number(start),
         end_page: Number(end),
-        date_column: Number(date) - 1,
-        amount_column: Number(amount) - 1,
+        ...(automatic
+          ? { auto_columns: true }
+          : {
+              date_column: Number(date) - 1,
+              amount_column: Number(amount) - 1,
+            }),
         table_index: 0,
         currency,
       }
@@ -93,9 +108,9 @@ export function CandidatePageScan({
       {opened && (
         <>
           <p>
-            Scan table 1 on up to 50 pages using the column positions you
-            choose. Pages may use different layouts; inspect each result.
-            Undated fees and interest need separate review.
+            Scan table 1 on up to 50 pages. Use chosen column positions or
+            propose them separately on each page. Inspect each result and its
+            original. Undated fees and interest need separate review.
           </p>
           <form
             onSubmit={(e) => {
@@ -108,6 +123,16 @@ export function CandidatePageScan({
               disabled={scan.isPending}
               className="flex flex-wrap gap-3"
             >
+              <label className="w-full">
+                <input
+                  type="checkbox"
+                  aria-label="Propose columns on each page"
+                  checked={automatic}
+                  onChange={(e) => setAutomatic(e.target.checked)}
+                />{" "}
+                Propose columns on each page; leave ambiguous layouts for manual
+                review
+              </label>
               <label>
                 Scan from page
                 <input
@@ -137,6 +162,7 @@ export function CandidatePageScan({
                 Possible date column
                 <input
                   aria-label="Possible date column"
+                  disabled={automatic}
                   type="number"
                   min="1"
                   max="64"
@@ -150,6 +176,7 @@ export function CandidatePageScan({
                 Possible amount column
                 <input
                   aria-label="Possible amount column"
+                  disabled={automatic}
                   type="number"
                   min="1"
                   max="64"
@@ -171,7 +198,7 @@ export function CandidatePageScan({
                   className="block w-24 border bg-background p-2"
                 />
               </label>
-              <Button type="submit" disabled={date === amount}>
+              <Button type="submit" disabled={!automatic && date === amount}>
                 {scan.isPending
                   ? "Scanning pages…"
                   : "Scan selected page range"}
@@ -199,6 +226,21 @@ export function CandidatePageScan({
                         ? `${p.suggestions.length} possible rows from ${p.checked_rows} rows checked`
                         : p.reason}
                     </p>
+                    {p.chosen_columns && (
+                      <p>
+                        Date column {p.chosen_columns.date_column + 1}, amount
+                        column {p.chosen_columns.amount_column + 1}
+                        {p.chosen_columns.supporting_rows !== undefined &&
+                          ` · ${p.chosen_columns.supporting_rows} supporting rows; ${p.chosen_columns.header_support ?? 0} recognised column labels`}
+                        . Review these positions before selecting readings.
+                      </p>
+                    )}
+                    {!!p.other_tables && (
+                      <p>
+                        {p.other_tables} other stored tables on this page were
+                        not scanned.
+                      </p>
+                    )}
                     {p.suggestions.slice(0, 3).map((r) => (
                       <p key={r.row_index}>
                         Row {r.row_index + 1}: {r.date_source.expected_text} ·{" "}

@@ -80,3 +80,40 @@ it("refuses incomplete page results", async () => {
   await scan()
   expect(await screen.findByRole("alert")).toHaveTextContent("incomplete scope")
 })
+it("proposes per-page columns without sending fixed positions", async () => {
+  const { fetch } = mount({
+    ...data,
+    auto_columns: true,
+    date_column: null,
+    amount_column: null,
+    pages: [
+      {
+        ...data.pages[0],
+        chosen_columns: {
+          date_column: 0,
+          amount_column: 1,
+          supporting_rows: 2,
+          header_support: 0,
+        },
+      },
+      data.pages[1],
+    ],
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible rows across PDF pages" })
+  )
+  fireEvent.click(screen.getByLabelText("Propose columns on each page"))
+  expect(screen.getByLabelText("Possible date column")).toBeDisabled()
+  fireEvent.change(screen.getByLabelText("Scan through page"), {
+    target: { value: "2" },
+  })
+  fireEvent.change(screen.getByLabelText("Scan currency"), {
+    target: { value: "GBP" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Scan selected page range" })
+  )
+  await screen.findByText(/Date column 1, amount column 2/)
+  expect(String(fetch.mock.calls[0][0])).toContain("auto_columns=true")
+  expect(String(fetch.mock.calls[0][0])).not.toContain("date_column=")
+})
