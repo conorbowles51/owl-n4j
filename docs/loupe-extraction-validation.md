@@ -206,3 +206,23 @@ reviewer independence. The actual private corpus, extraction outputs, retained p
 and deployment invocation are still to be established. The existing deployment
 script has not been changed to run an unconfigured check. Unit fixtures only test
 supplied declarations and do not establish a real independently reviewed corpus.
+
+### Prepare blank review files from original PDFs
+
+```sh
+python3 scripts/prepare_financial_reference_reviews.py first.pdf second.pdf \
+  --corpus-id selected-corpus --corpus-version draft-1 --output new-review-drafts
+```
+
+The new directory contains a byte inventory, two blank reader drafts and a README
+covering the source-position/field conventions. It does not copy PDFs or provide
+transaction labels. Both reader identities and label status start null, source
+coverage starts false and rows are empty: reconciliation rejects these drafts.
+Each actual reader must independently complete their own record. Duplicate source
+bytes, non-PDF signatures and observed source changes during hashing are refused.
+A PDF signature is a format screen, not complete PDF validity verification.
+
+Blank drafts for the two supplied PDFs are available locally in
+`data/local-runtime/reference-review-drafts-20260910`. Their hashes match the
+previously retained originals. This ignored directory is private local test data;
+its existence is not independent review or representative corpus acceptance.

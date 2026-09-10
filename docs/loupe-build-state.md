@@ -1,3 +1,23 @@
+## Blank independent-review preparation — 10 September
+
+Added prepare_financial_reference_reviews.py: bounded original-PDF hashing,
+duplicate/content-change refusal, source inventory and two independent blank drafts
+with null reviewer identity/status, false completeness and no rows. The generated
+README defines source-position/field conventions and retention/reconciliation steps.
+No labels, reviewer independence or corpus representativeness are invented.
+
+Two focused tests pass, including incomplete-draft rejection by the actual
+reconciliation validator. Generated private ignored drafts for both supplied PDFs
+at data/local-runtime/reference-review-drafts-20260910; original hashes match the
+previously recorded values. No PDFs copied, case mutations, provider or push.
+
+Implemented software now includes UI assembly/verification, review reconciliation,
+pinned regression checks and offline timestamp tools. Remaining original-scope
+acceptance still includes a working selected provider, actual independent reader
+labels/representative runs and real external timestamp trust. These cannot be
+substituted with synthetic fixtures or guessed historical custody. The pending
+asynchronous provider-configuration question has not received an answer.
+
 ## Clean migration and runtime readiness acceptance — 10 September
 
 Added a repeatable disposable-local-database migration check: full upgrade to
