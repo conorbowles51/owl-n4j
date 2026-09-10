@@ -1,3 +1,17 @@
+## Pinned extraction release check — 10 September
+
+Added scripts/check_financial_extraction_release.py. It requires a retained review
+record digest and exact baseline-file digest, recomputes reconciled truth for both
+runs, refuses synthetic labels and sources without reviewed transaction rows, and
+writes an explicit no-measured-regression or regression report (exit2 on regression).
+Three CLI tests cover matching declared inputs, measured regression, synthetic
+refusal, wrong pins and changed truth. These test declarations are not a real
+independently reviewed corpus. No accuracy floor or authority certification claimed.
+
+Actual private corpus, real extraction runs and release pins remain unavailable;
+the deployment script is unchanged, so no unconfigured check can block existing
+deployment. No provider, case write or push. Backend79825/engine62038/worker73588.
+
 ## Paired withdrawal/deposit column coverage — 10 September
 
 Extended exact paired amount headings to Withdrawal/Deposit and plural forms.

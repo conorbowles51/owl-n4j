@@ -181,3 +181,28 @@ checks all declared members and recomputes an included audit chain. It preserves
 the ZIP exactly and records whether wider case history was selected. That ledger
 capture remains separate from each scenario's snapshot; the bundle does not merge
 their rows or claim that their dates and filters match.
+
+### Release regression command
+
+The standalone release check is ready for an approved private corpus location:
+
+```sh
+data/local-runtime/backend-venv/bin/python scripts/check_financial_extraction_release.py \
+  --review-record reconciled-review.json --expected-review-sha256 REVIEW_RECORD_DIGEST \
+  --baseline baseline-predictions.json --expected-baseline-sha256 BASELINE_FILE_DIGEST \
+  --current current-predictions.json --output new-release-check.json
+```
+
+The review pin is the reconciliation record's `review_record_sha256`; the baseline
+pin is SHA-256 of the exact baseline file bytes. Retain pins separately during
+release review, rather than deriving them automatically from whatever input is
+being tested. The command recomputes reconciliation, binds both runs to the same
+truth, refuses synthetic labels or sources without reviewed transaction rows and
+returns exit2 with a report on a measured regression. Invalid or mismatched inputs
+fail without a success report. Output is a new file; no database or provider call.
+
+This is a regression check, not an absolute accuracy threshold or certification of
+reviewer independence. The actual private corpus, extraction outputs, retained pins
+and deployment invocation are still to be established. The existing deployment
+script has not been changed to run an unconfigured check. Unit fixtures only test
+supplied declarations and do not establish a real independently reviewed corpus.
