@@ -1,3 +1,5 @@
+import { statementDeltaHints } from "../lib/statement-delta-hints"
+import { StatementDeltaHintsPanel } from "./StatementDeltaHintsPanel"
 import { printedTotalChecks } from "../lib/printed-total-checks"
 import { PrintedTotalChecks } from "./PrintedTotalChecks"
 import { StatementRunningBalances } from "./StatementRunningBalances"
@@ -45,10 +47,16 @@ const item = z
     counted_rows: count.nullable(),
     excluded_rows: count.nullable(),
     independent: z.boolean().nullable(),
+    delta_hints: statementDeltaHints.nullable().optional(),
     printed_totals: printedTotalChecks.nullable().optional(),
     printed_totals_error: z.string().nullable().optional(),
   })
   .refine((v) => {
+    if (
+      v.delta_hints?.available &&
+      v.delta_hints.difference_minor !== v.amounts?.difference
+    )
+      return false
     if (v.status === "refused") return v.amounts === null && v.reason !== null
     if (
       !v.amounts ||
@@ -176,6 +184,14 @@ export function StatementChecksPanel({
                   {period.proof_class.toUpperCase()}. These checks do not change
                   source eligibility.
                 </p>
+                {period.delta_hints && (
+                  <StatementDeltaHintsPanel
+                    key={`${query.data.checked_at}:${period.period_id}`}
+                    caseId={caseId}
+                    currency={period.currency}
+                    hints={period.delta_hints}
+                  />
+                )}
                 {period.printed_totals && (
                   <PrintedTotalChecks
                     checks={period.printed_totals}

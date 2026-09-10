@@ -1,3 +1,24 @@
+## Statement discrepancy leads — 10 September
+
+Statements now screens a nonzero balance difference against the current admitted
+readings. It identifies arithmetic possibilities for an extra/missing amount or
+reversed direction, with source links and explicit explanations that these are
+leads, not findings. Opening-sign and divisible-by-nine signatures retain the
+same uncertainty. Limits refuse partial screening above5000rows or100leads.
+Unknown balance identities and differences with no matching lead remain explicit.
+No row, proof class or recorded reconciliation result is changed by screening.
+
+15targeted backend tests,11UI tests, TypeScript and scoped ESLint pass. Synthetic
+native case e1642248-9df2-48b0-b098-f4ece94b0cf8 browser acceptance changed a3000USD
+credit to5000, inspected the2000difference/source lead, then restored3000 through
+a second correction. Both decisions and native-control comparisons remain in
+history; final difference is zero. Export hash and5captured readings/2correction
+events verified. Guarded writer scripts/check_local_statement_delta.cjs has
+completed: do not rerun it. Report:data/local-runtime/native-delta-journey.json;
+export:native-delta-export.zip. Current backend37595 includes this and the final
+held-source duplicate branch. No push. Development continues through remaining
+matching, extraction, tracing and integrated acceptance work.
+
 ## Bulk duplicate review and source sightings — 10 September, about08:02Dublin
 
 Same-case comparison now exposes matching recorded ingestion hashes even when

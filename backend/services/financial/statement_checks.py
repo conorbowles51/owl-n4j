@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from postgres.models.financial import (
     FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction,
 )
+from services.financial.statement_delta_hints import statement_delta_hints
 from services.financial.printed_totals import compare_printed_totals, retained_total_controls
 from services.financial.ledger_source import LedgerSourceError
 from services.financial.money import MoneyError
@@ -49,7 +50,7 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25):
             recorded_status=period.reconciliation_status,
             recorded_at=period.reconciled_at.isoformat() if period.reconciled_at else None,
             status='refused', reason=None, amounts=None, counted_rows=None, excluded_rows=None,
-            independent=None, printed_totals=None, printed_totals_error=None)
+            independent=None, printed_totals=None, printed_totals_error=None, delta_hints=None)
         try:
             outcome = evaluate_identity(opening=read_opening(period), closing=read_closing(period),
                 totals=total_transactions(session, period_id=period.id, currency=period.currency), currency=period.currency)
@@ -60,6 +61,7 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25):
                     ('closing', outcome.printed_closing), ('difference', outcome.delta))},
                 counted_rows=outcome.totals.counted, excluded_rows=outcome.totals.excluded_count,
                 independent=outcome.independent)
+            item["delta_hints"] = statement_delta_hints(session, period, outcome)
         except (MoneyError, PeriodError, ReconciliationError) as exc:
             item['reason'] = str(exc)
         if item['amounts'] is not None:
