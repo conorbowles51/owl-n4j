@@ -1,0 +1,40 @@
+"""Inventory captured support for an expert, with explicit missing evidence.
+
+This is a reproducible index into the exported snapshot, not a signed opinion or
+an assertion of complete custody, independent validation, or admissibility.
+"""
+from services.financial.review_methods import pdf_review_methods
+
+
+def build_expert_support(document, *, snapshot_sha256, code_version=None, source_files=()):
+    sources={}
+    for reading in document['ledger']['readings']:
+        source=reading['source']
+        if source['id'] in sources and sources[source['id']]!=source:
+            from services.financial.ledger_summary import LedgerSummaryError
+            raise LedgerSummaryError('Conflicting source records in expert support inventory.')
+        sources[source['id']]=source
+    history=document.get('pdf_review_history')
+    methods=pdf_review_methods(document)
+    return dict(schema_version='loupe.financial.expert_support/1',
+        derived_from_sha256=snapshot_sha256,
+        case_id=document['ledger']['case_id'],
+        purpose='Preparation support for expert review. Not an expert opinion, signature, complete custody certification or legal admissibility determination.',
+        extraction_and_review=dict(status='captured_pdf_scope' if methods is not None else 'unavailable',description=methods,
+            snapshot_reference='pdf_review_history.mappings'),
+        source_records=dict(status='recorded_source_inventory',sources=[sources[key] for key in sorted(sources)],
+            fresh_byte_checks=[{key:value for key,value in item.items() if key!='content'} for item in source_files],
+            limitation='Recorded ingestion source references and optional export-time byte checks do not establish every custody transfer. Complete custody event history is not captured here.'),
+        human_decisions=dict(status='captured_scope' if document.get('export_ready') else 'unavailable',
+            recorded_decisions=len(document.get('decisions',[])),pdf_reviews=len(history['reviews']) if history else 0,
+            scope=document.get('decision_scope'),snapshot_references=['decisions','pdf_review_history','ledger.readings'],
+            limitation='Relevant captured ledger and PDF review decisions only; not all decisions or opinions in the case.'),
+        versions=dict(export_code_version=code_version,
+            source_parsers=[dict(source_document_id=key,parser_name=sources[key].get("parser_name"),parser_version=sources[key].get("parser_version")) for key in sorted(sources)],
+            model_requests=[m for m in methods['methods'] if m['model']] if methods else [],
+            limitation='Export code version and recorded PDF model requests are included. A complete historical component/toolchain manifest is unavailable.'),
+        validation=dict(status='unavailable',
+            reason='No versioned independently reviewed extraction evaluation is attached to this snapshot. Software test counts are not measured extraction accuracy.'),
+        tracing=dict(status='not_selected',
+            reason='This ledger export does not capture a tracing scenario. Export the selected scenario separately with its source readings, assumptions and method comparisons.'),
+        completeness='incomplete_expert_packet')

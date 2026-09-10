@@ -129,6 +129,11 @@ function ScopedExport({
         className="space-y-2 rounded border p-3"
       >
         <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm">
+            Includes recorded review methods and an inventory of available
+            expert support. Missing validation, custody history and tracing
+            material remain identified; this is not a complete expert packet.
+          </p>
           <Button disabled={busy} onClick={() => void download()}>
             {busy ? "Preparing table export…" : "Download this table view"}
           </Button>
@@ -208,6 +213,11 @@ function ScopedExport({
           changed files stop the export.
         </p>
       )}
+      <p className="text-sm">
+        Includes recorded review methods and an inventory of available expert
+        support. Missing validation, custody history and tracing material remain
+        identified; this is not a complete expert packet.
+      </p>
       <Button disabled={busy} onClick={() => void download()}>
         {busy
           ? "Preparing ledger export…"
@@ -226,11 +236,12 @@ function ScopedExport({
       <p>
         Downloads the applied account/date scope, exact rows and totals, source
         references and relevant decision history with a verification manifest
-        and a readable report with section-specific exhibit assessments. Report amounts retain their exact minor
-        units alongside currency formatting. PDF original readings, review
-        history and finalization receipts for referenced files are included.
-        Original files are included only when selected above; otherwise source
-        hashes are recorded values rather than fresh file checks.
+        and a readable report with section-specific exhibit assessments. Report
+        amounts retain their exact minor units alongside currency formatting.
+        PDF original readings, review history and finalization receipts for
+        referenced files are included. Original files are included only when
+        selected above; otherwise source hashes are recorded values rather than
+        fresh file checks.
       </p>
       {message && <p role="status">{message}</p>}
     </section>

@@ -1957,3 +1957,15 @@ __all__ += ["statement_layout_context"]
 
 from services.financial.model_pdf_nomination import PdfModelNominationRequest, run_pdf_model_nomination, read_pdf_model_nomination, list_pdf_model_nominations
 __all__ += ["PdfModelNominationRequest", "run_pdf_model_nomination", "read_pdf_model_nomination", "list_pdf_model_nominations"]
+
+from services.financial.review_methods import pdf_review_methods
+__all__ += ["pdf_review_methods"]
+
+from services.financial.extraction_evaluation import ExtractionEvaluation, evaluate_extraction
+__all__ += ["ExtractionEvaluation", "evaluate_extraction"]
+
+from services.financial.extraction_evaluation import compare_extraction_evaluations
+__all__ += ["compare_extraction_evaluations"]
+
+from services.financial.expert_support import build_expert_support
+__all__ += ["build_expert_support"]

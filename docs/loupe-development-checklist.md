@@ -11,8 +11,8 @@ Final scheduled handoff:7September2026. The authorized cutoff was
 that cutoff, confirmed by automation_update. No further automatic segments are
 expected. Earlier ACTIVE/time-window statements below are retained history.
 
-**Current overall: eight completed workflows (2,3,4,5,6,7,8,9); two features retain
-outstanding work.** Completion here means the stated investigator-review,
+**Current overall: seven operational workflows complete (2,3,4,5,6,7,9);
+features1,8and10retain original-specification or acceptance work.** Completion here means the stated investigator-review,
 authoritative-view and recorded-coverage workflows, with their explicit evidence
 limitations preserved. The historical handoff tables below remain unchanged. See [the review and testing guide](loupe-review-2026-09-07.md).
 Completed subitems stay visible. Neil requested mindful usage; valid passing tests
@@ -162,7 +162,7 @@ feature below is complete at the start of this window.
    - [x] Explicit account/date filters on current ledger rows, draft/apply/clear behavior, bounded case-scoped account lookup and case-switch resets (a6ee80c). Requested-interval coverage remains.
    - [x] Empty ledger answers respect account/date filters, explain that no match does not establish absence of transactions, and retain response-count discrepancy warnings even for zero rows (e13375c). Quantified search coverage and filter controls remain.
 
-7. **Connect transactions and explain money movement — partial**
+7. **Connect transactions and explain money movement — complete within the recorded investigator-review scope**
    - [x] Reuse payment-created reviewed identities in account links, with unchanged source names and case-scoped history. Tests cover stale saves/conflicting names; existing synthetic identity visible in account dropdown with no browser writes.
    - [x] Suggest repeated-name identity links from already reviewed payment sources, retaining case/whitespace variants, competing identities and explicit clear decisions. Source inspection and capped selection remain separate from saving;11UI tests and simulated-response browser check pass.
    - [x] Offer optional spelling/formatting identity proposals for unlinked readings and new imports, retaining ambiguous reviewed parties and explicit prior decisions. Each suggestion explains its source-based comparison; differing numeric identifiers and short-name fuzzy matches are excluded.15UI tests and zero-write simulated-name browser acceptance pass; links still require an explicit reason/save.
@@ -180,7 +180,9 @@ feature below is complete at the start of this window.
    - [x] Show the evidence supporting a match and distinguish exact matches from uncertain ones. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [x] Connect comparisons between financial records and statements or claims about payments. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
-8. **Produce traceable reports and exports — complete**
+8. **Produce traceable reports and exports — operational exports complete; full expert packet partial**
+   - [x] Readable PDF methods appendix identifies captured mappings and model/prompt provenance, marks simulated model output, and distinguishes absent accuracy measurements from software test counts. Snapshot digests checked; full real-document report rendered and inspected.
+   - [ ] Complete the original specification’s expert packet: full applicable custody/decision coverage, component versions, linked measured validation and selected tracing methods/results. Current ledger exports contain scoped history; they are not a complete expert packet.
    - [x] Reproducible table-view export captures search, currency, direction, proof filter and deterministic row order across every matching page, alongside the full account/date/history snapshot. Real-PDF one-row61.62USD search verified against all3captured readings and JSON/HTML/PDF hashes; exact scope echoed to browser.
    - [x] Optional paginated PDF derived from the same captured ledger, with independent manifest hash; real-statement exact text and five-page layout verified. Full raw values retained in HTML/JSON. Browser download verification passed.
    - [x] Optional original-source bundle with fresh byte verification, source manifest, case ownership checks and whole-bundle limits; both supplied PDFs independently verified unchanged (5eeda00). Complete referenced files may extend beyond ledger filters.
@@ -214,6 +216,9 @@ feature below is complete at the start of this window.
    - [x] Preserve the basis for each tracing result so it can be reviewed. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 10. **Test the complete application locally — partial**
+    - [x] Add offline row/field/direction and admitted-error measurements against supplied reviewed labels, with exact ratios, unavailable states and regression comparison. Synthetic coverage and CLI nonzero regression behavior are tested; no provider calls.
+    - [ ] Establish the original specification’s independently reviewed representative corpus and publish versioned extraction measurements. The runner and existing control-block census do not establish independent ground truth. See loupe-extraction-validation.md.
+    - [ ] Connect the approved corpus run to the release regression gate after the labels and storage location are established.
     - [x] Fresh current-schema real PostgreSQL concurrency and injected-failure acceptance: two saves/one batch, two finalizers/one receipt, full rollback after flush, idempotent retry and sealed review. Ten database guards and14subsequent application/analysis/export checks pass on the new synthetic case.
     - [x] Integrated4186backend/917financialUI/build gate and87live access checks across15read/scenario and9edit endpoints. Temporary local viewer can calculate conditional scenarios, cannot edit, and loses access immediately on membership removal; test user cleaned up.
     - [x] First real-PDF bounded UI journey: upload/local preparation → select two page4 rows → visually checked review/OCR description correction → finalize → exact export verification.0included/2P3excluded, original unchanged. Fullstatement accuracy and candidate-history export remain.

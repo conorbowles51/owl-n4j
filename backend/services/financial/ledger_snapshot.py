@@ -143,9 +143,18 @@ def ledger_export_archive(export, *, include_pdf=False):
         manifest['source_files'] = [{key:value for key,value in item.items() if key != 'content'} for item in export.source_files]
         manifest['source_files_verified_against_ingestion'] = True
         manifest['source_files_scope'] = 'Complete original files referenced by captured rows; files may contain pages or information outside the ledger filters.'
+    from services.financial.expert_support import build_expert_support
+    support = json.dumps(build_expert_support(json.loads(export.snapshot.content),
+        snapshot_sha256=export.snapshot.sha256, code_version=manifest.get('code_version'),
+        source_files=export.source_files),sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
+    support_bytes = support.encode('utf-8')
+    if len(support_bytes)>MAX_EXPORT_BYTES:
+        raise LedgerSummaryError('Expert support inventory exceeds the export limit; no partial export was produced.')
+    manifest['expert_support'] = dict(filename='expert-support.json',sha256=hashlib.sha256(support_bytes).hexdigest(),
+        byte_count=len(support_bytes),derived_from_sha256=export.snapshot.sha256,completeness='incomplete_expert_packet')
     stream=io.BytesIO()
     with zipfile.ZipFile(stream,'w',compression=zipfile.ZIP_DEFLATED) as archive:
-        for name,content in (('ledger-snapshot.json',export.snapshot.content),('manifest.json',json.dumps(manifest,sort_keys=True,separators=(',',':'))), ('ledger-report.html',report)):
+        for name,content in (('ledger-snapshot.json',export.snapshot.content),('manifest.json',json.dumps(manifest,sort_keys=True,separators=(',',':'))), ('ledger-report.html',report), ('expert-support.json',support)):
             info=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0))
             info.compress_type=zipfile.ZIP_DEFLATED
             archive.writestr(info,content.encode('utf-8'))
@@ -296,6 +305,32 @@ def render_ledger_report(snapshot):
                     '<p>Review reason: ' + text(scope['reason']) + '</p>',
                     details('Control source locations and selected candidate references', scope), '</article>']
         parts += [details('Original PDF mappings and cells, review chain and finalization receipts',history)]
+    from services.financial.review_methods import pdf_review_methods
+    methods = pdf_review_methods(document)
+    if methods is not None:
+        parts += ['<h2>PDF extraction and review methods</h2>',
+            '<p>' + text(methods['procedure']) + '</p>',
+            '<p>' + text(methods['scope']) + '</p>',
+            '<h3>Validation evidence</h3><p>' + text(methods['validation']) + '</p>']
+        by_file = {}
+        for method in methods['methods']:
+            group = by_file.setdefault(method['evidence_file_id'], {'formats': set(), 'count': 0, 'models': 0})
+            group['formats'].add(method['schema_version'])
+            group['count'] += 1
+            group['models'] += int(method['model'] is not None)
+        parts += [table(['Source file', 'Mapping formats', 'Saved mappings', 'With model proposals'], [[
+            file_id, ', '.join(sorted(group['formats'])), group['count'], group['models']]
+            for file_id, group in sorted(by_file.items())], widths=[40, 32, 14, 14]),
+            '<p>A mapping without a recorded model nomination does not establish that upstream preparation used no AI. Exact mapping IDs and source revisions remain in the accompanying HTML and JSON.</p>']
+        for method in methods['methods']:
+            model = method['model']
+            if model:
+                parts += ['<article><h3>Model proposal for mapping ' + text(method['mapping_id']) + '</h3>',
+                    table(['Requested model', 'Prompt version', 'Execution', 'Attempt recorded at'], [[
+                    model['provider'] + ' / ' + model['model_id'], model['schema_version'],
+                    'SIMULATED TEST - no external model ran' if model['execution_mode'] == 'simulated_test' else 'Configured provider', model['created_at']]]),
+                    '<p>Prompt SHA-256: <code>' + text(model['prompt_sha256']) + '</code>. The requested model name is not proof of a fixed provider model revision.</p></article>']
+        parts += [details('Mapping source revisions and model requests', methods['methods'])]
     parts += ['<h2>Verification</h2><p>This report is derived only from the bundled ledger-snapshot.json. '
         'Its SHA-256 is <code>' + text(snapshot.sha256) + '</code>; its UTF-8 size is ' + text(snapshot.byte_count) +
         ' bytes. The manifest separately identifies the report bytes.</p></body></html>']

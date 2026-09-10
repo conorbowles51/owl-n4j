@@ -1,3 +1,40 @@
+## Original-plan export and validation work — 10 September
+
+Continued development independently of the provider credential. Added:
+
+- Readable PDF extraction/review methods appendix with mapping format counts and
+  retained model/prompt metadata. No recorded model nomination is not treated as
+  proof that upstream preparation used no AI. Inconsistent snapshot provenance is
+  refused. Compact layout adds one page to the full supplied-file report (91total),
+  with exact mapping details retained in HTML/JSON. Final pages90/91inspected.
+- Generated expert-support.json in every ledger bundle, with its own manifest hash
+  tied to the snapshot. It inventories recorded source/parser references, optional
+  fresh byte checks, relevant decision counts and PDF model versions. It explicitly
+  identifies unavailable full custody/toolchain history, independent validation and
+  unselected tracing scenarios. This is incomplete expert preparation support, not
+  the original specification's full expert packet or a signed opinion.
+- Offline extraction-evaluation schema/runner: exact row/field precision and recall,
+  direction accuracy, admitted errors, quarantine and balance-gate rates. Synthetic
+  labels stay labelled synthetic. Regression comparison requires unchanged reviewed
+  truth and document extraction layers and returns exit2when accuracy worsens.
+  The CLI preserves supplied labels and never calls a provider. Seven focused tests
+  include actual subprocess failure behavior. No independent corpus was invented.
+
+4285backend tests pass. Export-button UI tests, TypeScript, scoped lint and frontend
+production build pass. Real104-reading/27-period browser export check remains exact;
+expert-support manifest/content links verified; no financial writes. Final compact
+report was rendered directly from the saved snapshot and visually checked.
+
+Checklist corrected: seven operational workflows complete;1,8,10retain original
+specification/acceptance work. Feature7's stale partial heading corrected. Completed
+items retained. See docs/loupe-extraction-validation.md for the input contract and
+remaining reviewed-corpus/release-gate requirements. These are separate from the
+known401provider key, which was not retried. No push/deployment.
+
+Next development: complete the supported expert-packet inputs and broader extraction
+coverage against the original specification; do not stop simply because live model
+acceptance is awaiting a working credential.
+
 ## Final model audit and real-document regression — 10 September
 
 The nomination now uses a fixed, recorded system prompt rather than inheriting an

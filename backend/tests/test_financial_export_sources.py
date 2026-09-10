@@ -62,7 +62,8 @@ class ExportSourceTests(fixture.DuplicateTestCase):
         self.assertNotIn('..',files[0]['archive_path'])
     def test_archive_contains_identical_verified_bytes_and_manifest_hash(self):
         files=self.capture()
-        snapshot=LedgerSnapshot('{}',hashlib.sha256(b'{}').hexdigest(),2)
+        raw=json.dumps({'ledger':{'case_id':str(self.case.id),'readings':[]}})
+        snapshot=LedgerSnapshot(raw,hashlib.sha256(raw.encode()).hexdigest(),len(raw.encode()))
         export=LedgerExport(snapshot,'{}',files,True)
         with patch('services.financial.ledger_snapshot.render_ledger_report',return_value='<html>report</html>'):
             archive=ledger_export_archive(export)

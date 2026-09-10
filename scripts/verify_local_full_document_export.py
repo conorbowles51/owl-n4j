@@ -20,6 +20,15 @@ with ZipFile(DATA / 'full-document-export.zip') as archive:
         assert hashlib.sha256(content).hexdigest() == entry['sha256']
         assert len(content) == entry['byte_count']
         assert entry['derived_from_sha256'] == manifest['document_sha256']
+    support_entry = manifest['expert_support']
+    support_bytes = archive.read(support_entry['filename'])
+    assert hashlib.sha256(support_bytes).hexdigest() == support_entry['sha256']
+    assert len(support_bytes) == support_entry['byte_count']
+    support = json.loads(support_bytes)
+    assert support['derived_from_sha256'] == manifest['document_sha256']
+    assert support['completeness'] == 'incomplete_expert_packet'
+    assert support['validation']['status'] == 'unavailable'
+    assert support['tracing']['status'] == 'not_selected'
     original = manifest['source_files'][0]
     assert len(manifest['source_files']) == 1
     assert hashlib.sha256(archive.read(original['archive_path'])).hexdigest() == review['source_sha256'] == original['sha256']
@@ -27,6 +36,9 @@ with ZipFile(DATA / 'full-document-export.zip') as archive:
     (DATA / 'full-document-ledger-report.pdf').write_bytes(pdf_bytes)
     snapshot = json.loads(raw)
 ledger = snapshot['ledger']
+assert {s['id'] for s in support['source_records']['sources']} == {r['source']['id'] for r in ledger['readings']}
+assert support['human_decisions']['pdf_reviews'] == 104
+assert len(support['extraction_and_review']['description']['methods']) == len(snapshot['pdf_review_history']['mappings'])
 assert ledger['case_id'] == review['case_id']
 assert len(ledger['readings']) == 104 and ledger['included_rows'] == 0 and ledger['excluded_rows'] == 104
 links = {r['candidate_id']: r['transaction_id'] for r in review['finalization']['transactions']}

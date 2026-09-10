@@ -70,13 +70,18 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         from services.financial.ledger_snapshot import LedgerExport,ledger_export_archive
         snapshot=self.capture()
         with zipfile.ZipFile(io.BytesIO(ledger_export_archive(LedgerExport(snapshot,'{"manifest":true}')))) as archive:
-            self.assertEqual(set(archive.namelist()),{'ledger-snapshot.json','manifest.json','ledger-report.html'})
+            self.assertEqual(set(archive.namelist()),{'ledger-snapshot.json','manifest.json','ledger-report.html','expert-support.json'})
             self.assertEqual(archive.read('ledger-snapshot.json'),snapshot.content.encode('utf-8'))
             report=archive.read('ledger-report.html')
             manifest=json.loads(archive.read('manifest.json'))
             self.assertEqual(manifest['report']['sha256'],hashlib.sha256(report).hexdigest())
             self.assertEqual(manifest['report']['byte_count'],len(report))
             self.assertEqual(manifest['report']['derived_from_sha256'],snapshot.sha256)
+            support=archive.read('expert-support.json')
+            self.assertEqual(manifest['expert_support']['sha256'],hashlib.sha256(support).hexdigest())
+            self.assertEqual(json.loads(support)['derived_from_sha256'],snapshot.sha256)
+            self.assertEqual(json.loads(support)['validation']['status'],'unavailable')
+            self.assertEqual(json.loads(support)['completeness'],'incomplete_expert_packet')
 
     def test_optional_pdf_is_bound_to_the_same_snapshot_manifest(self):
         import io, zipfile
