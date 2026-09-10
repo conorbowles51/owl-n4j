@@ -53,6 +53,29 @@ classes;23focused backend and12UI tests pass. Multiple-claim working-population 
 downloaded scenario hashes and clearing results when assumptions change. No full-feature completion claim. Continue through remaining
 PDF extraction, review persistence, cross-case duplicates, tracing and reporting.
 
+### Cross-view correction acceptance — 10 September, about07:03 Dublin
+
+4f25dada saves reproducible table export locally, no push.40additional financial
+page/correctable-ledger tests pass. Final runtime64512 includes CORS exposure;
+HTTP verified actual allowed origin127.0.0.1:55174 and all scope headers.
+
+Synthetic printed-total case d72a4ac0-f990-415e-be89-838f955e6af2: browser changed
+Office cost30.00→30.01 and verified Ledger, Transactions, Counterparties, Trends,
+Posting graph and printed statement controls. Restored30.00 with a second explicit
+correction. Two current rows remain;P3 unchanged. Export preserves4readings,
+2correction events with before/after printed-total audits; snapshot hash verified.
+Original1417e855-67d3-41c2-b739-b7adf90c4a87,
+temporary132f7eb6-da9f-4103-88da-cb4588021d34,
+currentaa66950f-0c9b-442b-84d3-c7dfbe965708. Do not rerun the completed writer
+scripts/check_local_correction_across_views.cjs. Reports:
+data/local-runtime/correction-across-views-check.json and correction-across-views-export.zip.
+
+Retained checklist now marks workflows2(uncertain-reading review),5(authoritative
+ledger views) and6(recorded evidence coverage) complete on their listed scope.
+Seven broader features retain remaining work, including native control revalidation,
+automatic extraction/claim processing, party resolution and remaining design scope.
+This is not a whole-application completion or permission to deploy. Keep working.
+
 ### Reproducible ledger table export — 10 September, about06:57 Dublin
 
 d770f805 saves printed incoming/outgoing controls locally. No push. Added a table

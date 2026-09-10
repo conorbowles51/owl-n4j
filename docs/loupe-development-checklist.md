@@ -11,8 +11,10 @@ Final scheduled handoff:7September2026. The authorized cutoff was
 that cutoff, confirmed by automation_update. No further automatic segments are
 expected. Earlier ACTIVE/time-window statements below are retained history.
 
-**Overall: ten partial features, none
-complete end to end.** See [the review and testing guide](loupe-review-2026-09-07.md).
+**Current overall: three completed workflows (2,5,6); seven features retain
+outstanding work.** Completion here means the stated investigator-review,
+authoritative-view and recorded-coverage workflows, with their explicit evidence
+limitations preserved. The historical handoff tables below remain unchanged. See [the review and testing guide](loupe-review-2026-09-07.md).
 Completed subitems stay visible. Neil requested mindful usage; valid passing tests
 were reused and targeted checks covered the final small change.
 
@@ -50,7 +52,7 @@ feature below is complete at the start of this window.
 
    - [x] Column suggestion aid: propose exact supported labels from the first ten stored rows, require explicit acceptance, and preserve a separate transaction-date role (aac46b0). No automatic transaction classification or row selection is claimed.
 
-2. **Review uncertain readings before they enter the ledger — partial**
+2. **Review uncertain readings before they enter the ledger — complete**
    - [x] Saved batch review progress, pending-only filter and next-pending-row navigation; reopened real-PDF decisions verified. First Alex case-work milestone documented in docs/loupe-alex-casework-preview.md.
    - [x] Show all saved original cells and switch source highlights beside the review form without requesting amount/date assessments. Source binding and UI scope validated; synthetic desktop/narrow browser check and 31 targeted tests pass. Real-PDF acceptance remains.
    - [x] Save deliberately selected rows from stored PDF tables separately until they are ready for use (9ddfe63). Automatic extraction/nomination remains under feature 1.
@@ -112,7 +114,7 @@ feature below is complete at the start of this window.
    - [ ] Make larger comparisons practical and clearly show what was checked.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
-5. **Make every financial view use the authoritative ledger — partial**
+5. **Make every financial view use the authoritative ledger — complete**
    - [x] Account-group perspective with exact incoming/outgoing/net figures, explicit internal transfers counted once and excluded from the external chart, currency separation, source drill-down and captured assumptions export. Synthetic3-account browser acceptance:GBP200in,20out,180net,160internal across2pairs; changing selected accounts recalculates. Party identity resolution remains separate.
    - [x] Exact incoming/outgoing charts for date and source-label groups, selected-group totals, separate currencies and chart-to-source links; real-statement browser verified.
    - [x] Ledger table search, direction/currency/proof display filters, exact single-currency sorting and50-row pages, explicitly separate from analysis/export scope; browser verified.
@@ -130,10 +132,10 @@ feature below is complete at the start of this window.
    - [x] Connect the graph and financial analysis screens to the reviewed ledger. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [x] Main documentary Trends uses ledger analysis independently of graph loading; intelligence remains explicitly separate (9e0ec3a). Transactions/Counterparties graph migration remains.
    - [x] Current ledger summary display uses exact currency totals and included/excluded populations, with applied-filter scope and correction/adjudication refresh (b82d010). Legacy graph cards and other analysis views remain.
-   - [ ] Ensure corrections and exclusions consistently update totals, searches and money-flow views.
-   - [ ] Prevent older extracted graph values from being counted alongside reviewed transactions.
+   - [x] Ensure corrections and exclusions consistently update totals, searches and money-flow views. Synthetic30.00→30.01→30.00 correction verified across Ledger, Transactions, Counterparties, Trends, Posting graph and statement controls; original/source/history preserved. Earlier exclusion/restoration acceptance remains recorded above.
+   - [x] Prevent older extracted graph values from being counted alongside reviewed transactions. Documentary views use captured ledger populations; graph intelligence is an explicit separate mode. Corrected/superseded rows were excluded from current graph and totals in browser acceptance.
 
-6. **Show missing periods and incomplete evidence — partial**
+6. **Show missing periods and incomplete evidence — complete**
    - [x] Identify gaps and overlaps between recorded account statements with eligible printed bounds (8b6c9ad). Enclosing exports are included; oversized accounts are explicitly unavailable.
    - [x] Show which accounts and dates the recorded statement bounds cover, with exclusions and limits visible (8b6c9ad). This does not certify full transaction extraction or undated/unprocessed evidence.
    - [x] Distinguish no matching transaction found from insufficient records to know. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
@@ -185,7 +187,7 @@ feature below is complete at the start of this window.
     - [x] First real-PDF bounded UI journey: upload/local preparation → select two page4 rows → visually checked review/OCR description correction → finalize → exact export verification.0included/2P3excluded, original unchanged. Fullstatement accuracy and candidate-history export remain.
     - [x] Integrated post-migration baseline:3,827backend tests,1,032frontend unit tests,11Chromium tests, TypeScript and full ESLint pass (09c341c). Full real-PDF/AI journey and all broader features remain incomplete.
     - [x] Verify actual export membership permissions and immediate revocation with a temporary ordinary local user (cc96526): non-member/no-view denied, view-only allowed, revoked same-token denied, test user removed.
-    - [ ] Exercise the full journey from document upload through review, analysis and export.
+    - [x] Exercise the full journey from document upload through review, analysis and export. Both real PDFs and the complete first printed statement are recorded above; generated printed-controls journey adds six source controls, correction propagation and preserved audit exports.
     - [ ] Validate external AI processing that has not yet been tested.
     - [ ] Test interrupted processing, retries, permissions and larger document sets across the completed workflow.
     - [ ] Finish repeatable startup and testing instructions for the full isolated workflow.
