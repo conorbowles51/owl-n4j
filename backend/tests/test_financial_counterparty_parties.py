@@ -58,3 +58,35 @@ class CounterpartyPartyTests(LedgerSummaryTests):
         self.assertEqual(result['snapshot_json'],content)
         self.assertEqual(result['snapshot_sha256'],export.snapshot.sha256)
         self.assertFalse(self.db.new or self.db.dirty)
+
+    def test_payment_created_party_can_be_reused_for_account_and_survives_clear(self):
+        from services.financial.account_parties import account_parties, set_account_party, AccountPartyRequest
+        row,_=self.add(100)
+        original=self.read()
+        old_state=account_parties(self.db,case_id=self.case.id)
+        party=self.assign([row])['parties'][0]
+        state=account_parties(self.db,case_id=self.case.id)
+        self.assertIn(party,state['parties'])
+        self.assertNotEqual(state['revision'],old_state['revision'])
+        request=dict(account_ids=[row.account_id],party_id=party['id'],reason='Reuse the explicitly reviewed synthetic identity')
+        with self.assertRaises(AccountPartyError):
+            set_account_party(self.db,case_id=self.case.id,request=AccountPartyRequest(expected_revision=old_state['revision'],**request),actor=self.actor)
+        result=set_account_party(self.db,case_id=self.case.id,request=AccountPartyRequest(expected_revision=state['revision'],**request),actor=self.actor)
+        self.assertEqual(next(a for a in result['accounts'] if a['id']==str(row.account_id))['party'],party)
+        self.assign([row],new_party_name=None,clear=True)
+        self.db.expire_all()
+        self.assertIn(party,account_parties(self.db,case_id=self.case.id)['parties'])
+        self.assertNotIn(party,account_parties(self.db,case_id=self.other_case.id)['parties'])
+        self.assertEqual(self.read(),original)
+
+    def test_payment_directory_conflicting_party_names_are_refused(self):
+        from services.financial.account_parties import account_parties
+        from postgres.models.financial import AdjudicationEvent
+        from sqlalchemy import select
+        a,_=self.add();b,_=self.add()
+        party=self.assign([a])['parties'][0]
+        self.assign([b],new_party_name=None,party_id=party['id'])
+        event=self.db.scalar(select(AdjudicationEvent).where(AdjudicationEvent.subject_id==b.id))
+        event.after={**event.after,'party':{**party,'name':'Conflicting name'}}
+        self.db.flush()
+        with self.assertRaises(AccountPartyError):account_parties(self.db,case_id=self.case.id)

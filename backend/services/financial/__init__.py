@@ -1945,3 +1945,6 @@ __all__.append("trace_asset_uses")
 
 from .counterparty_parties import counterparty_parties, set_counterparty_party
 __all__.extend(["counterparty_parties", "set_counterparty_party"])
+
+from services.financial.summary_contributions import summary_contributions
+__all__ += ["summary_contributions"]

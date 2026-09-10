@@ -42,7 +42,7 @@ class AccountPartyRequest(BaseModel):
         return self
 
 
-def account_parties(session, *, case_id):
+def _account_party_state(session, *, case_id):
     accounts = list(session.scalars(select(FinancialAccount).where(
         FinancialAccount.case_id == case_id).order_by(FinancialAccount.id).limit(1001)))
     if len(accounts) > 1000:
@@ -87,6 +87,17 @@ def account_parties(session, *, case_id):
         parties=sorted(parties.values(), key=lambda p: (p['name'].casefold(), p['id'])),
         history=history, applied=False,
         limitation='Investigator account links are replayed from decisions. Equal printed names do not establish identity. Original source accounts and proof classes remain unchanged.')
+    result['revision'] = hashlib.sha256(json.dumps(result, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    return result
+
+
+def account_parties(session, *, case_id):
+    """One case-scoped party choice list, including identities created on payments."""
+    from services.financial.counterparty_parties import payment_party_choices
+    result = _account_party_state(session, case_id=case_id)
+    parties = payment_party_choices(session, case_id=case_id, known_parties=result['parties'])
+    result['parties'] = sorted(parties.values(), key=lambda p: (p['name'].casefold(), p['id']))
+    result.pop('revision')
     result['revision'] = hashlib.sha256(json.dumps(result, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return result
 

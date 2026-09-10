@@ -47,8 +47,8 @@ feature below is complete at the start of this window.
    - [x] Source-bound backend date/amount row suggestions preserve uncertainty and all checked rows, with explicit columns/currency and no automatic admission (ea125fd).36tests plus route test pass; UI integration next.
    - [x] Propose explicit English named-month dates while preserving source text and unresolved year/century/glyph uncertainty (43dbbd5).24targeted tests pass; source review remains required and automatic extraction remains incomplete.
    - [ ] Identify transaction rows and column meanings: dates, amounts, accounts and money coming in or going out.
-   - [ ] Link each extracted value to its exact location in the original document, including verified stored PDF cells.
-   - [ ] Handle digital PDFs and scanned documents while preserving uncertainty where the source is unclear.
+   - [x] Link selected extracted values to measured original PDF cells, including native text and orientation-corrected OCR. Missing or invalid locations remain explicit; both real PDFs and saved OCR review have browser acceptance.
+   - [x] Handle digital PDFs and scanned pages with local OCR, retaining provenance and uncertainty. The dense broken text sample now recovers pages51–52; amount source selection/reopening is verified without claiming financial accuracy.
    - [x] Foundation: bind nominated canonical-text rows to exact source spans and source/provenance revisions; keep every candidate pending. Verified in 5d7279d, including 21 new tests. Automatic extraction remains; geometry adapter completion is recorded below.
 
    - [x] Foundation: verify stored PDF table/cell identity and rectangles without guessed text offsets (5ab6931). Includes repeated amounts, provenance drift, malformed geometry and generated-PDF extraction tests.
@@ -155,6 +155,8 @@ feature below is complete at the start of this window.
    - [x] Empty ledger answers respect account/date filters, explain that no match does not establish absence of transactions, and retain response-count discrepancy warnings even for zero rows (e13375c). Quantified search coverage and filter controls remain.
 
 7. **Connect transactions and explain money movement — partial**
+   - [x] Reuse payment-created reviewed identities in account links, with unchanged source names and case-scoped history. Tests cover stale saves/conflicting names; existing synthetic identity visible in account dropdown with no browser writes.
+   - [ ] Offer automatic identity proposals for review, including ambiguous names and new imports; preserve investigator decisions rather than silently merging names.
    - [x] Reviewed counterparty identity links for explicitly selected payments, immutable history, correction inheritance/override, source inspection and optional identity-grouped charts. Synthetic save/reload/source/download preserves raw labels,24.68GBPworking debits and0verified rows. Original names and future imports are not merged automatically.
    - [x] Optional source-linked equal-value transfer chains and return-flow hypotheses across accounts, bounded to two/three candidate transfers without posting reuse. Synthetic three-account/six-posting theory save/source/history verified; all pairings stay conditional, with no allocation or automatic finding.
    - [x] Connect scoped identifier comparisons to Transfers and captured scenarios: version4UUID equality and native ACH traces with explicit effective-date scope. Conflicting amounts, same-side sightings, multiple partners and unsupported scope remain visible. Synthetic source-navigation/scenario browser acceptance passes; no automatic merge or UETR assertion.
@@ -186,6 +188,8 @@ feature below is complete at the start of this window.
    - [x] Record which evidence and decisions supported an exported result. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 9. **Complete funds tracing — partial**
+   - [ ] Complete partial-purchase and resale asset substitution with explicit evidence and method allocations.
+   - [ ] Connect the saved indirect-method scope (net worth, deposits, expenditure and cash-T) to supported evidence and investigator assumptions.
    - [x] Optional whole-withdrawal asset interpretation in single-account and network scenarios, with per-method allocation and source/basis retained; cash figures unchanged. Both browser forms/source/download verified with zero ledger writes. Partial purchases, ownership, valuation and resale substitution remain outside this calculation.
    - [x] Explicit backward timing, off by default and requiring a basis, with unchanged source dates and acyclic account dependency checks. Synthetic earlier-credit/later-debit browser scenario conserves each method, flags the backward hop and preserves source/download; circular backward dependencies are refused. Asset substitution remains separate.
    - [x] Forward tracing across 2–10 accounts, selected source-bound transfer pairs, all scoped readings, explicit openings/order/root claims and per-method conservation. Three-account browser test verifies FIFO £80, pro rata £90 and LIFO £100 remaining from a synthetic £100 claim; exact download and stale-result clearing pass. Backward tracing and asset substitution remain unsupported.

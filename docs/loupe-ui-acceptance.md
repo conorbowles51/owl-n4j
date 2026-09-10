@@ -173,3 +173,7 @@ See build-state for guarded writer and repeatable read-only script names.
   cleared selection after refresh. Row and PDF screenshots visually inspected.
   This closes the main-summary navigation gap; the broader every-surface audit
   remains open rather than treating one interaction as full UI completion.
+
+- [x] Reviewed payment identities are reusable in account-link choices. Existing
+  synthetic party selected in the browser without saving an ownership assertion;
+  source labels unchanged. Independent histories and stale-revision refusal tested.

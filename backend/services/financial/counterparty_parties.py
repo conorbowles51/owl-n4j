@@ -8,7 +8,7 @@ from postgres.models.case import Case
 from postgres.models.financial import FinancialTransaction, AdjudicationEvent
 from postgres.models.enums import AdjudicationSubject, AdjudicationDecision
 from services.financial.decisions import record
-from services.financial.account_parties import AccountPartyError, account_parties
+from services.financial.account_parties import AccountPartyError, _account_party_state
 
 
 class CounterpartyPartyRequest(BaseModel):
@@ -68,12 +68,29 @@ def _identity_state(rows, events, known_parties=()):
     return readings, parties, history
 
 
+def payment_party_choices(session, *, case_id, known_parties=()):
+    """Replay only payment subjects with identity decisions, not every case row."""
+    events=list(session.scalars(select(AdjudicationEvent).where(
+        AdjudicationEvent.case_id==case_id,
+        AdjudicationEvent.subject_type=='transaction',
+        AdjudicationEvent.decision=='set_counterparty_party').order_by(
+            AdjudicationEvent.subject_id,AdjudicationEvent.subject_sequence).limit(10001)))
+    if len(events)>10000:
+        raise AccountPartyError('More than10000counterparty decisions; no partial party directory returned.')
+    subjects={event.subject_id for event in events}
+    rows=list(session.scalars(select(FinancialTransaction).where(
+        FinancialTransaction.case_id==case_id,
+        FinancialTransaction.id.in_(subjects)))) if subjects else []
+    _, parties, _ = _identity_state(rows,events,known_parties)
+    return parties
+
+
 def counterparty_parties(session, *, case_id):
     rows=list(session.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id==case_id).order_by(FinancialTransaction.id).limit(5001).execution_options(populate_existing=True)))
     if len(rows)>5000:raise AccountPartyError('More than5000historical readings; no partial counterparty directory returned.')
     events=list(session.scalars(select(AdjudicationEvent).where(AdjudicationEvent.case_id==case_id,AdjudicationEvent.subject_type=='transaction',AdjudicationEvent.decision=='set_counterparty_party').order_by(AdjudicationEvent.subject_id,AdjudicationEvent.subject_sequence).limit(10001)))
     if len(events)>10000:raise AccountPartyError('More than10000counterparty decisions; no partial history returned.')
-    readings,parties,history=_identity_state(rows,events,account_parties(session,case_id=case_id)["parties"])
+    readings,parties,history=_identity_state(rows,events,_account_party_state(session,case_id=case_id)["parties"])
     result=dict(case_id=str(case_id),readings=readings,parties=sorted(parties.values(),key=lambda p:(p['name'].casefold(),p['id'])),history=history,applied=False,
       limitation='Investigator identity links for selected readings only. Raw source names, amounts, eligibility and proof classes are unchanged. Equal names and future imports are not linked automatically. Corrections inherit a link only while account, currency and raw name remain identical; direct decisions override inheritance.')
     result['revision']=hashlib.sha256(json.dumps(result,sort_keys=True,separators=(',',':')).encode()).hexdigest()

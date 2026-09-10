@@ -1,3 +1,26 @@
+## Shared reviewed party choices — 10 September
+
+Payment-created identities are now available when linking source accounts.
+Account and payment histories remain separate immutable decisions, while both
+screens reuse the same case-scoped identity ID. The account revision includes
+changed choices, so an old form cannot save across a newly created identity.
+Only payment subjects with identity history are loaded for the account choices;
+no account feature acquires the payment screen's whole-ledger row limit.
+Conflicting saved names and broken histories are refused; raw labels, amounts,
+proof classes and account ownership are unchanged.
+
+27 account/payment identity tests pass, including cross-screen reuse, stale
+revision refusal, clearing, case isolation and conflicting-name refusal.
+Read-only live browser confirms existing synthetic partyc752b149-b5b8-44ec-b649-2bcf55fbd631
+in casee9cafc92-85a7-497c-aec8-049157e823d0 is selectable under account links;
+zero financial writes, screenshot visually inspected. Repeatable script
+check_local_shared_party_choices.cjs; report shared-party-choices-check.json.
+Backend54157 runs this fix (/tmp/loupe-shared-parties-runtime.out).
+938 financial UI tests and4237financial backend tests pass. Full regression
+caught a missing package export for summary_contributions; added and reran the
+backend gate successfully. New identity-suggestion UI is now under development.
+No push. Automatic identity suggestions and broader tracing remain outstanding.
+
 ## Currency totals open their contributing source readings — 10 September
 
 Main working/verified summary totals now open the exact contributing credit,

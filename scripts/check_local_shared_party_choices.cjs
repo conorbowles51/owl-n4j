@@ -1,0 +1,11 @@
+// Read-only cross-screen reuse of an existing synthetic payment identity.
+const fs=require('fs'),path=require('path'),root=path.resolve(__dirname,'..');
+const {chromium}=require(path.join(root,'frontend_v2/node_modules/playwright'));
+(async()=>{const caseId='e9cafc92-85a7-497c-aec8-049157e823d0';const saved=JSON.parse(fs.readFileSync(path.join(root,'data/local-runtime/counterparty-identity-ui-check.json')));if(saved.case_id!==caseId||!saved.party_id)throw Error('Existing synthetic identity missing');const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage({viewport:{width:1600,height:1100}});page.setDefaultTimeout(30000);let writes=0;
+ await page.route('**/api/financial/**',async route=>{if(!['GET','HEAD'].includes(route.request().method())){writes++;await route.abort()}else await route.continue()});
+ await page.goto('http://127.0.0.1:55174/login');await page.getByPlaceholder('Enter your username').fill('loupe-local@example.com');await page.getByPlaceholder('Enter your password').fill('Loupe-local-test-2026');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL(u=>!u.pathname.includes('login'));
+ await page.goto(`http://127.0.0.1:55174/cases/${caseId}/financial`);await page.getByRole('tab',{name:'Transfers',exact:true}).click();await page.getByRole('button',{name:'Find possible transfers',exact:true}).click();await page.getByRole('button',{name:'Review account-to-party links',exact:true}).click();
+ const choice=page.getByLabel('Account party choice',{exact:true});await choice.locator(`option[value="${saved.party_id}"]`).waitFor({state:'attached'});await choice.selectOption(saved.party_id);if(await choice.inputValue()!==saved.party_id)throw Error('Existing identity cannot be selected');await page.getByRole('region',{name:'Account party links',exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:'/tmp/loupe-shared-party-choice.png'});
+ if(writes)throw Error('Unexpected write');const report={case_id:caseId,party_id:saved.party_id,existing_payment_identity_available_for_accounts:true,financial_writes:0};fs.writeFileSync(path.join(root,'data/local-runtime/shared-party-choices-check.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+ }finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});
