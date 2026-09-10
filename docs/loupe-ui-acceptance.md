@@ -268,3 +268,25 @@ including allowed view-only verification and rejected/revoked access.4357financi
 backend tests,1007financial UI tests, focused layout tests and production build
 pass. The permission script prepares its existing test exports, which retain
 prospective export audit receipts; it does not mutate financial source/ledger rows.
+
+
+## Assemble a review package in the application — 10 September
+
+- [x] Transactions export panel offers **Assemble a review package**: select up to
+  eight saved scenarios, optional ledger ZIP and paired reconciled review/prediction
+  files. Each capture retains its original scope; no union ledger is constructed.
+- [x] Bound selected-file sizes and bind the returned archive to exact input hashes,
+  case and outer marking. Reject incomplete validation inputs and a mismatched
+  response; cancel pending preparation when the case view closes.
+- [x] Server authenticates preparation, recalculates scenarios/validation, verifies
+  the optional ledger and records its prepared-export receipt before returning
+  bytes. Receipt failure withholds the download. Uploads close on all outcomes.
+- [x] Desktop/mobile browser selection of a saved synthetic resale scenario,
+  ledger with recorded history and explicitly synthetic reference reviews yields
+  a package that independently rebuilds exactly. Original ledger ZIP bytes and
+  all reviewed inputs are retained; synthetic status is not upgraded.
+
+4360financial backend tests,1011financial UI tests, production build and136live
+permission checks pass. Existing ledger/source rows were unchanged; normal export
+receipts were recorded. This is complete selected-input assembly, not a signed
+expert opinion or certification of historical custody or corpus independence.

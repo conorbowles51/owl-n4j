@@ -296,6 +296,66 @@ def download_trace_support(body: TraceSupportDownload, case_id: UUID = Query(...
         raise HTTPException(status_code=500, detail='Tracing support could not be prepared.')
 
 
+@router.post('/trace-support-assembly')
+async def assemble_saved_trace_support(case_id: UUID = Query(...), scenarios: list[UploadFile] = File(...),
+        ledger: Optional[UploadFile] = File(None), review: Optional[UploadFile] = File(None),
+        predictions: Optional[UploadFile] = File(None),
+        privilege_marking: Literal['unmarked','confidential','privileged_confidential'] = Query('unmarked'),
+        current_user=Depends(get_current_db_user), db: Session=Depends(get_db)):
+    import hashlib
+    import json
+    from datetime import datetime, timezone
+    from starlette.concurrency import run_in_threadpool
+    from services.financial.trace_support_archive import build_trace_support_archive
+    from services.financial.reference_reviews import parse_review_json
+    uploads = [*scenarios, *[value for value in (ledger, review, predictions) if value is not None]]
+    try:
+        if not 1 <= len(scenarios) <= 8 or (review is None) != (predictions is None):
+            raise ValueError('Select one to eight scenarios and supply both review and predictions when attaching validation.')
+        async def read(upload, limit):
+            if upload is None:
+                return None
+            content = await upload.read(limit + 1)
+            if len(content) > limit:
+                raise ValueError('A selected file exceeds its size limit.')
+            return content
+        selected = [await read(upload, 16 * 1024 * 1024) for upload in scenarios]
+        ledger_bytes = await read(ledger, 128 * 1024 * 1024)
+        review_bytes = await read(review, 16 * 1024 * 1024)
+        predictions_bytes = await read(predictions, 16 * 1024 * 1024)
+        def sha(value):
+            return hashlib.sha256(value).hexdigest() if value is not None else None
+        inputs = dict(ledger=sha(ledger_bytes), predictions=sha(predictions_bytes), review=sha(review_bytes),
+                      scenarios=[sha(value) for value in selected])
+        input_digest = hashlib.sha256(json.dumps(inputs, sort_keys=True, separators=(',',':')).encode()).hexdigest()
+        actor = dict(id=str(current_user.id), name=current_user.name, email=current_user.email)
+        preparation = dict(generated_at=datetime.now(timezone.utc).isoformat(), generated_by=actor,
+            privilege_marking=privilege_marking, selected_input_sha256=inputs,
+            basis='Authenticated assembly of selected saved captures. Each retains its original scope and markings; this outer marking does not rewrite enclosed originals or establish legal privilege.')
+        content = await run_in_threadpool(build_trace_support_archive, selected, expected_case_id=case_id,
+            ledger_archive=ledger_bytes, reference_review=parse_review_json(review_bytes) if review_bytes is not None else None,
+            validation_predictions=parse_review_json(predictions_bytes) if predictions_bytes is not None else None,
+            preparation=preparation)
+        receipt = await run_in_threadpool(record_prepared_export, db.get_bind(), case_id=case_id,
+            kind='trace_support_exports', content=content, actor=actor,
+            scope=dict(selected_input_sha256=inputs, privilege_marking=privilege_marking))
+        return Response(content=content, media_type='application/zip', headers={
+            'X-Loupe-Export-Id':receipt['export_id'], 'X-Loupe-Export-Event-Sha256':receipt['entry_sha256'],
+            'X-Loupe-Export-Event-Sequence':str(receipt['sequence']),
+            'Content-Disposition':'attachment; filename="loupe-review-support.zip"',
+            'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff',
+            'X-Loupe-Case-Id':str(case_id), 'X-Loupe-Privilege-Marking':privilege_marking,
+            'X-Loupe-Archive-Sha256':sha(content), 'X-Loupe-Assembly-Inputs-Sha256':input_digest})
+    except (ValueError, LedgerSummaryError, TracingError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Saved support assembly failed')
+        raise HTTPException(status_code=500, detail='Review support could not be prepared.')
+    finally:
+        for upload in uploads:
+            await upload.close()
+
+
 @router.get("/ledger-counterparties")
 async def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db)):

@@ -35,7 +35,7 @@ reads += [('GET','indirect-review-methods',case,{},None),
  ('GET',f'candidate-sources/{file}/model-nominations',case,{},None),
  ('POST','network-trace',network_case,{},network['inputs']),
  ('POST','trace-support-export',network_case,{},dict(scenarios=[json.dumps(network,sort_keys=True,separators=(',',':'),ensure_ascii=False)]))]
-reads += [('POST','ledger-export-comparison',case,{},None), ('POST','trace-support-verification',network_case,{},None)]
+reads += [('POST','ledger-export-comparison',case,{},None), ('POST','trace-support-verification',network_case,{},None), ('POST','trace-support-assembly',network_case,{},None)]
 # Invalid bodies are intentional: permission denial must precede payload validation.
 mutations=[('POST',name) for name in (
  f'transactions/{row}/quarantine',f'transactions/{row}/release',f'transactions/{row}/correction',
@@ -74,6 +74,9 @@ try:
     if stage=='view_only' and path=='trace-support-verification':
      require(fresh_support is not None,'Fresh support export missing')
      options={'files':{'archive':('support.zip',fresh_support,'application/zip')}}
+    if stage=='view_only' and path=='trace-support-assembly':
+     require(fresh_scenario is not None,'Fresh scenario missing')
+     options={'files':{'scenarios':('scenario.json',fresh_scenario.encode(),'application/json')}}
     response=client.request(method,'/api/financial/'+path,params={'case_id':scope,**params},**options)
     require(response.status_code==expected,f'{stage}: {method} {path}: expected {expected}, got {response.status_code}')
     if stage=='view_only' and path=='ledger-export':fresh_ledger_export=response.content

@@ -161,7 +161,7 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "X-Loupe-Case-Id", "X-Loupe-Account-Id",
         "X-Loupe-Start-Date", "X-Loupe-End-Date", "X-Loupe-PDF-Report",
         "X-Loupe-Source-Files", "X-Loupe-Table-View", "X-Loupe-Privilege-Marking",
-        "X-Loupe-Case-Review-History", "X-Loupe-Archive-Sha256", "X-Loupe-Scenario-Sha256",
+        "X-Loupe-Case-Review-History", "X-Loupe-Archive-Sha256", "X-Loupe-Assembly-Inputs-Sha256", "X-Loupe-Scenario-Sha256",
         "X-Loupe-Export-Id", "X-Loupe-Export-Event-Sha256", "X-Loupe-Export-Event-Sequence"],
 )
 

@@ -90,3 +90,17 @@ Optional `--expected-sha256` checks an archive digest retained independently at
 capture. A digest derived from the same untrusted file adds no independent proof.
 Internal hashes and recalculation cannot authenticate authorship, evidence truth,
 reviewer independence or complete custody.
+
+
+## Assemble from the case UI
+
+In Transactions, expand **Assemble a review package** in the export panel. Select
+one to eight saved scenario JSON files from the conditional tracing workbench.
+Optionally add a ledger ZIP and both a reconciled reference-review JSON and its
+prediction JSON. Choose an outer package marking, then prepare/download.
+
+The browser checks the case, selected input digests, marking and archive hash.
+The server records an authenticated prepared-export receipt before returning the
+ZIP. Enclosed originals keep their original markings and scopes; the outer choice
+does not relabel them or establish legal privilege. The separate **Check a saved
+tracing audit package** control can verify the downloaded ZIP again.

@@ -1,3 +1,21 @@
+## Case UI assembly of selected review support — 10 September
+
+Added TraceSupportAssembly and case-view-protected multipart assembly endpoint.
+Select1–8saved scenarios, optional original ledger ZIP and paired reconciled
+review/prediction JSON. Server rechecks/recalculates all content, binds exact input
+digests and authenticated marking/actor, then records prepared-export receipt.
+Browser independently checks input binding and returned archive bytes. Enclosed
+capture scopes and markings remain separate; no ledger union or privilege finding.
+
+Full4360backend/1011financial UI tests, production build and136live permissions pass.
+Browser synthetic resale+ledger+synthetic-review package independently verifies as
+matching rebuild. All8members checked; original ledger ZIP unchanged, review and
+predictions preserved, synthetic status retained,5prior audit events in capture.
+Normal export receipts were appended; existing financial source/ledger rows remain
+unchanged. No provider/push. Backend72500 (/tmp/loupe-review-assembly-runtime.out),
+engine62038/worker73588. The asynchronous request for a working provider connection
+is pending; continue independent work while it is unanswered.
+
 ## Investigator-facing saved package verification — 10 September
 
 Added TraceSupportVerification to the ledger analysis export panel and a
