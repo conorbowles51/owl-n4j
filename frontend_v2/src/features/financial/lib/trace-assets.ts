@@ -25,6 +25,7 @@ export const traceAssetResults = z
       amount_minor: minor,
       asset_amount_minor: minor.optional(),
       remaining_withdrawal_minor: minor.optional(),
+      allocation_sequence: z.number().int().positive().optional(),
       allocation_basis: z
         .enum(["whole_withdrawal", "proportional_share"])
         .optional(),
@@ -63,16 +64,24 @@ export function verifyTraceAssets(
     )
     .max(50)
     .parse(requested ?? [])
-  if (
-    actual.length !== uses.length ||
-    new Set(uses.map((u) => u.transaction_id)).size !== uses.length
-  )
+  if (actual.length !== uses.length)
     throw Error("Asset interpretation scope differs.")
+  const remaining = new Map<string, bigint[]>()
+  const sequences = new Map<string, number>()
   for (const [i, asset] of actual.entries()) {
     const use = uses[i],
       row = rows.find((r) => r.key === use.transaction_id),
       draw = draws.find((d) => d.transaction_id === use.transaction_id)
     const partial = use.asset_amount_minor != null
+    const shared =
+      uses.filter((u) => u.transaction_id === use.transaction_id).length > 1
+    if (shared && !partial)
+      throw Error("Shared withdrawals require explicit purchase amounts.")
+    const sequence = (sequences.get(use.transaction_id) ?? 0) + 1
+    sequences.set(use.transaction_id, sequence)
+    let remainingAmount =
+      BigInt(row?.amount_minor ?? "0") -
+      BigInt(use.asset_amount_minor ?? row?.amount_minor ?? "0")
     let claims = Object.fromEntries(
       Object.entries(draw?.by_claim ?? {}).map(([claim, amount]) => [
         claim,
@@ -95,16 +104,24 @@ export function verifyTraceAssets(
       )
         throw Error("Invalid partial asset assumption.")
       const keys = Object.keys(claims).sort(unicodeOrder)
-      const weights = [
+      const originalWeights = [
         ...keys.map((k) => BigInt(claims[k])),
         BigInt(draw.from_untainted.minor_units),
         BigInt(draw.from_opening.minor_units),
         BigInt(draw.unidentified.minor_units),
         BigInt(draw.unfunded.minor_units),
       ]
-      if (weights.reduce((n, v) => n + v, 0n) !== BigInt(row.amount_minor))
+      if (
+        originalWeights.reduce((n, v) => n + v, 0n) !== BigInt(row.amount_minor)
+      )
         throw Error("Withdrawal components do not conserve the source amount.")
+      const weights = remaining.get(use.transaction_id) ?? originalWeights
+      if (BigInt(use.asset_amount_minor!) > weights.reduce((n, v) => n + v, 0n))
+        throw Error("Combined purchases exceed the remaining withdrawal.")
       const parts = proportionalParts(BigInt(use.asset_amount_minor!), weights)
+      const residual = weights.map((w, i) => w - parts[i])
+      remaining.set(use.transaction_id, residual)
+      remainingAmount = residual.reduce((n, v) => n + v, 0n)
       claims = Object.fromEntries(keys.map((key, i) => [key, String(parts[i])]))
       unidentified = String(parts.at(-2))
       unfunded = String(parts.at(-1))
@@ -113,14 +130,16 @@ export function verifyTraceAssets(
     if (
       (partial || asset.asset_amount_minor !== undefined) &&
       (asset.asset_amount_minor !== assetAmount ||
-        asset.remaining_withdrawal_minor !==
-          String(
-            BigInt(row?.amount_minor ?? "0") - BigInt(assetAmount ?? "0")
-          ) ||
+        asset.remaining_withdrawal_minor !== String(remainingAmount) ||
         asset.allocation_basis !==
           (partial ? "proportional_share" : "whole_withdrawal"))
     )
       throw Error("Asset portion differs from its requested source amount.")
+    if (
+      (shared || asset.allocation_sequence !== undefined) &&
+      asset.allocation_sequence !== sequence
+    )
+      throw Error("Asset allocation order differs from its requested order.")
     if (
       !row ||
       !draw ||

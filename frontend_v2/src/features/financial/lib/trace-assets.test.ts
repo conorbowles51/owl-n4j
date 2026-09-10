@@ -163,3 +163,66 @@ it("uses Unicode code-point claim order for proportional rounding ties", () => {
     )
   ).not.toThrow()
 })
+
+it("allocates repeated withdrawals from remaining components without double counting a rounding unit", () => {
+  const request = {
+    ...use,
+    asset_amount_minor: "1",
+    allocation_basis: "proportional_share",
+  }
+  const smallRows = [{ ...rows[0], amount_minor: "2" }]
+  const smallDraw = {
+    ...draw,
+    amount: money("2"),
+    by_claim: { claim: money("1") },
+    from_untainted: money("1"),
+    from_opening: money("0"),
+    unidentified: money("0"),
+    unfunded: money("0"),
+  }
+  const first = {
+    ...item,
+    amount_minor: "2",
+    asset_amount_minor: "1",
+    remaining_withdrawal_minor: "1",
+    allocation_basis: "proportional_share" as const,
+    allocation_sequence: 1,
+    allocated_by_claim: { claim: "1" },
+    outside_claims_minor: "0",
+    unidentified_minor: "0",
+  }
+  const second = {
+    ...first,
+    allocation_sequence: 2,
+    remaining_withdrawal_minor: "0",
+    allocated_by_claim: { claim: "0" },
+    outside_claims_minor: "1",
+  }
+  expect(() =>
+    verifyTraceAssets([first, second], [request, request], smallRows, [
+      smallDraw,
+    ])
+  ).not.toThrow()
+  for (const changed of [
+    { allocated_by_claim: { claim: "1" }, outside_claims_minor: "0" },
+    { allocation_sequence: 1 },
+    { remaining_withdrawal_minor: "1" },
+  ]) {
+    expect(() =>
+      verifyTraceAssets(
+        [first, { ...second, ...changed }],
+        [request, request],
+        smallRows,
+        [smallDraw]
+      )
+    ).toThrow()
+  }
+  expect(() =>
+    verifyTraceAssets(
+      [first, second, second],
+      [request, request, request],
+      smallRows,
+      [smallDraw]
+    )
+  ).toThrow()
+})

@@ -69,6 +69,23 @@ class LedgerTracingTests(LedgerSummaryTests):
         for changes in ({'asset_amount_minor':'0'},{'asset_amount_minor':'-1'},{'allocation_basis':None}):
             with self.assertRaises(ValidationError):TraceAssetUseInput.model_validate({**use.model_dump(),**changes})
 
+    def test_multiple_purchases_conserve_each_component_without_reusing_rounding(self):
+        from services.financial.trace_assets import TraceAssetUseInput
+        export, request, _, withdrawal = self.scenario()
+        baseline=json.loads(evaluate_ledger_trace(export,request)['scenario_json'])
+        uses=[TraceAssetUseInput(transaction_id=withdrawal.id,asset_label=f'Purchase {i}',basis='Synthetic listed-order proportional allocation',asset_amount_minor=amount,allocation_basis='proportional_share') for i,amount in enumerate(['300001','199999'])]
+        actual=json.loads(evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':uses}))['scenario_json'])
+        self.assertEqual(actual['comparison'],baseline['comparison'])
+        for method,expected in [('first_in_first_out',500000),('pro_rata',250000),('last_in_first_out',0)]:
+            items=actual['asset_uses'][method]
+            self.assertEqual(sum(int(item['allocated_by_claim'].get('claim-a','0')) for item in items),expected)
+            self.assertEqual([item['remaining_withdrawal_minor'] for item in items],['199999','0'])
+            self.assertEqual([item['allocation_sequence'] for item in items],[1,2])
+            self.assertEqual(sum(int(item['outside_claims_minor']) for item in items),500000-expected)
+        self.assertEqual([item['allocated_by_claim']['claim-a'] for item in actual['asset_uses']['pro_rata']],['150001','99999'])
+        for invalid in [uses+[uses[1]], [uses[0],uses[1].model_copy(update={'asset_amount_minor':None,'allocation_basis':None})]]:
+            with self.assertRaises(LedgerSummaryError):evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':invalid}))
+
     def test_working_population_keeps_p3_class_and_requires_explicit_selection(self):
         _, request, first, _ = self.scenario()
         first.proof_class = 'p3'

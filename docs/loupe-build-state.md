@@ -1,3 +1,20 @@
+## Multiple purchases from one withdrawal — 10 September
+
+Both tracing forms accept multiple explicitly priced purchases from one selected
+withdrawal. Combined amounts cannot exceed the source, and shared withdrawals
+require proportional assumptions for every purchase. Allocation proceeds in the
+listed order from remaining components, preventing repeated rounding units or claim
+amounts from being reused. The result retains each purchase order and remainder;
+original cash results are unchanged. The client independently verifies the residual
+allocation and rejects over-allocation, reordered results and reused claim units.
+
+49targeted backend and12frontend checks plus TypeScript pass. A read-only browser
+journey allocates12GBPthen8GBPfrom the same20GBPwithdrawal, verifies exact downloaded
+bytes/source opening/stale clearing, and keeps40GBPcash from the60GBPattribution.
+Screenshot inspected; no financial writes. Repeatable command:
+`node scripts/check_local_single_asset_journey.cjs --multiple`.
+Resale substitution is still outstanding and remains on the checklist.
+
 ## Guided indirect workpapers — 10 September
 
 The financial tracing area now offers net worth, bank deposits, expenditure and

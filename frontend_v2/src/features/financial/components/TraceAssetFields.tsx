@@ -14,10 +14,12 @@ export function TraceAssetFields({
     <fieldset className="space-y-3 rounded border p-3">
       <legend>Optional asset-use interpretations</legend>
       <p>
-        Identify all or part of a withdrawal as funding one asset. This records
-        your interpretation of its use, not ownership or current value. Partial
-        purchases and resale proceeds are not inferred. A selected transfer
-        cannot also fund an asset here.
+        Record purchases funded by all or part of a withdrawal. When several
+        purchases share a withdrawal, enter an explicit amount for each. They
+        are allocated in the order shown from the remaining funds, including
+        rounding. Explain this order in your basis. This records your
+        interpretation of use; ownership, current value and resale proceeds are
+        not inferred. A selected transfer cannot also fund an asset here.
       </p>
       {value.map((use, i) => (
         <div key={i} className="space-y-2 border-t pt-2">
@@ -38,13 +40,7 @@ export function TraceAssetFields({
             >
               <option value="">Choose a withdrawal</option>
               {withdrawals.map((row) => (
-                <option
-                  key={row.id}
-                  value={row.id}
-                  disabled={value.some(
-                    (v, n) => n !== i && v.transaction_id === row.id
-                  )}
-                >
+                <option key={row.id} value={row.id}>
                   {row.label}
                 </option>
               ))}
@@ -168,7 +164,7 @@ export function TraceAssetResultsPanel({
     >
       <h4 className="font-semibold">Conditional asset-use allocations</h4>
       {items.map((item, i) => (
-        <article key={item.transaction_id} className="space-y-1">
+        <article key={`${item.transaction_id}-${i}`} className="space-y-1">
           <p>
             {item.asset_label} · source withdrawal{" "}
             {correctionMoney(item.amount_minor, item.currency)}
@@ -177,7 +173,7 @@ export function TraceAssetResultsPanel({
             <p>
               Amount attributed to asset:{" "}
               {correctionMoney(item.asset_amount_minor, item.currency)};
-              remaining withdrawal:{" "}
+              withdrawal remaining after this purchase:{" "}
               {correctionMoney(
                 item.remaining_withdrawal_minor ?? "0",
                 item.currency
@@ -187,6 +183,11 @@ export function TraceAssetResultsPanel({
                 ? "explicit proportional assumption"
                 : "whole withdrawal"}
               .
+            </p>
+          )}
+          {item.allocation_sequence !== undefined && (
+            <p>
+              Allocation order for this withdrawal: {item.allocation_sequence}
             </p>
           )}
           <p>{item.basis}</p>
