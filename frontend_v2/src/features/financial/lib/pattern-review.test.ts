@@ -94,8 +94,17 @@ it("preserves every split-payment source and the exact selected threshold", () =
   h.transaction_ids.push("three")
   h.sources.push(source("three"))
   const parsed = patternReview.parse(value)
-  const saved = patternTheory(parsed, parsed.hypotheses[0], "Review split payments", "Could be separate legitimate purchases.")
-  expect(saved.links?.[0].source_anchor?.financial_transaction_ids).toEqual(["one", "two", "three"])
+  const saved = patternTheory(
+    parsed,
+    parsed.hypotheses[0],
+    "Review split payments",
+    "Could be separate legitimate purchases."
+  )
+  expect(saved.links?.[0].source_anchor?.financial_transaction_ids).toEqual([
+    "one",
+    "two",
+    "three",
+  ])
   expect(saved.links?.[0].metadata?.threshold_minor).toBe("9007199254740994")
   expect(saved.body).toContain("investigator-selected criterion")
 })
@@ -103,8 +112,63 @@ it("refuses substituted or duplicate pattern support before saving a theory", ()
   const scope = structuredClone(review)
   const changed = structuredClone(scope.hypotheses[0])
   changed.sources[0].row.amount_minor = "999"
-  expect(() => patternTheory(scope, changed, "Title", "Reason")).toThrow("inconsistent")
+  expect(() => patternTheory(scope, changed, "Title", "Reason")).toThrow(
+    "inconsistent"
+  )
   scope.hypotheses[0].transaction_ids = ["one", "one"]
   scope.hypotheses[0].sources = [source("one"), source("one")]
-  expect(() => patternTheory(scope, scope.hypotheses[0], "Title", "Reason")).toThrow("inconsistent")
+  expect(() =>
+    patternTheory(scope, scope.hypotheses[0], "Title", "Reason")
+  ).toThrow("inconsistent")
+})
+
+it("retains path assumptions in theory sources and refuses a reused posting", () => {
+  const sources = [source("d0"), source("c0"), source("d1"), source("c1")]
+  sources.forEach((s, i) => {
+    s.row = {
+      ...s.row,
+      account_id: ["A", "B", "B", "C"][i],
+      direction: (i % 2 ? "credit" : "debit") as "credit",
+    }
+  })
+  const h = {
+    ...review.hypotheses[0],
+    kind: "possible_transfer_chain",
+    transaction_ids: sources.map((s) => s.row.key),
+    sources,
+    transfer_pairs: [
+      { debit_id: "d0", credit_id: "c0" },
+      { debit_id: "d1", credit_id: "c1" },
+    ],
+  }
+  const scope = patternReview.parse({
+    ...review,
+    cross_account: true,
+    hypotheses: [h],
+  })
+  const theory = patternTheory(
+    scope,
+    scope.hypotheses[0],
+    "Review this chain",
+    "Possible unrelated payments; inspect all four sources."
+  )
+  expect(theory.links?.[0].metadata).toMatchObject({
+    cross_account: true,
+    transfer_pairs: h.transfer_pairs,
+  })
+  expect(
+    patternReview.safeParse({
+      ...review,
+      cross_account: false,
+      hypotheses: [h],
+    }).success
+  ).toBe(false)
+  expect(
+    patternReview.safeParse({
+      ...scope,
+      hypotheses: [
+        { ...h, transfer_pairs: [h.transfer_pairs[0], h.transfer_pairs[0]] },
+      ],
+    }).success
+  ).toBe(false)
 })

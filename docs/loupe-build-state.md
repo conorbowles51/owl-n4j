@@ -1,3 +1,26 @@
+## Cross-account pattern hypotheses — 10 September, about08:44Dublin
+
+Patterns optionally screens two/three candidate transfers for an equal-value
+chain or return to the starting account. It requires all-account scope, excludes
+unknown chronology/zero amounts, forbids posting reuse, checks forward displayed
+dates and the overall window, and retains all source readings and candidate
+pairings. Same-day order remains unknown; alternatives can overlap. Transfer
+matching is bounded500rows/1000pairs, path extensions10,000 and total hypotheses
+200; excess refuses the whole screen. No allocation, automatic finding or merge.
+
+UI preserves explicit selection and clears results when criteria change; each
+source shows its account and date basis. The displayed amount is per candidate
+transfer, not a sum. Workspace theories retain the selected path, captured ledger
+hash, all source attachments, investigator explanation and immutable history.
+15targetedbackend and6UI tests, TypeScript/scopedlint pass. Synthetic browser case
+777fa2ac-91d7-4ad1-b5ff-010601ec762c: three100GBPtransfers A→B→C→A represented by
+sixpostings; sixsource attachments and threecandidate pairings saved in proposed
+theorya4ee0667-5cbe-4a2a-9201-28bc07e3ec0c; source navigation/history verified.
+No financial writes. Guarded prepare_local_chain_review.py and
+check_local_chain_theory.cjs havecompleted: do not rerun writers. Report:
+data/local-runtime/chain-theory-ui-check.json. Current backend61016,
+log/tmp/loupe-chain-runtime.out. No push. Remaining development continues.
+
 ## Current native statement controls — 10 September, about08:36Dublin
 
 Statements can explicitly recheck native file controls from fresh original bytes,

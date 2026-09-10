@@ -17,6 +17,7 @@ import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 function PatternScreen({ caseId }: { caseId: string | undefined }) {
   const [params, setParams] = useState<LedgerQueryParams>({}),
     [population, setPopulation] = useState("working"),
+    [crossAccount, setCrossAccount] = useState(false),
     [days, setDays] = useState("3"),
     [threshold, setThreshold] = useState(""),
     [currency, setCurrency] = useState("GBP")
@@ -90,6 +91,16 @@ function PatternScreen({ caseId }: { caseId: string | undefined }) {
           </label>
         </div>
       </fieldset>
+      <label className="block">
+        <input
+          type="checkbox"
+          aria-label="Screen paths between accounts"
+          checked={crossAccount}
+          onChange={(e) => setCrossAccount(e.target.checked)}
+        />{" "}
+        Screen possible chains and returns between accounts (all accounts
+        required)
+      </label>
       <PatternScope
         key={JSON.stringify([
           caseId,
@@ -98,6 +109,7 @@ function PatternScreen({ caseId }: { caseId: string | undefined }) {
           days,
           threshold,
           currency,
+          crossAccount,
         ])}
         caseId={caseId}
         params={params}
@@ -105,6 +117,7 @@ function PatternScreen({ caseId }: { caseId: string | undefined }) {
         days={days}
         threshold={threshold}
         currency={currency}
+        crossAccount={crossAccount}
       />
     </section>
   )
@@ -116,6 +129,7 @@ function PatternScope({
   days,
   threshold,
   currency,
+  crossAccount,
 }: {
   caseId: string
   params: LedgerQueryParams
@@ -123,6 +137,7 @@ function PatternScope({
   days: string
   threshold: string
   currency: string
+  crossAccount: boolean
 }) {
   const [source, setSource] = useState<string | null>(null),
     [page, setPage] = useState(0)
@@ -136,7 +151,11 @@ function PatternScope({
         throw Error(
           "Enter a positive exact threshold amount and a supported currency."
         )
-      const q = new URLSearchParams({ population, window_days: days })
+      const q = new URLSearchParams({
+        population,
+        window_days: days,
+        cross_account: String(crossAccount),
+      })
       if (thresholdMinor) {
         q.set("threshold_minor", thresholdMinor)
         q.set("threshold_currency", currency)
@@ -156,6 +175,7 @@ function PatternScope({
         value.end_date !== (params.endDate ?? null) ||
         value.population !== population ||
         value.window_days !== Number(days) ||
+        value.cross_account !== crossAccount ||
         value.threshold_minor !== thresholdMinor ||
         value.threshold_currency !== (thresholdMinor ? currency : null)
       )
@@ -260,10 +280,21 @@ function PatternCard({
           ? "Repeated equal amount"
           : h.kind === "equal_amount_in_and_out"
             ? "Equal amount in and out"
-            : "Smaller payments reach selected threshold"}{" "}
+            : h.kind === "possible_transfer_chain"
+              ? "Possible chain between accounts"
+              : h.kind === "possible_return_flow"
+                ? "Possible return to the starting account"
+                : "Smaller payments reach selected threshold"}{" "}
         · {h.account_label} · {correctionMoney(h.amount_minor, h.currency)}
       </h3>
       <p>{h.explanation}</p>
+      {h.transfer_pairs && (
+        <p>
+          {h.transfer_pairs.length} candidate transfers, supported by{" "}
+          {h.sources.length} postings. The amount above is the equal amount per
+          transfer; it is not a sum or a traced allocation.
+        </p>
+      )}
       {h.kind === "split_payment_threshold" && (
         <p>
           {h.sources.length} payments; combined amount shown above. Selected
@@ -276,7 +307,8 @@ function PatternCard({
       {h.sources.map((s, i) => (
         <div key={s.row.key}>
           <p>
-            {s.row.chronology_date} · {s.row.direction} ·{" "}
+            {s.row.account_label} · {s.row.chronology_date} (
+            {s.row.chronology_basis.replaceAll("_", " ")}) · {s.row.direction} ·{" "}
             {s.row.proof_class.toUpperCase()} ·{" "}
             {correctionMoney(s.row.amount_minor, s.row.currency)} ·{" "}
             {s.row.description}

@@ -950,11 +950,11 @@ def get_pattern_review(case_id: UUID = Query(...), account_id: Optional[UUID] = 
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         population: Literal['working', 'verified'] = Query('working'), window_days: int = Query(3,ge=0,le=30),
         threshold_minor: Optional[int] = Query(None,ge=1,le=9223372036854775807),
-        threshold_currency: Optional[str] = Query(None,pattern='^[A-Z]{3}$'), db: Session = Depends(get_db)):
+        threshold_currency: Optional[str] = Query(None,pattern='^[A-Z]{3}$'), db: Session = Depends(get_db), cross_account: bool = False):
     from services.financial.pattern_review import screen_ledger_patterns
     try:
         captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
-        return screen_ledger_patterns(captured, population=population, window_days=window_days, threshold_minor=threshold_minor, threshold_currency=threshold_currency)
+        return screen_ledger_patterns(captured, population=population, window_days=window_days, threshold_minor=threshold_minor, threshold_currency=threshold_currency, **(dict(cross_account=True) if cross_account else {}))
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:

@@ -66,3 +66,36 @@ class PatternReviewTests(LedgerTimelineTests):
             with self.assertRaises(LedgerSummaryError):screen_ledger_patterns(self.capture([]),**args)
         with self.assertRaisesRegex(LedgerSummaryError,'more than 50'):
             self.split_screen(self.split_rows(range(1,52)),threshold_minor=1000)
+
+    def path_fixture(self, returning=False):
+        rows=[];pairs=[]
+        for i,(a,b) in enumerate([('A','B'),('B','A' if returning else 'C')]):
+            for label,account,direction in [('d',a,'debit'),('c',b,'credit')]:
+                row=self.pair()[0];row['row'].update(key=f'{label}{i}',account_id=account,direction=direction,transaction_date=f'2026-01-0{i+1}')
+                rows.append(row)
+            pairs.append(dict(debit_id=f'd{i}',credit_id=f'c{i}',currency='GBP',amount_minor='9007199254740993',outcome='ambiguous'))
+        return rows,pairs
+
+    def test_optional_paths_retain_every_posting_and_candidate_pair(self):
+        for returning,kind in [(False,'possible_transfer_chain'),(True,'possible_return_flow')]:
+            rows,pairs=self.path_fixture(returning)
+            with patch('services.financial.ledger_transfers.ledger_transfer_candidates',return_value={'candidates':pairs}):
+                found=screen_ledger_patterns(self.capture(rows),cross_account=True)
+            paths=[h for h in found['hypotheses'] if h['kind']==kind]
+            self.assertEqual(len(paths),1)
+            self.assertEqual(paths[0]['transaction_ids'],['d0','c0','d1','c1'])
+            self.assertEqual(paths[0]['transfer_pairs'],pairs)
+            self.assertEqual(len(paths[0]['sources']),4)
+            self.assertTrue(found['cross_account'])
+
+    def test_path_screen_respects_dates_currency_zero_and_no_reused_posting(self):
+        for update in ['backward','zero','reuse','currency']:
+            rows,pairs=self.path_fixture()
+            if update=='backward':rows[2]['row']['transaction_date']='2025-12-31'
+            if update=='zero':pairs[0]['amount_minor']='0'
+            if update=='reuse':pairs[1]['debit_id']='d0'
+            if update=='currency':pairs[1]['currency']='USD'
+            with patch('services.financial.ledger_transfers.ledger_transfer_candidates',return_value={'candidates':pairs}):
+                found=screen_ledger_patterns(self.capture(rows),cross_account=True)
+            self.assertFalse(any(h['kind'].startswith('possible_') for h in found['hypotheses']),update)
+        with self.assertRaises(LedgerSummaryError):screen_ledger_patterns(self.capture([]),cross_account='yes')

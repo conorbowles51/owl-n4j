@@ -8,7 +8,8 @@ from services.financial.ledger_summary import LedgerSummaryError
 MAX_HYPOTHESES = 200
 
 
-def screen_ledger_patterns(export, *, population='working', window_days=3, threshold_minor=None, threshold_currency=None):
+def screen_ledger_patterns(export, *, population='working', window_days=3, threshold_minor=None, threshold_currency=None, cross_account=False):
+    if type(cross_account) is not bool:raise LedgerSummaryError('Cross-account screening must be selected explicitly.')
     if type(window_days) is not int or not 0 <= window_days <= 30:
         raise LedgerSummaryError('Choose a screening window from 0 to 30 days.')
     if (threshold_minor is None) != (threshold_currency is None):
@@ -22,6 +23,8 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
     readings = {r['row']['key']: r for r in json.loads(export.snapshot.content)['ledger']['readings']}
     usable = [r for r in timeline['rows'] if r['chronology_basis'] not in ('ordering_date', 'statement_end_ordering_only')]
     excluded_dates = [r['key'] for r in timeline['rows'] if r not in usable]
+    if cross_account and timeline['account_id'] is not None:
+        raise LedgerSummaryError('Clear the account filter to screen paths between accounts.')
     hypotheses = []
 
     def add(kind, left, right, days, explanation, *, group=None):
@@ -82,8 +85,44 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
                 days = (date.fromisoformat(right['chronology_date']) - date.fromisoformat(left['chronology_date'])).days
                 add('split_payment_threshold', left, right, days,
                     'Several same-direction postings in one account are individually below the investigator-selected amount and together reach or exceed it. This is a configurable split-payment screen, not a statutory threshold or evidence of intent. Different counterparties may be involved. Overlapping candidates must not be added together.', group=selected)
+    if cross_account:
+        from services.financial.ledger_transfers import ledger_transfer_candidates
+        by_id = {r['key']:r for r in usable}
+        transfers = ledger_transfer_candidates(export,population=population,tolerance_days=min(window_days,7))
+        outgoing = {}
+        for pair in transfers['candidates']:
+            debit,credit=by_id.get(pair['debit_id']),by_id.get(pair['credit_id'])
+            if not debit or not credit or int(pair['amount_minor']) == 0 or debit['chronology_date'] > credit['chronology_date']:
+                continue
+            outgoing.setdefault((debit['account_id'],pair['currency'],pair['amount_minor']),[]).append((debit,credit,pair))
+        examined = 0
+        def extend(path, used):
+            nonlocal examined
+            first,last = path[0][0],path[-1][1]
+            if len(path)>=2:
+                kind='possible_return_flow' if first['account_id']==last['account_id'] else 'possible_transfer_chain'
+                group=[r for debit,credit,_ in path for r in (debit,credit)]
+                gap=(date.fromisoformat(last['chronology_date'])-date.fromisoformat(first['chronology_date'])).days
+                add(kind,first,last,gap,
+                    'Equal-value candidate transfers return to the starting account within the selected window. Ordinary transfers, repeated source coverage and unrelated payments can create this pattern; it is not proof of round-tripping.' if kind=='possible_return_flow' else
+                    'Equal-value candidate transfers may connect several accounts within the selected window. This is a possible chain for review, not a funds allocation or evidence of layering.',group=group)
+                hypotheses[-1]['transfer_pairs']=[pair for _,_,pair in path]
+                if kind=='possible_return_flow' or len(path)==3:return
+            for edge in outgoing.get((last['account_id'],last['currency'],last['amount_minor']),[]):
+                examined+=1
+                if examined>10000:raise LedgerSummaryError('More than10,000candidate path extensions. Narrow the dates; no partial screen was returned.')
+                debit,credit,_=edge
+                if debit['key'] in used or credit['key'] in used or debit['chronology_date']<last['chronology_date']:
+                    continue
+                if (date.fromisoformat(credit['chronology_date'])-date.fromisoformat(first['chronology_date'])).days>window_days:
+                    continue
+                extend(path+[edge],used|{debit['key'],credit['key']})
+        for edges in outgoing.values():
+            for edge in edges:
+                if (date.fromisoformat(edge[1]['chronology_date'])-date.fromisoformat(edge[0]['chronology_date'])).days<=window_days:
+                    extend([edge],{edge[0]['key'],edge[1]['key']})
     return dict(schema='loupe.financial.pattern_review/1',case_id=timeline['case_id'],account_id=timeline['account_id'],
-        start_date=timeline['start_date'],end_date=timeline['end_date'],population=population,window_days=window_days,
+        start_date=timeline['start_date'],end_date=timeline['end_date'],population=population,window_days=window_days,cross_account=cross_account,
         threshold_minor=None if threshold_minor is None else str(threshold_minor),threshold_currency=threshold_currency,
         snapshot_sha256=export.snapshot.sha256,reviewed_rows=len(timeline['rows']),date_unavailable_ids=excluded_dates,
-        hypotheses=hypotheses,limitation='Repeated equal amounts and equal incoming/outgoing pairs are screened within one account and currency. An optional investigator-selected threshold also screens groups of smaller same-direction payments. Dates use the labelled chronology basis. Candidates can overlap and must not be totalled together. No regulatory threshold, intent, typology conclusion or automatic finding is applied.')
+        hypotheses=hypotheses,limitation='Optional cross-account screening follows two or three equal-value candidate transfers, with no repeated posting, a maximum seven-day per-pair date tolerance and the selected overall window. All alternatives remain proposals; same-day order is unknown. Repeated equal amounts and equal incoming/outgoing pairs are screened within one account and currency. An optional investigator-selected threshold also screens groups of smaller same-direction payments. Dates use the labelled chronology basis. Candidates can overlap and must not be totalled together. No regulatory threshold, intent, typology conclusion or automatic finding is applied.')
