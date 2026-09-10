@@ -137,4 +137,3 @@ check_local_asset_journey.cjs and check_local_single_asset_journey.cjs. Reports
 asset-trace-ui-check.json and conditional-trace-asset-ui-check.json under
  data/local-runtime. Current backend18209, log/tmp/loupe-asset-runtime.out.
 No push. Broader asset substitution, extraction and integrated acceptance remain.
-

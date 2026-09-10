@@ -31,6 +31,7 @@ const resultSchema = z.object({
           .object({
             date_column: index,
             amount_column: index,
+            additional_amount_columns: z.array(index).max(1).default([]),
             supporting_rows: index.optional(),
             header_support: index.optional(),
           })
@@ -50,7 +51,12 @@ const resultSchema = z.object({
           )
           .default([]),
         suggestions: z.array(
-          z.object({ row_index: index, date_source: cell, amount_source: cell })
+          z.object({
+            row_index: index,
+            date_source: cell,
+            amount_source: cell,
+            amount_header_source: cell.optional(),
+          })
         ),
       })
     )
@@ -246,6 +252,9 @@ export function CandidatePageScan({
                       <p>
                         Date column {p.chosen_columns.date_column + 1}, amount
                         column {p.chosen_columns.amount_column + 1}
+                        {p.chosen_columns.additional_amount_columns
+                          .map((c) => `, additional amount column ${c + 1}`)
+                          .join("")}
                         {p.chosen_columns.supporting_rows !== undefined &&
                           ` · ${p.chosen_columns.supporting_rows} supporting rows; ${p.chosen_columns.header_support ?? 0} recognised column labels`}
                         . Review these positions before selecting readings.
@@ -258,9 +267,11 @@ export function CandidatePageScan({
                       </p>
                     )}
                     {p.suggestions.slice(0, 3).map((r) => (
-                      <p key={r.row_index}>
+                      <p key={`${r.row_index}:${r.amount_source.column_index}`}>
                         Row {r.row_index + 1}: {r.date_source.expected_text} ·{" "}
                         {r.amount_source.expected_text}
+                        {r.amount_header_source &&
+                          ` · source header “${r.amount_header_source.expected_text}” (review direction)`}
                       </p>
                     ))}
                     {p.suggestions.length > 3 && (

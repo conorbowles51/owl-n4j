@@ -154,3 +154,36 @@ it("shows undated charge evidence even when dated column selection is unavailabl
   fireEvent.click(screen.getByRole("button", { name: "Inspect PDF page 1" }))
   expect(onPage).toHaveBeenCalledWith(1)
 })
+
+it("retains both labelled amount columns for source review", async () => {
+  mount({
+    ...data,
+    pages: [
+      {
+        ...data.pages[0],
+        chosen_columns: {
+          date_column: 0,
+          amount_column: 1,
+          additional_amount_columns: [2],
+        },
+        suggestions: [
+          {
+            ...data.pages[0].suggestions[0],
+            amount_header_source: {
+              column_index: 1,
+              expected_text: "Money out",
+            },
+          },
+        ],
+      },
+      data.pages[1],
+    ],
+  })
+  await scan()
+  expect(
+    await screen.findByText(/additional amount column 3/)
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(/source header “Money out” \(review direction\)/)
+  ).toBeInTheDocument()
+})

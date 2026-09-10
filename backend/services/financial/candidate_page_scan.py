@@ -38,6 +38,29 @@ def propose_scan_columns(source, currency):
         for d in possible_dates:
             for a in possible_amounts:
                 if d!=a:pairs[(d,a)]=pairs.get((d,a),0)+1
+    # Two separately labelled amount columns are not competing alternatives.
+    # Require one coherent header row and consistent positions across repeats.
+    split_headers=[]
+    for header in source['rows'][:10]:
+        labels={}
+        for cell in header['cells']:
+            label=' '.join(cell['expected_text'].lower().split())
+            role=('debit' if label in ('debit','debits','money out') else
+                  'credit' if label in ('credit','credits','money in') else
+                  'date' if label in ('date','transaction date','trans date','booking date','posting date','posted date','value date') else None)
+            if role:labels.setdefault(role,[]).append(cell)
+        if all(len(labels.get(role,[]))==1 for role in ('date','debit','credit')):
+            split_headers.append(labels)
+    layouts={(h['date'][0]['column_index'],h['debit'][0]['column_index'],h['credit'][0]['column_index']) for h in split_headers}
+    if len(layouts)==1:
+        d,debit,credit=next(iter(layouts))
+        if len({d,debit,credit})==3 and date_headers=={d} and amount_headers=={debit,credit} and any(pairs.get((d,a),0) for a in (debit,credit)):
+            header=split_headers[0]
+            return dict(date_column=d,amount_column=debit,additional_amount_columns=[credit],
+                amount_headers=[header['debit'][0],header['credit'][0]],
+                supporting_rows=sum(pairs.get((d,a),0) for a in (debit,credit)),header_support=3),None
+    if len(layouts)>1:
+        return None,'Separate money-in/out headers use conflicting positions. Inspect the page and choose positions manually.'
     ranked=sorted([dict(date_column=d,amount_column=a,supporting_rows=n,header_support=int(d in date_headers)+int(a in amount_headers)) for (d,a),n in pairs.items()],key=lambda p:(-p['supporting_rows'],-p['header_support'],p['date_column'],p['amount_column']))
     if not ranked:return None,'No date-and-amount column pair has source support.'
     first=ranked[0]
@@ -105,13 +128,21 @@ def scan_candidate_pages(session, *, case_id, evidence_file_id, start_page, end_
             if chosen is None:
                 pages.append(dict(page_number=page,checked=False,reason=reason,checked_rows=0,suggestions=[],**supplement))
                 continue
-            result=suggest_candidate_rows(session,case_id=case_id,evidence_file_id=evidence_file_id,page_number=page,table_index=table_index,
-                expected_revision=source['source_revision'],date_column=chosen['date_column'],amount_column=chosen['amount_column'],currency=currency)
+            suggestions=[]
+            for amount_position in [chosen['amount_column'],*chosen.get('additional_amount_columns',[])]:
+                result=suggest_candidate_rows(session,case_id=case_id,evidence_file_id=evidence_file_id,page_number=page,table_index=table_index,
+                    expected_revision=source['source_revision'],date_column=chosen['date_column'],amount_column=amount_position,currency=currency)
+                header=next((h for h in chosen.get('amount_headers',[]) if h['column_index']==amount_position),None)
+                for r in result['rows']:
+                    if r['suggested']:
+                        item=dict(row_index=r['row_index'],date_source=r['date_source'],amount_source=r['amount_source'])
+                        if header:item['amount_header_source']=header
+                        suggestions.append(item)
+            suggestions.sort(key=lambda r:(r['row_index'],r['amount_source']['column_index']))
         except PdfMappingError as exc:
             if exc.status_code==409:raise
             pages.append(dict(page_number=page,checked=False,reason=str(exc),checked_rows=0,suggestions=[]))
             continue
-        suggestions=[dict(row_index=r['row_index'],date_source=r['date_source'],amount_source=r['amount_source']) for r in result['rows'] if r['suggested']]
         total+=len(suggestions)
         if total>MAX_SUGGESTED_ROWS:raise PdfMappingError('More than 1,000 suggested rows. Narrow the page range; no partial scan was returned.',422)
         pages.append(dict(page_number=page,checked=True,reason=None,checked_rows=result['checked_rows'],suggestions=suggestions,chosen_columns=chosen,**supplement))
@@ -120,4 +151,4 @@ def scan_candidate_pages(session, *, case_id, evidence_file_id, start_page, end_
     if version()!=before:raise PdfMappingError('PDF preparation changed during the scan. Reload before reviewing suggestions.',409)
     return dict(case_id=str(case_id),evidence_file_id=str(evidence_file_id),start_page=start_page,end_page=end_page,table_index=table_index,
         date_column=None if auto_columns else date_column,amount_column=None if auto_columns else amount_column,auto_columns=auto_columns,currency=currency,pages=pages,suggested_rows=total,undated_charge_rows=undated_total,applied=False,
-        limitation=('Per-page column proposals use co-occurring date/amount shapes and recognised labels; they do not establish column meaning or transaction status. Ambiguous layouts remain unchecked. ' if auto_columns else '')+'Review suggestions under the selected column positions only. No rows are saved or admitted. Undated charge suggestions use a limited list of exact labels, separate from dated proposals; dates and directions remain unknown. Summary totals and APR figures are not nominated by this screen. Other undated transactions and unchecked pages can be missed. Open each page, inspect the original and explicitly choose readings; source revisions are rechecked on save.')
+        limitation=('Per-page column proposals use co-occurring date/amount shapes and recognised labels; they do not establish column meaning or transaction status. Explicit separate debit/credit header columns are both checked and each original header is retained; labels are proposals, not verified account conventions. Ambiguous layouts remain unchecked. ' if auto_columns else '')+'Review suggestions under the selected column positions only. No rows are saved or admitted. Undated charge suggestions use a limited list of exact labels, separate from dated proposals; dates and directions remain unknown. Summary totals and APR figures are not nominated by this screen. Other undated transactions and unchecked pages can be missed. Open each page, inspect the original and explicitly choose readings; source revisions are rechecked on save.')

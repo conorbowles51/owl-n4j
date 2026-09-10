@@ -1,3 +1,25 @@
+## Split amount columns and live access matrix — 10 September, about09:21Dublin
+
+Automatic page nomination now checks both explicitly labelled money-in/out
+columns when one coherent header row identifies date/debit/credit positions.
+Each amount retains its original header cell and locator. Zero amounts and two
+populated cells remain separate proposals; no direction convention or admission
+is inferred. Conflicting repeated layouts remain unchecked.31 targeted backend
+and5 scan UI tests pass; the real108-page PDF remains23dated proposals and81
+undated charge rows,0writes. Synthetic stored-grid test verifies both exact
+header/amount locations; no claim of a real split-column PDF acceptance.
+
+Integrated asset/split-column gate:4186backend tests,917financialUI tests,
+TypeScript, production build and scopedlint pass. Live access matrix verifies
+15read/scenario endpoints and9edit endpoints over non-member, missing-view,
+view-only and same-token revocation states (87checks). Read-only network asset
+scenario succeeds for a viewer; edits refuse before invalid-body validation.
+Temporary user/memberships removed; no financial records changed. Script
+check_local_financial_access_matrix.py may rerun; reportfinancial-access-matrix.json.
+This supplements earlier export membership testing; upload/worker disruption
+and broader completed-workflow concurrency still need integrated acceptance.
+Backend22431, log/tmp/loupe-split-runtime.out. No push. Development continues.
+
 ## Whole-payment asset interpretations — 10 September, about09:18Dublin
 
 Single-account and network tracing now accept optional whole-withdrawal asset
