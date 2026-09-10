@@ -215,7 +215,18 @@ function NetworkForm({
         })),
         basis,
         order_basis: orderBasis,
-        asset_uses: assetUses,
+        asset_uses: assetUses.map(({ asset_amount_input, ...use }) => ({
+          ...use,
+          ...(asset_amount_input === undefined
+            ? {}
+            : {
+                asset_amount_minor: correctionMinor(
+                  asset_amount_input,
+                  currency
+                ),
+                allocation_basis: "proportional_share",
+              }),
+        })),
         allow_backward: allowBackward,
         backward_basis: allowBackward ? backwardBasis : "",
         ordered_transaction_ids: ordered.map((r) => r.key),

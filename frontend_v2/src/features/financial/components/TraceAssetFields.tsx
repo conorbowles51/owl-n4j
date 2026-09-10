@@ -14,8 +14,8 @@ export function TraceAssetFields({
     <fieldset className="space-y-3 rounded border p-3">
       <legend>Optional asset-use interpretations</legend>
       <p>
-        Identify a whole withdrawal as funding one asset. This records your
-        interpretation of its use, not ownership or current value. Partial
+        Identify all or part of a withdrawal as funding one asset. This records
+        your interpretation of its use, not ownership or current value. Partial
         purchases and resale proceeds are not inferred. A selected transfer
         cannot also fund an asset here.
       </p>
@@ -50,6 +50,50 @@ export function TraceAssetFields({
               ))}
             </select>
           </label>
+          <label className="block">
+            <input
+              type="checkbox"
+              aria-label={`Use a proportional part of withdrawal ${i + 1}`}
+              checked={use.asset_amount_input !== undefined}
+              onChange={(e) =>
+                onChange(
+                  value.map((v, n) =>
+                    n === i
+                      ? {
+                          ...v,
+                          asset_amount_input: e.target.checked ? "" : undefined,
+                        }
+                      : v
+                  )
+                )
+              }
+            />{" "}
+            Use part of this withdrawal, allocated proportionally
+          </label>
+          {use.asset_amount_input !== undefined && (
+            <label className="block">
+              Amount funding the asset (currency units)
+              <input
+                aria-label={`Asset purchase amount ${i + 1}`}
+                required
+                inputMode="decimal"
+                className="block w-full border bg-background p-2"
+                value={use.asset_amount_input}
+                onChange={(e) =>
+                  onChange(
+                    value.map((v, n) =>
+                      n === i ? { ...v, asset_amount_input: e.target.value } : v
+                    )
+                  )
+                }
+              />
+              <span className="text-sm">
+                This assumption divides each method’s withdrawal components
+                proportionally. Include the purchase evidence and why this split
+                is appropriate in your basis.
+              </span>
+            </label>
+          )}
           <label className="block">
             Asset description
             <input
@@ -129,11 +173,27 @@ export function TraceAssetResultsPanel({
             {item.asset_label} · source withdrawal{" "}
             {correctionMoney(item.amount_minor, item.currency)}
           </p>
+          {item.asset_amount_minor !== undefined && (
+            <p>
+              Amount attributed to asset:{" "}
+              {correctionMoney(item.asset_amount_minor, item.currency)};
+              remaining withdrawal:{" "}
+              {correctionMoney(
+                item.remaining_withdrawal_minor ?? "0",
+                item.currency
+              )}
+              . Allocation:{" "}
+              {item.allocation_basis === "proportional_share"
+                ? "explicit proportional assumption"
+                : "whole withdrawal"}
+              .
+            </p>
+          )}
           <p>{item.basis}</p>
           {Object.entries(item.allocated_by_claim).map(([claim, amount]) => (
             <p key={claim}>
               {claim}: {correctionMoney(amount, item.currency)} allocated to
-              this withdrawal under this method
+              this asset use under this method
             </p>
           ))}
           <p>

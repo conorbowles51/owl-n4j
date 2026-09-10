@@ -36,6 +36,7 @@ class LedgerTracingTests(LedgerSummaryTests):
         from services.financial.trace_assets import TraceAssetUseInput
         baseline=json.loads(evaluate_ledger_trace(export,request)['scenario_json'])
         use=TraceAssetUseInput(transaction_id=withdrawal.id,asset_label='Synthetic equipment',basis='Explicit synthetic whole-payment interpretation')
+        self.assertEqual(set(use.model_dump()), {'transaction_id','asset_label','basis'})
         actual=json.loads(evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':[use]}))['scenario_json'])
         self.assertEqual(actual['comparison'],baseline['comparison'])
         for method, expected in [('first_in_first_out','500000'),('pro_rata','250000'),('last_in_first_out','0')]:
@@ -48,6 +49,25 @@ class LedgerTracingTests(LedgerSummaryTests):
         for value in ('','   '):
             with self.assertRaises(ValidationError):TraceAssetUseInput(transaction_id=withdrawal.id,asset_label='Asset',basis=value)
         self.assertFalse(self.db.new or self.db.dirty)
+
+    def test_partial_asset_allocation_conserves_amount_and_keeps_cash_unchanged(self):
+        from services.financial.trace_assets import TraceAssetUseInput
+        export, request, _, withdrawal = self.scenario()
+        baseline=json.loads(evaluate_ledger_trace(export,request)['scenario_json'])
+        use=TraceAssetUseInput(transaction_id=withdrawal.id,asset_label='Partial equipment purchase',basis='Synthetic purchase portion allocated proportionally',asset_amount_minor='300001',allocation_basis='proportional_share')
+        actual=json.loads(evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':[use]}))['scenario_json'])
+        self.assertEqual(actual['comparison'],baseline['comparison'])
+        for method,expected in [('first_in_first_out','300001'),('pro_rata','150001'),('last_in_first_out','0')]:
+            item=actual['asset_uses'][method][0]
+            self.assertEqual(item['allocated_by_claim'].get('claim-a','0'),expected)
+            self.assertEqual(item['asset_amount_minor'],'300001')
+            self.assertEqual(item['remaining_withdrawal_minor'],'199999')
+            self.assertEqual(int(item['outside_claims_minor'])+sum(map(int,item['allocated_by_claim'].values())),300001)
+            self.assertEqual(item['allocation_basis'],'proportional_share')
+        with self.assertRaises(LedgerSummaryError):
+            evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':[use.model_copy(update={'asset_amount_minor':'500001'})]}))
+        for changes in ({'asset_amount_minor':'0'},{'asset_amount_minor':'-1'},{'allocation_basis':None}):
+            with self.assertRaises(ValidationError):TraceAssetUseInput.model_validate({**use.model_dump(),**changes})
 
     def test_working_population_keeps_p3_class_and_requires_explicit_selection(self):
         _, request, first, _ = self.scenario()

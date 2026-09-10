@@ -190,7 +190,18 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
         ...a,
         amount_minor: correctionMinor(amount_input, inputs.currency),
       })),
-      asset_uses: assetUses,
+      asset_uses: assetUses.map(({ asset_amount_input, ...use }) => ({
+        ...use,
+        ...(asset_amount_input === undefined
+          ? {}
+          : {
+              asset_amount_minor: correctionMinor(
+                asset_amount_input,
+                inputs.currency
+              ),
+              allocation_basis: "proportional_share",
+            }),
+      })),
       doctrines: selected,
     }
     try {

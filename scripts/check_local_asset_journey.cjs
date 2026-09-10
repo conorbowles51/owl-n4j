@@ -2,6 +2,7 @@
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const root = path.resolve(__dirname, '..');
 const {chromium} = require(path.join(root, 'frontend_v2/node_modules/playwright'));
+const partial=process.argv.includes('--partial');
 (async () => {
   const fixture = JSON.parse(fs.readFileSync(path.join(root, 'data/local-runtime/backward-review-check.json')));
   if (fixture.status !== 'ready') throw Error('Synthetic fixture not ready');
@@ -63,6 +64,7 @@ const {chromium} = require(path.join(root, 'frontend_v2/node_modules/playwright'
     await page.getByLabel('Asset withdrawal 1',{exact:true}).selectOption(fixture.ordered_ids[3]);
     await page.getByLabel('Asset description 1',{exact:true}).fill('Synthetic equipment');
     await page.getByLabel('Asset basis 1',{exact:true}).fill('Synthetic whole-payment hypothesis; no ownership or current value assertion.');
+    if(partial){await page.getByLabel('Use a proportional part of withdrawal 1',{exact:true}).check();await page.getByLabel('Asset purchase amount 1',{exact:true}).fill('12.00');await page.getByLabel('Asset basis 1',{exact:true}).fill('Synthetic purchase portion: explicit12of20GBP proportional assumption.');}
     const calculated=page.waitForResponse(r=>r.url().includes('/network-trace?'));
     await page.getByRole('button',{name:'Calculate cross-account scenario',exact:true}).click();
     const result=await calculated, envelope=await result.json();
@@ -73,21 +75,22 @@ const {chromium} = require(path.join(root, 'frontend_v2/node_modules/playwright'
     const expected={first_in_first_out:'8000',last_in_first_out:'10000',pro_rata:'9000'};
     for(const [method,remaining] of Object.entries(expected)) {
       const value=report.results[method];
-      const asset=value.asset_uses[0],allocated={first_in_first_out:'2000',last_in_first_out:'0',pro_rata:'1000'}[method];
-      if(value.asset_uses.length!==1||asset.asset_label!=='Synthetic equipment'||asset.transaction_id!==fixture.ordered_ids[3]||(asset.allocated_by_claim['Synthetic claim']||'0')!==allocated||BigInt(asset.outside_claims_minor)+BigInt(allocated)!==2000n||asset.changes_cash_results)throw Error('Asset allocation differs');
+      const asset=value.asset_uses[0],allocated=(partial?{first_in_first_out:'1200',last_in_first_out:'0',pro_rata:'600'}:{first_in_first_out:'2000',last_in_first_out:'0',pro_rata:'1000'})[method];
+      if(value.asset_uses.length!==1||asset.asset_label!=='Synthetic equipment'||asset.transaction_id!==fixture.ordered_ids[3]||(asset.allocated_by_claim['Synthetic claim']||'0')!==allocated||BigInt(asset.outside_claims_minor)+BigInt(allocated)!==(partial?1200n:2000n)||asset.changes_cash_results)throw Error('Asset allocation differs');
+      if(partial&&(asset.asset_amount_minor!=='1200'||asset.remaining_withdrawal_minor!=='800'||asset.allocation_basis!=='proportional_share'))throw Error('Partial assumption differs');
       if(value.claims['Synthetic claim'].reported_remaining_minor!==remaining||value.hops.length!==2||value.hops.filter(h=>h.backward_timing).length!==1) throw Error('Incorrect multi-hop result');
     }
     const results=page.getByRole('region',{name:'Cross-account tracing results',exact:true});
     await results.waitFor();console.log('Results rendered');
     const sourceRead=page.waitForResponse(r=>r.url().includes('/source?'));await results.getByRole('button',{name:'Inspect asset payment 1',exact:true}).first().click();const sourceResponse=await sourceRead,sourceData=await sourceResponse.json();if(!sourceResponse.ok()||sourceData.transaction_id!==fixture.ordered_ids[3])throw Error('Backward source scope differs');await page.keyboard.press('Escape');
     const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download cross-account scenario',exact:true}).click();
-    const output=path.join(root,'data/local-runtime/asset-trace-scenario.json');await(await download).saveAs(output);
-    console.log('Downloaded');await page.screenshot({path:'/tmp/loupe-asset-trace-results.png'});
+    const output=path.join(root,`data/local-runtime/${partial?'partial-':''}asset-trace-scenario.json`);await(await download).saveAs(output);
+    console.log('Downloaded');await page.screenshot({path:`/tmp/loupe-${partial?'partial-':''}asset-trace-results.png`});
     if(fs.readFileSync(output,'utf8')!==envelope.scenario_json) throw Error('Download mismatch');
     await page.getByLabel('Opening amount account 1',{exact:true}).fill('1.00');
     if(await results.count()) throw Error('Stale results remain after assumption edit');
     if(writes) throw Error('Unexpected financial write');
-    const verified={case_id:fixture.case_id,synthetic:true,asset_use_verified:true,backward_timing_used:true,default_refused:true,source_navigation:true,accounts:3,postings:7,selected_hops:2,remaining_minor:expected,download_verified:true,stale_results_cleared:true,financial_writes:writes};
-    fs.writeFileSync(path.join(root,'data/local-runtime/asset-trace-ui-check.json'),JSON.stringify(verified,null,2));console.log(JSON.stringify(verified));
+    const verified={partial,case_id:fixture.case_id,synthetic:true,asset_use_verified:true,backward_timing_used:true,default_refused:true,source_navigation:true,accounts:3,postings:7,selected_hops:2,remaining_minor:expected,download_verified:true,stale_results_cleared:true,financial_writes:writes};
+    fs.writeFileSync(path.join(root,`data/local-runtime/${partial?'partial-':''}asset-trace-ui-check.json`),JSON.stringify(verified,null,2));console.log(JSON.stringify(verified));
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

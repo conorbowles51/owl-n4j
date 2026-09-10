@@ -2,6 +2,7 @@
 const path=require('path'),fs=require('fs'),crypto=require('crypto');
 const root=path.resolve(__dirname,'..');
 const {chromium}=require(path.join(root,'frontend_v2/node_modules/playwright'));
+const partial=process.argv.includes('--partial');
 (async()=>{
  const caseId='3dfbafe7-fa6b-4bdd-9af5-0e97975447b9',accountId='43e04760-190e-4183-aa1c-eb55334e8aaf';
  const browser=await chromium.launch({headless:true});
@@ -42,25 +43,27 @@ const {chromium}=require(path.join(root,'frontend_v2/node_modules/playwright'));
   await page.getByLabel('Asset withdrawal 1',{exact:true}).selectOption('d270ac84-f7bc-41f5-ab30-858ec4a6894c');
   await page.getByLabel('Asset description 1',{exact:true}).fill('Synthetic equipment');
   await page.getByLabel('Asset basis 1',{exact:true}).fill('Synthetic whole-payment hypothesis.');
+  if(partial){await page.getByLabel('Use a proportional part of withdrawal 1',{exact:true}).check();await page.getByLabel('Asset purchase amount 1',{exact:true}).fill('12.00');await page.getByLabel('Asset basis 1',{exact:true}).fill('Synthetic purchase portion: explicitly assume proportional allocation of12of20GBP.');}
   await page.getByLabel('first in first out',{exact:true}).check();
   const responsePromise=page.waitForResponse(r=>r.url().includes('/ledger-trace?')&&r.request().method()==='POST');
   await page.getByRole('button',{name:'Calculate conditional scenario',exact:true}).click();
   const response=await responsePromise;const envelope=await response.json();if(!response.ok())throw Error(JSON.stringify(envelope));
   await page.getByRole('region',{name:'Conditional tracing results',exact:true}).waitFor();
   const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Download conditional scenario',exact:true}).click();
-  const destination=path.join(root,'data/local-runtime/conditional-trace-asset-check.json');await (await pending).saveAs(destination);
+  const destination=path.join(root,`data/local-runtime/${partial?'partial-':''}conditional-trace-asset-check.json`);await (await pending).saveAs(destination);
   const bytes=fs.readFileSync(destination),scenario=JSON.parse(bytes);
   if(crypto.createHash('sha256').update(bytes).digest('hex')!==envelope.scenario_sha256||bytes.length!==envelope.scenario_byte_count)throw Error('Downloaded bytes differ');
   if(scenario.comparison.results.first_in_first_out.outcomes['synthetic-claim'].surviving.minor_units!=='4000')throw Error('Unexpected conditional result');
   const asset=scenario.asset_uses.first_in_first_out[0];
-  if(asset.allocated_by_claim['synthetic-claim']!=='2000'||asset.outside_claims_minor!=='0')throw Error('Asset allocation differs');
+  if(asset.allocated_by_claim['synthetic-claim']!==(partial?'1200':'2000')||asset.outside_claims_minor!=='0')throw Error('Asset allocation differs');
+  if(partial&&(asset.asset_amount_minor!=='1200'||asset.remaining_withdrawal_minor!=='800'||asset.allocation_basis!=='proportional_share'))throw Error('Partial assumption differs');
   const source=page.waitForResponse(r=>r.url().includes('/source?'));await page.getByRole('button',{name:'Inspect asset payment 1',exact:true}).click();
   const sourceResponse=await source;if(!sourceResponse.ok()||(await sourceResponse.json()).transaction_id!==asset.transaction_id)throw Error('Asset source differs');await page.keyboard.press('Escape');
-  await page.screenshot({path:'/tmp/loupe-single-asset-ui.png',fullPage:true});
+  await page.screenshot({path:`/tmp/loupe-${partial?'partial-':''}single-asset-ui.png`,fullPage:true});
   await page.getByLabel('Attributed amount (GBP)',{exact:true}).fill('1.01');
   if(await page.getByRole('region',{name:'Conditional tracing results',exact:true}).count())throw Error('Stale result survived changed assumptions');
   if(writes)throw Error("Unexpected financial write");
-  const report={asset_use_verified:true,source_verified:true,financial_writes:writes,case_id:caseId,account_id:accountId,included_rows:scenario.ledger_snapshot.ledger.included_rows,download_sha256:envelope.scenario_sha256,exact_download:true,assumption_change_clears_result:true,applied:scenario.applied};
-  fs.writeFileSync(path.join(root,'data/local-runtime/conditional-trace-asset-ui-check.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+  const report={partial,asset_use_verified:true,source_verified:true,financial_writes:writes,case_id:caseId,account_id:accountId,included_rows:scenario.ledger_snapshot.ledger.included_rows,download_sha256:envelope.scenario_sha256,exact_download:true,assumption_change_clears_result:true,applied:scenario.applied};
+  fs.writeFileSync(path.join(root,`data/local-runtime/${partial?'partial-':''}conditional-trace-asset-ui-check.json`),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
  }catch(error){ if(page){ await page.screenshot({path:"/tmp/loupe-single-asset-failure.png"});fs.writeFileSync("/tmp/loupe-single-asset-failure.txt",await page.locator("body").innerText()); } throw error; }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

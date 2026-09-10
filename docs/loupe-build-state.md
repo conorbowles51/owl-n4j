@@ -1,3 +1,28 @@
+## Partial-withdrawal asset purchase assumptions — 10 September
+
+Single-account and network tracing can attribute an explicitly selected portion
+of a positive unpaired withdrawal to one asset. The opt-in proportional assumption
+is separate from each cash tracing method. Money.allocate uses exact minor-unit
+largest-remainder distribution; ties use Unicode claim ID order, then untainted,
+opening, unidentified and unfunded components. The client independently checks
+this distribution, the purchase/remainder and unchanged source amount. Oversized,
+zero, missing-assumption and paired-transfer interpretations are refused.
+Whole-payment input serialization retains its original fields.
+
+Both read-only synthetic browser journeys pass. A12GBPportion of a20GBPwithdrawal
+has network FIFO12/pro-rata6/LIFO0claim allocation while reported cash remaining
+stays80/90/100. Single-account60claim still leaves40cash and attributes12to the
+asset. Source navigation, exact downloaded scenario/hash and stale-result clearing
+pass. Network screenshot visually inspected. No financial writes or proof promotion.
+
+Repeatable scripts check_local_asset_journey.cjs --partial and
+check_local_single_asset_journey.cjs --partial retain separate partial-* reports
+under data/local-runtime. Existing whole-payment browser regression passes, including source/download.
+48backend tracing tests and22UI/contract tests pass. Integrated4238backend and
+947financial UI tests pass; production build passes.
+Backend89733 (/tmp/loupe-partial-asset-final-runtime.out). No push. Resale
+substitution, multiple purchases from one withdrawal and indirect methods remain.
+
 ## Review suggestions for repeated payment names — 10 September
 
 Counterparties can now find unlinked names matching already reviewed payment

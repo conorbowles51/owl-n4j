@@ -182,3 +182,8 @@ See build-state for guarded writer and repeatable read-only script names.
   supporting sources and competing identities. Selection requires a fresh reason
   and does not save. Browser acceptance uses an explicit synthetic response;
   original case names and links remain unchanged.
+
+- [x] Single-account and network asset forms accept an opt-in proportional purchase
+  portion in currency units. Results show source amount, asset amount, remainder
+  and separate per-method claim allocations. Synthetic12of20GBP browser checks
+  preserve cash figures, exact downloads and original source navigation.

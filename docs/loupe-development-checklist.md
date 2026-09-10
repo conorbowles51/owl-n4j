@@ -189,7 +189,8 @@ feature below is complete at the start of this window.
    - [x] Record which evidence and decisions supported an exported result. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 9. **Complete funds tracing — partial**
-   - [ ] Complete partial-purchase and resale asset substitution with explicit evidence and method allocations.
+   - [x] One partial-withdrawal asset purchase with explicit proportional assumption, exact per-method allocations, preserved remaining withdrawal and unchanged cash results. Both synthetic browser forms/source/downloads pass; no financial writes.
+   - [ ] Complete resale asset substitution and multiple purchases from one withdrawal with explicit evidence and method allocations.
    - [ ] Connect the saved indirect-method scope (net worth, deposits, expenditure and cash-T) to supported evidence and investigator assumptions.
    - [x] Optional whole-withdrawal asset interpretation in single-account and network scenarios, with per-method allocation and source/basis retained; cash figures unchanged. Both browser forms/source/download verified with zero ledger writes. Partial purchases, ownership, valuation and resale substitution remain outside this calculation.
    - [x] Explicit backward timing, off by default and requiring a basis, with unchanged source dates and acyclic account dependency checks. Synthetic earlier-credit/later-debit browser scenario conserves each method, flags the backward hop and preserves source/download; circular backward dependencies are refused. Asset substitution remains separate.

@@ -67,3 +67,99 @@ describe("asset withdrawal verification", () => {
   it("permits an empty optional section", () =>
     expect(() => verifyTraceAssets([], undefined, rows, [draw])).not.toThrow())
 })
+
+it("checks partial allocations, conserved rounding and unchanged cash amount", () => {
+  const partialUse = {
+    ...use,
+    asset_amount_minor: "3",
+    allocation_basis: "proportional_share",
+  }
+  const partialRows = [{ ...rows[0], amount_minor: "10" }]
+  const partialDraw = {
+    ...draw,
+    amount: money("10"),
+    by_claim: { claim: money("5") },
+    from_untainted: money("5"),
+    from_opening: money("0"),
+    unidentified: money("0"),
+    unfunded: money("0"),
+  }
+  const partialItem = {
+    ...item,
+    amount_minor: "10",
+    asset_amount_minor: "3",
+    remaining_withdrawal_minor: "7",
+    allocation_basis: "proportional_share" as const,
+    allocated_by_claim: { claim: "2" },
+    outside_claims_minor: "1",
+    unidentified_minor: "0",
+    unfunded_minor: "0",
+  }
+  expect(() =>
+    verifyTraceAssets([partialItem], [partialUse], partialRows, [partialDraw])
+  ).not.toThrow()
+  for (const change of [
+    { allocated_by_claim: { claim: "1" }, outside_claims_minor: "2" },
+    { remaining_withdrawal_minor: "8" },
+    { allocation_basis: "whole_withdrawal" as const },
+    { asset_amount_minor: "4" },
+  ])
+    expect(() =>
+      verifyTraceAssets(
+        [{ ...partialItem, ...change }],
+        [partialUse],
+        partialRows,
+        [partialDraw]
+      )
+    ).toThrow()
+  expect(() =>
+    verifyTraceAssets(
+      [partialItem],
+      [{ ...partialUse, asset_amount_minor: "11" }],
+      partialRows,
+      [partialDraw]
+    )
+  ).toThrow()
+  expect(() =>
+    verifyTraceAssets([partialItem], [partialUse], partialRows, [
+      { ...partialDraw, from_untainted: undefined },
+    ])
+  ).toThrow()
+})
+it("uses Unicode code-point claim order for proportional rounding ties", () => {
+  const keys = ["\u{10000}", "\uE000"]
+  const d = {
+    ...draw,
+    amount: money("2"),
+    by_claim: Object.fromEntries(keys.map((k) => [k, money("1")])),
+    from_untainted: money("0"),
+    from_opening: money("0"),
+    unidentified: money("0"),
+    unfunded: money("0"),
+  }
+  const a = {
+    ...item,
+    amount_minor: "2",
+    asset_amount_minor: "1",
+    remaining_withdrawal_minor: "1",
+    allocation_basis: "proportional_share" as const,
+    allocated_by_claim: { [keys[0]]: "0", [keys[1]]: "1" },
+    outside_claims_minor: "0",
+    unidentified_minor: "0",
+    unfunded_minor: "0",
+  }
+  expect(() =>
+    verifyTraceAssets(
+      [a],
+      [
+        {
+          ...use,
+          asset_amount_minor: "1",
+          allocation_basis: "proportional_share",
+        },
+      ],
+      [{ ...rows[0], amount_minor: "2" }],
+      [d]
+    )
+  ).not.toThrow()
+})
