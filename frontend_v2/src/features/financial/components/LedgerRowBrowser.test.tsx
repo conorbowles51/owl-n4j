@@ -81,3 +81,40 @@ it("pages the complete loaded set and resets its page after filtering", () => {
   })
   expect(screen.getByText(/No loaded rows match/)).toBeInTheDocument()
 })
+
+it("filters inclusive exact ranges, rejects invalid precision and resets on currency change", () => {
+  render(
+    <LedgerRowBrowser
+      transactions={[
+        row("larger"),
+        row("smaller", { amount_minor: "9007199254740992" }),
+      ]}
+    />
+  )
+  expect(screen.getByLabelText("Table minimum amount")).toBeDisabled()
+  fireEvent.change(screen.getByLabelText("Table currency"), {
+    target: { value: "GBP" },
+  })
+  fireEvent.change(screen.getByLabelText("Table minimum amount"), {
+    target: { value: "90071992547409.93" },
+  })
+  fireEvent.change(screen.getByLabelText("Table maximum amount"), {
+    target: { value: "90071992547409.93" },
+  })
+  expect(screen.getByRole("button", { name: "larger" })).toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: "smaller" })
+  ).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText("Table maximum amount"), {
+    target: { value: "1.001" },
+  })
+  expect(screen.getByRole("alert")).toHaveTextContent("valid amounts")
+  expect(
+    screen.queryByRole("button", { name: "larger" })
+  ).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText("Table currency"), {
+    target: { value: "" },
+  })
+  expect(screen.getByLabelText("Table minimum amount")).toHaveValue("")
+  expect(screen.getByRole("button", { name: "smaller" })).toBeInTheDocument()
+})

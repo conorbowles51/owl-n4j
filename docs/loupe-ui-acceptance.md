@@ -114,3 +114,5 @@ flow selection and evidence-linked hypotheses remain active development.
   download the captured result, and save an investigator response in Workspace.
   Synthetic browser verifies source hash, working/verified separation, P4 retention,
   changed-input clearing and persistent source-linked review history.
+
+- [x] Exact inclusive amount-range filters in the main ledger, currency-scoped decimal input and reproducible table export. Real61.62USDpurchase selected by60–70range; complete3reading capture and report hashes verified (10September).

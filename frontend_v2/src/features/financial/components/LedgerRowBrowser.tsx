@@ -1,3 +1,4 @@
+import { correctionMinor } from "../lib/correction-contract"
 import { LedgerExportButton } from "./LedgerExportButton"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { useState, type ComponentProps } from "react"
@@ -19,13 +20,26 @@ export function LedgerRowBrowser({
 }) {
   const [search, setSearch] = useState(""),
     [currency, setCurrency] = useState(""),
+    [minimum, setMinimum] = useState(""),
+    [maximum, setMaximum] = useState(""),
     [direction, setDirection] = useState(""),
     [proof, setProof] = useState(""),
     [sort, setSort] = useState("ledger"),
     [page, setPage] = useState(0)
   const query = search.trim().toLowerCase()
+  const minMinor = minimum.trim() ? correctionMinor(minimum, currency) : ""
+  const maxMinor = maximum.trim() ? correctionMinor(maximum, currency) : ""
+  const invalidRange =
+    minMinor === null ||
+    maxMinor === null ||
+    (!!minMinor && !!maxMinor && BigInt(minMinor) > BigInt(maxMinor))
   const rows = transactions.filter(
     (row) =>
+      !invalidRange &&
+      (!minMinor ||
+        (exactAmount(row) !== null && exactAmount(row)! >= BigInt(minMinor))) &&
+      (!maxMinor ||
+        (exactAmount(row) !== null && exactAmount(row)! <= BigInt(maxMinor))) &&
       (!currency || row.currency === currency) &&
       (!direction || row.direction === direction) &&
       (!proof || row.proof_class === proof) &&
@@ -83,6 +97,8 @@ export function LedgerRowBrowser({
             value={currency}
             onChange={(e) => {
               setCurrency(e.target.value)
+              setMinimum("")
+              setMaximum("")
               setPage(0)
               if (sort.startsWith("amount")) setSort("ledger")
             }}
@@ -94,6 +110,36 @@ export function LedgerRowBrowser({
                 <option key={c}>{c}</option>
               ))}
           </select>
+        </label>
+        <label>
+          Minimum amount {currency}
+          <input
+            aria-label="Table minimum amount"
+            className="block w-40 rounded border bg-background p-2"
+            inputMode="decimal"
+            maxLength={32}
+            disabled={!currency}
+            value={minimum}
+            onChange={(e) => {
+              setMinimum(e.target.value)
+              setPage(0)
+            }}
+          />
+        </label>
+        <label>
+          Maximum amount {currency}
+          <input
+            aria-label="Table maximum amount"
+            className="block w-40 rounded border bg-background p-2"
+            inputMode="decimal"
+            maxLength={32}
+            disabled={!currency}
+            value={maximum}
+            onChange={(e) => {
+              setMaximum(e.target.value)
+              setPage(0)
+            }}
+          />
         </label>
         <label>
           Table direction
@@ -157,6 +203,8 @@ export function LedgerRowBrowser({
           onClick={() => {
             setSearch("")
             setCurrency("")
+            setMinimum("")
+            setMaximum("")
             setDirection("")
             setProof("")
             setSort("ledger")
@@ -166,13 +214,24 @@ export function LedgerRowBrowser({
           Reset table view
         </Button>
       </div>
+      {invalidRange && (
+        <p role="alert">
+          Enter valid amounts for {currency}, with the minimum no greater than
+          the maximum. The table export is unavailable until the range is valid.
+        </p>
+      )}
+      <p className="text-sm">
+        Amount bounds are inclusive and compare posting amounts in the chosen
+        currency. Choose incoming or outgoing separately; changing currency
+        clears the range.
+      </p>
       <p className="text-sm">
         {rows.length} of {transactions.length} loaded rows match this table
         view. Main totals and the ledger snapshot use the applied account/date
         filters. The table-view export also records the filters and order above.
         Display sorting does not establish bank sequence.
       </p>
-      {exportContext && (
+      {exportContext && !invalidRange && (
         <LedgerExportButton
           caseId={exportContext.caseId}
           params={exportContext.params}
@@ -181,6 +240,8 @@ export function LedgerRowBrowser({
             currency,
             direction,
             proof,
+            minimum_minor: minMinor ?? "",
+            maximum_minor: maxMinor ?? "",
             sort: sort.startsWith("amount") && !amountAllowed ? "ledger" : sort,
           }}
         />

@@ -1,3 +1,19 @@
+## Exact ledger amount ranges — 10 September, about08:30Dublin
+
+Main Ledger now filters inclusive minimum/maximum posting amounts in an explicitly
+selected currency. Decimal entry converts exactly to integer minor units. Invalid
+precision/reversed ranges block table export; changing currency clears the range.
+Backend capture independently validates bounds and applies them to the complete
+admitted display population, preserving original account/date history separately.
+
+4backend table-view tests,16targeted UI tests, TypeScript and scoped lint pass.
+Read-only real-statement browser:USD60–70range selects the61.62purchase. Export
+records6000/7000minor bounds and one row; full capture keeps all3readings. JSON,
+HTML andPDF manifest hashes verified. No financial writes. Repeatable script:
+scripts/check_local_amount_range.cjs. Artifacts:data/local-runtime/ledger-range-
+check.json and ledger-range-export.zip. Current backend97292,
+log/tmp/loupe-range-runtime.out. No push. Development continues.
+
 ## Undated PDF charge review — 10 September, about08:26Dublin
 
 Page-range scans now supplement dated proposals with a separate exact-label

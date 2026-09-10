@@ -3,6 +3,8 @@ export interface LedgerTableView {
   currency: string
   direction: string
   proof: string
+  minimum_minor?: string
+  maximum_minor?: string
   sort: string
 }
 export function sameTableView(header: string | null, view?: LedgerTableView) {

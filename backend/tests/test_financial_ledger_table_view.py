@@ -25,3 +25,13 @@ class LedgerTableViewTests(TestCase):
         with self.assertRaises(LedgerSummaryError):capture_table_view({'readings':[a,b]},dict(sort='amount-desc'))
         for invalid in [dict(search='x'*257),dict(sort='raw_sql'),dict(extra=True)]:
             with self.assertRaises(LedgerSummaryError):capture_table_view({'readings':[]},invalid)
+
+    def test_inclusive_bigint_range_requires_currency_and_preserves_full_capture(self):
+        from copy import deepcopy
+        a=self.row('a');b=self.row('b');b['row']['amount_minor']='9007199254740992'
+        ledger={'readings':[a,b]};before=deepcopy(ledger)
+        view=capture_table_view(ledger,dict(currency='GBP',minimum_minor='9007199254740993',maximum_minor='9007199254740993'))
+        self.assertEqual(view['row_ids'],['a']);self.assertEqual(ledger,before)
+        self.assertEqual(view['filters']['minimum_minor'],'9007199254740993')
+        for invalid in [dict(minimum_minor='0'),dict(currency='GBP',minimum_minor='2',maximum_minor='1'),dict(currency='GBP',minimum_minor='9223372036854775808'),dict(currency='GBP',maximum_minor='1.2'),dict(currency='GBP',minimum_minor=0)]:
+            with self.subTest(invalid=invalid),self.assertRaises(LedgerSummaryError):capture_table_view(ledger,invalid)

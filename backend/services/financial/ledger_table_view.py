@@ -1,6 +1,6 @@
 """Reproducible display filters and row order inside a full ledger capture."""
 from typing import Annotated, Literal
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from services.financial.ledger_summary import LedgerSummaryError
 
 class LedgerTableView(BaseModel):
@@ -9,7 +9,20 @@ class LedgerTableView(BaseModel):
     currency: Annotated[str, Field(pattern=r'^$|^[A-Z]{3}$')] = ''
     direction: Literal['', 'credit', 'debit'] = ''
     proof: Literal['', 'p0', 'p1', 'p2', 'p3'] = ''
+    minimum_minor: Annotated[str, Field(pattern=r'^$|^(0|[1-9][0-9]{0,18})$')] = ''
+    maximum_minor: Annotated[str, Field(pattern=r'^$|^(0|[1-9][0-9]{0,18})$')] = ''
     sort: Literal['ledger', 'oldest', 'newest', 'amount-asc', 'amount-desc'] = 'ledger'
+
+    @model_validator(mode='after')
+    def amount_range(self):
+        if self.minimum_minor or self.maximum_minor:
+            if not self.currency:
+                raise ValueError('Select a currency for an amount range.')
+            if any(int(v)>9223372036854775807 for v in (self.minimum_minor,self.maximum_minor) if v):
+                raise ValueError('Amount range exceeds the ledger range.')
+            if self.minimum_minor and self.maximum_minor and int(self.minimum_minor)>int(self.maximum_minor):
+                raise ValueError('Minimum amount exceeds maximum amount.')
+        return self
 
 
 def capture_table_view(ledger, request):
@@ -26,6 +39,8 @@ def capture_table_view(ledger, request):
         if row['ledger_status'] != 'admitted':
             continue
         if view.currency and row['currency'] != view.currency or view.direction and row['direction'] != view.direction or view.proof and row['proof_class'] != view.proof:
+            continue
+        if view.minimum_minor and int(row['amount_minor']) < int(view.minimum_minor) or view.maximum_minor and int(row['amount_minor']) > int(view.maximum_minor):
             continue
         if query and not any(isinstance(row.get(k), str) and query in row[k].lower() for k in (
                 'description','counterparty_raw','bank_reference','ref_id','key','account_id','source_document_id')):
