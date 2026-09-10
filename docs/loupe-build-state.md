@@ -1,3 +1,38 @@
+## Statement columns and review dropdown repair, 11 September
+
+Reproduced the reported failure using the supplied 03_bank_statement_nexus.pdf.
+Fractional boundaries in a valid ruled table rounded outward to overlapping
+millipoints. Geometry rejection then fell back to whole-page text rows, losing
+empty credit/debit positions and including document headings. The repair separates
+only rounding-induced overlaps; genuine overlapping source rectangles still fail.
+The original PDF remains unchanged. Fresh preparation returns the table's 14 rows,
+including the header and opening balance, with all five columns aligned.
+
+The generic Date role was also absent from the suggestion date selector. It is now
+included, a sole eligible date/amount defaults automatically, and currency survives
+column-role changes. Table headings and a status message show selected meanings.
+Changing meanings does not move cells or automatically select/approve transactions.
+
+Validation: 4,392 clean financial backend tests, 39 PDF pipeline tests, 25 focused
+frontend tests, scoped ESLint and production build passed. The actual supplied PDF
+passed checks for all 12 payment dates, six credits, six debits, 13 printed balances
+and running balance arithmetic. A browser check on its newly prepared local source
+confirmed both suggestion requests together identify exactly the 12 payments,
+excluding the header and opening balance. No financial ledger writes were made.
+Local fixture case: be24336d-de60-43e0-9632-3480af7b6213. Evidence and verification
+reports remain under data/local-runtime. The PDF is not committed.
+
+Existing server preparations are stored data and will not be rewritten by deploying
+this change. The current preparation endpoint skips already processed evidence.
+For immediate verification after deployment, prepare the statement in a fresh test
+case. Do not silently replace existing source mappings or finalized records. A safe
+in-place preparation refresh still needs explicit implementation and validation.
+
+Unfinished runtime inventory work is preserved in the git stash named
+'Preserve unfinished runtime inventory while verifying statement extraction repair'.
+It is excluded from this repair and still requires export integration, tests and
+migration acceptance. Previous dated sections below are historical checkpoints.
+
 ## Financial user guide and persistent modal access, 10 September
 
 Added a beginner guide with 25 sections and ten synthetic-case screenshots. It covers

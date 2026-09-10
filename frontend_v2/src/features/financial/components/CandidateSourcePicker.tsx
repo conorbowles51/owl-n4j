@@ -533,6 +533,18 @@ function SourceSelection({
               </label>
             ))}
           </div>
+          <p role="status" className="text-sm">
+            {Object.entries(columns)
+              .filter(([, role]) => role !== "unknown")
+              .map(
+                ([column, role]) =>
+                  `Column ${Number(column) + 1}: ${meanings.find(([value]) => value === role)?.[1] ?? role}`
+              )
+              .join("; ") || "No column meanings assigned yet."}{" "}
+            These choices label the table below and are saved with selected
+            rows. They do not move values between columns or select
+            transactions.
+          </p>
           <CandidateRowSuggestions
             source={source}
             columns={columns}
@@ -546,7 +558,18 @@ function SourceSelection({
                 <tr>
                   <th>Use row</th>
                   {source.columns.map((c) => (
-                    <th key={c}>Column {c + 1}</th>
+                    <th key={c}>
+                      Column {c + 1}{" "}
+                      {columns[c] && columns[c] !== "unknown" && (
+                        <span className="block font-semibold">
+                          {
+                            meanings.find(
+                              ([value]) => value === columns[c]
+                            )?.[1]
+                          }
+                        </span>
+                      )}
+                    </th>
                   ))}
                 </tr>
               </thead>

@@ -399,3 +399,28 @@ it("opens the printed account reference locator without selecting rows or creati
   ).toBe(false)
   expect(onSaved).not.toHaveBeenCalled()
 })
+
+it("shows changed column meanings in the table without selecting or moving source rows", async () => {
+  server()
+  mount()
+  await open()
+  fireEvent.change(await screen.findByLabelText("Column 1 meaning"), {
+    target: { value: "date" },
+  })
+  fireEvent.change(screen.getByLabelText("Column 2 meaning"), {
+    target: { value: "amount" },
+  })
+  expect(
+    screen.getByRole("columnheader", {
+      name: /Column 1 Date \(type not identified\)/,
+    })
+  ).toBeInTheDocument()
+  expect(
+    screen.getByRole("columnheader", { name: /Column 2 Amount/ })
+  ).toBeInTheDocument()
+  expect(screen.getByLabelText("Date column for suggestions")).toHaveValue("0")
+  expect(screen.getByLabelText("Amount column for suggestions")).toHaveValue(
+    "1"
+  )
+  expect(screen.getByLabelText("Select source row 4")).not.toBeChecked()
+})

@@ -136,3 +136,34 @@ it("clears suggestions when currency context changes", async () => {
     })
   ).not.toBeInTheDocument()
 })
+
+it("uses a generic Date meaning and retains currency while column meanings change", () => {
+  const client = new QueryClient()
+  const onSelect = vi.fn()
+  const view = (columns: Record<number, string>) => (
+    <QueryClientProvider client={client}>
+      <CandidateRowSuggestions
+        source={source}
+        columns={columns}
+        onSelect={onSelect}
+      />
+    </QueryClientProvider>
+  )
+  const { rerender } = render(view({ 0: "date", 1: "credit" }))
+  expect(screen.getByLabelText("Date column for suggestions")).toHaveValue("0")
+  expect(screen.getByLabelText("Amount column for suggestions")).toHaveValue(
+    "1"
+  )
+  fireEvent.change(screen.getByLabelText("Currency context for suggestions"), {
+    target: { value: "EUR" },
+  })
+  rerender(view({ 0: "date", 1: "debit" }))
+  expect(screen.getByLabelText("Currency context for suggestions")).toHaveValue(
+    "EUR"
+  )
+  expect(screen.getByLabelText("Date column for suggestions")).toHaveValue("0")
+  expect(
+    screen.getByRole("button", { name: "Inspect row suggestions" })
+  ).toBeEnabled()
+  expect(onSelect).not.toHaveBeenCalled()
+})

@@ -63,12 +63,15 @@ export function CandidateRowSuggestions({
   columns: Record<number, string>
   onSelect: (rows: number[]) => void
 }) {
+  const [currency, setCurrency] = useState("")
   return (
     <Suggestions
       key={JSON.stringify([source.source_revision, columns])}
       source={source}
       columns={columns}
       onSelect={onSelect}
+      currency={currency}
+      setCurrency={setCurrency}
     />
   )
 }
@@ -76,14 +79,27 @@ function Suggestions({
   source,
   columns,
   onSelect,
+  currency,
+  setCurrency,
 }: {
   source: Source
   columns: Record<number, string>
   onSelect: (rows: number[]) => void
+  currency: string
+  setCurrency: (value: string) => void
 }) {
-  const [dateColumn, setDateColumn] = useState(""),
-    [amountColumn, setAmountColumn] = useState(""),
-    [currency, setCurrency] = useState(""),
+  const dates = Object.entries(columns).filter(([, role]) =>
+    ["date", "booking_date", "value_date", "transaction_date"].includes(role)
+  )
+  const amounts = Object.entries(columns).filter(([, role]) =>
+    ["amount", "credit", "debit"].includes(role)
+  )
+  const [dateColumn, setDateColumn] = useState(
+      dates.length === 1 ? dates[0][0] : ""
+    ),
+    [amountColumn, setAmountColumn] = useState(
+      amounts.length === 1 ? amounts[0][0] : ""
+    ),
     [page, setPage] = useState(0)
   const suggestion = useMutation({
     retry: false,
@@ -148,12 +164,6 @@ function Suggestions({
     suggestion.reset()
     setPage(0)
   }
-  const dates = Object.entries(columns).filter(([, role]) =>
-    ["booking_date", "value_date", "transaction_date"].includes(role)
-  )
-  const amounts = Object.entries(columns).filter(([, role]) =>
-    ["amount", "credit", "debit"].includes(role)
-  )
   return (
     <section
       aria-label="Suggest rows for review"
@@ -165,10 +175,18 @@ function Suggestions({
         those columns and your currency context; they do not establish which
         rows are transactions. All rows remain available for manual selection.
       </p>
+      <p className="text-sm">
+        A single identified date or amount column is selected below
+        automatically. With separate Money in and Money out columns, inspect
+        each amount column in turn. Date (type not identified) can suggest rows
+        without asserting whether the printed date is a transaction, booking or
+        value date.
+      </p>
       <div className="grid gap-3 sm:grid-cols-3">
         <label>
           Date column for suggestions
           <select
+            aria-label="Date column for suggestions"
             className="mt-1 block w-full rounded border bg-background p-2"
             value={dateColumn}
             disabled={suggestion.isPending}
@@ -188,6 +206,7 @@ function Suggestions({
         <label>
           Amount column for suggestions
           <select
+            aria-label="Amount column for suggestions"
             className="mt-1 block w-full rounded border bg-background p-2"
             value={amountColumn}
             disabled={suggestion.isPending}
@@ -207,6 +226,7 @@ function Suggestions({
         <label>
           Currency context for suggestions
           <input
+            aria-label="Currency context for suggestions"
             className="mt-1 block w-full rounded border bg-background p-2"
             value={currency}
             maxLength={3}

@@ -30,7 +30,7 @@ What was measured, on PyMuPDF 1.28.2, before any of this was written:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Iterable, Optional, Sequence
 
 from postgres.models.enums import CoordinateSpace, LocatorKind
@@ -235,6 +235,7 @@ def locate_table(
     table_locator = Locator(kind=LocatorKind.page_rectangle, rectangle=table)
 
     placed: list[tuple[int, int, SourceRectangle]] = []
+    raw_positions: dict[tuple[int, int], tuple[float, ...]] = {}
     values: list[tuple[int, int, str, Optional[SourceRectangle]]] = []
 
     for row_index, texts in enumerate(cell_text):
@@ -276,8 +277,44 @@ def locate_table(
                 )
 
             placed.append((row_index, column_index, rectangle))
+            raw_positions[(row_index, column_index)] = tuple(float(v) for v in raw_rect)
             values.append((row_index, column_index, text, rectangle))
 
+    # Outward millipoint rounding can make genuinely disjoint cells overlap
+    # by one millipoint at a fractional shared edge. Check their original
+    # coordinates before separating that rounding artefact. Actual overlaps,
+    # however small, must still fail. Shrinking only cannot create collisions.
+    adjusted = {(row, column): rect for row, column, rect in placed}
+    ordered = sorted(placed, key=lambda item: (item[2].y0, item[2].x0))
+    for index, (row, column, original) in enumerate(ordered):
+        key = (row, column)
+        for other_row, other_column, original_other in ordered[index + 1:]:
+            if original_other.y0 >= original.y1:
+                break
+            other_key = (other_row, other_column)
+            rect, other = adjusted[key], adjusted[other_key]
+            dx = min(rect.x1, other.x1) - max(rect.x0, other.x0)
+            dy = min(rect.y1, other.y1) - max(rect.y0, other.y0)
+            if dx <= 0 or dy <= 0:
+                continue
+            a, b = raw_positions[key], raw_positions[other_key]
+            if min(a[2], b[2]) > max(a[0], b[0]) and min(a[3], b[3]) > max(a[1], b[1]):
+                raise TableGeometryError(f"cells {key} and {other_key} share page area; original cell rectangles overlap")
+            try:
+                if dx <= 1:
+                    if rect.x0 < other.x0:
+                        adjusted[key] = replace(rect, x1=other.x0)
+                    else:
+                        adjusted[other_key] = replace(other, x1=rect.x0)
+                elif dy <= 1:
+                    if rect.y0 < other.y0:
+                        adjusted[key] = replace(rect, y1=other.y0)
+                    else:
+                        adjusted[other_key] = replace(other, y1=rect.y0)
+            except LocatorError as exc:
+                raise TableGeometryError("A rounded cell boundary has no usable area") from exc
+    placed = [(row, column, adjusted[(row, column)]) for row, column, _ in placed]
+    values = [(row, column, text, adjusted.get((row, column))) for row, column, text, _ in values]
     collision = _first_overlap(placed)
     if collision is not None:
         first, second = collision
