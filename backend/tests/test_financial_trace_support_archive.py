@@ -221,3 +221,47 @@ class TraceSupportArchiveTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify_trace_support_archive(content, expected_case_id='another-case')
         rebuild.assert_not_called()
+
+    def test_readable_index_has_conditional_results_and_explicit_missing_material(self):
+        content=build_trace_support_archive([self.f.content],preparation=dict(privilege_marking='confidential',
+            generated_by=dict(name='<script>untrusted</script>',email='test@example.invalid'),generated_at='2026-09-10T12:00:00Z'))
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest=json.loads(archive.read('manifest.json'));report=archive.read(manifest['readable_index']).decode()
+            self.assertIn('Confidential',report)
+            self.assertIn('&lt;script&gt;untrusted&lt;/script&gt;',report)
+            self.assertNotIn('<script>untrusted',report)
+            self.assertIn('No extraction measurements were attached',report)
+            self.assertIn('No separate ledger export was attached',report)
+            self.assertIn('first in first out',report)
+            self.assertIn('500000 minor units',report)
+            self.assertIn('scenarios/01/scenario.json',report)
+        self.assertEqual(verify_trace_support_archive(content)['status'],'verified_bytes_matching_rebuild')
+
+    def test_pre_index_packages_still_rebuild_without_rewriting(self):
+        content=build_trace_support_archive([self.f.content],include_readable_index=False)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            self.assertNotIn('review-index.html',archive.namelist())
+        self.assertEqual(verify_trace_support_archive(content)['status'],'verified_bytes_matching_rebuild')
+
+    def test_rehashed_readable_report_changes_are_detected(self):
+        content=build_trace_support_archive([self.f.content])
+        def change(files):
+            files['review-index.html']=files['review-index.html'].replace(b'500000 minor units',b'900000 minor units')
+            manifest=json.loads(files['manifest.json'])
+            for item in manifest['files']:
+                if item['filename']=='review-index.html':
+                    item.update(byte_count=len(files['review-index.html']),sha256=hashlib.sha256(files['review-index.html']).hexdigest())
+            files['manifest.json']=json.dumps(manifest).encode()
+        result=verify_trace_support_archive(self.rewrite_archive(content,change))
+        self.assertEqual(result['status'],'verified_bytes_different_rebuild')
+        self.assertEqual(result['changed_members'],['review-index.html'])
+
+    def test_readable_measurement_report_keeps_synthetic_status_and_exact_denominators(self):
+        corpus=corpus_fixture.ExtractionEvaluationTests().corpus()
+        content=build_trace_support_archive([self.f.content],validation_corpus=corpus)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            report=archive.read('review-index.html').decode()
+            self.assertIn('synthetic_test',report)
+            self.assertIn('ocr_model',report)
+            self.assertIn('1 / 2',report)
+            self.assertIn('test-1',report)

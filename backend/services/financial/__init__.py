@@ -2009,3 +2009,6 @@ __all__ += ['submit_financial_audit_timestamp']
 
 from services.financial.custody import CustodyRequest, record_custody, source_custody, capture_case_custody
 __all__ += ["CustodyRequest", "record_custody", "source_custody", "capture_case_custody"]
+
+from services.financial.review_package_report import render_review_package_report
+__all__ += ["render_review_package_report"]

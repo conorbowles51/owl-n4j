@@ -104,3 +104,15 @@ The server records an authenticated prepared-export receipt before returning the
 ZIP. Enclosed originals keep their original markings and scopes; the outer choice
 does not relabel them or establish legal privilege. The separate **Check a saved
 tracing audit package** control can verify the downloaded ZIP again.
+
+## Readable starting page
+
+Open review-index.html after extracting a newly assembled package. It links to the
+original scenario/ledger files and displays preparation, marking, attached custody/
+history counts, conditional cash results by method, and supplied extraction
+measurement fractions. Missing support and synthetic label status remain explicit.
+Cash results are not combined with asset/resale interpretations. Every capture
+retains its own scope and original marking. The report is included in the file
+hash manifest and regenerated during verification; edits remain detectable even
+if its manifest hash is recomputed. Earlier packages without this report remain
+verifiable without adding or rewriting content.

@@ -122,7 +122,7 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
       setMessage(
-        "Review package prepared and checked. Original captures retain their separate scopes and markings."
+        "Review package prepared and checked. Open review-index.html inside the ZIP for the contents, results and missing support. Original captures retain their separate scopes and markings."
       )
     } catch (e) {
       if (request.current === controller)

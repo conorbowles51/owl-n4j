@@ -1,3 +1,23 @@
+## Readable review-package contents — 10 September
+
+New review packages include a manifest-hashed review-index.html: authenticated
+preparation/marking, original-file links, attached ledger/history/custody counts,
+exact layer measurement fractions and label status, per-method conditional cash
+results and remaining support gaps. Each scenario retains its own capture/scope;
+asset/resale interpretations are explicitly separate. No complete expert opinion,
+source authenticity or representative validation claim is inferred.
+
+Narrow tables become labelled rows; printed pages retain the selected marking.
+Generated synthetic desktop/mobile report inspected. Actual authenticated browser
+assembly passes with retained original ledger bytes and synthetic labels; downloaded
+ZIP independently verifies as matching rebuild. Older packages without the index
+still verify without rewriting (pre-index retained ZIP tested). Rehashed report
+changes are detected by rebuilding. Package/API/method tests and4assembly UI tests
+pass; build passes. No ledger/source edits or provider calls. Ordinary prepared
+export receipts were recorded. Backend session84344. Continue remaining original
+expert-packet/audit requirements; external provider and independent corpus inputs
+remain unresolved.
+
 ## Structured custody reports — 10 September
 
 Implemented append-only source custody reports and corrections with source hash
