@@ -1,3 +1,21 @@
+## Final model audit and real-document regression — 10 September
+
+The nomination now uses a fixed, recorded system prompt rather than inheriting an
+unrecorded global chat prompt. Generation settings are retained with the request.
+The rollback-only PostgreSQL flow also verifies exact model response and input
+provenance in the export history snapshot.13focused model tests pass after the
+4273backend/989UI/build gate; no external provider was called.
+
+The full supplied108-page real-document UI/export regression passes again:
+104reviewed readings,27balanced statement periods,62explicit zeros, unchanged
+working totals and0verified rows. The regenerated90-page report, ledger snapshot,
+review history and original PDF hashes all match. No financial mutations.
+
+The outstanding acceptance item is still a working external AI connection, not a
+deployment infrastructure issue. The model workflow is implemented and locally
+verified with explicitly simulated transport; it has not passed a real provider
+run. Do not mark Feature1/10fully complete or push as fully accepted on that basis.
+
 ## Model-assisted PDF nomination connected — 10 September
 
 The optional per-table fallback now requests only existing row/column positions,

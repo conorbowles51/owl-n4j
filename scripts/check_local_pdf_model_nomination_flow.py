@@ -41,8 +41,14 @@ with engine.connect() as connection:
             assert review['model_nomination']['request']['execution_mode']=='simulated_test'
             assert store_pdf_candidates(db,case_id=case,proposal=proposal,actor=actor)['id']==saved['id']
             assert db.scalar(select(func.count()).select_from(FinancialTransaction).where(FinancialTransaction.case_id==case))==before
+            from services.financial.ledger_review_history import capture_pdf_review_history
+            history=capture_pdf_review_history(db,case_id=case,evidence_file_ids=[file])
+            exported=next(m for m in history['mappings'] if m['id']==saved['id'])
+            model=exported['snapshot']['nomination_snapshot']
+            assert model['result']['raw_response']==run['result']['raw_response']
+            assert model['request']['system_context']==run['request']['system_context']
             assert len(calls)==1
-            print('PASS: real source cells; simulated transport once; durable result; pending review; retained provenance; idempotent save; unchanged ledger')
+            print('PASS: real source cells; simulated transport once; durable result; pending review; retained provenance and export snapshot; idempotent save; unchanged ledger')
     finally: outer.rollback()
 with Session(engine) as db: assert db.get(FinancialPdfNomination,attempt) is None
 engine.dispose()

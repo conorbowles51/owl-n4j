@@ -122,3 +122,17 @@ class ModelNominationTests(unittest.TestCase):
         with patch('services.ai_provider_credentials.get_provider_api_key',return_value='local-test-no-api-key'), patch('services.llm_service.LLMService') as service:
             with self.assertRaises(ValueError): _call_model(self.f.db,'openai','test','synthetic')
             service.assert_not_called()
+
+    def test_nomination_uses_its_recorded_system_prompt_without_global_overrides(self):
+        from services.financial.model_pdf_nomination import _call_model, SYSTEM_CONTEXT
+        from unittest.mock import MagicMock
+        context=MagicMock()
+        context.call.return_value=self.answer()
+        context.last_usage={'total_tokens':3}
+        with patch('services.ai_provider_credentials.get_provider_api_key',return_value='synthetic-not-a-key'), patch('services.llm_service.LLMService') as service:
+            service.return_value.create_context.return_value=context
+            raw,usage=_call_model(self.f.db,'openai','synthetic-model','synthetic prompt')
+        self.assertEqual(context.system_context,SYSTEM_CONTEXT)
+        context.call.assert_called_once_with('synthetic prompt',temperature=0,json_mode=True,timeout=90)
+        self.assertEqual(raw,self.answer())
+        self.assertEqual(usage,{'total_tokens':3})
