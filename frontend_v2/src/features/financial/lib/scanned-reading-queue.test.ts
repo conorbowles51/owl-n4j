@@ -8,7 +8,7 @@ import {
   sourceFixture,
   mappingFixture,
 } from "./__fixtures__/scanned-readings"
-it("preserves exact original cells, unknown date roles and explicit undated opt-in", () => {
+it("preserves exact original cells, unclassified date roles and explicit undated opt-in", () => {
   const proposal = scannedPageProposal(
     scanFixture,
     scanFixture.pages[0],
@@ -17,7 +17,7 @@ it("preserves exact original cells, unknown date roles and explicit undated opt-
   )
   expect(proposal.rows).toHaveLength(1)
   expect(proposal.columns).toEqual([
-    { column_index: 0, meaning: "unknown" },
+    { column_index: 0, meaning: "date" },
     { column_index: 1, meaning: "amount" },
   ])
   expect(

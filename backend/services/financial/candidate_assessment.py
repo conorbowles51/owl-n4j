@@ -99,7 +99,7 @@ def assess_candidate_dates(session, *, case_id, candidate_id):
     typed = next(c for c in bound.candidates if c.candidate_key == candidate["candidate_key"])
     cells, unknown = [], []
     for cell in typed.cells:
-        if cell.proposed_meaning not in ("booking_date", "value_date", "transaction_date"):
+        if cell.proposed_meaning not in ("date", "booking_date", "value_date", "transaction_date"):
             if cell.proposed_meaning == "unknown":
                 unknown.append(cell.column_index)
             continue

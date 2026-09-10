@@ -26,11 +26,10 @@ it("keeps exact original text and source positions while suggesting specific dat
     },
   ])
 })
-it("does not guess generic dates, OCR repairs, substrings or financial context", () => {
+it("does not guess OCR repairs, substrings or financial context", () => {
   expect(
     proposePdfHeaders(
       [
-        "Date",
         "Oate",
         "Opening Balance",
         "Total Amount",
@@ -55,4 +54,8 @@ it("reports the ten-row search limit without interpreting later content", () => 
     row(10, "Amount"),
   ])
   expect(result).toEqual({ proposals: [], checkedRows: 10, hasMore: true })
+})
+
+it("retains generic date meaning without choosing a booking or transaction role", () => {
+  expect(proposePdfHeaders([row(0, "Date")]).proposals[0].meaning).toBe("date")
 })

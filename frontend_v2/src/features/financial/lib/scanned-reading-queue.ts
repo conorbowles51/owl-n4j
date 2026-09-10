@@ -67,6 +67,7 @@ export function scannedPageProposal(
   ])
   if (page.suggestions.some((r) => amounts.has(r.date_source.column_index)))
     throw Error("Conflicting date and amount columns need manual page review.")
+  const dates = new Set(page.suggestions.map((r) => r.date_source.column_index))
   const headers = proposePdfHeaders(source.rows).proposals
   return {
     schema_version: "pdf-grid-mapping-v1",
@@ -92,9 +93,19 @@ export function scannedPageProposal(
               ["amount", "debit", "credit"].includes(meanings[0])
               ? meanings[0]
               : "amount"
-            : meanings.length === 1
-              ? meanings[0]
-              : "unknown",
+            : dates.has(column_index)
+              ? meanings.length === 1 &&
+                [
+                  "date",
+                  "booking_date",
+                  "value_date",
+                  "transaction_date",
+                ].includes(meanings[0])
+                ? meanings[0]
+                : "date"
+              : meanings.length === 1
+                ? meanings[0]
+                : "unknown",
         }
       }),
     rows: [...chosen.keys()]

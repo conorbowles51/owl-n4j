@@ -132,6 +132,12 @@ export function CandidateDateAssessment({
                 Original {cell.proposed_meaning.replaceAll("_", " ")}:{" "}
                 {cell.source.text}
               </p>
+              {cell.proposed_meaning === "date" && (
+                <p>
+                  Date type has not been identified. Choose the appropriate
+                  transaction, booking or value date separately during review.
+                </p>
+              )}
               <p>{cell.assessment.explanation}</p>
               <p>{cell.assessment.glyph_limitation}</p>
               {cell.assessment.proposals.map((proposal, index) => (

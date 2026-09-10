@@ -104,3 +104,16 @@ it("shows incomplete month/day without a fabricated year", async () => {
   ).toBeInTheDocument()
   expect(screen.queryByText(/2026-02-01/)).not.toBeInTheDocument()
 })
+
+it("shows an unclassified date without selecting its financial role", async () => {
+  mount({
+    ...result,
+    date_cells: [{ ...result.date_cells[0], proposed_meaning: "date" }],
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Assess original dates" }))
+  expect(
+    await screen.findByText(/Date type has not been identified/)
+  ).toBeInTheDocument()
+  expect(screen.getByText(/2026-02-01/)).toBeInTheDocument()
+  expect(screen.queryAllByRole("textbox")).toHaveLength(0)
+})

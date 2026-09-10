@@ -74,6 +74,17 @@ class CandidateDateTests(unittest.TestCase):
         self.f.fixture.db.commit()
         with self.assertRaises(CandidateStoreError): self.assess()
 
+    def test_generic_date_is_assessed_without_assigning_a_transaction_role(self):
+        self.f.save(raw="01/02/2026", meaning="date")
+        result=self.assess()
+        cell=next(c for c in result['date_cells'] if c['column_index']==1)
+        self.assertEqual(cell['proposed_meaning'],'date')
+        self.assertEqual(cell['assessment']['status'],'ambiguous_order')
+        self.assertEqual({p['iso_date'] for p in cell['assessment']['proposals']},{'2026-01-02','2026-02-01'})
+        self.assertFalse(result['applied'])
+        self.assertNotIn('reading',result)
+        self.assertFalse(self.f.fixture.db.new or self.f.fixture.db.dirty)
+
 
 class CandidateDateRouterTests(unittest.IsolatedAsyncioTestCase):
     async def test_read_scope_and_errors(self):

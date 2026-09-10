@@ -34,6 +34,7 @@ const meanings = [
   ["amount", "Amount"],
   ["debit", "Money out"],
   ["credit", "Money in"],
+  ["date", "Date (type not identified)"],
   ["booking_date", "Booking date"],
   ["value_date", "Value date"],
   ["transaction_date", "Transaction date"],

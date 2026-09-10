@@ -49,7 +49,7 @@ class PdfTextSpan(_Contract):
 
 class PdfColumnProposal(_Contract):
     column_index: _Index
-    meaning: Literal["unknown", "amount", "debit", "credit", "booking_date",
+    meaning: Literal["unknown", "date", "amount", "debit", "credit", "booking_date",
                      "value_date", "transaction_date", "description", "reference", "balance",
                      "account", "currency", "direction"] = "unknown"
     header: Optional[PdfTextSpan] = None

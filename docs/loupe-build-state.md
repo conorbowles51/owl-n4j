@@ -1,3 +1,18 @@
+## Generic date proposals retain unknown date type — 10 September
+
+PDF mappings now accept a generic date column meaning without calling it a booking,
+transaction or value date. Exact Date headers nominate that role; exact TransDate
+and PostDate retain their distinct existing meanings. The cross-page queue preserves
+its nominated date positions as generic dates when no specific supported header is
+available, instead of losing them as wholly unidentified columns. Date assessment
+therefore exposes source/calendar alternatives while explicitly leaving the financial
+date type for review. Original values, uncertainty and admission rules are unchanged.
+
+54focused backend and34UI tests pass, along with TypeScript and scoped lint. Existing
+full4260backend/978UI/330engine gates remain the preceding integration baseline.
+The saved seven-row real-PDF queue remains unchanged; its writer is not rerun.
+Continue remaining PDF extraction work; this change is not full automatic import.
+
 ## Printed statement layout context — 10 September
 
 A narrow version1Capital One layout recognizer supports both observed printed-card
