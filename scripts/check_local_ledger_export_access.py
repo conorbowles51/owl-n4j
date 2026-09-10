@@ -38,7 +38,12 @@ try:
             response = client.get('/api/financial/ledger-export', params={'case_id': str(case_id)})
             assert response.status_code == status, (name, response.status_code)
             assert ('application/zip' in response.headers.get('content-type', '')) == (status == 200)
+            totals = client.get('/api/financial/ledger-working-summary', params={'case_id': str(case_id)})
+            assert totals.status_code == status, (name, 'working totals', totals.status_code)
+            if status == 200:
+                assert totals.json()['population'] == 'working'
             reports[name] = status
+            reports[name + '_working_totals'] = totals.status_code
         check('non_member', 403)
         with Session(engine) as db:
             db.add(CaseMembership(case_id=case_id, user_id=user_id, membership_role=CaseMembershipRole.collaborator,

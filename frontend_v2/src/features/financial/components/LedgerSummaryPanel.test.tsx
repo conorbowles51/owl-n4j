@@ -34,7 +34,10 @@ const answer = {
     },
   ],
 }
-function mount(initial: unknown = answer) {
+function mount(
+  initial: unknown = answer,
+  population: "verified" | "working" = "verified"
+) {
   let data = initial
   const fetch = vi
     .spyOn(globalThis, "fetch")
@@ -42,7 +45,11 @@ function mount(initial: unknown = answer) {
   const client = new QueryClient()
   const element = (accountId?: string) => (
     <QueryClientProvider client={client}>
-      <LedgerSummaryPanel caseId="case-a" params={{ accountId }} />
+      <LedgerSummaryPanel
+        caseId="case-a"
+        params={{ accountId }}
+        population={population}
+      />
     </QueryClientProvider>
   )
   const view = render(element())
@@ -129,5 +136,39 @@ it("does not retain old totals when account filters change", async () => {
   ).not.toBeInTheDocument()
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "different filters"
+  )
+})
+
+it("shows separate working totals and uses their scoped endpoint", async () => {
+  const { fetch } = mount(
+    {
+      ...answer,
+      population: "working",
+      included_classes: ["p0", "p1", "p2", "p3"],
+      outside_verified_rows: 2,
+    },
+    "working"
+  )
+  expect(
+    await screen.findByText("Credits: 90071992547409.93 GBP")
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText("2 of these rows remain outside verified totals.")
+  ).toBeInTheDocument()
+  expect(String(fetch.mock.calls[0][0])).toContain("ledger-working-summary")
+})
+it.each([{}, { population: "working", outside_verified_rows: 3 }])(
+  "refuses mismatched working population %j",
+  async (change) => {
+    mount({ ...answer, ...change }, "working")
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Summary unavailable"
+    )
+  }
+)
+it("does not show working data as verified totals", async () => {
+  mount({ ...answer, population: "working", outside_verified_rows: 2 })
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Summary unavailable"
   )
 })

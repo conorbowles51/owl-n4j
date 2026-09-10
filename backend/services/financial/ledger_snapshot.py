@@ -67,6 +67,8 @@ def _capture_history(session, document, *, case_id):
     document['export_ready']=True
     from services.financial.ledger_review_history import capture_pdf_review_history
     document['pdf_review_history']=capture_pdf_review_history(session,case_id=case_id,evidence_file_ids=scopes['evidence_file'])
+    from services.financial.working_totals import working_totals_from_readings
+    document['working_totals'] = working_totals_from_readings(document['ledger'])
     document['schema']='loupe.financial.ledger_snapshot/3'
     document['limitations']=[
         'Source digests are recorded ingestion digests; source bytes were not reverified for this snapshot.',
@@ -188,15 +190,22 @@ def render_ledger_report(snapshot):
         '<p>Amounts show currency units with their exact integer minor units in brackets. '
         'Unsupported values remain explicitly unscaled. No exchange-rate conversion or transfer matching is applied.</p>',
         '<p>Included rows: ' + text(ledger['included_rows']) + '; excluded rows: ' + text(ledger['excluded_rows']) + '.</p>',
-        '<h2>Totals by currency</h2>',
+        '<h2>Verified totals by currency</h2>',
         table(['Currency', 'Rows', 'Credits', 'Debits', 'Net postings'],
               [[c['currency'], c['rows'], money_display(c['credits_minor'], c['currency']), money_display(c['debits_minor'], c['currency']), money_display(c['net_minor'], c['currency'])] for c in ledger['currencies']]),
-        '<h2>Limitations</h2><ul>' + ''.join('<li>' + text(v) + '</li>' for v in document['limitations']) + '</ul>',
-        '<h2>Captured readings</h2><p>Excluded readings are retained for review and do not enter the totals.</p>']
+        '<h2>Limitations</h2><ul>' + ''.join('<li>' + text(v) + '</li>' for v in document['limitations']) + '</ul>']
+    working = document.get('working_totals')
+    if working is not None:
+        parts += ['<h2>Working totals — including readings outside verified totals</h2>',
+            '<p>' + text(working['limitation']) + '</p>',
+            '<p>' + text(working['included_rows']) + ' current rows; ' + text(working['outside_verified_rows']) + ' outside verified totals.</p>',
+            table(['Currency', 'Rows', 'Credits', 'Debits', 'Net postings'],
+                [[g['currency'], g['rows'], money_display(g['credits_minor'],g['currency']), money_display(g['debits_minor'],g['currency']), money_display(g['net_minor'],g['currency'])] for g in working['currencies']])]
+    parts += ['<h2>Captured readings</h2><p>Readings excluded from verified totals are retained for review. Current admitted P3 readings can enter the separate working totals.</p>']
     for reading in ledger['readings']:
         row = reading['row']
         parts += ['<article><h3>Reading ' + text(row['key']) + '</h3>',
-            table(['Included in totals', 'Ordering date', 'Description', 'Direction', 'Currency', 'Amount (exact minor units in brackets)'],
+            table(['Included in verified totals', 'Ordering date', 'Description', 'Direction', 'Currency', 'Amount (exact minor units in brackets)'],
                   [['Yes' if reading['included'] else 'No: ' + str(reading['exclusion_reason']),
                     row['ordering_date'], row['description'], row['direction'], row['currency'], money_display(row['amount_minor'], row['currency'])]]),
             details('Source reference and recorded ingestion digest', reading['source']),

@@ -19,10 +19,12 @@ const common = z.object({
   account_id: z.string().nullable(),
   start_date: z.string().nullable(),
   end_date: z.string().nullable(),
-  included_classes: z.array(z.enum(["p0", "p1", "p2"])),
+  included_classes: z.array(z.enum(["p0", "p1", "p2", "p3"])),
   max_rows: count.positive(),
   applied: z.literal(false),
   limitation: z.string(),
+  population: z.literal("working").optional(),
+  outside_verified_rows: count.nullable().optional(),
 })
 const report = z.discriminatedUnion("available", [
   common.extend({
@@ -62,15 +64,25 @@ const labels = {
 export function LedgerSummaryPanel({
   caseId,
   params,
+  population = "verified",
 }: {
   caseId: string
   params: LedgerQueryParams
+  population?: "verified" | "working"
 }) {
+  const working = population === "working"
   const account = params.accountId ?? null,
     start = params.startDate ?? null,
     end = params.endDate ?? null
   const query = useQuery({
-    queryKey: ["financial-ledger", caseId, "summary", account, start, end],
+    queryKey: [
+      "financial-ledger",
+      caseId,
+      working ? "working-summary" : "summary",
+      account,
+      start,
+      end,
+    ],
     retry: false,
     queryFn: async () => {
       const search = new URLSearchParams()
@@ -79,10 +91,20 @@ export function LedgerSummaryPanel({
       if (end) search.set("end_date", end)
       const data = report.parse(
         await fetchAPI<unknown>(
-          `${candidateUrl("ledger-summary", caseId)}&${search}`
+          `${candidateUrl(working ? "ledger-working-summary" : "ledger-summary", caseId)}&${search}`
         )
       )
       assertCandidateScope(data, caseId)
+      if (
+        working
+          ? data.population !== "working" ||
+            (data.available &&
+              (data.outside_verified_rows == null ||
+                data.outside_verified_rows > data.included_rows))
+          : data.population !== undefined ||
+            data.included_classes.includes("p3")
+      )
+        throw new Error("Summary returned for a different population.")
       if (
         data.account_id !== account ||
         data.start_date !== start ||
@@ -112,33 +134,56 @@ export function LedgerSummaryPanel({
   })
   return (
     <section
-      aria-label="Current ledger summary"
+      aria-label={working ? "Working ledger totals" : "Current ledger summary"}
       className="space-y-2 rounded border p-3"
     >
-      <h3 className="font-semibold">Current ledger summary</h3>
-      <p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-semibold">
+          {working
+            ? "Working totals — all current admitted readings"
+            : "Verified totals"}
+        </h3>
+        <Button
+          variant="outline"
+          disabled={query.isFetching}
+          onClick={() => void query.refetch()}
+        >
+          {working ? "Refresh working totals" : "Refresh ledger summary"}
+        </Button>
+      </div>
+      <p className="text-muted-foreground">
         {account ? `Account ${account}` : "All ledger accounts"} ·{" "}
         {start ?? "Any start date"} to {end ?? "any end date"}
       </p>
-      <Button
-        variant="outline"
-        disabled={query.isFetching}
-        onClick={() => void query.refetch()}
-      >
-        Refresh ledger summary
-      </Button>
+      {working && (
+        <p>
+          Includes readings outside verified totals. Completeness remains
+          unverified.
+        </p>
+      )}
       {query.isFetching || query.isPending ? (
         <p role="status">Calculating current ledger summary…</p>
       ) : query.isError ? (
         <p role="alert">Summary unavailable. {query.error.message}</p>
       ) : (
         <>
-          <p>{query.data.limitation}</p>
-          <p>
-            Included classifications:{" "}
-            {query.data.included_classes.map((c) => c.toUpperCase()).join(", ")}
-            .
-          </p>
+          <details>
+            <summary>How these totals are calculated</summary>
+            <p>{query.data.limitation}</p>
+            <p>
+              Included classifications:{" "}
+              {query.data.included_classes
+                .map((c) => c.toUpperCase())
+                .join(", ")}
+              .
+            </p>
+          </details>
+          {working && query.data.available && (
+            <p>
+              {query.data.outside_verified_rows} of these rows remain outside
+              verified totals.
+            </p>
+          )}
           {!query.data.available ? (
             <p>Summary unavailable. {query.data.reason}</p>
           ) : (
@@ -162,18 +207,20 @@ export function LedgerSummaryPanel({
                   <p>
                     {group.currency} · {group.rows} included postings
                   </p>
-                  <p>
-                    Credits:{" "}
-                    {correctionMoney(group.credits_minor, group.currency)}
-                  </p>
-                  <p>
-                    Debits:{" "}
-                    {correctionMoney(group.debits_minor, group.currency)}
-                  </p>
-                  <p>
-                    Net postings:{" "}
-                    {correctionMoney(group.net_minor, group.currency)}
-                  </p>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <p className="font-medium tabular-nums">
+                      Credits:{" "}
+                      {correctionMoney(group.credits_minor, group.currency)}
+                    </p>
+                    <p className="font-medium tabular-nums">
+                      Debits:{" "}
+                      {correctionMoney(group.debits_minor, group.currency)}
+                    </p>
+                    <p className="font-medium tabular-nums">
+                      Net postings:{" "}
+                      {correctionMoney(group.net_minor, group.currency)}
+                    </p>
+                  </div>
                 </div>
               ))}
               <details>

@@ -216,6 +216,20 @@ async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUI
         raise HTTPException(status_code=500, detail="Ledger trends could not be calculated.")
 
 
+@router.get("/ledger-working-summary")
+async def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        db: Session = Depends(get_db)):
+    from services.financial.working_totals import working_ledger_summary
+    try:
+        return working_ledger_summary(db, case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Working ledger summary failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Working totals could not be calculated.")
+
+
 @router.get("/ledger-summary")
 async def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),

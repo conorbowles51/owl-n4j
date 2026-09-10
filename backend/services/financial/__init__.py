@@ -1879,3 +1879,6 @@ from services.financial.statement_balances import capture_statement_running_bala
 from services.financial.statement_checks import capture_statement_checks
 
 __all__ += ["ReviewedStatementScope", "capture_export_sources", "capture_pdf_review_history", "capture_statement_running_balances", "capture_statement_checks"]
+
+from services.financial.working_totals import working_ledger_summary
+__all__ += ["working_ledger_summary"]

@@ -6,6 +6,35 @@
 claims preserved below.** The older detailed decisions remain useful, but dates,
 completed-item claims and environment recipes in that history are not current.
 
+### Working totals and usable manual-preview checkpoint — 10 September 2026
+
+Neil explicitly clarified: deployment is not blocked; pushing triggers the existing
+server deployment. Do not push before a useful tested build. No push performed.
+The limited manual-review preview now includes separate working totals in the
+ledger and exact JSON/HTML exports. Current admitted P3 readings count here while
+verified totals remain unchanged. Superseded, quarantined, rejected and excluded
+source readings do not enter working totals; currencies and integer precision are
+preserved. Existing account/date filters apply. Compact UI displays money together,
+with calculation explanations expandable and classification limits still visible.
+
+Verification: 3,947 financial backend tests; 834 financial UI tests; TypeScript,
+production build and scoped lint pass. Read-only browser checks on fresh preview
+case ccae1db4-43f8-4f93-b5b8-b744e4d50af9 and corrected case
+ ea81df83-814c-4f9e-b3a8-3a989190b920 show 18000 credit, 6162 debit, 11838 net USD
+minor units, matching both downloaded snapshots/reports. Corrected case excludes
+one superseded reading. Verified totals remain zero with 2/3 excluded readings.
+Case-view authorization tested: nonmember/no-view/revoked403, view-only200; temporary
+user removed. No financial writes or original-PDF changes during acceptance.
+
+Backend session41593 serves this implementation, log /tmp/loupe-working-runtime.out.
+Acceptance script scripts/check_local_working_totals.cjs; logs
+/tmp/loupe-working-{financial,financial-ui,build,live,access}.out. Earlier integrated
+Workspace/Dossier/source-viewer tests remain valid. The existing local preview is
+usable for bounded manual PDF review, corrections, statement checks and exports;
+full-statement extraction and broader analysis remain on the checklist. No claim
+of full financial feature completion or deployment. Stop at this limited-preview
+checkpoint as Neil requested; no background schedule started.
+
 ### Limited-preview local release candidate — integrated checkpoint
 
 808cf691 integrates local 59e56a2d and remote f76524e with both parents retained.
@@ -36,12 +65,13 @@ check_local_second_pdf_review.cjs preview refuse repeated writes via checkpoints
 Artifacts preview-pdf-{intake,review}-check.json, preview-pdf-sample-export.zip under
  data/local-runtime. Existing real cases unchanged; original PDF unchanged.
 
-Local limited-preview release candidate checkpoint achieved. **Live preview remains
-blocked by missing watched server branch and URL**, asked asynchronously twice;
-user has not supplied them. No deployment or Alex account access is verified.
+Local limited-preview release candidate checkpoint achieved. Neil confirmed that
+pushing the repository triggers the existing deployment script. There is no
+deployment blocker. Do not push until the application is useful and tested.
+No deployment or Alex account access is verified.
 User explicitly asked to continue until limited preview, then report. See
  docs/loupe-alex-casework-preview.md for handoff gates and exact scope. Do not claim
-full core release or working totals; accelerated core-release estimate remains
+full core release; accelerated core-release estimate remains
  docs/loupe-release-estimate-2026-09-09.md. No background schedule started.
 
 ### Alex case-work preview milestone — 9 September 2026

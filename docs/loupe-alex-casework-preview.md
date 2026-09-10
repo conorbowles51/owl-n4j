@@ -19,12 +19,14 @@ all analysis screens. It is a testing release, not financial completeness certif
    Finalization seals further additions from this PDF in this case: do not finalize
    the first batch if more pages still need selection. Recorded reviews can remain
    saved while that work continues.
-7. Inspect the ledger, correct a test reading with a reason, inspect its source
+7. Inspect working totals (separate from verified totals), correct a test reading with a reason, inspect its source
    and decision history, check statement balances and download the ledger snapshot.
 
 Counts describe selected rows only. Resolved does not mean independently verified.
 These manually finalized documentary rows remain P3 and outside verified totals.
-An empty verified total does not mean the statement has no money movements.
+Working totals include current admitted P3 readings and exclude superseded, held,
+rejected and non-admitted-source readings. Exports carry both populations. An empty
+verified total does not mean the statement has no money movements.
 Only recorded decisions survive closing the form; unsubmitted form edits and
 statement-control preview drafts are not yet saved drafts.
 
@@ -38,7 +40,8 @@ statement-control preview drafts are not yet saved drafts.
 - [x] Review-progress counts and pending filter added; targeted tests cover refreshed decisions.
 - [x] Reopen progress through the browser against the saved real-PDF case; 2 resolved readings remain, no financial writes.
 - [x] Resolve the five integration conflicts with the remote updates and rerun release checks (808cf691). Single migration head; local upgrade/build/financial and Workspace tests pass.
-- [ ] Confirm watched deployment branch and site URL, then release and check that site.
+- [x] Neil confirmed the existing push-triggered deployment process; deployment is not a blocker.
+- [ ] Push the useful, tested release candidate and check the resulting deployment.
 - [ ] Confirm Alex's account/case permissions and run one new upload on the server.
 
 The existing local cases and PDFs are not automatically shipped by a Git push.
@@ -74,10 +77,11 @@ remote `f76524e` as a second parent. No force-push or remote changes performed.
 - Fresh case ccae1db4-43f8-4f93-b5b8-b744e4d50af9: original PDF copied/uploaded,
   108 pages prepared, two real rows reviewed and finalized, exact export checked.
   18000 credit / 6162 debit; 0 verified-included, 2 P3-excluded. This is still a
-  bounded manual preview, not complete-statement extraction or core-release totals.
+  bounded manual preview. Separate working totals were added and verified on 10 September;
+  complete-statement extraction remains unfinished.
 - Saved review reopen and ordinary-user export permissions/revocation verified.
 
-Pending to make it **live for Alex**: confirm server's watched branch/site URL,
-release the tested candidate to that branch, inspect deployment outcome and perform
+Pending to make it **live for Alex**: push the useful, tested candidate through the
+existing deployment process, inspect deployment outcome and perform
 server login/new-case/upload checks. Server configuration, user account and source
 files are not supplied by these local tests. Do not report the preview as deployed.
