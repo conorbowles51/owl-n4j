@@ -11,7 +11,7 @@ Final scheduled handoff:7September2026. The authorized cutoff was
 that cutoff, confirmed by automation_update. No further automatic segments are
 expected. Earlier ACTIVE/time-window statements below are retained history.
 
-**Current overall: four completed workflows (2,5,6,8); six features retain
+**Current overall: five completed workflows (2,4,5,6,8); five features retain
 outstanding work.** Completion here means the stated investigator-review,
 authoritative-view and recorded-coverage workflows, with their explicit evidence
 limitations preserved. The historical handoff tables below remain unchanged. See [the review and testing guide](loupe-review-2026-09-07.md).
@@ -107,11 +107,11 @@ feature below is complete at the start of this window.
 
    - [x] Historical running-balance diagnostics: show the saved comparison in correction history, preserve original source links, and distinguish historical results from current ledger state (42e42f1).
 
-4. **Finish duplicate handling — partial**
+4. **Finish duplicate handling — complete**
    - [x] Compare a second explicitly authorized case for matching ingestion hashes or stored readings; bounded full scans and paged results, no cross-case exclusion. Real-PDF pair browser check passes.
-   - [ ] Extend the existing same-case comparison to the remaining supported situations.
+   - [x] Same-case comparison now also exposes matching ingestion hashes across different/missing recorded coverage and held documents. These source sightings never offer exclusion; identical-reading decisions retain current revision checks.
    - [x] Show matching evidence in another explicitly selected case only after verifying view permission, without changing either case.
-   - [ ] Make larger comparisons practical and clearly show what was checked.
+   - [x] Bulk-loaded same/cross-case comparison avoids repeated per-document scans, with500documents/case,50,000readings and10,000period limits and no partial result. Paged10-group UI; synthetic24documents/48rows/12groups/source navigation verified read-only in877ms. Twenty-document test confirms at most10SQL statements and writer-identical revisions.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
 5. **Make every financial view use the authoritative ledger — complete**

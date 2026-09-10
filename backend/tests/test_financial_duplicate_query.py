@@ -109,3 +109,53 @@ class DuplicateQueryTests(DuplicateTestCase):
         b = fingerprint_document(self.db, second)
         self.assertEqual(a.group_key, b.group_key)
         self.assertNotEqual(a.content_fingerprint, b.content_fingerprint)
+
+    def test_same_source_hash_survives_different_account_identity(self):
+        other = self._account(self.case.id, identity_key='separately-recorded-account')
+        self.db.add(other)
+        self.db.commit()
+        self.make_copy(sha256='a'*64)
+        self.make_copy(sha256='a'*64, account=other)
+        result = list_duplicate_candidates(self.db, self.case.id)
+        self.assertEqual(result['groups'], [])
+        self.assertEqual(len(result['source_hash_groups']), 1)
+        self.assertEqual(len(result['source_hash_groups'][0]['members']), 2)
+        self.assertIn('different or unavailable', result['source_hash_groups'][0]['limitation'])
+
+    def test_bulk_scan_revisions_match_the_locked_writer_with_bounded_queries(self):
+        from services.financial.duplicate_decisions import duplicate_revision
+        for _ in range(20): self.make_copy(fingerprint=False)
+        case_id = self.case.id
+        statements = []
+        def capture(_conn, _cursor, sql, _params, _context, _many):
+            statements.append(sql)
+        event.listen(self.engine, 'before_cursor_execute', capture)
+        try:
+            result = list_duplicate_candidates(self.db, case_id)
+        finally:
+            event.remove(self.engine, 'before_cursor_execute', capture)
+        self.assertLessEqual(len(statements), 10)
+        self.assertEqual(result['stored_rows_in_case'], 40)
+        from postgres.models.financial import FinancialSourceDocument
+        for row in result['groups'][0]['members']:
+            import uuid
+            document = self.db.get(FinancialSourceDocument, uuid.UUID(row['document_id']))
+            self.assertEqual(row['revision'], duplicate_revision(self.db, document))
+
+    def test_reading_and_period_limits_refuse_the_whole_comparison(self):
+        self.make_copy()
+        for name in ('MAX_COMPARISON_ROWS', 'MAX_COMPARISON_PERIODS'):
+            with patch('services.financial.duplicate_query.'+name, 0):
+                with self.assertRaises(DuplicateQueryLimitError):
+                    list_duplicate_candidates(self.db, self.case.id)
+
+    def test_held_source_hash_match_is_visible_without_comparing_held_readings(self):
+        self.make_copy(sha256='c'*64)
+        held=self.make_copy(sha256='c'*64)
+        held.status='quarantined';held.quarantine_reason='unexplained_delta'
+        self.db.commit()
+        result=list_duplicate_candidates(self.db,self.case.id)
+        self.assertEqual(result['compared'],1)
+        self.assertEqual(len(result['skipped']),1)
+        self.assertEqual(len(result['source_hash_groups']),1)
+        self.assertIn('quarantined',[r['status'] for r in result['source_hash_groups'][0]['members']])

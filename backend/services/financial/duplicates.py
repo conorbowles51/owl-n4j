@@ -207,6 +207,27 @@ def fingerprint_document(
     identity_keys = _account_identity_keys(
         session, {p.account_id for p in periods} | {r.account_id for r in rows}
     )
+    return _fingerprint_contents(periods, rows, identity_keys)
+
+
+def fingerprint_documents(session, documents):
+    """Load a bounded comparison set once instead of querying each document."""
+    ids = [d.id for d in documents]
+    periods = list(session.scalars(select(FinancialStatementPeriod).where(
+        FinancialStatementPeriod.source_document_id.in_(ids)))) if ids else []
+    rows = list(session.scalars(select(FinancialTransaction).where(
+        FinancialTransaction.source_document_id.in_(ids)))) if ids else []
+    keys = _account_identity_keys(session, {p.account_id for p in periods} | {r.account_id for r in rows})
+    period_groups, row_groups = {}, {}
+    for period in periods:
+        period_groups.setdefault(period.source_document_id, []).append(period)
+    for row in rows:
+        row_groups.setdefault(row.source_document_id, []).append(row)
+    return ({d.id: _fingerprint_contents(period_groups.get(d.id, []), row_groups.get(d.id, []), keys)
+             for d in documents}, row_groups)
+
+
+def _fingerprint_contents(periods, rows, identity_keys):
     if not periods and not rows:
         return DocumentFingerprint(None, None)
 

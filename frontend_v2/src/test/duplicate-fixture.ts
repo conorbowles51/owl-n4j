@@ -14,6 +14,7 @@ export function duplicateCandidates(caseId = "case-1"): DuplicateCandidates {
       },
     ],
     excluded_documents: [],
+    source_hash_groups: [],
     groups: [
       {
         group_key: "group",

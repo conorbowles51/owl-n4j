@@ -10,7 +10,7 @@ import hashlib
 import json
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from postgres.models.enums import AdjudicationDecision, AdjudicationSubject, ProofClass
 from postgres.models.financial import (
@@ -48,12 +48,33 @@ def duplicate_revision(session, document):
     ).where(FinancialTransaction.source_document_id == document.id)
       .order_by(FinancialTransaction.id)))
     latest = _latest(session, document)
+    return _revision(document, fingerprint, rows, latest.subject_sequence if latest else 0)
+
+
+def duplicate_revisions(session, documents, fingerprints, rows_by_document):
+    """Same revision as the locked writer, from the complete bulk comparison."""
+    ids = [d.id for d in documents]
+    sequences = dict(session.execute(select(AdjudicationEvent.subject_id,
+        func.max(AdjudicationEvent.subject_sequence)).where(
+            AdjudicationEvent.subject_type == 'source_document',
+            AdjudicationEvent.subject_id.in_(ids),
+            AdjudicationEvent.case_id.in_({d.case_id for d in documents}))
+        .group_by(AdjudicationEvent.subject_id)).all()) if ids else {}
+    names = ('id', 'ledger_status', 'superseded_by_id', 'content_hash', 'proof_class',
+             'row_index', 'running_balance_minor', 'amount_minor', 'direction',
+             'account_id', 'currency', 'statement_period_id')
+    return {d.id: _revision(d, fingerprints[d.id],
+        [tuple(getattr(r, name) for name in names) for r in sorted(rows_by_document.get(d.id, []), key=lambda r: r.id)],
+        sequences.get(d.id, 0)) for d in documents}
+
+
+def _revision(document, fingerprint, rows, sequence):
     value = [str(document.id), document.status, str(document.superseded_by_id),
              document.duplicate_match_rung, document.duplicate_review_required, document.proof_class,
              fingerprint.content_fingerprint,
              (document.metadata_ or {}).get("source_shape"),
              (document.metadata_ or {}).get("admissibility_reservations"),
-             latest.subject_sequence if latest else 0,
+             sequence,
              [[str(item) for item in row] for row in rows]]
     return hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()
 

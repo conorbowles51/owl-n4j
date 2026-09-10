@@ -1,3 +1,31 @@
+## Bulk duplicate review and source sightings — 10 September, about08:02Dublin
+
+Same-case comparison now exposes matching recorded ingestion hashes even when
+account/period coverage differs or is unavailable. Held sources remain visible
+as hash sightings while their readings remain skipped. These supplementary
+matches never offer exclusion. Source navigation uses a retained transaction
+when available; recorded hashes are explicitly not fresh byte verification.
+
+Same-case fingerprints, row status counts and revision inputs are bulk-loaded;
+cross-case fingerprints also share a bulk load. Twenty-document test requires
+at most10SQL statements and exact parity with the locked writer's revisions.
+Bounds:500documents percase,50,000readings,10,000periods; exceeding a bound refuses
+the whole comparison. Reading/hash groups page10at a time; page position is
+clamped afterrefresh. Existing exclusion/restoration behavior is unchanged.
+
+All4150backend tests and901financialUI tests/build/scopedlint pass. Final held-file
+sighting addition has13backend and12frontend targeted tests passing, plusTypeScript.
+Syntheticcase561bc2db-c038-40e5-843e-f3b9dea2a08c:24documents/48readings/12readinggroups,
+onehashgroup acrosscoverage; browser10+2paging andsource navigation pass with0writes,
+877mscomparison. Seed scriptprepare_local_duplicate_review.py refusesrepeatwrites;
+readonlycheck_local_duplicate_bulk.cjs canrerun. The seed initially usedthe test
+factory's unrelated file digest; onlythese24synthetic file metadata records were
+aligned tothe actual generatedsource. No real evidence orledgerreading changed.
+Report:data/local-runtime/duplicate-bulk-browser-check.json. Backend36700 contains
+bulkcomparison; finalheld-sourcebranch willload atnextbackendrestart. No push.
+Documentduplicateworkflow4nowcomplete withinthese supportedbounds; transaction
+identity/reconciliation istracked separately under7. Work continues.
+
 ## Connected exhibit exports — 10 September, about07:47Dublin
 
 The existing exhibit engine now assesses exact verified, working and table-view

@@ -5,9 +5,9 @@ exclusion is offered: a copy may legitimately be evidence in each case.
 """
 from sqlalchemy import select, func
 from postgres.models.evidence import EvidenceFile
-from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
+from postgres.models.financial import FinancialSourceDocument, FinancialTransaction, FinancialStatementPeriod
 from services.financial.duplicate_query import DuplicateQueryLimitError
-from services.financial.duplicates import fingerprint_document
+from services.financial.duplicates import fingerprint_documents
 
 MAX_DOCUMENTS = 500
 MAX_ROWS = 50000
@@ -28,6 +28,11 @@ def compare_case_documents(session, case_id, comparison_case_id):
     row_count = session.scalar(select(func.count()).select_from(FinancialTransaction).where(FinancialTransaction.case_id.in_(cases)))
     if row_count > MAX_ROWS:
         raise DuplicateQueryLimitError('The selected cases exceed 50,000 stored readings; no partial comparison was returned.')
+    period_count = session.scalar(select(func.count()).select_from(FinancialStatementPeriod).where(FinancialStatementPeriod.case_id.in_(cases)))
+    if period_count > 10000:
+        raise DuplicateQueryLimitError('The selected cases exceed10,000statement periods; no partial comparison was returned.')
+    eligible = [d for items in documents.values() for d in items if d.status in ('admitted', 'superseded')]
+    fingerprints, _rows = fingerprint_documents(session, eligible)
     files = dict(session.execute(select(EvidenceFile.id, EvidenceFile.original_filename).where(EvidenceFile.case_id.in_(cases), EvidenceFile.id.in_([d.evidence_file_id for items in documents.values() for d in items]))).all())
     prepared = {}
     skipped = []
@@ -38,7 +43,7 @@ def compare_case_documents(session, case_id, comparison_case_id):
             if document.status not in ('admitted', 'superseded'):
                 skipped.append({**view, 'reason':'Document is held out or rejected.'})
                 continue
-            fingerprint = fingerprint_document(session, document)
+            fingerprint = fingerprints[document.id]
             prepared[case].append((document, view, fingerprint))
     matches = []
     for left, left_view, left_fp in prepared[case_id]:

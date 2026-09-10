@@ -64,3 +64,38 @@ it("hides an earlier successful comparison after a refresh fails", async () => {
   )
   expect(screen.queryByText(/Candidate group 1/)).toBeNull()
 })
+
+it("shows hash-only matches separately without offering exclusions for those matches", async () => {
+  const fixture = duplicateCandidates()
+  const members = fixture.groups[0].members.map((row) => ({
+    ...row,
+    source_transaction_id: null,
+  }))
+  const data = {
+    ...fixture,
+    groups: [],
+    source_hash_groups: [
+      {
+        sha256_at_ingestion: "a".repeat(64),
+        members,
+        limitation: "Recorded hashes only; coverage differs.",
+      },
+    ],
+  }
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response(JSON.stringify(data))
+  )
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Compare documents" }))
+  expect(
+    await screen.findByRole("region", {
+      name: "Matching source hashes across coverage",
+    })
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText("Recorded hashes only; coverage differs.")
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: /Exclude this copy/ })
+  ).not.toBeInTheDocument()
+})

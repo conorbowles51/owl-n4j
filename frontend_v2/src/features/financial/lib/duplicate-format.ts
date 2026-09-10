@@ -16,6 +16,22 @@ const schema = z.object({
   compared: count,
   skipped: z.array(document.extend({ reason: z.string().min(1) })),
   excluded_documents: z.array(reviewedDocument),
+  stored_rows_in_case: count.optional(),
+  source_hash_groups: z
+    .array(
+      z.object({
+        sha256_at_ingestion: z.string().regex(/^[a-f0-9]{64}$/),
+        members: z
+          .array(
+            document.extend({
+              source_transaction_id: z.string().nullable().optional(),
+            })
+          )
+          .min(2),
+        limitation: z.string(),
+      })
+    )
+    .default([]),
   groups: z.array(
     z.object({
       group_key: z.string().min(1),
@@ -45,6 +61,20 @@ export function readDuplicateCandidates(
   const ids = [...members, ...data.skipped].map((row) => row.document_id)
   if (
     data.case_id !== caseId ||
+    new Set(data.source_hash_groups.map((g) => g.sha256_at_ingestion)).size !==
+      data.source_hash_groups.length ||
+    data.source_hash_groups.some(
+      (g) =>
+        new Set(g.members.map((r) => r.document_id)).size !== g.members.length
+    ) ||
+    new Set(
+      data.source_hash_groups.flatMap((g) =>
+        g.members.map((r) => r.document_id)
+      )
+    ).size !==
+      data.source_hash_groups.reduce((n, g) => n + g.members.length, 0) ||
+    data.source_hash_groups.reduce((n, g) => n + g.members.length, 0) >
+      data.documents ||
     data.excluded_documents.some((row) => row.status !== "superseded") ||
     new Set(data.excluded_documents.map((row) => row.document_id)).size !==
       data.excluded_documents.length ||
