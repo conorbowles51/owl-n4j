@@ -1913,3 +1913,6 @@ __all__ += ['ledger_timeline']
 
 from services.financial.pattern_review import screen_ledger_patterns
 __all__ += ['screen_ledger_patterns']
+
+from services.financial.claim_comparison import ClaimComparisonInput, compare_ledger_claim
+__all__ += ['ClaimComparisonInput', 'compare_ledger_claim']

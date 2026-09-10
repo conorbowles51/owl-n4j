@@ -13,8 +13,10 @@ import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 export function LedgerFilters({
   caseId,
   onApply,
+  accountOnly = false,
 }: {
   caseId: string
+  accountOnly?: boolean
   onApply: (params: LedgerQueryParams) => void
 }) {
   const [search, setSearch] = useState("")
@@ -44,7 +46,11 @@ export function LedgerFilters({
       aria-label="Ledger filters"
       className="space-y-3 rounded border p-3"
     >
-      <h3 className="font-semibold">Filter current ledger rows</h3>
+      <h3 className="font-semibold">
+        {accountOnly
+          ? "Choose the ledger account"
+          : "Filter current ledger rows"}
+      </h3>
       <form
         className="flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
@@ -114,8 +120,8 @@ export function LedgerFilters({
           if (!reversed)
             onApply({
               accountId: account?.id,
-              startDate: start || undefined,
-              endDate: end || undefined,
+              startDate: accountOnly ? undefined : start || undefined,
+              endDate: accountOnly ? undefined : end || undefined,
             })
         }}
       >
@@ -127,41 +133,45 @@ export function LedgerFilters({
         >
           Use all accounts
         </Button>
-        <div className="flex flex-wrap gap-3">
-          <label>
-            Ordering date from
-            <input
-              className="block rounded border p-2"
-              type="date"
-              min="0001-01-01"
-              max="9999-12-31"
-              value={start}
-              onChange={(event) => setStart(event.target.value)}
-            />
-          </label>
-          <label>
-            Ordering date through
-            <input
-              className="block rounded border p-2"
-              type="date"
-              min="0001-01-01"
-              max="9999-12-31"
-              value={end}
-              onChange={(event) => setEnd(event.target.value)}
-            />
-          </label>
-        </div>
-        <p>
-          Dates include both endpoints and use the ledger ordering date. These
-          filters do not establish that statement records or extracted
-          transactions are complete.
-        </p>
+        {!accountOnly && (
+          <>
+            <div className="flex flex-wrap gap-3">
+              <label>
+                Ordering date from
+                <input
+                  className="block rounded border p-2"
+                  type="date"
+                  min="0001-01-01"
+                  max="9999-12-31"
+                  value={start}
+                  onChange={(event) => setStart(event.target.value)}
+                />
+              </label>
+              <label>
+                Ordering date through
+                <input
+                  className="block rounded border p-2"
+                  type="date"
+                  min="0001-01-01"
+                  max="9999-12-31"
+                  value={end}
+                  onChange={(event) => setEnd(event.target.value)}
+                />
+              </label>
+            </div>
+            <p>
+              Dates include both endpoints and use the ledger ordering date.
+              These filters do not establish that statement records or extracted
+              transactions are complete.
+            </p>
+          </>
+        )}
         {reversed && (
           <p role="alert">The start date must be on or before the end date.</p>
         )}
         <div className="flex gap-2">
           <Button type="submit" disabled={reversed}>
-            Apply ledger filters
+            {accountOnly ? "Use selected account" : "Apply ledger filters"}
           </Button>
           <Button
             type="button"
@@ -173,7 +183,7 @@ export function LedgerFilters({
               onApply({})
             }}
           >
-            Clear ledger filters
+            {accountOnly ? "Clear selected account" : "Clear ledger filters"}
           </Button>
         </div>
         <p>

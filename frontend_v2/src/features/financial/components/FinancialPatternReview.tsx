@@ -1,3 +1,4 @@
+import { PaymentClaimComparison } from "./PaymentClaimComparison"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -13,11 +14,7 @@ import { correctionMoney } from "../lib/correction-contract"
 import { LedgerFilters } from "./LedgerFilters"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
-export function FinancialPatternReview({
-  caseId,
-}: {
-  caseId: string | undefined
-}) {
+function PatternScreen({ caseId }: { caseId: string | undefined }) {
   const [params, setParams] = useState<LedgerQueryParams>({}),
     [population, setPopulation] = useState("working"),
     [days, setDays] = useState("3")
@@ -274,5 +271,36 @@ function PatternCard({
         </p>
       )}
     </article>
+  )
+}
+
+export function FinancialPatternReview({
+  caseId,
+}: {
+  caseId: string | undefined
+}) {
+  const [mode, setMode] = useState("patterns")
+  return (
+    <div>
+      <div className="flex gap-2 p-4">
+        <Button
+          variant={mode === "patterns" ? "primary" : "outline"}
+          onClick={() => setMode("patterns")}
+        >
+          Review patterns
+        </Button>
+        <Button
+          variant={mode === "claims" ? "primary" : "outline"}
+          onClick={() => setMode("claims")}
+        >
+          Compare payment claim
+        </Button>
+      </div>
+      {mode === "claims" && caseId ? (
+        <PaymentClaimComparison key={caseId} caseId={caseId} />
+      ) : (
+        <PatternScreen key={caseId} caseId={caseId} />
+      )}
+    </div>
   )
 }

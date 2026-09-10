@@ -108,3 +108,9 @@ flow selection and evidence-linked hypotheses remain active development.
   A proposed Workspace theory requires investigator wording, carries exact captured
   supporting rows/source links and retains revision history. Synthetic save/reopen
   browser check passed; no automatic finding or proof-class promotion.
+
+- [x] Payment-claim comparison lives beside Patterns: inspect a selected evidence
+  file, preserve quotation/ranges, see component-by-component proposals and sources,
+  download the captured result, and save an investigator response in Workspace.
+  Synthetic browser verifies source hash, working/verified separation, P4 retention,
+  changed-input clearing and persistent source-linked review history.

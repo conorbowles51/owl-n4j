@@ -137,6 +137,32 @@ Backend session7571, log /tmp/loupe-pattern-runtime.out. Full scope continues;
 next payment-claim comparison and broader PDF end-to-end acceptance remain.
 No push/deploy. Do not pause for a preview handoff.
 
+### Payment-claim comparison — 10 September, about06:07 Dublin
+
+fdc8d017 saves pattern review locally. Added payment-claim comparison under Patterns:
+investigator-selected source file and quotation/location; explicit amount/date ranges,
+account-holder assumption and tolerance; existing correlation rules over captured
+ledger chronology; preserved P4 and source classes. No certified completeness claim:
+unknown coverage cannot yield a contradiction. Statement reconciliation is reported
+unknown rather than as a failure. Verified and working populations stay explicit.
+
+Uploaded synthetic-payment-claim.txt in syntheticcase7d7d04f7-012f-4dc4-bc03-30351f3db15a;
+file04935d4a-0aa6-4f4f-8ce7-c1b3d94bd3ee. Browser source hash/download verified;
+verified result unresolved with0rows; working result conditional corroboration
+with3compared readings and unknown counterparty caveat. Editing bounds clears it.
+A human agree/disagree response can be saved with up to20 selected supporting
+readings in canonical Workspace notes (quote/source metadata and immutable history).
+Browser note f45183b2-762d-43d9-a852-6d0b86d0dfbd verified2source links, P4unchanged,
+0ledgerwrites. Scripts/check_local_claim_comparison.cjs andcheck_local_claim_decision.cjs
+have completed checkpoint guards; do not rerun writers. Reports/export in
+ data/local-runtime/claim-{comparison,decision}-ui-check.json andclaim-comparison-export.json.
+
+Integrated4079financial backend and885financial UI tests pass, production build,
+TypeScript and scoped lint pass. Native PDF test format issue nowresolved in full
+suite. Backend session5349, log /tmp/loupe-claim-runtime.out. No push/deployment.
+Continue remaining PDF intake/layout nomination and full review acceptance, then
+reassess retained checklist against actual completed workflows. Do not stop here.
+
 ### Further full-scope work — 10 September
 
 Local commit c39d23ca saves working analysis, posting graph, control drafts,

@@ -945,3 +945,23 @@ def get_pattern_review(case_id: UUID = Query(...), account_id: Optional[UUID] = 
     except Exception:
         logger.exception('Pattern review failed for case %s', case_id)
         raise HTTPException(status_code=500, detail='Pattern review could not be prepared.')
+
+
+from services.financial.claim_comparison import ClaimComparisonInput, compare_ledger_claim
+from services.financial.correlation import CorrelationError
+from services.financial.money import MoneyError
+
+@router.post('/claim-comparison')
+def run_claim_comparison(body: ClaimComparisonInput,case_id: UUID = Query(...),db: Session = Depends(get_db)):
+    from postgres.models.evidence import EvidenceFile
+    source=db.get(EvidenceFile,body.source_file_id)
+    if source is None or source.case_id!=case_id:
+        raise HTTPException(status_code=404,detail='Claim source not available in this case.')
+    try:
+        captured=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=body.account_id)
+        return compare_ledger_claim(captured,body,dict(id=str(source.id),case_id=str(case_id),filename=source.original_filename,sha256=source.sha256))
+    except (LedgerSummaryError,CorrelationError,MoneyError) as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Claim comparison failed for case %s',case_id)
+        raise HTTPException(status_code=500,detail='Claim comparison could not be prepared.')
