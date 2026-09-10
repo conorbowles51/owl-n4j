@@ -1940,3 +1940,6 @@ __all__ += ["statement_delta_hints"]
 
 from services.financial.trace_assets import trace_asset_uses
 __all__.append("trace_asset_uses")
+
+from .counterparty_parties import counterparty_parties, set_counterparty_party
+__all__.extend(["counterparty_parties", "set_counterparty_party"])

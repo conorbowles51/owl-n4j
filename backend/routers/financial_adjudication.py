@@ -411,3 +411,16 @@ def record_account_party(body: AccountPartyRequest, case_id: UUID = Query(...),
         return set_account_party(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
     except (AccountPartyError, ActorError) as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 422), detail=str(exc))
+
+from services.financial.counterparty_parties import CounterpartyPartyRequest, set_counterparty_party
+
+@router.post('/counterparty-parties')
+def record_counterparty_party(body: CounterpartyPartyRequest, case_id: UUID = Query(...),
+        db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    try:
+        return set_counterparty_party(db,case_id=case_id,request=body,actor=actor_from_user(current_user))
+    except (AccountPartyError,ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc,'status_code',422),detail=str(exc))
+    except Exception:
+        logger.exception('Counterparty identity decision failed for case %s',case_id)
+        raise HTTPException(status_code=500,detail='Counterparty identity change could not be confirmed. Reload before retrying.')

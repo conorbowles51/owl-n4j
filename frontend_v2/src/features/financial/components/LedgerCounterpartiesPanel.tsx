@@ -22,12 +22,17 @@ const response = z.object({
   account_id: z.string().nullable(),
   start_date: z.string().nullable(),
   end_date: z.string().nullable(),
-  label_basis: z.literal("counterparty_raw_exact"),
+  label_basis: z.enum([
+    "counterparty_raw_exact",
+    "investigator_payment_identity",
+  ]),
+  snapshot_sha256: z.string().optional(),
+  snapshot_json: z.string().optional(),
   counterparty_limitation: z.string(),
   available: z.boolean(),
   reason: z.string().nullable(),
   applied: z.literal(false),
-  population: z.literal("working").optional(),
+  population: z.enum(["working", "verified"]).optional(),
   limitation: z.string(),
   included_rows: count.nullable(),
   excluded_rows: count.nullable(),
@@ -35,6 +40,12 @@ const response = z.object({
   counterparties: z.array(
     totals.extend({
       label: z.string().nullable(),
+      group_id: z.string().optional(),
+      party: z
+        .object({ id: z.string().uuid(), name: z.string() })
+        .nullable()
+        .optional(),
+      raw_labels: z.array(z.string().nullable()).optional(),
       transaction_ids: z.array(z.string()),
       source_document_ids: z.array(z.string()),
     })
@@ -44,16 +55,19 @@ export function LedgerCounterpartiesPanel({
   caseId,
   params,
   population = "verified",
+  identities = false,
 }: {
   caseId: string
   params: LedgerQueryParams
   population?: "verified" | "working"
+  identities?: boolean
 }) {
   return (
     <CounterpartyScope
       key={JSON.stringify([
         caseId,
         population,
+        identities,
         params.accountId,
         params.startDate,
         params.endDate,
@@ -61,6 +75,7 @@ export function LedgerCounterpartiesPanel({
       caseId={caseId}
       params={params}
       population={population}
+      identities={identities}
     />
   )
 }
@@ -68,10 +83,12 @@ function CounterpartyScope({
   caseId,
   params,
   population = "verified",
+  identities = false,
 }: {
   caseId: string
   params: LedgerQueryParams
   population?: "verified" | "working"
+  identities?: boolean
 }) {
   const [opened, setOpened] = useState(false),
     [page, setPage] = useState(0)
@@ -85,6 +102,7 @@ function CounterpartyScope({
       caseId,
       population,
       "counterparties",
+      identities,
       account,
       start,
       end,
@@ -93,17 +111,56 @@ function CounterpartyScope({
     retry: false,
     queryFn: async () => {
       const search = new URLSearchParams(
-        population === "working" ? { grouping: "counterparty" } : {}
+        identities
+          ? { population }
+          : population === "working"
+            ? { grouping: "counterparty" }
+            : {}
       )
       if (account) search.set("account_id", account)
       if (start) search.set("start_date", start)
       if (end) search.set("end_date", end)
       const data = response.parse(
         await fetchAPI<unknown>(
-          `${candidateUrl(population === "working" ? "ledger-working-analysis" : "ledger-counterparties", caseId)}&${search}`
+          `${candidateUrl(identities ? "counterparty-party-analysis" : population === "working" ? "ledger-working-analysis" : "ledger-counterparties", caseId)}&${search}`
         )
       )
       assertCandidateScope(data, caseId)
+      if (
+        data.label_basis !==
+        (identities
+          ? "investigator_payment_identity"
+          : "counterparty_raw_exact")
+      )
+        throw Error("Analysis returned a different grouping basis.")
+      if (identities) {
+        if (
+          !data.snapshot_json ||
+          !data.snapshot_sha256 ||
+          data.counterparties.some((p) => !p.group_id)
+        )
+          throw Error("Identity analysis is missing its captured source.")
+        const digest = Array.from(
+          new Uint8Array(
+            await crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(data.snapshot_json)
+            )
+          ),
+          (b) => b.toString(16).padStart(2, "0")
+        ).join("")
+        if (digest !== data.snapshot_sha256)
+          throw Error("Identity source capture hash differs.")
+        const ledger = JSON.parse(data.snapshot_json).ledger
+        if (
+          ledger.case_id !== caseId ||
+          ledger.account_id !== account ||
+          ledger.start_date !== start ||
+          ledger.end_date !== end
+        )
+          throw Error("Identity capture belongs to a different scope.")
+      }
+
       if ((population === "working") !== (data.population === "working"))
         throw new Error("Analysis returned for a different population.")
       if (
@@ -127,7 +184,10 @@ function CounterpartyScope({
       const ids = new Set<string>(),
         keys = new Set<string>()
       for (const point of data.counterparties) {
-        const key = JSON.stringify([point.label, point.currency])
+        const key = JSON.stringify([
+          point.group_id ?? point.label,
+          point.currency,
+        ])
         if (
           !point.source_document_ids.length ||
           new Set(point.source_document_ids).size !==
@@ -192,13 +252,15 @@ function CounterpartyScope({
     >
       <h3 className="font-semibold">
         {population === "working" ? "Working analysis" : "Verified analysis"} ·
-        Ledger counterparty labels
+        {identities
+          ? "Reviewed counterparty identities"
+          : "Ledger counterparty labels"}
       </h3>
       <p>
-        Groups source labels exactly as recorded, separately by currency. Equal
-        labels do not establish identity or transfer matches. Missing and blank
-        labels remain explicit. Uses the applied account and ordering-date
-        filters.
+        {identities
+          ? "Groups only explicitly linked payments by reviewed identity; other labels remain unresolved. Identity decisions do not match transfers or change eligibility."
+          : "Groups source labels exactly as recorded, separately by currency. Equal labels do not establish identity or transfer matches. Missing and blank labels remain explicit."}{" "}
+        Uses the applied account and ordering-date filters.
       </p>
       <Button
         variant="outline"
@@ -220,6 +282,26 @@ function CounterpartyScope({
           <>
             <p>{query.data.limitation}</p>
             <p>{query.data.counterparty_limitation}</p>
+            {identities && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const url = URL.createObjectURL(
+                    new Blob([JSON.stringify(query.data, null, 2)], {
+                      type: "application/json",
+                    })
+                  )
+                  const link = document.createElement("a")
+                  link.href = url
+                  link.download = "loupe-reviewed-counterparties.json"
+                  link.click()
+                  setTimeout(() => URL.revokeObjectURL(url), 1000)
+                }}
+              >
+                Download reviewed counterparty analysis
+              </Button>
+            )}
+
             {!query.data.available ? (
               <p>Counterparty totals unavailable. {query.data.reason}</p>
             ) : (
@@ -230,16 +312,22 @@ function CounterpartyScope({
                   summary for exclusion reasons.
                 </p>
                 <LedgerFlowChart
-                  title="Money by source label"
+                  title={
+                    identities
+                      ? "Money by reviewed counterparty"
+                      : "Money by source label"
+                  }
                   groups={counterparties.map((p) => ({
                     ...p,
-                    id: JSON.stringify([p.label, p.currency]),
+                    id: JSON.stringify([p.group_id ?? p.label, p.currency]),
                     label:
                       p.label === null
                         ? "Counterparty not recorded"
                         : p.label === ""
                           ? "Blank source label"
-                          : p.label.trim() === p.label ? p.label : JSON.stringify(p.label),
+                          : p.label.trim() === p.label
+                            ? p.label
+                            : JSON.stringify(p.label),
                   }))}
                   onSource={setSource}
                 />
@@ -253,7 +341,10 @@ function CounterpartyScope({
                   .slice(safePage * 25, safePage * 25 + 25)
                   .map((point) => (
                     <Point
-                      key={JSON.stringify([point.label, point.currency])}
+                      key={JSON.stringify([
+                        point.group_id ?? point.label,
+                        point.currency,
+                      ])}
                       point={point}
                       onSource={setSource}
                     />
@@ -314,6 +405,16 @@ function Point({
         Debits: {correctionMoney(point.debits_minor, point.currency)} · Net
         postings: {correctionMoney(point.net_minor, point.currency)}
       </p>
+      {point.raw_labels && (
+        <p className="break-words">
+          Original source labels:{" "}
+          {point.raw_labels
+            .map((label) =>
+              label === null ? "Not recorded" : JSON.stringify(label)
+            )
+            .join(" · ")}
+        </p>
+      )}
       <details>
         <summary>Contributing readings ({point.rows})</summary>
         <p>

@@ -1,3 +1,4 @@
+import { CounterpartyPartyDirectory } from "./CounterpartyPartyDirectory"
 import { useState } from "react"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { LedgerExportButton } from "./LedgerExportButton"
@@ -18,6 +19,7 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
   const [population, setPopulation] = useState<"working" | "verified">(
     "working"
   )
+  const [identities, setIdentities] = useState(false)
   const [params, setParams] = useState<LedgerQueryParams>({})
   return (
     <section
@@ -45,6 +47,7 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
           <option value="verified">Verified totals only</option>
         </select>
       </label>
+      <CounterpartyPartyDirectory key={caseId} caseId={caseId} />
       <LedgerFilters caseId={caseId} onApply={setParams} />
       <RequestedCoveragePanel caseId={caseId} params={params} />
       <LedgerSummaryPanel
@@ -53,10 +56,20 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
         population={population}
       />
       <LedgerExportButton caseId={caseId} params={params} />
+      <label className="block">
+        <input
+          type="checkbox"
+          aria-label="Group by reviewed payment identity"
+          checked={identities}
+          onChange={(e) => setIdentities(e.target.checked)}
+        />{" "}
+        Group explicitly linked payments by reviewed identity
+      </label>
       <LedgerCounterpartiesPanel
         caseId={caseId}
         params={params}
         population={population}
+        identities={identities}
       />
     </section>
   )

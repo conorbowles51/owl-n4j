@@ -990,3 +990,29 @@ def get_account_parties(case_id: UUID = Query(...), db: Session = Depends(get_db
         return account_parties(db, case_id=case_id)
     except AccountPartyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+from services.financial.counterparty_parties import counterparty_parties
+
+@router.get('/counterparty-parties')
+def get_counterparty_parties(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return counterparty_parties(db, case_id=case_id)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    except Exception:
+        logger.exception('Counterparty identity directory failed for case %s',case_id)
+        raise HTTPException(status_code=500,detail='Counterparty identities could not be loaded.')
+
+
+@router.get('/counterparty-party-analysis')
+def get_counterparty_party_analysis(case_id: UUID = Query(...),account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None),end_date: Optional[date] = Query(None),
+        population: Literal['working','verified'] = Query('working'),db: Session = Depends(get_db)):
+    from services.financial.counterparty_parties import counterparty_party_analysis
+    try:
+        return counterparty_party_analysis(capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id,start_date=start_date,end_date=end_date),population=population)
+    except (AccountPartyError,LedgerSummaryError) as exc:
+        raise HTTPException(status_code=getattr(exc,'status_code',422),detail=str(exc))
+    except Exception:
+        logger.exception('Reviewed counterparty analysis failed for case %s',case_id)
+        raise HTTPException(status_code=500,detail='Reviewed counterparty analysis could not be prepared.')

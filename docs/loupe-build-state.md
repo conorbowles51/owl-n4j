@@ -1,3 +1,39 @@
+## Reviewed payment counterparties — 10 September, about09:59Dublin
+
+New investigator identity directory under Counterparties links1–100explicit
+current readings to a new or existing account/payment party, or removes links.
+No automatic name matching or future-import linking. Raw names, money and proof
+classes stay unchanged. Events retain direct-override state, actor and reason;
+clearing an inherited link is distinguishable from never assigning one. Amount
+corrections inherit only while account/currency/raw name are unchanged. Case and
+selected-row locks plus refreshed reads protect stale/replaced-row edits.
+
+New optional reviewed-identity analysis replays the same decisions from a single
+captured ledger/history snapshot, groups only linked readings by identity and
+keeps unlinked names verbatim. Currency totals/source rows are conserved; original
+labels remain visible, and downloaded analysis includes exact hash-verified
+snapshot JSON. Shared Decisions vocabulary/formatting includes the new event.
+Directory readings/history paginate25entries, selection is capped100. No ownership,
+transfer pairing, automatic recipient confirmation or proof promotion is implied.
+
+Migration20260910_counterparty_parties (parent20260910_account_parties) applied
+locally; adds audit decision vocabulary and refuses downgrade with its history.
+4208backend tests,927financialUI tests and production build pass; final history
+paging adds a fourth directory test, with targeted4tests/TypeScript/scopedlint pass.
+98live access checks pass across17reads/scenarios and10edits; temporary user removed.
+All14local runtime/head/analysis/export checks pass after migration.
+
+Synthetic casee9cafc92-85a7-497c-aec8-049157e823d0: one UIwrite records two links to
+party c752b149-b5b8-44ec-b649-2bcf55fbd631 (SYNTHETIC reviewed recipient).
+Source intentionally has no printed counterparty; basis explicitly says synthetic
+investigator interpretation. Reload/history/source and analysis download verified:
+working debits24.68GBP, verified0rows, rawnull and P3 unchanged. Subsequent read-only
+browser run passes with0writes. Chart screenshot visually inspected. Guarded
+check_local_counterparty_identity.cjs writer COMPLETED; only --read-only may rerun.
+Reportcounterparty-identity-ui-check.json and capturecounterparty-identity-analysis.json.
+Current backend92018, log/tmp/loupe-counterparty-final-runtime.out. No push.
+Broader automatic extraction/identity proposals and full-document acceptance remain.
+
 ## External provider check — 10 September, about09:35Dublin
 
 One capped synthetic-only request through the engine's actual OpenAI adapter

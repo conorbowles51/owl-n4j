@@ -190,6 +190,11 @@ const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
     description:
       "How well a document is proved was settled once its figures had been checked, which cannot be known when the document first arrives. Every total filters on this, so the standing before and after is kept here rather than changing quietly.",
   },
+  set_counterparty_party: {
+    label: "Payment counterparty link changed",
+    description:
+      "An investigator linked or unlinked selected payment readings to a reviewed party. Original names, amounts and proof classes remain unchanged; direct overrides and earlier decisions are retained.",
+  },
   set_account_party: {
     label: "Account party link changed",
     description:
@@ -234,6 +239,7 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   reclassify_document: "info",
   correct_transaction: "info",
   set_account_party: "info",
+  set_counterparty_party: "info",
   admit_financial_document: "danger",
 }
 
@@ -266,6 +272,7 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   reclassify_document: true,
   correct_transaction: true,
   set_account_party: true,
+  set_counterparty_party: true,
   admit_financial_document: false,
 }
 

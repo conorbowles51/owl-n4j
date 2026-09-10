@@ -26,7 +26,7 @@ cases=[UUID(case),UUID(network_case)]
 reads=[('GET',name,case,{},None) for name in (
  'ledger-export','ledger-working-summary','ledger-summary','ledger-working-analysis',
  'ledger-posting-graph','ledger-transfer-candidates','statement-checks','statement-coverage',
- 'ledger-accounts','account-parties','candidate-mappings','candidate-sources')]
+ 'ledger-accounts','account-parties','candidate-mappings','candidate-sources','counterparty-parties','counterparty-party-analysis')]
 reads += [('GET',f'ledger/{row}/source',case,{},None),
  ('GET',f'candidate-sources/{file}/page-scan',case,dict(start_page=3,end_page=3,auto_columns='true',currency='USD'),None),
  ('POST','network-trace',network_case,{},network['inputs'])]
@@ -34,7 +34,7 @@ reads += [('GET',f'ledger/{row}/source',case,{},None),
 mutations=[('POST',name) for name in (
  f'transactions/{row}/quarantine',f'transactions/{row}/release',f'transactions/{row}/correction',
  f'transactions/{row}/correction-preview',f'candidate-sources/{file}/finalize',
- 'candidate-mappings','account-parties',f'candidates/{uuid4()}/review')]
+ 'candidate-mappings','account-parties','counterparty-parties',f'candidates/{uuid4()}/review')]
 mutations += [('PUT',f'candidate-sources/{file}/statement-draft')]
 engine=create_engine('postgresql+psycopg://loupe_local:loupe_local_dev@127.0.0.1:55434/loupe_local')
 user_id=uuid4();email=f'local-financial-access-{user_id}@example.invalid';report={}

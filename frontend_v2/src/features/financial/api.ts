@@ -738,6 +738,7 @@ export const ADJUDICATION_DECISIONS = [
   "admit_financial_document",
   "correct_transaction",
   "set_account_party",
+  "set_counterparty_party",
 ] as const
 export type AdjudicationDecision = (typeof ADJUDICATION_DECISIONS)[number]
 

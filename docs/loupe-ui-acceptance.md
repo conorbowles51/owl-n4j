@@ -137,3 +137,7 @@ check_local_asset_journey.cjs and check_local_single_asset_journey.cjs. Reports
 asset-trace-ui-check.json and conditional-trace-asset-ui-check.json under
  data/local-runtime. Current backend18209, log/tmp/loupe-asset-runtime.out.
 No push. Broader asset substitution, extraction and integrated acceptance remain.
+
+## Reviewed payment identity acceptance —10September
+
+- [x] Counterparties now includes explicit payment identity review, source navigation, retained paged history and optional reviewed-identity amount charts. Synthetic two-row save/reload/source/chart/hash-verified capture passes with unchanged P3 and raw labels. See latest build-state entry for scope and repeatable read-only checks.
