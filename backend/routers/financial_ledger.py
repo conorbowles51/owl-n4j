@@ -171,13 +171,14 @@ def run_ledger_trace(body: LedgerTraceInput, case_id: UUID = Query(...), db: Ses
 
 @router.get("/ledger-export")
 def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
-        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False):
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False, include_pdf: bool = False):
     try:
         source_options = dict(include_source_files=True, resolve_path=_resolve_stored_path) if include_source_files else {}
         exported=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id,
             start_date=start_date,end_date=end_date,**source_options)
-        return Response(content=ledger_export_archive(exported),media_type="application/zip",headers={
+        return Response(content=ledger_export_archive(exported, **({"include_pdf":True} if include_pdf else {})),media_type="application/zip",headers={
             "Content-Disposition": 'attachment; filename="loupe-ledger-export.zip"',
+            "X-Loupe-PDF-Report": "true" if include_pdf else "false",
             "Cache-Control": "no-store", "X-Loupe-Source-Files": "true" if include_source_files else "false", "X-Content-Type-Options": "nosniff",
             "X-Loupe-Case-Id": str(case_id), "X-Loupe-Account-Id": str(account_id) if account_id else "",
             "X-Loupe-Start-Date": start_date.isoformat() if start_date else "",
@@ -855,3 +856,38 @@ def get_ledger_posting_graph(case_id: UUID = Query(...), account_id: Optional[UU
     except Exception:
         logger.exception('Posting graph failed for case %s', case_id)
         raise HTTPException(status_code=500, detail='Posting graph could not be prepared.')
+
+
+@router.get("/cross-case-duplicates")
+def get_cross_case_duplicates(case_id: UUID = Query(...), comparison_case_id: UUID = Query(...),
+        db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    from routers.case_access import authorize_case_view
+    from services.financial.cross_case_duplicates import compare_case_documents
+    # Authorize before querying any comparison documents. Keep unavailable and
+    # unauthorized comparison-case responses indistinguishable.
+    try:
+        authorize_case_view(db, comparison_case_id, current_user)
+    except HTTPException as exc:
+        raise HTTPException(status_code=403, detail="Comparison case is not available to this user.") from exc
+    try:
+        return compare_case_documents(db, case_id, comparison_case_id)
+    except DuplicateQueryLimitError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Cross-case document comparison failed")
+        raise HTTPException(status_code=500, detail="Document comparison could not be completed.")
+
+
+@router.get("/candidate-sources/{evidence_file_id}/page-scan")
+def get_candidate_page_scan(evidence_file_id: UUID, case_id: UUID = Query(...), start_page: int = Query(...),
+        end_page: int = Query(...), date_column: int = Query(...), amount_column: int = Query(...),
+        currency: str = Query(...), table_index: int = Query(0), db: Session = Depends(get_db)):
+    from services.financial.candidate_page_scan import scan_candidate_pages
+    try:
+        return scan_candidate_pages(db,case_id=case_id,evidence_file_id=evidence_file_id,start_page=start_page,end_page=end_page,
+            date_column=date_column,amount_column=amount_column,currency=currency,table_index=table_index)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("PDF page scan failed")
+        raise HTTPException(status_code=500,detail="PDF page scan could not be completed.")

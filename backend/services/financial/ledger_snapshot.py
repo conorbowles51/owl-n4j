@@ -118,7 +118,7 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
     return LedgerExport(snapshot,json.dumps(manifest,sort_keys=True,separators=(',',':')), source_files, include_source_files)
 
 
-def ledger_export_archive(export):
+def ledger_export_archive(export, *, include_pdf=False):
     """Package canonical bytes without reserializing the captured content."""
     import io
     import zipfile
@@ -127,6 +127,12 @@ def ledger_export_archive(export):
     manifest = json.loads(export.manifest)
     manifest['report'] = dict(filename='ledger-report.html', sha256=hashlib.sha256(report_bytes).hexdigest(),
         byte_count=len(report_bytes), derived_from_sha256=export.snapshot.sha256)
+    pdf = None
+    if include_pdf:
+        from services.financial.ledger_pdf import render_ledger_pdf
+        pdf = render_ledger_pdf(export.snapshot, report)
+        manifest['pdf_report'] = dict(filename='ledger-report.pdf', sha256=hashlib.sha256(pdf).hexdigest(),
+            byte_count=len(pdf), derived_from_sha256=export.snapshot.sha256)
     if export.source_files_requested:
         manifest['source_files'] = [{key:value for key,value in item.items() if key != 'content'} for item in export.source_files]
         manifest['source_files_verified_against_ingestion'] = True
@@ -137,6 +143,10 @@ def ledger_export_archive(export):
             info=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0))
             info.compress_type=zipfile.ZIP_DEFLATED
             archive.writestr(info,content.encode('utf-8'))
+        if pdf is not None:
+            info = zipfile.ZipInfo('ledger-report.pdf', date_time=(1980,1,1,0,0,0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, pdf)
         for item in export.source_files:
             info=zipfile.ZipInfo(item['archive_path'],date_time=(1980,1,1,0,0,0))
             info.compress_type=zipfile.ZIP_DEFLATED
@@ -201,13 +211,14 @@ def render_ledger_report(snapshot):
             '<p>' + text(working['included_rows']) + ' current rows; ' + text(working['outside_verified_rows']) + ' outside verified totals.</p>',
             table(['Currency', 'Rows', 'Credits', 'Debits', 'Net postings'],
                 [[g['currency'], g['rows'], money_display(g['credits_minor'],g['currency']), money_display(g['debits_minor'],g['currency']), money_display(g['net_minor'],g['currency'])] for g in working['currencies']])]
-    parts += ['<h2>Captured readings</h2><p>Readings excluded from verified totals are retained for review. Current admitted P3 readings can enter the separate working totals.</p>']
-    for reading in ledger['readings']:
+    parts += ['<h2>Captured readings</h2><p>Readings excluded from verified totals are retained for review. Current admitted P3 readings can enter the separate working totals. Displayed by ordering date; same-day display order does not establish bank sequence.</p>']
+    for reading in sorted(ledger['readings'], key=lambda value:(value['row']['ordering_date'],value['row']['key'])):
         row = reading['row']
-        parts += ['<article><h3>Reading ' + text(row['key']) + '</h3>',
+        parts += ['<article><h3>Reading ' + text(row.get('ref_id') or row['key']) + '</h3>',
             table(['Included in verified totals', 'Ordering date', 'Description', 'Direction', 'Currency', 'Amount (exact minor units in brackets)'],
-                  [['Yes' if reading['included'] else 'No: ' + str(reading['exclusion_reason']),
+                  [['Yes' if reading['included'] else 'No: ' + {'proof_class_not_included':'Outside verified proof classes', 'superseded':'Superseded reading', 'quarantined':'Held for review', 'rejected':'Rejected reading', 'source_not_admitted':'Source is not admitted'}.get(reading['exclusion_reason'],str(reading['exclusion_reason'])),
                     row['ordering_date'] + (' (statement end; ordering only, transaction date unknown)' if row.get('ordering_date_context') == 'statement_end_ordering_only' else ''), row['description'], row['direction'], row['currency'], money_display(row['amount_minor'], row['currency'])]]),
+            '<p>Source document: ' + text(reading['source']['id']) + '; PDF page: ' + text((row.get('locator') or {}).get('page')) + '. Recorded ingestion SHA-256: <code>' + text(reading['source'].get('sha256_at_ingestion')) + '</code>.</p>',
             details('Source reference and recorded ingestion digest', reading['source']),
             details('Original captured row, dates and source locator', row),
             details('Preserved transaction provenance', reading['provenance']), '</article>']

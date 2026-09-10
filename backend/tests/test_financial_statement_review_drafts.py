@@ -37,6 +37,27 @@ class StatementDraftTests(unittest.TestCase):
         scope = self.f.scope(); scope['account_id']=str(uuid4())
         with self.assertRaises(CandidateStoreError): self.save(scopes=[scope])
         self.assertIsNone(self.read()['revision'])
+    def test_incomplete_editor_survives_reopen_and_scope_only_save(self):
+        editor = dict(group='',selected=[],start='2026-01-01',end='',opening='123.',closing='',convention='',reason='Unfinished',cells={})
+        saved = save_statement_draft(self.f.db,case_id=self.f.case.id,evidence_file_id=self.f.file.id,
+            request=dict(statement_scopes=[],editor_draft=editor),actor=self.f.actor)
+        with Session(self.f.engine) as db:
+            reopened = read_statement_draft(db,case_id=self.f.case.id,evidence_file_id=self.f.file.id)
+        self.assertEqual(reopened['editor_draft'],editor)
+        scoped = self.save(saved['revision'])
+        self.assertEqual(scoped['editor_draft'],editor)
+        self.assertEqual(self.f.transactions(),[])
+        with self.assertRaisesRegex(CandidateStoreError,'changed'):
+            save_statement_draft(self.f.db,case_id=self.f.case.id,evidence_file_id=self.f.file.id,
+                request=dict(expected_revision=saved['revision'],statement_scopes=[],editor_draft=editor),actor=self.f.actor)
+
+    def test_editor_cannot_reference_another_case_candidate(self):
+        editor = dict(group='',selected=[str(uuid4())],start='',end='',opening='',closing='',convention='',reason='',cells={})
+        with self.assertRaisesRegex(CandidateStoreError,'this PDF'):
+            save_statement_draft(self.f.db,case_id=self.f.case.id,evidence_file_id=self.f.file.id,
+                request=dict(statement_scopes=[],editor_draft=editor),actor=self.f.actor)
+        self.assertIsNone(self.read()['revision'])
+
     def test_finalization_seals_draft_writes(self):
         saved = self.save()
         self.f.finalize(self.f.scoped_request())

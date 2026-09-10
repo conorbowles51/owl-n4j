@@ -53,6 +53,35 @@ classes;23focused backend and12UI tests pass. Multiple-claim working-population 
 downloaded scenario hashes and clearing results when assumptions change. No full-feature completion claim. Continue through remaining
 PDF extraction, review persistence, cross-case duplicates, tracing and reporting.
 
+### Further full-scope work — 10 September
+
+Local commit c39d23ca saves working analysis, posting graph, control drafts,
+conditional transfer scenarios and multiple-attribution working tracing. No push.
+
+Subsequent changes (continue until complete):
+- Cross-case document comparison with explicit second-case view authorization,
+  indistinguishable inaccessible/missing second-case responses, bounded complete
+  scans and no exclusions. Real-PDF case-pair browser acceptance passed: identical
+  ingestion hash, different recorded reading identities, zero financial writes.
+- Unfinished statement editor fields/source cells can be saved separately from
+  reviewed scopes. Revision conflicts and file/case ownership checked. Existing
+  scope-only saves retain the editor. Migration20260910_statement_editor applied
+  locally. Five backend/eight targeted UI tests passed.
+- Optional paginated PDF in ledger ZIP, derived from the captured snapshot and
+  independently hashed in the manifest. No external resources load during render.
+  Real statement rendered to five pages: exact working totals, statement-end-only
+  date caveat, controls and page bounds verified; representative pages visually
+  inspected. Full raw data remains in HTML/JSON. Browser download check passed.
+
+Latest combined gates after PDF:4042financial backend and862financial UI tests
+passed, with production build. Package export issue corrected. Page-range PDF
+scan added:11backend and12UI focused tests passed. First50pages of the real108-page
+PDF yielded40checked/10unchecked pages and15suggestions, including both known
+dated first-statement rows; undated interest remains explicitly separate. No writes.
+Current backend session72261, log /tmp/loupe-page-scan-runtime.out; latest session recorded by
+live tools. PDF migration and script cache paths are local only. Full scope remains
+active; no early-preview stopping point or deployment blocker.
+
 ### Working totals and usable manual-preview checkpoint — 10 September 2026
 
 Neil explicitly clarified: deployment is not blocked; pushing triggers the existing

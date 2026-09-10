@@ -7,6 +7,10 @@ import {
   type ScopeReading,
   type ControlCell,
 } from "../lib/statement-scope-contract"
+import {
+  StatementEditorDraftPanel,
+  type EditorDraft,
+} from "./StatementEditorDraftPanel"
 import { StatementControlPicker } from "./StatementControlPicker"
 const labels = {
   start: "statement start",
@@ -50,7 +54,11 @@ export function StatementScopeEditor({
   const draft = statementScope.safeParse({
     account_id: account?.account_id,
     currency: account?.currency,
-    candidate_ids: selected,
+    candidate_ids: selected.every((id) =>
+      matching.some((row) => row.candidate_id === id)
+    )
+      ? selected
+      : [],
     start: { value: start, source: cells.start },
     end: { value: end, source: cells.end },
     opening: opening
@@ -73,6 +81,41 @@ export function StatementScopeEditor({
       className="space-y-3 rounded border p-3"
       aria-label="Review statement controls"
     >
+      <StatementEditorDraftPanel
+        caseId={caseId}
+        fileId={fileId}
+        value={{
+          group,
+          selected,
+          start,
+          end,
+          opening,
+          closing,
+          convention: convention as EditorDraft["convention"],
+          reason,
+          cells,
+        }}
+        onLoad={(saved) => {
+          setGroup(saved.group)
+          setSelected(saved.selected)
+          setStart(saved.start)
+          setEnd(saved.end)
+          setOpening(saved.opening)
+          setClosing(saved.closing)
+          setConvention(saved.convention)
+          setReason(saved.reason)
+          setCells(saved.cells)
+          setPicking(null)
+        }}
+      />
+      {selected.some(
+        (id) => !matching.some((row) => row.candidate_id === id)
+      ) && (
+        <p role="alert">
+          Some saved rows are no longer available for this statement. Choose the
+          account and rows again before adding controls.
+        </p>
+      )}
       <h4 className="font-semibold">Review statement dates and balances</h4>
       <p>
         Assign selected reviewed rows to one printed statement period. This
@@ -170,8 +213,8 @@ export function StatementScopeEditor({
       </div>
       <p className="text-sm">
         Leave an unprinted balance blank. Blank means unknown, not zero. Enter
-        decimal amounts without currency symbols or thousands separators, keeping a
-        minus sign where printed.
+        decimal amounts without currency symbols or thousands separators,
+        keeping a minus sign where printed.
       </p>
       <label className="block">
         What do the printed balances represent?

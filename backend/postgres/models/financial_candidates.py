@@ -129,6 +129,7 @@ class FinancialStatementReviewDraft(Base):
     case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('cases.id', ondelete='CASCADE'), nullable=False, index=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     statement_scopes: Mapped[list] = mapped_column(JSONB().with_variant(JSON(), 'sqlite'), nullable=False)
+    editor_draft: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), 'sqlite'), nullable=True)
     actor: Mapped[dict] = mapped_column(JSONB().with_variant(JSON(), 'sqlite'), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     __table_args__ = (CheckConstraint('version > 0', name='ck_statement_review_draft_version'),)

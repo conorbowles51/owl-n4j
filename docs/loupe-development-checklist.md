@@ -25,6 +25,8 @@ Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remain
 feature below is complete at the start of this window.
 
 1. **Import financial transactions from PDFs — partial**
+   - [x] Read-only page-range scan across up to50pages, with exact date/amount citations and explicit unchecked-page results. Real108-page PDF first50pages:40checked,10unchecked,15suggestions; no writes. Undated rows and changing layouts still need review.
+   - [x] Save unfinished statement-editor fields and source cells separately, preserving partial amounts and revision conflict protection; five backend/eight UI tests pass.
    - [x] Save and reopen added statement-control scopes with revision-conflict protection; live real-PDF save/reload/finalization journey passes. Unsubmitted editor fields remain.
    - [x] Real-PDF ledger correction acceptance: intentionally misstated test purchase $61.26 corrected to printed $61.62 in a separate case; original source/history and exact export preserved, P3 unchanged. Fixed long decision-reason layout during walkthrough.
    - [x] Second supplied PDF: prepare 108 pages, visually review a payment and purchase, finalize as an incomplete P3 sample and verify exact source/history export (f6220fa). All originals unchanged; full-statement accuracy remains.
@@ -102,8 +104,9 @@ feature below is complete at the start of this window.
    - [x] Historical running-balance diagnostics: show the saved comparison in correction history, preserve original source links, and distinguish historical results from current ledger state (42e42f1).
 
 4. **Finish duplicate handling — partial**
+   - [x] Compare a second explicitly authorized case for matching ingestion hashes or stored readings; bounded full scans and paged results, no cross-case exclusion. Real-PDF pair browser check passes.
    - [ ] Extend the existing same-case comparison to the remaining supported situations.
-   - [ ] Show matching evidence in other cases only where the user has permission.
+   - [x] Show matching evidence in another explicitly selected case only after verifying view permission, without changing either case.
    - [ ] Make larger comparisons practical and clearly show what was checked.
    - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
 
@@ -143,6 +146,7 @@ feature below is complete at the start of this window.
    - [ ] Connect comparisons between financial records and statements or claims about payments.
 
 8. **Produce traceable reports and exports — partial**
+   - [x] Optional paginated PDF derived from the same captured ledger, with independent manifest hash; real-statement exact text and five-page layout verified. Full raw values retained in HTML/JSON. Browser download verification passed.
    - [x] Optional original-source bundle with fresh byte verification, source manifest, case ownership checks and whole-bundle limits; both supplied PDFs independently verified unchanged (5eeda00). Complete referenced files may extend beyond ledger filters.
    - [x] Include source-file PDF mappings/originals, review chains and finalization receipts in schema3 snapshot and readable report; separate review/adjudication counts.50backend/9frontend tests and real-sample hash/content verification pass. Original PDF bytes remain outside bundle.
    - [x] Primary Ledger and documentary Transactions export their applied filter scope directly, with case-switch reset and no misleading held-out-only export (51ebd77).44targeted tests and primary browser ZIP/hash checks pass.

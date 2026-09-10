@@ -1,3 +1,4 @@
+import { CandidatePageScan } from "./CandidatePageScan"
 import { CandidateRowSuggestions } from "./CandidateRowSuggestions"
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -169,6 +170,7 @@ export function CandidateSourcePicker({
           </div>
         </>
       )}
+      {selected && <CandidatePageScan key={selected.file} caseId={caseId} fileId={selected.file} onPage={page=>setSelected({...selected,page})} />}
       {selected && (
         <SourcePage
           key={`${caseId}:${selected.file}:${selected.page}`}

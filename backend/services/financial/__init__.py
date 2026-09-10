@@ -1897,3 +1897,10 @@ __all__ += ['ledger_transfer_candidates', 'evaluate_transfer_scenario']
 
 from services.financial.ledger_graph import ledger_posting_graph
 __all__ += ["ledger_posting_graph"]
+
+from services.financial.cross_case_duplicates import compare_case_documents
+from services.financial.ledger_pdf import render_ledger_pdf
+__all__ += ['compare_case_documents', 'render_ledger_pdf']
+
+from services.financial.candidate_page_scan import scan_candidate_pages
+__all__ += ['scan_candidate_pages']

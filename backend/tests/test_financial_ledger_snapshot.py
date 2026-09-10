@@ -78,6 +78,25 @@ class LedgerSnapshotTests(LedgerSummaryTests):
             self.assertEqual(manifest['report']['byte_count'],len(report))
             self.assertEqual(manifest['report']['derived_from_sha256'],snapshot.sha256)
 
+    def test_optional_pdf_is_bound_to_the_same_snapshot_manifest(self):
+        import io, zipfile
+        from services.financial.ledger_snapshot import LedgerExport, ledger_export_archive
+        from services.financial.ledger_pdf import render_ledger_pdf
+        snapshot = self.capture()
+        content = b'%PDF-1.7 synthetic renderer fixture'
+        with patch('services.financial.ledger_pdf.render_ledger_pdf', return_value=content) as render:
+            zipped = ledger_export_archive(LedgerExport(snapshot,'{}'), include_pdf=True)
+        self.assertEqual(render.call_args.args[0],snapshot)
+        with zipfile.ZipFile(io.BytesIO(zipped)) as archive:
+            self.assertEqual(archive.read('ledger-report.pdf'),content)
+            proof=json.loads(archive.read('manifest.json'))['pdf_report']
+            self.assertEqual(proof['derived_from_sha256'],snapshot.sha256)
+            self.assertEqual(proof['sha256'],hashlib.sha256(content).hexdigest())
+            self.assertEqual(proof['byte_count'],len(content))
+        self.add()
+        with patch('services.financial.ledger_pdf.MAX_PDF_READINGS',0):
+            with self.assertRaises(LedgerSummaryError):render_ledger_pdf(self.capture(),'')
+
     def test_download_route_is_scoped_attachment_and_hides_internal_errors(self):
         from routers import financial_ledger as router
         from services.financial.ledger_snapshot import LedgerExport

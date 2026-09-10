@@ -93,7 +93,7 @@ export function StatementDraftPanel({
       <p>
         Save the statements added to this preview so you can return later. These
         are draft controls; source validation happens again before finalization.
-        Edits still inside the statement editor are not included.
+        Use Save unfinished statement editor inside the editor to save partially entered fields separately.
       </p>
       {draft.isPending ? (
         <p role="status">Loading saved controls…</p>

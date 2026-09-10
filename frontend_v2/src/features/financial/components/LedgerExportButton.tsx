@@ -32,6 +32,7 @@ function ScopedExport({
 }) {
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState("")
+  const [includePdf, setIncludePdf] = useState(false)
   const [includeSourceFiles, setIncludeSourceFiles] = useState(false)
   const active = useRef<AbortController | null>(null)
   useEffect(() => () => active.current?.abort(), [])
@@ -51,6 +52,7 @@ function ScopedExport({
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)
+      if (includePdf) search.set("include_pdf", "true")
       if (includeSourceFiles) search.set("include_source_files", "true")
       const token = localStorage.getItem("authToken")
       const response = await fetch(
@@ -78,6 +80,7 @@ function ScopedExport({
         response.headers.get("X-Loupe-Start-Date") !==
           (params.startDate ?? "") ||
         response.headers.get("X-Loupe-End-Date") !== (params.endDate ?? "") ||
+        (includePdf && response.headers.get("X-Loupe-PDF-Report") !== "true") ||
         (includeSourceFiles &&
           response.headers.get("X-Loupe-Source-Files") !== "true") ||
         (!includeSourceFiles &&
@@ -113,6 +116,21 @@ function ScopedExport({
       className="space-y-2 rounded border p-3"
       aria-label="Export ledger analysis"
     >
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={includePdf}
+          disabled={busy}
+          onChange={(event) => setIncludePdf(event.target.checked)}
+        />
+        Include a paginated PDF report
+      </label>
+      {includePdf && (
+        <p className="text-sm">
+          The PDF uses the same captured readings, totals and history as the
+          JSON and HTML report. Up to 2,000 captured readings per PDF.
+        </p>
+      )}
       <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"

@@ -5,6 +5,7 @@ import {
   signedControlMinor,
   statementScope,
 } from "../lib/statement-scope-contract"
+vi.mock("./StatementEditorDraftPanel", () => ({ StatementEditorDraftPanel: () => null }))
 vi.mock("./StatementControlPicker", () => ({
   StatementControlPicker: ({
     onSelected,

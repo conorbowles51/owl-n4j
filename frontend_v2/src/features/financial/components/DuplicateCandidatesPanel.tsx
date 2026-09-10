@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { CrossCaseDuplicatePanel } from "./CrossCaseDuplicatePanel"
 import { Button } from "@/components/ui/button"
 import { useDuplicateCandidates } from "../hooks/use-duplicate-candidates"
 import {
@@ -46,6 +47,7 @@ export function DuplicateCandidatesPanel({
           {opened ? "Refresh comparison" : "Compare documents"}
         </Button>
       )}
+      {caseId && <CrossCaseDuplicatePanel key={caseId} caseId={caseId} />}
       {selection && (
         <DuplicateDecisionForm
           selection={selection}

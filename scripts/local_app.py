@@ -20,6 +20,7 @@ def main():
     # Do not load the real installation's .env or inherit its AI credentials.
     env.update({
         "PYTHON_DOTENV_DISABLED": "1",
+        "XDG_CACHE_HOME": str(RUNTIME / "cache"),
         "DATABASE_URL": "postgresql+psycopg://loupe_local:loupe_local_dev@127.0.0.1:55434/loupe_local",
         "NEO4J_URI": "bolt://127.0.0.1:57687",
         "NEO4J_USER": "neo4j", "NEO4J_PASSWORD": "loupe_local_dev",

@@ -127,3 +127,12 @@ it("refuses an unexpected original-file bundle", async () => {
   ).toBeVisible()
   expect(makeUrl).not.toHaveBeenCalled()
 })
+
+it("requests a PDF only when selected and requires the PDF response marker", async () => {
+  const {fetch, makeUrl} = mount()
+  fireEvent.click(screen.getByLabelText("Include a paginated PDF report"))
+  fireEvent.click(screen.getByRole("button",{name:"Download ledger snapshot"}))
+  await screen.findByText(/different filters or in an unexpected format/)
+  expect(String(fetch.mock.calls[0][0])).toContain("include_pdf=true")
+  expect(makeUrl).not.toHaveBeenCalled()
+})
