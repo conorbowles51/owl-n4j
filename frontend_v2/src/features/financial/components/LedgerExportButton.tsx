@@ -226,7 +226,7 @@ function ScopedExport({
       <p>
         Downloads the applied account/date scope, exact rows and totals, source
         references and relevant decision history with a verification manifest
-        and a readable HTML report. Report amounts retain their exact minor
+        and a readable report with section-specific exhibit assessments. Report amounts retain their exact minor
         units alongside currency formatting. PDF original readings, review
         history and finalization receipts for referenced files are included.
         Original files are included only when selected above; otherwise source

@@ -11,7 +11,7 @@ Final scheduled handoff:7September2026. The authorized cutoff was
 that cutoff, confirmed by automation_update. No further automatic segments are
 expected. Earlier ACTIVE/time-window statements below are retained history.
 
-**Current overall: three completed workflows (2,5,6); seven features retain
+**Current overall: four completed workflows (2,5,6,8); six features retain
 outstanding work.** Completion here means the stated investigator-review,
 authoritative-view and recorded-coverage workflows, with their explicit evidence
 limitations preserved. The historical handoff tables below remain unchanged. See [the review and testing guide](loupe-review-2026-09-07.md).
@@ -156,7 +156,7 @@ feature below is complete at the start of this window.
    - [x] Show the evidence supporting a match and distinguish exact matches from uncertain ones. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [x] Connect comparisons between financial records and statements or claims about payments. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
-8. **Produce traceable reports and exports — partial**
+8. **Produce traceable reports and exports — complete**
    - [x] Reproducible table-view export captures search, currency, direction, proof filter and deterministic row order across every matching page, alongside the full account/date/history snapshot. Real-PDF one-row61.62USD search verified against all3captured readings and JSON/HTML/PDF hashes; exact scope echoed to browser.
    - [x] Optional paginated PDF derived from the same captured ledger, with independent manifest hash; real-statement exact text and five-page layout verified. Full raw values retained in HTML/JSON. Browser download verification passed.
    - [x] Optional original-source bundle with fresh byte verification, source manifest, case ownership checks and whole-bundle limits; both supplied PDFs independently verified unchanged (5eeda00). Complete referenced files may extend beyond ledger filters.
@@ -167,7 +167,7 @@ feature below is complete at the start of this window.
    - [x] Download the applied ledger scope as a ZIP with exact rows/totals, source references, relevant decision history and a byte-verifiable manifest (49f2b83). Browser download and digest verified; formatted reports and broader export workflow remain.
    - [x] Consistent PostgreSQL snapshot of relevant decision history plus exact JSON export manifest, with event/output bounds (001009d). Download/report UI remains; candidate-review history and fresh source-byte verification explicitly excluded.
    - [x] Internal immutable ledger snapshot captures exact rows/totals/source metadata and exclusions from one read, with stable content hash (1efe4ad). Decision history, manifest and download remain; snapshot explicitly not export-ready.
-   - [ ] Connect existing export and exhibit components to reviewed results.
+   - [x] Existing exhibit assessment now uses the exact verified/working/table-view populations, separate currencies, signed net postings, proof composition and source disclosure lists. Classification is section-specific; P3 remains illustrative and no disclosure/legal admissibility is asserted. Real-statement JSON/HTML/PDF capture and hashes verified.
    - [x] Include source references, correction history and relevant limitations. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [x] Ensure exported totals agree with the application. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
    - [x] Record which evidence and decisions supported an exported result. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.

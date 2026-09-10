@@ -1,3 +1,29 @@
+## Connected exhibit exports — 10 September, about07:47Dublin
+
+The existing exhibit engine now assesses exact verified, working and table-view
+populations separately within captured ledger exports. Currency/net-posting/class
+composition, ordered row references and source hashes are retained. Empty sets
+stay unavailable; excluded-source display populations are not classified as
+summary candidates. Source-file inclusion does not assert disclosure. Whole
+archives include history/other rows, so no single legal category is claimed for
+the archive and the software does not determine legal admissibility.
+
+Adapted legacy P3 caveat wording to the reviewed-PDF workflow: P3 can reflect
+incomplete coverage or interpretation even when arithmetic agrees. Classification
+remains conservative. Report includes assessment reasons, outstanding software
+conditions and review points separately, plus source disclosure lists.
+
+All4147backend financial tests pass; final wording change has32targetedbackend
+and12export-button tests passing. Reused899UI/build/lint verification from the
+party batch for unchanged components. Real-statement filtered export verified
+read-only: working netUSD62.22; selected purchase netUSD-61.62; bothP3 illustrative;
+no verified rows; disclosure unrecorded. JSON/PDF hashes verified and both new
+assessment pages visually inspected in7-pagePDF. Scripts:
+check_local_exhibit_export.cjs and verify_local_exhibit_export.py. Artifacts:
+data/local-runtime/ledger-exhibit-export.zip and ledger-exhibit-verification.json.
+Backend15878, log/tmp/loupe-exhibit-runtime.out. No push. Feature8nowcomplete for
+its specified report/export workflow; other outstanding features remain.
+
 ## Durable account-party links — 10 September, about07:39Dublin
 
 Account-to-party decisions are retained as ordered immutable adjudication events,

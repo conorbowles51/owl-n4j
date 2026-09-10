@@ -102,6 +102,8 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
                 if table_view is not None:
                     from services.financial.ledger_table_view import capture_table_view
                     document['table_view'] = capture_table_view(document['ledger'], table_view)
+                from services.financial.ledger_exhibits import capture_ledger_exhibits
+                document["exhibit_assessment"] = capture_ledger_exhibits(document)
                 if include_source_files:
                     from services.financial.export_sources import capture_export_sources
                     source_files = capture_export_sources(session,document,case_id=case_id,resolve_path=resolve_path)
@@ -215,6 +217,25 @@ def render_ledger_report(snapshot):
             '<p>' + text(working['included_rows']) + ' current rows; ' + text(working['outside_verified_rows']) + ' outside verified totals.</p>',
             table(['Currency', 'Rows', 'Credits', 'Debits', 'Net postings'],
                 [[g['currency'], g['rows'], money_display(g['credits_minor'],g['currency']), money_display(g['debits_minor'],g['currency']), money_display(g['net_minor'],g['currency'])] for g in working['currencies']])]
+    assessment = document.get('exhibit_assessment')
+    if assessment is not None:
+        parts += ['<h2>Exhibit assessment and source disclosure checklist</h2>',
+                  '<p>' + text(assessment['limitation']) + '</p>']
+        for section in assessment['sections']:
+            parts += ['<h3>' + text(section['population'].replace('_', ' ').capitalize()) + (' · ' + text(section['currency']) if section['currency'] else '') + '</h3>']
+            if not section['available']:
+                parts += ['<p>' + text(section['reason']) + '</p>']
+                continue
+            label = 'Potential Rule 1006 summary, subject to review and outstanding conditions' if section['software_rule'] == 'rule_1006' else 'Rule 107 illustrative aid under the software assessment'
+            parts += ['<p>' + text(label) + '</p>', '<p>' + text(section['amount_basis']) + '</p>',
+                '<p>Net postings: ' + text(money_display(section['net_postings_minor'], section['currency'])) + '</p>',
+                table(['Proof class', 'Rows', 'Net postings'], [[g['proof_class'], g['rows'], money_display(g['net_minor'],section['currency'])] for g in section['proof_composition']])]
+            for key, title in [('reasons','Assessment reasons'), ('outstanding_conditions','Outstanding conditions'), ('caveats','Review points')]:
+                if not section[key]:
+                    continue
+                parts += ['<h4>' + title + '</h4><ul>' + ''.join('<li>' + text(v) + '</li>' for v in section[key]) + '</ul>']
+            parts += [table(['Source document', 'Evidence file', 'Recorded SHA-256', 'Disclosure recorded'], [[v['source_document_id'],v['evidence_file_id'],v['sha256_at_ingestion'],'No'] for v in section['sources']]),
+                      details('Complete assessed row references, in order',section['references'])]
     parts += ['<h2>Captured readings</h2><p>Readings excluded from verified totals are retained for review. Current admitted P3 readings can enter the separate working totals. Displayed by ordering date; same-day display order does not establish bank sequence.</p>']
     for reading in sorted(ledger['readings'], key=lambda value:(value['row']['ordering_date'],value['row']['key'])):
         row = reading['row']
