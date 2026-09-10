@@ -171,7 +171,7 @@ def run_ledger_trace(body: LedgerTraceInput, case_id: UUID = Query(...), db: Ses
 
 @router.get("/ledger-export")
 def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
-        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False, include_pdf: bool = False, table_view: Optional[str] = Query(None, max_length=4096)):
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False, include_pdf: bool = False, table_view: Optional[str] = Query(None, max_length=4096), privilege_marking: Literal["unmarked","confidential","privileged_confidential"] = "unmarked", current_user=Depends(get_current_db_user)):
     try:
         view_options = {}
         view_header = ''
@@ -187,10 +187,12 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
             view_header = json.dumps(parsed_view.model_dump(), ensure_ascii=True, separators=(',', ':'))
         source_options = dict(include_source_files=True, resolve_path=_resolve_stored_path) if include_source_files else {}
         exported=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id,
-            start_date=start_date,end_date=end_date,**source_options,**view_options)
+            start_date=start_date,end_date=end_date,privilege_marking=privilege_marking,
+            generated_by=dict(id=str(current_user.id),name=current_user.name,email=current_user.email) if getattr(current_user,'id',None) else None,**source_options,**view_options)
         return Response(content=ledger_export_archive(exported, **({"include_pdf":True} if include_pdf else {})),media_type="application/zip",headers={
             "Content-Disposition": 'attachment; filename="loupe-ledger-export.zip"',
             "X-Loupe-PDF-Report": "true" if include_pdf else "false",
+            "X-Loupe-Privilege-Marking": privilege_marking,
             "X-Loupe-Table-View": view_header,
             "Cache-Control": "no-store", "X-Loupe-Source-Files": "true" if include_source_files else "false", "X-Content-Type-Options": "nosniff",
             "X-Loupe-Case-Id": str(case_id), "X-Loupe-Account-Id": str(account_id) if account_id else "",

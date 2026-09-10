@@ -1,3 +1,32 @@
+## Recorded processing, export actor and page markings — 10 September
+
+The export now captures case-scoped financial ingestion runs (historical code and
+ruleset versions, recorded operator and timestamps), source parser/layer records,
+and evidence registration metadata inside the same repeatable-read transaction.
+Missing references/cross-case runs fail; null historical versions remain unknown.
+Raw configuration, private error text and local storage paths are not exported.
+The expert-support inventory includes these recorded versions without claiming a
+complete upstream toolchain or custody-transfer history.
+
+The authenticated download records its generating user and UTC timestamp in the
+snapshot and manifest. Users can select unmarked, confidential, or privileged and
+confidential. The selected marking appears in the PDF footer on every page and is
+checked by the download UI. It is explicitly a user-selected marking, not a legal
+privilege determination. Internal tracing captures retain their stable default
+without export actor/time context; existing captured snapshots remain readable.
+
+4290backend tests and990financial UI tests pass; TypeScript, scoped lint and build
+pass. Live read-only seven-page export verifies every-page footer, authentic actor
+(despite an untrusted generated_by query value), historical versions and hashes.
+Final first page visually inspected. Existing synthetic three-account backward/asset-resale tracing also passes with FIFO80/pro-rata90/LIFO100remaining, source navigation and exact scenario download unchanged. The full real104-reading/27balanced-period
+UI/export journey passes again; final report91pages, working amounts unchanged,
+0verified rows, original/review/export hashes verified. No financial writes.
+
+New repeatable check: scripts/check_local_export_marking.py. Last runtime backend
+is session27396 on58002, output /tmp/loupe-marking-final-runtime.out. No provider
+calls, no push. Full expert packet/independent corpus and broader extraction work
+remain explicitly tracked; continue useful development independently of the key.
+
 ## Original-plan export and validation work — 10 September
 
 Continued development independently of the provider credential. Added:

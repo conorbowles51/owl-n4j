@@ -39,6 +39,7 @@ function ScopedExport({
 }) {
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState("")
+  const [marking, setMarking] = useState("unmarked")
   const [includePdf, setIncludePdf] = useState(false)
   const [includeSourceFiles, setIncludeSourceFiles] = useState(false)
   const active = useRef<AbortController | null>(null)
@@ -56,6 +57,7 @@ function ScopedExport({
     }, 120000)
     try {
       const search = new URLSearchParams()
+      search.set("privilege_marking", marking)
       if (tableView) search.set("table_view", JSON.stringify(tableView))
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
@@ -80,6 +82,7 @@ function ScopedExport({
         )
       }
       if (
+        response.headers.get("X-Loupe-Privilege-Marking") !== marking ||
         !sameTableView(response.headers.get("X-Loupe-Table-View"), tableView) ||
         response.headers.get("content-type")?.split(";")[0] !==
           "application/zip" ||
@@ -122,12 +125,29 @@ function ScopedExport({
       setBusy(false)
     }
   }
+  const markingControl = (
+    <label className="flex items-center gap-2 text-sm">
+      {tableView ? "Table export marking" : "Export marking"}
+      <select
+        value={marking}
+        disabled={busy}
+        onChange={(event) => setMarking(event.target.value)}
+      >
+        <option value="unmarked">No privilege marking</option>
+        <option value="confidential">Confidential</option>
+        <option value="privileged_confidential">
+          Privileged and confidential
+        </option>
+      </select>
+    </label>
+  )
   if (tableView)
     return (
       <section
         aria-label="Export this table view"
         className="space-y-2 rounded border p-3"
       >
+        {markingControl}
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm">
             Includes recorded review methods and an inventory of available
@@ -178,6 +198,7 @@ function ScopedExport({
         tableView ? "Export this table view" : "Export ledger analysis"
       }
     >
+      {markingControl}
       <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"

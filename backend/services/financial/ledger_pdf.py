@@ -12,6 +12,9 @@ def render_ledger_pdf(snapshot, html):
     def deny_resource(url, *args, **kwargs):
         raise ValueError('Ledger PDF reports cannot load external or local resources.')
     html = html.replace('<h1>Loupe ledger report</h1>', '<h1>Loupe ledger report</h1><p>This PDF presents the captured readings, totals, decision reasons and reviewed statement controls. Full original values, source coordinates and machine-readable review chains are retained in the accompanying HTML and JSON files.</p>')
+    marking = json.loads(snapshot.content).get('export_context',{}).get('privilege_marking','unmarked')
+    label = {'unmarked':'No privilege marking selected','confidential':'Confidential','privileged_confidential':'Privileged and confidential'}.get(marking)
+    if label is None:raise LedgerSummaryError('Unrecognized captured export marking.')
     styles = CSS(string='''
         @page { size: A4; margin: 18mm 16mm 20mm;
           @bottom-left { content: "Loupe · Captured ledger report"; font: 8pt sans-serif; color: #556; }
@@ -31,7 +34,8 @@ def render_ledger_pdf(snapshot, html):
         code { overflow-wrap: anywhere; }
         article { margin-top: 12pt; padding-top: 10pt; }
     ''')
-    content = HTML(string=html, url_fetcher=deny_resource).write_pdf(stylesheets=[styles])
+    marking_style = CSS(string='@page { @bottom-left { content: "Loupe - ' + label + '"; font: 8pt sans-serif; color: #556; } }')
+    content = HTML(string=html, url_fetcher=deny_resource).write_pdf(stylesheets=[styles,marking_style])
     if len(content) > MAX_EXPORT_BYTES:
         raise LedgerSummaryError('PDF report exceeds 16 MiB. Narrow the scope; no partial PDF was generated.')
     return content

@@ -1969,3 +1969,6 @@ __all__ += ["compare_extraction_evaluations"]
 
 from services.financial.expert_support import build_expert_support
 __all__ += ["build_expert_support"]
+
+from services.financial.processing_provenance import capture_processing_provenance
+__all__ += ["capture_processing_provenance"]

@@ -12,6 +12,7 @@ function mount(
 ) {
   const headers = {
     "content-type": "application/zip",
+    "X-Loupe-Privilege-Marking": "unmarked",
     "X-Loupe-Case-Id": "case-a",
     "X-Loupe-Account-Id": "account-a",
     "X-Loupe-Start-Date": "2026-01-01",
@@ -183,4 +184,19 @@ it("downloads a matching recorded table view", async () => {
   )
   expect(await screen.findByText(/Download started/)).toBeInTheDocument()
   expect(click).toHaveBeenCalledTimes(1)
+})
+
+it("captures the chosen marking and rejects a differently marked response", async () => {
+  const { fetch, makeUrl } = mount()
+  fireEvent.change(screen.getByLabelText("Export marking"), {
+    target: { value: "confidential" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Download ledger snapshot" })
+  )
+  await screen.findByText(/different filters or in an unexpected format/)
+  expect(String(fetch.mock.calls[0][0])).toContain(
+    "privilege_marking=confidential"
+  )
+  expect(makeUrl).not.toHaveBeenCalled()
 })

@@ -109,7 +109,7 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         case_id=self.case.id
         with patch.object(router,'capture_ledger_export',return_value=LedgerExport(self.capture(),'{}')) as call:
             response=router.download_ledger_export(case_id,None,None,None,self.db)
-            call.assert_called_once_with(self.db.get_bind(),case_id=case_id,account_id=None,start_date=None,end_date=None)
+            call.assert_called_once_with(self.db.get_bind(),case_id=case_id,account_id=None,start_date=None,end_date=None,privilege_marking="unmarked",generated_by=None)
             self.assertEqual(response.headers['content-type'],'application/zip')
             self.assertEqual(response.headers['x-loupe-case-id'],str(case_id))
             self.assertEqual(response.headers['cache-control'],'no-store')
@@ -151,3 +151,14 @@ class LedgerSnapshotTests(LedgerSummaryTests):
                 report = render_ledger_report(LedgerSnapshot(json.dumps(document), 'test', 0))
                 self.assertIn(expected, report)
                 self.assertIn(value, report)
+
+    def test_export_actor_and_selected_marking_are_server_supplied(self):
+        from routers import financial_ledger as router
+        from services.financial.ledger_snapshot import LedgerExport
+        from types import SimpleNamespace
+        user=SimpleNamespace(id=self.user.id,name='Recorded exporter',email='recorded@example.test')
+        with patch.object(router,'capture_ledger_export',return_value=LedgerExport(self.capture(),'{}')) as call:
+            response=router.download_ledger_export(self.case.id,None,None,None,self.db,privilege_marking='confidential',current_user=user)
+        self.assertEqual(call.call_args.kwargs['generated_by']['id'],str(user.id))
+        self.assertEqual(call.call_args.kwargs['privilege_marking'],'confidential')
+        self.assertEqual(response.headers['x-loupe-privilege-marking'],'confidential')
