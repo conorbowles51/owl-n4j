@@ -58,7 +58,7 @@ def _trust_directory(directory):
     (directory / 'empty.pem').write_bytes(b'')
 
 
-def prepare_request(archive, output, *, openssl='openssl'):
+def prepare_financial_audit_timestamp_request(archive, output, *, openssl='openssl'):
     content = checkpoint(archive)
     output = Path(output)
     if output.exists():
@@ -76,7 +76,7 @@ def prepare_request(archive, output, *, openssl='openssl'):
     return hashlib.sha256(content).hexdigest()
 
 
-def verify_response(archive, request_directory, response, ca_file, *, openssl='openssl', untrusted=None):
+def verify_financial_audit_timestamp_response(archive, request_directory, response, ca_file, *, openssl='openssl', untrusted=None):
     expected = checkpoint(archive)
     request_directory = Path(request_directory)
     if _read(request_directory / 'checkpoint.json') != expected:

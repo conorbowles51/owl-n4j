@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 os.environ['PYTHON_DOTENV_DISABLED'] = '1'
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from services.financial.audit_timestamp import prepare_request, verify_response
+from services.financial.audit_timestamp import prepare_financial_audit_timestamp_request, verify_financial_audit_timestamp_response
 
 
 def main():
@@ -27,10 +27,10 @@ def main():
     if args.output.exists():
         parser.error('Output must be new.')
     if args.command == 'prepare':
-        digest = prepare_request(args.archive, args.output, openssl=args.openssl)
+        digest = prepare_financial_audit_timestamp_request(args.archive, args.output, openssl=args.openssl)
         print(f'Prepared offline request; checkpoint SHA-256 {digest}. No network call made.')
     else:
-        result = verify_response(args.archive, args.request, args.response, args.ca_file,
+        result = verify_financial_audit_timestamp_response(args.archive, args.request, args.response, args.ca_file,
                                  openssl=args.openssl, untrusted=args.untrusted)
         with args.output.open('x') as target:
             json.dump(result, target, indent=2, sort_keys=True)

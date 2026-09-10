@@ -8,7 +8,7 @@ import sys
 import tempfile
 os.environ['PYTHON_DOTENV_DISABLED'] = '1'
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from services.financial.audit_timestamp import prepare_request, verify_response
+from services.financial.audit_timestamp import prepare_financial_audit_timestamp_request, verify_financial_audit_timestamp_response
 
 
 def main():
@@ -49,9 +49,9 @@ ess_cert_id_chain=no
 ess_cert_id_alg=sha256
 ''')
         request = base / 'request'
-        prepare_request(args.archive, request, openssl=args.openssl)
+        prepare_financial_audit_timestamp_request(args.archive, request, openssl=args.openssl)
         run('ts', '-reply', '-config', 'tsa.cnf', '-queryfile', request / 'request.tsq', '-out', 'response.tsr')
-        result = verify_response(args.archive, request, base / 'response.tsr', base / 'root.pem', openssl=args.openssl)
+        result = verify_financial_audit_timestamp_response(args.archive, request, base / 'response.tsr', base / 'root.pem', openssl=args.openssl)
         assert result['status'] == 'verified_against_supplied_trust'
         refused = []
         def reject(name, callback):
@@ -61,8 +61,8 @@ ess_cert_id_alg=sha256
                 refused.append(name)
             else:
                 raise AssertionError('Accepted invalid ' + name)
-        call = lambda: verify_response(args.archive, request, base / 'response.tsr', base / 'root.pem', openssl=args.openssl)
-        reject('existing request output', lambda: prepare_request(args.archive, request, openssl=args.openssl))
+        call = lambda: verify_financial_audit_timestamp_response(args.archive, request, base / 'response.tsr', base / 'root.pem', openssl=args.openssl)
+        reject('existing request output', lambda: prepare_financial_audit_timestamp_request(args.archive, request, openssl=args.openssl))
         original = (request / 'checkpoint.json').read_bytes()
         (request / 'checkpoint.json').write_bytes(original + b' ')
         reject('altered checkpoint', call)
@@ -75,11 +75,11 @@ ess_cert_id_alg=sha256
         (base / 'other').write_bytes(b'different checkpoint')
         run('ts', '-query', '-data', 'other', '-sha256', '-cert', '-out', request / 'request.tsq')
         run('ts', '-reply', '-config', 'tsa.cnf', '-queryfile', request / 'request.tsq', '-out', 'other.tsr')
-        reject('swapped request and response', lambda: verify_response(args.archive, request, base / 'other.tsr', base / 'root.pem', openssl=args.openssl))
+        reject('swapped request and response', lambda: verify_financial_audit_timestamp_response(args.archive, request, base / 'other.tsr', base / 'root.pem', openssl=args.openssl))
         (request / 'request.tsq').write_bytes(query)
         run('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', 'wrong.key',
             '-out', 'wrong.pem', '-days', '1', '-subj', '/CN=Unrelated root')
-        reject('untrusted signer', lambda: verify_response(args.archive, request, base / 'response.tsr', base / 'wrong.pem', openssl=args.openssl))
+        reject('untrusted signer', lambda: verify_financial_audit_timestamp_response(args.archive, request, base / 'response.tsr', base / 'wrong.pem', openssl=args.openssl))
         response = (base / 'response.tsr').read_bytes()
         (base / 'response.tsr').write_bytes(response[:-20])
         reject('truncated signature', call)

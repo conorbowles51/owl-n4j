@@ -1,3 +1,21 @@
+## Linked validation and captured ledger support — 10 September
+
+Selected tracing support now directly accepts reconciled reference reviews and
+predictions, recomputes truth and measurements, retains all inputs and links them
+from each scenario's expert index. Recorded ledger source hash overlap is explicit;
+extractor/version equivalence and real reviewer independence are not inferred.
+An optional verified original ledger ZIP is preserved byte-for-byte, with its
+separate snapshot digest, wider-history status and recomputed audit verification.
+Case mismatch, malformed archives, stale chain summaries and altered labels fail.
+
+Timestamp public package export integration was corrected after the full suite
+caught it. Focused package/support/timestamp checks and actual OpenSSL synthetic
+signature acceptance pass. Full financial backend rerun passes4344tests in44.5seconds; output
+/tmp/loupe-timestamp-reference-backend-full-fixed.out. Offline existing captured
+resale scenario assembly also passes without provider/database calls.
+Original external provider acceptance, approved independent corpus and externally
+trusted anchoring remain unverified; no real-case or provider writes, no push.
+
 ## Offline audit timestamp tooling — 10 September
 
 Added request preparation and signed-response verification for saved ledger exports.

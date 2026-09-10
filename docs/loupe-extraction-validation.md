@@ -151,3 +151,33 @@ With `--review-record`, an optional `--baseline` also contains predictions in th
 schema: both prediction sets are measured against the selected reviewed labels.
 Retain the resulting versioned baseline and review record; do not present this as
 reuse of an old accuracy result if the ground truth changed.
+
+
+### Retain review evidence with selected tracing support
+
+The offline assembler now accepts the reconciled record and predictions directly:
+
+```sh
+data/local-runtime/backend-venv/bin/python scripts/assemble_financial_trace_support.py \
+  selected-scenario.json --reference-review reconciled-review.json \
+  --validation-predictions predictions.json --output new-support.zip
+```
+
+It reruns reconciliation, assembles truth from the retained reader/adjudication
+records and recalculates measurements. It retains the original review values,
+predictions, prepared corpus and measurement report as hash-listed ZIP members.
+Do not also pass `--validation-corpus`; the two input modes are mutually exclusive.
+Each selected scenario's expert index links the validation and compares its recorded
+ledger source hashes to the corpus. Missing digests and unmeasured sources are
+explicit. Pending documents outside those ledger readings are outside the overlap
+check. Matching source bytes do not establish matching extraction versions/settings
+or review workflows. Synthetic reviews stay synthetic, and reviewer independence
+remains a supplied declaration. No model call, database write or external upload.
+
+
+Add `--ledger-export saved-ledger.zip` to retain a verified original ledger ZIP in
+the same support bundle. It must belong to the scenarios' case. The assembler
+checks all declared members and recomputes an included audit chain. It preserves
+the ZIP exactly and records whether wider case history was selected. That ledger
+capture remains separate from each scenario's snapshot; the bundle does not merge
+their rows or claim that their dates and filters match.
