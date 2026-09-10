@@ -119,13 +119,19 @@ export function LedgerPanel({
   return (
     <div className="space-y-3">
       {hasScopeFilter && (
-        <p className="text-xs text-muted-foreground" data-testid="ledger-filter-scope">
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="ledger-filter-scope"
+        >
           {scope} Date filters use the ledger ordering date, which may differ
           from a date printed on the statement.
         </p>
       )}
       {rows.length > 0 && (
-        <p className="text-xs text-muted-foreground" data-testid="ledger-summary">
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="ledger-summary"
+        >
           {rows.length} {rows.length === 1 ? "row" : "rows"},{" "}
           {status.label.toLowerCase()}.
         </p>
@@ -165,6 +171,12 @@ export function LedgerPanel({
         <LedgerRowBrowser
           key={JSON.stringify([caseId, params])}
           transactions={rows}
+          exportContext={
+            caseId &&
+            (params?.ledgerStatus ?? DEFAULT_LEDGER_STATUS) === "admitted"
+              ? { caseId, params: params ?? {} }
+              : undefined
+          }
           onAdjudicate={onAdjudicate}
           onCorrect={onCorrect}
           onSource={onSource}

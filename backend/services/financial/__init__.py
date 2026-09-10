@@ -1919,3 +1919,6 @@ __all__ += ['ClaimComparisonInput', 'compare_ledger_claim']
 
 from services.financial.printed_totals import compare_printed_totals
 __all__ += ['compare_printed_totals']
+
+from services.financial.ledger_table_view import capture_table_view
+__all__ += ['capture_table_view']

@@ -93,6 +93,7 @@ def list_transactions(
     stmt = stmt.order_by(
         FinancialTransaction.ordering_date.asc(),
         FinancialTransaction.row_index.asc(),
+        FinancialTransaction.id.asc(),
     )
     return list(session.scalars(stmt).all())
 

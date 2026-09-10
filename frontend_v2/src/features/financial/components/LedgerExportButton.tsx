@@ -1,3 +1,4 @@
+import { sameTableView, type LedgerTableView } from "../lib/ledger-table-view"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { candidateUrl } from "../lib/candidate-contract"
@@ -6,9 +7,11 @@ import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 export function LedgerExportButton({
   caseId,
   params,
+  tableView,
 }: {
   caseId: string
   params: LedgerQueryParams
+  tableView?: LedgerTableView
 }) {
   return (
     <ScopedExport
@@ -17,18 +20,22 @@ export function LedgerExportButton({
         params.accountId,
         params.startDate,
         params.endDate,
+        tableView,
       ])}
       caseId={caseId}
       params={params}
+      tableView={tableView}
     />
   )
 }
 function ScopedExport({
   caseId,
   params,
+  tableView,
 }: {
   caseId: string
   params: LedgerQueryParams
+  tableView?: LedgerTableView
 }) {
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState("")
@@ -49,6 +56,7 @@ function ScopedExport({
     }, 120000)
     try {
       const search = new URLSearchParams()
+      if (tableView) search.set("table_view", JSON.stringify(tableView))
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)
@@ -72,6 +80,7 @@ function ScopedExport({
         )
       }
       if (
+        !sameTableView(response.headers.get("X-Loupe-Table-View"), tableView) ||
         response.headers.get("content-type")?.split(";")[0] !==
           "application/zip" ||
         response.headers.get("X-Loupe-Case-Id") !== caseId ||
@@ -94,7 +103,9 @@ function ScopedExport({
       const url = URL.createObjectURL(blob),
         link = document.createElement("a")
       link.href = url
-      link.download = "loupe-ledger-export.zip"
+      link.download = tableView
+        ? "loupe-ledger-table-view.zip"
+        : "loupe-ledger-export.zip"
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
       setMessage("Download started: ledger snapshot and manifest.")
@@ -111,10 +122,56 @@ function ScopedExport({
       setBusy(false)
     }
   }
+  if (tableView)
+    return (
+      <section
+        aria-label="Export this table view"
+        className="space-y-2 rounded border p-3"
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <Button disabled={busy} onClick={() => void download()}>
+            {busy ? "Preparing table export…" : "Download this table view"}
+          </Button>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={includePdf}
+              disabled={busy}
+              onChange={(e) => setIncludePdf(e.target.checked)}
+            />
+            Include a PDF in the table-view export
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={includeSourceFiles}
+              disabled={busy}
+              onChange={(e) => setIncludeSourceFiles(e.target.checked)}
+            />
+            Include originals in the table-view export
+          </label>
+        </div>
+        <p className="text-sm">
+          Preserves this search, filters and order for all matching rows across
+          table pages, captured at export time. The bundle also retains the full
+          applied account/date snapshot and source history; its main totals
+          describe that full scope.
+        </p>
+        {includeSourceFiles && (
+          <p className="text-sm">
+            Originals are complete referenced files with fresh hash checks,
+            including pages outside the table filters.
+          </p>
+        )}
+        {message && <p role="status">{message}</p>}
+      </section>
+    )
   return (
     <section
       className="space-y-2 rounded border p-3"
-      aria-label="Export ledger analysis"
+      aria-label={
+        tableView ? "Export this table view" : "Export ledger analysis"
+      }
     >
       <label className="flex items-start gap-2 text-sm">
         <input
@@ -123,7 +180,9 @@ function ScopedExport({
           disabled={busy}
           onChange={(event) => setIncludePdf(event.target.checked)}
         />
-        Include a paginated PDF report
+        {tableView
+          ? "Include a PDF in the table-view export"
+          : "Include a paginated PDF report"}
       </label>
       {includePdf && (
         <p className="text-sm">
@@ -138,7 +197,9 @@ function ScopedExport({
           disabled={busy}
           onChange={(event) => setIncludeSourceFiles(event.target.checked)}
         />
-        Include original source files with fresh hash checks
+        {tableView
+          ? "Include originals in the table-view export"
+          : "Include original source files with fresh hash checks"}
       </label>
       {includeSourceFiles && (
         <p className="text-sm">
@@ -148,8 +209,20 @@ function ScopedExport({
         </p>
       )}
       <Button disabled={busy} onClick={() => void download()}>
-        {busy ? "Preparing ledger export…" : "Download ledger snapshot"}
+        {busy
+          ? "Preparing ledger export…"
+          : tableView
+            ? "Download this table view"
+            : "Download ledger snapshot"}
       </Button>
+      {tableView && (
+        <p>
+          Records this search, currency, direction, proof filter and display
+          order for all matching rows, across every table page, at export time.
+          The bundle also contains the full applied account/date snapshot and
+          history. Its main totals describe that full scope.
+        </p>
+      )}
       <p>
         Downloads the applied account/date scope, exact rows and totals, source
         references and relevant decision history with a verification manifest

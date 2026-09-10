@@ -1,3 +1,5 @@
+import { LedgerExportButton } from "./LedgerExportButton"
+import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { useState, type ComponentProps } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
@@ -10,8 +12,11 @@ function exactAmount(row: LedgerTransaction) {
 }
 export function LedgerRowBrowser({
   transactions,
+  exportContext,
   ...actions
-}: ComponentProps<typeof LedgerTable>) {
+}: ComponentProps<typeof LedgerTable> & {
+  exportContext?: { caseId: string; params: LedgerQueryParams }
+}) {
   const [search, setSearch] = useState(""),
     [currency, setCurrency] = useState(""),
     [direction, setDirection] = useState(""),
@@ -33,7 +38,10 @@ export function LedgerRowBrowser({
           row.key,
           row.account_id,
           row.source_document_id,
-        ].some((value) => typeof value === "string" && value.toLowerCase().includes(query)))
+        ].some(
+          (value) =>
+            typeof value === "string" && value.toLowerCase().includes(query)
+        ))
   )
   const amountAllowed = new Set(rows.map((row) => row.currency)).size <= 1
   if (sort === "newest")
@@ -160,9 +168,23 @@ export function LedgerRowBrowser({
       </div>
       <p className="text-sm">
         {rows.length} of {transactions.length} loaded rows match this table
-        view. Totals and downloads use the applied account/date filters. Display
-        sorting does not establish bank sequence.
+        view. Main totals and the ledger snapshot use the applied account/date
+        filters. The table-view export also records the filters and order above.
+        Display sorting does not establish bank sequence.
       </p>
+      {exportContext && (
+        <LedgerExportButton
+          caseId={exportContext.caseId}
+          params={exportContext.params}
+          tableView={{
+            search,
+            currency,
+            direction,
+            proof,
+            sort: sort.startsWith("amount") && !amountAllowed ? "ledger" : sort,
+          }}
+        />
+      )}
       {!rows.length ? (
         <p>
           No loaded rows match this table search. Evidence may still be

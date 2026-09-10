@@ -171,14 +171,27 @@ def run_ledger_trace(body: LedgerTraceInput, case_id: UUID = Query(...), db: Ses
 
 @router.get("/ledger-export")
 def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
-        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False, include_pdf: bool = False):
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False, include_pdf: bool = False, table_view: Optional[str] = Query(None, max_length=4096)):
     try:
+        view_options = {}
+        view_header = ''
+        if isinstance(table_view, str):
+            import json
+            from pydantic import ValidationError
+            from services.financial.ledger_table_view import LedgerTableView
+            try:
+                parsed_view = LedgerTableView.model_validate_json(table_view)
+            except ValidationError as exc:
+                raise LedgerSummaryError('Invalid table-view filters.') from exc
+            view_options['table_view'] = parsed_view.model_dump()
+            view_header = json.dumps(parsed_view.model_dump(), ensure_ascii=True, separators=(',', ':'))
         source_options = dict(include_source_files=True, resolve_path=_resolve_stored_path) if include_source_files else {}
         exported=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id,
-            start_date=start_date,end_date=end_date,**source_options)
+            start_date=start_date,end_date=end_date,**source_options,**view_options)
         return Response(content=ledger_export_archive(exported, **({"include_pdf":True} if include_pdf else {})),media_type="application/zip",headers={
             "Content-Disposition": 'attachment; filename="loupe-ledger-export.zip"',
             "X-Loupe-PDF-Report": "true" if include_pdf else "false",
+            "X-Loupe-Table-View": view_header,
             "Cache-Control": "no-store", "X-Loupe-Source-Files": "true" if include_source_files else "false", "X-Content-Type-Options": "nosniff",
             "X-Loupe-Case-Id": str(case_id), "X-Loupe-Account-Id": str(account_id) if account_id else "",
             "X-Loupe-Start-Date": start_date.isoformat() if start_date else "",

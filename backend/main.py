@@ -158,6 +158,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Loupe-Case-Id", "X-Loupe-Account-Id",
+        "X-Loupe-Start-Date", "X-Loupe-End-Date", "X-Loupe-PDF-Report",
+        "X-Loupe-Source-Files", "X-Loupe-Table-View"],
 )
 
 # Include routers

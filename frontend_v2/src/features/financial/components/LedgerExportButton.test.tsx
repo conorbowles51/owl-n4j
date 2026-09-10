@@ -6,7 +6,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
   localStorage.clear()
 })
-function mount(change: Record<string, string> = {}) {
+function mount(
+  change: Record<string, string> = {},
+  tableView?: import("../lib/ledger-table-view").LedgerTableView
+) {
   const headers = {
     "content-type": "application/zip",
     "X-Loupe-Case-Id": "case-a",
@@ -32,6 +35,7 @@ function mount(change: Record<string, string> = {}) {
   render(
     <LedgerExportButton
       caseId="case-a"
+      tableView={tableView}
       params={{
         accountId: "account-a",
         startDate: "2026-01-01",
@@ -129,10 +133,54 @@ it("refuses an unexpected original-file bundle", async () => {
 })
 
 it("requests a PDF only when selected and requires the PDF response marker", async () => {
-  const {fetch, makeUrl} = mount()
+  const { fetch, makeUrl } = mount()
   fireEvent.click(screen.getByLabelText("Include a paginated PDF report"))
-  fireEvent.click(screen.getByRole("button",{name:"Download ledger snapshot"}))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Download ledger snapshot" })
+  )
   await screen.findByText(/different filters or in an unexpected format/)
   expect(String(fetch.mock.calls[0][0])).toContain("include_pdf=true")
   expect(makeUrl).not.toHaveBeenCalled()
+})
+
+it("captures the full table settings and rejects a different returned view", async () => {
+  const view = {
+    search: "Office cost",
+    currency: "GBP",
+    direction: "debit",
+    proof: "p3",
+    sort: "amount-desc",
+  }
+  const { fetch, click } = mount(
+    { "X-Loupe-Table-View": JSON.stringify({ ...view, sort: "ledger" }) },
+    view
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Download this table view" })
+  )
+  expect(await screen.findByText(/different filters/)).toBeInTheDocument()
+  expect(
+    JSON.parse(
+      new URL(
+        String(fetch.mock.calls[0][0]),
+        "http://localhost"
+      ).searchParams.get("table_view")!
+    )
+  ).toEqual(view)
+  expect(click).not.toHaveBeenCalled()
+})
+it("downloads a matching recorded table view", async () => {
+  const view = {
+    search: "Office cost",
+    currency: "GBP",
+    direction: "debit",
+    proof: "p3",
+    sort: "amount-desc",
+  }
+  const { click } = mount({ "X-Loupe-Table-View": JSON.stringify(view) }, view)
+  fireEvent.click(
+    screen.getByRole("button", { name: "Download this table view" })
+  )
+  expect(await screen.findByText(/Download started/)).toBeInTheDocument()
+  expect(click).toHaveBeenCalledTimes(1)
 })

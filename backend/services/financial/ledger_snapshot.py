@@ -78,7 +78,7 @@ def _capture_history(session, document, *, case_id):
     return document
 
 
-def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None):
+def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None):
     """Own a fresh PostgreSQL repeatable-read read-only transaction for both reads."""
     from datetime import datetime, timezone
     from sqlalchemy.engine import Engine
@@ -98,6 +98,9 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
             with Session(bind=connection,autoflush=False) as session:
                 snapshot=capture_ledger_snapshot(session,case_id=case_id,account_id=account_id,start_date=start_date,end_date=end_date)
                 document=_capture_history(session,json.loads(snapshot.content),case_id=case_id)
+                if table_view is not None:
+                    from services.financial.ledger_table_view import capture_table_view
+                    document['table_view'] = capture_table_view(document['ledger'], table_view)
                 if include_source_files:
                     from services.financial.export_sources import capture_export_sources
                     source_files = capture_export_sources(session,document,case_id=case_id,resolve_path=resolve_path)
@@ -222,6 +225,18 @@ def render_ledger_report(snapshot):
             details('Source reference and recorded ingestion digest', reading['source']),
             details('Original captured row, dates and source locator', row),
             details('Preserved transaction provenance', reading['provenance']), '</article>']
+    if document.get('table_view') is not None:
+        view = document['table_view']
+        indexed = {reading['row']['key']: reading['row'] for reading in ledger['readings']}
+        parts += ['<h2>Exported table view</h2>', '<p>' + text(view['limitation']) + '</p>',
+            table(['Search', 'Currency', 'Direction', 'Proof class', 'Display order', 'Matching rows'], [[
+                view['filters']['search'] or 'None', view['filters']['currency'] or 'All',
+                view['filters']['direction'] or 'Both', view['filters']['proof'] or 'All',
+                view['filters']['sort'], view['matching_rows']]]),
+            table(['Position', 'Ordering date', 'Description', 'Direction', 'Amount', 'Proof class', 'Source reference'], [[
+                index + 1, indexed[key]['ordering_date'], indexed[key]['description'], indexed[key]['direction'],
+                money_display(indexed[key]['amount_minor'], indexed[key]['currency']), indexed[key]['proof_class'],
+                indexed[key]['ref_id']] for index, key in enumerate(view['row_ids'])])]
     parts += ['<h2>Relevant recorded decisions</h2>', '<p>' + text(document.get('decision_order', 'Decision history has not been captured.')) + '</p>']
     for decision in document.get('decisions', []):
         parts += ['<article><h3>' + text(decision['decision']) + '</h3>',

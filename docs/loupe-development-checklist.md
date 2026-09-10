@@ -155,6 +155,7 @@ feature below is complete at the start of this window.
    - [x] Connect comparisons between financial records and statements or claims about payments. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
 
 8. **Produce traceable reports and exports — partial**
+   - [x] Reproducible table-view export captures search, currency, direction, proof filter and deterministic row order across every matching page, alongside the full account/date/history snapshot. Real-PDF one-row61.62USD search verified against all3captured readings and JSON/HTML/PDF hashes; exact scope echoed to browser.
    - [x] Optional paginated PDF derived from the same captured ledger, with independent manifest hash; real-statement exact text and five-page layout verified. Full raw values retained in HTML/JSON. Browser download verification passed.
    - [x] Optional original-source bundle with fresh byte verification, source manifest, case ownership checks and whole-bundle limits; both supplied PDFs independently verified unchanged (5eeda00). Complete referenced files may extend beyond ledger filters.
    - [x] Include source-file PDF mappings/originals, review chains and finalization receipts in schema3 snapshot and readable report; separate review/adjudication counts.50backend/9frontend tests and real-sample hash/content verification pass. Original PDF bytes remain outside bundle.

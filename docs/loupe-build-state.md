@@ -53,6 +53,26 @@ classes;23focused backend and12UI tests pass. Multiple-claim working-population 
 downloaded scenario hashes and clearing results when assumptions change. No full-feature completion claim. Continue through remaining
 PDF extraction, review persistence, cross-case duplicates, tracing and reporting.
 
+### Reproducible ledger table export — 10 September, about06:57 Dublin
+
+d770f805 saves printed incoming/outgoing controls locally. No push. Added a table
+view inside the captured JSON/HTML/PDF export: exact search/currency/direction/proof
+filters, deterministic display order (ordering date, source row, UUID tie-break),
+all matching row IDs across table pages. Full applied account/date snapshot and
+history retained, with explicit wording that main totals describe that full scope.
+Browser refuses a different view echo; amount sorting refuses mixed currencies.
+Table export controls compact, separate from main snapshot download. CORS exposes
+scope verification headers for separately hosted configured frontends.
+
+Read-only real-statement casee8ecc646-7b29-49d6-b64d-7086a9a14ad4:searchTSP*COPPER,
+USD/debit/P3/largest-first gives1row61.62USD; export retains all3source readings.
+JSON/HTML/PDF hashes verified;6page PDF table view visually checked onpage3.
+Reports data/local-runtime/ledger-table-view-{check,export-check}.json and
+ledger-table-view-export.zip.37initial/61export-query backend tests,30UI tests,
+TypeScript/scoped lint pass. Current backend89999 (/tmp/loupe-table-view-runtime.out);
+restart required to include the final CORS header exposure. This is an intermediate
+checkpoint; continue full scope, no push/deploy.
+
 ### Printed incoming/outgoing controls — 10 September, about06:45 Dublin
 
 b358fbe1 saves automatic PDF columns and split-payment screening locally. No push.
