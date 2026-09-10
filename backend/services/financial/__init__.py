@@ -1993,3 +1993,6 @@ __all__ += ["capture_financial_audit_chain", "verify_financial_audit_chain"]
 
 from services.financial.pdf_processing_manifest import validate_pdf_processing_manifest
 __all__ += ["validate_pdf_processing_manifest"]
+
+from services.financial.export_audit import record_prepared_export
+__all__ += ["record_prepared_export"]

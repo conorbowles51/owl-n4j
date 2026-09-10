@@ -15,9 +15,15 @@ record, not a reconstruction of events that occurred before installation.
 | Evidence file registration | Insert, update and delete |
 | Workspace entries and links | Insert, update and delete |
 | Workspace revisions and events | Insert |
+| Prepared document text and table geometry | Insert, update and delete |
+| Server ledger ZIP and tracing support ZIP | Export prepared |
 
 The additional state targets begin at migration `20260910_audit_state_changes`;
-they are not backfilled. The captured policy is retained in new event payloads.
+they are not backfilled. Source replacement and export preparation begin at
+`20260910_audit_source_exports`. The captured policy is retained in new event payloads.
+Text bodies and geometry payloads are represented by hashes; they are not copied
+into audit exports. Cascading file deletion retains the child-source events.
+Truncation of tracked tables is refused because it would bypass row history.
 In-place case ownership changes on tracked rows are refused so a before-state
 cannot silently be written into a different case's chain.
 
@@ -61,8 +67,19 @@ at capture time. A head copied from the same untrusted archive adds no independe
 assurance. Verification checks every declared ZIP member first. Outputs must be new
 files. Nothing is sent to a provider or written to the case database.
 
-This is not yet the full audit spine in the original specification. Full source-preparation replacement history, graph/entity merges, export events,
-and external RFC3161 timestamp anchoring are not covered. Internally consistent
+Server ZIP preparation records its exact bytes, scope and authenticated requester
+before the response is returned. If this fails, the archive is withheld. The event
+is `EXPORT_PREPARED`, with `prepared_not_delivery_confirmed`: it cannot establish
+that someone received or saved the download. `X-Loupe-Export-Id`,
+`X-Loupe-Export-Event-Sha256` and `X-Loupe-Export-Event-Sequence` identify the receipt.
+It follows the snapshot capture and therefore appears in subsequent audit history,
+not inside the archive that caused it. These receipt headers are not a checkpoint
+for that archive's earlier chain head. Offline artifact generation does not append
+a server event.
+
+This is not yet the full audit spine in the original specification. Graph/entity
+merges, historical custody and external RFC3161 timestamp anchoring remain outside
+this coverage. Internally consistent
 hashes alone cannot detect replacement of the whole chain or removal of its tail.
 Older decisions/reviews retain their existing history separately and are not
 retroactively authenticated by this mechanism.

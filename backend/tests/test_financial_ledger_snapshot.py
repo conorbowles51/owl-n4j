@@ -107,12 +107,14 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         from services.financial.ledger_snapshot import LedgerExport
         from fastapi import HTTPException
         case_id=self.case.id
-        with patch.object(router,'capture_ledger_export',return_value=LedgerExport(self.capture(),'{}')) as call:
+        with patch.object(router,'capture_ledger_export',return_value=LedgerExport(self.capture(),'{}')) as call, patch.object(router,'record_prepared_export',return_value=dict(export_id='synthetic',entry_sha256='a'*64,sequence=1)) as audited:
             response=router.download_ledger_export(case_id,None,None,None,self.db)
             call.assert_called_once_with(self.db.get_bind(),case_id=case_id,account_id=None,start_date=None,end_date=None,privilege_marking="unmarked",generated_by=None)
             self.assertEqual(response.headers['content-type'],'application/zip')
             self.assertEqual(response.headers['x-loupe-case-id'],str(case_id))
             self.assertEqual(response.headers['cache-control'],'no-store')
+            self.assertEqual(response.headers['x-loupe-export-event-sha256'],'a'*64)
+            self.assertEqual(audited.call_args.kwargs['content'],response.body)
         with patch.object(router,'capture_ledger_export',side_effect=RuntimeError('private')):
             with self.assertRaises(HTTPException) as caught:router.download_ledger_export(case_id,None,None,None,self.db)
             self.assertNotIn('private',caught.exception.detail)
@@ -157,8 +159,18 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         from services.financial.ledger_snapshot import LedgerExport
         from types import SimpleNamespace
         user=SimpleNamespace(id=self.user.id,name='Recorded exporter',email='recorded@example.test')
-        with patch.object(router,'capture_ledger_export',return_value=LedgerExport(self.capture(),'{}')) as call:
+        with patch.object(router,'capture_ledger_export',return_value=LedgerExport(self.capture(),'{}')) as call, patch.object(router,'record_prepared_export',return_value=dict(export_id='synthetic',entry_sha256='a'*64,sequence=1)) as audited:
             response=router.download_ledger_export(self.case.id,None,None,None,self.db,privilege_marking='confidential',current_user=user)
         self.assertEqual(call.call_args.kwargs['generated_by']['id'],str(user.id))
         self.assertEqual(call.call_args.kwargs['privilege_marking'],'confidential')
         self.assertEqual(response.headers['x-loupe-privilege-marking'],'confidential')
+
+    def test_ledger_audit_failure_withholds_prepared_archive(self):
+        from routers import financial_ledger as router
+        from services.financial.ledger_snapshot import LedgerExport
+        from fastapi import HTTPException
+        with patch.object(router,'capture_ledger_export',return_value=LedgerExport(self.capture(),'{}')),patch.object(router,'record_prepared_export',side_effect=RuntimeError('private audit failure')):
+            with self.assertRaises(HTTPException) as caught:
+                router.download_ledger_export(self.case.id,None,None,None,self.db)
+        self.assertEqual(caught.exception.status_code,500)
+        self.assertNotIn('private',caught.exception.detail)

@@ -45,6 +45,7 @@ from services.financial.candidate_statement_scopes import StatementScopesRequest
 from routers.evidence import _resolve_stored_path
 from services.financial.ledger_snapshot import capture_ledger_export, ledger_export_archive
 from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
+from services.financial.export_audit import record_prepared_export
 from services.financial.statement_balances import capture_statement_running_balances
 from services.financial.statement_checks import capture_statement_checks, StatementCheckError
 from services.financial.coverage_query import requested_statement_coverage, CoverageQueryError, list_statement_coverage
@@ -191,7 +192,17 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
         exported=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id,
             start_date=start_date,end_date=end_date,privilege_marking=privilege_marking,
             generated_by=dict(id=str(current_user.id),name=current_user.name,email=current_user.email) if getattr(current_user,'id',None) else None,**source_options,**view_options)
-        return Response(content=ledger_export_archive(exported, **({"include_pdf":True} if include_pdf else {})),media_type="application/zip",headers={
+        content=ledger_export_archive(exported, **({"include_pdf":True} if include_pdf else {}))
+        receipt=record_prepared_export(db.get_bind(),case_id=case_id,kind='ledger_exports',content=content,
+            actor=dict(id=str(current_user.id),name=current_user.name,email=current_user.email) if getattr(current_user,'id',None) else None,
+            scope=dict(snapshot_sha256=exported.snapshot.sha256,account_id=str(account_id) if account_id else None,
+                start_date=start_date.isoformat() if start_date else None,end_date=end_date.isoformat() if end_date else None,
+                privilege_marking=privilege_marking,include_source_files=include_source_files,include_pdf=include_pdf,
+                include_case_financial_history=include_case_financial_history,table_view=view_options.get('table_view')))
+        return Response(content=content,media_type="application/zip",headers={
+            "X-Loupe-Export-Id":receipt['export_id'],
+            "X-Loupe-Export-Event-Sha256":receipt['entry_sha256'],
+            "X-Loupe-Export-Event-Sequence":str(receipt['sequence']),
             "Content-Disposition": 'attachment; filename="loupe-ledger-export.zip"',
             "X-Loupe-Case-Review-History": "true" if include_case_financial_history else "false",
             "X-Loupe-PDF-Report": "true" if include_pdf else "false",
@@ -233,7 +244,7 @@ async def compare_saved_ledger_exports(case_id: UUID = Query(...), before: Uploa
 
 
 @router.post('/trace-support-export')
-def download_trace_support(body: TraceSupportDownload, case_id: UUID = Query(...), current_user=Depends(get_current_db_user)):
+def download_trace_support(body: TraceSupportDownload, case_id: UUID = Query(...), current_user=Depends(get_current_db_user), db: Session=Depends(get_db)):
     """Recompute submitted captures and package support under the case-view bar."""
     import hashlib
     from datetime import datetime, timezone
@@ -244,7 +255,14 @@ def download_trace_support(body: TraceSupportDownload, case_id: UUID = Query(...
                 generated_by=dict(id=str(current_user.id), name=current_user.name, email=current_user.email),
                 privilege_marking=body.privilege_marking,
                 basis='Authenticated bundle preparation from submitted historical captures; not authentication of their original authorship or a legal privilege determination.'))
+        receipt=record_prepared_export(db.get_bind(),case_id=case_id,kind='trace_support_exports',content=content,
+            actor=dict(id=str(current_user.id),name=current_user.name,email=current_user.email),
+            scope=dict(scenario_sha256=[hashlib.sha256(value.encode('utf-8')).hexdigest() for value in body.scenarios],
+                privilege_marking=body.privilege_marking))
         return Response(content=content, media_type='application/zip', headers={
+            'X-Loupe-Export-Id':receipt['export_id'],
+            'X-Loupe-Export-Event-Sha256':receipt['entry_sha256'],
+            'X-Loupe-Export-Event-Sequence':str(receipt['sequence']),
             'Content-Disposition':'attachment; filename="loupe-tracing-audit.zip"',
             'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff',
             'X-Loupe-Case-Id':str(case_id), 'X-Loupe-Privilege-Marking':body.privilege_marking,

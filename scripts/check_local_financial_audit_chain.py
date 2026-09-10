@@ -23,6 +23,8 @@ spec = importlib.util.spec_from_file_location('audit_migration',path)
 migration = importlib.util.module_from_spec(spec); spec.loader.exec_module(migration)
 state_spec=importlib.util.spec_from_file_location('audit_states',path.with_name('20260910_audit_state_changes.py'))
 state_migration=importlib.util.module_from_spec(state_spec);state_spec.loader.exec_module(state_migration)
+source_spec=importlib.util.spec_from_file_location('audit_sources',path.with_name('20260910_audit_source_exports.py'))
+source_migration=importlib.util.module_from_spec(source_spec);source_spec.loader.exec_module(source_migration)
 
 
 def configure(connection):
@@ -46,8 +48,10 @@ try:
               actor jsonb, actor_name text, actor_email text, actor_user_id uuid, outcome_actor jsonb,
               reason text, status text, candidate_id uuid, config jsonb, error text, notes text, started_by_user_id uuid, started_by_email text, stored_path text, metadata jsonb, last_error text, last_processed_profile_snapshot jsonb)'''))
         connection.execute(text('CREATE TABLE financial_extraction_candidates (id uuid PRIMARY KEY, mapping_id uuid NOT NULL)'))
+        connection.execute(text('CREATE TABLE evidence_document_texts (evidence_file_id uuid PRIMARY KEY REFERENCES evidence_files(id) ON DELETE CASCADE, content text, content_sha256 text, processing_manifest jsonb)'))
+        connection.execute(text('CREATE TABLE evidence_table_geometry (evidence_file_id uuid REFERENCES evidence_files(id) ON DELETE CASCADE, page_number integer, payload jsonb, PRIMARY KEY(evidence_file_id,page_number))'))
         with Operations.context(MigrationContext.configure(connection)):
-            migration.upgrade();state_migration.upgrade()
+            migration.upgrade();state_migration.upgrade();source_migration.upgrade()
     with engine.begin() as connection:
         configure(connection)
         with Session(bind=connection) as db:
@@ -73,7 +77,7 @@ try:
             assert values[2]['case_id']==str(case) and values[2]['actor_basis']=='not_recorded'
             assert values[5]['actor']['name']=='Synthetic completer'
             assert values[7]['before']['status']=='pending' and values[7]['after']['status']=='completed'
-    for sql in ('UPDATE financial_audit_events SET payload_text=payload_text','DELETE FROM financial_audit_events','TRUNCATE financial_audit_events',
+    for sql in ('UPDATE financial_audit_events SET payload_text=payload_text','DELETE FROM financial_audit_events','TRUNCATE financial_audit_events','TRUNCATE financial_transactions','TRUNCATE evidence_files CASCADE',
                 "INSERT INTO financial_audit_events VALUES (:case,999,repeat('0',64),repeat('0',64),'{}')"):
         try:
             with engine.begin() as connection:
@@ -155,6 +159,45 @@ try:
             connection.execute(text('UPDATE financial_transactions SET case_id=:case WHERE id=:id'),dict(case=unrelated_case,id=identity))
     except DBAPIError:pass
     else:raise AssertionError('In-place case ownership change bypassed the audit boundary')
+    source_case=uuid4()
+    with engine.begin() as connection:
+        configure(connection)
+        source_file=insert(connection,'evidence_files',scope=source_case)
+        connection.execute(text("INSERT INTO evidence_document_texts VALUES (:file,'PRIVATE_SOURCE_TEXT','recorded-hash',NULL)"),dict(file=source_file))
+        connection.execute(text("UPDATE evidence_document_texts SET content='REPLACEMENT_SOURCE_TEXT' WHERE evidence_file_id=:file"),dict(file=source_file))
+        connection.execute(text("INSERT INTO evidence_table_geometry VALUES (:file,1,'[]'::jsonb)"),dict(file=source_file))
+        connection.execute(text("UPDATE evidence_table_geometry SET payload=CAST(:payload AS jsonb) WHERE evidence_file_id=:file"),dict(file=source_file,payload=json.dumps([{'synthetic':1}])))
+        connection.execute(text('DELETE FROM evidence_files WHERE id=:file'),dict(file=source_file))
+        with Session(bind=connection) as db:
+            captured=capture_financial_audit_chain(db,case_id=source_case)
+            assert captured['verification']['event_count']==8
+            assert 'PRIVATE_SOURCE_TEXT' not in str(captured) and 'REPLACEMENT_SOURCE_TEXT' not in str(captured)
+            events=[json.loads(entry['payload_text']) for entry in captured['entries']]
+            assert {e['source_table'] for e in events[-3:]}=={'evidence_files','evidence_document_texts','evidence_table_geometry'}
+            assert all(e['operation']=='DELETE' and e['after'] is None for e in events[-3:])
+            import hashlib
+            assert events[1]['after']['omitted_content_sha256']==hashlib.sha256(b'PRIVATE_SOURCE_TEXT').hexdigest()
+    from services.financial.export_audit import record_prepared_export
+    scoped_engine=create_engine('postgresql+psycopg://loupe_local:loupe_local_dev@127.0.0.1:55434/loupe_local',connect_args={'options':f'-csearch_path={schema}'})
+    export_case=uuid4()
+    try:
+        receipt=record_prepared_export(scoped_engine,case_id=export_case,kind='ledger_exports',content=b'SYNTHETIC archive bytes',scope={'snapshot_sha256':'a'*64},actor={'id':str(user.id),'name':user.name,'email':user.email})
+        with Session(scoped_engine) as db:
+            captured=capture_financial_audit_chain(db,case_id=export_case)
+            assert captured['verification']['event_count']==1 and captured['verification']['head_sha256']==receipt['entry_sha256']
+            event=json.loads(captured['entries'][0]['payload_text'])
+            assert event['source_id']==receipt['export_id']
+            assert event['after']['artifact_sha256']==hashlib.sha256(b'SYNTHETIC archive bytes').hexdigest()
+            assert event['after']['delivery_status']=='prepared_not_delivery_confirmed'
+        with scoped_engine.begin() as connection:
+            connection.execute(text("ALTER TABLE financial_audit_events ADD CONSTRAINT export_failure CHECK (payload_text NOT LIKE '%SYNTHETIC_EXPORT_FAIL%')"))
+        try:
+            record_prepared_export(scoped_engine,case_id=export_case,kind='trace_support_exports',content=b'SYNTHETIC archive bytes',scope={},actor={'id':str(user.id),'name':'SYNTHETIC_EXPORT_FAIL','email':user.email})
+        except DBAPIError:pass
+        else:raise AssertionError('Audit failure did not refuse prepared export')
+        with Session(scoped_engine) as db:assert capture_financial_audit_chain(db,case_id=export_case)['verification']['event_count']==1
+    finally:scoped_engine.dispose()
+    print('PASS: prepared text and geometry replacements and cascading deletion; actual omitted-content hashes; prepared-export receipt bytes/actor/head and injected failure rollback.')
     print('PASS: ten additional state targets,26events; deletion before-state; private evidence fields excluded; authorized actor retained across commits, scoped to its case and cleared from pooled connections; in-place case ownership change refused.')
     print('PASS: all six trigger targets; exact hash verification; source-derived actor and before/after; no-op exclusion; update/delete/truncate/bad append refused; atomic rollback and injected-failure rollback; two concurrent writers, twenty ordered events; case isolation.')
 finally:

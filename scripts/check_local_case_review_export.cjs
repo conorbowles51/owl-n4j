@@ -21,10 +21,13 @@ const {chromium}=require(path.join(root,'frontend_v2/node_modules/playwright'));
   const response=page.waitForResponse(r=>r.url().includes('/ledger-export?'));
   const download=page.waitForEvent('download');await region.getByRole('button',{name:'Download ledger snapshot',exact:true}).click();
   const received=await response;if(!received.ok()||received.headers()['x-loupe-case-review-history']!=='true')throw Error('Wider history scope was not returned');
+  const headers=received.headers();
+  if(!/^[a-f0-9]{64}$/.test(headers['x-loupe-export-event-sha256']||'') || !/^[1-9][0-9]*$/.test(headers['x-loupe-export-event-sequence']||''))throw Error('Prepared export audit receipt is missing');
+  fs.writeFileSync('/tmp/loupe-case-review-export-receipt.json',JSON.stringify({case_id:caseId,export_id:headers['x-loupe-export-id'],sequence:Number(headers['x-loupe-export-event-sequence']),entry_sha256:headers['x-loupe-export-event-sha256']}));
   await(await download).saveAs('/tmp/loupe-case-review-export.zip');
   await page.getByText('Download started: ledger snapshot and manifest.',{exact:true}).waitFor();
   await region.screenshot({path:'/tmp/loupe-case-review-controls.png'});
   if(writes)throw Error('Unexpected financial write');
-  console.log(JSON.stringify({case_id:caseId,wider_history_download:true,financial_writes:0}));
+  console.log(JSON.stringify({case_id:caseId,wider_history_download:true,prepared_export_audit_recorded:true,financial_writes:0}));
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -1,3 +1,34 @@
+## Prepared source and export audit coverage — 10 September
+
+Migration20260910_audit_source_exports factors a shared database append operation,
+chains text/geometry inserts, replacements and deletions, and retains cascading
+child-deletion history after an evidence-file BEFORE DELETE event. Text bodies and
+geometry payloads are hashed rather than copied. Truncation of audited tables is
+refused because it would bypass row history. Database ownership remains an explicit
+limit; this is not externally anchored history.
+
+Server ledger and tracing support ZIPs now append an authenticated EXPORT_PREPARED
+event with exact archive digest/size and scope before responding. Failure to record
+it returns an error instead of the archive. Delivery is explicitly unconfirmed.
+The receipt follows the captured snapshot, so it appears in subsequent history;
+headers expose its ID/hash/sequence. CORS now exposes these and the other integrity /
+marking/history headers used by the client.
+
+4336financial backend tests and128live permissions pass. Disposable PostgreSQL
+coverage includes source replacement, cascade deletion, truncate refusal, actor
+isolation, exact prepared-export receipt and injected-failure rollback. Actual
+engine preparation on the rollback-only synthetic fixture retains source and audit
+atomicity through failures/cancellation/retry. Two pending real-PDF browser exports
+pass; receipts match the verified database chain, requester and exact ZIP bytes.
+The later export includes the earlier receipt.4-page report hashes remain valid.
+
+Existing ledger/source records remain unchanged; intentional export audit events
+were appended to local cases. No provider or push. Backend39628 at
+/tmp/loupe-source-export-audit-runtime.out includes the new receipts; engine62038 /
+worker73588 unchanged. Migration applied. Remaining original-specification work
+includes graph/entity merge history, external timestamp anchoring, broader automatic
+extraction and independent corpus/provider acceptance. Continue remaining development.
+
 ## Expanded state audit and authenticated attribution — 10 September
 
 Migration20260910_audit_state_changes extends the prospective chain to ledger

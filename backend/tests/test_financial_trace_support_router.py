@@ -1,7 +1,7 @@
 import hashlib
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from uuid import uuid4
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -13,8 +13,10 @@ class TraceSupportRouterTests(unittest.TestCase):
     def test_case_and_authenticated_actor_bound_to_download(self):
         case = uuid4()
         user = SimpleNamespace(id=uuid4(), name='Local tester', email='fixture@example.test')
-        with patch('services.financial.trace_support_archive.build_trace_support_archive', return_value=b'archive') as build:
-            response = download_trace_support(TraceSupportDownload(scenarios=['original'], privilege_marking='confidential'), case_id=case, current_user=user)
+        with patch('services.financial.trace_support_archive.build_trace_support_archive', return_value=b'archive') as build, patch('routers.financial_ledger.record_prepared_export',return_value=dict(export_id='synthetic',entry_sha256='a'*64,sequence=1)) as audited:
+            response = download_trace_support(TraceSupportDownload(scenarios=['original'], privilege_marking='confidential'), case_id=case, current_user=user,db=MagicMock())
+        self.assertEqual(audited.call_args.kwargs['content'],response.body)
+        self.assertEqual(response.headers['x-loupe-export-event-sha256'],'a'*64)
         args = build.call_args.kwargs
         self.assertEqual(args['expected_case_id'], case)
         self.assertEqual(args['preparation']['generated_by']['id'], str(user.id))
@@ -31,3 +33,11 @@ class TraceSupportRouterTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 422)
         for fields in ({'scenarios':[]}, {'scenarios':['x'], 'generated_by':'spoof'}, {'scenarios':['x'], 'privilege_marking':'arbitrary'}):
             with self.assertRaises(ValidationError): TraceSupportDownload.model_validate(fields)
+
+    def test_audit_failure_withholds_the_archive(self):
+        user=SimpleNamespace(id=uuid4(),name='Synthetic',email='synthetic@example.invalid')
+        with patch('services.financial.trace_support_archive.build_trace_support_archive',return_value=b'archive'),patch('routers.financial_ledger.record_prepared_export',side_effect=RuntimeError('private database failure')):
+            with self.assertRaises(HTTPException) as caught:
+                download_trace_support(TraceSupportDownload(scenarios=['synthetic']),case_id=uuid4(),current_user=user,db=MagicMock())
+        self.assertEqual(caught.exception.status_code,500)
+        self.assertNotIn('private',caught.exception.detail)

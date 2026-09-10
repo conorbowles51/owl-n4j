@@ -14,8 +14,9 @@ with ZipFile('/tmp/loupe-case-review-export.zip') as archive:
     history = document['case_financial_history']
     reviews = history['pdf_review_history']
     chain = history['audit_chain']
-    assert chain['verification']['event_count'] == 0 and chain['verification']['status'] == 'no_recorded_events'
-    assert chain['entries'] == []  # Older reviews are not backfilled into prospective history.
+    assert chain['verification']['event_count'] == len(chain['entries'])
+    receipt = json.loads(Path('/tmp/loupe-case-review-export-receipt.json').read_text())
+    assert receipt['sequence'] > len(chain['entries'])  # Preparation event follows captured history.
     assert history['case_id'] == document['ledger']['case_id'] == '3db2ae11-da7f-405a-a087-b465bdc9f12d'
     assert manifest['case_financial_history_included'] is True
     assert not document['ledger']['readings'] and not document['pdf_review_history']['candidates']

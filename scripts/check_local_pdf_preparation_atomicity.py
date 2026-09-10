@@ -11,8 +11,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
-from sqlalchemy import select
+from uuid import uuid4, UUID
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'evidence-engine'))
@@ -30,11 +30,14 @@ async def main():
             rows=(await connection.execute(select(model.__table__).where(model.evidence_file_id == FILE))).mappings().all()
             values.append(sorted([dict(row) for row in rows],key=lambda r:str(r.get('id',''))))
         return values
+    async def audit_count(connection):
+        return (await connection.execute(text('SELECT count(*) FROM financial_audit_events WHERE case_id=(SELECT case_id FROM evidence_files WHERE id=:file)'),{'file':UUID(FILE)})).scalar_one()
     checks=[]
     try:
         async with engine.connect() as conn:
             outer=await conn.begin()
             before=await snapshot(conn)
+            audit_before=await audit_count(conn)
             if not before[0] or not before[1]:raise AssertionError('Synthetic source fixture missing')
             job=SimpleNamespace(id=str(uuid4()),source_evidence_file_id=FILE,file_name='synthetic.pdf',file_path='/tmp/unused-synthetic.pdf')
             doc=ExtractedDocument(text='SYNTHETIC atomic replacement',metadata={'file_type':'pdf','table_geometry':{'per_table':[]}})
@@ -52,6 +55,7 @@ async def main():
                         except (RuntimeError, ValueError, asyncio.CancelledError):pass
                         else:raise AssertionError('Expected preparation failure')
                     assert await snapshot(conn)==before, failure+' changed source generation'
+                    assert await audit_count(conn)==audit_before, failure+' left an audit event'
                     assert all(call.args[1]!=JobStatus.COMPLETED for call in update.call_args_list)
                     checks.append(failure+'_preserved_original')
                 with patch('app.pipeline.prepare_pdf_review.async_session',factory), patch('app.pipeline.prepare_pdf_review.extract_text',AsyncMock(return_value=doc)):
@@ -60,12 +64,15 @@ async def main():
                         now=await snapshot(conn)
                         assert now[0][0]['content']==doc.text and not now[1]
                         assert update.call_args.args[1]==JobStatus.COMPLETED
+                assert await audit_count(conn)>audit_before
                 checks.append('successful_retry_replaced_text_and_geometry_together')
+                checks.append('source_and_audit_events_share_transaction_outcome')
                 async with engine.connect() as observer:
                     assert await snapshot(observer)==before
                 checks.append('uncommitted_fixture_invisible_to_other_connections')
             finally:await outer.rollback()
             assert await snapshot(conn)==before
+            assert await audit_count(conn)==audit_before
             checks.append('all_test_changes_rolled_back')
         report={'checks':checks,'persistent_source_changes':0,'ledger_writes':0}
         (ROOT/'data/local-runtime/pdf-preparation-atomicity-check.json').write_text(json.dumps(report,indent=2))
