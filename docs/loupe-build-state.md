@@ -1,3 +1,17 @@
+## Offline audit timestamp tooling — 10 September
+
+Added request preparation and signed-response verification for saved ledger exports.
+The checkpoint binds exact ZIP/snapshot bytes, case identity and recorded chain.
+No network calls or external authority selection. Explicit trust roots, nonce and
+independent data-imprint verification reject swapped request/response pairs.
+
+Real OpenSSL3 synthetic signer acceptance passes; rejects altered checkpoint,
+wrong nonce, swapped query/response, unrelated trust root, truncated signature and
+existing output. Three checkpoint unit checks cover empty-case binding, missing
+history and recomputed summaries. Actual independent timestamp acceptance remains
+open; this is implemented offline tooling, not a claim of external anchoring.
+No existing case writes, provider request or push.
+
 ## Recorded processing and merge/recovery history — 10 September
 
 Migration20260910_audit_graph_jobs adds prospective job, merge-job, graph recovery

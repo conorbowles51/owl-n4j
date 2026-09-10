@@ -99,3 +99,43 @@ concurrency, atomic rollback and mutation
 guards without editing existing cases. The source-bound simulated nomination
 acceptance in `scripts/check_local_pdf_model_nomination_flow.py` additionally checks
 three audit events and rolls back its entire transaction.
+
+
+## Offline timestamp checkpoint support
+
+Prepare a request from an export containing wider case history:
+
+```sh
+data/local-runtime/backend-venv/bin/python scripts/financial_audit_timestamp.py \
+  --openssl /opt/homebrew/opt/openssl@3/bin/openssl prepare saved-ledger.zip \
+  --output new-timestamp-request
+```
+
+The new directory retains `checkpoint.json` and `request.tsq`. The checkpoint binds
+case identity, event count, chain head, snapshot digest and exact ZIP digest. Only
+the opaque imprint and nonce are in the timestamp request. This command does not
+contact a timestamp authority. Retain the original ZIP and request directory.
+
+After obtaining a response from an authority selected through your own trust process:
+
+```sh
+data/local-runtime/backend-venv/bin/python scripts/financial_audit_timestamp.py \
+  --openssl /opt/homebrew/opt/openssl@3/bin/openssl verify saved-ledger.zip \
+  --request new-timestamp-request --response authority-response.tsr \
+  --ca-file trusted-roots.pem --output new-timestamp-verification.json
+```
+
+Optional `--untrusted intermediates.pem` supplies intermediate certificates, not
+additional trusted roots. Verification uses explicit supplied roots and empty
+fallback trust locations. It checks both the original nonce-bearing query and the
+reconstructed checkpoint data. A replacement query/response for different data
+cannot pass merely because its signature is valid. All outputs must be new.
+
+The retained result includes input hashes, OpenSSL version and response details.
+It establishes verification against the supplied trust, not authority independence,
+current revocation status, complete custody or evidence truth. No real external
+response has yet been accepted and no automatic anchoring schedule is configured.
+The repeatable `scripts/check_financial_audit_timestamp.py saved-ledger.zip` uses
+only a temporary synthetic root/signer and deletes its private keys afterward.
+
+Protocol implementation reference: [OpenSSL timestamp utility documentation](https://docs.openssl.org/3.0/man1/openssl-ts/).
