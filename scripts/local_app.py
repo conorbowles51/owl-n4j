@@ -11,8 +11,10 @@ RUNTIME = ROOT / "data" / "local-runtime"
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("service", choices=("migrate", "backend", "engine", "worker", "frontend"))
+    parser.add_argument("service", choices=("migrate", "backend", "engine", "worker", "frontend", "setup", "check"))
+    parser.add_argument("--case-id", help="Case UUID for read-only check mode")
     args = parser.parse_args()
+    if args.case_id and args.service != "check":parser.error("--case-id is only supported with check")
     env = os.environ.copy()
     if os.uname().sysname == "Darwin":
         # Homebrew's PDF libraries are not on macOS's default loader path.
@@ -50,7 +52,10 @@ def main():
         (RUNTIME / name).mkdir(parents=True, exist_ok=True)
     python = str(RUNTIME / "backend-venv" / "bin" / "python")
     cwd = ROOT / "backend"
-    if args.service == "migrate":
+    if args.service in ("setup", "check"):
+        command = [python, str(ROOT / "scripts" / "local_verify.py"), args.service]
+        if args.case_id:command += ["--case-id", args.case_id]
+    elif args.service == "migrate":
         command = [python, "-m", "alembic", "upgrade", "head"]
     elif args.service == "backend":
         command = [python, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "58002"]

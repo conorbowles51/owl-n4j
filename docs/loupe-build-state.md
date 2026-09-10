@@ -1,3 +1,22 @@
+## Repeatable local application checks — 10 September, about08:48Dublin
+
+New local_app.py setup verifies the existing tester or creates it only on an
+empty local database; it creates no case. local_app.py check optionally accepts
+--case-id and uses fixed loopback services with proxy environment disabled.
+It checks frontend/backend/engine, OCR/storage/databases, migration-head parity,
+worker heartbeat and login. With a case it checks eight financial reads and
+compares captured working totals/export hashes. Results are local-check.latest.json;
+failures exit nonzero without printing tokens, response bodies or source data.
+No fixture/review/ledger mutations or external provider calls. Check-only mode
+without a case explicitly does not claim financial workflow validation.
+
+Consolidated docs/loupe-local-testing.md covers both venvs, startup, idempotent
+setup, current real-statement review, safe repeated browser scripts and stopping
+without deleting volumes. Existing local-application.md notes remain as history.
+Actual idempotent setup and all14checks pass for e8ecc646-7b29-49d6-b64d-7086a9a14ad4.
+External model connectivity remains untested; the misleading nonempty-key health
+flag is excluded. No push. Current backend61016 unchanged. Remaining work continues.
+
 ## Cross-account pattern hypotheses — 10 September, about08:44Dublin
 
 Patterns optionally screens two/three candidate transfers for an equal-value

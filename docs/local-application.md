@@ -1,5 +1,10 @@
 # Local application testing
 
+For the consolidated current startup and repeatable read-only checks, use
+[Loupe local testing](loupe-local-testing.md). The detailed segment notes below
+are retained history; some describe earlier capabilities or scripts that write
+fixtures and must not be blindly rerun.
+
 This stack is for synthetic data. It uses separate Docker volumes and loopback
 ports, leaving the existing Owl containers and evidence directories untouched.
 The backend and evidence engine use separate Python 3.12 virtual environments.

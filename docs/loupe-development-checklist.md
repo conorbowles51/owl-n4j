@@ -194,7 +194,7 @@ feature below is complete at the start of this window.
     - [x] Exercise the full journey from document upload through review, analysis and export. Both real PDFs and the complete first printed statement are recorded above; generated printed-controls journey adds six source controls, correction propagation and preserved audit exports.
     - [ ] Validate external AI processing that has not yet been tested.
     - [ ] Test interrupted processing, retries, permissions and larger document sets across the completed workflow.
-    - [ ] Finish repeatable startup and testing instructions for the full isolated workflow.
+    - [x] Consolidated startup/testing guide in docs/loupe-local-testing.md, idempotent local tester setup and14repeatable service/migration/financial-read/export checks. Actual supplied-statement case passes; writer fixtures are explicitly separate and external AI remains unvalidated.
     - [x] Foundation: separate persistent backend/engine venvs, isolated services and synthetic HTTP/PostgreSQL/UI checks. Setup and repeatable partial-workflow scripts are documented in docs/local-application.md.
 
 ## Completion record for this window
