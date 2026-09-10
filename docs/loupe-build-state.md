@@ -1,3 +1,20 @@
+## Explicit retained timestamp submission — 10 September
+
+Added submit_financial_audit_timestamp and CLI submit command. It generates a
+request from a verified export, parses/retains caller-supplied trust files, sends
+only the digest request, bounds response/time and independently verifies the reply.
+No redirects/environment proxies/automatic retries. The journal retains uncertain
+submission state without claiming a successful anchor. Endpoint query parameters
+are not written in plaintext; credentials in URLs are refused.
+
+Real OpenSSL synthetic-authority checks now also exercise the actual submission
+function through an in-memory HTTP transport: signature/nonce/imprint verification,
+request-only transmission, exact retained roots, failed-delivery journal and no
+false success output. Existing wrong-nonce/imprint/trust/signature refusals still
+pass.11focused package/checkpoint tests pass. No additional public TSA request,
+actual case upload, provider AI call or push. Production periodic anchoring remains
+unconfigured. Continue with the original structured custody/intake coverage gap.
+
 ## Real public timestamp interoperability — 10 September
 
 One70-byte synthetic-only RFC3161 request to DigiCert returned6008bytes. Existing

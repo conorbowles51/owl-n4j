@@ -108,3 +108,67 @@ def verify_financial_audit_timestamp_response(archive, request_directory, respon
         limitation='Offline signature, nonce and checkpoint verification against supplied roots only. '
         'This does not establish authority independence, current revocation status, complete historical custody '
         'or the truth of case evidence. Retain the original archive, request, response and trust certificates.')
+
+
+def submit_financial_audit_timestamp(archive, output, *, tsa_url, ca_file, openssl='openssl', untrusted=None):
+    """Explicit one-shot submission of a generated imprint request, never an archive.
+
+    Trust files and the response remain beside the exact request for later offline
+    verification. No redirects, environment proxies or automatic retries are used.
+    """
+    from urllib.parse import urlsplit
+    import httpx
+    endpoint = urlsplit(tsa_url)
+    if endpoint.scheme not in ('http', 'https') or not endpoint.hostname or endpoint.username or endpoint.password or endpoint.fragment:
+        raise ValueError('Choose an HTTP(S) timestamp endpoint without embedded credentials or a fragment.')
+    root_bytes = _read(ca_file)
+    intermediate_bytes = _read(untrusted) if untrusted is not None else None
+    output = Path(output)
+    prepare_financial_audit_timestamp_request(archive, output, openssl=openssl)
+    (output/'roots.pem').write_bytes(root_bytes)
+    if intermediate_bytes is not None:
+        (output/'intermediates.pem').write_bytes(intermediate_bytes)
+    journal = dict(schema_version='loupe.financial.timestamp_submission/1', status='request_prepared',
+        endpoint_sha256=hashlib.sha256(tsa_url.encode()).hexdigest(),
+        endpoint_origin=f'{endpoint.scheme}://{endpoint.hostname}',
+        request_sha256=hashlib.sha256(_read(output/'request.tsq')).hexdigest(),
+        limitation='Endpoint query parameters are not recorded in plaintext. Request delivery can be uncertain after a network error; no retry was made automatically.')
+    def save_journal():
+        (output/'submission.json').write_bytes(_json(journal))
+    save_journal()
+    try:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary); _trust_directory(directory)
+            _run(openssl, ['x509','-in',output/'roots.pem','-noout'], directory)
+        query = _read(output/'request.tsq', 8192)
+        journal['status'] = 'submission_started'
+        save_journal()
+        try:
+            with httpx.Client(timeout=20, follow_redirects=False, trust_env=False) as client:
+                with client.stream('POST', tsa_url, content=query,
+                        headers={'Content-Type':'application/timestamp-query','Accept':'application/timestamp-reply'}) as response:
+                    response.raise_for_status()
+                    if response.headers.get('content-type','').split(';')[0] != 'application/timestamp-reply':
+                        raise ValueError('Unexpected timestamp response type.')
+                    chunks = []; size = 0
+                    for chunk in response.iter_bytes():
+                        size += len(chunk)
+                        if size > MAX_RESPONSE_BYTES:
+                            raise ValueError('Timestamp response exceeds its byte limit.')
+                        chunks.append(chunk)
+                    (output/'response.tsr').write_bytes(b''.join(chunks))
+        except httpx.HTTPError:
+            raise ValueError('Timestamp request failed; delivery may be uncertain. No automatic retry was made.') from None
+        journal['status'] = 'response_received_unverified'
+        save_journal()
+        result = verify_financial_audit_timestamp_response(archive, output, output/'response.tsr', output/'roots.pem',
+            openssl=openssl, untrusted=output/'intermediates.pem' if intermediate_bytes is not None else None)
+        result['submission'] = dict(endpoint_sha256=journal['endpoint_sha256'], endpoint_origin=journal['endpoint_origin'])
+        (output/'verification.json').write_bytes(_json(result))
+        journal['status'] = 'verified_against_supplied_trust'
+        save_journal()
+        return result
+    except Exception as error:
+        journal['failure_type'] = type(error).__name__
+        save_journal()
+        raise

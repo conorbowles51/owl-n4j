@@ -8,7 +8,7 @@ import sys
 import tempfile
 os.environ['PYTHON_DOTENV_DISABLED'] = '1'
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from services.financial.audit_timestamp import prepare_financial_audit_timestamp_request, verify_financial_audit_timestamp_response
+from services.financial.audit_timestamp import prepare_financial_audit_timestamp_request, verify_financial_audit_timestamp_response, submit_financial_audit_timestamp
 
 
 def main():
@@ -53,6 +53,40 @@ ess_cert_id_alg=sha256
         run('ts', '-reply', '-config', 'tsa.cnf', '-queryfile', request / 'request.tsq', '-out', 'response.tsr')
         result = verify_financial_audit_timestamp_response(args.archive, request, base / 'response.tsr', base / 'root.pem', openssl=args.openssl)
         assert result['status'] == 'verified_against_supplied_trust'
+        import httpx
+        from unittest.mock import patch
+        posted = []
+        def responder(request):
+            posted.append(request.content)
+            (base / 'posted.tsq').write_bytes(request.content)
+            run('ts', '-reply', '-config', 'tsa.cnf', '-queryfile', base / 'posted.tsq', '-out', 'posted.tsr')
+            return httpx.Response(200, content=(base / 'posted.tsr').read_bytes(), headers={'Content-Type':'application/timestamp-reply'})
+        client = httpx.Client(transport=httpx.MockTransport(responder))
+        with patch('httpx.Client', return_value=client) as factory:
+            submitted = submit_financial_audit_timestamp(args.archive, base / 'submitted',
+                tsa_url='https://tsa.example.test?token=synthetic-secret', ca_file=base / 'root.pem', openssl=args.openssl)
+        factory.assert_called_once_with(timeout=20, follow_redirects=False, trust_env=False)
+        assert len(posted) == 1 and len(posted[0]) < 128
+        assert submitted['status'] == 'verified_against_supplied_trust'
+        assert 'synthetic-secret' not in (base / 'submitted' / 'submission.json').read_text()
+        assert 'synthetic-secret' not in (base / 'submitted' / 'verification.json').read_text()
+        assert (base / 'submitted' / 'roots.pem').read_bytes() == (base / 'root.pem').read_bytes()
+        journal = json.loads((base / 'submitted' / 'submission.json').read_text())
+        assert journal['status'] == 'verified_against_supplied_trust'
+        def unavailable(request):
+            raise httpx.ConnectError('private synthetic-secret', request=request)
+        failed_client = httpx.Client(transport=httpx.MockTransport(unavailable))
+        with patch('httpx.Client', return_value=failed_client):
+            try:
+                submit_financial_audit_timestamp(args.archive, base / 'failed-submission',
+                    tsa_url='https://tsa.example.test?token=synthetic-secret', ca_file=base / 'root.pem', openssl=args.openssl)
+            except ValueError as error:
+                assert 'synthetic-secret' not in str(error)
+            else:
+                raise AssertionError('Failed network submission was accepted')
+        assert not (base / 'failed-submission' / 'verification.json').exists()
+        failed = json.loads((base / 'failed-submission' / 'submission.json').read_text())
+        assert failed['status'] == 'submission_started' and failed['failure_type'] == 'ValueError'
         refused = []
         def reject(name, callback):
             try:
@@ -83,7 +117,7 @@ ess_cert_id_alg=sha256
         response = (base / 'response.tsr').read_bytes()
         (base / 'response.tsr').write_bytes(response[:-20])
         reject('truncated signature', call)
-        print(json.dumps(dict(synthetic_authority_only=True, valid_signature_verified=True, invalid_inputs_refused=refused)))
+        print(json.dumps(dict(synthetic_authority_only=True, valid_signature_verified=True, submission_transport_and_failure_verified=True, invalid_inputs_refused=refused)))
 
 
 if __name__ == '__main__':

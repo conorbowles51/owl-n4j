@@ -2003,3 +2003,6 @@ __all__ += ['prepare_financial_audit_timestamp_request', 'verify_financial_audit
 
 from services.financial.trace_support_archive import verify_trace_support_archive
 __all__ += ['verify_trace_support_archive']
+
+from services.financial.audit_timestamp import submit_financial_audit_timestamp
+__all__ += ['submit_financial_audit_timestamp']

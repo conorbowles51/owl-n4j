@@ -172,3 +172,30 @@ The retained local acceptance artifacts are in
 archive, exact request, signed response, downloaded certificates and verification.
 This tests real service interoperability, not qualified timestamp status, current
 revocation checking, production trust policy or periodic anchoring of case events.
+
+## Explicit submission for a saved ledger export
+
+After selecting an authority and trust roots, the existing timestamp CLI can submit
+one generated request and retain the complete response for offline verification:
+
+```sh
+data/local-runtime/backend-venv/bin/python scripts/financial_audit_timestamp.py \
+  --openssl /opt/homebrew/opt/openssl@3/bin/openssl submit saved-ledger.zip \
+  --tsa-url https://your-selected-authority.example/timestamp \
+  --ca-file selected-trusted-roots.pem --output new-timestamp-submission
+```
+
+Optional `--untrusted intermediates.pem` supplies chain certificates without making
+them trust anchors. Only the generated imprint request is sent, never the archive
+or checkpoint JSON. Roots are retained and parsed before submission. The transport
+has bounded response/time limits, follows no redirects and makes no automatic
+retry. The output journal distinguishes prepared, submission-started, received-but-
+unverified and verified states. A failed or uncertain request does not produce a
+successful verification record. Endpoint query parameters are retained only as a
+URL digest, not plaintext; embedded username/password URLs are refused.
+
+The directory retains the checkpoint, exact request, supplied roots/intermediates,
+received response and verification. Keep the original archive separately. A failed
+attempt may have reached the authority, so inspect its journal before deliberately
+retrying into a new directory. This command enables an explicitly selected operation;
+it does not install a periodic job or choose production trust on your behalf.
