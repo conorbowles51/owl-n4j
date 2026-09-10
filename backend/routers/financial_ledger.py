@@ -248,9 +248,13 @@ async def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Op
 @router.get("/ledger-working-summary")
 async def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
-        db: Session = Depends(get_db)):
+        db: Session = Depends(get_db), include_contributions: bool = False):
     from services.financial.working_totals import working_ledger_summary
     try:
+        if include_contributions:
+            from services.financial.summary_contributions import summary_contributions
+            return summary_contributions(db, case_id=case_id, account_id=account_id,
+                start_date=start_date, end_date=end_date, population='working')
         return working_ledger_summary(db, case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -262,8 +266,12 @@ async def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Opt
 @router.get("/ledger-summary")
 async def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
-        db: Session = Depends(get_db)):
+        db: Session = Depends(get_db), include_contributions: bool = False):
     try:
+        if include_contributions:
+            from services.financial.summary_contributions import summary_contributions
+            return summary_contributions(db, case_id=case_id, account_id=account_id,
+                start_date=start_date, end_date=end_date, population='verified')
         return ledger_summary(db, case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

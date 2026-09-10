@@ -1,3 +1,9 @@
+import { useState } from "react"
+import { SummaryContributions } from "./SummaryContributions"
+import {
+  summaryContribution,
+  validateSummaryContributions,
+} from "../lib/summary-contributions"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
@@ -23,6 +29,7 @@ const common = z.object({
   max_rows: count.positive(),
   applied: z.literal(false),
   limitation: z.string(),
+  contributions: z.array(summaryContribution).optional(),
   population: z.literal("working").optional(),
   outside_verified_rows: count.nullable().optional(),
 })
@@ -70,6 +77,19 @@ export function LedgerSummaryPanel({
   params: LedgerQueryParams
   population?: "verified" | "working"
 }) {
+  const [selection, setSelection] = useState<{
+    currency: string
+    direction: "credit" | "debit" | "all"
+    scope: string
+    updatedAt: number
+  } | null>(null)
+  const scope = JSON.stringify([
+    caseId,
+    population,
+    params.accountId,
+    params.startDate,
+    params.endDate,
+  ])
   const working = population === "working"
   const account = params.accountId ?? null,
     start = params.startDate ?? null,
@@ -85,7 +105,7 @@ export function LedgerSummaryPanel({
     ],
     retry: false,
     queryFn: async () => {
-      const search = new URLSearchParams()
+      const search = new URLSearchParams({ include_contributions: "true" })
       if (account) search.set("account_id", account)
       if (start) search.set("start_date", start)
       if (end) search.set("end_date", end)
@@ -129,6 +149,7 @@ export function LedgerSummaryPanel({
           ))
       )
         throw new Error("Summary counts or money disagree.")
+      validateSummaryContributions(data.contributions, data.currencies, working)
       return data
     },
   })
@@ -208,21 +229,73 @@ export function LedgerSummaryPanel({
                     {group.currency} · {group.rows} included postings
                   </p>
                   <div className="grid gap-2 sm:grid-cols-3">
-                    <p className="font-medium tabular-nums">
+                    <button
+                      type="button"
+                      className="text-left font-medium tabular-nums enabled:underline enabled:underline-offset-4"
+                      disabled={!query.data.contributions}
+                      aria-label={`Credits: ${correctionMoney(group.credits_minor, group.currency)}; show contributing readings`}
+                      onClick={() =>
+                        setSelection({
+                          currency: group.currency,
+                          direction: "credit",
+                          scope,
+                          updatedAt: query.dataUpdatedAt,
+                        })
+                      }
+                    >
                       Credits:{" "}
                       {correctionMoney(group.credits_minor, group.currency)}
-                    </p>
-                    <p className="font-medium tabular-nums">
+                    </button>
+                    <button
+                      type="button"
+                      className="text-left font-medium tabular-nums enabled:underline enabled:underline-offset-4"
+                      disabled={!query.data.contributions}
+                      aria-label={`Debits: ${correctionMoney(group.debits_minor, group.currency)}; show contributing readings`}
+                      onClick={() =>
+                        setSelection({
+                          currency: group.currency,
+                          direction: "debit",
+                          scope,
+                          updatedAt: query.dataUpdatedAt,
+                        })
+                      }
+                    >
                       Debits:{" "}
                       {correctionMoney(group.debits_minor, group.currency)}
-                    </p>
-                    <p className="font-medium tabular-nums">
+                    </button>
+                    <button
+                      type="button"
+                      className="text-left font-medium tabular-nums enabled:underline enabled:underline-offset-4"
+                      disabled={!query.data.contributions}
+                      aria-label={`Net postings: ${correctionMoney(group.net_minor, group.currency)}; show contributing readings`}
+                      onClick={() =>
+                        setSelection({
+                          currency: group.currency,
+                          direction: "all",
+                          scope,
+                          updatedAt: query.dataUpdatedAt,
+                        })
+                      }
+                    >
                       Net postings:{" "}
                       {correctionMoney(group.net_minor, group.currency)}
-                    </p>
+                    </button>
                   </div>
                 </div>
               ))}
+              {selection &&
+                selection.scope === scope &&
+                selection.updatedAt === query.dataUpdatedAt &&
+                query.data.contributions && (
+                  <SummaryContributions
+                    key={JSON.stringify(selection)}
+                    caseId={caseId}
+                    currency={selection.currency}
+                    direction={selection.direction}
+                    rows={query.data.contributions}
+                    onClose={() => setSelection(null)}
+                  />
+                )}
               <details>
                 <summary>Excluded rows ({query.data.excluded_rows})</summary>
                 <p>

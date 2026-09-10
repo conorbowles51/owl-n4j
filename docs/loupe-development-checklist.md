@@ -145,6 +145,7 @@ feature below is complete at the start of this window.
    - [x] Prevent older extracted graph values from being counted alongside reviewed transactions. Documentary views use captured ledger populations; graph intelligence is an explicit separate mode. Corrected/superseded rows were excluded from current graph and totals in browser acceptance.
 
 6. **Show missing periods and incomplete evidence — complete**
+   - [x] Currency summary credits/debits/net open their exact captured contributing rows, with25-row pages and original PDF navigation. Working/verified scope, integer sums and source classes checked; real104-reading browser journey and refresh clearing pass without writes.
    - [x] Identify gaps and overlaps between recorded account statements with eligible printed bounds (8b6c9ad). Enclosing exports are included; oversized accounts are explicitly unavailable.
    - [x] Show which accounts and dates the recorded statement bounds cover, with exclusions and limits visible (8b6c9ad). This does not certify full transaction extraction or undated/unprocessed evidence.
    - [x] Distinguish no matching transaction found from insufficient records to know. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.

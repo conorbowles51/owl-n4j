@@ -1,3 +1,22 @@
+## Currency totals open their contributing source readings — 10 September
+
+Main working/verified summary totals now open the exact contributing credit,
+debit or net population. The optional include_contributions endpoint captures
+rows in the same query as totals; no second query can mix revisions. UI validates
+currency membership, unique IDs, exact bigint sums and verified proof exclusions
+before showing the result. 25-row paging and original PDF navigation are built in.
+Scope changes/refreshed summaries hide the previous selection.
+
+Real 108-page case a2dae109-477c-4526-8642-c6a358a73479 passes read-only browser:
+104 contributions on pages25/25/25/25/4, exact766541credit/120934debit minorUSD,
+credit-only inspection, original page31 opening and refresh clearing. Both rows
+and original-source screenshots visually inspected. No financial writes.
+Repeatable script check_local_summary_sources.cjs; report summary-source-ui-check.json.
+20 summary UI tests,85 backend summary/working/contribution tests pass. Additional route coverage passes (19 contribution-module tests). TypeScript,
+scoped lint and production build pass.
+Backend43654 runs this change (/tmp/loupe-summary-source-runtime.out).
+No push. Continue full saved UI and remaining development.
+
 ## Measured OCR source selection — 10 September
 
 OCR now retains measured word rectangles from the selected Tesseract orientation,

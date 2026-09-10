@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, act } from "@testing-library/react"
+import { render, screen, act, waitFor } from "@testing-library/react"
 import { it, expect, vi, afterEach } from "vitest"
 import { LedgerSummaryPanel } from "./LedgerSummaryPanel"
 afterEach(() => vi.restoreAllMocks())
@@ -171,4 +171,70 @@ it("does not show working data as verified totals", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Summary unavailable"
   )
+})
+
+const contributions = [
+  {
+    transaction_id: "10000000-0000-4000-8000-000000000001",
+    ref_id: "TX-CREDIT",
+    currency: "GBP",
+    amount_minor: "9007199254740993",
+    direction: "credit",
+    ordering_date: "2026-09-10",
+    proof_class: "p1",
+    source_proof_class: "p1",
+    source_document_id: "20000000-0000-4000-8000-000000000001",
+  },
+  {
+    transaction_id: "10000000-0000-4000-8000-000000000002",
+    ref_id: "TX-DEBIT",
+    currency: "GBP",
+    amount_minor: "9007199254740995",
+    direction: "debit",
+    ordering_date: null,
+    proof_class: "p2",
+    source_proof_class: "p1",
+    source_document_id: "20000000-0000-4000-8000-000000000001",
+  },
+]
+it("opens exactly one side of a total and clears it after refresh", async () => {
+  const { client, fetch } = mount({ ...answer, contributions })
+  const button = await screen.findByRole("button", {
+    name: /Credits: .*show contributing readings/,
+  })
+  await act(async () => button.click())
+  expect(screen.getByText("TX-CREDIT")).toBeInTheDocument()
+  expect(screen.queryByText("TX-DEBIT")).not.toBeInTheDocument()
+  expect(
+    screen.getByRole("button", { name: "Open source TX-CREDIT" })
+  ).toBeInTheDocument()
+  expect(String(fetch.mock.calls[0][0])).toContain("include_contributions=true")
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["financial-ledger", "case-a"] })
+  })
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("region", { name: "GBP contributing readings" })
+    ).not.toBeInTheDocument()
+  )
+})
+it.each(
+  [
+    [contributions[0]],
+    [contributions[0], contributions[0]],
+    [
+      contributions[0],
+      { ...contributions[1], amount_minor: "9007199254740994" },
+    ],
+    [contributions[0], { ...contributions[1], proof_class: "p3" }],
+    [contributions[0], { ...contributions[1], currency: "USD" }],
+  ].map((rows) => [rows])
+)("refuses source membership or exact amount mismatch %j", async (rows) => {
+  mount({ ...answer, contributions: rows })
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Summary unavailable"
+  )
+  expect(
+    screen.queryByText("Credits: 90071992547409.93 GBP")
+  ).not.toBeInTheDocument()
 })

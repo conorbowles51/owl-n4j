@@ -36,7 +36,7 @@ separate Loupes collection design are not by themselves an agreed financial layo
 
 - [ ] Ledger: full filtering/sorting, visible reliability and corrected/original
   distinction, totals with their included population, reproducible export state.
-- [ ] Account continuity timeline: verified periods, held periods, gaps/overlaps
+- [x] Account continuity timeline: verified periods, held periods, gaps/overlaps
   visible together with navigation to the relevant statement.
 - [ ] Quantitative money flow: select parties or a group; incoming/outgoing and
   internal transfers, internal counted once; divergent counterparty chart.
@@ -48,7 +48,7 @@ separate Loupes collection design are not by themselves an agreed financial layo
 - [ ] Pattern hypotheses: attached supporting rows, no automatic conclusions.
 - [ ] From every total to rows, and from rows to source images when a measured
   location exists. Missing locators must remain explicit.
-- [ ] Export: same scope/values, originals and decisions, appropriate limitations.
+- [x] Export: same scope/values, originals and decisions, appropriate limitations.
 
 Current visual state is functional, not final. The existing Loupe shell is retained.
 Backend test counts do not establish completion of these user journeys.
@@ -164,3 +164,12 @@ No push. Broader asset substitution, extraction and integrated acceptance remain
   columns reduce report108→90pages; rendered opening/middle/tail inspected.
 
 See build-state for guarded writer and repeatable read-only script names.
+
+## Summary source navigation — 10 September
+
+- [x] Currency credit/debit/net totals open their exact captured contributing
+  rows, paged25at a time, with original PDF source buttons. Browser verifies all
+  104real readings across five pages, separate directions, exact totals and
+  cleared selection after refresh. Row and PDF screenshots visually inspected.
+  This closes the main-summary navigation gap; the broader every-surface audit
+  remains open rather than treating one interaction as full UI completion.
