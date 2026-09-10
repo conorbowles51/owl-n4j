@@ -116,3 +116,25 @@ flow selection and evidence-linked hypotheses remain active development.
   changed-input clearing and persistent source-linked review history.
 
 - [x] Exact inclusive amount-range filters in the main ledger, currency-scoped decimal input and reproducible table export. Real61.62USDpurchase selected by60–70range; complete3reading capture and report hashes verified (10September).
+
+## Whole-payment asset interpretations — 10 September, about09:18Dublin
+
+Single-account and network tracing now accept optional whole-withdrawal asset
+interpretations with a description and basis. Per-method allocations reuse the
+calculated withdrawal; cash claims/balances do not change and are not counted
+twice. Positive unpaired withdrawals only; duplicate, credit, missing-source and
+paired-transfer selections fail. No ownership, valuation, partial purchase or
+resale tracing is inferred. Backward scenarios can retain these interpretations.
+
+47 targeted backend and20 tracing UI/contract tests pass, including bigint,
+allocation tampering and unchanged cash; TypeScript and scoped ESLint pass.
+Read-only browser acceptance on synthetic case3dfbafe7-fa6b-4bdd-9af5-0e97975447b9
+passes for both forms: network FIFO20GBP/pro-rata10/LIFO0 allocated to equipment,
+remaining80/90/100 unchanged; single-account60claim pays20, leaving40. Original
+source navigation, exact scenario download and stale-result clearing verified,
+with0 financial writes. Network screenshot visually inspected. Repeatable scripts:
+check_local_asset_journey.cjs and check_local_single_asset_journey.cjs. Reports
+asset-trace-ui-check.json and conditional-trace-asset-ui-check.json under
+ data/local-runtime. Current backend18209, log/tmp/loupe-asset-runtime.out.
+No push. Broader asset substitution, extraction and integrated acceptance remain.
+

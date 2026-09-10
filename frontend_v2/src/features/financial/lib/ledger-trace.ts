@@ -1,3 +1,8 @@
+import {
+  traceAssetDraw,
+  traceAssetResults,
+  verifyTraceAssets,
+} from "./trace-assets"
 import { z } from "zod"
 
 export const methods = [
@@ -61,6 +66,7 @@ const scenario = z.object({
   assumptions_verified: z.literal(false),
   inputs: z.object({ expected_snapshot_sha256: z.string() }).passthrough(),
   limitations: z.array(z.string()),
+  asset_uses: z.record(z.string(), traceAssetResults).default({}),
   comparison: z.object({
     results: z.record(
       z.string(),
@@ -69,7 +75,7 @@ const scenario = z.object({
           z.string(),
           z.object({ deposited: money, surviving: money, withdrawn: money })
         ),
-        draws: z.array(z.object({ unidentified: money, unfunded: money })),
+        draws: z.array(traceAssetDraw),
         notes: z.array(z.string()),
       })
     ),
@@ -131,7 +137,13 @@ export async function verifyTraceResponse(
       canonical(Object.keys(value.comparison.results).sort())
   )
     throw new Error("Scenario returned different calculation methods.")
-  for (const result of Object.values(value.comparison.results)) {
+  for (const [method, result] of Object.entries(value.comparison.results)) {
+    verifyTraceAssets(
+      value.asset_uses[method] ?? [],
+      request.asset_uses,
+      scope.readings.map((r) => r.row),
+      result.draws
+    )
     const amounts = [
       ...Object.values(result.outcomes).flatMap((o) => [
         o.deposited,

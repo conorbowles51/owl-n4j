@@ -17,6 +17,8 @@ from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.ledger_snapshot import MAX_EXPORT_BYTES
 from services.financial.tracing import Movement, Attribution, Doctrine, compare_doctrines
 
+from services.financial.trace_assets import TraceAssetUseInput, validate_asset_uses, trace_asset_uses
+
 MAX_TRACE_ROWS = 1000
 
 
@@ -47,6 +49,7 @@ class LedgerTraceInput(BaseModel):
     order_basis: str = Field(min_length=1, max_length=4096)
     ordered_transaction_ids: list[UUID] = Field(min_length=1, max_length=MAX_TRACE_ROWS)
     attributions: list[TraceAttributionInput] = Field(min_length=1, max_length=50)
+    asset_uses: list[TraceAssetUseInput] = Field(default_factory=list, max_length=50)
     doctrines: list[Doctrine] = Field(min_length=1, max_length=5)
 
     @field_validator('opening_basis', 'order_basis')
@@ -114,6 +117,7 @@ def evaluate_ledger_trace(export, request: LedgerTraceInput):
     dates = [date.fromisoformat(indexed[key]['ordering_date']) for key in ordered]
     if dates != sorted(dates):
         raise LedgerSummaryError('Explicit order cannot reverse the recorded ordering dates.')
+    validate_asset_uses(request.asset_uses,indexed)
     currency = scope['currency']
     movements = [Movement(transaction_id=UUID(key), ordering_date=dates[index], row_index=index,
         amount=Money(int(indexed[key]['amount_minor']), currency),
@@ -127,6 +131,7 @@ def evaluate_ledger_trace(export, request: LedgerTraceInput):
     payload = dict(schema='loupe.financial.conditional_trace/1', case_id=scope['case_id'], account_id=scope['account_id'],
         applied=False, assumptions_verified=False, inputs=request.model_dump(mode='json'),
         ledger_snapshot=json.loads(export.snapshot.content), ledger_manifest=json.loads(export.manifest),
+        asset_uses={method.value:trace_asset_uses(request.asset_uses,indexed,[result]) for method,result in comparison.results.items()},
         comparison=_exact_json(comparison), limitations=[
             'Population: ' + request.population + '. Original proof classes are retained; working P3 readings are assumptions in this scenario, not verified postings.',
             'Conditional scenario only. Opening balance, deposit attributions and same-day order are investigator-supplied assumptions, not verified ledger facts.',

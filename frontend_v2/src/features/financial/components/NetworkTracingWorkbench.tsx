@@ -1,3 +1,5 @@
+import { TraceAssetFields, TraceAssetResultsPanel } from "./TraceAssetFields"
+import type { TraceAssetUse } from "../lib/trace-assets"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -186,6 +188,7 @@ function NetworkForm({
     [chosen, setChosen] = useState<number[]>([]),
     [selectedMethods, setSelectedMethods] = useState<string[]>([]),
     [basis, setBasis] = useState(""),
+    [assetUses, setAssetUses] = useState<TraceAssetUse[]>([]),
     [allowBackward, setAllowBackward] = useState(false),
     [backwardBasis, setBackwardBasis] = useState(""),
     [orderBasis, setOrderBasis] = useState(""),
@@ -212,6 +215,7 @@ function NetworkForm({
         })),
         basis,
         order_basis: orderBasis,
+        asset_uses: assetUses,
         allow_backward: allowBackward,
         backward_basis: allowBackward ? backwardBasis : "",
         ordered_transaction_ids: ordered.map((r) => r.key),
@@ -490,6 +494,24 @@ function NetworkForm({
               </label>
             )}
           </fieldset>
+          <TraceAssetFields
+            value={assetUses}
+            onChange={(v) => {
+              setAssetUses(v)
+              reset()
+            }}
+            withdrawals={ordered
+              .filter(
+                (r) =>
+                  r.direction === "debit" &&
+                  BigInt(r.amount_minor) > 0n &&
+                  !used.has(r.key)
+              )
+              .map((r) => ({
+                id: r.key,
+                label: `${accountLabel(r.account_id)} · ${r.ordering_date} · ${correctionMoney(r.amount_minor, currency)}`,
+              }))}
+          />
           <h3 className="font-semibold">Review the movement order</h3>
           <p>
             All current readings in this currency are included. Same-day order
@@ -660,6 +682,10 @@ function NetworkForm({
                   )}
                   . Read remaining figures alongside this uncertainty.
                 </p>
+                <TraceAssetResultsPanel
+                  items={result.asset_uses}
+                  onSource={setSource}
+                />
                 {result.hops.map((h, i) => (
                   <div key={h.debit_id} className="rounded border p-2">
                     <p>

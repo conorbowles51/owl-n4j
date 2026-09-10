@@ -1937,3 +1937,6 @@ __all__ += ["capture_ledger_exhibits"]
 
 from services.financial.statement_delta_hints import statement_delta_hints
 __all__ += ["statement_delta_hints"]
+
+from services.financial.trace_assets import trace_asset_uses
+__all__.append("trace_asset_uses")

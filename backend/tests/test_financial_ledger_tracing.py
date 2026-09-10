@@ -31,6 +31,24 @@ class LedgerTracingTests(LedgerSummaryTests):
             doctrines=list(Doctrine))
         return export,request,first,third
 
+    def test_asset_allocation_reuses_method_draw_without_changing_cash(self):
+        export, request, first, withdrawal = self.scenario()
+        from services.financial.trace_assets import TraceAssetUseInput
+        baseline=json.loads(evaluate_ledger_trace(export,request)['scenario_json'])
+        use=TraceAssetUseInput(transaction_id=withdrawal.id,asset_label='Synthetic equipment',basis='Explicit synthetic whole-payment interpretation')
+        actual=json.loads(evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':[use]}))['scenario_json'])
+        self.assertEqual(actual['comparison'],baseline['comparison'])
+        for method, expected in [('first_in_first_out','500000'),('pro_rata','250000'),('last_in_first_out','0')]:
+            item=actual['asset_uses'][method][0]
+            self.assertEqual(item['allocated_by_claim'].get('claim-a','0'),expected)
+            self.assertEqual(int(item['outside_claims_minor'])+int(expected),500000)
+            self.assertFalse(item['changes_cash_results'])
+        for uses in ([use,use],[use.model_copy(update={'transaction_id':first.id})],[use.model_copy(update={'transaction_id':self.other_account.id})]):
+            with self.assertRaises(LedgerSummaryError):evaluate_ledger_trace(export,request.model_copy(update={'asset_uses':uses}))
+        for value in ('','   '):
+            with self.assertRaises(ValidationError):TraceAssetUseInput(transaction_id=withdrawal.id,asset_label='Asset',basis=value)
+        self.assertFalse(self.db.new or self.db.dirty)
+
     def test_working_population_keeps_p3_class_and_requires_explicit_selection(self):
         _, request, first, _ = self.scenario()
         first.proof_class = 'p3'

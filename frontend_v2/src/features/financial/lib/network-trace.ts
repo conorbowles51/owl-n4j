@@ -1,3 +1,8 @@
+import {
+  traceAssetDraw,
+  traceAssetResults,
+  verifyTraceAssets,
+} from "./trace-assets"
 import { z } from "zod"
 import { transferInputs } from "./ledger-transfers"
 export const networkInputs = transferInputs.and(
@@ -31,9 +36,11 @@ const resultSchema = z.object({
   results: z.record(
     z.string(),
     z.object({
+      asset_uses: traceAssetResults.default([]),
       accounts: z.record(
         z.string(),
         z.object({
+          draws: z.array(traceAssetDraw).default([]),
           currency: z.string(),
           closing_balance: money,
           lowest_balance: money,
@@ -165,6 +172,12 @@ export async function verifyNetworkTrace(
     )
   )
   for (const result of Object.values(value.results)) {
+    verifyTraceAssets(
+      result.asset_uses,
+      request.asset_uses,
+      scope.rows,
+      Object.values(result.accounts).flatMap((a) => a.draws)
+    )
     if (
       canonical(openings.map((o) => o.account_id).sort()) !==
         canonical(Object.keys(result.accounts).sort()) ||

@@ -22,6 +22,20 @@ class NetworkTracingTests(LedgerSummaryTests):
             openings=[dict(account_id=str(a.id),amount_minor='0',basis='Synthetic zero opening') for a in [self.account,b,c]],
             ordered_transaction_ids=[str(r.id) for r in ordered],order_basis='Explicit synthetic order',attributions=[dict(transaction_id=str(root.id),claim_id='claim',amount_minor='10000',basis='Synthetic root attribution')],doctrines=[d.value for d in Doctrine])
         return export,request,ordered
+    def test_asset_use_preserves_network_cash_and_rejects_paired_debits(self):
+        export,request,rows=self.network()
+        baseline=json.loads(evaluate_network_trace(export,request)['scenario_json'])
+        use=dict(transaction_id=str(rows[-1].id),asset_label='Synthetic equipment',basis='Explicit synthetic whole-payment use')
+        actual=json.loads(evaluate_network_trace(export,{**request,'asset_uses':[use]})['scenario_json'])
+        for method, expected in [('first_in_first_out','2000'),('pro_rata','1000'),('last_in_first_out','0')]:
+            result=actual['results'][method]
+            self.assertEqual(result['claims'],baseline['results'][method]['claims'])
+            self.assertEqual(result['accounts'],baseline['results'][method]['accounts'])
+            self.assertEqual(result['asset_uses'][0]['allocated_by_claim'].get('claim','0'),expected)
+        with self.assertRaisesRegex(LedgerSummaryError,'not paired transfers'):
+            evaluate_network_trace(export,{**request,'asset_uses':[{**use,'transaction_id':str(rows[2].id)}]})
+        self.assertFalse(self.db.new or self.db.dirty)
+
     def test_two_hops_compare_methods_and_conserve_root_claim(self):
         export,request,rows=self.network();result=evaluate_network_trace(export,request);report=json.loads(result['scenario_json'])
         fifo=report['results']['first_in_first_out'];pro=report['results']['pro_rata'];lifo=report['results']['last_in_first_out']

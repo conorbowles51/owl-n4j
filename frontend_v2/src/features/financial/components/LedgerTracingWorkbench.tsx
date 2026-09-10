@@ -1,3 +1,5 @@
+import { TraceAssetFields, TraceAssetResultsPanel } from "./TraceAssetFields"
+import type { TraceAssetUse } from "../lib/trace-assets"
 import { useState } from "react"
 import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
@@ -160,6 +162,7 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
   const [opening, setOpening] = useState(""),
     [openingBasis, setOpeningBasis] = useState("")
   const [orderBasis, setOrderBasis] = useState("")
+  const [assetUses, setAssetUses] = useState<TraceAssetUse[]>([])
   const [attributions, setAttributions] = useState([
     { transaction_id: "", claim_id: "", amount_input: "", basis: "" },
   ])
@@ -187,6 +190,7 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
         ...a,
         amount_minor: correctionMinor(amount_input, inputs.currency),
       })),
+      asset_uses: assetUses,
       doctrines: selected,
     }
     try {
@@ -318,6 +322,23 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
               onChange={(e) => setOrderBasis(e.target.value)}
             />
           </label>
+          <TraceAssetFields
+            value={assetUses}
+            onChange={(v) => {
+              setAssetUses(v)
+              setResult(null)
+              setError("")
+            }}
+            withdrawals={rows
+              .filter(
+                (r) =>
+                  r.row.direction === "debit" && BigInt(r.row.amount_minor) > 0n
+              )
+              .map(({ row: r }) => ({
+                id: r.key,
+                label: `${r.ordering_date} · ${correctionMoney(r.amount_minor, inputs.currency)}`,
+              }))}
+          />
           <TraceAttributionFields
             currency={inputs.currency}
             credits={rows
@@ -378,6 +399,10 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
             ([method, output]) => (
               <div className="border p-3" key={method}>
                 <h4>{method.replaceAll("_", " ")}</h4>
+                <TraceAssetResultsPanel
+                  items={result.value.asset_uses[method] ?? []}
+                  onSource={setSource}
+                />
                 {Object.entries(output.outcomes).map(([id, outcome]) => (
                   <p key={id}>
                     {id}: attributed{" "}

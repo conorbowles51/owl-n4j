@@ -19,6 +19,7 @@ from services.financial.ledger_snapshot import MAX_EXPORT_BYTES
 from services.financial.money import Money
 from services.financial.proof_class import DEFAULT_TOTAL_CLASSES
 from services.financial.tracing import Movement, Attribution, Doctrine, trace
+from services.financial.trace_assets import TraceAssetUseInput, validate_asset_uses, trace_asset_uses
 MAX_NETWORK_ROWS = 300
 
 class NetworkOpening(BaseModel):
@@ -40,6 +41,7 @@ class NetworkTraceInput(LedgerTransferScenario):
     ordered_transaction_ids: list[UUID] = Field(min_length=1,max_length=MAX_NETWORK_ROWS)
     order_basis: str = Field(min_length=1,max_length=4096)
     attributions: list[TraceAttributionInput] = Field(min_length=1,max_length=50)
+    asset_uses: list[TraceAssetUseInput] = Field(default_factory=list, max_length=50)
     allow_backward: bool = Field(default=False, strict=True)
     backward_basis: str = Field(default='', max_length=4096)
     doctrines: list[Doctrine] = Field(min_length=1,max_length=5)
@@ -89,6 +91,7 @@ def evaluate_network_trace(export, request):
             raise LedgerSummaryError('Forward tracing requires each selected receiving credit after its debit. Review same-day order; backward tracing is not assumed.')
         if positions[credit]<=positions[debit]:backward_pairs.append((debit,credit))
         used.update((debit,credit));receiving.add(credit);links[debit]=credit
+    validate_asset_uses(request.asset_uses,rows,links)
     account_order=[]
     if backward_pairs:
         dependencies={a:set() for a in accounts}
@@ -152,7 +155,7 @@ def evaluate_network_trace(export, request):
             outside=sum(draw.by_claim.get(claim,Money.zero(request.currency)).minor_units for result in final.values() for draw in result.draws if str(draw.transaction_id) not in links)
             if remaining+outside!=root_amount:raise LedgerSummaryError('Cross-account claim allocations failed conservation; no result was produced.')
             claims[claim]=dict(root_attributed_minor=str(root_amount),reported_remaining_minor=str(remaining),withdrawn_without_selected_transfer_minor=str(outside))
-        results[method.value]=dict(accounts=_exact_json(final),hops=hops,claims=claims,
+        results[method.value]=dict(accounts=_exact_json(final),hops=hops,claims=claims,asset_uses=trace_asset_uses(request.asset_uses,rows,final.values()),
             unidentified_withdrawals_minor=str(sum(r.total_unidentified().minor_units for r in final.values())))
     document=dict(schema='loupe.financial.network_trace/1',case_id=scope['case_id'],applied=False,assumptions_verified=False,
         inputs=request.model_dump(mode='json'),backward_timing_used=bool(backward_pairs),calculation_account_order=account_order,results=results,ledger_snapshot=json.loads(export.snapshot.content),ledger_manifest=json.loads(export.manifest),
@@ -161,7 +164,7 @@ def evaluate_network_trace(export, request):
             'Remaining claim figures must be read alongside unidentified withdrawals, especially under direct tracing; they are not a finding that those funds remain recoverable.',
             'Withdrawals without a selected transfer may have destinations outside this scope; they are not labelled dissipated.',
             'Every selected-currency current reading is included; omitted or incomplete evidence can change the result. Original proof classes remain unchanged.',
-            'Recorded dates are unchanged. Backward timing requires an explicit basis and acyclic account dependencies; its legal applicability is not determined. Currency conversion and asset substitution are not inferred.'])
+            'Recorded dates are unchanged. Backward timing requires an explicit basis and acyclic account dependencies; its legal applicability is not determined. Currency conversion is not inferred. Explicit asset-use hypotheses are separate annotations on complete withdrawals; they do not change cash results or establish asset ownership or value.'])
     content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False);encoded=content.encode()
     if len(encoded)>MAX_EXPORT_BYTES:raise LedgerSummaryError('Cross-account report exceeds 16 MiB; no partial report was produced.')
     return dict(case_id=scope['case_id'],applied=False,scenario_json=content,scenario_sha256=hashlib.sha256(encoded).hexdigest(),scenario_byte_count=len(encoded))
