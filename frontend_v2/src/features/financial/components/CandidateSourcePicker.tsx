@@ -1,3 +1,4 @@
+import { proposePdfAccountReferences } from "../lib/pdf-account-references"
 import { CandidatePageScan } from "./CandidatePageScan"
 import { CandidateRowSuggestions } from "./CandidateRowSuggestions"
 import { useRef, useState } from "react"
@@ -279,6 +280,8 @@ function SourceSelection({
   } | null>(null)
   const [showHeaders, setShowHeaders] = useState(false)
   const headers = proposePdfHeaders(source.rows)
+  const [showAccounts, setShowAccounts] = useState(false)
+  const accountReferences = proposePdfAccountReferences(source.rows)
   const [selected, setSelected] = useState<number[]>([])
   const [columns, setColumns] = useState<Record<number, string>>({})
   const [page, setPage] = useState(0)
@@ -450,6 +453,62 @@ function SourceSelection({
                 </div>
               ))}
             </div>
+          )}
+
+          <Button variant="outline" onClick={() => setShowAccounts((v) => !v)}>
+            {showAccounts
+              ? "Hide printed account references"
+              : "Inspect printed account references"}
+          </Button>
+          {showAccounts && (
+            <section
+              aria-label="Printed account reference proposals"
+              className="space-y-2 rounded border p-3"
+            >
+              <p>
+                Checked {accountReferences.checkedRows} stored rows for labelled
+                account/card numbers or ending digits.
+                {accountReferences.hasMore
+                  ? " Later rows were not checked."
+                  : ""}{" "}
+                These are source-text proposals, not verified identities.
+                Partial numbers cannot identify an account by themselves. Review
+                the original, then explicitly choose or create the appropriate
+                account during row review.
+              </p>
+              {!accountReferences.references.length && (
+                <p>
+                  No supported labelled reference found in these rows. Inspect
+                  the original for account context; absence here does not mean
+                  no account is present.
+                </p>
+              )}
+              {accountReferences.distinctReferences > 1 && (
+                <p>
+                  Several different printed references were found. They may
+                  concern different accounts or different representations of one
+                  account; no association has been inferred.
+                </p>
+              )}
+              {accountReferences.references.map((reference) => (
+                <div
+                  key={`${reference.row}:${reference.column}`}
+                  className="space-y-1"
+                >
+                  <p>
+                    Printed {reference.partial ? "partial " : ""}reference:{" "}
+                    {reference.reference}
+                  </p>
+                  <Button
+                    variant="outline"
+                    onClick={() => setFocusedCell(reference)}
+                  >
+                    Inspect account reference at row {reference.row + 1}, column{" "}
+                    {reference.column + 1}
+                  </Button>
+                </div>
+              ))}
+            </section>
           )}
 
           <div className="grid gap-2 sm:grid-cols-3">

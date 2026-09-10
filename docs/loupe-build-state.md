@@ -1,3 +1,24 @@
+## Printed account-reference identification aid — 10 September
+
+PDF source review now finds explicitly labelled account/card references in the first
+30stored rows, including inline account-ending text and adjacent number cells. It
+retains each exact source cell/locator, flags partial or masked references, exposes
+multiple alternatives and refuses vague labels, unsupported OCR characters or gaps
+between label/value cells. Clicking a reference highlights the original; it does not
+select transactions, create an account or assert identity.
+
+Both supplied PDFs pass a read-only browser check: two references on the56-page
+file's page4 and one partial reference on the108-page file's page3. Original page
+images fully load and their reference highlights were inspected.17focused tests,
+TypeScript and scoped lint pass. Repeat source-origin check with `--accounts`;
+reports source-accounts-check.json. No evidence/identity/ledger writes.
+
+Remaining PDF work is still recorded, not silently called complete: the page-range
+scan currently only opens individual pages for nomination. The next improvement is
+an explicit, source-revision-checked way to send chosen scan proposals into pending
+review across pages, preserving unknown fields and avoiding repeated page setup.
+External AI acceptance still awaits a valid configured key; do not retry known401.
+
 ## Connected transfer graph and analytical UI audit — 10 September
 
 Added a connected account graph to the captured transfer/account perspective.

@@ -1,6 +1,7 @@
 // Read-only source provenance display against both supplied PDFs.
 const fs=require('fs'),path=require('path'),root=path.resolve(__dirname,'..');
 const {chromium}=require(path.join(root,'frontend_v2/node_modules/playwright'));
+const accounts=process.argv.includes('--accounts');
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage({viewport:{width:1500,height:1100}});page.setDefaultTimeout(20000);let writes=0;const reports=[];
  await page.route('**/api/financial/**',async route=>{if(!['GET','HEAD'].includes(route.request().method())){writes++;await route.abort()}else await route.continue()});
@@ -13,7 +14,7 @@ const {chromium}=require(path.join(root,'frontend_v2/node_modules/playwright'));
   const label=page.getByLabel('Stored page text origin',{exact:true});await label.waitFor();
   const expected={digital_text_layer:'PDF text layer',recognised_glyphs:'recognised from an image (OCR)',unknown:'text origin is unknown'}[data.text_origin];if(!expected||!(await label.innerText()).includes(expected))throw Error('Origin display differs');
   if(await page.getByRole('checkbox',{checked:true}).count())throw Error('Source rows selected automatically');
-  await label.scrollIntoViewIfNeeded();await page.screenshot({path:`/tmp/loupe-source-origin-${number}.png`});reports.push({case_id:caseId,page:number,text_origin:data.text_origin,display_verified:true});
+  let referenceCount=0;if(accounts){await page.getByRole('button',{name:'Inspect printed account references',exact:true}).click();const panel=page.getByRole('region',{name:'Printed account reference proposals',exact:true});referenceCount=await panel.getByRole('button',{name:/Inspect account reference at row/}).count();if(!referenceCount)throw Error('Known labelled account header was not proposed');await panel.getByRole('button',{name:/Inspect account reference at row/}).first().click();await page.getByRole('button',{name:'Show table location',exact:true}).waitFor();const original=page.getByRole('img',{name:`Page ${number} of the source document`,exact:true});await original.waitFor();await original.evaluate(img=>img.decode());if(await page.getByRole('checkbox',{checked:true}).count())throw Error('Reference inspection selected transaction rows');await panel.scrollIntoViewIfNeeded();}else await label.scrollIntoViewIfNeeded();await page.screenshot({path:`/tmp/loupe-source-${accounts?"accounts":"origin"}-${number}.png`});reports.push({case_id:caseId,page:number,text_origin:data.text_origin,display_verified:true,...(accounts?{reference_proposals:referenceCount,reference_locator_opened:true}: {})});
  }
- if(writes)throw Error('Unexpected financial write');fs.writeFileSync(path.join(root,'data/local-runtime/source-origin-check.json'),JSON.stringify({sources:reports,financial_writes:0},null,2));console.log(JSON.stringify(reports));
+ if(writes)throw Error('Unexpected financial write');fs.writeFileSync(path.join(root,`data/local-runtime/source-${accounts?'accounts':'origin'}-check.json`),JSON.stringify({sources:reports,financial_writes:0},null,2));console.log(JSON.stringify(reports));
 }finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

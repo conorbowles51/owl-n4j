@@ -55,6 +55,7 @@ function server({
   stale = false,
   wrongEcho = false,
   wrongPage = false,
+  accountReference = false,
 } = {}) {
   return vi
     .spyOn(globalThis, "fetch")
@@ -99,6 +100,21 @@ function server({
       if (String(url).includes("/pages/"))
         return json({
           ...table,
+          rows: accountReference
+            ? [
+                {
+                  row_index: 0,
+                  cells: [
+                    {
+                      column_index: 0,
+                      expected_text: "Account ending in 1234",
+                      locator: { page: 1, rect: [1, 2, 3, 4] },
+                    },
+                  ],
+                },
+                ...table.rows.slice(1),
+              ]
+            : table.rows,
           text_origin: origin,
           case_id: wrongCase ? "case-b" : "case-a",
           page_number: wrongPage ? 2 : 1,
@@ -356,3 +372,30 @@ it.each([
     expect(fetch.mock.calls.every(([, o]) => o?.method !== "POST")).toBe(true)
   }
 )
+
+it("opens the printed account reference locator without selecting rows or creating an identity", async () => {
+  const fetch = server({ accountReference: true })
+  const { onSaved } = mount()
+  await open()
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Inspect printed account references",
+    })
+  )
+  expect(
+    screen.getByText("Printed partial reference: 1234")
+  ).toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Inspect account reference at row 1, column 1",
+    })
+  )
+  expect(screen.getByTestId("source-locator")).toHaveTextContent(
+    '"rect":[1,2,3,4]'
+  )
+  expect(screen.queryAllByRole("checkbox", { checked: true })).toHaveLength(0)
+  expect(
+    fetch.mock.calls.some(([, options]) => options?.method === "POST")
+  ).toBe(false)
+  expect(onSaved).not.toHaveBeenCalled()
+})
