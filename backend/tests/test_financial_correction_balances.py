@@ -45,6 +45,13 @@ class RunningBalanceTests(unittest.TestCase):
         self.assertEqual(current["unanchored_balances"],1)
         self.assertEqual(current["compared_intervals"],1)
 
+    def test_manual_page_citation_does_not_establish_printed_row_sequence(self):
+        result = self.check([row(0, 10, 10), row(1, 20, 30,
+            provenance={'statement_import_original': {'kind': 'manual_entry'}})])
+        self.assertFalse(result['available'])
+        self.assertIn('no confirmed position', result['reason'])
+        self.assertEqual(result['interpretations'], [])
+
     def test_excluded_row_breaks_chain_and_held_correction_has_no_effect(self):
         result=self.check([row(0,10,10),row(1,500,510,ledger_status="quarantined"),row(2,20,530)],transaction_id=1)
         current=result["interpretations"][0]["current"]

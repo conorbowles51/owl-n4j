@@ -26,6 +26,8 @@ def current_running_balances(period, rows):
     if len(rows) > 1000:
         return dict(available=False, reason="More than 1,000 period rows; running-balance comparison was not performed.", interpretations=[])
     current = [r for r in rows if r.ledger_status != "superseded" and not r.superseded_by_id]
+    if any(((getattr(r, 'provenance', None) or {}).get('statement_import_original') or {}).get('kind') == 'manual_entry' for r in current):
+        return dict(available=False, reason="A manually added transaction has a page citation but no confirmed position in the printed row sequence. Compare its source and the statement totals; a sequential running-balance check is unavailable.", interpretations=[])
     if any(type(r.row_index) is not int or r.row_index < 0 or
            type(r.amount_minor) is not int or r.amount_minor < 0 or
            r.direction not in ("credit", "debit") or
