@@ -88,6 +88,7 @@ async function open() {
     target: { value: "file" },
   })
   await screen.findByText("Review statement.pdf")
+  fireEvent.click(screen.getByRole("button", { name: "Show corrections and import choices" }))
 }
 beforeEach(() => {
   sent = []
@@ -149,7 +150,7 @@ it("shows the source alongside correction controls and saves the reason", async 
   await open()
   fireEvent.click(screen.getByRole("button", { name: "View source" }))
   expect(screen.getByText("Original PDF beside editable values")).toBeVisible()
-  fireEvent.change(screen.getByLabelText("Amount 1:0:1"), {
+  fireEvent.change(screen.getByLabelText("Credit 1:0:1"), {
     target: { value: "125.50" },
   })
   expect(

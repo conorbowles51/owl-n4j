@@ -686,7 +686,11 @@ export function FinancialPage() {
 
         <TabsContent
           value="transactions"
-          className="flex min-h-0 flex-1 flex-col"
+          forceMount
+          style={
+            store.mainView !== "transactions" ? { display: "none" } : undefined
+          }
+          className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
         >
           <div className="flex items-center gap-2 border-b p-3">
             <Button
@@ -702,21 +706,24 @@ export function FinancialPage() {
               Financial intelligence
             </Button>
           </div>
-          {isTransactionsMode ? (
-            <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
-              <StatementImportPanel
+          <div
+            className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
+            style={!isTransactionsMode ? { display: "none" } : undefined}
+          >
+            <StatementImportPanel
+              key={caseId}
+              caseId={caseId}
+              onImported={() => store.setMainView("transactions")}
+            />
+            <ErrorBoundary level="section">
+              <CorrectableLedger
+                key={caseId}
                 caseId={caseId}
-                onImported={() => store.setMainView("transactions")}
+                onAdjudicate={setAdjudicationRow}
               />
-              <ErrorBoundary level="section">
-                <CorrectableLedger
-                  key={caseId}
-                  caseId={caseId}
-                  onAdjudicate={setAdjudicationRow}
-                />
-              </ErrorBoundary>
-            </div>
-          ) : (
+            </ErrorBoundary>
+          </div>
+          {!isTransactionsMode && (
             <>
               <p className="border-b p-3 text-sm">
                 Financial intelligence uses extracted graph records, including

@@ -14,7 +14,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -322,7 +322,29 @@ describe("FinancialPage", () => {
     ).toBeInTheDocument()
     expect(
       screen.queryByText(/No admitted rows in the ledger/i)
-    ).not.toBeInTheDocument()
+    ).not.toBeVisible()
+  })
+
+  it("retains the selected PDF when switching financial tabs and transaction modes", () => {
+    graphWithRows()
+    renderPage()
+    fireEvent.click(screen.getByRole("button", { name: "Import a statement" }))
+    fireEvent.click(screen.getByRole("button", { name: "Upload a statement" }))
+    const input = screen.getByLabelText("PDF document") as HTMLInputElement
+    const file = new File(["pdf"], "unfinished-statement.pdf", {
+      type: "application/pdf",
+    })
+    fireEvent.change(input, { target: { files: [file] } })
+    selectTab("Statements")
+    selectTab("Transactions")
+    expect(screen.getByLabelText("PDF document")).toBe(input)
+    expect(screen.getByText("unfinished-statement.pdf")).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Financial intelligence" })
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Ledger postings" }))
+    expect(screen.getByLabelText("PDF document")).toBe(input)
+    expect(input.files?.[0]).toBe(file)
   })
 
   it("mounts the ledger panel in the ledger tab", () => {
@@ -667,7 +689,9 @@ describe("FinancialPage, the row adjudication dialog", () => {
     ledgerWithRows([makeLedgerRow({ key: "txn-9" })])
     renderPage()
 
-    fireEvent.click(screen.getByTestId("ledger-row-action"))
+    fireEvent.click(
+      within(screen.getByRole("tabpanel")).getByTestId("ledger-row-action")
+    )
 
     expect(screen.getByTestId("adjudication-row")).toHaveAttribute(
       "data-row-key",
@@ -687,7 +711,9 @@ describe("FinancialPage, the row adjudication dialog", () => {
     renderPage()
 
     selectTab("Held out")
-    fireEvent.click(screen.getByTestId("ledger-row-action"))
+    fireEvent.click(
+      within(screen.getByRole("tabpanel")).getByTestId("ledger-row-action")
+    )
 
     expect(screen.getByTestId("adjudication-row")).toHaveAttribute(
       "data-row-key",
@@ -710,7 +736,9 @@ describe("FinancialPage, the row adjudication dialog", () => {
     const { rerender } = renderPage()
 
     selectTab("Held out")
-    fireEvent.click(screen.getByTestId("ledger-row-action"))
+    fireEvent.click(
+      within(screen.getByRole("tabpanel")).getByTestId("ledger-row-action")
+    )
     expect(screen.getByTestId("adjudication-row")).toBeInTheDocument()
 
     ledgerEmpty()
@@ -741,7 +769,9 @@ describe("FinancialPage, the row adjudication dialog", () => {
     ledgerWithRows([makeLedgerRow({ key: "txn-9" })])
     const { rerender } = renderPage()
 
-    fireEvent.click(screen.getByTestId("ledger-row-action"))
+    fireEvent.click(
+      within(screen.getByRole("tabpanel")).getByTestId("ledger-row-action")
+    )
     expect(screen.getByTestId("adjudication-row")).toBeInTheDocument()
 
     ledgerEmpty()
@@ -761,7 +791,9 @@ describe("FinancialPage, the row adjudication dialog", () => {
     ledgerWithRows([makeLedgerRow({ key: "txn-9" })])
     renderPage()
 
-    fireEvent.click(screen.getByTestId("ledger-row-action"))
+    fireEvent.click(
+      within(screen.getByRole("tabpanel")).getByTestId("ledger-row-action")
+    )
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
 
     expect(screen.queryByTestId("adjudication-row")).not.toBeInTheDocument()
@@ -832,7 +864,9 @@ describe("FinancialPage authoritative Trends", () => {
       screen.queryByRole("region", { name: "Authoritative ledger trends" })
     ).not.toBeInTheDocument()
     expect(
-      screen.getByText(/do not reflect ledger corrections/)
+      within(screen.getByRole("tabpanel")).getByText(
+        /do not reflect ledger corrections/
+      )
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Ledger postings" }))
     expect(
@@ -878,9 +912,11 @@ describe("FinancialPage authoritative Transactions", () => {
     )
     expect(
       screen.queryByText(/No admitted rows in the ledger/i)
-    ).not.toBeInTheDocument()
+    ).not.toBeVisible()
     expect(
-      screen.getByText(/do not reflect ledger corrections/)
+      within(screen.getByRole("tabpanel")).getByText(
+        /do not reflect ledger corrections/
+      )
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Ledger postings" }))
     expect(
@@ -932,7 +968,9 @@ describe("FinancialPage authoritative Counterparties", () => {
       })
     ).not.toBeInTheDocument()
     expect(
-      screen.getByText(/do not reflect ledger corrections/)
+      within(screen.getByRole("tabpanel")).getByText(
+        /do not reflect ledger corrections/
+      )
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Ledger postings" }))
     expect(

@@ -35,6 +35,7 @@ export function PdfReviewIntake({
   automaticReview?: boolean
   onReady: (fileId?: string) => void
 }) {
+  const fileInput = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null),
     [fileId, setFileId] = useState<string | null>(null),
     [jobId, setJobId] = useState<string | null>(null)
@@ -155,6 +156,55 @@ export function PdfReviewIntake({
           ? "Choose the PDF. The system will read its account details and transactions, then open the statement for you to check and confirm."
           : "Prepare its text and page locations locally, then choose and review possible transaction rows. This does not run AI analysis, verify transactions or add them to totals."}
       </p>
+      <div className="space-y-3 rounded-lg border-2 border-dashed p-4">
+        <span className="block font-semibold">
+          Choose a PDF from your computer
+        </span>
+        <input
+          ref={fileInput}
+          aria-label="PDF document"
+          type="file"
+          className="hidden"
+          accept="application/pdf,.pdf"
+          disabled={busy || running}
+          onChange={(e) => {
+            setFile(e.target.files?.[0] ?? null)
+            setFileId(null)
+            setJobId(null)
+            setError("")
+          }}
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            disabled={busy || running}
+            onClick={() => fileInput.current?.click()}
+          >
+            {file ? "Change PDF" : "Choose PDF"}
+          </Button>
+          <span className="min-w-0 break-all text-sm" role="status">
+            {file?.name ?? "No PDF selected"}
+          </span>
+        </div>
+      </div>
+      {!file && !fileId && (
+        <p className="text-sm text-muted-foreground">
+          Select a PDF above to enable upload.
+        </p>
+      )}
+      <Button
+        disabled={(!file && !fileId) || busy || running || ready}
+        onClick={() => void prepare()}
+      >
+        {busy
+          ? "Uploading and reading…"
+          : automaticReview
+            ? "Upload and read statement"
+            : "Prepare PDF for review"}
+      </Button>
+      <p className="border-t pt-3 text-sm text-muted-foreground">
+        Or use a PDF already uploaded to this case.
+      </p>
       <Button
         variant="outline"
         disabled={busy || running}
@@ -189,35 +239,11 @@ export function PdfReviewIntake({
         ))}
       {showExisting && (
         <p>
-          Already processed files can be opened through Choose PDF rows. Active
-          processing is shown in Evidence.
+          {automaticReview
+            ? "Open a processed PDF using Choose a statement below. Files still being processed are shown in Evidence."
+            : "Already processed files can be opened through Choose PDF rows. Active processing is shown in Evidence."}
         </p>
       )}
-      <label className="block">
-        PDF document{" "}
-        <input
-          aria-label="PDF document"
-          type="file"
-          accept="application/pdf,.pdf"
-          disabled={busy || running}
-          onChange={(e) => {
-            setFile(e.target.files?.[0] ?? null)
-            setFileId(null)
-            setJobId(null)
-            setError("")
-          }}
-        />
-      </label>
-      <Button
-        disabled={(!file && !fileId) || busy || running || ready}
-        onClick={() => void prepare()}
-      >
-        {busy
-          ? "Uploading and reading…"
-          : automaticReview
-            ? "Upload and read statement"
-            : "Prepare PDF for review"}
-      </Button>
       {fileId && !automaticReview && (
         <p>Uploaded evidence reference: {fileId}</p>
       )}

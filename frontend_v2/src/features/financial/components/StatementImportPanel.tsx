@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
+import { PrintedStatementTable } from "./PrintedStatementTable"
 
 const cell = z.object({
   column_index: z.number(),
@@ -475,6 +476,7 @@ function EditableStatement({
     : null
   const [saved] = useState(() => readStatementDraft(draftKey, data.revision))
   const [draftSaved, setDraftSaved] = useState(!!saved)
+  const [correctionsOpen, setCorrectionsOpen] = useState(false)
   const [sourcePage, setSourcePage] = useState(data.page_numbers[0] || 1)
   const client = useQueryClient()
   const [rows, setRows] = useState(() => saved?.rows ?? initialRows(data)),
@@ -485,7 +487,10 @@ function EditableStatement({
   const [focus, setFocus] = useState<{
       rowId: string
       locator: unknown
-    } | null>(null),
+    } | null>({
+      rowId: "",
+      locator: { kind: "page_only", page: data.page_numbers[0] || 1 },
+    }),
     [showExcluded, setShowExcluded] = useState(false),
     [onlyIssues, setOnlyIssues] = useState(false)
   const [amountText, setAmountText] = useState<Record<string, string>>(
@@ -666,14 +671,307 @@ function EditableStatement({
           </p>
         )}
         <p className="text-sm">
-          The system has filled the transaction fields. Correct anything wrong,
-          or select a value to compare it with the original.
+          Compare the extracted statement with the original PDF. Select printed
+          text to locate it on the page. Corrections and import choices are
+          separate below the table.
         </p>
       </header>
       <fieldset
         disabled={confirm.isPending || confirm.isSuccess}
         className="space-y-4"
       >
+        <div
+          className={`grid gap-4 ${focus ? "xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.2fr)]" : ""}`}
+        >
+          {focus && (
+            <aside className="min-w-0 xl:sticky xl:top-0 self-start rounded border p-3">
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="font-semibold">Original statement</h4>
+                <Button variant="ghost" onClick={() => setFocus(null)}>
+                  Close source
+                </Button>
+              </div>
+              <TransactionSourceHighlight
+                sourceDocumentId={fileId}
+                locatorPayload={focus.locator}
+              />
+            </aside>
+          )}
+          <div className="overflow-auto max-h-[65vh]">
+            <h4 className="font-semibold">Extracted statement</h4>
+            <p className="text-sm text-muted-foreground mb-3">
+              Printed text, column positions and blank cells are retained here.
+              Select a value to locate it in the PDF. Use the separate
+              correction controls to change an import value.
+            </p>
+            <PrintedStatementTable
+              rows={data.rows}
+              onCell={(rowId, locator) => setFocus({ rowId, locator })}
+            />
+            <Button
+              variant="outline"
+              className="my-3"
+              onClick={() => setCorrectionsOpen((value) => !value)}
+            >
+              {correctionsOpen
+                ? "Hide corrections and import choices"
+                : "Show corrections and import choices"}
+            </Button>
+            <div hidden={!correctionsOpen}>
+              <div className="flex flex-wrap gap-4 text-sm">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={onlyIssues}
+                    onChange={(e) => setOnlyIssues(e.target.checked)}
+                  />{" "}
+                  Show problems and edits only
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showExcluded}
+                    onChange={(e) => setShowExcluded(e.target.checked)}
+                  />{" "}
+                  Show excluded rows
+                </label>
+              </div>
+
+              <h4 className="font-semibold my-2">
+                Corrections and import choices
+              </h4>
+              <p className="text-sm mb-3">
+                These fields control the import. They do not replace the printed
+                statement above. Paid by / paid to is an investigation field
+                suggested from the description.
+              </p>
+              <table className="w-full text-sm border-collapse">
+                <thead className="sticky top-0 bg-card z-10">
+                  <tr>
+                    {[
+                      "Use",
+                      "Date",
+                      "Description",
+                      "Credit",
+                      "Debit",
+                      "Printed balance",
+                      "Actions",
+                    ].map((s) => (
+                      <th key={s} className="text-left p-2 border-b">
+                        {s}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((r) => {
+                    const original = originals.get(r.id)!
+                    return (
+                      <tr key={r.id} className={r.excluded ? "opacity-70" : ""}>
+                        <td className="p-2 border-b align-top">
+                          <input
+                            aria-label={`Include row ${r.id}`}
+                            type="checkbox"
+                            checked={!r.excluded}
+                            onChange={(e) =>
+                              update(r.id, { excluded: !e.target.checked })
+                            }
+                          />
+                        </td>
+                        <td className="p-2 border-b align-top">
+                          <input
+                            aria-label={`Date ${r.id}`}
+                            type="date"
+                            disabled={r.excluded}
+                            className="border rounded p-1 bg-background"
+                            value={r.date}
+                            onChange={(e) =>
+                              update(r.id, { date: e.target.value })
+                            }
+                          />
+                        </td>
+                        <td className="p-2 border-b align-top min-w-56">
+                          <input
+                            aria-label={`Description ${r.id}`}
+                            disabled={r.excluded}
+                            className="border rounded p-1 bg-background w-full"
+                            value={r.description}
+                            onChange={(e) =>
+                              update(r.id, { description: e.target.value })
+                            }
+                          />
+                          <label className="block mt-2 text-xs">
+                            Paid by / paid to
+                            <input
+                              aria-label={`Counterparty ${r.id}`}
+                              disabled={r.excluded}
+                              className="block border rounded p-1 bg-background w-full"
+                              value={r.counterparty}
+                              onChange={(e) =>
+                                update(r.id, { counterparty: e.target.value })
+                              }
+                            />
+                          </label>
+                          {original.issues.map((s, i) => (
+                            <p
+                              key={i}
+                              className="text-amber-700 dark:text-amber-300 mt-1"
+                            >
+                              {s}
+                            </p>
+                          ))}
+                          {r.manual_page && (
+                            <label className="block mt-2">
+                              Source page
+                              <select
+                                aria-label={`Source page ${r.id}`}
+                                value={r.manual_page}
+                                onChange={(e) => {
+                                  update(r.id, {
+                                    manual_page: Number(e.target.value),
+                                  })
+                                  setFocus({
+                                    rowId: r.id,
+                                    locator: {
+                                      kind: "page_only",
+                                      page: Number(e.target.value),
+                                    },
+                                  })
+                                }}
+                                className="border rounded p-1 bg-background"
+                              >
+                                {data.page_numbers.map((p) => (
+                                  <option key={p} value={p}>
+                                    {p}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {requiresReason(r) && (
+                            <label className="block mt-2">
+                              Reason for correction or decision
+                              <input
+                                aria-label={`Reason ${r.id}`}
+                                value={r.reason}
+                                onChange={(e) =>
+                                  update(r.id, { reason: e.target.value })
+                                }
+                                className="border rounded p-1 w-full bg-background"
+                              />
+                            </label>
+                          )}
+                          {focus?.rowId === r.id && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {original.source_cells.map((c) => (
+                                <Button
+                                  key={c.column_index}
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    setFocus({
+                                      rowId: r.id,
+                                      locator: c.locator,
+                                    })
+                                  }
+                                >
+                                  {c.expected_text}
+                                </Button>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        {(["credit", "debit"] as const).map((direction) => (
+                          <td
+                            key={direction}
+                            className="p-2 border-b align-top"
+                          >
+                            <input
+                              aria-label={`${direction === "credit" ? "Credit" : "Debit"} ${r.id}`}
+                              disabled={r.excluded}
+                              inputMode="decimal"
+                              className="border rounded p-1 bg-background w-28"
+                              value={
+                                r.direction === direction
+                                  ? (amountText[r.id] ??
+                                    displayAmount(r.amount_minor, digits))
+                                  : ""
+                              }
+                              onChange={(e) => {
+                                const value = e.target.value
+                                if (!value && r.direction !== direction) return
+                                setAmountText((previous) => ({
+                                  ...previous,
+                                  [r.id]: value,
+                                }))
+                                update(r.id, {
+                                  direction,
+                                  amount_minor: minorAmount(value, digits),
+                                })
+                              }}
+                            />
+                          </td>
+                        ))}
+                        <td className="p-2 border-b align-top whitespace-nowrap">
+                          <input
+                            aria-label={`Balance ${r.id}`}
+                            className="border rounded p-1 bg-background w-28"
+                            inputMode="decimal"
+                            value={
+                              amountText[`balance:${r.id}`] ??
+                              (r.balance_minor !== null
+                                ? displayAmount(r.balance_minor, digits)
+                                : "")
+                            }
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setAmountText((x) => ({
+                                ...x,
+                                [`balance:${r.id}`]: v,
+                              }))
+                              const parsed = minorAmount(
+                                v.replace(/^-/, ""),
+                                digits
+                              )
+                              update(r.id, {
+                                balance_minor:
+                                  v === ""
+                                    ? null
+                                    : parsed
+                                      ? (v.startsWith("-") ? "-" : "") + parsed
+                                      : "invalid",
+                              })
+                            }}
+                          />
+                        </td>
+                        <td className="p-2 border-b align-top">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setFocus({
+                                rowId: r.id,
+                                locator: original.source_cells[0]?.locator ?? {
+                                  kind: "page_only",
+                                  page: original.page_number,
+                                },
+                              })
+                            }
+                          >
+                            View source
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {visible.length === 0 && (
+                <p className="p-4">No rows match these review filters.</p>
+              )}
+            </div>
+          </div>
+        </div>
         {data.current_import && (
           <div className="rounded border p-3 space-y-2">
             <p>
@@ -846,6 +1144,7 @@ function EditableStatement({
               sourcePage
             if (!page) return
             const id = `manual:${newReviewId()}`
+            setCorrectionsOpen(true)
             setRows((current) => [
               ...current,
               {
@@ -970,279 +1269,6 @@ function EditableStatement({
             </Button>
           </div>
         )}
-        <div className="flex flex-wrap gap-4 text-sm">
-          <label>
-            <input
-              type="checkbox"
-              checked={onlyIssues}
-              onChange={(e) => setOnlyIssues(e.target.checked)}
-            />{" "}
-            Show problems and edits only
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={showExcluded}
-              onChange={(e) => setShowExcluded(e.target.checked)}
-            />{" "}
-            Show excluded rows
-          </label>
-        </div>
-        <div
-          className={`grid gap-4 ${focus ? "xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.2fr)]" : ""}`}
-        >
-          {focus && (
-            <aside className="min-w-0 xl:sticky xl:top-0 self-start rounded border p-3">
-              <div className="flex justify-between items-center mb-2">
-                <h4 className="font-semibold">Original statement</h4>
-                <Button variant="ghost" onClick={() => setFocus(null)}>
-                  Close source
-                </Button>
-              </div>
-              <TransactionSourceHighlight
-                sourceDocumentId={fileId}
-                locatorPayload={focus.locator}
-              />
-            </aside>
-          )}
-          <div className="overflow-auto max-h-[65vh]">
-            <table className="w-full text-sm border-collapse">
-              <thead className="sticky top-0 bg-card z-10">
-                <tr>
-                  {[
-                    "Use",
-                    "Date",
-                    "Description",
-                    "Amount",
-                    "Direction",
-                    "Printed balance",
-                    "Actions",
-                  ].map((s) => (
-                    <th key={s} className="text-left p-2 border-b">
-                      {s}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((r) => {
-                  const original = originals.get(r.id)!
-                  return (
-                    <tr key={r.id} className={r.excluded ? "opacity-70" : ""}>
-                      <td className="p-2 border-b align-top">
-                        <input
-                          aria-label={`Include row ${r.id}`}
-                          type="checkbox"
-                          checked={!r.excluded}
-                          onChange={(e) =>
-                            update(r.id, { excluded: !e.target.checked })
-                          }
-                        />
-                      </td>
-                      <td className="p-2 border-b align-top">
-                        <input
-                          aria-label={`Date ${r.id}`}
-                          type="date"
-                          disabled={r.excluded}
-                          className="border rounded p-1 bg-background"
-                          value={r.date}
-                          onChange={(e) =>
-                            update(r.id, { date: e.target.value })
-                          }
-                        />
-                      </td>
-                      <td className="p-2 border-b align-top min-w-56">
-                        <input
-                          aria-label={`Description ${r.id}`}
-                          disabled={r.excluded}
-                          className="border rounded p-1 bg-background w-full"
-                          value={r.description}
-                          onChange={(e) =>
-                            update(r.id, { description: e.target.value })
-                          }
-                        />
-                        <label className="block mt-2 text-xs">
-                          Paid by / paid to
-                          <input
-                            aria-label={`Counterparty ${r.id}`}
-                            disabled={r.excluded}
-                            className="block border rounded p-1 bg-background w-full"
-                            value={r.counterparty}
-                            onChange={(e) =>
-                              update(r.id, { counterparty: e.target.value })
-                            }
-                          />
-                        </label>
-                        {original.issues.map((s, i) => (
-                          <p
-                            key={i}
-                            className="text-amber-700 dark:text-amber-300 mt-1"
-                          >
-                            {s}
-                          </p>
-                        ))}
-                        {r.manual_page && (
-                          <label className="block mt-2">
-                            Source page
-                            <select
-                              aria-label={`Source page ${r.id}`}
-                              value={r.manual_page}
-                              onChange={(e) => {
-                                update(r.id, {
-                                  manual_page: Number(e.target.value),
-                                })
-                                setFocus({
-                                  rowId: r.id,
-                                  locator: {
-                                    kind: "page_only",
-                                    page: Number(e.target.value),
-                                  },
-                                })
-                              }}
-                              className="border rounded p-1 bg-background"
-                            >
-                              {data.page_numbers.map((p) => (
-                                <option key={p} value={p}>
-                                  {p}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        )}
-                        {requiresReason(r) && (
-                          <label className="block mt-2">
-                            Reason for correction or decision
-                            <input
-                              aria-label={`Reason ${r.id}`}
-                              value={r.reason}
-                              onChange={(e) =>
-                                update(r.id, { reason: e.target.value })
-                              }
-                              className="border rounded p-1 w-full bg-background"
-                            />
-                          </label>
-                        )}
-                        {focus?.rowId === r.id && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {original.source_cells.map((c) => (
-                              <Button
-                                key={c.column_index}
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  setFocus({ rowId: r.id, locator: c.locator })
-                                }
-                              >
-                                {c.expected_text}
-                              </Button>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-2 border-b align-top">
-                        <input
-                          aria-label={`Amount ${r.id}`}
-                          disabled={r.excluded}
-                          inputMode="decimal"
-                          className="border rounded p-1 bg-background w-28"
-                          value={
-                            amountText[r.id] ??
-                            displayAmount(r.amount_minor, digits)
-                          }
-                          onChange={(e) => {
-                            setAmountText((v) => ({
-                              ...v,
-                              [r.id]: e.target.value,
-                            }))
-                            update(r.id, {
-                              amount_minor: minorAmount(e.target.value, digits),
-                            })
-                          }}
-                        />
-                      </td>
-                      <td className="p-2 border-b align-top">
-                        <select
-                          aria-label={`Direction ${r.id}`}
-                          disabled={r.excluded}
-                          className="border rounded p-1 bg-background"
-                          value={r.direction}
-                          onChange={(e) =>
-                            update(r.id, {
-                              direction: e.target.value as Edit["direction"],
-                            })
-                          }
-                        >
-                          <option value="credit">
-                            {data.metadata.account_type === "credit_card"
-                              ? "Credit (reduces amount owed)"
-                              : "Money in"}
-                          </option>
-                          <option value="debit">
-                            {data.metadata.account_type === "credit_card"
-                              ? "Debit (increases amount owed)"
-                              : "Money out"}
-                          </option>
-                        </select>
-                      </td>
-                      <td className="p-2 border-b align-top whitespace-nowrap">
-                        <input
-                          aria-label={`Balance ${r.id}`}
-                          className="border rounded p-1 bg-background w-28"
-                          inputMode="decimal"
-                          value={
-                            amountText[`balance:${r.id}`] ??
-                            (r.balance_minor !== null
-                              ? displayAmount(r.balance_minor, digits)
-                              : "")
-                          }
-                          onChange={(e) => {
-                            const v = e.target.value
-                            setAmountText((x) => ({
-                              ...x,
-                              [`balance:${r.id}`]: v,
-                            }))
-                            const parsed = minorAmount(
-                              v.replace(/^-/, ""),
-                              digits
-                            )
-                            update(r.id, {
-                              balance_minor:
-                                v === ""
-                                  ? null
-                                  : parsed
-                                    ? (v.startsWith("-") ? "-" : "") + parsed
-                                    : "invalid",
-                            })
-                          }}
-                        />
-                      </td>
-                      <td className="p-2 border-b align-top">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            setFocus({
-                              rowId: r.id,
-                              locator: original.source_cells[0]?.locator ?? {
-                                kind: "page_only",
-                                page: original.page_number,
-                              },
-                            })
-                          }
-                        >
-                          View source
-                        </Button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            {visible.length === 0 && (
-              <p className="p-4">No rows match these review filters.</p>
-            )}
-          </div>
-        </div>
         <div className="rounded border bg-muted/30 p-3 space-y-2">
           <p>
             Import adds {included.length} transactions to the case. Original

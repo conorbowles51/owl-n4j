@@ -211,3 +211,18 @@ No deployment has been triggered. Local commits are prepared separately from the
 
 
 Final review safeguard: manually entered rows carry a page citation, not a confirmed printed row position. Sequential running-balance comparisons now return that explicit limitation instead of treating append order as source order. Transaction totals and the review's aggregate balance comparison remain available. All 15 correction/statement balance checks passed after this safeguard. This is documented in the user guide.
+
+### User test corrections, 11 September, morning (local, not deployed)
+
+The user's live test exposed failures in presentation and navigation that the earlier readiness record did not cover adequately. These reopen UI acceptance rather than erase the earlier checks.
+
+- [x] Replace the native unstyled file picker with a proper Choose PDF button, selected filename, and Change PDF action. Put fresh upload before existing-file discovery.
+- [x] Keep the transaction workspace mounted when switching financial tabs and modes, with inactive content hidden. Key statement review to the case so another case does not inherit it. This preserves the File object, upload job, selected statement and mounted corrections during these transitions.
+- [x] Display the original PDF by default beside a table built from stored source cells. Preserve printed text, dates, currency formatting, column indices, blank cells and row order. Keep the opening balance visible in this source view without importing it as a payment.
+- [x] Move corrections and import choices into separate controls. The printed source table does not show inferred counterparties or internal direction fields. Correction controls use Credit and Debit amounts.
+- [x] Move the source comparison ahead of account forms and import summaries so it is visible near the start of review.
+- [x] Local browser acceptance on the existing synthetic case, with API writes blocked after login: PDF loaded beside the extracted printed table; selected statement retained after visiting Statements and returning to Transactions. Screenshot: /tmp/loupe-printed-review.png.
+- [x] FinancialPage checks: 38 passed, including selected File preservation across tabs and transaction modes. Printed table and statement review checks: 7 passed. Intake checks: 3 passed before the final button appearance change. TypeScript passed after final layout formatting. Full suite not run.
+- [ ] Deploy these corrections and repeat the user's live journey. No deployment of this batch has occurred.
+
+Report work was interrupted to prioritize the user's defects. The local expert-support index now describes captured statement confirmations, checks their stored hashes, and exposes source custody reports. Expanding a separate outer ledger index remains unfinished; the trial addition was removed because historical partial captures need explicit compatibility handling. Do not mark the whole expert packet complete.
