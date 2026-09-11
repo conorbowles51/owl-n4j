@@ -66,7 +66,7 @@ Approved scope: 11 September 2026. The user requested a proper plan and implemen
 - [x] Run targeted integration checks, then the broad regression suite once at the final integration milestone.
 - [x] Complete the nine-step investigator acceptance script in the product assessment, including another user's ability to retrieve saved work.
 - [x] Review final diff, record outstanding limitations and commit the verified implementation.
-- [ ] Push the release. Automatic approval review requires explicit permission to publish this commit to the verified public repository `conorbowles51/owl-n4j`.
+- [x] Push the release. The user explicitly approved publication to the public repository `conorbowles51/owl-n4j`; commits `fee37455` and `9b5a6b5c` were pushed to `integration/evidence-main-reunion` on 11 September 2026.
 
 ## Implementation notes
 
@@ -131,4 +131,4 @@ One broad financial regression run returned 1,059 frontend passes with nine obso
 
 The remote branch was fetched and matched the starting commit `424e859c`, so no incoming merge was required. The release includes the assessment, this completed checklist, application changes and updated guide. Private PDFs, local test records, unrelated documents, archives and temporary screenshots are excluded. No financial database migration is required. The existing server deployment follows a push to `integration/evidence-main-reunion`.
 
-The implementation is committed as `fee37455`. Automatic approval review rejected the push twice: first because the destination was unverified, then because the verified GitHub repository is public and the reviewer requires explicit approval for this public disclosure. GitHub confirmed WRITE access. No push occurred. Do not retry through another transport or workflow; obtain the required destination-specific approval.
+The implementation is committed as `fee37455`. Automatic approval review initially rejected publication and required destination-specific approval. The user then explicitly approved committing and pushing to this public repository in response to the destination-specific question. The push succeeded, moving the remote branch from `424e859c` to `9b5a6b5c`. The local and remote branches matched after the push. The existing auto-deploy can now pick up the release; server deployment completion has not been independently verified.
