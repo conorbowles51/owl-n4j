@@ -16,6 +16,8 @@ def build_expert_support(document, *, snapshot_sha256, code_version=None, source
         sources[source['id']]=source
     history=document.get('pdf_review_history')
     methods=pdf_review_methods(document)
+    processing = document.get('processing_provenance') or {}
+    imports = processing.get('statement_import_history')
     support = dict(schema_version='loupe.financial.expert_support/1',
         derived_from_sha256=snapshot_sha256,
         case_id=document['ledger']['case_id'],preparation=document.get('export_context'),
@@ -46,10 +48,34 @@ def build_expert_support(document, *, snapshot_sha256, code_version=None, source
             reason='This ledger export does not capture a tracing scenario. Export the selected scenario separately with its source readings, assumptions and method comparisons.'),
         completeness='incomplete_expert_packet')
 
+    if imports is not None:
+        from services.financial.pdf_candidates import _digest
+        from services.financial.ledger_summary import LedgerSummaryError
+        captured_imports = []
+        for index, item in enumerate(imports):
+            if (_digest(item['confirmation']) != item['confirmation_sha256']
+                    or (item.get('original_sha256') is not None
+                        and _digest(item['original']) != item['original_sha256'])):
+                raise LedgerSummaryError('Statement import support does not match its recorded digest.')
+            captured_imports.append(dict(
+                source_document_id=item['source_document_id'], evidence_file_id=item['evidence_file_id'],
+                original_sha256=item.get('original_sha256'),
+                confirmation_sha256=item['confirmation_sha256'],
+                snapshot_reference=f'processing_provenance.statement_import_history[{index}]'))
+        support['extraction_and_review']['statement_imports'] = dict(
+            status='captured_scope', count=len(captured_imports), records=captured_imports,
+            procedure='Each referenced record retains the original statement proposal and the confirmed import, including recorded corrections and exclusions. Subsequent transaction changes are retained in the decision history.',
+            limitation='A missing original digest remains unknown. Confirmation records an investigator decision, not independent extraction accuracy.')
+        if captured_imports and methods is None:
+            support['extraction_and_review']['status'] = 'captured_statement_import_scope'
+        support['human_decisions']['statement_import_confirmations'] = len(captured_imports)
+        support['human_decisions']['snapshot_references'].append('processing_provenance.statement_import_history')
+
     case_custody = (document.get('case_financial_history') or {}).get('custody_reports')
     source_custody = (document.get('processing_provenance') or {}).get('custody_reports')
     if case_custody is not None or source_custody is not None:
         support['source_records']['case_custody_reports'] = case_custody
+        support['source_records']['source_custody_reports'] = source_custody
         support['source_records']['limitation'] = ('Attributed custody reports are included where recorded; missing earlier history remains unknown. '
             'Recorded source hashes and optional fresh byte checks do not establish authenticity or all custody transfers.')
     return support

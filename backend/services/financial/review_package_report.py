@@ -26,7 +26,7 @@ def render_review_package_report(*, case_id, scenarios, supports, preparation=No
         '<p>Each enclosed capture keeps its own date, filters, source readings and marking. The outer marking does not relabel the originals. This report does not combine their totals.</p>',
         '<h2>Contents</h2><ul><li><a href="manifest.json">File inventory and SHA-256 hashes</a></li>']
     if ledger is not None:
-        parts += ['<li><a href="ledger/original-export.zip">Original ledger export</a> — open this ZIP separately for its captured report and any selected original source files.</li>']
+        parts += ['<li><a href="ledger/original-export.zip">Original ledger export</a>: open this ZIP separately for its captured report and any selected original source files.</li>']
     for i in range(len(scenarios)):
         prefix=f'scenarios/{i+1:02d}/'
         parts += ['<li>Scenario '+str(i+1)+': <a href="'+prefix+'scenario.json">original scenario</a>, <a href="'+prefix+'replay.json">recalculation check</a>, <a href="'+prefix+'expert-support.json">methods, versions and support index</a>.</li>']
@@ -43,9 +43,11 @@ def render_review_package_report(*, case_id, scenarios, supports, preparation=No
         history=ledger.get('case_financial_history')
         custody=(history or {}).get('custody_reports')
         audit=(history or {}).get('audit_chain')
+        imports=(ledger.get('processing_provenance') or {}).get('statement_import_history')
         parts += ['<h2>Attached ledger and case history</h2>',table(['Captured item','Count or scope'],[
             ['Included ledger readings',ledger['ledger'].get('included_rows')],['Excluded ledger readings',ledger['ledger'].get('excluded_rows')],
             ['Wider case history','Attached' if history is not None else 'Not selected'],
+            ['Statement import confirmations',len(imports) if imports is not None else 'Not captured'],
             ['Case custody reports',len(custody['events']) if custody is not None else 'Not captured'],
             ['Case financial decisions',len(history['decisions']) if history is not None and 'decisions' in history else 'Not captured'],
             ['Recorded audit events',audit['verification']['event_count'] if audit else 'Not captured']]),
@@ -65,6 +67,7 @@ def render_review_package_report(*, case_id, scenarios, supports, preparation=No
         parts += ['<h2>Scenario '+str(i)+'</h2>',
             '<p>Period: '+text(inputs.get('start_date'))+' to '+text(inputs.get('end_date'))+'. Snapshot SHA-256: <code>'+text(support['derived_from_sha256'])+'</code>.</p>',
             '<p>Captured export code version: '+text(support['versions']['export_code_version'])+'.</p>',
+            '<p>Statement import confirmations: '+text(support['human_decisions'].get('statement_import_confirmations'))+'. Original extraction and confirmed changes are identified in this scenario’s support index.</p>',
             '<p>Conditional cash results under each selected method. Asset/resale allocations are separate interpretations retained in the scenario; do not add them to these cash amounts.</p>']
         rows=[]
         for method,result in results.items():
