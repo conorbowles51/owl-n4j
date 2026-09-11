@@ -40,6 +40,26 @@ class ExportComparisonTests(unittest.TestCase):
         self.assertTrue(result['packaging_or_generation_changed'])
         self.assertFalse(result['readings']['changed'])
 
+    def support_archive(self, *, support_changes=None):
+        document = self.document()
+        digest = hashlib.sha256(json.dumps(document).encode()).hexdigest()
+        support = dict(schema_version='loupe.financial.expert_support/1', case_id='case', derived_from_sha256=digest)
+        support.update(support_changes or {})
+        content = json.dumps(support, indent=2).encode()
+        entry = dict(filename='expert-support.json', sha256=hashlib.sha256(content).hexdigest(),
+                     byte_count=len(content), derived_from_sha256=digest)
+        return self.archive(document, manifest_changes={'expert_support': entry}, extra=('expert-support.json', content)), content
+
+    def test_saved_support_bytes_retained_and_bound_to_snapshot(self):
+        archive, support = self.support_archive()
+        self.assertEqual(read_verified_ledger_archive(archive)['expert_support_content'], support)
+        self.assertIsNone(read_verified_ledger_archive(self.archive())['expert_support_content'])
+        for change in ({'case_id': 'another-case'}, {'derived_from_sha256': '0' * 64}, {'schema_version': 'unknown'}):
+            with self.subTest(change=change):
+                archive, _ = self.support_archive(support_changes=change)
+                with self.assertRaises(LedgerSummaryError):
+                    read_verified_ledger_archive(archive)
+
     def test_exact_reading_fields_and_review_additions_are_identified(self):
         changed = self.document();changed['ledger']['readings'][0]['row']['amount_minor'] = '9007199254740994'
         changed['pdf_review_history']['reviews'] = [{'id':'new-review', 'reason':'Synthetic correction'}]

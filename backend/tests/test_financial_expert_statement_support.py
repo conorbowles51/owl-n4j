@@ -45,3 +45,23 @@ class ExpertStatementSupportTests(unittest.TestCase):
     def test_old_capture_does_not_claim_zero_confirmations(self):
         support = build_expert_support({'ledger': {'case_id': 'case', 'readings': []}}, snapshot_sha256='snapshot')
         self.assertNotIn('statement_import_confirmations', support['human_decisions'])
+
+    def test_original_pdf_runtime_is_exposed_without_current_version_substitution(self):
+        from tests.test_financial_pdf_processing_manifest import manifest
+        document = self.document()
+        item = document['processing_provenance']['statement_import_history'][0]
+        recorded = manifest()
+        item['original']['sources'] = [
+            {'page_number': 1, 'table_index': 0, 'processing_manifest': recorded},
+            {'page_number': 2, 'table_index': 0}]
+        item['original_sha256'] = _digest(item['original'])
+        support = build_expert_support(document, snapshot_sha256='snapshot')
+        versions = support['versions']['statement_pdf_processing_records']
+        self.assertEqual(versions[0]['manifest'], recorded)
+        self.assertEqual(versions[0]['status'], 'captured')
+        self.assertEqual(versions[1]['status'], 'not_recorded')
+        self.assertIsNone(versions[1]['manifest'])
+        recorded['content']['python_version'] = 'changed-without-manifest-hash'
+        item['original_sha256'] = _digest(item['original'])
+        with self.assertRaisesRegex(LedgerSummaryError, 'processing record'):
+            build_expert_support(document, snapshot_sha256='snapshot')

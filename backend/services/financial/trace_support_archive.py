@@ -100,6 +100,10 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
             wider_case_history='included' if history is not None else 'not_selected',
             audit_verification=verification,
             limitation='Original verified archive retained without rewriting. Its capture time and scope may differ from selected scenarios; no union ledger, latest-state claim or complete custody is inferred.')
+        if saved['expert_support_content'] is not None:
+            entries['ledger/captured-expert-support.json'] = saved['expert_support_content']
+            captured_ledger['support_reference'] = 'ledger/captured-expert-support.json'
+            captured_ledger['support_sha256'] = hashlib.sha256(saved['expert_support_content']).hexdigest()
 
     measurement = None
     validation = dict(status='unavailable', reason='No measured extraction corpus supplied.')
@@ -133,7 +137,8 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
         entries['review-index.html'] = render_review_package_report(case_id=next(iter(cases)),
             scenarios=[json.loads(content) for content in scenarios],
             supports=[json.loads(entries[scope['support_reference']]) for scope in scopes],
-            preparation=preparation, ledger=ledger_document, measurement=measurement)
+            preparation=preparation, ledger=ledger_document, measurement=measurement,
+            ledger_support_attached=bool(captured_ledger and captured_ledger.get('support_reference')))
     manifest = dict(schema_version='loupe.financial.trace_support_archive/1', case_id=next(iter(cases)),
         completeness='incomplete_expert_packet', scenarios=scopes, validation=validation, preparation=preparation,
         limitation='Selected scenarios preserve separate captured scopes. This bundle does not establish complete case custody, all human decisions, a complete historical toolchain, an expert opinion or signature. Hashes detect byte changes relative to this manifest; they do not authenticate authorship.',

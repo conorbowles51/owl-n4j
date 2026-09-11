@@ -39,6 +39,7 @@ def read_verified_ledger_archive(content):
     """
     if not isinstance(content, bytes) or len(content) > MAX_ARCHIVE_BYTES:
         raise LedgerSummaryError('Ledger archive exceeds 128 MiB or is not bytes.')
+    expert_support_content = None
     try:
         with ZipFile(io.BytesIO(content)) as archive:
             infos = archive.infolist()
@@ -87,11 +88,20 @@ def read_verified_ledger_archive(content):
                     raise ValueError('Archive member differs from its manifest digest or size.')
                 if path_key == 'filename' and entry['derived_from_sha256'] != manifest['document_sha256']:
                     raise ValueError('Derived report refers to a different snapshot.')
+                if entry is manifest.get('expert_support'):
+                    support = _json(data)
+                    if (not isinstance(support, dict)
+                            or support.get('schema_version') != 'loupe.financial.expert_support/1'
+                            or support.get('case_id') != manifest['case_id']
+                            or support.get('derived_from_sha256') != manifest['document_sha256']):
+                        raise ValueError('Expert support refers to a different case or snapshot.')
+                    expert_support_content = data
             if names != expected:
                 raise ValueError('Archive has unlisted or missing members.')
     except (BadZipFile, KeyError, TypeError, ValueError, UnicodeError, RecursionError, OSError, RuntimeError) as exc:
         raise LedgerSummaryError('Ledger archive is inconsistent or unsupported; comparison refused.') from exc
-    return dict(document=document, manifest=manifest, archive_sha256=hashlib.sha256(content).hexdigest())
+    return dict(document=document, manifest=manifest, archive_sha256=hashlib.sha256(content).hexdigest(),
+                expert_support_content=expert_support_content)
 
 
 def _index(records, key):

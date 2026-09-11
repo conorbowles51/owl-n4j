@@ -150,6 +150,27 @@ class TraceSupportArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'summary differs'):
             build_trace_support_archive([self.f.content], ledger_archive=fixture.archive(document))
 
+    def test_attached_ledger_support_is_copied_without_rewriting(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        fixture = ledger_fixture.ExportComparisonTests()
+        document = fixture.document()
+        document['ledger']['case_id'] = json.loads(self.f.content)['ledger_snapshot']['ledger']['case_id']
+        digest = hashlib.sha256(json.dumps(document).encode()).hexdigest()
+        support = json.dumps(dict(schema_version='loupe.financial.expert_support/1',
+            case_id=document['ledger']['case_id'], derived_from_sha256=digest,
+            validation={'status': 'unavailable'}), indent=4).encode()
+        entry = dict(filename='expert-support.json', sha256=hashlib.sha256(support).hexdigest(),
+            byte_count=len(support), derived_from_sha256=digest)
+        original = fixture.archive(document, manifest_changes={'expert_support': entry}, extra=('expert-support.json', support))
+        content = build_trace_support_archive([self.f.content], ledger_archive=original)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            reference = manifest['captured_ledger']['support_reference']
+            self.assertEqual(archive.read(reference), support)
+            self.assertEqual(archive.read('ledger/original-export.zip'), original)
+            self.assertIn(reference.encode(), archive.read('review-index.html'))
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+
     def rewrite_archive(self, content, change):
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             files = {name: archive.read(name) for name in archive.namelist()}

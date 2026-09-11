@@ -5,7 +5,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.money import Money
 
 
-def render_review_package_report(*, case_id, scenarios, supports, preparation=None, ledger=None, measurement=None):
+def render_review_package_report(*, case_id, scenarios, supports, preparation=None, ledger=None, measurement=None, ledger_support_attached=False):
     def text(value): return escape('Not recorded' if value is None else str(value), quote=True)
     def table(headers, rows):
         return '<table><thead><tr>'+''.join('<th>'+text(v)+'</th>' for v in headers)+'</tr></thead><tbody>'+''.join(
@@ -27,6 +27,8 @@ def render_review_package_report(*, case_id, scenarios, supports, preparation=No
         '<h2>Contents</h2><ul><li><a href="manifest.json">File inventory and SHA-256 hashes</a></li>']
     if ledger is not None:
         parts += ['<li><a href="ledger/original-export.zip">Original ledger export</a>: open this ZIP separately for its captured report and any selected original source files.</li>']
+        if ledger_support_attached:
+            parts += ['<li><a href="ledger/captured-expert-support.json">Saved ledger methods, versions and decision references</a>: an unchanged copy from the ledger export. Its capture date and scope remain separate from the selected scenarios.</li>']
     for i in range(len(scenarios)):
         prefix=f'scenarios/{i+1:02d}/'
         parts += ['<li>Scenario '+str(i+1)+': <a href="'+prefix+'scenario.json">original scenario</a>, <a href="'+prefix+'replay.json">recalculation check</a>, <a href="'+prefix+'expert-support.json">methods, versions and support index</a>.</li>']
@@ -69,6 +71,18 @@ def render_review_package_report(*, case_id, scenarios, supports, preparation=No
             '<p>Captured export code version: '+text(support['versions']['export_code_version'])+'.</p>',
             '<p>Statement import confirmations: '+text(support['human_decisions'].get('statement_import_confirmations'))+'. Original extraction and confirmed changes are identified in this scenario’s support index.</p>',
             '<p>Conditional cash results under each selected method. Asset/resale allocations are separate interpretations retained in the scenario; do not add them to these cash amounts.</p>']
+        processing_records = support['versions'].get('statement_pdf_processing_records')
+        if processing_records:
+            parts += ['<h3>Recorded statement processing</h3>', table(
+                ['Source document', 'Page', 'Recorded at', 'Python', 'PDF reader', 'OCR engine'], [
+                    [record['source_document_id'], record['page_number'],
+                     (record.get('manifest') or {}).get('content', {}).get('recorded_at'),
+                     (record.get('manifest') or {}).get('content', {}).get('python_version'),
+                     (record.get('manifest') or {}).get('content', {}).get('packages', {}).get('PyMuPDF'),
+                     ((record.get('manifest') or {}).get('content', {}).get('tesseract') or {}).get('version')
+                     if ((record.get('manifest') or {}).get('content', {}).get('tesseract') or {}).get('status') != 'not_used' else 'Not used']
+                    for record in processing_records]),
+                '<p>Versions describe the saved extraction, not the computer opening this report. Missing historical records remain not recorded. The support index retains the settings and component hashes where captured.</p>']
         rows=[]
         for method,result in results.items():
             if 'claims' in result:

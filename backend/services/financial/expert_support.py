@@ -52,11 +52,23 @@ def build_expert_support(document, *, snapshot_sha256, code_version=None, source
         from services.financial.pdf_candidates import _digest
         from services.financial.ledger_summary import LedgerSummaryError
         captured_imports = []
+        processing_records = []
         for index, item in enumerate(imports):
             if (_digest(item['confirmation']) != item['confirmation_sha256']
                     or (item.get('original_sha256') is not None
                         and _digest(item['original']) != item['original_sha256'])):
                 raise LedgerSummaryError('Statement import support does not match its recorded digest.')
+            from services.financial.pdf_processing_manifest import validate_pdf_processing_manifest
+            for source_index, source in enumerate(item['original'].get('sources', [])):
+                try:
+                    manifest = validate_pdf_processing_manifest(source.get('processing_manifest'))
+                except (TypeError, ValueError) as exc:
+                    raise LedgerSummaryError('Statement PDF processing record is inconsistent; report refused.') from exc
+                processing_records.append(dict(source_document_id=item['source_document_id'],
+                    page_number=source.get('page_number'), table_index=source.get('table_index'),
+                    status='captured' if manifest is not None else 'not_recorded',
+                    manifest=manifest,
+                    snapshot_reference=f'processing_provenance.statement_import_history[{index}].original.sources[{source_index}].processing_manifest'))
             captured_imports.append(dict(
                 source_document_id=item['source_document_id'], evidence_file_id=item['evidence_file_id'],
                 original_sha256=item.get('original_sha256'),
@@ -69,6 +81,7 @@ def build_expert_support(document, *, snapshot_sha256, code_version=None, source
         if captured_imports and methods is None:
             support['extraction_and_review']['status'] = 'captured_statement_import_scope'
         support['human_decisions']['statement_import_confirmations'] = len(captured_imports)
+        support['versions']['statement_pdf_processing_records'] = processing_records
         support['human_decisions']['snapshot_references'].append('processing_provenance.statement_import_history')
 
     case_custody = (document.get('case_financial_history') or {}).get('custody_reports')
