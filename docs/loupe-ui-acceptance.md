@@ -1,5 +1,14 @@
 # Loupe UI and practical workflow acceptance
 
+> **Workflow acceptance correction, 11 September 2026:** The checked items below
+> retain their historical component/sample checks. They do **not** establish a
+> usable complete-statement workflow. Neil's live test exposed the gap between PDF
+> preparation, actionable review and the investigation views. Whole-workflow
+> acceptance is reopened in [the requirements recovery audit](loupe-workflow-recovery-2026-09-11.md).
+> Complete that document's end-to-end checks through normal UI controls before
+> reporting this financial piece ready. Direct API writers and populated test
+> cases do not substitute for this acceptance. Preserve the completed work below.
+
 Current focus agreed with Neil on 9 September 2026: finish a usable PDF import →
 review → correction → analysis → export journey. Implement the saved design as
 part of that journey, not as an unspecified finishing phase. Existing completed

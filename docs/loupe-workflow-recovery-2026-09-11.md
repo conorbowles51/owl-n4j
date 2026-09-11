@@ -1,0 +1,142 @@
+# Financial workflow: requirements recovery and implementation audit
+
+11 September 2026. Inspected against commit 7ea627a5. This is a source-code and
+saved-requirements audit, not a new browser acceptance result. No server case or
+financial record was changed during this audit.
+
+## What governs the correction
+
+Neil asked for the existing requirements to be recovered rather than another
+invented product proposal. His latest clarification is that the original statement
+comparison is valuable, but it offers no apparent action. The review must let the
+investigator do something with the displayed values.
+
+The following sources have different authority:
+
+- `CLAUDE.md`, Design rules already settled, and `docs/financial-handoff.md`,
+  Design rules already settled: recorded user directions. Flag suspect fields, show their source,
+  allow confirmation or correction, preserve both values and use the correction
+  in calculations. Do not invent relationships between documents delivered together.
+- `bundle/docs/10-loupe-integration-and-store-design.md`, sections 8 and 12:
+  recorded decisions. The user controls grouping and filtering; the record retains
+  verification information. Postgres holds the financial record, with graph views
+  derived from it. This supersedes the recommendations in document 09.
+- `bundle/docs/11-v1-learnings-into-loupe.md`, sections 1 and 6: the saved analysis
+  of capabilities worth retaining, including entity perspective, incoming/outgoing
+  charts, review before applying proposed changes and safe re-extraction.
+- `bundle/docs/13-target-state-financial-forensics.md`, sections 4, 5 and 10:
+  the detailed target for extraction, balance checks and analytical views. Its
+  introduction explicitly says it is an unconstrained target, not a schedule.
+  Do not present every sentence as a verbatim instruction from Neil.
+- `bundle/docs/14-gap-analysis-and-roadmap.md`: original dependency sequence.
+  `docs/loupe-wiring-plan.md` and the later handover record subsequent wiring work.
+- `docs/loupe-ui-acceptance.md`: later implementation checklist. Its checked boxes
+  describe local and often synthetic checks. They do not override the requirements
+  or establish that the whole application works for a new user and a fresh statement.
+
+## What went wrong
+
+A manual, selected-row PDF recovery workflow became the normal statement workflow.
+An investigator must operate several intermediate representations before the
+application has transactions to analyse. The analytical features were then tested
+with prepared or separately populated cases. Those checks established useful
+individual capabilities but did not close the gap between uploading a statement
+and investigating its complete contents.
+
+The current source confirms the distinction:
+
+1. `PdfReviewIntake.tsx` uploads and prepares a PDF, then opens source selection.
+2. `CandidateSourcePicker.tsx` starts with no rows selected and no column meanings.
+   It saves only explicitly selected rows as a mapping. Clicking source cells
+   highlights them; it does not edit their interpreted transaction values.
+3. `PdfCandidatesPanel.tsx` lists saved batches. A user opens a batch and then an
+   individual reading to reach `CandidateReviewForm.tsx`.
+4. That form has editable amounts, direction, dates, description and counterparty,
+   account selection, and resolved/rejected/reopened decisions. These capabilities
+   exist, but are separated from the first comparison table and use internal terms.
+5. `CandidateFinalizationPanel.tsx` is a further operation. The backend's
+   `candidate_materialization.py` explicitly describes selected rows with
+   unverified whole-file coverage and prevents later additions after finalization.
+   The preview reports P3 and exclusion from default verified totals. This is not
+   a complete-statement import contract.
+6. `FinancialPage.tsx` puts proof status, document comparisons and PDF preparation
+   above the ledger. `CorrectableLedger.tsx` then puts coverage, two summaries,
+   export and trends before the transaction table. This explains the long screen
+   of controls in Neil's screenshot.
+7. Ledger and Transactions both mount `CorrectableLedger`. Counterparties, trends,
+   transfers and patterns each have separate controls and scopes. The user is
+   responsible for connecting these views and their selections.
+
+The screenshot's single candidate is evidence of a one-row saved batch. It does
+not establish that only one row was extracted, nor that the whole file has been
+imported. The interface must make those counts distinct without requiring the user
+to understand mappings, candidates or finalization.
+
+## Requirement compared with current implementation
+
+| Requirement | What exists | Gap to close |
+| --- | --- | --- |
+| Process a complete statement into reviewable transactions | PDF preparation, source cells, row suggestions, saved readings | No single complete-statement workflow joining these stages. Account details, controls and all transaction pages need a common review result. |
+| Act on a value while comparing it with the original | Measured highlights and a separate review form | Put editable transaction fields and clear Save correction, Confirm and Exclude actions in the same review. Keep original text unchanged. Explain why an action is unavailable. |
+| Correct omissions and non-transaction rows | Manual row selection and rejection | Make excluded headings/balances visible as such; provide a source-linked route for missed transactions. Do not treat opening balance as money received. |
+| Check statement completeness and arithmetic | Statement scopes, balance checks, coverage and reconciliation services | Integrate checks with the review and show the actual discrepancy. A balanced subset must not be called a complete statement. |
+| Begin investigation with a useful financial view | Filterable ledger and source links, summary/trend components | Make transactions and account context the main working area. Keep preparation and detailed history available without putting them ahead of every investigation. |
+| Select parties and see money in, out and internal movement | Source-label/identity charts and explicit account-transfer scenarios | The saved design calls for a shared entity perspective. Account-pair scenarios are not a complete substitute. Selection and population need to follow the user across relevant views. |
+| Follow connections and inspect supporting evidence | Posting graph, paired account diagram, source dialogs | Preserve these capabilities and connect them to the current account/party/transaction selection. Do not infer that an extracted label proves identity or ownership. |
+| Investigate patterns and relate transactions to case events | Bounded pattern screens, saved theories and case timeline | These are useful partial implementations. They do not establish the full target pattern catalogue or a connected workflow from a newly imported statement. |
+| Export the investigation being viewed | Ledger reports, captured scenarios, source/history packages | Verify a report produced from the same reviewed statement and filters through the ordinary UI. Separate capture mechanics from the main investigation controls. |
+| Reprocess without destroying work | Preserved source bytes and review histories; preparation skips processed files | A safe new extraction version with comparison and explicit replacement remains needed. Re-uploading into another case is a workaround, not completion. |
+
+## Correction order and acceptance
+
+These are implementation steps derived from the recovered requirements. They are
+not assertions that Neil approved a new visual mockup. Preserve the existing Loupe
+shell and persistent Financial guide modal.
+
+1. [ ] Complete statement review in one place.
+   - Prepare a statement and open a transaction table beside its original PDF.
+   - Show account, currency, period, opening/closing controls and page coverage.
+   - Offer proposed column meanings and transaction rows for review. Preserve
+     uncertainty; no bank-specific assumption based only on the Nexus fixture.
+   - Edit/confirm fields, exclude non-transactions and recover missed rows within
+     this review. Show what was saved and the next unresolved issue.
+2. [ ] Connect review to the financial record.
+   - Show complete transaction count, exclusions, balance check and unresolved
+     problems before committing the import.
+   - Preserve original readings and individual changes with actor and reason.
+   - Prevent duplicate additions and partial success being described as complete.
+   - Do not promote verification merely to make totals appear.
+3. [ ] Make the financial record the main investigation screen.
+   - Put the table, understandable account names, dates and money totals first.
+   - Provide visible account/date/search/reliability filters and source actions.
+   - Move preparation, detailed verification history and document comparison into
+     appropriate secondary panels while retaining their functionality.
+   - Remove the confusing duplication between Ledger and Transactions.
+4. [ ] Connect the analytical views to that record and selection.
+   - Reuse the existing charts, transfers, graph, timeline and tracing calculations.
+   - Carry account/party/date scope and verification selection consistently.
+   - Restore the saved incoming/outgoing/internal entity perspective behaviour.
+   - Check corrections flow through every applicable calculation and export.
+5. [ ] Add safe reprocessing of an existing statement.
+   - Keep the previous extraction and review history, compare versions, and make
+     replacement explicit. Do not overwrite finalized source mappings in place.
+6. [ ] Prove the whole journey through normal application controls.
+   - Fresh Nexus PDF: all 12 payments, six credits, six debits, all 13 printed
+     balances; header and opening balance excluded from transaction counts.
+   - Deliberately correct a field and verify original/history preservation.
+   - Import, reload and see the same transactions; chart and export the same scope.
+   - Repeat on the supplied real multi-page documents in isolated copies.
+   - Include a missing-row/balance discrepancy and interrupted/resumed import.
+   - No database seeding or direct API review scripts may substitute for the
+     acceptance of the user-facing journey.
+
+## What is retained
+
+The extraction repair, exact monetary calculations, source rectangles, review
+history, correction handling, reconciliation, analytical components and export
+checks are existing work to reuse. Their tests remain valuable regression checks.
+They are not evidence that the workflow items above are complete.
+
+No new completion date is inferred from test counts or number of components.
+The first acceptance boundary is the ordinary statement-to-investigation journey,
+not another isolated control or a screenshot of a pre-populated case.
