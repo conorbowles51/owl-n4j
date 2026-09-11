@@ -17,8 +17,14 @@ import { LedgerPostingGraph } from "./LedgerPostingGraph"
 import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
 import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { LedgerCounterpartiesAnalysis } from "./LedgerCounterpartiesAnalysis"
-import { useCallback, useMemo, useState, type ReactNode } from "react"
-import { useParams } from "react-router-dom"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react"
+import { useParams, useSearchParams } from "react-router-dom"
 import { BarChart3, DollarSign, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LedgerAnalysis } from "./LedgerAnalysis"
@@ -80,6 +86,15 @@ import type {
 export function FinancialPage() {
   const { id: caseId } = useParams()
   const store = useFinancialStore()
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (caseId && searchParams.get("view") === "findings") {
+      useFinancialStore.getState().setMainView("findings")
+      const next = new URLSearchParams(searchParams)
+      next.delete("view")
+      setSearchParams(next, { replace: true })
+    }
+  }, [caseId, searchParams, setSearchParams])
   const currentCase = useCase(caseId)
   const [importReceipt, setImportReceipt] =
     useState<StatementImportReceipt | null>(null)
@@ -714,7 +729,11 @@ export function FinancialPage() {
           className="min-h-0 flex-1 overflow-auto"
           active={store.mainView === "findings"}
         >
-          <FinancialFindings key={caseId} caseId={caseId} />
+          <FinancialFindings
+            key={caseId}
+            caseId={caseId}
+            caseTitle={currentCase.data?.title || ""}
+          />
         </RetainedFinancialTab>
 
         <RetainedFinancialTab

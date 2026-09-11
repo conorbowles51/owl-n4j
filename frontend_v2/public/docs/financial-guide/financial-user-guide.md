@@ -771,6 +771,50 @@ To resume a downloaded calculation file instead, open **Indirect review methods*
 
 ## Download reports and supporting records
 
+### Build a report from several findings
+
+Use this when you want to explain several observations together. Save the observations in **Findings** first. For example, select payments in Transactions and save them with a note, or save a calculation from Trace funds.
+
+1. Open **Financial**, then **Findings**.
+2. Find a note you want to include. Tick **Include in report** under its title. Repeat for the other notes. You can select up to 20 notes, including notes on different search results or pages.
+3. Select **Build report**. The number on the button is the number of selected notes.
+4. Enter a **Report title** that describes what the report covers.
+5. Enter an **Introduction** explaining why you chose these findings and what the reader should look at. This is your writing. Loupe does not generate a conclusion for you.
+6. Check the list of selected notes. Use **Move up** and **Move down** to put them in reading order. Use **Remove** to leave a note out of this report. Removing it here does not delete the saved note.
+7. Select **Preview report**. If a selected note has changed since you selected it, choose **Use latest selected notes**, check the updated list, then preview again.
+8. Read the preview. It contains your introduction, each note, its saved payment values and references, and any saved tracing or indirect calculation. Payment totals are separated by account and currency within each note.
+9. If you change the title, introduction, selection or order, select **Preview report** again.
+10. Select **Save report to case**. Wait for **Report saved to this case**. Your colleagues with access to this case can then open the report. Saving does not send it to anyone.
+
+![Choosing and ordering findings for a financial report](images/17-financial-report-builder.png)
+
+*Choose the reading order and write an introduction before previewing the report.*
+
+The report retains the note versions shown in the preview. Later edits to those notes or their transactions do not rewrite the report. To report later corrections, prepare another report using the updated notes. Keep the earlier report if it forms part of your case record.
+
+A payment may be discussed in several findings. It appears in each relevant note, but is counted once within that note's payment totals. Do not add totals from different notes together to calculate money received or spent. Use the Transactions totals with the required filters for that purpose.
+
+Your title, introduction and selected notes remain in the same browser tab when you close the builder or visit another financial tab. Closing the browser tab may discard an unfinished report. Saving to the case is the step that lets you and your colleagues return to it later.
+
+### Reopen or download a saved financial report
+
+1. Open **Reports** in the main left sidebar while the case is open.
+2. Find the title under **Financial reports** and select **Open financial report**. You can also find the report in Financial's **Findings** tab and select the same button there.
+3. Read the saved note list and preview to check that you have the intended report.
+4. Select **Download readable report** to save an HTML file to your computer. Open that file in a browser. Use the browser's Print command to print it or save it as a PDF. This download does not include the original statement files.
+5. For a copy that also retains the saved report data, select **Download report and saved data**. Extract the ZIP and open `report.html`. Keep `saved-report.json` and `contents.json` with it. They record the saved contents, note versions and file checks; you do not need to edit them to read the report.
+6. To include original PDFs, expand **Supporting file references** and read the file list. Tick **Include the supporting PDFs in the download package**, then select **Download report package with PDFs**.
+7. Extract the ZIP. Open `report.html`; the file links open the PDFs in its `statements` folder. A source used in several notes is included once. Each PDF is the whole original file, including any other payments or periods it contains.
+8. Check the report and files before sharing them outside the case.
+
+![Opening a saved financial report](images/18-saved-financial-report.png)
+
+*The saved report keeps its selected note versions. Downloads are separate from saving to the case.*
+
+Reports support up to 20 selected notes and 8 MB of saved report data. A package can include up to 20 PDFs and 64 MB of original files. If it is too large, select fewer findings or download the report without PDFs and obtain the required files from Evidence. If Loupe reports a changed or unavailable source, it stops the package download. Check the named source before trying again.
+
+If saving is interrupted, your draft remains. Open **Reports** and check whether the report was saved before trying to save again, to avoid creating a duplicate.
+
 ### Make a report from a saved note
 
 1. Open **Findings** and find the note you want to report.
@@ -789,6 +833,7 @@ For a saved tracing calculation, use **Open saved calculation**, then **Download
 
 | You need to give someone | Use |
 |---|---|
+| Several findings together with your introduction and their saved calculations | Build report in Findings, then save it to the case and download the readable report or package. |
 | Current ledger rows, totals and recorded source/review history | Ledger snapshot ZIP. |
 | A particular searched and sorted table | Table-view export, with its separate table scope. |
 | A readable ledger report | HTML inside the ZIP, or select the PDF option before downloading. |
@@ -905,6 +950,7 @@ External timestamping is an administrator-operated process, not a button an inve
 | Custody or identity decisions | Save and confirm the recorded history. | Reload the relevant history before adding or changing anything. |
 | A tracing calculation | Save this calculation in Findings, then wait for confirmation. Download a report if needed. | Open Findings, then Open saved calculation. Use Trace funds to calculate a new result with current records. |
 | A transfer comparison | Save this analysis with a note. | Open Findings to review its selected payments and explanation. |
+| A report containing several findings | Select Save report to case and wait for confirmation. | Open Reports, find its title under Financial reports and select Open financial report. |
 | A selected set of payments | Save selection with a note and wait for confirmation. | Reopen the named entry in Findings. |
 | An indirect workpaper | Save workpaper in Findings. Download it if you also need the calculation file. | Open saved workpaper in Findings, or restore the downloaded file. |
 | A pattern theory or claim response | Use the provided Workspace save action and confirm the entry. | Open Workspace and inspect the saved entry and attachments. |

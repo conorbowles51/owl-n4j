@@ -1,3 +1,12 @@
+import { FinancialReportBuilder } from "./FinancialReportBuilder"
+import { SavedFinancialReport } from "./SavedFinancialReport"
+import { useFinancialDraft } from "../stores/financial-drafts"
+import {
+  emptyReportDraft,
+  reportDraftName,
+  MAX_REPORT_NOTES,
+  type FinancialReportDraft,
+} from "../lib/financial-report"
 import { SavedIndirectFinding } from "./SavedIndirectFinding"
 import { indirectWorkpaperSchema } from "../lib/saved-indirect"
 import { savedAnalysisSummary } from "../lib/saved-analysis-summary"
@@ -13,7 +22,18 @@ import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { transactionDetail } from "../lib/transaction-detail"
 
-export function FinancialFindings({ caseId }: { caseId: string | undefined }) {
+export function FinancialFindings({
+  caseId,
+  caseTitle = "",
+}: {
+  caseId: string | undefined
+  caseTitle?: string
+}) {
+  const [reportDraft, setReportDraft] = useFinancialDraft<FinancialReportDraft>(
+    caseId || "",
+    reportDraftName,
+    emptyReportDraft
+  )
   const selectNodes = useGraphStore((state) => state.selectNodes)
   const expand = useUIStore((state) => state.expandGraphPanelTo)
   const [page, setPage] = useState(0)
@@ -43,6 +63,11 @@ export function FinancialFindings({ caseId }: { caseId: string | undefined }) {
           These are also available in Workspace.
         </p>
       </header>
+      <FinancialReportBuilder
+        key={caseId}
+        caseId={caseId}
+        caseTitle={caseTitle}
+      />
       <label className="block">
         Search saved work
         <input
@@ -73,6 +98,47 @@ export function FinancialFindings({ caseId }: { caseId: string | undefined }) {
           className="rounded border bg-card p-4 space-y-3"
         >
           <h3 className="font-semibold">{entry.title || "Untitled note"}</h3>
+          {!entry.tags.includes("financial-report") && (
+            <label className="flex gap-2 items-center text-sm">
+              <input
+                type="checkbox"
+                aria-label={`Include ${entry.title || "Untitled note"} in report`}
+                checked={reportDraft.selected.some(
+                  (note) => note.id === entry.id
+                )}
+                disabled={
+                  query.isPlaceholderData ||
+                  (!reportDraft.selected.some((note) => note.id === entry.id) &&
+                    reportDraft.selected.length >= MAX_REPORT_NOTES)
+                }
+                onChange={(event) =>
+                  setReportDraft((current) => ({
+                    ...current,
+                    selected: event.target.checked
+                      ? [
+                          ...current.selected.filter(
+                            (note) => note.id !== entry.id
+                          ),
+                          {
+                            id: entry.id,
+                            title: entry.title || "Untitled note",
+                            version: entry.version,
+                          },
+                        ]
+                      : current.selected.filter((note) => note.id !== entry.id),
+                  }))
+                }
+              />
+              Include in report
+            </label>
+          )}
+          {entry.tags.includes("financial-report") && (
+            <SavedFinancialReport
+              key={entry.id + ":" + entry.version}
+              caseId={caseId}
+              entry={entry}
+            />
+          )}
           <p className="text-xs text-muted-foreground">
             {entry.entry_type} ·{" "}
             {entry.author_name || entry.author_email || "Author not recorded"}
@@ -195,52 +261,56 @@ export function FinancialFindings({ caseId }: { caseId: string | undefined }) {
               </div>
             )
           })}
-          <details className="rounded border p-3 space-y-2">
-            <summary className="cursor-pointer font-medium">
-              Create a report from this note
-            </summary>
-            <p className="text-sm">
-              Includes this note and any saved payment values and statement
-              references attached to it. The original PDFs are not included.
-              Open the downloaded HTML file to read it or print it to PDF.
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setError("")
-                try {
-                  const url = URL.createObjectURL(
-                    new Blob([findingReport(entry, caseId)], {
-                      type: "text/html;charset=utf-8",
-                    })
-                  )
-                  const link = document.createElement("a")
-                  link.href = url
-                  link.download = `financial-note-${entry.id}.html`
-                  link.click()
-                  setTimeout(() => URL.revokeObjectURL(url), 1000)
-                } catch (failure) {
-                  setError(
-                    failure instanceof Error
-                      ? failure.message
-                      : "The report could not be created."
-                  )
-                }
-              }}
-            >
-              Download this note and its payments
-            </Button>
-            <FindingReportBundle
-              key={entry.id + ":" + entry.version}
-              entry={entry}
-              caseId={caseId}
-            />
-          </details>
+          {!entry.tags.includes("financial-report") && (
+            <details className="rounded border p-3 space-y-2">
+              <summary className="cursor-pointer font-medium">
+                Create a report from this note
+              </summary>
+              <p className="text-sm">
+                Includes this note and any saved payment values and statement
+                references attached to it. The original PDFs are not included.
+                Open the downloaded HTML file to read it or print it to PDF.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setError("")
+                  try {
+                    const url = URL.createObjectURL(
+                      new Blob([findingReport(entry, caseId)], {
+                        type: "text/html;charset=utf-8",
+                      })
+                    )
+                    const link = document.createElement("a")
+                    link.href = url
+                    link.download = `financial-note-${entry.id}.html`
+                    link.click()
+                    setTimeout(() => URL.revokeObjectURL(url), 1000)
+                  } catch (failure) {
+                    setError(
+                      failure instanceof Error
+                        ? failure.message
+                        : "The report could not be created."
+                    )
+                  }
+                }}
+              >
+                Download this note and its payments
+              </Button>
+              <FindingReportBundle
+                key={entry.id + ":" + entry.version}
+                entry={entry}
+                caseId={caseId}
+              />
+            </details>
+          )}
           <a
             className="inline-block underline text-sm"
             href={`/cases/${caseId}/workspace?view=casework&entry=${entry.id}`}
           >
-            Edit or review in Workspace
+            {entry.tags.includes("financial-report")
+              ? "Open report record in Workspace"
+              : "Edit or review in Workspace"}
           </a>
         </article>
       ))}

@@ -179,3 +179,20 @@ Validation: 38 affected backend checks and 45 affected frontend checks passed, i
 Browser acceptance used the existing synthetic Nexus case. It opened the account's statement, identified the uncovered January 2024 range, loaded the original PDF into the viewer with the same SHA-256 as its uploaded bytes, opened the account/date-filtered transaction request with a successful nonempty response, and retained the date range on returning to Statements. No financial writes occurred. Local evidence is retained in `data/local-runtime/account-review-acceptance.json` and is not published.
 
 Limits: this is an account investigation workflow over existing imports, not new PDF extraction accuracy evidence. The unavailable Capital One 8160 source, independently reviewed extraction corpus and broader expert-report acceptance remain outstanding as recorded above. Agreement between balances and payments does not establish complete extraction. Account/date view choices are temporary and reset on a full browser refresh.
+
+## Financial reports follow-up, 11 September 2026
+
+- [x] Select up to 20 saved financial findings across search results and pages. Retain the selection, title and introduction in a user/case-specific browser-tab draft.
+- [x] Choose a reading order and preview the actual included notes, payment values, source references and saved tracing or indirect calculations. Require an explicit selection update if a note changed before preview.
+- [x] Save the exact previewed note versions as a shared casework report using the existing case permissions and entry history. Do not edit the original notes or discard a newer draft when an earlier save completes.
+- [x] Reopen the report from Financial Findings and the main Reports page. Make New financial report open Findings; distinguish the older report types and their loading errors from financial reports.
+- [x] Download readable HTML or a ZIP with the saved report data and file manifest. Optional original PDFs are deduplicated, size-limited and checked against their recorded bytes and payment/calculation references.
+- [x] Show exact payment totals per note, account and currency. Do not add overlapping findings into a misleading report-wide total.
+- [x] Preserve method definitions for older saved calculations when preparing a report. Reopening the saved report uses the captured definition and does not depend on the current catalog.
+- [x] Add beginner instructions for selection, ordering, preview, saving, reopening and downloads, with two real screenshots of the local synthetic workflow.
+
+Validation: 21 affected frontend checks passed, including exact large amounts, overlap handling, saved calculation sources, modified records, case separation, optional original bytes and save/draft races. The save-race check found and fixed a late response clearing a newer draft. Scoped lint, TypeScript, guide generation and the final production build passed. No full suite was run.
+
+Browser acceptance selected two existing synthetic workpapers, retained the draft across financial tabs, changed their order, previewed the original 40.00 GBP and revised 50.00 GBP results, saved once and reopened from both Findings and Reports. Both original notes and links were unchanged. Downloads with and without PDFs succeeded; the shared PDF appeared once and all listed member sizes and hashes matched. No new ledger or extraction writes occurred. Local evidence is `data/local-runtime/financial-report-acceptance.json`; the synthetic case and this local receipt are not published.
+
+Limits: this is a report of selected saved findings, not completion of the full expert packet. Historical note values remain historical even if later transactions are corrected. The original expert-packet acceptance and independently reviewed extraction corpus remain open. The unrelated older general-report API is unavailable in the local app; the financial report workflow uses the working shared casework API and remains accessible independently.

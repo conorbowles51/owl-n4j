@@ -12,25 +12,33 @@ const fileSchema = z.object({
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
 })
 const MAX_BYTES = 64 * 1024 * 1024
-export async function findingReportBundle(
-  entry: CaseworkEntry,
+export async function verifiedFindingSources(
+  entries: CaseworkEntry[],
   caseId: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  expectedDigests: Record<string, string> = {}
 ) {
   if (
-    entry.case_id !== caseId ||
-    entry.links.some((link) => link.case_id !== caseId)
+    !entries.length ||
+    entries.some(
+      (entry) =>
+        entry.case_id !== caseId ||
+        entry.links.some((link) => link.case_id !== caseId)
+    )
   )
     throw Error("The saved work does not match this case.")
+  const links = entries.flatMap((entry) => entry.links)
   const ids = [
     ...new Set(
-      entry.links
+      links
         .filter((link) => link.target_type === "evidence")
         .map((link) => link.target_id)
     ),
   ]
   if (!ids.length || ids.length > 20)
     throw Error("A report package needs between 1 and 20 supporting PDFs.")
+  if (Object.keys(expectedDigests).some((id) => !ids.includes(id)))
+    throw Error("A saved calculation is missing a supporting file reference.")
   const files = []
   let total = 0
   for (const id of ids) {
@@ -39,6 +47,10 @@ export async function findingReportBundle(
     )
     if (file.case_id !== caseId || file.id !== id)
       throw Error("A supporting file belongs to another case.")
+    if (expectedDigests[file.id] && expectedDigests[file.id] !== file.sha256)
+      throw Error(
+        "A supporting file differs from the source recorded in a saved calculation."
+      )
     if (!file.original_filename.toLowerCase().endsWith(".pdf"))
       throw Error(
         "This package supports PDFs only. Download other supporting files separately from Evidence."
@@ -56,7 +68,7 @@ export async function findingReportBundle(
     const file = files[i]
     const linkedIds = [
       ...new Set(
-        entry.links
+        links
           .filter(
             (link) =>
               link.target_type === "evidence" && link.target_id === file.id
@@ -145,6 +157,19 @@ export async function findingReportBundle(
     paths[file.id] = path
     archive[path] = bytes
   }
+  return { archive, paths, files }
+}
+
+export async function findingReportBundle(
+  entry: CaseworkEntry,
+  caseId: string,
+  signal: AbortSignal
+) {
+  const { archive, paths, files } = await verifiedFindingSources(
+    [entry],
+    caseId,
+    signal
+  )
   archive["report.html"] = strToU8(findingReport(entry, caseId, paths))
   archive["references.json"] = strToU8(
     JSON.stringify(

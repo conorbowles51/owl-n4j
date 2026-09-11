@@ -14,7 +14,8 @@ const escape = (value: unknown) =>
 // Accept only the already-checked record used by the saved-workpaper viewer.
 export function indirectWorkpaperReport(
   saved: Awaited<ReturnType<typeof readSavedIndirect>>,
-  entry: CaseworkEntry
+  entry: CaseworkEntry,
+  files?: Record<string, string>
 ) {
   const { review, catalog } = saved
   const { value, envelope } = review
@@ -45,7 +46,7 @@ ${value.missing.length ? `<h2>Still to complete</h2><ul>${value.missing.map((ite
     })
     .join("")}
 <h2>Calculation notes</h2><p>${escape(value.limitation)}</p>
-<h2>Supporting files</h2><ul>${value.sources.map((file) => `<li>${escape(file.filename)}<p class="reference">File ${escape(file.id)}<br>Recorded SHA-256: ${escape(file.sha256 || "Not recorded")}</p></li>`).join("")}</ul><p>The original files are not included in this report. Open the saved workpaper in Loupe to inspect them.</p>
+<h2>Supporting files</h2><ul>${value.sources.map((file) => `<li>${files?.[file.id] ? `<a href="${escape(files[file.id])}">${escape(file.filename)}</a>` : escape(file.filename)}<p class="reference">File ${escape(file.id)}<br>Recorded SHA-256: ${escape(file.sha256 || "Not recorded")}</p></li>`).join("")}</ul><p>${files ? "The supporting original files are included in the statements folder." : "The original files are not included in this report. Open the saved workpaper in Loupe to inspect them."}</p>
 <h2>Saved note</h2><p>${escape(entry.body)}</p>
 <p class="reference">${escape(entry.author_name || entry.author_email || "Author not recorded")}<br>Saved ${escape(entry.updated_at || entry.created_at || "date not recorded")}<br>Case ${escape(entry.case_id)}<br>Note ${escape(entry.id)}<br>Workpaper SHA-256: ${escape(envelope.scenario_sha256)}<br>Method reference: ${escape(value.reference)}, section ${escape(value.reference_section)}</p></body></html>`
 }
