@@ -1,3 +1,7 @@
+import {
+  useInvestigationScope,
+  useAnalysisPopulation,
+} from "../stores/investigation-scope"
 import { TransferReferenceEvidence } from "./TransferReferenceEvidence"
 import { AccountFlowPerspective } from "./AccountFlowPerspective"
 import { useState } from "react"
@@ -14,11 +18,10 @@ export function LedgerTransfersWorkbench({
 }: {
   caseId: string | undefined
 }) {
-  const [start, setStart] = useState(""),
-    [end, setEnd] = useState("")
-  const [population, setPopulation] = useState<"working" | "verified">(
-    "working"
-  )
+  const [investigation, applyInvestigation] = useInvestigationScope(caseId)
+  const start = investigation.startDate || ""
+  const end = investigation.endDate || ""
+  const [population, setPopulation] = useAnalysisPopulation(caseId)
   const [tolerance, setTolerance] = useState(3)
   if (!caseId) return <p>Choose a case to compare transfers.</p>
   return (
@@ -29,6 +32,11 @@ export function LedgerTransfersWorkbench({
         case. Inspect both sources before selecting a pairing. The ledger
         retains both original postings.
       </p>
+      <p className="text-sm text-muted-foreground">
+        The date range follows your other investigation tabs. Transfer
+        comparison includes all accounts in that range so both sides can be
+        found, even when another tab has a single account selected.
+      </p>
       <div className="flex flex-wrap items-end gap-3">
         <label>
           From ordering date
@@ -37,7 +45,12 @@ export function LedgerTransfersWorkbench({
             className="block rounded border bg-background p-2"
             type="date"
             value={start}
-            onChange={(e) => setStart(e.target.value)}
+            onChange={(e) =>
+              applyInvestigation({
+                ...investigation,
+                startDate: e.target.value || undefined,
+              })
+            }
           />
         </label>
         <label>
@@ -47,7 +60,12 @@ export function LedgerTransfersWorkbench({
             className="block rounded border bg-background p-2"
             type="date"
             value={end}
-            onChange={(e) => setEnd(e.target.value)}
+            onChange={(e) =>
+              applyInvestigation({
+                ...investigation,
+                endDate: e.target.value || undefined,
+              })
+            }
           />
         </label>
         <label>

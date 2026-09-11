@@ -5,13 +5,17 @@ import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl } from "../lib/candidate-contract"
 import { postingGraph } from "../lib/ledger-graph"
 import { correctionMoney } from "../lib/correction-contract"
-import { LedgerFilters } from "./LedgerFilters"
+import { InvestigationFilters } from "./InvestigationFilters"
+import {
+  useInvestigationScope,
+  useAnalysisPopulation,
+} from "../stores/investigation-scope"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 const Canvas = lazy(() => import("./LedgerGraphCanvas"))
 export function LedgerPostingGraph({ caseId }: { caseId: string | undefined }) {
-  const [params, setParams] = useState<LedgerQueryParams>({}),
-    [population, setPopulation] = useState<"working" | "verified">("working")
+  const [params, setParams] = useInvestigationScope(caseId)
+  const [population, setPopulation] = useAnalysisPopulation(caseId)
   if (!caseId) return <p>Choose a case to view its posting graph.</p>
   return (
     <section aria-label="Ledger posting graph" className="space-y-4 p-4">
@@ -21,7 +25,12 @@ export function LedgerPostingGraph({ caseId }: { caseId: string | undefined }) {
         Label groups are not resolved people or organisations. Each arrow
         represents one posting, with its original source available.
       </p>
-      <LedgerFilters caseId={caseId} onApply={setParams} />
+      <InvestigationFilters
+        key={JSON.stringify(params)}
+        caseId={caseId}
+        initialParams={params}
+        onApply={setParams}
+      />
       <label>
         Graph population
         <select

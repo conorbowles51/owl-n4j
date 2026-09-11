@@ -1,8 +1,11 @@
+import { beforeEach } from "vitest"
+import { useInvestigationScopeStore } from "../stores/investigation-scope"
+beforeEach(() => useInvestigationScopeStore.getState().reset())
 import { render, screen, fireEvent } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, expect, it, vi } from "vitest"
 import { FinancialCaseTimeline } from "./FinancialCaseTimeline"
-vi.mock("./LedgerFilters", () => ({ LedgerFilters: () => null }))
+vi.mock("./InvestigationFilters", () => ({ InvestigationFilters: () => null }))
 vi.mock("./RequestedCoveragePanel", () => ({
   RequestedCoveragePanel: () => null,
 }))

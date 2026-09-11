@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { CorrectableLedger } from "./CorrectableLedger"
-vi.mock("./LedgerFilters", () => ({
-  LedgerFilters: ({ onApply }: { onApply: (p: object) => void }) => (
+vi.mock("./InvestigationFilters", () => ({
+  InvestigationFilters: ({ onApply }: { onApply: (p: object) => void }) => (
     <button onClick={() => onApply({ accountId: "a" })}>
       Apply fixture filter
     </button>

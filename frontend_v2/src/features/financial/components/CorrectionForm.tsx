@@ -1,3 +1,4 @@
+import type { LedgerTransaction } from "../api"
 import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
 import { PrintedTotalChecks } from "./PrintedTotalChecks"
 import { useRef, useState } from "react"
@@ -18,15 +19,68 @@ export function CorrectionForm({
   transactionId,
   currency,
   initialDirection = "credit",
+  initialRow,
   onClose,
 }: {
   caseId: string
   transactionId: string
   currency: string
   initialDirection?: "credit" | "debit"
+  initialRow?: LedgerTransaction
   onClose: () => void
 }) {
-  const [amount, setAmount] = useState("")
+  const editAmount = (value: string | number | null) =>
+    value === null
+      ? ""
+      : correctionMoney(String(value), currency).replace(` ${currency}`, "")
+  const [amount, setAmount] = useState(
+    initialRow ? editAmount(initialRow.amount_minor) : ""
+  )
+  const fieldLabels = {
+    transaction_date: "Transaction date",
+    posted_date: "Booking date",
+    value_date: "Value date",
+    effective_date: "Effective date",
+    description: "Description",
+    counterparty_raw: "Counterparty as printed",
+    bank_reference: "Bank reference",
+    transaction_type: "Transaction type",
+  } as const
+  const [editedFields, setEditedFields] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.keys(fieldLabels).map((key) => [
+        key,
+        initialRow?.[key as keyof typeof fieldLabels] ?? "",
+      ])
+    )
+  )
+  const [balance, setBalance] = useState(
+    initialRow ? editAmount(initialRow.running_balance_minor) : ""
+  )
+  const balanceMagnitude = correctionMinor(balance.replace(/^-/, ""), currency)
+  const balanceMinor =
+    balance === ""
+      ? null
+      : balanceMagnitude === null
+        ? undefined
+        : `${balance.startsWith("-") && balanceMagnitude !== "0" ? "-" : ""}${balanceMagnitude}`
+  const fieldChanges: Record<string, string | null> = {}
+  if (initialRow) {
+    for (const key of Object.keys(fieldLabels) as Array<
+      keyof typeof fieldLabels
+    >) {
+      if (editedFields[key] !== (initialRow[key] ?? ""))
+        fieldChanges[key] = editedFields[key] || null
+    }
+    if (
+      balanceMinor !== undefined &&
+      balanceMinor !==
+        (initialRow.running_balance_minor === null
+          ? null
+          : String(initialRow.running_balance_minor))
+    )
+      fieldChanges.running_balance_minor = balanceMinor
+  }
   const [direction, setDirection] = useState<"credit" | "debit">(
     initialDirection
   )
@@ -40,6 +94,7 @@ export function CorrectionForm({
     mutationFn: async (input: {
       amount_minor: string
       direction: "credit" | "debit"
+      fields?: Record<string, string | null>
     }) => {
       const data = correctionPreview.parse(
         await fetchAPI<unknown>(
@@ -55,6 +110,9 @@ export function CorrectionForm({
         data.original.currency !== currency ||
         data.proposed.amount_minor !== input.amount_minor ||
         data.proposed.direction !== input.direction ||
+        Object.entries(input.fields ?? {}).some(
+          ([key, value]) => data.field_changes?.[key] !== value
+        ) ||
         (data.running_balances?.available &&
           data.running_balances.currency !== currency)
       )
@@ -82,6 +140,9 @@ export function CorrectionForm({
               amount_minor: reviewed.proposed.amount_minor,
               direction: reviewed.proposed.direction,
               expected_revision: reviewed.document_revision,
+              ...(reviewed.field_changes
+                ? { fields: reviewed.field_changes }
+                : {}),
               reason,
             },
           }
@@ -117,10 +178,12 @@ export function CorrectionForm({
     [400, 401, 403, 404, 409, 422].includes(record.error.status)
   return (
     <section
-      aria-label="Correct ledger amount"
+      aria-label={initialRow ? "Correct transaction" : "Correct ledger amount"}
       className="space-y-3 rounded border p-4"
     >
-      <h3 className="font-semibold">Correct ledger amount</h3>
+      <h3 className="font-semibold">
+        {initialRow ? "Correct transaction" : "Correct ledger amount"}
+      </h3>
       <p className="text-sm">
         The original reading and citation stay in the ledger. A correction
         creates a replacement and records your reason.
@@ -154,6 +217,48 @@ export function CorrectionForm({
           <option value="debit">Debit</option>
         </select>
       </label>
+      {initialRow && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {Object.entries(fieldLabels).map(([key, label]) => (
+            <label className="block text-sm" key={key}>
+              {label}
+              <input
+                className="block w-full rounded border bg-background p-2"
+                type={key.endsWith("_date") ? "date" : "text"}
+                value={editedFields[key]}
+                maxLength={4000}
+                disabled={busy || finished}
+                onChange={(event) => {
+                  setEditedFields((current) => ({
+                    ...current,
+                    [key]: event.target.value,
+                  }))
+                  preview.reset()
+                }}
+              />
+            </label>
+          ))}
+          <label className="block text-sm">
+            Running balance ({currency})
+            <input
+              className="block w-full rounded border bg-background p-2"
+              inputMode="decimal"
+              value={balance}
+              disabled={busy || finished}
+              onChange={(event) => {
+                setBalance(event.target.value)
+                preview.reset()
+              }}
+            />
+          </label>
+          {balanceMinor === undefined && (
+            <p role="alert">
+              Enter the printed balance using a decimal point, or leave it empty
+              if no balance is printed.
+            </p>
+          )}
+        </div>
+      )}
       {minor === null && amount && (
         <p role="alert">
           Enter an unsigned amount using a decimal point, with no separators and
@@ -162,12 +267,16 @@ export function CorrectionForm({
       )}
       {!finished && (
         <Button
-          disabled={minor === null || busy}
+          disabled={minor === null || balanceMinor === undefined || busy}
           onClick={() => {
             if (lock.current || minor === null) return
             lock.current = true
             preview.mutate(
-              { amount_minor: minor, direction },
+              {
+                amount_minor: minor,
+                direction,
+                ...(initialRow ? { fields: fieldChanges } : {}),
+              },
               {
                 onSettled: () => {
                   lock.current = false
@@ -179,6 +288,25 @@ export function CorrectionForm({
           Preview correction
         </Button>
       )}
+      {reviewed?.field_changes &&
+        Object.keys(reviewed.field_changes).length > 0 && (
+          <div className="rounded border p-3 text-sm">
+            <h4 className="font-semibold">Changes to record</h4>
+            {Object.entries(reviewed.field_changes).map(([key, value]) => (
+              <p key={key}>
+                {key === "running_balance_minor"
+                  ? "Running balance"
+                  : fieldLabels[key as keyof typeof fieldLabels] || key}
+                :{" "}
+                {value === null
+                  ? "Not recorded"
+                  : key === "running_balance_minor"
+                    ? correctionMoney(value, currency)
+                    : value}
+              </p>
+            ))}
+          </div>
+        )}
       {preview.isError && (
         <p role="alert">
           Preview unavailable: {preview.error.message}. Nothing was recorded.

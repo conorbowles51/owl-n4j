@@ -1,8 +1,11 @@
+import { beforeEach } from "vitest"
+import { useInvestigationScopeStore } from "../stores/investigation-scope"
+beforeEach(() => useInvestigationScopeStore.getState().reset())
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { LedgerPostingGraph } from "./LedgerPostingGraph"
-vi.mock("./LedgerFilters", () => ({ LedgerFilters: () => null }))
+vi.mock("./InvestigationFilters", () => ({ InvestigationFilters: () => null }))
 vi.mock("./LedgerGraphCanvas", () => ({
   default: ({ onNode }: { onNode: (id: string) => void }) => (
     <button onClick={() => onNode("a")}>Canvas account</button>

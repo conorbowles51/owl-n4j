@@ -64,10 +64,12 @@ const reasons = {
 }
 export function StatementCoveragePanel({
   caseId,
+  autoLoad = false,
 }: {
   caseId: string | undefined
+  autoLoad?: boolean
 }) {
-  const [opened, setOpened] = useState(false),
+  const [opened, setOpened] = useState(autoLoad),
     [offset, setOffset] = useState(0)
   const query = useQuery({
     queryKey: ["financial-ledger", caseId, "coverage", offset],

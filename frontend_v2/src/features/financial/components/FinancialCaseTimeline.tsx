@@ -13,7 +13,11 @@ import {
   type LedgerTimeline,
 } from "../lib/ledger-timeline"
 import { correctionMoney } from "../lib/correction-contract"
-import { LedgerFilters } from "./LedgerFilters"
+import { InvestigationFilters } from "./InvestigationFilters"
+import {
+  useInvestigationScope,
+  useAnalysisPopulation,
+} from "../stores/investigation-scope"
 import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
@@ -24,8 +28,8 @@ export function FinancialCaseTimeline({
 }: {
   caseId: string | undefined
 }) {
-  const [params, setParams] = useState<LedgerQueryParams>({}),
-    [population, setPopulation] = useState("working")
+  const [params, setParams] = useInvestigationScope(caseId)
+  const [population, setPopulation] = useAnalysisPopulation(caseId)
   if (!caseId) return <p>Choose a case for its financial timeline.</p>
   return (
     <section aria-label="Financial case timeline" className="space-y-4 p-4">
@@ -35,7 +39,12 @@ export function FinancialCaseTimeline({
         review aid; it does not establish that an event explains or corroborates
         a payment.
       </p>
-      <LedgerFilters caseId={caseId} onApply={setParams} />
+      <InvestigationFilters
+        key={JSON.stringify(params)}
+        caseId={caseId}
+        initialParams={params}
+        onApply={setParams}
+      />
       <RequestedCoveragePanel caseId={caseId} params={params} />
       <label>
         Timeline population{" "}

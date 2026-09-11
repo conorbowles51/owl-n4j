@@ -11,13 +11,17 @@ import {
   type PatternReview,
 } from "../lib/pattern-review"
 import { correctionMinor, correctionMoney } from "../lib/correction-contract"
-import { LedgerFilters } from "./LedgerFilters"
+import { InvestigationFilters } from "./InvestigationFilters"
+import {
+  useInvestigationScope,
+  useAnalysisPopulation,
+} from "../stores/investigation-scope"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 function PatternScreen({ caseId }: { caseId: string | undefined }) {
-  const [params, setParams] = useState<LedgerQueryParams>({}),
-    [population, setPopulation] = useState("working"),
-    [crossAccount, setCrossAccount] = useState(false),
+  const [params, setParams] = useInvestigationScope(caseId)
+  const [population, setPopulation] = useAnalysisPopulation(caseId)
+  const [crossAccount, setCrossAccount] = useState(false),
     [days, setDays] = useState("3"),
     [threshold, setThreshold] = useState(""),
     [currency, setCurrency] = useState("GBP")
@@ -32,7 +36,12 @@ function PatternScreen({ caseId }: { caseId: string | undefined }) {
         consider ordinary explanations, and save a theory only with your own
         reasoning.
       </p>
-      <LedgerFilters caseId={caseId} onApply={setParams} />
+      <InvestigationFilters
+        key={JSON.stringify(params)}
+        caseId={caseId}
+        initialParams={params}
+        onApply={setParams}
+      />
       <div className="flex gap-3">
         <label>
           Pattern population{" "}

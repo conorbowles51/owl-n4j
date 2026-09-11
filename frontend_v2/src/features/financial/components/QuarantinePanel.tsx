@@ -50,6 +50,8 @@ export function QuarantinePanel({
   onAdjudicate,
   onCorrect,
   onSource,
+  onNote,
+  splitAmounts = false,
 }: {
   caseId: string | undefined
   params?: Omit<LedgerQueryParams, "ledgerStatus">
@@ -64,6 +66,8 @@ export function QuarantinePanel({
   onAdjudicate?: (transaction: LedgerTransaction) => void
   onCorrect?: (transaction: LedgerTransaction) => void
   onSource?: (transaction: LedgerTransaction) => void
+  onNote?: (transaction: LedgerTransaction) => void
+  splitAmounts?: boolean
 }) {
   const { data, isPending, isError, error } = useLedgerTransactions(caseId, {
     ...params,
@@ -165,6 +169,8 @@ export function QuarantinePanel({
         onAdjudicate={onAdjudicate}
         onCorrect={onCorrect}
         onSource={onSource}
+        onNote={onNote}
+        splitAmounts={splitAmounts}
       />
     </div>
   )

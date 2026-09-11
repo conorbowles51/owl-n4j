@@ -286,15 +286,19 @@ function ActionCell({
 function LedgerRow({
   transaction,
   showQuarantineGrounds,
+  splitAmounts,
   onAdjudicate,
   onCorrect,
   onSource,
+  onNote,
 }: {
   transaction: LedgerTransaction
   showQuarantineGrounds: boolean
+  splitAmounts: boolean
   onAdjudicate?: (transaction: LedgerTransaction) => void
   onCorrect?: (transaction: LedgerTransaction) => void
   onSource?: (transaction: LedgerTransaction) => void
+  onNote?: (transaction: LedgerTransaction) => void
 }) {
   const amount = formatLedgerAmount(
     transaction.amount_minor,
@@ -304,9 +308,15 @@ function LedgerRow({
   const status = readLedgerStatus(transaction.ledger_status)
   const proofClass = readProofClass(transaction.proof_class)
   const layer = readExtractionLayer(transaction.extraction_layer)
-  const dateSource = transaction.ordering_date_context === "statement_end_ordering_only"
-    ? { value: "effective", label: "Statement end · ordering only", description: "The row has no printed transaction date. Ordered using the bound statement end date; transaction timing remains unknown." }
-    : readDateSource(transaction.ordering_date_source)
+  const dateSource =
+    transaction.ordering_date_context === "statement_end_ordering_only"
+      ? {
+          value: "effective",
+          label: "Statement end · ordering only",
+          description:
+            "The row has no printed transaction date. Ordered using the bound statement end date; transaction timing remains unknown.",
+        }
+      : readDateSource(transaction.ordering_date_source)
   const quarantineReason =
     transaction.quarantine_reason === null || showQuarantineGrounds
       ? null
@@ -367,39 +377,95 @@ function LedgerRow({
         )}
       </TableCell>
 
-      <TableCell className="align-top">
-        <TermBadge
-          term={direction}
-          variants={DIRECTION_VARIANTS}
-          testId="ledger-direction"
-        />
-      </TableCell>
-
-      <TableCell className="align-top text-right whitespace-nowrap">
-        <span
-          className="font-mono text-sm tabular-nums"
-          data-testid="ledger-amount"
-        >
-          {amount.text}
-        </span>{" "}
-        <span className="text-xs text-muted-foreground">{amount.currency}</span>
-        {!amount.scaled && (
-          <div>
-            <Badge
-              variant="warning"
-              data-testid="ledger-amount-unscaled"
-              title={
-                "This figure is the stored count of minor units, not an amount. " +
-                "It could not be scaled, so read it against the source document " +
-                "before relying on it."
-              }
+      {splitAmounts ? (
+        <>
+          {(["credit", "debit"] as const).map((side) => (
+            <TableCell
+              key={side}
+              className="align-top text-right whitespace-nowrap"
             >
-              <TriangleAlert aria-hidden="true" />
-              Unscaled
-            </Badge>
-          </div>
-        )}
-      </TableCell>
+              {direction.value === side ? (
+                <>
+                  <span
+                    className="font-mono text-sm tabular-nums"
+                    data-testid="ledger-amount"
+                  >
+                    {amount.text}
+                  </span>{" "}
+                  <span className="text-xs text-muted-foreground">
+                    {amount.currency}
+                  </span>
+                  {!amount.scaled && (
+                    <div>
+                      <Badge
+                        variant="warning"
+                        data-testid="ledger-amount-unscaled"
+                        title={
+                          "This figure is the stored count of minor units, not an amount. " +
+                          "It could not be scaled, so read it against the source document " +
+                          "before relying on it."
+                        }
+                      >
+                        <TriangleAlert aria-hidden="true" />
+                        Unscaled
+                      </Badge>
+                    </div>
+                  )}
+                </>
+              ) : direction.value === null && side === "credit" ? (
+                <span role="alert">
+                  Unknown direction: {amount.text} {amount.currency}
+                </span>
+              ) : (
+                <span
+                  className="text-muted-foreground"
+                  aria-label={`No ${side} amount`}
+                >
+                  -
+                </span>
+              )}
+            </TableCell>
+          ))}
+        </>
+      ) : (
+        <>
+          <TableCell className="align-top">
+            <TermBadge
+              term={direction}
+              variants={DIRECTION_VARIANTS}
+              testId="ledger-direction"
+            />
+          </TableCell>
+
+          <TableCell className="align-top text-right whitespace-nowrap">
+            <span
+              className="font-mono text-sm tabular-nums"
+              data-testid="ledger-amount"
+            >
+              {amount.text}
+            </span>{" "}
+            <span className="text-xs text-muted-foreground">
+              {amount.currency}
+            </span>
+            {!amount.scaled && (
+              <div>
+                <Badge
+                  variant="warning"
+                  data-testid="ledger-amount-unscaled"
+                  title={
+                    "This figure is the stored count of minor units, not an amount. " +
+                    "It could not be scaled, so read it against the source document " +
+                    "before relying on it."
+                  }
+                >
+                  <TriangleAlert aria-hidden="true" />
+                  Unscaled
+                </Badge>
+              </div>
+            )}
+          </TableCell>
+        </>
+      )}
 
       <TableCell className="align-top text-right whitespace-nowrap">
         {balance === null ? (
@@ -493,9 +559,22 @@ function LedgerRow({
 
       {onSource && (
         <TableCell>
-          <Button variant="outline" size="sm" onClick={() => onSource(transaction)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onSource(transaction)}
+          >
             View source
           </Button>
+          {onNote && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onNote(transaction)}
+            >
+              Add note
+            </Button>
+          )}
         </TableCell>
       )}
       {onCorrect && (
@@ -510,7 +589,7 @@ function LedgerRow({
             }
             onClick={() => onCorrect(transaction)}
           >
-            Correct amount
+            Correct transaction
           </Button>
         </TableCell>
       )}
@@ -531,12 +610,15 @@ const BASE_COLUMN_COUNT = 7
 export function LedgerTable({
   transactions,
   showQuarantineGrounds = false,
+  splitAmounts = false,
   onAdjudicate,
   onCorrect,
   onSource,
+  onNote,
 }: {
   transactions: LedgerTransaction[]
   showQuarantineGrounds?: boolean
+  splitAmounts?: boolean
   /**
    * Called with the row a person chose to change. Supplying this is what draws
    * the action column; the table does nothing else with it.
@@ -544,6 +626,7 @@ export function LedgerTable({
   onAdjudicate?: (transaction: LedgerTransaction) => void
   onCorrect?: (transaction: LedgerTransaction) => void
   onSource?: (transaction: LedgerTransaction) => void
+  onNote?: (transaction: LedgerTransaction) => void
 }) {
   const columnCount =
     BASE_COLUMN_COUNT +
@@ -558,8 +641,12 @@ export function LedgerTable({
         <TableRow>
           <TableHead>Date</TableHead>
           <TableHead>Description</TableHead>
-          <TableHead>Direction</TableHead>
-          <TableHead className="text-right">Amount</TableHead>
+          <TableHead className={splitAmounts ? "text-right" : ""}>
+            {splitAmounts ? "Credit" : "Direction"}
+          </TableHead>
+          <TableHead className="text-right">
+            {splitAmounts ? "Debit" : "Amount"}
+          </TableHead>
           <TableHead className="text-right">Running balance</TableHead>
           <TableHead>How it was read</TableHead>
           <TableHead>Status</TableHead>
@@ -586,9 +673,11 @@ export function LedgerTable({
               key={transaction.key}
               transaction={transaction}
               showQuarantineGrounds={showQuarantineGrounds}
+              splitAmounts={splitAmounts}
               onAdjudicate={onAdjudicate}
               onCorrect={onCorrect}
               onSource={onSource}
+              onNote={onNote}
             />
           ))
         )}

@@ -1,3 +1,6 @@
+import { beforeEach } from "vitest"
+import { useInvestigationScopeStore } from "../stores/investigation-scope"
+beforeEach(() => useInvestigationScopeStore.getState().reset())
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"

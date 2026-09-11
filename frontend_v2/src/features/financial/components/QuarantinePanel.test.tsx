@@ -139,7 +139,7 @@ it("corrects a held debit without releasing it, and keeps confirmation after a l
     </QueryClientProvider>
   )
   const { rerender } = render(view)
-  fireEvent.click(screen.getByRole("button", { name: "Correct amount" }))
+  fireEvent.click(screen.getByRole("button", { name: "Correct transaction" }))
   expect(screen.getByLabelText("Direction")).toHaveValue("debit")
   fireEvent.change(screen.getByLabelText("Proposed amount (USD)"), {
     target: { value: "1234.55" },

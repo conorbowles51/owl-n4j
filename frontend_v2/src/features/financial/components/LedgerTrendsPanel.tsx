@@ -44,10 +44,12 @@ export function LedgerTrendsPanel({
   caseId,
   params,
   population = "verified",
+  autoLoad = false,
 }: {
   caseId: string
   params: LedgerQueryParams
   population?: "verified" | "working"
+  autoLoad?: boolean
 }) {
   return (
     <TrendScope
@@ -61,6 +63,7 @@ export function LedgerTrendsPanel({
       caseId={caseId}
       params={params}
       population={population}
+      autoLoad={autoLoad}
     />
   )
 }
@@ -68,13 +71,15 @@ function TrendScope({
   caseId,
   params,
   population = "verified",
+  autoLoad = false,
 }: {
   caseId: string
   params: LedgerQueryParams
   population?: "verified" | "working"
+  autoLoad?: boolean
 }) {
   const [grouping, setGrouping] = useState<"daily" | "monthly">("monthly"),
-    [opened, setOpened] = useState(false),
+    [opened, setOpened] = useState(autoLoad),
     [page, setPage] = useState(0)
   const [source, setSource] = useState<string | null>(null)
   const account = params.accountId ?? null,
@@ -230,7 +235,10 @@ function TrendScope({
                   groups={points.map((p) => ({
                     ...p,
                     id: `${p.date}:${p.currency}`,
-                    label: grouping === "monthly" ? `${p.date.slice(0, 7)} (month)` : p.date,
+                    label:
+                      grouping === "monthly"
+                        ? `${p.date.slice(0, 7)} (month)`
+                        : p.date,
                   }))}
                   onSource={setSource}
                 />

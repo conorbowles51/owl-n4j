@@ -231,21 +231,6 @@ export function LedgerRowBrowser({
         filters. The table-view export also records the filters and order above.
         Display sorting does not establish bank sequence.
       </p>
-      {exportContext && !invalidRange && (
-        <LedgerExportButton
-          caseId={exportContext.caseId}
-          params={exportContext.params}
-          tableView={{
-            search,
-            currency,
-            direction,
-            proof,
-            minimum_minor: minMinor ?? "",
-            maximum_minor: maxMinor ?? "",
-            sort: sort.startsWith("amount") && !amountAllowed ? "ledger" : sort,
-          }}
-        />
-      )}
       {!rows.length ? (
         <p>
           No loaded rows match this table search. Evidence may still be
@@ -256,6 +241,27 @@ export function LedgerRowBrowser({
           transactions={rows.slice(index * 50, index * 50 + 50)}
           {...actions}
         />
+      )}
+      {exportContext && !invalidRange && (
+        <details className="rounded border p-3">
+          <summary className="cursor-pointer font-medium">
+            Download these transactions
+          </summary>
+          <LedgerExportButton
+            caseId={exportContext.caseId}
+            params={exportContext.params}
+            tableView={{
+              search,
+              currency,
+              direction,
+              proof,
+              minimum_minor: minMinor ?? "",
+              maximum_minor: maxMinor ?? "",
+              sort:
+                sort.startsWith("amount") && !amountAllowed ? "ledger" : sort,
+            }}
+          />
+        </details>
       )}
       {rows.length > 50 && (
         <div className="flex items-center gap-3">

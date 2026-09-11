@@ -1,3 +1,6 @@
+import { FinancialAccounts } from "./FinancialAccounts"
+import { useInvestigationScope } from "../stores/investigation-scope"
+import { StatementImportPanel } from "./StatementImportPanel"
 import { FinancialPatternReview } from "./FinancialPatternReview"
 import { FinancialGuide } from "./FinancialGuide"
 import { FinancialCaseTimeline } from "./FinancialCaseTimeline"
@@ -78,6 +81,7 @@ import type {
 export function FinancialPage() {
   const { id: caseId } = useParams()
   const store = useFinancialStore()
+  const [, applyInvestigationScope] = useInvestigationScope(caseId)
   const { data: transactionsResponse, isLoading } = useTransactions(caseId, {
     mode: store.mode,
   })
@@ -481,22 +485,33 @@ export function FinancialPage() {
       >
         <div className="border-b border-border bg-card px-4">
           <TabsList variant="line" className="h-10">
-            <TabsTrigger value="ledger" data-testid="financial-tab-ledger">
-              <ScrollText className="size-3.5" />
-              Ledger
+            <TabsTrigger value="transactions">
+              <Rows3 className="size-3.5" />
+              Transactions
             </TabsTrigger>
-            {/*
-              Directly after the ledger because the two are one read against
-              two populations: what this case's totals count, and what they
-              leave out. A person who has just read a total is one tab away
-              from what the total excludes.
-            */}
             <TabsTrigger
               value="statements"
               data-testid="financial-tab-statements"
             >
               <CalendarRange className="size-3.5" />
               Statements
+            </TabsTrigger>
+            <TabsTrigger value="counterparties">
+              <Users className="size-3.5" />
+              Counterparties
+            </TabsTrigger>
+            <TabsTrigger value="transfers">Transfers</TabsTrigger>
+            <TabsTrigger value="patterns">Patterns</TabsTrigger>
+            <TabsTrigger value="trends">
+              <BarChart3 className="size-3.5" />
+              Trends
+            </TabsTrigger>
+            <TabsTrigger value="posting-graph">Posting graph</TabsTrigger>
+            <TabsTrigger value="tracing">Conditional tracing</TabsTrigger>
+            <TabsTrigger value="case-context">Case context</TabsTrigger>
+            <TabsTrigger value="ledger" data-testid="financial-tab-ledger">
+              <ScrollText className="size-3.5" />
+              Import history
             </TabsTrigger>
             <TabsTrigger
               value="quarantine"
@@ -505,47 +520,16 @@ export function FinancialPage() {
               <ShieldAlert className="size-3.5" />
               Held out
             </TabsTrigger>
-            {/*
-              Kept beside the ledger, and before the three graph tabs, because
-              it reads the same store the ledger does: it is the record of what
-              put the rows there. "Attempts" is the word the notice above the
-              ledger already uses in front of a reader; "runs" is the word the
-              endpoint, the hook and the store member use.
-            */}
             <TabsTrigger value="runs" data-testid="financial-tab-runs">
               <History className="size-3.5" />
               Attempts
             </TabsTrigger>
-            {/*
-              Last of the four Postgres tabs, and still before the graph tabs.
-              The three before it are views of what the ledger holds now; this
-              one is the record of who moved any of it and on what grounds, so
-              it is a tab away from the totals it explains rather than the
-              other side of the strip.
-            */}
             <TabsTrigger
               value="decisions"
               data-testid="financial-tab-decisions"
             >
               <Gavel className="size-3.5" />
               Decisions
-            </TabsTrigger>
-            <TabsTrigger value="transactions">
-              <Rows3 className="size-3.5" />
-              Transactions
-            </TabsTrigger>
-            <TabsTrigger value="counterparties">
-              <Users className="size-3.5" />
-              Counterparties
-            </TabsTrigger>
-            <TabsTrigger value="posting-graph">Posting graph</TabsTrigger>
-            <TabsTrigger value="transfers">Transfers</TabsTrigger>
-            <TabsTrigger value="patterns">Patterns</TabsTrigger>
-            <TabsTrigger value="case-context">Case context</TabsTrigger>
-            <TabsTrigger value="tracing">Conditional tracing</TabsTrigger>
-            <TabsTrigger value="trends">
-              <BarChart3 className="size-3.5" />
-              Trends
             </TabsTrigger>
           </TabsList>
         </div>
@@ -608,12 +592,28 @@ export function FinancialPage() {
               </p>
             </header>
             <ErrorBoundary level="section">
-              <StatementChecksPanel key={`checks:${caseId}`} caseId={caseId} />
+              <FinancialAccounts
+                key={caseId}
+                caseId={caseId}
+                onOpenAccount={(accountId) => {
+                  applyInvestigationScope({ accountId })
+                  store.setMode("transactions")
+                  store.setMainView("transactions")
+                }}
+              />
+            </ErrorBoundary>
+            <ErrorBoundary level="section">
+              <StatementChecksPanel
+                key={`checks:${caseId}`}
+                caseId={caseId}
+                autoLoad
+              />
             </ErrorBoundary>
             <ErrorBoundary level="section">
               <StatementCoveragePanel
                 key={`coverage:${caseId}`}
                 caseId={caseId}
+                autoLoad
               />
             </ErrorBoundary>
           </div>
@@ -703,7 +703,11 @@ export function FinancialPage() {
             </Button>
           </div>
           {isTransactionsMode ? (
-            <div className="min-h-0 flex-1 overflow-auto p-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+              <StatementImportPanel
+                caseId={caseId}
+                onImported={() => store.setMainView("transactions")}
+              />
               <ErrorBoundary level="section">
                 <CorrectableLedger
                   key={caseId}

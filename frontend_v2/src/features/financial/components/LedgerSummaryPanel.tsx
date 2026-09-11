@@ -1,3 +1,4 @@
+import { formatLedgerAmount } from "../lib/ledger-format"
 import { useState } from "react"
 import { SummaryContributions } from "./SummaryContributions"
 import {
@@ -31,6 +32,7 @@ const common = z.object({
   limitation: z.string(),
   contributions: z.array(summaryContribution).optional(),
   population: z.literal("working").optional(),
+  has_credit_card_readings: z.boolean().optional(),
   outside_verified_rows: count.nullable().optional(),
 })
 const report = z.discriminatedUnion("available", [
@@ -72,10 +74,12 @@ export function LedgerSummaryPanel({
   caseId,
   params,
   population = "verified",
+  compact = false,
 }: {
   caseId: string
   params: LedgerQueryParams
   population?: "verified" | "working"
+  compact?: boolean
 }) {
   const [selection, setSelection] = useState<{
     currency: string
@@ -153,6 +157,132 @@ export function LedgerSummaryPanel({
       return data
     },
   })
+  if (compact)
+    return (
+      <section
+        aria-label={
+          working ? "Working ledger totals" : "Current ledger summary"
+        }
+        className="rounded border p-3 space-y-2"
+      >
+        {query.isPending || query.isFetching ? (
+          <p role="status">Calculating transaction totals…</p>
+        ) : query.isError ? (
+          <p role="alert">Totals unavailable. {query.error.message}</p>
+        ) : !query.data.available ? (
+          <p>{query.data.reason}</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap justify-between gap-2 text-sm">
+              <p>
+                {query.data.included_rows} transactions ·{" "}
+                {query.data.excluded_rows} excluded
+                {working && query.data.outside_verified_rows
+                  ? ` · ${query.data.outside_verified_rows} unverified entries included`
+                  : ""}
+              </p>
+              <button
+                type="button"
+                onClick={() => void query.refetch()}
+                className="underline"
+              >
+                Refresh totals
+              </button>
+            </div>
+            {query.data.has_credit_card_readings && (
+              <p className="text-sm">
+                These totals include credit-card entries. Card purchases
+                increase the amount owed; payments and refunds reduce it. They
+                are not a measure of cash entering or leaving bank accounts.
+              </p>
+            )}
+            {query.data.currencies.map((group) => (
+              <div key={group.currency} className="grid sm:grid-cols-3 gap-3">
+                {(
+                  [
+                    [
+                      query.data.has_credit_card_readings
+                        ? "Credits"
+                        : "Money in",
+                      group.credits_minor,
+                      "credit",
+                    ],
+                    [
+                      query.data.has_credit_card_readings
+                        ? "Debits"
+                        : "Money out",
+                      group.debits_minor,
+                      "debit",
+                    ],
+                    [
+                      query.data.has_credit_card_readings
+                        ? "Net postings"
+                        : "Net movement",
+                      group.net_minor,
+                      "all",
+                    ],
+                  ] as const
+                ).map(([label, amount, direction]) => (
+                  <button
+                    key={direction}
+                    type="button"
+                    disabled={!query.data.contributions}
+                    onClick={() =>
+                      setSelection({
+                        currency: group.currency,
+                        direction,
+                        scope,
+                        updatedAt: query.dataUpdatedAt,
+                      })
+                    }
+                    className="rounded bg-muted/40 p-3 text-left"
+                  >
+                    <span className="block text-xs text-muted-foreground">
+                      {label}
+                    </span>
+                    <strong className="text-xl tabular-nums">
+                      {formatLedgerAmount(amount, group.currency).scaled
+                        ? `${formatLedgerAmount(amount, group.currency).text} ${group.currency}`
+                        : correctionMoney(amount, group.currency)}
+                    </strong>
+                  </button>
+                ))}
+              </div>
+            ))}
+            {selection &&
+              selection.scope === scope &&
+              selection.updatedAt === query.dataUpdatedAt &&
+              query.data.contributions && (
+                <SummaryContributions
+                  key={JSON.stringify(selection)}
+                  caseId={caseId}
+                  currency={selection.currency}
+                  direction={selection.direction}
+                  rows={query.data.contributions}
+                  onClose={() => setSelection(null)}
+                />
+              )}
+            <details className="text-xs">
+              <summary className="cursor-pointer">
+                What these totals include
+              </summary>
+              <p>{query.data.limitation}</p>
+              <p>
+                Classes: {query.data.included_classes.join(", ")}.{" "}
+                {query.data.considered_rows} records considered. Exclusions:{" "}
+                {Object.entries(query.data.exclusions)
+                  .filter(([, n]) => n)
+                  .map(
+                    ([key, n]) => `${labels[key as keyof typeof labels]}: ${n}`
+                  )
+                  .join("; ") || "none"}
+                .
+              </p>
+            </details>
+          </>
+        )}
+      </section>
+    )
   return (
     <section
       aria-label={working ? "Working ledger totals" : "Current ledger summary"}

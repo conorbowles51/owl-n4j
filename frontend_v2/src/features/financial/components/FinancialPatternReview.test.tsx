@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, fireEvent, cleanup } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { FinancialPatternReview } from "./FinancialPatternReview"
-vi.mock("./LedgerFilters", () => ({ LedgerFilters: () => null }))
+vi.mock("./InvestigationFilters", () => ({ InvestigationFilters: () => null }))
 vi.mock("./PaymentClaimComparison", () => ({
   PaymentClaimComparison: () => null,
 }))

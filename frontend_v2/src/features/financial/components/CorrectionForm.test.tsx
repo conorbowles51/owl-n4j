@@ -179,14 +179,12 @@ it.each([
 ])(
   "refuses inconsistent verification before confirmation (%j)",
   async (verification) => {
-    const fetch = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        response({
-          ...preview,
-          verification: { ...preview.verification, ...verification },
-        })
-      )
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      response({
+        ...preview,
+        verification: { ...preview.verification, ...verification },
+      })
+    )
     mount()
     fireEvent.click(screen.getByRole("button", { name: "Preview correction" }))
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -251,3 +249,71 @@ it.each([409, 500, 200])(
     ).toBeNull()
   }
 )
+
+it("previews source-field edits without requiring an amount change and resets the preview after another edit", async () => {
+  const fields = {
+    transaction_date: "2023-02-08",
+    description: "Corrected description",
+    running_balance_minor: "-125",
+  }
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(
+      response({
+        ...preview,
+        proposed: { ...preview.proposed, amount_minor: "100" },
+        field_changes: fields,
+      })
+    )
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <CorrectionForm
+        caseId="case-a"
+        transactionId="old"
+        currency="GBP"
+        initialRow={
+          {
+            key: "old",
+            currency: "GBP",
+            amount_minor: "100",
+            running_balance_minor: null,
+            transaction_date: "2023-02-07",
+            description: "Original description",
+          } as import("../api").LedgerTransaction
+        }
+        onClose={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(screen.getByLabelText("Proposed amount (GBP)")).toHaveValue("1.00")
+  fireEvent.change(screen.getByLabelText("Transaction date"), {
+    target: { value: "2023-02-08" },
+  })
+  fireEvent.change(screen.getByLabelText("Description"), {
+    target: { value: "Corrected description" },
+  })
+  fireEvent.change(screen.getByLabelText("Running balance (GBP)"), {
+    target: { value: "-1.25" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Preview correction" }))
+  await screen.findByText("Changes to record")
+  expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({
+    amount_minor: "100",
+    direction: "credit",
+    fields,
+  })
+  fireEvent.change(screen.getByLabelText("Reason for correction"), {
+    target: { value: "Checked original" },
+  })
+  expect(
+    screen.getByRole("button", { name: "Record correction" })
+  ).toBeEnabled()
+  fireEvent.change(screen.getByLabelText("Transaction date"), {
+    target: { value: "2023-02-09" },
+  })
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Record correction" })
+    ).toBeDisabled()
+  )
+})

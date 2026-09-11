@@ -116,10 +116,12 @@ const fields = [
 
 export function StatementChecksPanel({
   caseId,
+  autoLoad = false,
 }: {
   caseId: string | undefined
+  autoLoad?: boolean
 }) {
-  const [opened, setOpened] = useState(false),
+  const [opened, setOpened] = useState(autoLoad),
     [offset, setOffset] = useState(0),
     [includeNative, setIncludeNative] = useState(false)
   const query = useQuery({

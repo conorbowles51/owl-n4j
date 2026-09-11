@@ -101,6 +101,7 @@ export const correctionPreview = z.object({
     currency: z.string(),
     direction,
   }),
+  field_changes: z.record(z.string(), z.string().nullable()).optional(),
   proposed: z.object({
     amount_minor: magnitude,
     currency: z.string(),

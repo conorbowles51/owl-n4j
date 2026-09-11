@@ -142,7 +142,7 @@ const initialState: FinancialStoreState = {
   checkedKeys: new Set<string>(),
   lastClickedKey: null,
   filterPanelOpen: true,
-  mainView: "ledger",
+  mainView: "transactions",
   chartGrouping: "auto",
   expandedRowKeys: new Set<string>(),
 }
@@ -275,29 +275,17 @@ export const useFinancialStore = create<FinancialStore>()(
        * between visits.
        */
       partialize: (state) => ({
-        mode: state.mode,
         sortColumns: state.sortColumns,
         pageSize: state.pageSize,
         filterPanelOpen: state.filterPanelOpen,
         chartGrouping: state.chartGrouping,
       }),
-      /**
-       * Leaving `mainView` out of `partialize` stops it being written but not
-       * being read. Any browser that opened this page before the ledger tab
-       * existed still has `"transactions"` sitting in `owl-financial-store`,
-       * and the default merge lays the stored object over the initial state —
-       * so without this, every existing user would keep landing on the graph
-       * and the ledger would be the opening view for nobody who already uses
-       * the system.
-       *
-       * The stored value is discarded on read rather than migrated away once,
-       * because a discard holds for a blob of any age and cannot be undone by
-       * one an older build writes later. There is no version to keep in step
-       * and no migration that can be skipped.
-       */
+      // Old saved intelligence views must not hide newly imported statements.
+      // Keep display preferences, but open a fresh visit on transactions.
       merge: (persisted, current) => {
         const stored = { ...(persisted as Partial<FinancialStoreState> | null) }
         delete stored.mainView
+        delete stored.mode
         return { ...current, ...stored }
       },
       storage: {

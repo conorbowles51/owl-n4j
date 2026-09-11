@@ -47,6 +47,8 @@ export function LedgerPanel({
   onAdjudicate,
   onCorrect,
   onSource,
+  onNote,
+  splitAmounts = false,
 }: {
   caseId: string | undefined
   params?: LedgerQueryParams
@@ -60,6 +62,8 @@ export function LedgerPanel({
   onAdjudicate?: (transaction: LedgerTransaction) => void
   onCorrect?: (transaction: LedgerTransaction) => void
   onSource?: (transaction: LedgerTransaction) => void
+  onNote?: (transaction: LedgerTransaction) => void
+  splitAmounts?: boolean
 }) {
   const { data, isPending, isError, error } = useLedgerTransactions(
     caseId,
@@ -180,6 +184,8 @@ export function LedgerPanel({
           onAdjudicate={onAdjudicate}
           onCorrect={onCorrect}
           onSource={onSource}
+          onNote={onNote}
+          splitAmounts={splitAmounts}
         />
       )}
     </div>

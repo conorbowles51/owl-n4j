@@ -23,7 +23,9 @@ import { LedgerTable } from "./LedgerTable"
  * A row carrying every field `TransactionView.to_json` emits, so a test that
  * overrides one field is changing exactly one thing.
  */
-function makeRow(overrides: Partial<LedgerTransaction> = {}): LedgerTransaction {
+function makeRow(
+  overrides: Partial<LedgerTransaction> = {}
+): LedgerTransaction {
   return {
     key: "txn-1",
     case_id: "case-1",
@@ -91,7 +93,9 @@ describe("LedgerTable money", () => {
 
 describe("LedgerTable running balance", () => {
   it("states an absent running balance instead of leaving the cell blank", () => {
-    render(<LedgerTable transactions={[makeRow({ running_balance_minor: null })]} />)
+    render(
+      <LedgerTable transactions={[makeRow({ running_balance_minor: null })]} />
+    )
     const absence = screen.getByTestId("ledger-no-balance")
     expect(absence.textContent).toBe("No running balance")
     expect(screen.queryByTestId("ledger-balance")).toBeNull()
@@ -100,7 +104,9 @@ describe("LedgerTable running balance", () => {
   it("renders a balance that is present, keeping a negative sign", () => {
     render(
       <LedgerTable
-        transactions={[makeRow({ running_balance_minor: -50000, currency: "USD" })]}
+        transactions={[
+          makeRow({ running_balance_minor: -50000, currency: "USD" }),
+        ]}
       />
     )
     expect(screen.getByTestId("ledger-balance").textContent).toBe("-500.00")
@@ -131,8 +137,12 @@ describe("LedgerTable closed vocabularies", () => {
       "Balance break"
     )
     expect(screen.getByTestId("ledger-proof-class").textContent).toBe("P0")
-    expect(screen.getByTestId("ledger-extraction-layer").textContent).toBe("Native")
-    expect(screen.getByTestId("ledger-date-source").textContent).toBe("Posted date")
+    expect(screen.getByTestId("ledger-extraction-layer").textContent).toBe(
+      "Native"
+    )
+    expect(screen.getByTestId("ledger-date-source").textContent).toBe(
+      "Posted date"
+    )
   })
 
   it("marks every known member as recognised", () => {
@@ -151,7 +161,9 @@ describe("LedgerTable closed vocabularies", () => {
   })
 
   it("shows a status this build cannot read, with the raw value in it", () => {
-    render(<LedgerTable transactions={[makeRow({ ledger_status: "escheated" })]} />)
+    render(
+      <LedgerTable transactions={[makeRow({ ledger_status: "escheated" })]} />
+    )
     const badge = screen.getByTestId("ledger-status")
     expect(badge.getAttribute("data-unrecognised")).toBe("true")
     expect(badge.textContent).toContain("escheated")
@@ -199,12 +211,16 @@ describe("LedgerTable closed vocabularies", () => {
   it("does not mark a normal extraction layer as the fallback", () => {
     render(<LedgerTable transactions={[makeRow({ extraction_layer: 2 })]} />)
     expect(
-      screen.getByTestId("ledger-extraction-layer").getAttribute("data-fallback")
+      screen
+        .getByTestId("ledger-extraction-layer")
+        .getAttribute("data-fallback")
     ).toBe("false")
   })
 
   it("carries the narrowed description as the badge's own explanation", () => {
-    render(<LedgerTable transactions={[makeRow({ ledger_status: "admitted" })]} />)
+    render(
+      <LedgerTable transactions={[makeRow({ ledger_status: "admitted" })]} />
+    )
     expect(screen.getByTestId("ledger-status").getAttribute("title")).toContain(
       "Counts toward totals"
     )
@@ -213,7 +229,9 @@ describe("LedgerTable closed vocabularies", () => {
 
 describe("LedgerTable row detail", () => {
   it("shows no quarantine reason when the row carries none", () => {
-    render(<LedgerTable transactions={[makeRow({ quarantine_reason: null })]} />)
+    render(
+      <LedgerTable transactions={[makeRow({ quarantine_reason: null })]} />
+    )
     expect(screen.queryByTestId("ledger-quarantine-reason")).toBeNull()
   })
 
@@ -254,8 +272,12 @@ describe("LedgerTable row detail", () => {
         ]}
       />
     )
-    expect(screen.getByTestId("ledger-counterparty").textContent).toBe("ACME LTD")
-    expect(screen.getByTestId("ledger-bank-reference").textContent).toBe("BR-99")
+    expect(screen.getByTestId("ledger-counterparty").textContent).toBe(
+      "ACME LTD"
+    )
+    expect(screen.getByTestId("ledger-bank-reference").textContent).toBe(
+      "BR-99"
+    )
   })
 
   it("shows the ordering date, which is the one the ledger reconciles by", () => {
@@ -305,7 +327,10 @@ describe("LedgerTable grounds column", () => {
     render(
       <LedgerTable
         transactions={[
-          makeRow({ ledger_status: "quarantined", quarantine_reason: "balance_break" }),
+          makeRow({
+            ledger_status: "quarantined",
+            quarantine_reason: "balance_break",
+          }),
         ]}
       />
     )
@@ -320,7 +345,10 @@ describe("LedgerTable grounds column", () => {
       <LedgerTable
         showQuarantineGrounds
         transactions={[
-          makeRow({ ledger_status: "quarantined", quarantine_reason: "balance_break" }),
+          makeRow({
+            ledger_status: "quarantined",
+            quarantine_reason: "balance_break",
+          }),
         ]}
       />
     )
@@ -338,14 +366,19 @@ describe("LedgerTable grounds column", () => {
       <LedgerTable
         showQuarantineGrounds
         transactions={[
-          makeRow({ ledger_status: "superseded", quarantine_reason: "adjudicated" }),
+          makeRow({
+            ledger_status: "superseded",
+            quarantine_reason: "adjudicated",
+          }),
         ]}
       />
     )
-    expect(screen.getByTestId("ledger-status").textContent).toContain("Superseded")
-    expect(screen.getByTestId("ledger-quarantine-reason").textContent).toContain(
-      "Set aside by a person"
+    expect(screen.getByTestId("ledger-status").textContent).toContain(
+      "Superseded"
     )
+    expect(
+      screen.getByTestId("ledger-quarantine-reason").textContent
+    ).toContain("Set aside by a person")
   })
 
   it("separates a person's decision from the ledger's own checks", () => {
@@ -376,10 +409,14 @@ describe("LedgerTable grounds column", () => {
       />
     )
     expect(
-      screen.getByTestId("ledger-grounds-origin").getAttribute("data-decided-by-person")
+      screen
+        .getByTestId("ledger-grounds-origin")
+        .getAttribute("data-decided-by-person")
     ).toBe("unknown")
     expect(
-      screen.getByTestId("ledger-quarantine-reason").getAttribute("data-unrecognised")
+      screen
+        .getByTestId("ledger-quarantine-reason")
+        .getAttribute("data-unrecognised")
     ).toBe("true")
   })
 
@@ -404,7 +441,9 @@ describe("LedgerTable grounds column", () => {
     // The colSpan is computed rather than fixed. Left at seven it would leave
     // a stray cell beside the sentence.
     render(<LedgerTable showQuarantineGrounds transactions={[]} />)
-    expect(screen.getByTestId("ledger-table-empty").getAttribute("colspan")).toBe("8")
+    expect(
+      screen.getByTestId("ledger-table-empty").getAttribute("colspan")
+    ).toBe("8")
 
     render(<LedgerTable transactions={[]} />)
     expect(
@@ -449,7 +488,10 @@ describe("LedgerTable action column", () => {
       <LedgerTable
         showQuarantineGrounds
         transactions={[
-          makeRow({ ledger_status: "quarantined", quarantine_reason: "balance_break" }),
+          makeRow({
+            ledger_status: "quarantined",
+            quarantine_reason: "balance_break",
+          }),
         ]}
         onAdjudicate={vi.fn()}
       />
@@ -474,7 +516,9 @@ describe("LedgerTable action column", () => {
       />
     )
     expect(
-      screen.getAllByTestId("ledger-row-action").map((b) => b.getAttribute("data-change"))
+      screen
+        .getAllByTestId("ledger-row-action")
+        .map((b) => b.getAttribute("data-change"))
     ).toEqual(["quarantine", "release"])
   })
 
@@ -512,13 +556,49 @@ describe("LedgerTable action column", () => {
 
   it("spans the empty sentence across this column too", () => {
     render(<LedgerTable transactions={[]} onAdjudicate={vi.fn()} />)
-    expect(screen.getByTestId("ledger-table-empty").getAttribute("colspan")).toBe("8")
+    expect(
+      screen.getByTestId("ledger-table-empty").getAttribute("colspan")
+    ).toBe("8")
 
     render(
-      <LedgerTable showQuarantineGrounds transactions={[]} onAdjudicate={vi.fn()} />
+      <LedgerTable
+        showQuarantineGrounds
+        transactions={[]}
+        onAdjudicate={vi.fn()}
+      />
     )
     expect(
       screen.getAllByTestId("ledger-table-empty")[1].getAttribute("colspan")
     ).toBe("9")
   })
+})
+
+it("places each exact payment in its credit or debit column without creating a second amount", () => {
+  render(
+    <LedgerTable
+      splitAmounts
+      transactions={[
+        makeRow({
+          key: "in",
+          direction: "credit",
+          amount_minor: "9007199254740993",
+        }),
+        makeRow({ key: "out", direction: "debit", amount_minor: "100" }),
+      ]}
+    />
+  )
+  expect(
+    screen.getByRole("columnheader", { name: "Credit" })
+  ).toBeVisible()
+  expect(
+    screen.getByRole("columnheader", { name: "Debit" })
+  ).toBeVisible()
+  const rows = screen.getAllByTestId("ledger-row")
+  expect(within(rows[0]).getAllByRole("cell")[2]).toHaveTextContent(
+    "90,071,992,547,409.93"
+  )
+  expect(within(rows[0]).getAllByRole("cell")[3]).toHaveTextContent("-")
+  expect(within(rows[1]).getAllByRole("cell")[2]).toHaveTextContent("-")
+  expect(within(rows[1]).getAllByRole("cell")[3]).toHaveTextContent("1.00")
+  expect(screen.getAllByTestId("ledger-amount")).toHaveLength(2)
 })

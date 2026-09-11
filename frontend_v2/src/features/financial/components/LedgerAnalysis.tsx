@@ -1,7 +1,9 @@
-import { useState } from "react"
-import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
+import {
+  useInvestigationScope,
+  useAnalysisPopulation,
+} from "../stores/investigation-scope"
 import { LedgerExportButton } from "./LedgerExportButton"
-import { LedgerFilters } from "./LedgerFilters"
+import { InvestigationFilters } from "./InvestigationFilters"
 import { LedgerSummaryPanel } from "./LedgerSummaryPanel"
 import { LedgerTrendsPanel } from "./LedgerTrendsPanel"
 import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
@@ -11,46 +13,57 @@ export function LedgerAnalysis({ caseId }: { caseId: string | undefined }) {
   return <CaseAnalysis key={caseId} caseId={caseId} />
 }
 function CaseAnalysis({ caseId }: { caseId: string }) {
-  const [population, setPopulation] = useState<"working" | "verified">(
-    "working"
-  )
-  const [params, setParams] = useState<LedgerQueryParams>({})
+  const [population, setPopulation] = useAnalysisPopulation(caseId)
+  const [params, setParams] = useInvestigationScope(caseId)
   return (
     <section aria-label="Authoritative ledger trends" className="space-y-3 p-4">
       <h2 className="font-semibold">Ledger trends</h2>
       <p>
-        Analysis of current ledger postings using recorded source eligibility
-        and classification. Credits and debits stay separate by currency. Use
-        the filters here to choose the account and ordering dates for this
-        analysis.
+        Choose an account or date range to explore its payments. Select a total
+        to inspect the transactions and their original statements.
       </p>
-      <label className="flex items-center gap-2">
-        Analysis population
-        <select
-          aria-label="Analysis population"
-          className="rounded border bg-background p-2"
-          value={population}
-          onChange={(e) =>
-            setPopulation(e.target.value as "working" | "verified")
-          }
-        >
-          <option value="working">Working readings, including P3</option>
-          <option value="verified">Verified totals only</option>
-        </select>
-      </label>
-      <LedgerFilters caseId={caseId} onApply={setParams} />
-      <RequestedCoveragePanel caseId={caseId} params={params} />
+
+      <InvestigationFilters
+        key={JSON.stringify(params)}
+        caseId={caseId}
+        initialParams={params}
+        onApply={setParams}
+      />
+
       <LedgerSummaryPanel
+        compact
         caseId={caseId}
         params={params}
         population={population}
       />
-      <LedgerExportButton caseId={caseId} params={params} />
+
       <LedgerTrendsPanel
+        autoLoad
         caseId={caseId}
         params={params}
         population={population}
       />
+      <details className="rounded border p-3 space-y-3">
+        <summary className="cursor-pointer font-medium">
+          Analysis settings, statement coverage and downloads
+        </summary>
+        <label className="flex items-center gap-2">
+          Analysis population
+          <select
+            aria-label="Analysis population"
+            className="rounded border bg-background p-2"
+            value={population}
+            onChange={(e) =>
+              setPopulation(e.target.value as "working" | "verified")
+            }
+          >
+            <option value="working">Working readings, including P3</option>
+            <option value="verified">Verified totals only</option>
+          </select>
+        </label>
+        <RequestedCoveragePanel caseId={caseId} params={params} />
+        <LedgerExportButton caseId={caseId} params={params} />
+      </details>
     </section>
   )
 }

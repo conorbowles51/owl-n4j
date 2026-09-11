@@ -1,5 +1,5 @@
 import { evidenceAPI } from "@/features/evidence/api"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
@@ -29,9 +29,11 @@ const jobAnswer = z.object({
 export function PdfReviewIntake({
   caseId,
   onReady,
+  automaticReview = false,
 }: {
   caseId: string
-  onReady: () => void
+  automaticReview?: boolean
+  onReady: (fileId?: string) => void
 }) {
   const [file, setFile] = useState<File | null>(null),
     [fileId, setFileId] = useState<string | null>(null),
@@ -84,6 +86,19 @@ export function PdfReviewIntake({
     job.data?.status === "completed" &&
     job.data.quality_report?.preparation_mode === "pdf_review"
   const running = !!jobId && !ready && job.data?.status !== "failed"
+  const openedJob = useRef<string | null>(null)
+  useEffect(() => {
+    if (
+      automaticReview &&
+      ready &&
+      fileId &&
+      jobId &&
+      openedJob.current !== jobId
+    ) {
+      openedJob.current = jobId
+      onReady(fileId)
+    }
+  }, [automaticReview, ready, fileId, jobId, onReady])
   const prepare = async () => {
     if ((!file && !fileId) || busy) return
     setBusy(true)
@@ -132,11 +147,13 @@ export function PdfReviewIntake({
       aria-label="Prepare PDF for review"
       className="space-y-3 rounded border p-3"
     >
-      <h3 className="font-semibold">Add a PDF for review</h3>
+      <h3 className="font-semibold">
+        {automaticReview ? "Upload a bank statement" : "Add a PDF for review"}
+      </h3>
       <p>
-        Prepare its text and page locations locally, then choose and review
-        possible transaction rows. This does not run AI analysis, verify
-        transactions or add them to totals.
+        {automaticReview
+          ? "Choose the PDF. The system will read its account details and transactions, then open the statement for you to check and confirm."
+          : "Prepare its text and page locations locally, then choose and review possible transaction rows. This does not run AI analysis, verify transactions or add them to totals."}
       </p>
       <Button
         variant="outline"
@@ -195,9 +212,15 @@ export function PdfReviewIntake({
         disabled={(!file && !fileId) || busy || running || ready}
         onClick={() => void prepare()}
       >
-        {busy ? "Uploading and preparing…" : "Prepare PDF for review"}
+        {busy
+          ? "Uploading and reading…"
+          : automaticReview
+            ? "Upload and read statement"
+            : "Prepare PDF for review"}
       </Button>
-      {fileId && <p>Uploaded evidence reference: {fileId}</p>}
+      {fileId && !automaticReview && (
+        <p>Uploaded evidence reference: {fileId}</p>
+      )}
       {jobId && (
         <p role="status">
           Preparation:{" "}
@@ -230,7 +253,9 @@ export function PdfReviewIntake({
             Source ready for review. Some pages may have no selectable table;
             this does not mean they contain no transactions.
           </p>
-          <Button onClick={onReady}>Choose prepared PDF rows</Button>
+          <Button onClick={() => onReady(fileId ?? undefined)}>
+            Review prepared statement
+          </Button>
         </>
       )}
     </section>

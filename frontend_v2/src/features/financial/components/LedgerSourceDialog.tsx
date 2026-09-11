@@ -1,3 +1,4 @@
+import { TransactionNote } from "./TransactionNote"
 import { SourceCustodyPanel } from "./SourceCustodyPanel"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -38,10 +39,12 @@ export function LedgerSourceDialog({
   caseId,
   transactionId,
   onClose,
+  initialNoteOpen = false,
 }: {
   caseId: string
   transactionId: string
   onClose: () => void
+  initialNoteOpen?: boolean
 }) {
   const [viewFile, setViewFile] = useState(false)
   const [assessAmount, setAssessAmount] = useState(false)
@@ -91,6 +94,15 @@ export function LedgerSourceDialog({
           {source.isError && <p role="alert">{source.error.message}</p>}
           {data && !source.isError && (
             <>
+              <TransactionNote
+                caseId={caseId}
+                transactionId={transactionId}
+                refId={data.ref_id}
+                fileId={data.evidence_file_id}
+                filename={data.filename}
+                locator={data.locator}
+                initialOpen={initialNoteOpen}
+              />
               <SourceCustodyPanel
                 caseId={caseId}
                 fileId={data.evidence_file_id}

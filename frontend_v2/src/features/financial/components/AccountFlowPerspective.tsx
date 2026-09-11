@@ -1,6 +1,6 @@
 import { ConditionalTransferGraph } from "./ConditionalTransferGraph"
 import { AccountPartyDirectory } from "./AccountPartyDirectory"
-import type { AccountParties } from "../lib/account-parties"
+import { useAccountPerspective } from "../stores/account-perspective"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { TransferInputs } from "../lib/ledger-transfers"
@@ -17,8 +17,8 @@ export function AccountFlowPerspective({
   onSource: (id: string) => void
 }) {
   const [showParties, setShowParties] = useState(false)
-  const [partyCapture, setPartyCapture] = useState<AccountParties | null>(null)
-  const [selected, setSelected] = useState<string[]>([])
+  const [perspective, setPerspective] = useAccountPerspective(scope.case_id)
+  const partyCapture = perspective.partyCapture
   const accounts = [
     ...new Map(
       scope.rows.map((r) => [
@@ -30,6 +30,10 @@ export function AccountFlowPerspective({
       ])
     ).values(),
   ]
+  const selected = perspective.accountIds.filter((id) =>
+    accounts.some((account) => account.id === id)
+  )
+  const outsideCount = perspective.accountIds.length - selected.length
   // The parent only supplies bytes already checked by verifyTransferScenario.
   const scenario = scenarioJson ? JSON.parse(scenarioJson) : null
   const pairs: { debit_id: string; credit_id: string }[] =
@@ -93,8 +97,7 @@ export function AccountFlowPerspective({
         <AccountPartyDirectory
           caseId={scope.case_id}
           onChoose={(ids, capture) => {
-            setSelected(ids.filter((id) => accounts.some((a) => a.id === id)))
-            setPartyCapture(capture)
+            setPerspective({ accountIds: ids, partyCapture: capture })
           }}
         />
       )}
@@ -105,6 +108,21 @@ export function AccountFlowPerspective({
           is included in the download.
         </p>
       )}
+      {outsideCount > 0 && (
+        <p role="status">
+          {outsideCount} selected accounts have no transactions in this date
+          range. They remain selected for other dates and do not contribute to
+          these totals.
+        </p>
+      )}
+      {perspective.accountIds.length > 0 && (
+        <Button
+          variant="outline"
+          onClick={() => setPerspective({ accountIds: [], partyCapture: null })}
+        >
+          Clear account group
+        </Button>
+      )}
       <fieldset className="grid gap-2 sm:grid-cols-2">
         <legend>Accounts in this perspective</legend>
         {accounts.map((a) => (
@@ -114,12 +132,12 @@ export function AccountFlowPerspective({
               aria-label={`Include account ${a.label}`}
               checked={selected.includes(a.id)}
               onChange={(e) => {
-                setPartyCapture(null)
-                setSelected((v) =>
-                  e.target.checked
-                    ? [...v, a.id]
-                    : v.filter((id) => id !== a.id)
-                )
+                setPerspective({
+                  partyCapture: null,
+                  accountIds: e.target.checked
+                    ? [...perspective.accountIds, a.id]
+                    : perspective.accountIds.filter((id) => id !== a.id),
+                })
               }}
             />{" "}
             {a.label}

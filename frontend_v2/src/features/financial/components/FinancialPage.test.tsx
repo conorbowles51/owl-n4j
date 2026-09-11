@@ -287,25 +287,25 @@ describe("FinancialPage", () => {
    * case holds now; it answers who moved any of it and on what grounds, and it
    * outlives its subjects.
    */
-  it("opens on the ledger, with statement review alongside the ledger tabs", () => {
+  it("opens on transactions, with import history available alongside investigation tabs", () => {
     graphWithRows()
     renderPage()
 
     const tabs = screen.getAllByRole("tab")
     expect(tabs.map((t) => t.textContent)).toEqual([
-      "Ledger",
+      "Transactions",
       "Statements",
+      "Counterparties",
+      "Transfers",
+      "Patterns",
+      "Trends",
+      "Posting graph",
+      "Conditional tracing",
+      "Case context",
+      "Import history",
       "Held out",
       "Attempts",
       "Decisions",
-      "Transactions",
-      "Counterparties",
-      "Posting graph",
-      "Transfers",
-      "Patterns",
-      "Case context",
-      "Conditional tracing",
-      "Trends",
     ])
     expect(tabs[0]).toHaveAttribute("aria-selected", "true")
   })
@@ -315,10 +315,10 @@ describe("FinancialPage", () => {
     renderPage()
     selectTab("Statements")
     expect(
-      screen.getByRole("button", { name: "Check statement balances" })
+      screen.getByRole("button", { name: "Refresh balance checks" })
     ).toBeInTheDocument()
     expect(
-      screen.getByRole("button", { name: "Check statement coverage" })
+      screen.getByRole("button", { name: "Refresh statement coverage" })
     ).toBeInTheDocument()
     expect(
       screen.queryByText(/No admitted rows in the ledger/i)
@@ -359,8 +359,13 @@ describe("FinancialPage", () => {
   it("opens the source-linked pattern review screen", () => {
     graphEmpty()
     renderPage()
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Patterns" }), { button: 0, ctrlKey: false })
-    expect(screen.getByRole("heading", { name: "Patterns to investigate" })).toBeInTheDocument()
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Patterns" }), {
+      button: 0,
+      ctrlKey: false,
+    })
+    expect(
+      screen.getByRole("heading", { name: "Patterns to investigate" })
+    ).toBeInTheDocument()
   })
 
   it("still reaches the ledger when the graph has no rows", () => {
@@ -770,6 +775,7 @@ it("shows the classification census even when both the graph and admitted ledger
   runsEmpty()
   adjudicationIdle()
   renderPage()
+  selectTab("Import history")
   expect(screen.getByTestId("proof-standing-totals")).toHaveTextContent(
     "5 financial source documents"
   )

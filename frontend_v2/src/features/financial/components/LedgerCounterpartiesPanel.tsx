@@ -55,11 +55,13 @@ export function LedgerCounterpartiesPanel({
   caseId,
   params,
   population = "verified",
+  autoLoad = false,
   identities = false,
 }: {
   caseId: string
   params: LedgerQueryParams
   population?: "verified" | "working"
+  autoLoad?: boolean
   identities?: boolean
 }) {
   return (
@@ -75,6 +77,7 @@ export function LedgerCounterpartiesPanel({
       caseId={caseId}
       params={params}
       population={population}
+      autoLoad={autoLoad}
       identities={identities}
     />
   )
@@ -83,14 +86,16 @@ function CounterpartyScope({
   caseId,
   params,
   population = "verified",
+  autoLoad = false,
   identities = false,
 }: {
   caseId: string
   params: LedgerQueryParams
   population?: "verified" | "working"
+  autoLoad?: boolean
   identities?: boolean
 }) {
-  const [opened, setOpened] = useState(false),
+  const [opened, setOpened] = useState(autoLoad),
     [page, setPage] = useState(0)
   const [source, setSource] = useState<string | null>(null)
   const account = params.accountId ?? null,
