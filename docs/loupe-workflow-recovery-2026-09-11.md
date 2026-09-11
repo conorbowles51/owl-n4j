@@ -226,3 +226,25 @@ The user's live test exposed failures in presentation and navigation that the ea
 - [ ] Deploy these corrections and repeat the user's live journey. No deployment of this batch has occurred.
 
 Report work was interrupted to prioritize the user's defects. The local expert-support index now describes captured statement confirmations, checks their stored hashes, and exposes source custody reports. Expanding a separate outer ledger index remains unfinished; the trial addition was removed because historical partial captures need explicit compatibility handling. Do not mark the whole expert packet complete.
+
+### Report support continuation after 22e73b7d (local, not deployed)
+
+- [x] Expose the original saved ledger expert-support JSON directly from assembled review packages. Copy its bytes unchanged and retain the entire original ledger ZIP. Older exports without support remain accepted without inventing an index.
+- [x] Validate the support file's internal case and snapshot binding as well as its declared member hash before reuse. Separate original capture scope from newly selected tracing scenarios.
+- [x] Surface the PDF processing manifests already retained by normal statement imports in expert-support versions. Validate nested manifest hashes, preserve missing historical manifests as not recorded, and show saved Python/PDF/OCR versions in the readable scenario report.
+- [x] Update the beginner guide for Choose PDF, printed statement comparison, separate corrections, Credit/Debit inputs, and saved package support links. Replace the previous review screenshot with the checked synthetic printed-layout screen. Rebuilt portable HTML and in-platform guide: 13,194 words, 12 image uses, no em dashes.
+- [x] Relevant integration checks: 31 export comparison, archive support and statement provenance checks passed. No full suite run.
+- [ ] Finish original expert-packet acceptance against applicable case custody/decision scope and independently reviewed extraction measurements. These improvements do not establish independent ground truth or complete historical records.
+
+### Statement file workspace requested during live testing (local, not deployed)
+
+- [x] Add a visible Edit import values action above the viewer. Already-imported statements have an Edit imported transactions action leading to current ledger correction controls; original source readings remain separate.
+- [x] Add Previous page, Next page and direct page selection. PDF and extracted printed table use the same page. Start at the selected statement's own first page, retain page choices during the session, and explain when a page has no extracted rows in that selected statement.
+- [x] Replace the empty Details view in the financial right-hand panel with Statements, including searchable PDF filenames, creation identifiers, processing status and direct viewer selection. Other case sections retain Details. A Statement files button opens the panel.
+- [x] Add bulk selection of up to 20 PDFs. Upload and request local preparation per file, retain per-file failures without automatic duplicate retries, and keep queue state outside the mounted panel. Stop unsent work if the signed-in user changes. Each import still requires its own review/confirmation.
+- [x] Keep user/case/file statement-period choices separate. Flush the review draft when leaving a file so switching within the former 300 ms debounce does not lose an edit. Restore the draft on returning to the same statement revision.
+- [x] Local browser acceptance created isolated case 0230dbcb-d5a0-4e1a-a3d2-3e285788398c with two synthetic PDFs from one selection. Both reached ready status, both opened from the sidebar, and an unconfirmed description correction survived switching files and returning. No financial import was confirmed. Persistent acceptance: data/local-runtime/statement-file-list-acceptance.json.
+- [x] Read-only existing 108-page PDF acceptance: choose the first statement and its recorded USD currency, open at page 3, next to page 4, previous to page 3, and return from another financial tab with page 3 retained. The initial automation timeout was caused by skipping the required currency choice, not a page-navigation failure.
+- [x] 47 affected checks passed at integration; after adding pagination coverage and opening imported originals directly, all seven statement-review checks passed. TypeScript, scoped ESLint and production build passed. Existing bundle-size warning remains. No full suite run.
+- [x] Update the beginner guide for bulk uploads, file-list switching, page controls and visible editing actions. Queue/page choices are session state, not resumable after closing the browser; uploaded files remain server records.
+- [ ] Push and verify this new file-workspace batch on the deployed server.

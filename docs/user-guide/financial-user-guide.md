@@ -106,7 +106,7 @@ A working total of 1,000.00 and a verified total of 0.00 can therefore both be c
 
 1. Open the correct case and select **Financial**. The **Transactions** tab opens first.
 2. Select **Import a statement**, then **Upload a statement**.
-3. In **PDF document**, choose your statement from your computer.
+3. Select **Choose PDF** and choose your statement from your computer. Use **Change PDF** if you picked the wrong file.
 4. Check its filename, then select **Upload and read statement** once.
 5. Wait for Loupe to read the pages. Scanned statements take longer because their letters and numbers must be read from images.
 6. The statement review opens when reading is complete. Loupe fills in the account details and transaction fields it can identify.
@@ -117,12 +117,28 @@ You do not need to assign columns, select every payment, save a batch or finaliz
 
 ![The normal statement review, using a synthetic statement](images/11-statement-review.png)
 
-*Loupe fills the transaction rows before you confirm. Use View source to compare a value with the original PDF.*
+*The original PDF opens beside its extracted printed table. Printed columns and blank cells remain visible. Corrections and import choices are separate below the table.*
+
+### Upload several statements and switch between files
+
+1. In **Bank statements**, select **Statement files**. The right-hand panel opens on **Statements**.
+2. Select **Upload statements** and choose up to 20 PDFs in one selection.
+3. Keep the browser tab open while Loupe uploads them. Each file shows its own progress. A failed request stays visible; other files can continue.
+4. Wait for a file to show **Ready to review**, then select its filename. It opens in the main statement viewer.
+5. Select another filename to switch files. Use **Search filenames** to narrow the list. The added time and short identifier distinguish files with the same name.
+6. Return to a file to continue its review. Changes are saved when you switch; its selected statement period and page are remembered during this session.
+7. Check and confirm each statement separately. Bulk upload does not automatically confirm transactions.
+
+If a request fails, select **Refresh files** and inspect what arrived before uploading another copy. A connection failure can occur after the server received a file. Closing the browser tab can stop uploads that have not yet been sent. Refreshing the page clears the in-memory upload queue and page selections; uploaded files remain in the case, and saved review drafts can be restored by reopening the same statement and period in the same browser tab.
+
+![Statement file list, page controls and separate corrections using synthetic PDFs](images/13-statement-files.png)
+
+*Choose a ready filename on the right to open it. Edit import values opens the correction controls while the original PDF stays visible.*
 
 ### Open a statement already uploaded
 
-1. Select **Import a statement**.
-2. Under **Or open an uploaded statement**, choose the file.
+1. Select **Statement files** and select a ready filename in the right-hand panel.
+2. Alternatively, select **Import a statement** and choose the file under **Or open an uploaded statement**.
 3. If several versions share a filename, compare their added times and the short identifier beside each name.
 4. Choose a statement period and currency if requested.
 5. If the statement was already imported, select **Open imported transactions** to return to the investigation view. Do not upload another copy to make it appear again.
@@ -143,19 +159,21 @@ Where a printed opening balance and an ending balance are available, the review 
 
 A manually added transaction has a page citation but does not establish its position among the printed rows. Loupe therefore explains when it cannot perform the sequential running-balance check. Check that payment against the PDF and compare the statement totals.
 
-An opening balance, closing balance, column heading or disclosure paragraph is not a payment. Loupe excludes recognised examples from the proposed transaction count. To inspect what it excluded, select **Show excluded rows**.
+An opening balance, closing balance, column heading or disclosure paragraph is not a payment. Loupe excludes recognised examples from the proposed transaction count. The extracted printed table still shows these source rows. To inspect their import treatment, open **Show corrections and import choices**, then select **Show excluded rows**.
 
 ### Compare a field with the PDF
 
-1. Select **View source** on the row you want to inspect, or select a source value where available.
-2. Read the original beside the editable transaction fields.
-3. Use the page image to check the date, description, direction, amount and printed balance.
+1. In **Extracted statement**, select the printed value you want to inspect.
+2. Read the original PDF alongside it. The table retains the stored printed text, column order and empty cells; it does not replace Credit and Debit with an invented Direction column.
+3. Compare the date, description, credit or debit amount and balance. The PDF remains the original evidence if its extraction differs.
 4. Use zoom and **Fit source width** to read small print. **Show highlighted value** returns you to the selected location.
 5. If the page has no exact highlight, inspect the whole cited page. A page link is less precise than a field highlight.
 
-Select **Show problems and edits only** to concentrate on rows that need attention. Turn it off again to inspect all proposed transactions. This filter only changes what you see; it does not remove rows from the import.
+Select **Edit import values** above the viewer, then select **Show problems and edits only** to concentrate on rows that need attention. Turn it off again to inspect all proposed transactions. This filter only changes what you see; it does not remove rows from the import.
 
 ### Check a PDF containing several statements
+
+Use **Previous page**, **Next page** or the **Page** selector above the viewer to move through the original PDF. The PDF and extracted table change together. A page with no extracted rows still remains available as a PDF page; inspect it for anything missed. The viewer starts at the first page of the chosen statement.
 
 Each choice identifies a printed account and statement period or date. Select **Choose another statement period** to return to the list. Confirm each statement separately so its account and dates stay attached to the correct payments.
 
@@ -167,9 +185,11 @@ A masked card ending is only a partial account reference. Do not use a matching 
 
 ### Fix a misread value
 
-1. Open the row's original source.
+Before confirmation, use **Edit import values**. For a statement already imported, **Edit imported transactions** opens the current transaction workspace; use the transaction's correction action there. Corrections to the current record are separate from the unchanged original extraction.
+
+1. Select the printed value to inspect its source, then select **Edit import values** above the viewer. It opens the correction controls below the printed table.
 2. Change only the fields that disagree with the printed statement. Dates need a full day, month and year. Amounts use a decimal point without thousands separators.
-3. Select the correct direction. Enter the amount as a positive value; use the direction to say whether it is a credit or debit.
+3. Enter the positive amount in **Credit** or **Debit**, matching the printed statement. Entering an amount in the other column moves this transaction to that column. The unchanged extracted table stays above the corrections so you can compare your change with the source.
 4. Enter a printed balance only if one is shown. Leave it empty when the statement does not supply one. A missing value is not zero.
 5. Enter the row's correction reason, explaining what you changed and where you checked it.
 6. If you corrected the holder, account, bank or period, complete **Reason for detail corrections** too.
@@ -733,8 +753,9 @@ The assembly controls are available with the ledger export tools.
 5. Choose the review package marking.
 6. Select **Prepare and download review package** and wait for the checked ZIP.
 7. Extract the ZIP and open `review-index.html`.
-8. Check the listed inputs, each capture's scope, method results and any validation or custody information.
-9. Retain the ZIP and original input files.
+8. Check the listed inputs, each capture's scope, method results and any validation or custody information. If you attached a ledger export containing support records, **Saved ledger methods, versions and decision references** opens an unchanged copy of that saved index. Older exports may not contain it.
+9. Read **Recorded statement processing**, where present, for the software versions recorded when those pages were extracted. A missing version remains **Not recorded**; it is not replaced with the version running today.
+10. Retain the ZIP and original input files.
 
 The index links the retained files and keeps their scopes separate. Assembly does not merge ledger rows or make different captures contemporaneous. Enclosed files retain their original markings. Synthetic validation remains labelled synthetic. Missing measurements remain missing.
 
