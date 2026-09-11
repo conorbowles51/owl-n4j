@@ -325,14 +325,12 @@ describe("FinancialPage", () => {
     graphLoading()
     renderPage()
     selectTab("Statements")
-    fireEvent.click(
-      screen.getByText("Accounts, balances and missing statement periods")
-    )
+    fireEvent.click(screen.getByText("Checks across all accounts"))
     expect(
-      screen.getByRole("button", { name: "Refresh balance checks" })
+      screen.getByRole("button", { name: "Check statement balances" })
     ).toBeInTheDocument()
     expect(
-      screen.getByRole("button", { name: "Refresh statement coverage" })
+      screen.getByRole("button", { name: "Check statement coverage" })
     ).toBeInTheDocument()
     expect(
       screen.queryByText(
@@ -352,9 +350,16 @@ describe("FinancialPage", () => {
       type: "application/pdf",
     })
     fireEvent.change(input, { target: { files: [file] } })
+    fireEvent.click(screen.getByRole("button", { name: "Review accounts" }))
+    expect(screen.getByText("unfinished-statement.pdf")).not.toBeVisible()
     selectTab("Transactions")
     expect(screen.getByText("unfinished-statement.pdf")).not.toBeVisible()
     selectTab("Statements")
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Upload and review statements",
+      })
+    )
     expect(screen.getByLabelText("PDF document")).toBe(input)
     expect(screen.getByText("unfinished-statement.pdf")).toBeInTheDocument()
     selectTab("Transactions")
@@ -365,6 +370,11 @@ describe("FinancialPage", () => {
       screen.getByRole("button", { name: "Imported statement payments" })
     )
     selectTab("Statements")
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Upload and review statements",
+      })
+    )
     expect(screen.getByLabelText("PDF document")).toBe(input)
     expect(input.files?.[0]).toBe(file)
   })

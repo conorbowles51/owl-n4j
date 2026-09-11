@@ -1,3 +1,4 @@
+import { StatementSourceButton } from "./StatementSourceButton"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -57,15 +58,19 @@ const reasons = {
 export function RequestedCoveragePanel({
   caseId,
   params,
+  accountLabel,
+  autoLoad = false,
 }: {
   caseId: string
   params: LedgerQueryParams
+  accountLabel?: string
+  autoLoad?: boolean
 }) {
   if (!params.accountId || !params.startDate || !params.endDate)
     return (
       <p className="text-sm text-muted-foreground">
-        To check coverage for a search, apply one ledger account and both date
-        bounds.
+        Choose one account and enter a start and end date to check for missing
+        statements.
       </p>
     )
   return (
@@ -80,6 +85,8 @@ export function RequestedCoveragePanel({
       accountId={params.accountId}
       start={params.startDate}
       end={params.endDate}
+      accountLabel={accountLabel}
+      autoLoad={autoLoad}
     />
   )
 }
@@ -88,13 +95,17 @@ function CoverageResult({
   accountId,
   start,
   end,
+  accountLabel,
+  autoLoad,
 }: {
   caseId: string
   accountId: string
   start: string
   end: string
+  accountLabel?: string
+  autoLoad: boolean
 }) {
-  const [opened, setOpened] = useState(false)
+  const [opened, setOpened] = useState(autoLoad)
   const query = useQuery({
     queryKey: [
       "financial-ledger",
@@ -133,19 +144,20 @@ function CoverageResult({
   })
   return (
     <section
-      aria-label="Coverage for applied ledger filters"
+      aria-label="Requested statement dates"
       className="space-y-2 rounded border p-3"
     >
-      <h3 className="font-semibold">Coverage for applied ledger filters</h3>
+      <h3 className="font-semibold">Requested statement dates</h3>
       <p>
-        {start} to {end} · account {accountId}
+        {start} to {end}
+        {accountLabel ? ` · ${accountLabel}` : ""}
       </p>
       <Button
         variant="outline"
         disabled={query.isFetching}
         onClick={() => (opened ? void query.refetch() : setOpened(true))}
       >
-        {opened ? "Refresh filtered coverage" : "Check filtered coverage"}
+        {opened ? "Refresh date check" : "Check these dates"}
       </Button>
       {opened &&
         (query.isFetching || query.isPending ? (
@@ -154,34 +166,38 @@ function CoverageResult({
           <p role="alert">Coverage unavailable. {query.error.message}</p>
         ) : (
           <>
-            <p>{query.data.limitation}</p>
+            <p className="text-sm">
+              This checks statement dates, not whether every payment was
+              extracted correctly.
+            </p>
             {!query.data.available ? (
-              <p>Coverage unknown or unavailable. {query.data.reason}</p>
+              <p>
+                Statement coverage could not be established. {query.data.reason}
+              </p>
             ) : (
               query.data.currencies.map((group) => (
                 <div key={group.currency} className="space-y-1">
                   <p>
                     {group.currency}: {group.covered_days} of{" "}
-                    {query.data.requested_days} requested days within eligible
-                    printed bounds; {group.uncovered_days} days uncovered.
+                    {query.data.requested_days} days covered by statements;{" "}
+                    {group.uncovered_days} days without a covering statement.
                   </p>
                   {group.gaps.map((gap) => (
                     <p key={gap.start}>
-                      Uncovered requested dates: {gap.start} to {gap.end} (
+                      Missing statement dates: {gap.start} to {gap.end} (
                       {gap.days} days).
                     </p>
                   ))}
                   {group.uncovered_days === 0 && (
                     <p>
-                      Printed bounds cover these requested dates. This does not
-                      establish complete transaction extraction or that no
-                      transactions occurred.
+                      Statements cover the full date range. Check their balance
+                      results separately to look for missing or incorrect
+                      payments.
                     </p>
                   )}
                   {group.windows.map((window) => (
                     <p key={window.start}>
-                      Covered requested dates: {window.start} to {window.end} ·
-                      source periods {window.period_ids.join(", ")}
+                      Statements cover: {window.start} to {window.end}
                     </p>
                   ))}
                 </div>
@@ -189,19 +205,32 @@ function CoverageResult({
             )}
             <details>
               <summary>
-                Recorded source periods ({query.data.periods.length})
+                Open the statements used in this check (
+                {query.data.periods.length})
               </summary>
               {query.data.periods.map((period) => (
-                <p key={period.period_id}>
-                  {period.start ?? "Unknown start"} to{" "}
-                  {period.end ?? "unknown end"} · {period.currency} ·{" "}
-                  {period.included
-                    ? "Eligible printed bounds; only intersecting dates count"
-                    : reasons[period.exclusion_reason!]}
-                  {" · "}period {period.period_id} · source document{" "}
-                  {period.source_document_id}
-                </p>
+                <div key={period.period_id} className="space-y-2 border-t py-2">
+                  <p>
+                    {period.start ?? "Unknown start"} to{" "}
+                    {period.end ?? "unknown end"} · {period.currency} ·{" "}
+                    {period.included
+                      ? "Dates available; only days in your requested range count"
+                      : reasons[period.exclusion_reason!]}
+                  </p>
+                  <StatementSourceButton
+                    caseId={caseId}
+                    periodId={period.period_id}
+                    sourceDocumentId={period.source_document_id}
+                    label="Open statement and dates"
+                  />
+                </div>
               ))}
+            </details>
+            <details className="text-sm">
+              <summary className="cursor-pointer">
+                How dates are checked
+              </summary>
+              <p>{query.data.limitation}</p>
             </details>
           </>
         ))}

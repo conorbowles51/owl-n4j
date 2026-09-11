@@ -161,3 +161,21 @@ Library import and supported input are documented in the [maintainer's README](h
 Acceptance: an HTTP-origin browser, with all traffic intercepted to the isolated local app, reported no SubtleCrypto or randomUUID. It still opened the saved workpaper, downloaded its report package, matched the included PDF's digest against the recorded reference, returned the standard SHA-256 result for `abc`, and generated a valid random version-4 request identifier. No financial or Workspace mutations occurred. Local record: `data/local-runtime/http-financial-acceptance.json`.
 
 The 79 affected checks passed, including tracing, transfers, claims, source package verification, file downloads, custody request identifiers and native/fallback hashing. Type checking and scoped lint passed. The production build passed in 6.34 seconds with the existing large-chunk advisory. The guide's fifteen images decoded and its new workpaper sections rendered. The branch was fetched and had no incoming commits before publication.
+
+## Account review follow-up, 11 September 2026
+
+- [x] Separate **Upload and review statements** from **Review accounts** within Statements. Keep the upload form and account review mounted while switching views or financial tabs.
+- [x] Open one account's statements from its account card. Show filenames, recorded periods, opening/closing balances, missing balances and differences before the detailed calculation controls.
+- [x] Add account-scoped balance and coverage requests. Reject another case's account and mismatched account responses; paginate balance checks within the chosen account. Preserve the 500-period coverage limit and read-only calculations.
+- [x] Display credit card amounts owed using the explicit convention retained in the reviewed source controls. Keep unknown conventions unchanged and preserve internal signed arithmetic in the detailed calculation.
+- [x] Open the original statement and its balance/date references from balance checks, date coverage and a requested date-range result. Pass case and evidence context to the document viewer.
+- [x] Check a chosen account's requested date range, including days before and after existing statements. Preserve the distinction between missing dates and dates that cannot be assessed.
+- [x] Open account transactions for all dates, a statement period or the checked date range. Use the actual account/date filters; do not imply that a date range identifies one source file when statements overlap.
+- [x] Refresh a repeated date-range check, retain dates across financial tab changes and returning to the same account, and clear the date result when choosing another account. Warn when edited date inputs have not yet been checked.
+- [x] Update the beginner guide with the account workflow, a replaced statement-review screenshot and a new requested-date screenshot. Sixteen guide images now accompany the instructions.
+
+Validation: 38 affected backend checks and 45 affected frontend checks passed, including the account/date isolation, exact arithmetic, credit-card presentation, source links, retained upload and navigation checks. Failed new fixture and test-selector assertions were corrected and only the affected checks repeated. Type checking, lint for the changed components, guide rendering and one successful production bundle build passed. No full test suite was run.
+
+Browser acceptance used the existing synthetic Nexus case. It opened the account's statement, identified the uncovered January 2024 range, loaded the original PDF into the viewer with the same SHA-256 as its uploaded bytes, opened the account/date-filtered transaction request with a successful nonempty response, and retained the date range on returning to Statements. No financial writes occurred. Local evidence is retained in `data/local-runtime/account-review-acceptance.json` and is not published.
+
+Limits: this is an account investigation workflow over existing imports, not new PDF extraction accuracy evidence. The unavailable Capital One 8160 source, independently reviewed extraction corpus and broader expert-report acceptance remain outstanding as recorded above. Agreement between balances and payments does not establish complete extraction. Account/date view choices are temporary and reset on a full browser refresh.

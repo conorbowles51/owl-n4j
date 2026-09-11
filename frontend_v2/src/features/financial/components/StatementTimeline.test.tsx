@@ -37,7 +37,7 @@ it("positions dates including leap day and retains excluded overlaps as separate
   const gap = screen.getByLabelText("Gap: 2024-02-29 to 2024-02-29, 1 days")
   expect(parseFloat(gap.style.width)).toBeCloseTo(100 / 3)
   expect(screen.getAllByRole("button")).toHaveLength(3)
-  expect(screen.getByText("Excluded bounds")).toBeVisible()
+  expect(screen.getByText("Dates left out")).toBeVisible()
   fireEvent.click(
     screen.getByRole("button", {
       name: "Inspect statement 2: 2024-02-28 to 2024-03-01",

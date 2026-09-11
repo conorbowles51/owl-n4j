@@ -40,7 +40,7 @@ const answer = {
   limitation: "No proof of complete extraction.",
   items: [period],
 }
-function mount(data: unknown = answer) {
+function mount(data: unknown = answer, accountId?: string) {
   const fetch = vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(async () => new Response(JSON.stringify(data)))
@@ -49,7 +49,7 @@ function mount(data: unknown = answer) {
   })
   const view = render(
     <QueryClientProvider client={client}>
-      <StatementChecksPanel caseId="case" />
+      <StatementChecksPanel caseId="case" accountId={accountId} />
     </QueryClientProvider>
   )
   return { fetch, client, ...view }
@@ -65,6 +65,9 @@ it("checks on request with exact amounts, exclusions and old result clearly dist
   open()
   expect(await screen.findByText("Balance difference")).toBeVisible()
   expect(screen.getAllByText(/90071992547409\.93/)).toHaveLength(2)
+  expect(screen.getByText("90,071,992,547,409.93 USD")).toBeVisible()
+  expect(screen.getByText(/Source: superseded · P3/)).not.toBeVisible()
+  fireEvent.click(screen.getByText("Calculation and further checks"))
   expect(screen.getByText(/Source: superseded · P3/)).toBeVisible()
   expect(
     screen.getByText(/2 admitted rows counted; 1 other rows excluded/)
@@ -189,4 +192,57 @@ it("refuses a zero count larger than the admitted population", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Balance checks unavailable"
   )
+})
+
+it("filters statement pages by account and rejects a mixed account response", async () => {
+  const { fetch } = mount(
+    {
+      ...answer,
+      account_id: "chosen",
+      items: [{ ...period, account_id: "other" }],
+    },
+    "chosen"
+  )
+  open()
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "different account"
+  )
+  expect(String(fetch.mock.calls[0][0])).toContain("account_id=chosen")
+  expect(screen.queryByText("Balance difference")).not.toBeInTheDocument()
+})
+it("requires the response to confirm the requested account", async () => {
+  mount(answer, "account")
+  open()
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "different account"
+  )
+})
+it("shows positive credit card amounts owed only with an explicit saved convention", async () => {
+  mount({
+    ...answer,
+    items: [
+      {
+        ...period,
+        balance_convention: "liability_owed",
+        status: "balanced",
+        amounts: {
+          opening: "-10000",
+          credits: "2000",
+          debits: "3000",
+          computed_closing: "-11000",
+          closing: "-11000",
+          difference: "0",
+        },
+      },
+    ],
+  })
+  open()
+  expect(await screen.findByText("Opening amount owed")).toBeVisible()
+  expect(screen.getByText("100.00 USD", { exact: true })).toBeVisible()
+  expect(screen.getByText("110.00 USD", { exact: true })).toBeVisible()
+  expect(
+    screen
+      .getAllByText("0.00 USD", { exact: true })
+      .filter((element) => !element.closest("details"))
+  ).toHaveLength(1)
 })

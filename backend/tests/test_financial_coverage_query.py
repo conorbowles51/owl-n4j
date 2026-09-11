@@ -74,6 +74,16 @@ class CoverageQueryTests(fixture.DuplicateTestCase):
         self.assertFalse(requested["available"])
         self.assertEqual(requested["currencies"],[])
 
+    def test_account_filter_returns_only_selected_periods_and_echoes_scope(self):
+        self.make_copy()
+        result = self.read(account_id=self.account.id)
+        self.assertEqual(result['account_id'], str(self.account.id))
+        self.assertEqual([p['account_id'] for p in result['items']], [str(self.account.id)])
+        with self.assertRaises(CoverageQueryError) as caught:
+            self.read(account_id=self.other_account.id)
+        self.assertEqual(caught.exception.status_code, 404)
+        self.assertFalse(self.db.dirty or self.db.new)
+
     def test_account_page_is_explicit_and_bounded(self):
         self.assertEqual(self.read(offset=100)["items"],[])
         for changes in ({"limit":26},{"offset":-1},{"limit":True}):
@@ -87,6 +97,10 @@ class CoverageRouterTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(router,"list_statement_coverage",return_value={}) as call:
             await router.get_statement_coverage(case,25,"db")
             call.assert_called_once_with("db",case_id=case,offset=25)
+        with patch.object(router,"list_statement_coverage",return_value={}) as call:
+            account = uuid4()
+            await router.get_statement_coverage(case,0,"db",account)
+            call.assert_called_once_with("db",case_id=case,offset=0,account_id=account)
         with patch.object(router,"list_statement_coverage",side_effect=RuntimeError("private")):
             with self.assertRaises(HTTPException) as caught:await router.get_statement_coverage(case,0,"db")
             self.assertNotIn("private",caught.exception.detail)

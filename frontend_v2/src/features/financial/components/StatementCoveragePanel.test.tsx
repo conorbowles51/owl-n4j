@@ -33,13 +33,13 @@ const answer = {
     },
   ],
 }
-function mount(data: unknown = answer) {
+function mount(data: unknown = answer, accountId?: string) {
   const fetch = vi
     .spyOn(globalThis, "fetch")
     .mockResolvedValue(new Response(JSON.stringify(data)))
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <StatementCoveragePanel caseId="case-a" />
+      <StatementCoveragePanel caseId="case-a" accountId={accountId} />
     </QueryClientProvider>
   )
   return fetch
@@ -51,7 +51,7 @@ it("loads on request and makes internal gaps and coverage limits explicit", asyn
     screen.getByRole("button", { name: "Check statement coverage" })
   )
   expect(
-    await screen.findByText(/Gap in eligible printed bounds: 2026-02-01/)
+    await screen.findByText(/Missing statement dates: 2026-02-01/)
   ).toBeInTheDocument()
   expect(
     screen.getByText("No conclusion about absent transactions.")
@@ -78,7 +78,28 @@ it("keeps unknown coverage distinct from no financial records", async () => {
   )
   expect(
     await screen.findByText(
-      "No eligible printed date ranges. Coverage is unknown."
+      "Statement dates are missing or cannot be used. Open the source statements to check their dates."
     )
   ).toBeInTheDocument()
 })
+
+it.each([
+  { ...answer, account_id: "other" },
+  {
+    ...answer,
+    account_id: "account-a",
+    items: [{ ...answer.items[0], account_id: "other" }],
+  },
+])(
+  "rejects a different account instead of displaying its statement dates",
+  async (data) => {
+    const fetch = mount(data, "account-a")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Check statement coverage" })
+    )
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "different account"
+    )
+    expect(String(fetch.mock.calls[0][0])).toContain("account_id=account-a")
+  }
+)

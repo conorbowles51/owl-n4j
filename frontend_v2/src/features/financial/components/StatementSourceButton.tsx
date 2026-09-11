@@ -55,10 +55,12 @@ export function StatementSourceButton({
   caseId,
   periodId,
   sourceDocumentId,
+  label = "Inspect statement source",
 }: {
   caseId: string
   periodId: string
   sourceDocumentId: string
+  label?: string
 }) {
   const [opened, setOpened] = useState(false),
     [viewFile, setViewFile] = useState(false),
@@ -88,7 +90,7 @@ export function StatementSourceButton({
   return (
     <>
       <Button variant="outline" onClick={() => setOpened(true)}>
-        Inspect statement source
+        {label}
       </Button>
       <Dialog
         open={opened && (!viewFile || query.isError)}
@@ -192,6 +194,8 @@ export function StatementSourceButton({
           documentUrl={evidenceAPI.getFileUrl(query.data.evidence_file_id)}
           documentName={query.data.filename}
           navigationKey={`${caseId}:${periodId}`}
+          caseId={caseId}
+          evidenceId={query.data.evidence_file_id}
         />
       )}
     </>

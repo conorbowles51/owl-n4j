@@ -1,3 +1,4 @@
+import { StatementSourceButton } from "./StatementSourceButton"
 import { StatementTimeline } from "./StatementTimeline"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -9,6 +10,7 @@ const day = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)
 const count = z.number().int().nonnegative()
 const report = z.object({
   case_id: z.string(),
+  account_id: z.string().nullable().optional(),
   offset: count,
   has_more: z.boolean(),
   applied: z.literal(false),
@@ -65,23 +67,33 @@ const reasons = {
 export function StatementCoveragePanel({
   caseId,
   autoLoad = false,
+  accountId,
 }: {
   caseId: string | undefined
   autoLoad?: boolean
+  accountId?: string
 }) {
   const [opened, setOpened] = useState(autoLoad),
     [offset, setOffset] = useState(0)
   const query = useQuery({
-    queryKey: ["financial-ledger", caseId, "coverage", offset],
+    queryKey: ["financial-ledger", caseId, "coverage", accountId, offset],
     enabled: opened && Boolean(caseId),
     retry: false,
     queryFn: async () => {
       const data = report.parse(
         await fetchAPI<unknown>(
-          `${candidateUrl("statement-coverage", caseId!)}&offset=${offset}`
+          `${candidateUrl("statement-coverage", caseId!)}&offset=${offset}${accountId ? `&account_id=${encodeURIComponent(accountId)}` : ""}`
         )
       )
       assertCandidateScope(data, caseId!)
+      if (
+        accountId &&
+        (data.account_id !== accountId ||
+          data.items.some((account) => account.account_id !== accountId))
+      )
+        throw new Error(
+          "Coverage returned for a different account. Reload the check."
+        )
       if (data.offset !== offset)
         throw new Error("The account page changed. Reload coverage.")
       return data
@@ -95,8 +107,10 @@ export function StatementCoveragePanel({
     >
       <h3 className="font-semibold">Statement coverage</h3>
       <p>
-        Check which dates are covered by recorded, printed statement bounds.
-        This does not establish that all transactions were extracted.
+        See the dates covered by imported statements and any gaps between them.{" "}
+        {accountId
+          ? "Use the date range check below to include earlier or later dates."
+          : "Review an individual account to check an earlier or later date range."}
       </p>
       <Button
         variant="outline"
@@ -112,58 +126,74 @@ export function StatementCoveragePanel({
           <p role="alert">Coverage unavailable. {query.error.message}</p>
         ) : (
           <>
-            <p>{query.data.limitation}</p>
+            <details className="text-sm">
+              <summary className="cursor-pointer">
+                How dates are checked
+              </summary>
+              <p>{query.data.limitation}</p>
+            </details>
             {query.data.items.length === 0 && (
-              <p>
-                No ledger accounts on this page. This does not establish that
-                the case has no financial records.
-              </p>
+              <p>No accounts were found on this page.</p>
             )}
             {query.data.items.map((account) => (
               <div
                 key={account.account_id}
                 className="space-y-2 rounded border p-3"
               >
-                <h4 className="font-semibold">{account.label}</h4>
+                {!accountId && (
+                  <h4 className="font-semibold">{account.label}</h4>
+                )}
                 {!account.available ? (
                   <p>{account.reason}</p>
                 ) : (
                   <>
                     {account.currencies.length === 0 && (
                       <p>
-                        No eligible printed date ranges. Coverage is unknown.
+                        Statement dates are missing or cannot be used. Open the
+                        source statements to check their dates.
                       </p>
                     )}
                     {account.currencies.map((group) => (
                       <div key={group.currency} className="space-y-1">
                         <p>
-                          {group.currency}: {group.period_count} eligible
-                          periods; {group.covered_days} calendar days within
-                          their combined bounds.
+                          {group.currency}: {group.period_count} statement{" "}
+                          {group.period_count === 1
+                            ? "period covers"
+                            : "periods cover"}{" "}
+                          {group.covered_days} days.
                         </p>
                         {group.windows.map((window) => (
                           <p key={window.start}>
-                            Covered bounds: {window.start} to {window.end} (
-                            {window.period_ids.length} source periods).
+                            Statements cover: {window.start} to {window.end} (
+                            {window.period_ids.length}{" "}
+                            {window.period_ids.length === 1
+                              ? "statement"
+                              : "statements"}
+                            ).
                           </p>
                         ))}
                         {group.gaps.map((gap) => (
                           <p key={gap.start}>
-                            Gap in eligible printed bounds: {gap.start} to{" "}
-                            {gap.end} ({gap.days} days).
+                            Missing statement dates: {gap.start} to {gap.end} (
+                            {gap.days} days).
                           </p>
                         ))}
                         {group.gaps.length === 0 && (
                           <p>
-                            No internal gaps between eligible printed bounds.
-                            Earlier and later records remain unassessed.
+                            No gaps between these statements. Earlier and later
+                            dates have not been checked.
                           </p>
                         )}
-                        <p>
-                          {group.overlaps.length} additional periods overlap
-                          already covered dates; overlapping days are counted
-                          once.
-                        </p>
+                        {group.overlaps.length > 0 && (
+                          <p>
+                            {group.overlaps.length} statement{" "}
+                            {group.overlaps.length === 1
+                              ? "period overlaps"
+                              : "periods overlap"}{" "}
+                            another statement. Check overlapping files for
+                            duplicate or additional transactions.
+                          </p>
+                        )}
                       </div>
                     ))}
                     {[
@@ -192,37 +222,50 @@ export function StatementCoveragePanel({
                       ))}
                     <details>
                       <summary>
-                        Source periods ({account.periods.length})
+                        Statements included or left out (
+                        {account.periods.length})
                       </summary>
                       {account.periods.map((period) => (
-                        <p key={period.period_id}>
-                          {period.start ?? "Unknown start"} to{" "}
-                          {period.end ?? "unknown end"} · {period.currency} ·{" "}
-                          {period.included
-                            ? "Included printed bounds"
-                            : reasons[period.exclusion_reason!]}{" "}
-                          · source document {period.source_document_id}
-                        </p>
+                        <div
+                          key={period.period_id}
+                          className="space-y-2 border-t py-2"
+                        >
+                          <p>
+                            {period.start ?? "Unknown start"} to{" "}
+                            {period.end ?? "unknown end"} · {period.currency} ·{" "}
+                            {period.included
+                              ? "Dates included"
+                              : reasons[period.exclusion_reason!]}
+                          </p>
+                          <StatementSourceButton
+                            caseId={caseId}
+                            periodId={period.period_id}
+                            sourceDocumentId={period.source_document_id}
+                            label="Open statement and dates"
+                          />
+                        </div>
                       ))}
                     </details>
                   </>
                 )}
               </div>
             ))}
-            <div className="flex gap-2">
-              <Button
-                disabled={!offset || query.isFetching}
-                onClick={() => setOffset((v) => Math.max(0, v - 25))}
-              >
-                Previous coverage accounts
-              </Button>
-              <Button
-                disabled={!query.data.has_more || query.isFetching}
-                onClick={() => setOffset((v) => v + 25)}
-              >
-                Next coverage accounts
-              </Button>
-            </div>
+            {!accountId && (
+              <div className="flex gap-2">
+                <Button
+                  disabled={!offset || query.isFetching}
+                  onClick={() => setOffset((v) => Math.max(0, v - 25))}
+                >
+                  Previous coverage accounts
+                </Button>
+                <Button
+                  disabled={!query.data.has_more || query.isFetching}
+                  onClick={() => setOffset((v) => v + 25)}
+                >
+                  Next coverage accounts
+                </Button>
+              </div>
+            )}
           </>
         ))}
     </section>

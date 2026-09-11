@@ -70,8 +70,9 @@ export function StatementTimeline({
     >
       <h5 className="font-semibold">{currency} statement timeline</h5>
       <p className="text-sm">
-        Solid bars: eligible printed bounds. Dashed bars: excluded bounds. Each
-        line is a statement; overlapping dates stay separate.
+        Select a bar to open its statement. Solid bars count towards covered
+        dates. Dashed bars are left out because their dates or source need
+        review.
       </p>
       <div className="flex justify-between gap-2 text-xs">
         <span>{new Date(first * 86400000).toISOString().slice(0, 10)}</span>
@@ -112,7 +113,7 @@ export function StatementTimeline({
                 Statement {index + 1}: {period.start} to {period.end}
               </span>
               <span>
-                {period.included ? "Eligible bounds" : "Excluded bounds"}
+                {period.included ? "Dates included" : "Dates left out"}
                 {overlaps.some((p) => p.period_id === period.period_id)
                   ? " · overlap"
                   : ""}
@@ -145,7 +146,7 @@ export function StatementTimeline({
           <p>
             {active.start} to {active.end} ·{" "}
             {active.included
-              ? "Eligible printed bounds"
+              ? "Dates included"
               : `Excluded: ${active.exclusion_reason?.replaceAll("_", " ") ?? "unknown reason"}`}
           </p>
           <StatementSourceButton

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
 import { correctionMoney } from "../lib/correction-contract"
+import { formatLedgerAmount } from "../lib/ledger-format"
 
 const count = z.number().int().nonnegative()
 const minor = z.string().regex(/^-?(0|[1-9][0-9]*)$/)
@@ -33,6 +34,11 @@ const item = z
     period_id: z.string(),
     account_id: z.string(),
     account_label: z.string(),
+    filename: z.string().nullable().optional(),
+    balance_convention: z
+      .enum(["asset_balance", "liability_owed"])
+      .nullable()
+      .optional(),
     source_document_id: z.string(),
     source_status: z.string(),
     proof_class: z.enum(["p0", "p1", "p2", "p3"]),
@@ -91,6 +97,7 @@ const item = z
   }, "Statement check arithmetic is inconsistent.")
 const report = z.object({
   case_id: z.string(),
+  account_id: z.string().nullable().optional(),
   offset: count,
   has_more: z.boolean(),
   applied: z.literal(false),
@@ -114,12 +121,23 @@ const fields = [
   ["difference", "Difference"],
 ] as const
 
+function balanceSummary(value: string, currency: string) {
+  const formatted = formatLedgerAmount(value, currency)
+  return formatted.scaled
+    ? `${formatted.text} ${formatted.currency}`
+    : correctionMoney(value, currency)
+}
+
 export function StatementChecksPanel({
   caseId,
   autoLoad = false,
+  accountId,
+  onOpenTransactions,
 }: {
   caseId: string | undefined
   autoLoad?: boolean
+  accountId?: string
+  onOpenTransactions?: (start?: string, end?: string) => void
 }) {
   const [opened, setOpened] = useState(autoLoad),
     [offset, setOffset] = useState(0),
@@ -129,6 +147,7 @@ export function StatementChecksPanel({
       "financial-ledger",
       caseId,
       "statement-checks",
+      accountId,
       offset,
       includeNative,
     ],
@@ -137,10 +156,18 @@ export function StatementChecksPanel({
     queryFn: async () => {
       const data = report.parse(
         await fetchAPI<unknown>(
-          `${candidateUrl("statement-checks", caseId!)}&offset=${offset}&include_native=${includeNative}`
+          `${candidateUrl("statement-checks", caseId!)}&offset=${offset}&include_native=${includeNative}${accountId ? `&account_id=${encodeURIComponent(accountId)}` : ""}`
         )
       )
       assertCandidateScope(data, caseId!)
+      if (
+        accountId &&
+        (data.account_id !== accountId ||
+          data.items.some((period) => period.account_id !== accountId))
+      )
+        throw new Error(
+          "Statements returned for a different account. Reload the check."
+        )
       if (
         data.offset !== offset ||
         data.native_controls_requested !== includeNative
@@ -157,8 +184,8 @@ export function StatementChecksPanel({
     >
       <h3 className="font-semibold">Statement balance checks</h3>
       <p>
-        Compare opening balance plus money in minus money out with the recorded
-        closing balance. Missing balances remain unknown.
+        Compare each statement’s recorded balances with its imported payments.
+        Open the statement to investigate a difference or a missing balance.
       </p>
       <Button
         variant="outline"
@@ -168,16 +195,19 @@ export function StatementChecksPanel({
         {opened ? "Refresh balance checks" : "Check statement balances"}
       </Button>
       {opened && (
-        <label className="block">
-          <input
-            aria-label="Recheck native bank-file controls"
-            type="checkbox"
-            checked={includeNative}
-            onChange={(e) => setIncludeNative(e.target.checked)}
-          />{" "}
-          Recheck native bank-file controls against current readings (reads
-          original files)
-        </label>
+        <details className="text-sm">
+          <summary className="cursor-pointer">Additional file checks</summary>
+          <label className="block">
+            <input
+              aria-label="Recheck native bank-file controls"
+              type="checkbox"
+              checked={includeNative}
+              onChange={(e) => setIncludeNative(e.target.checked)}
+            />{" "}
+            Recheck native bank-file controls against current readings (reads
+            original files)
+          </label>
+        </details>
       )}
       {opened &&
         (query.isPending ? (
@@ -186,163 +216,283 @@ export function StatementChecksPanel({
           <p role="alert">Balance checks unavailable. {query.error.message}</p>
         ) : (
           <>
-            <Button
-              variant="outline"
-              disabled={query.isFetching}
-              onClick={() => {
-                const url = URL.createObjectURL(
-                  new Blob(
-                    [
-                      JSON.stringify(
-                        {
-                          schema: "loupe.financial.statement_checks/1",
-                          ...query.data,
-                        },
-                        null,
-                        2
-                      ),
-                    ],
-                    { type: "application/json" }
+            <details className="text-sm space-y-2">
+              <summary className="cursor-pointer">
+                Save these check results and read calculation details
+              </summary>
+              <Button
+                variant="outline"
+                disabled={query.isFetching}
+                onClick={() => {
+                  const url = URL.createObjectURL(
+                    new Blob(
+                      [
+                        JSON.stringify(
+                          {
+                            schema: "loupe.financial.statement_checks/1",
+                            ...query.data,
+                          },
+                          null,
+                          2
+                        ),
+                      ],
+                      { type: "application/json" }
+                    )
                   )
-                )
-                const link = document.createElement("a")
-                link.href = url
-                link.download = `loupe-statement-checks-page-${Math.floor(offset / 25) + 1}.json`
-                link.click()
-                setTimeout(() => URL.revokeObjectURL(url), 1000)
-              }}
-            >
-              Download this page of statement checks
-            </Button>
-            <p className="text-sm">
-              The download captures these displayed periods only, including any
-              requested whole-source native checks. Other statement pages and
-              source files are not included.
-            </p>
-            <p className="text-sm">
-              Checked at {query.data.checked_at}. {query.data.limitation}
-            </p>
+                  const link = document.createElement("a")
+                  link.href = url
+                  link.download = `loupe-statement-checks-page-${Math.floor(offset / 25) + 1}.json`
+                  link.click()
+                  setTimeout(() => URL.revokeObjectURL(url), 1000)
+                }}
+              >
+                Download this page of statement checks
+              </Button>
+              <p className="text-sm">
+                The download captures these displayed periods only, including
+                any requested whole-source native checks. Other statement pages
+                and source files are not included.
+              </p>
+              <p className="text-sm">
+                Checked at {query.data.checked_at}. {query.data.limitation}
+              </p>
+            </details>
             {query.data.items.length === 0 && (
               <p>
-                No statement periods on this page. This does not establish
-                complete extraction.
+                No imported statement periods were found here. Upload and
+                confirm a statement to record its dates and balances.
               </p>
             )}
-            {query.data.items.map((period) => (
-              <article
-                key={period.period_id}
-                className="space-y-3 rounded border p-3"
-              >
-                <div className="flex flex-wrap justify-between gap-2">
-                  <h4 className="font-semibold">
-                    {period.account_label} · {period.currency}
-                  </h4>
-                  <strong>{statusLabel[period.status]}</strong>
-                </div>
-                <p>
-                  {period.start ?? "Unknown start"} to{" "}
-                  {period.end ?? "unknown end"}
-                </p>
-                <p>
-                  Source: {period.source_status} ·{" "}
-                  {period.proof_class.toUpperCase()}. These checks do not change
-                  source eligibility.
-                </p>
-                {period.delta_hints && (
-                  <StatementDeltaHintsPanel
-                    key={`${query.data.checked_at}:${period.period_id}`}
-                    caseId={caseId}
-                    currency={period.currency}
-                    hints={period.delta_hints}
-                  />
-                )}
-                {period.native_controls && (
-                  <NativeControlComparisonPanel
-                    comparison={period.native_controls}
-                  />
-                )}
-                {period.printed_totals && (
-                  <PrintedTotalChecks
-                    checks={period.printed_totals}
-                    currency={period.currency}
-                  />
-                )}
-                {period.printed_totals_error && (
-                  <p role="alert">
-                    Printed totals could not be checked:{" "}
-                    {period.printed_totals_error}
+            <div
+              className="max-h-[38rem] space-y-3 overflow-auto"
+              aria-label="Statements and balances"
+            >
+              {query.data.items.map((period) => (
+                <article
+                  key={period.period_id}
+                  className="space-y-3 rounded border p-3"
+                >
+                  <div className="flex flex-wrap justify-between gap-2">
+                    <h4 className="font-semibold break-words">
+                      {period.filename || period.account_label} ·{" "}
+                      {period.currency}
+                    </h4>
+                    <strong
+                      className={`rounded px-2 py-1 text-sm ${period.status === "balanced" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-800 dark:text-amber-300"}`}
+                    >
+                      {statusLabel[period.status]}
+                    </strong>
+                  </div>
+                  <p>
+                    {period.start ?? "Unknown start"} to{" "}
+                    {period.end ?? "unknown end"}
                   </p>
-                )}
-                {period.reason && <p>{period.reason}</p>}
-                {period.amounts && (
-                  <>
-                    <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {fields.map(([key, label]) => (
-                        <div key={key}>
-                          <dt className="text-sm text-muted-foreground">
-                            {label}
-                          </dt>
-                          <dd className="font-mono">
-                            {period.amounts![key] === null
-                              ? "Unknown"
-                              : correctionMoney(
-                                  period.amounts![key]!,
-                                  period.currency
-                                )}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                    <p>
-                      {period.counted_rows} admitted rows counted;{" "}
-                      {period.excluded_rows} other rows excluded from this
-                      arithmetic.
+                  {period.source_status !== "admitted" && (
+                    <p className="text-sm text-amber-700 dark:text-amber-300">
+                      This statement is excluded from current transaction
+                      totals.
                     </p>
-                    {period.zero_amount_rows != null &&
-                      period.zero_amount_rows > 0 && (
-                        <p>
-                          Includes {period.zero_amount_rows} zero-amount
-                          readings; these preserve printed lines and are not
-                          nonzero payments.
-                        </p>
+                  )}
+                  {period.amounts && (
+                    <dl className="grid gap-3 sm:grid-cols-3">
+                      {(["opening", "closing", "difference"] as const).map(
+                        (field) => {
+                          const owed =
+                            period.balance_convention === "liability_owed"
+                          const value = period.amounts![field]
+                          return (
+                            <div key={field}>
+                              <dt className="text-sm text-muted-foreground">
+                                {field === "opening"
+                                  ? owed
+                                    ? "Opening amount owed"
+                                    : "Opening balance"
+                                  : field === "closing"
+                                    ? owed
+                                      ? "Closing amount owed"
+                                      : "Closing balance"
+                                    : "Difference"}
+                              </dt>
+                              <dd className="font-semibold tabular-nums">
+                                {value === null
+                                  ? "Not available"
+                                  : balanceSummary(
+                                      owed && field !== "difference"
+                                        ? String(-BigInt(value))
+                                        : field === "difference"
+                                          ? String(
+                                              BigInt(value) < 0n
+                                                ? -BigInt(value)
+                                                : BigInt(value)
+                                            )
+                                          : value,
+                                      period.currency
+                                    )}
+                              </dd>
+                            </div>
+                          )
+                        }
                       )}
-                    <p>
-                      {period.independent
-                        ? "Both balances are sourced from printed statement controls. Ledger signs reflect the recorded balance convention."
-                        : "The balances do not provide an independent pair of printed controls."}
+                    </dl>
+                  )}
+                  {period.status === "unavailable" && (
+                    <p className="text-sm">
+                      {period.amounts?.opening === null &&
+                        "Opening balance not recorded. "}
+                      {period.amounts?.closing === null &&
+                        "Closing balance not recorded. "}
+                      Open the statement to check whether these values are
+                      printed.
                     </p>
-                  </>
-                )}
-                <StatementSourceButton
-                  caseId={caseId}
-                  periodId={period.period_id}
-                  sourceDocumentId={period.source_document_id}
-                />
-                <StatementRunningBalances
-                  caseId={caseId}
-                  periodId={period.period_id}
-                  sourceDocumentId={period.source_document_id}
-                  currency={period.currency}
-                />
-                <details>
-                  <summary>Recorded check and source details</summary>
-                  <p>
-                    Earlier stored check: {period.recorded_status}
-                    {period.recorded_at
-                      ? ` at ${period.recorded_at}`
-                      : " (no recorded check time)"}
-                    . This read has not overwritten it.
-                  </p>
-                  <p>
-                    Opening balance source: {period.opening_source}; closing
-                    balance source: {period.closing_source}.
-                  </p>
-                  <p className="break-all">
-                    Source document: {period.source_document_id}
-                  </p>
-                </details>
-              </article>
-            ))}
+                  )}
+                  {period.status === "balanced" && (
+                    <p className="text-sm">
+                      The imported payments agree with the recorded balances.
+                    </p>
+                  )}
+                  {period.status === "unbalanced" && (
+                    <p className="text-sm">
+                      Check the original statement and its payments for a
+                      missing or incorrect value.
+                    </p>
+                  )}
+                  {period.status === "refused" && (
+                    <p role="alert">{period.reason}</p>
+                  )}
+                  {period.amounts && (
+                    <p className="text-sm text-muted-foreground">
+                      {period.counted_rows} imported{" "}
+                      {period.counted_rows === 1 ? "entry" : "entries"} in this
+                      check · {period.excluded_rows} excluded{" "}
+                      {period.excluded_rows === 1 ? "entry" : "entries"}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <StatementSourceButton
+                      caseId={caseId}
+                      periodId={period.period_id}
+                      sourceDocumentId={period.source_document_id}
+                      label="Open statement and balances"
+                    />
+                    {onOpenTransactions && (
+                      <Button
+                        variant="outline"
+                        onClick={() =>
+                          onOpenTransactions(
+                            period.start ?? undefined,
+                            period.end ?? undefined
+                          )
+                        }
+                      >
+                        {period.start && period.end
+                          ? "View transactions for these dates"
+                          : "View account transactions"}
+                      </Button>
+                    )}
+                  </div>
+                  <details className="space-y-3 text-sm">
+                    <summary className="cursor-pointer">
+                      Calculation and further checks
+                    </summary>
+                    <p>
+                      Source: {period.source_status} ·{" "}
+                      {period.proof_class.toUpperCase()}. These checks do not
+                      change source eligibility.
+                    </p>
+                    {period.delta_hints && (
+                      <StatementDeltaHintsPanel
+                        key={`${query.data.checked_at}:${period.period_id}`}
+                        caseId={caseId}
+                        currency={period.currency}
+                        hints={period.delta_hints}
+                      />
+                    )}
+                    {period.native_controls && (
+                      <NativeControlComparisonPanel
+                        comparison={period.native_controls}
+                      />
+                    )}
+                    {period.printed_totals && (
+                      <PrintedTotalChecks
+                        checks={period.printed_totals}
+                        currency={period.currency}
+                      />
+                    )}
+                    {period.printed_totals_error && (
+                      <p role="alert">
+                        Printed totals could not be checked:{" "}
+                        {period.printed_totals_error}
+                      </p>
+                    )}
+                    {period.reason && period.status !== "refused" && (
+                      <p>{period.reason}</p>
+                    )}
+                    {period.amounts && (
+                      <>
+                        <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                          {fields.map(([key, label]) => (
+                            <div key={key}>
+                              <dt className="text-sm text-muted-foreground">
+                                {label}
+                              </dt>
+                              <dd className="font-mono">
+                                {period.amounts![key] === null
+                                  ? "Unknown"
+                                  : correctionMoney(
+                                      period.amounts![key]!,
+                                      period.currency
+                                    )}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                        <p>
+                          {period.counted_rows} admitted rows counted;{" "}
+                          {period.excluded_rows} other rows excluded from this
+                          arithmetic.
+                        </p>
+                        {period.zero_amount_rows != null &&
+                          period.zero_amount_rows > 0 && (
+                            <p>
+                              Includes {period.zero_amount_rows} zero-amount
+                              readings; these preserve printed lines and are not
+                              nonzero payments.
+                            </p>
+                          )}
+                        <p>
+                          {period.independent
+                            ? "Both balances are sourced from printed statement controls. Ledger signs reflect the recorded balance convention."
+                            : "The balances do not provide an independent pair of printed controls."}
+                        </p>
+                      </>
+                    )}
+                    <StatementRunningBalances
+                      caseId={caseId}
+                      periodId={period.period_id}
+                      sourceDocumentId={period.source_document_id}
+                      currency={period.currency}
+                    />
+                    <details>
+                      <summary>Recorded check and source details</summary>
+                      <p>
+                        Earlier stored check: {period.recorded_status}
+                        {period.recorded_at
+                          ? ` at ${period.recorded_at}`
+                          : " (no recorded check time)"}
+                        . This read has not overwritten it.
+                      </p>
+                      <p>
+                        Opening balance source: {period.opening_source}; closing
+                        balance source: {period.closing_source}.
+                      </p>
+                      <p className="break-all">
+                        Source document: {period.source_document_id}
+                      </p>
+                    </details>
+                  </details>
+                </article>
+              ))}
+            </div>
             <div className="flex gap-2">
               <Button
                 disabled={!offset || query.isFetching}

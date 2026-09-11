@@ -1,4 +1,5 @@
 """Current diagnostics remain exact, case scoped, read-only and distinct from admission."""
+from unittest.mock import patch
 from sqlalchemy import select
 from services.financial.statement_checks import list_statement_checks, capture_statement_checks, StatementCheckError
 from services.financial.periods import BalanceObservation
@@ -93,6 +94,35 @@ class StatementCheckTests(fixture.DuplicateTestCase):
         items = self.read()['items']
         self.assertEqual({item['status'] for item in items}, {'refused', 'unbalanced'})
         self.assertIsNone(next(item for item in items if item['status'] == 'refused')['amounts'])
+
+    def test_account_filter_paginates_only_selected_account(self):
+        from postgres.models.financial import FinancialAccount
+        import uuid
+        second = FinancialAccount(id=uuid.uuid4(), case_id=self.case.id, identity_key='second', identifier_as_printed='Second account', currency='GBP')
+        self.db.add(second); self.db.commit()
+        self.make_copy(); self.make_copy(); self.make_copy(account=second)
+        first = self.read(account_id=self.account.id, limit=1)
+        next_page = self.read(account_id=self.account.id, limit=1, offset=1)
+        self.assertEqual(first['account_id'], str(self.account.id))
+        self.assertTrue(first['has_more'])
+        self.assertFalse(next_page['has_more'])
+        self.assertNotEqual(first['items'][0]['period_id'], next_page['items'][0]['period_id'])
+        self.assertEqual({p['account_id'] for p in first['items'] + next_page['items']}, {str(self.account.id)})
+        self.assertEqual(len(self.read(account_id=second.id)['items']), 1)
+        with self.assertRaises(StatementCheckError): self.read(account_id=self.other_account.id)
+        self.assertFalse(self.db.dirty or self.db.new)
+
+    def test_balance_convention_requires_retained_controls(self):
+        self.make_copy()
+        self.assertIsNone(self.read()['items'][0]['balance_convention'])
+        with patch('services.financial.statement_checks.retained_total_controls', return_value={'balance_convention': 'liability_owed', 'controls': []}):
+            item = self.read()['items'][0]
+            self.assertEqual(item['balance_convention'], 'liability_owed')
+            self.assertEqual(item['amounts']['opening'], '10000')
+        with patch('services.financial.statement_checks.retained_total_controls', side_effect=ValueError('Invalid saved controls')):
+            item = self.read()['items'][0]
+            self.assertIsNone(item['balance_convention'])
+            self.assertEqual(item['printed_totals_error'], 'Invalid saved controls')
 
     def test_capture_refuses_non_postgres_connection(self):
         with self.assertRaises(StatementCheckError): capture_statement_checks(self.db.get_bind(), case_id=self.case.id)

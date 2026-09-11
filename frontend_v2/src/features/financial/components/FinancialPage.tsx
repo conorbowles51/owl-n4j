@@ -84,6 +84,10 @@ export function FinancialPage() {
   const [importReceipt, setImportReceipt] =
     useState<StatementImportReceipt | null>(null)
   const [, applyInvestigationScope] = useInvestigationScope(caseId)
+  const [accountReviewCase, setAccountReviewCase] = useState<string | null>(
+    null
+  )
+  const reviewingAccounts = !!caseId && accountReviewCase === caseId
   const { data: transactionsResponse, isLoading } = useTransactions(caseId, {
     mode: store.mode,
   })
@@ -572,42 +576,64 @@ export function FinancialPage() {
                 payments are available in Transactions.
               </p>
             </header>
-            <StatementImportPanel
-              key={caseId}
-              caseId={caseId}
-              onImported={(result) => {
-                if (result) setImportReceipt(result)
-                store.setMode("transactions")
-                store.setMainView("transactions")
-              }}
-            />
-            <details className="rounded border p-3 space-y-3">
-              <summary className="cursor-pointer font-medium">
-                Accounts, balances and missing statement periods
-              </summary>
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label="Statement workspace"
+            >
+              <Button
+                variant={reviewingAccounts ? "outline" : "primary"}
+                aria-pressed={!reviewingAccounts}
+                onClick={() => setAccountReviewCase(null)}
+              >
+                Upload and review statements
+              </Button>
+              <Button
+                variant={reviewingAccounts ? "primary" : "outline"}
+                aria-pressed={reviewingAccounts}
+                onClick={() => setAccountReviewCase(caseId ?? null)}
+              >
+                Review accounts
+              </Button>
+            </div>
+            <div hidden={!reviewingAccounts}>
               <ErrorBoundary level="section">
                 <FinancialAccounts
                   key={caseId}
                   caseId={caseId}
-                  onOpenAccount={(accountId) => {
-                    applyInvestigationScope({ accountId })
+                  onOpenAccount={(accountId, dates) => {
+                    applyInvestigationScope({ accountId, ...dates })
                     store.setMode("transactions")
                     store.setMainView("transactions")
                   }}
                 />
               </ErrorBoundary>
+            </div>
+            <div hidden={reviewingAccounts}>
+              <StatementImportPanel
+                key={caseId}
+                caseId={caseId}
+                onImported={(result) => {
+                  if (result) setImportReceipt(result)
+                  store.setMode("transactions")
+                  store.setMainView("transactions")
+                }}
+              />
+            </div>
+            <details className="rounded border p-3 space-y-3">
+              <summary className="cursor-pointer font-medium">
+                Checks across all accounts
+              </summary>
               <ErrorBoundary level="section">
                 <StatementChecksPanel
                   key={`checks:${caseId}`}
                   caseId={caseId}
-                  autoLoad
                 />
               </ErrorBoundary>
               <ErrorBoundary level="section">
                 <StatementCoveragePanel
                   key={`coverage:${caseId}`}
                   caseId={caseId}
-                  autoLoad
                 />
               </ErrorBoundary>
             </details>

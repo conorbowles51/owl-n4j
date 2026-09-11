@@ -16,6 +16,9 @@ def list_statement_coverage(session, *, case_id, offset=0, limit=25, account_id=
         raise CoverageQueryError("Invalid account coverage page limits.")
     account_query = select(FinancialAccount).where(FinancialAccount.case_id == case_id)
     if account_id is not None:
+        account = session.get(FinancialAccount, account_id)
+        if account is None or account.case_id != case_id:
+            raise CoverageQueryError("Account not found in this case.", 404)
         account_query = account_query.where(FinancialAccount.id == account_id)
     accounts=list(session.scalars(account_query
         .order_by(FinancialAccount.id).offset(offset).limit(limit+1)))
@@ -50,7 +53,7 @@ def list_statement_coverage(session, *, case_id, offset=0, limit=25, account_id=
             item["periods"].append(record)
             if reason is None:groups.setdefault(period.currency,[]).append(record)
         item["currencies"]=[_coverage(currency,periods) for currency,periods in sorted(groups.items())]
-    return dict(case_id=str(case_id),offset=offset,has_more=len(accounts)>limit,items=items,applied=False,
+    return dict(case_id=str(case_id),account_id=str(account_id) if account_id else None,offset=offset,has_more=len(accounts)>limit,items=items,applied=False,
         limitation="Printed statement bounds only. Covered dates do not prove every transaction was captured. Gaps are dates not covered by eligible printed bounds, not proof that no transactions occurred. Records before the first or after the last known bound are not assessed.")
 
 

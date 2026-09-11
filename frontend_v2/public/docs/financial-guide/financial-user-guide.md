@@ -374,37 +374,63 @@ Open **Change history**. Expand the relevant decision to inspect the reason, act
 
 ## Check statements and missing periods
 
-The top of **Statements** lists the accounts recorded in this case, with their holder, account number, bank and currency. Use **Find an account** to search those details. Select **View all transactions** on an account to open its payments across all recorded dates. Missing account details are shown as not recorded.
+### Open one account's statements
 
-1. Open **Statements**. Balance checks and date coverage load automatically.
-2. Read each period's account, currency and recorded bounds.
-3. In **Statement balance checks**, compare opening balance plus money in minus money out with the recorded closing balance.
-4. Expand **Recorded check and source details** for the period.
-5. Open the printed balance and date sources. Compare running balances and direction totals where available.
-6. If a difference appears, inspect candidate causes and their source rows. Treat suggestions as places to look, not automatic corrections.
-7. Correct an actual reading error through the ledger. Refresh the checks afterward.
-8. Use **Previous statement checks** and **Next statement checks** to inspect all periods.
-9. If retaining the displayed checks, select **Download this page of statement checks**. Repeat for additional pages you need; that download contains the displayed page, not every statement.
+1. Open **Statements** and select **Review accounts**. **Upload and review statements** returns to the file upload and import area.
+2. Find the account by its holder, account number or bank. Enter part of those details in **Find an account**, then select **Find accounts**. **Show all accounts** clears that search.
+3. Check the holder, account number, bank and currency on the account card. Missing details are shown as **Not recorded**.
+4. Select **Review statements** on that account. The balance checks and date coverage now refer to that account only.
+5. To see every imported payment for the account, select **View all account transactions**. To choose another account, select **Back to accounts**.
 
-![Statements controls in the development case](images/07-statements.png)
+![Account statement review with recorded balances and source actions](images/07-statements.png)
 
-*The Statements tab separates balance checks from date coverage. Results load when you open the tab; use **Refresh balance checks** and **Refresh statement coverage** to refresh them after changes.*
+*Choose an account first. Its statements, balance checks and date coverage are shown together.*
 
-A balanced period only establishes agreement for the recorded controls and rows. Missing equal-value incoming and outgoing transactions could leave a balance unchanged. Continue checking source coverage.
+### Check a statement's balances
 
-### Inspect native bank-file checks
+1. In **Statement balance checks**, find the statement by its filename and dates. A file containing several statement periods can appear more than once.
+2. Read the opening balance, closing balance and difference. For a credit card statement with a recorded amount-owed convention, the summary says **Opening amount owed** and **Closing amount owed**.
+3. Read the result. **Balances agree** means the imported payments agree with the recorded balances. **Balance difference** means you need to compare the payments and balances with the original. **Missing balances** means a recorded opening or closing balance is missing. A missing value is not treated as zero.
+4. Select **Open statement and balances**. In the window, inspect any retained balance or date readings. Select an available reading to locate it on the original page. **Open statement file** opens the PDF.
+5. Select **View transactions for these dates** to open that account's imported payments during the statement period. The date filter can include payments from overlapping statements. If both statement dates are not recorded, the button instead opens all account transactions.
+6. Open a payment to compare its source and correct an actual reading error. Return to **Statements**, then select **Refresh balance checks** to see the current result.
+7. For more detail, expand **Calculation and further checks**. You can inspect the arithmetic, check running balances, compare printed totals where available, and inspect suggested causes of a difference. Suggestions are places to investigate, not automatic corrections. Internal signed balances may differ from a credit card's positive amount-owed display.
+8. Use **Previous statement checks** and **Next statement checks** to reach further periods. Each page contains up to 25 periods for this account. Scroll inside the statement list if there are several entries.
+9. To retain the displayed check results, expand **Save these check results and read calculation details**, then select **Download this page of statement checks**. The download contains this page only. Repeat for other pages you need.
 
-If native bank-file records have been loaded through a supported ingestion process, select **Recheck native bank-file controls** and inspect the current results. These checks concern the available native source and its recorded structure. They do not manufacture missing native evidence from a PDF. Ask the administrator about loading native formats; the PDF upload control is not a general bank-file importer.
+An excluded statement is marked above its balances. Its check does not add it back to current transaction totals. An agreeing balance also does not establish that every payment was extracted: missing equal incoming and outgoing amounts can leave a balance unchanged.
 
-### Inspect gaps, overlaps and requested coverage
+### Find missing dates and overlapping statements
 
-1. Inspect the loaded coverage results, or select **Refresh statement coverage** to refresh them. Read the account entries and use the coverage pagination to reach the account you need.
-2. Inspect the recorded periods, gaps and overlaps.
-3. Open the period's source dates to verify that the bounds were recorded correctly.
-4. For a specific question, apply the relevant account and date range in the ledger and read its requested-coverage result.
-5. Record periods that are missing, unknown or unavailable before interpreting an empty transaction search.
+1. Below the balance checks, read **Statement coverage**. It uses the dates recorded from the statements, separately for each currency.
+2. Read any **Missing statement dates**. For example, January and March statements can leave February uncovered.
+3. Read any overlap count. Two statements covering the same dates may be duplicates, or one may include extra information. Open the originals before deciding.
+4. Select a bar in the statement timeline, then use its source button to open that statement. Solid bars contribute to covered dates. Dashed bars are left out because their source or dates need review.
+5. Expand **Statements included or left out** to see the reason for excluding a date range and open its source.
+6. If you need dates before the first statement or after the last one, use the date range check below. A message saying there are no gaps between existing statements does not check those earlier or later dates.
 
-An overlap may reflect repeated statements or deliberately overlapping records. A gap in recorded periods is a reason to seek or inspect evidence. Neither result proves the presence or absence of every individual transaction.
+### Check the full date range you need
+
+1. Find **Do you have statements for the dates you need?** in the account review.
+2. Enter the first date in **From** and the last date in **To**. The start date must be on or before the end date.
+3. Select **Check date range**. The result shows how many days have a covering statement and lists any **Missing statement dates**, including dates before or after the statements already imported.
+4. If coverage could not be established, inspect the source dates. Missing, excluded or unconfirmed dates do not count as covered days.
+5. Expand **Open the statements used in this check** to inspect individual sources.
+6. Select **View transactions in the checked date range** to investigate the account's payments for those dates. An empty result does not prove that no payments occurred.
+7. You can switch financial tabs and return without losing this account review or its date range. Selecting a different account starts a separate date check. A full browser refresh clears this temporary view.
+8. If you edit **From** or **To**, select **Check date range** again. Until then, the results and transaction button still refer to the previously checked dates, which remain displayed above the result.
+
+![A date range check identifies January 2024 after the synthetic statement ends](images/16-account-date-check.png)
+
+*This example has a statement for 2023, but none covering the requested dates in January 2024. The missing month is listed explicitly.*
+
+Covered dates describe the statement periods you have, not a guarantee that every transaction was read correctly. Use balance checks and original documents alongside the date check.
+
+### Inspect additional bank-file checks
+
+If native bank-file records have been loaded through a supported ingestion process, expand **Additional file checks**, select **Recheck native bank-file controls**, and inspect the results under **Calculation and further checks**. These checks use the available native file. Ask the administrator about loading native formats; the PDF upload control is not a general bank-file importer.
+
+For a case-wide review, expand **Checks across all accounts** at the bottom of **Statements**, then select **Check statement balances** or **Check statement coverage**. Those lists include all accounts; use their pagination to reach further results.
 
 ## Review duplicates
 

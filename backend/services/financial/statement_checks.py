@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from postgres.models.financial import (
     FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction,
 )
+from postgres.models.evidence import EvidenceFile
 from services.financial.statement_delta_hints import statement_delta_hints
 from services.financial.printed_totals import compare_printed_totals, retained_total_controls
 from services.financial.ledger_source import LedgerSourceError
@@ -20,11 +21,16 @@ class StatementCheckError(ValueError):
     pass
 
 
-def list_statement_checks(session, *, case_id, offset=0, limit=25, include_native=False, resolve_path=None):
+def list_statement_checks(session, *, case_id, offset=0, limit=25, include_native=False, resolve_path=None, account_id=None):
     if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 25:
         raise StatementCheckError('Invalid statement check page limits.')
-    periods = list(session.scalars(select(FinancialStatementPeriod)
-        .where(FinancialStatementPeriod.case_id == case_id)
+    period_query = select(FinancialStatementPeriod).where(FinancialStatementPeriod.case_id == case_id)
+    if account_id is not None:
+        account = session.get(FinancialAccount, account_id)
+        if account is None or account.case_id != case_id:
+            raise StatementCheckError('Account not found in this case.')
+        period_query = period_query.where(FinancialStatementPeriod.account_id == account_id)
+    periods = list(session.scalars(period_query
         .order_by(FinancialStatementPeriod.period_start.asc().nullslast(), FinancialStatementPeriod.id)
         .offset(offset).limit(limit + 1)))
     # Count zero readings for the same admitted population, in one bounded
@@ -42,6 +48,9 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25, include_nativ
         document = session.get(FinancialSourceDocument, period.source_document_id)
         if account is None or document is None or account.case_id != case_id or document.case_id != case_id:
             raise StatementCheckError('Statement ownership is inconsistent; no check was returned.')
+        evidence = session.get(EvidenceFile, document.evidence_file_id) if document.evidence_file_id else None
+        if document.evidence_file_id and (evidence is None or evidence.case_id != case_id):
+            raise StatementCheckError('Statement file ownership is inconsistent; no check was returned.')
         foreign_row = session.scalar(select(FinancialTransaction.id).where(
             FinancialTransaction.statement_period_id == period.id,
             or_(FinancialTransaction.case_id != case_id,
@@ -53,6 +62,7 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25, include_nativ
             account_label=(account.metadata_ or {}).get('display_label') or account.identifier_as_printed or account.holder_name or 'Unidentified account',
             source_document_id=str(document.id), source_status=document.status,
             proof_class=document.proof_class, currency=period.currency,
+            filename=evidence.original_filename if evidence else None, balance_convention=None,
             start=period.period_start.isoformat() if period.period_start else None,
             end=period.period_end.isoformat() if period.period_end else None,
             opening_source=period.opening_balance_source, closing_source=period.closing_balance_source,
@@ -75,7 +85,11 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25, include_nativ
             item['reason'] = str(exc)
         if item['amounts'] is not None:
             try:
-                item['printed_totals'] = compare_printed_totals(retained_total_controls(session, period, document),
+                controls = retained_total_controls(session, period, document)
+                # The saved review explicitly records how card balances are
+                # signed. Never infer this from the bank name or account type.
+                item['balance_convention'] = controls['balance_convention'] if controls else None
+                item['printed_totals'] = compare_printed_totals(controls,
                     credits=int(item['amounts']['credits']), debits=int(item['amounts']['debits']))
             except (LedgerSourceError, ValueError) as exc:
                 item['printed_totals_error'] = str(exc)
@@ -97,11 +111,11 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25, include_nativ
                 native_by_document[document.id] = native
             item['native_controls'] = native_by_document[document.id]
         items.append(item)
-    return dict(case_id=str(case_id), offset=offset, has_more=len(periods) > limit, items=items,
+    return dict(case_id=str(case_id), account_id=str(account_id) if account_id else None, offset=offset, has_more=len(periods) > limit, items=items,
         applied=False, native_controls_requested=include_native, limitation='Current opening + admitted row credits − admitted row debits compared with the recorded closing balance. This does not check every printed control, prove complete extraction, or change proof class or admission. Source exclusions still apply.')
 
 
-def capture_statement_checks(engine, *, case_id, offset=0, include_native=False, resolve_path=None):
+def capture_statement_checks(engine, *, case_id, offset=0, include_native=False, resolve_path=None, account_id=None):
     """Balances and transaction totals come from the same read-only database snapshot."""
     if not isinstance(engine, Engine) or engine.dialect.name != 'postgresql':
         raise StatementCheckError('Consistent statement checks require a PostgreSQL engine connection.')
@@ -109,5 +123,5 @@ def capture_statement_checks(engine, *, case_id, offset=0, include_native=False,
         with connection.begin():
             connection.exec_driver_sql('SET TRANSACTION READ ONLY')
             with Session(bind=connection, autoflush=False) as session:
-                result = list_statement_checks(session, case_id=case_id, offset=offset, include_native=include_native, resolve_path=resolve_path)
+                result = list_statement_checks(session, case_id=case_id, offset=offset, include_native=include_native, resolve_path=resolve_path, account_id=account_id)
     return {**result, 'checked_at': datetime.now(timezone.utc).isoformat()}

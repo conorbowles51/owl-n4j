@@ -49,17 +49,15 @@ function mount(data: unknown = answer) {
 it("checks applied dates only on request and hides results when scope changes", async () => {
   const { fetch, change } = mount()
   expect(fetch).not.toHaveBeenCalled()
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check filtered coverage" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Check these dates" }))
   expect(await screen.findByText(/GBP: 0 of 28/)).toBeInTheDocument()
   expect(
-    screen.getByText(/Uncovered requested dates: 2026-02-01/)
+    screen.getByText(/Missing statement dates: 2026-02-01/)
   ).toBeInTheDocument()
   change({ ...params, accountId: "other-account" })
   expect(screen.queryByText(/GBP: 0 of 28/)).not.toBeInTheDocument()
   expect(
-    screen.getByRole("button", { name: "Check filtered coverage" })
+    screen.getByRole("button", { name: "Check these dates" })
   ).toBeInTheDocument()
   expect(fetch).toHaveBeenCalledTimes(1)
 })
@@ -72,9 +70,7 @@ it.each([
   { requested_days: 30 },
 ])("refuses mismatched coverage %j", async (change) => {
   mount({ ...answer, ...change })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check filtered coverage" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Check these dates" }))
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Coverage unavailable"
   )
@@ -87,14 +83,12 @@ it("distinguishes unknown coverage from zero gaps", async () => {
     reason: "No eligible printed dates.",
     currencies: [],
   })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check filtered coverage" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Check these dates" }))
   expect(
-    await screen.findByText(/Coverage unknown or unavailable/)
+    await screen.findByText(/Statement coverage could not be established/)
   ).toHaveTextContent("No eligible printed dates")
   expect(
-    screen.queryByText(/Printed bounds cover these requested dates/)
+    screen.queryByText(/Statements cover the full date range/)
   ).not.toBeInTheDocument()
 })
 it("does not present a fully covered range as complete transactions", async () => {
@@ -109,19 +103,19 @@ it("does not present a fully covered range as complete transactions", async () =
       },
     ],
   })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check filtered coverage" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Check these dates" }))
   expect(await screen.findByText(/GBP: 28 of 28/)).toBeInTheDocument()
   expect(
-    screen.getByText(/This does not establish complete transaction extraction/)
+    screen.getByText(
+      /This checks statement dates, not whether every payment was extracted correctly/
+    )
   ).toBeInTheDocument()
 })
 it("requires one account and two dates without fetching", () => {
   const { fetch, change } = mount()
   change({ ...params, endDate: "" })
   expect(
-    screen.getByText(/apply one ledger account and both date bounds/)
+    screen.getByText(/Choose one account and enter a start and end date/)
   ).toBeInTheDocument()
   expect(fetch).not.toHaveBeenCalled()
 })
