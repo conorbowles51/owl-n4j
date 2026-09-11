@@ -248,3 +248,35 @@ Report work was interrupted to prioritize the user's defects. The local expert-s
 - [x] 47 affected checks passed at integration; after adding pagination coverage and opening imported originals directly, all seven statement-review checks passed. TypeScript, scoped ESLint and production build passed. Existing bundle-size warning remains. No full suite run.
 - [x] Update the beginner guide for bulk uploads, file-list switching, page controls and visible editing actions. Queue/page choices are session state, not resumable after closing the browser; uploaded files remain server records.
 - [ ] Push and verify this new file-workspace batch on the deployed server.
+
+### Existing statement reading recovery
+
+- [x] Add Read statement for existing unprocessed PDFs in the Statements sidebar.
+- [x] Add Retry reading for failed PDFs, reusing the existing file ID instead of uploading a duplicate.
+- [x] Disable reading while the request is pending; refresh file status after success or failure. Do not automatically retry uncertain requests.
+- [x] Keep processing/queued files unavailable for restart from the sidebar.
+- [x] Stop polling merely because an idle unprocessed file exists. Continue polling active jobs and files queued by the upload workspace.
+- [x] Update the beginner guide and regenerate its in-app and portable copies.
+- [x] Focused validation: three file recovery UI tests, TypeScript and scoped ESLint passed. Full suite not run for this change.
+- [ ] Push this follow-up and verify deployed recovery with a failed or unprocessed statement. These changes are local at this checkpoint.
+
+### Product-wide assessment after user testing
+
+- [x] Recorded findings for all 13 tabs and cross-cutting statement intake, notes, reporting, navigation and help in `docs/loupe-financial-product-assessment-2026-09-11.md`.
+- [x] Opened every tab in the local synthetic case; exercised read-only transfer/pattern/graph/timeline loading and note/correction entry points.
+- [x] Reproduced lost pattern settings on tab change and discarded unsaved note text on dialog close.
+- [x] Identified separate imported/graph datasets, hidden actions, disconnected findings/report workflow and raw text presented as faithful statement layout.
+- [x] Recorded user requirement to separate statement review/confirmation from the investigation workspace.
+- [ ] Check exact complex Capital One page shown by user against its proposed transaction import. A different local real-file proposal was inspected; it is not verification of that page.
+- [ ] Implement the product corrections and complete the investigator acceptance script in the assessment. Earlier implementation checklist completion is not proof this script passes.
+
+Provisional copy/layout changes were backed up under `/tmp/loupe-provisional-ui-backup-20260911` and removed after hash verification. No redesign changes were pushed. Existing local statement-file recovery work remains intact. Read-only audit results are in `/tmp/loupe-financial-audit.json` and `/tmp/loupe-financial-actions-audit.json`.
+
+
+## Financial redesign release checkpoint, 11 September
+
+The user requested a proper redesign plan and implementation. Read `docs/loupe-financial-redesign-plan.md` for the checked completion list, acceptance evidence and remaining real-PDF limits. Statements and Transactions are now separate workspaces. Findings saves payment selections, observations, transfer comparisons and tracing calculations; reports can include verified original PDFs. Main analysis results open the actual payments. Saved file import counts and periods are read from the case, rather than browser drafts.
+
+Fresh local journeys covered import, correction, notes, selections, transfer comparison, single-account and three-account tracing, case-event links, report packages, another case member's access, and multipage navigation. The exact Capital One account ending 8160 from the screenshot is still unavailable; the supplied file ends in 3539. Scanned Merrick headings and dates with damaged OCR remain flagged for review. Do not describe that PDF as automatically reconstructed without errors.
+
+The broad financial regression was run once at the integration milestone, with focused follow-ups for final changes. Do not restart the old development plan or rerun the full suite for ordinary copy edits. No database migration or private case-data upload is part of this release.

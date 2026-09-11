@@ -39,7 +39,7 @@ it("sorts exact amounts and passes the original selected row to source actions",
     second = row("smaller", { amount_minor: "9007199254740992" }),
     source = vi.fn()
   render(<LedgerRowBrowser transactions={[first, second]} onSource={source} />)
-  fireEvent.change(screen.getByLabelText("Table order"), {
+  fireEvent.change(screen.getByLabelText("Sort payments"), {
     target: { value: "amount-asc" },
   })
   expect(screen.getAllByRole("listitem").map((r) => r.textContent)).toEqual([
@@ -61,10 +61,10 @@ it("refuses amount ordering across currencies and searches recorded references",
   expect(
     screen.getByRole("option", { name: "Largest amount first (one currency)" })
   ).toBeDisabled()
-  fireEvent.change(screen.getByLabelText("Find in loaded rows"), {
+  fireEvent.change(screen.getByLabelText("Search payments"), {
     target: { value: "invoice 123" },
   })
-  expect(screen.getByText(/1 of 2 loaded rows/)).toBeInTheDocument()
+  expect(screen.getByText(/1 payments match your filters/)).toBeInTheDocument()
   expect(screen.queryByRole("button", { name: "two" })).not.toBeInTheDocument()
 })
 it("pages the complete loaded set and resets its page after filtering", () => {
@@ -76,10 +76,10 @@ it("pages the complete loaded set and resets its page after filtering", () => {
   expect(screen.getAllByRole("listitem")).toHaveLength(50)
   fireEvent.click(screen.getByRole("button", { name: "Next ledger rows" }))
   expect(screen.getAllByRole("listitem")).toHaveLength(1)
-  fireEvent.change(screen.getByLabelText("Find in loaded rows"), {
+  fireEvent.change(screen.getByLabelText("Search payments"), {
     target: { value: "missing" },
   })
-  expect(screen.getByText(/No loaded rows match/)).toBeInTheDocument()
+  expect(screen.getByText(/No payments match/)).toBeInTheDocument()
 })
 
 it("filters inclusive exact ranges, rejects invalid precision and resets on currency change", () => {
@@ -92,7 +92,7 @@ it("filters inclusive exact ranges, rejects invalid precision and resets on curr
     />
   )
   expect(screen.getByLabelText("Table minimum amount")).toBeDisabled()
-  fireEvent.change(screen.getByLabelText("Table currency"), {
+  fireEvent.change(screen.getByLabelText("Currency"), {
     target: { value: "GBP" },
   })
   fireEvent.change(screen.getByLabelText("Table minimum amount"), {
@@ -112,7 +112,7 @@ it("filters inclusive exact ranges, rejects invalid precision and resets on curr
   expect(
     screen.queryByRole("button", { name: "larger" })
   ).not.toBeInTheDocument()
-  fireEvent.change(screen.getByLabelText("Table currency"), {
+  fireEvent.change(screen.getByLabelText("Currency"), {
     target: { value: "" },
   })
   expect(screen.getByLabelText("Table minimum amount")).toHaveValue("")

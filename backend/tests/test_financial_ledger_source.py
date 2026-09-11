@@ -27,8 +27,19 @@ class LedgerSourceTests(DuplicateTestCase):
         self.assertEqual(result["evidence_file_id"], str(self.file.id))
         self.assertEqual(result["source_document_id"], str(self.document.id))
         self.assertNotIn("stored_path", result)
+        self.assertEqual(result["transaction"]["key"], str(self.row.id))
+        self.assertEqual(result["transaction"]["case_id"], str(self.case.id))
+        self.assertEqual(result["transaction"]["amount_minor"], str(self.row.amount_minor))
         self.assertFalse(result["file_bytes_verified"])
         self.assertFalse(self.db.dirty)
+
+    def test_card_account_context_is_read_without_reinterpreting_the_payment(self):
+        self.row.account.account_type = "credit_card"
+        self.db.commit()
+        result = self.read()["transaction"]
+        self.assertEqual(result["account_type"], "credit_card")
+        self.assertEqual(result["direction"], self.row.direction)
+        self.assertEqual(result["amount_minor"], str(self.row.amount_minor))
 
     def test_wrong_case_and_cross_case_links_are_not_disclosed(self):
         with self.assertRaises(LedgerSourceError) as ctx:

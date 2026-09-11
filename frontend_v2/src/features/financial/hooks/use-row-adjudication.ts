@@ -156,7 +156,16 @@ export function useRowAdjudication(caseId: string | undefined) {
     },
     onSuccess: (reading) => {
       if (ledgerContentsMoved(reading)) {
-        queryClient.invalidateQueries({ queryKey: ["financial-ledger", caseId] })
+        queryClient.invalidateQueries({
+          queryKey: ["financial-ledger", caseId],
+        })
+        queryClient.invalidateQueries({ queryKey: ["ledger-source", caseId] })
+        queryClient.invalidateQueries({
+          queryKey: ["statement-import-status", caseId],
+        })
+        queryClient.invalidateQueries({
+          queryKey: ["financial-linked-payments", caseId],
+        })
       }
       if (decisionWasRecorded(reading)) {
         queryClient.invalidateQueries({

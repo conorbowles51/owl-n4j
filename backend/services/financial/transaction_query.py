@@ -45,7 +45,7 @@ from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from postgres.models.enums import LedgerStatus
 from postgres.models.financial import FinancialTransaction
@@ -80,7 +80,7 @@ def list_transactions(
 
     status = ledger_status if ledger_status is not None else LedgerStatus.admitted
 
-    stmt = select(FinancialTransaction).where(
+    stmt = select(FinancialTransaction).options(joinedload(FinancialTransaction.account)).where(
         FinancialTransaction.case_id == case_id,
         FinancialTransaction.ledger_status == status.value,
     )
@@ -136,12 +136,16 @@ class TransactionView:
     superseded_by_id: Optional[str]
     locator: Optional[Any]
     ordering_date_context: Optional[str] = None
+    account_type: Optional[str] = None
+    account_label: Optional[str] = None
 
     def to_json(self) -> dict[str, Any]:
         return {
             "key": self.key,
             "case_id": self.case_id,
             "account_id": self.account_id,
+            **({"account_type": self.account_type} if self.account_type else {}),
+            **({"account_label": self.account_label} if self.account_label else {}),
             "source_document_id": self.source_document_id,
             "ingestion_run_id": self.ingestion_run_id,
             "statement_period_id": self.statement_period_id,
@@ -175,7 +179,7 @@ def _isoformat(value: Optional[date]) -> Optional[str]:
     return value.isoformat() if value is not None else None
 
 
-def to_view(row: FinancialTransaction) -> TransactionView:
+def to_view(row: FinancialTransaction, *, account=None) -> TransactionView:
     """Convert one stored row into its read shape.
 
     Reads every closed-vocabulary column as the plain string or int
@@ -183,7 +187,10 @@ def to_view(row: FinancialTransaction) -> TransactionView:
     always a ``.value``, never an enum instance -- so there is nothing to
     unwrap here.
     """
+    account_type = account.account_type if account is not None and account.case_id == row.case_id else None
     return TransactionView(
+        account_type=account_type,
+        account_label=(" · ".join(v for v in [account.holder_name, account.institution_name, account.identifier_as_printed] if v) if account is not None and account.case_id == row.case_id else None),
         key=str(row.id),
         case_id=str(row.case_id),
         account_id=str(row.account_id),

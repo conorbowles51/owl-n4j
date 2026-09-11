@@ -1,6 +1,15 @@
+import { useCase } from "@/features/cases/hooks/use-cases"
+import {
+  FinancialNavigation,
+  RetainedFinancialTab,
+} from "./FinancialNavigation"
+import { FinancialFindings } from "./FinancialFindings"
 import { FinancialAccounts } from "./FinancialAccounts"
 import { useInvestigationScope } from "../stores/investigation-scope"
-import { StatementImportPanel } from "./StatementImportPanel"
+import {
+  StatementImportPanel,
+  type StatementImportReceipt,
+} from "./StatementImportPanel"
 import { FinancialPatternReview } from "./FinancialPatternReview"
 import { FinancialGuide } from "./FinancialGuide"
 import { FinancialCaseTimeline } from "./FinancialCaseTimeline"
@@ -10,23 +19,13 @@ import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { LedgerCounterpartiesAnalysis } from "./LedgerCounterpartiesAnalysis"
 import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { useParams } from "react-router-dom"
-import {
-  BarChart3,
-  CalendarRange,
-  DollarSign,
-  Gavel,
-  History,
-  Rows3,
-  ScrollText,
-  ShieldAlert,
-  Users,
-} from "lucide-react"
+import { BarChart3, DollarSign, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LedgerAnalysis } from "./LedgerAnalysis"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs } from "@/components/ui/tabs"
 import {
   useFinancialStore,
   type FinancialMainView,
@@ -81,6 +80,9 @@ import type {
 export function FinancialPage() {
   const { id: caseId } = useParams()
   const store = useFinancialStore()
+  const currentCase = useCase(caseId)
+  const [importReceipt, setImportReceipt] =
+    useState<StatementImportReceipt | null>(null)
   const [, applyInvestigationScope] = useInvestigationScope(caseId)
   const { data: transactionsResponse, isLoading } = useTransactions(caseId, {
     mode: store.mode,
@@ -475,64 +477,34 @@ export function FinancialPage() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="flex shrink-0 justify-end border-b border-border bg-card px-4 py-2">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 py-2">
+        <p
+          className="min-w-0 truncate text-sm font-medium"
+          title={
+            currentCase.data && currentCase.data.id === caseId
+              ? currentCase.data.title
+              : caseId
+          }
+        >
+          Financial ·{" "}
+          {currentCase.data && currentCase.data.id === caseId
+            ? currentCase.data.title
+            : currentCase.isPending
+              ? "Loading case…"
+              : (caseId ?? "Choose a case")}
+        </p>
         <FinancialGuide />
       </div>
       <Tabs
+        key={caseId}
         value={store.mainView}
         onValueChange={(value) => store.setMainView(value as FinancialMainView)}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="border-b border-border bg-card px-4">
-          <TabsList variant="line" className="h-10">
-            <TabsTrigger value="transactions">
-              <Rows3 className="size-3.5" />
-              Transactions
-            </TabsTrigger>
-            <TabsTrigger
-              value="statements"
-              data-testid="financial-tab-statements"
-            >
-              <CalendarRange className="size-3.5" />
-              Statements
-            </TabsTrigger>
-            <TabsTrigger value="counterparties">
-              <Users className="size-3.5" />
-              Counterparties
-            </TabsTrigger>
-            <TabsTrigger value="transfers">Transfers</TabsTrigger>
-            <TabsTrigger value="patterns">Patterns</TabsTrigger>
-            <TabsTrigger value="trends">
-              <BarChart3 className="size-3.5" />
-              Trends
-            </TabsTrigger>
-            <TabsTrigger value="posting-graph">Posting graph</TabsTrigger>
-            <TabsTrigger value="tracing">Conditional tracing</TabsTrigger>
-            <TabsTrigger value="case-context">Case context</TabsTrigger>
-            <TabsTrigger value="ledger" data-testid="financial-tab-ledger">
-              <ScrollText className="size-3.5" />
-              Import history
-            </TabsTrigger>
-            <TabsTrigger
-              value="quarantine"
-              data-testid="financial-tab-quarantine"
-            >
-              <ShieldAlert className="size-3.5" />
-              Held out
-            </TabsTrigger>
-            <TabsTrigger value="runs" data-testid="financial-tab-runs">
-              <History className="size-3.5" />
-              Attempts
-            </TabsTrigger>
-            <TabsTrigger
-              value="decisions"
-              data-testid="financial-tab-decisions"
-            >
-              <Gavel className="size-3.5" />
-              Decisions
-            </TabsTrigger>
-          </TabsList>
-        </div>
+        <FinancialNavigation
+          value={store.mainView}
+          onChange={store.setMainView}
+        />
 
         {/*
           The ledger tab reads Postgres and shares nothing with the three graph
@@ -540,7 +512,11 @@ export function FinancialPage() {
           takes none of the graph chrome and is not gated on the graph query,
           so a case with ledger rows and no graph opens here and shows them.
         */}
-        <TabsContent value="ledger" className="flex min-h-0 flex-1 flex-col">
+        <RetainedFinancialTab
+          value="ledger"
+          className="flex min-h-0 flex-1 flex-col"
+          active={store.mainView === "ledger"}
+        >
           <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
             {/*
               A sibling of the panel and never a child of it. `LedgerPanel`
@@ -570,7 +546,7 @@ export function FinancialPage() {
               />
             </ErrorBoundary>
           </div>
-        </TabsContent>
+        </RetainedFinancialTab>
 
         {/*
           Reads Postgres like the ledger tab, takes no graph chrome and is not
@@ -579,49 +555,69 @@ export function FinancialPage() {
           and nothing about a failed attempt to load evidence bears on whether
           the rows that did arrive are being held out of the totals.
         */}
-        <TabsContent
+        <RetainedFinancialTab
           value="statements"
-          className="flex min-h-0 flex-1 flex-col"
+          forceMount
+          style={
+            store.mainView !== "statements" ? { display: "none" } : undefined
+          }
+          className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+          active={store.mainView === "statements"}
         >
           <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
             <header className="space-y-1">
               <h2 className="text-lg font-semibold">Statements</h2>
               <p className="text-sm text-muted-foreground">
-                Inspect balances, date coverage and the source documents behind
-                this case's financial records.
+                Upload and check statements here. After confirmation, their
+                payments are available in Transactions.
               </p>
             </header>
-            <ErrorBoundary level="section">
-              <FinancialAccounts
-                key={caseId}
-                caseId={caseId}
-                onOpenAccount={(accountId) => {
-                  applyInvestigationScope({ accountId })
-                  store.setMode("transactions")
-                  store.setMainView("transactions")
-                }}
-              />
-            </ErrorBoundary>
-            <ErrorBoundary level="section">
-              <StatementChecksPanel
-                key={`checks:${caseId}`}
-                caseId={caseId}
-                autoLoad
-              />
-            </ErrorBoundary>
-            <ErrorBoundary level="section">
-              <StatementCoveragePanel
-                key={`coverage:${caseId}`}
-                caseId={caseId}
-                autoLoad
-              />
-            </ErrorBoundary>
+            <StatementImportPanel
+              key={caseId}
+              caseId={caseId}
+              onImported={(result) => {
+                if (result) setImportReceipt(result)
+                store.setMode("transactions")
+                store.setMainView("transactions")
+              }}
+            />
+            <details className="rounded border p-3 space-y-3">
+              <summary className="cursor-pointer font-medium">
+                Accounts, balances and missing statement periods
+              </summary>
+              <ErrorBoundary level="section">
+                <FinancialAccounts
+                  key={caseId}
+                  caseId={caseId}
+                  onOpenAccount={(accountId) => {
+                    applyInvestigationScope({ accountId })
+                    store.setMode("transactions")
+                    store.setMainView("transactions")
+                  }}
+                />
+              </ErrorBoundary>
+              <ErrorBoundary level="section">
+                <StatementChecksPanel
+                  key={`checks:${caseId}`}
+                  caseId={caseId}
+                  autoLoad
+                />
+              </ErrorBoundary>
+              <ErrorBoundary level="section">
+                <StatementCoveragePanel
+                  key={`coverage:${caseId}`}
+                  caseId={caseId}
+                  autoLoad
+                />
+              </ErrorBoundary>
+            </details>
           </div>
-        </TabsContent>
+        </RetainedFinancialTab>
 
-        <TabsContent
+        <RetainedFinancialTab
           value="quarantine"
           className="flex min-h-0 flex-1 flex-col"
+          active={store.mainView === "quarantine"}
         >
           <div className="min-h-0 flex-1 overflow-auto p-4">
             <ErrorBoundary level="section">
@@ -633,7 +629,7 @@ export function FinancialPage() {
               />
             </ErrorBoundary>
           </div>
-        </TabsContent>
+        </RetainedFinancialTab>
 
         {/*
           The attempts tab takes no graph chrome either, for the same reason
@@ -642,13 +638,17 @@ export function FinancialPage() {
           whose graph is empty -- which is a case whose loading may well be
           what went wrong.
         */}
-        <TabsContent value="runs" className="flex min-h-0 flex-1 flex-col">
+        <RetainedFinancialTab
+          value="runs"
+          className="flex min-h-0 flex-1 flex-col"
+          active={store.mainView === "runs"}
+        >
           <div className="min-h-0 flex-1 overflow-auto p-4">
             <ErrorBoundary level="section">
               <IngestionRunsPanel caseId={caseId} />
             </ErrorBoundary>
           </div>
-        </TabsContent>
+        </RetainedFinancialTab>
 
         {/*
           Reads Postgres, takes no graph chrome, is not gated on the graph
@@ -661,62 +661,123 @@ export function FinancialPage() {
           mounted, so a dialog opened from the ledger and living inside the
           ledger tab would be unmounted the moment anyone switched here.
         */}
-        <TabsContent value="decisions" className="flex min-h-0 flex-1 flex-col">
+        <RetainedFinancialTab
+          value="decisions"
+          className="flex min-h-0 flex-1 flex-col"
+          active={store.mainView === "decisions"}
+        >
           <div className="min-h-0 flex-1 overflow-auto p-4">
             <ErrorBoundary level="section">
               <DecisionsPanel caseId={caseId} />
             </ErrorBoundary>
           </div>
-        </TabsContent>
+        </RetainedFinancialTab>
 
-        <TabsContent
+        <RetainedFinancialTab
           value="posting-graph"
           className="min-h-0 flex-1 overflow-auto"
+          active={store.mainView === "posting-graph"}
         >
           <ErrorBoundary level="section">
             <LedgerPostingGraph key={caseId} caseId={caseId} />
           </ErrorBoundary>
-        </TabsContent>
+        </RetainedFinancialTab>
 
-        <TabsContent value="transfers" className="min-h-0 flex-1 overflow-auto">
+        <RetainedFinancialTab
+          value="findings"
+          className="min-h-0 flex-1 overflow-auto"
+          active={store.mainView === "findings"}
+        >
+          <FinancialFindings key={caseId} caseId={caseId} />
+        </RetainedFinancialTab>
+
+        <RetainedFinancialTab
+          value="transfers"
+          className="min-h-0 flex-1 overflow-auto"
+          active={store.mainView === "transfers"}
+        >
           <ErrorBoundary level="section">
             <LedgerTransfersWorkbench key={caseId} caseId={caseId} />
           </ErrorBoundary>
-        </TabsContent>
+        </RetainedFinancialTab>
 
-        <TabsContent
+        <RetainedFinancialTab
           value="transactions"
           forceMount
           style={
             store.mainView !== "transactions" ? { display: "none" } : undefined
           }
           className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+          active={store.mainView === "transactions"}
         >
           <div className="flex items-center gap-2 border-b p-3">
             <Button
               variant={isTransactionsMode ? "secondary" : "outline"}
               onClick={() => handleModeChange("transactions")}
             >
-              Ledger postings
+              Imported statement payments
             </Button>
             <Button
               variant={!isTransactionsMode ? "secondary" : "outline"}
               onClick={() => handleModeChange("intelligence")}
             >
-              Financial intelligence
+              Other financial records
             </Button>
           </div>
           <div
             className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
             style={!isTransactionsMode ? { display: "none" } : undefined}
           >
-            <StatementImportPanel
-              key={caseId}
-              caseId={caseId}
-              onImported={() => store.setMainView("transactions")}
-            />
+            <header className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Transactions</h2>
+                <p className="text-sm text-muted-foreground">
+                  Find a payment, open its statement, or record what you
+                  noticed.
+                </p>
+              </div>
+              <Button onClick={() => store.setMainView("statements")}>
+                Add statements
+              </Button>
+            </header>
+            {importReceipt && importReceipt.case_id === caseId && (
+              <section
+                role="status"
+                className="rounded border border-primary/30 bg-primary/5 p-3 space-y-2"
+              >
+                <p>
+                  <strong>
+                    {importReceipt.transaction_count} transactions imported
+                  </strong>{" "}
+                  from {importReceipt.filename || "your statement"}. Your
+                  existing investigation filters are still in place.
+                </p>
+                <div className="flex gap-2">
+                  {importReceipt.account_id && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        applyInvestigationScope({
+                          accountId: importReceipt.account_id,
+                        })
+                        setImportReceipt(null)
+                      }}
+                    >
+                      Show this account's payments
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    onClick={() => setImportReceipt(null)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </section>
+            )}
             <ErrorBoundary level="section">
               <CorrectableLedger
+                investigation
                 key={caseId}
                 caseId={caseId}
                 onAdjudicate={setAdjudicationRow}
@@ -726,9 +787,9 @@ export function FinancialPage() {
           {!isTransactionsMode && (
             <>
               <p className="border-b p-3 text-sm">
-                Financial intelligence uses extracted graph records, including
-                claims and valuations. These are separate from ledger posting
-                totals and do not reflect ledger corrections.
+                These are amounts and claims found elsewhere in case evidence.
+                They are separate from imported statement payments; correcting a
+                statement payment does not change these records.
               </p>
               {graphTab(
                 <>
@@ -772,24 +833,25 @@ export function FinancialPage() {
               )}
             </>
           )}
-        </TabsContent>
+        </RetainedFinancialTab>
 
-        <TabsContent
+        <RetainedFinancialTab
           value="counterparties"
           className="flex min-h-0 flex-1 flex-col"
+          active={store.mainView === "counterparties"}
         >
           <div className="flex items-center gap-2 border-b p-3">
             <Button
               variant={isTransactionsMode ? "secondary" : "outline"}
               onClick={() => handleModeChange("transactions")}
             >
-              Ledger postings
+              Imported statement payments
             </Button>
             <Button
               variant={!isTransactionsMode ? "secondary" : "outline"}
               onClick={() => handleModeChange("intelligence")}
             >
-              Financial intelligence
+              Other financial records
             </Button>
           </div>
           {isTransactionsMode ? (
@@ -801,9 +863,9 @@ export function FinancialPage() {
           ) : (
             <>
               <p className="border-b p-3 text-sm">
-                Financial intelligence uses extracted graph records, including
-                claims and valuations. These are separate from ledger posting
-                totals and do not reflect ledger corrections.
+                These are amounts and claims found elsewhere in case evidence.
+                They are separate from imported statement payments; correcting a
+                statement payment does not change these records.
               </p>
               {graphTab(
                 !isTransactionsMode ? (
@@ -840,40 +902,53 @@ export function FinancialPage() {
               )}
             </>
           )}
-        </TabsContent>
+        </RetainedFinancialTab>
 
-        <TabsContent value="patterns" className="min-h-0 flex-1 overflow-auto">
+        <RetainedFinancialTab
+          value="patterns"
+          className="min-h-0 flex-1 overflow-auto"
+          active={store.mainView === "patterns"}
+        >
           <ErrorBoundary level="section">
             <FinancialPatternReview key={caseId} caseId={caseId} />
           </ErrorBoundary>
-        </TabsContent>
-        <TabsContent
+        </RetainedFinancialTab>
+        <RetainedFinancialTab
           value="case-context"
           className="min-h-0 flex-1 overflow-auto"
+          active={store.mainView === "case-context"}
         >
           <ErrorBoundary level="section">
             <FinancialCaseTimeline key={caseId} caseId={caseId} />
           </ErrorBoundary>
-        </TabsContent>
-        <TabsContent value="tracing" className="min-h-0 flex-1 overflow-auto">
+        </RetainedFinancialTab>
+        <RetainedFinancialTab
+          value="tracing"
+          className="min-h-0 flex-1 overflow-auto"
+          active={store.mainView === "tracing"}
+        >
           <ErrorBoundary level="section">
             <LedgerTracingWorkbench key={caseId} caseId={caseId} />
           </ErrorBoundary>
-        </TabsContent>
+        </RetainedFinancialTab>
 
-        <TabsContent value="trends" className="flex min-h-0 flex-1 flex-col">
+        <RetainedFinancialTab
+          value="trends"
+          className="flex min-h-0 flex-1 flex-col"
+          active={store.mainView === "trends"}
+        >
           <div className="flex items-center gap-2 border-b p-3">
             <Button
               variant={isTransactionsMode ? "secondary" : "outline"}
               onClick={() => handleModeChange("transactions")}
             >
-              Ledger postings
+              Imported statement payments
             </Button>
             <Button
               variant={!isTransactionsMode ? "secondary" : "outline"}
               onClick={() => handleModeChange("intelligence")}
             >
-              Financial intelligence
+              Other financial records
             </Button>
           </div>
           {isTransactionsMode ? (
@@ -885,9 +960,9 @@ export function FinancialPage() {
           ) : (
             <>
               <p className="border-b p-3 text-sm">
-                Financial intelligence uses extracted graph records, including
-                claims and valuations. These are separate from ledger posting
-                totals and do not reflect ledger corrections.
+                These are amounts and claims found elsewhere in case evidence.
+                They are separate from imported statement payments; correcting a
+                statement payment does not change these records.
               </p>
               {graphTab(
                 <>
@@ -944,7 +1019,7 @@ export function FinancialPage() {
               )}
             </>
           )}
-        </TabsContent>
+        </RetainedFinancialTab>
       </Tabs>
 
       <BulkCategorizeDialog

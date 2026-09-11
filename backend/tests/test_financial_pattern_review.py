@@ -99,3 +99,19 @@ class PatternReviewTests(LedgerTimelineTests):
                 found=screen_ledger_patterns(self.capture(rows),cross_account=True)
             self.assertFalse(any(h['kind'].startswith('possible_') for h in found['hypotheses']),update)
         with self.assertRaises(LedgerSummaryError):screen_ledger_patterns(self.capture([]),cross_account='yes')
+
+    def test_repeated_name_allows_variable_amounts_and_month_long_gaps(self):
+        rows=self.split_rows([100,250,175],['2026-01-01','2026-02-01','2026-03-01'])
+        for row in rows:row['row']['counterparty_raw']='Sample supplier'
+        result=screen_ledger_patterns(self.capture(rows),window_days=3)
+        hits=[h for h in result['hypotheses'] if h['kind']=='repeated_counterparty']
+        self.assertEqual(len(hits),1)
+        self.assertEqual(hits[0]['amount_minor'],'525')
+        self.assertEqual(hits[0]['minimum_gap_days'],28)
+        self.assertEqual(hits[0]['maximum_gap_days'],31)
+        self.assertEqual(hits[0]['transaction_ids'],['0','1','2'])
+        for field,value in [('currency','USD'),('account_id','another'),('direction','debit'),('counterparty_raw','Different supplier'),('ordering_date_context','statement_end_ordering_only')]:
+            changed=self.split_rows([100,250,175],['2026-01-01','2026-02-01','2026-03-01'])
+            for row in changed:row['row']['counterparty_raw']='Sample supplier'
+            changed[-1]['row'][field]=value
+            self.assertFalse(any(h['kind']=='repeated_counterparty' for h in screen_ledger_patterns(self.capture(changed))['hypotheses']),field)

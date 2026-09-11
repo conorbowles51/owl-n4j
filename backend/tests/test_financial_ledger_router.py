@@ -9,6 +9,7 @@ which ``test_financial_transaction_query`` already covers.
 
 import unittest
 import uuid
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -36,7 +37,7 @@ from services.financial.transaction_query import LedgerQueryError
 class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
     async def test_uses_the_query_service_and_shapes_the_response(self):
         case_id = uuid.uuid4()
-        fake_row = object()
+        fake_row = SimpleNamespace(account=object())
         view_payload = {"key": "row-1"}
 
         class FakeView:
@@ -73,7 +74,7 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
             start_date=None,
             end_date=None,
         )
-        to_view_call.assert_called_once_with(fake_row)
+        to_view_call.assert_called_once_with(fake_row, account=fake_row.account)
 
     async def test_an_explicit_ledger_status_is_parsed_and_passed_through(self):
         case_id = uuid.uuid4()

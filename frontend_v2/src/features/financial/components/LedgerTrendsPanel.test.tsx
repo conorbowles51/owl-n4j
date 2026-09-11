@@ -2,16 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { it, expect, vi, afterEach } from "vitest"
 import { LedgerTrendsPanel } from "./LedgerTrendsPanel"
-vi.mock("./LedgerSourceDialog", () => ({
-  LedgerSourceDialog: ({
-    caseId,
-    transactionId,
-  }: {
-    caseId: string
-    transactionId: string
-  }) => (
-    <p>
-      Source {caseId}/{transactionId}
+vi.mock("./LinkedPayments", () => ({
+  LinkedPayments: ({ caseId, ids }: { caseId: string; ids: string[] }) => (
+    <p data-testid="linked-payments">
+      {caseId}/{ids.join(",")}
     </p>
   ),
 }))
@@ -62,24 +56,16 @@ function mount(
   const view = render(element())
   return { fetch, change: () => view.rerender(element("case-b")) }
 }
-it("loads exact date totals on request and opens only a contributing source", async () => {
+it("loads exact date totals on request and passes only contributing payments to the payment browser", async () => {
   const { fetch, change } = mount()
   expect(fetch).not.toHaveBeenCalled()
-  fireEvent.click(
-    screen.getByRole("button", { name: "Read ledger date totals" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
   expect(
-    await screen.findByText(/Credits: 90071992547409.93 GBP/)
+    await screen.findByText(/Credits: 90,071,992,547,409.93 GBP/)
   ).toBeInTheDocument()
-  fireEvent.click(screen.getByText("Contributing readings (1)"))
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: "Open contributing reading 1",
-    })
-  )
-  expect(screen.getByText("Source case-a/tx-a")).toBeInTheDocument()
+  expect(screen.getByTestId("linked-payments")).toHaveTextContent("case-a/tx-a")
   change()
-  expect(screen.queryByText("Source case-a/tx-a")).not.toBeInTheDocument()
+  expect(screen.queryByTestId("linked-payments")).not.toBeInTheDocument()
   expect(screen.queryByText(/Credits:/)).not.toBeInTheDocument()
 })
 it.each([
@@ -92,9 +78,7 @@ it.each([
   { currencies: [{ ...totals, credits_minor: "4" }] },
 ])("refuses mismatched date totals %j", async (change) => {
   mount({ ...answer, ...change })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Read ledger date totals" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Date totals unavailable"
   )
@@ -110,30 +94,24 @@ it("keeps unknown separate from empty activity", async () => {
     currencies: [],
     points: [],
   })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Read ledger date totals" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
   expect(
     await screen.findByText("Date totals unavailable. Too many rows.")
   ).toBeInTheDocument()
-  expect(screen.queryByText(/No eligible postings/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/No eligible payments/)).not.toBeInTheDocument()
 })
 
 it("uses the explicit working population and preserves exact amounts", async () => {
   const { fetch } = mount({ ...answer, population: "working" }, "working")
-  fireEvent.click(
-    screen.getByRole("button", { name: "Read ledger date totals" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
   expect(
-    await screen.findByText(/Credits: 90071992547409.93 GBP/)
+    await screen.findByText(/Credits: 90,071,992,547,409.93 GBP/)
   ).toBeInTheDocument()
   expect(String(fetch.mock.calls[0][0])).toContain("ledger-working-analysis")
 })
 it("refuses verified data returned to a working analysis", async () => {
   mount(answer, "working")
-  fireEvent.click(
-    screen.getByRole("button", { name: "Read ledger date totals" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "different population"
   )

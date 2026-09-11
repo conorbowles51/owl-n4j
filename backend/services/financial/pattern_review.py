@@ -42,7 +42,7 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
             sources.append(dict(row=row, source=captured['source'], provenance=captured['provenance']))
         hypotheses.append(dict(id=digest, kind=kind, transaction_ids=keys, gap_days=days,
             account_id=left['account_id'], account_label=left['account_label'], currency=left['currency'],
-            amount_minor=str(sum(int(r['amount_minor']) for r in group)) if kind == 'split_payment_threshold' else left['amount_minor'], sources=sources, explanation=explanation,
+            amount_minor=str(sum(int(r['amount_minor']) for r in group)) if kind in ('split_payment_threshold', 'repeated_counterparty') else left['amount_minor'], sources=sources, explanation=explanation,
             limitation='Screening candidate only. Amounts and nearby dates do not establish common funds, purpose, identity or misconduct. Same-day order is unknown.'))
 
     for i, left in enumerate(usable):
@@ -60,6 +60,25 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
                 add('equal_amount_in_and_out', credit, debit, days,
                     'A credit and debit have the same recorded amount within the selected window. This is a possible pass-through pattern to investigate, not a tracing allocation. Same-day order is not established.' if days == 0 else
                     'A credit is followed by an equal recorded debit within the selected window. This is a possible pass-through pattern to investigate, not evidence that the same funds moved.')
+    # Repeated relationships often involve changing amounts and month-long gaps.
+    # Match the recorded name exactly; never claim that a label establishes identity.
+    relationships = {}
+    for row in usable:
+        label = readings[row['key']]['row'].get('counterparty_raw')
+        if isinstance(label, str) and label.strip():
+            relationships.setdefault((row['account_id'], row['currency'], row['direction'], label), []).append(row)
+    for (*_, label), group in relationships.items():
+        distinct_dates = sorted({r['chronology_date'] for r in group})
+        if len(group) < 3 or len(distinct_dates) < 3:
+            continue
+        if len(group) > 50:
+            raise LedgerSummaryError('More than 50 payments share one recorded name. Narrow the dates to inspect that relationship; no partial result was returned.')
+        gaps = [(date.fromisoformat(b)-date.fromisoformat(a)).days for a,b in zip(distinct_dates, distinct_dates[1:])]
+        elapsed = (date.fromisoformat(distinct_dates[-1])-date.fromisoformat(distinct_dates[0])).days
+        add('repeated_counterparty',group[0],group[-1],elapsed,
+            f'{len(group)} payments use the recorded name {label!r} on {len(distinct_dates)} dates. Amounts may differ. Gaps between payment dates range from {min(gaps)} to {max(gaps)} days. This check uses the full selected date range, not the short payment window.',group=group)
+        hypotheses[-1].update(counterparty_label=label, minimum_gap_days=min(gaps), maximum_gap_days=max(gaps),
+            limitation='The same printed name does not establish that the recipient or sender is the same person or business. Review the originals and record your explanation. The total is for these payments only; do not add overlapping pattern totals together.')
     if threshold_minor is not None:
         groups = {}
         for row in usable:

@@ -11,28 +11,26 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 it("opts into path screening and clears captured results when criteria change", async () => {
-  const fetch = vi
-    .spyOn(globalThis, "fetch")
-    .mockImplementation(
-      async () =>
-        new Response(
-          JSON.stringify({
-            schema: "loupe.financial.pattern_review/1",
-            case_id: "case",
-            account_id: null,
-            start_date: null,
-            end_date: null,
-            population: "working",
-            window_days: 3,
-            cross_account: true,
-            snapshot_sha256: "a".repeat(64),
-            reviewed_rows: 4,
-            date_unavailable_ids: [],
-            hypotheses: [],
-            limitation: "Captured path criteria",
-          })
-        )
-    )
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          schema: "loupe.financial.pattern_review/1",
+          case_id: "case",
+          account_id: null,
+          start_date: null,
+          end_date: null,
+          population: "working",
+          window_days: 3,
+          cross_account: true,
+          snapshot_sha256: "a".repeat(64),
+          reviewed_rows: 4,
+          date_unavailable_ids: [],
+          hypotheses: [],
+          limitation: "Captured path criteria",
+        })
+      )
+  )
   render(
     <QueryClientProvider client={new QueryClient()}>
       <FinancialPatternReview caseId="case" />
@@ -42,9 +40,7 @@ it("opts into path screening and clears captured results when criteria change", 
     screen.getByLabelText("Screen paths between accounts")
   ).not.toBeChecked()
   fireEvent.click(screen.getByLabelText("Screen paths between accounts"))
-  fireEvent.click(
-    screen.getByRole("button", { name: "Screen captured ledger" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Find patterns" }))
   expect(await screen.findByText("Captured path criteria")).toBeInTheDocument()
   expect(String(fetch.mock.calls[0][0])).toContain("cross_account=true")
   fireEvent.click(screen.getByLabelText("Screen paths between accounts"))

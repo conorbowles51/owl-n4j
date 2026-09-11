@@ -1,6 +1,8 @@
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useCreateCaseworkEntry } from "@/features/workspace/hooks/use-casework"
+import { transactionDetail } from "../lib/transaction-detail"
 
 export function TransactionNote({
   caseId,
@@ -10,6 +12,7 @@ export function TransactionNote({
   filename,
   locator,
   initialOpen = false,
+  transaction,
 }: {
   caseId: string
   transactionId: string
@@ -18,10 +21,22 @@ export function TransactionNote({
   filename: string
   locator: unknown
   initialOpen?: boolean
+  transaction?: unknown
 }) {
   const [open, setOpen] = useState(initialOpen)
-  const [body, setBody] = useState("")
+  const [body, setBody, clearDraft] = useFinancialDraft(
+    caseId,
+    `note:${transactionId}`,
+    ""
+  )
   const save = useCreateCaseworkEntry(caseId)
+  const parsed = transactionDetail.safeParse(transaction)
+  const snapshot =
+    parsed.success &&
+    parsed.data.case_id === caseId &&
+    parsed.data.key === transactionId
+      ? parsed.data
+      : null
   if (!open)
     return (
       <Button variant="outline" onClick={() => setOpen(true)}>
@@ -37,6 +52,10 @@ export function TransactionNote({
       <p className="text-sm">
         Record what you noticed or what needs checking. The note is saved in
         this case's Workspace with a link to this transaction and statement.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Unfinished text is kept in this browser tab. Select Save investigation
+        note to save it to the case.
       </p>
       {save.isSuccess && save.data.case_id === caseId ? (
         <p role="status">
@@ -64,30 +83,38 @@ export function TransactionNote({
           <Button
             disabled={!body.trim() || save.isPending || save.isSuccess}
             onClick={() =>
-              save.mutate({
-                entry_type: "note",
-                title: `Transaction note: ${filename}`,
-                body: body.trim(),
-                tags: ["financial", "transaction"],
-                links: [
-                  {
-                    target_type: "evidence",
-                    target_id: fileId,
-                    target_label: filename,
-                    relationship: "context",
-                    source_anchor: {
-                      financial_transaction_ids: [transactionId],
-                      financial_ref_ids: [refId],
-                      locator,
+              save.mutate(
+                {
+                  entry_type: "note",
+                  title: `Transaction note: ${filename}`,
+                  body: body.trim(),
+                  tags: ["financial", "transaction"],
+                  links: [
+                    {
+                      target_type: "evidence",
+                      target_id: fileId,
+                      target_label: filename,
+                      relationship: "context",
+                      source_anchor: {
+                        financial_transaction_ids: [transactionId],
+                        financial_ref_ids: [refId],
+                        locator,
+                      },
+                      metadata: {
+                        schema: "loupe.financial.transaction_note/1",
+                        transaction_id: transactionId,
+                        ref_id: refId,
+                        ...(snapshot ? { transactions: [snapshot] } : {}),
+                      },
                     },
-                    metadata: {
-                      schema: "loupe.financial.transaction_note/1",
-                      transaction_id: transactionId,
-                      ref_id: refId,
-                    },
+                  ],
+                },
+                {
+                  onSuccess: (entry) => {
+                    if (entry.case_id === caseId) clearDraft()
                   },
-                ],
-              })
+                }
+              )
             }
           >
             {save.isPending ? "Saving note…" : "Save investigation note"}

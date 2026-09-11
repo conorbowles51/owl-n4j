@@ -23,7 +23,9 @@ vi.mock("../hooks/use-ledger-transactions", () => ({
   useLedgerTransactions,
 }))
 
-function makeRow(overrides: Partial<LedgerTransaction> = {}): LedgerTransaction {
+function makeRow(
+  overrides: Partial<LedgerTransaction> = {}
+): LedgerTransaction {
   return {
     key: "txn-1",
     case_id: "case-1",
@@ -102,7 +104,7 @@ describe("LedgerPanel states before there are rows", () => {
     expect(screen.queryByTestId("ledger-table")).toBeNull()
   })
 
-  it("says a failed read is not a count of anything, and shows the reason", () => {
+  it("shows the loading failure and its reason without rendering transaction counts", () => {
     useLedgerTransactions.mockReturnValue({
       data: undefined,
       isPending: false,
@@ -113,7 +115,7 @@ describe("LedgerPanel states before there are rows", () => {
     render(<LedgerPanel caseId="case-1" />)
 
     const failure = screen.getByTestId("ledger-error")
-    expect(failure.textContent).toContain("nothing below is a count of anything")
+    expect(failure.textContent).toContain("Transactions could not be loaded")
     expect(failure.textContent).toContain("is after end_date")
     expect(screen.queryByTestId("ledger-table")).toBeNull()
   })
@@ -135,7 +137,9 @@ describe("LedgerPanel with no rows returned", () => {
   it("names the status actually asked for when it is not the default", () => {
     useLedgerTransactions.mockReturnValue(settled([]))
 
-    render(<LedgerPanel caseId="case-1" params={{ ledgerStatus: "quarantined" }} />)
+    render(
+      <LedgerPanel caseId="case-1" params={{ ledgerStatus: "quarantined" }} />
+    )
 
     expect(screen.getByText("No quarantined rows in the ledger")).toBeTruthy()
   })
@@ -158,7 +162,9 @@ describe("LedgerPanel with rows", () => {
 
     render(<LedgerPanel caseId="case-1" />)
 
-    expect(screen.getByTestId("ledger-summary").textContent).toBe("2 rows, admitted.")
+    expect(screen.getByTestId("ledger-summary").textContent).toBe(
+      "2 rows, admitted."
+    )
     expect(screen.getAllByTestId("ledger-row")).toHaveLength(2)
   })
 
@@ -167,7 +173,9 @@ describe("LedgerPanel with rows", () => {
 
     render(<LedgerPanel caseId="case-1" />)
 
-    expect(screen.getByTestId("ledger-summary").textContent).toBe("1 row, admitted.")
+    expect(screen.getByTestId("ledger-summary").textContent).toBe(
+      "1 row, admitted."
+    )
   })
 
   it("stays quiet when the reported total and the rows sent agree", () => {
@@ -190,7 +198,6 @@ describe("LedgerPanel with rows", () => {
   })
 })
 
-
 describe("LedgerPanel filtered and incomplete empty answers", () => {
   it.each([
     { accountId: "acct-2" },
@@ -199,22 +206,39 @@ describe("LedgerPanel filtered and incomplete empty answers", () => {
   ])("limits an empty answer to the requested scope %o", (params) => {
     useLedgerTransactions.mockReturnValue(settled([]))
     render(<LedgerPanel caseId="case-1" params={params} />)
-    expect(screen.getByText("No admitted rows match these filters")).toBeTruthy()
+    expect(
+      screen.getByText("No admitted rows match these filters")
+    ).toBeTruthy()
     expect(screen.queryByText("No admitted rows in the ledger")).toBeNull()
-    expect(screen.getByText(/does not establish that no transactions occurred/)).toBeTruthy()
-    expect(screen.getByTestId("ledger-filter-scope").textContent).toContain(Object.values(params)[0])
+    expect(
+      screen.getByText(/does not establish that no transactions occurred/)
+    ).toBeTruthy()
+    expect(screen.getByTestId("ledger-filter-scope").textContent).toContain(
+      Object.values(params)[0]
+    )
   })
 
   it("retains a response count disagreement even when no rows arrived", () => {
     useLedgerTransactions.mockReturnValue(settled([], 40))
     render(<LedgerPanel caseId="case-1" />)
-    expect(screen.getByTestId("ledger-count-disagreement").textContent).toContain("reported 40 rows and sent 0")
+    expect(
+      screen.getByTestId("ledger-count-disagreement").textContent
+    ).toContain("reported 40 rows and sent 0")
     expect(screen.queryByTestId("ledger-table")).toBeNull()
   })
 
   it("shows both date bounds and account scope beside populated results", () => {
     useLedgerTransactions.mockReturnValue(settled([makeRow()]))
-    render(<LedgerPanel caseId="case-1" params={{ accountId: "acct-1", startDate: "2024-01-01", endDate: "2024-12-31" }} />)
+    render(
+      <LedgerPanel
+        caseId="case-1"
+        params={{
+          accountId: "acct-1",
+          startDate: "2024-01-01",
+          endDate: "2024-12-31",
+        }}
+      />
+    )
     const scope = screen.getByTestId("ledger-filter-scope").textContent
     expect(scope).toContain("acct-1")
     expect(scope).toContain("on or after 2024-01-01")

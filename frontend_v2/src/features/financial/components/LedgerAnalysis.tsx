@@ -17,7 +17,7 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
   const [params, setParams] = useInvestigationScope(caseId)
   return (
     <section aria-label="Authoritative ledger trends" className="space-y-3 p-4">
-      <h2 className="font-semibold">Ledger trends</h2>
+      <h2 className="font-semibold">Money over time</h2>
       <p>
         Choose an account or date range to explore its payments. Select a total
         to inspect the transactions and their original statements.
@@ -48,17 +48,17 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
           Analysis settings, statement coverage and downloads
         </summary>
         <label className="flex items-center gap-2">
-          Analysis population
+          Payments to include
           <select
-            aria-label="Analysis population"
+            aria-label="Payments to include"
             className="rounded border bg-background p-2"
             value={population}
             onChange={(e) =>
               setPopulation(e.target.value as "working" | "verified")
             }
           >
-            <option value="working">Working readings, including P3</option>
-            <option value="verified">Verified totals only</option>
+            <option value="working">All imported payments</option>
+            <option value="verified">Verified payments only</option>
           </select>
         </label>
         <RequestedCoveragePanel caseId={caseId} params={params} />

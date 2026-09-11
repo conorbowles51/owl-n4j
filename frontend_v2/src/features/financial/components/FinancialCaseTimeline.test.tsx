@@ -85,7 +85,7 @@ it("keeps context separate from exact ledger money and makes unknown dates expli
   expect(
     screen.queryByText("Meeting about purchase · Meeting")
   ).not.toBeInTheDocument()
-  fireEvent.change(screen.getByLabelText("Timeline population"), {
+  fireEvent.change(screen.getByLabelText("Payments to include"), {
     target: { value: "verified" },
   })
   expect(screen.queryByText("Source payment")).not.toBeInTheDocument()

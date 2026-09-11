@@ -1,3 +1,5 @@
+import { SavePaymentSelection } from "./SavePaymentSelection"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import {
   useInvestigationScope,
   useAnalysisPopulation,
@@ -22,15 +24,19 @@ export function LedgerTransfersWorkbench({
   const start = investigation.startDate || ""
   const end = investigation.endDate || ""
   const [population, setPopulation] = useAnalysisPopulation(caseId)
-  const [tolerance, setTolerance] = useState(3)
+  const [tolerance, setTolerance] = useFinancialDraft(
+    caseId ?? "none",
+    "transfer-days",
+    3
+  )
   if (!caseId) return <p>Choose a case to compare transfers.</p>
   return (
     <section aria-label="Ledger transfers" className="space-y-4 p-4">
       <h2 className="font-semibold">Transfers between accounts</h2>
       <p>
-        Compare current debit and credit readings across the accounts in this
-        case. Inspect both sources before selecting a pairing. The ledger
-        retains both original postings.
+        Find money leaving one account and arriving in another. Open both
+        statements, select the pairs you believe are transfers, and record why
+        you linked them.
       </p>
       <p className="text-sm text-muted-foreground">
         The date range follows your other investigation tabs. Transfer
@@ -39,7 +45,7 @@ export function LedgerTransfersWorkbench({
       </p>
       <div className="flex flex-wrap items-end gap-3">
         <label>
-          From ordering date
+          From date
           <input
             aria-label="Transfer start date"
             className="block rounded border bg-background p-2"
@@ -54,7 +60,7 @@ export function LedgerTransfersWorkbench({
           />
         </label>
         <label>
-          To ordering date
+          To date
           <input
             aria-label="Transfer end date"
             className="block rounded border bg-background p-2"
@@ -78,12 +84,12 @@ export function LedgerTransfersWorkbench({
               setPopulation(e.target.value as "working" | "verified")
             }
           >
-            <option value="working">Working, including P3</option>
-            <option value="verified">Verified only</option>
+            <option value="working">All imported payments</option>
+            <option value="verified">Verified payments only</option>
           </select>
         </label>
         <label>
-          Date tolerance
+          Maximum days between payments
           <select
             aria-label="Transfer date tolerance"
             className="block rounded border bg-background p-2"
@@ -123,7 +129,7 @@ function TransferScope({
   tolerance: number
 }) {
   const [selected, setSelected] = useState<number[]>([]),
-    [basis, setBasis] = useState(""),
+    [basis, setBasis] = useFinancialDraft(caseId, "transfer-basis", ""),
     [page, setPage] = useState(0),
     [source, setSource] = useState<string | null>(null)
   const load = useMutation({
@@ -216,7 +222,7 @@ function TransferScope({
       >
         Find possible transfers
       </Button>
-      {load.isPending && <p role="status">Comparing current readings…</p>}
+      {load.isPending && <p role="status">Comparing payments…</p>}
       {load.isError && (
         <p role="alert">
           Transfer comparison unavailable. {load.error.message}
@@ -225,19 +231,30 @@ function TransferScope({
       {load.data && !load.isPending && (
         <>
           <p>
-            {load.data.rows.length} current readings · {load.data.excluded_rows}{" "}
+            {load.data.rows.length} payments · {load.data.excluded_rows}{" "}
             excluded · {load.data.candidates.length} possible pairs
           </p>
-          <p className="text-muted-foreground">{load.data.limitation}</p>
-          <TransferReferenceEvidence
-            key={load.data.snapshot_sha256}
-            data={load.data}
-            onSource={setSource}
-          />
+          <details>
+            <summary className="cursor-pointer">
+              How possible transfers are matched
+            </summary>
+            <p>{load.data.limitation}</p>
+          </details>
+          <details>
+            <summary className="cursor-pointer">
+              Check repeated payment references (
+              {load.data.reference_evidence.length})
+            </summary>
+            <TransferReferenceEvidence
+              key={load.data.snapshot_sha256}
+              data={load.data}
+              onSource={setSource}
+            />
+          </details>
           {load.data.date_unavailable_ids.length > 0 && (
             <p>
-              {load.data.date_unavailable_ids.length} readings use statement-end
-              ordering only and were not compared as dated transfers.
+              {load.data.date_unavailable_ids.length} payments have no
+              transaction date and were not compared by date.
             </p>
           )}
           {load.data.candidates.length === 0 && (
@@ -286,16 +303,18 @@ function TransferScope({
                       </strong>
                       <span>
                         {pair.outcome === "ambiguous"
-                          ? "Multiple possible partners — inspect alternatives"
+                          ? "More than one possible match. Compare the alternatives."
                           : pair.match_basis === "exact_reference"
-                            ? "Matching recorded identifier"
-                            : "Unique amount/date candidate"}
+                            ? "Matching payment reference"
+                            : "Matching amount and nearby date"}
                       </span>
                     </label>
                     <div className="grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
                       <div>
                         <p>
-                          Money out · account {debit.account_id.slice(0, 8)}
+                          Money out ·{" "}
+                          {debit.account_label ||
+                            `account ${debit.account_id.slice(0, 8)}`}
                         </p>
                         <p>
                           {debit.ordering_date} ·{" "}
@@ -314,7 +333,9 @@ function TransferScope({
                       </span>
                       <div>
                         <p>
-                          Money in · account {credit.account_id.slice(0, 8)}
+                          Money in ·{" "}
+                          {credit.account_label ||
+                            `account ${credit.account_id.slice(0, 8)}`}
                         </p>
                         <p>
                           {credit.ordering_date} ·{" "}
@@ -334,8 +355,8 @@ function TransferScope({
                         ? `Shared ${pair.reference.kind}: ${pair.reference.value}. `
                         : ""}
                       {pair.compared_date_field
-                        ? `${pair.date_gap_days} days apart using ${pair.compared_date_field}. `
-                        : "No date-tolerance match is asserted. "}
+                        ? `${pair.date_gap_days} days apart using the recorded payment dates. `
+                        : "Matched by reference; the dates may be farther apart than your chosen limit. "}
                       Matching values alone do not establish a transfer.
                     </p>
                   </li>
@@ -362,13 +383,13 @@ function TransferScope({
           )}
           {load.data.candidates.length > 0 && (
             <fieldset disabled={busy} className="space-y-2 rounded border p-3">
-              <legend>Separate pairing scenario</legend>
+              <legend>Explain your selected transfers</legend>
               <p>
-                {selected.length} pairs selected. Each reading can belong to
+                {selected.length} pairs selected. Each payment can belong to
                 only one selected pair.
               </p>
               <label className="block">
-                Basis for these pairings
+                Why do you think these payments are transfers?
                 <textarea
                   aria-label="Basis for transfer pairings"
                   className="block w-full rounded border bg-background p-2"
@@ -384,7 +405,7 @@ function TransferScope({
                 disabled={!selected.length || !basis.trim()}
                 onClick={() => scenario.mutate()}
               >
-                Calculate paired movement scenario
+                Compare totals using these transfers
               </Button>
             </fieldset>
           )}
@@ -401,7 +422,9 @@ function TransferScope({
           aria-label="Paired transfer scenario"
           className="space-y-2 rounded border p-3"
         >
-          <h3 className="font-semibold">Conditional movement totals</h3>
+          <h3 className="font-semibold">
+            Totals using your selected transfers
+          </h3>
           <p>
             Selected pairs count once here. These assumptions do not change
             ledger totals or verify a transfer.
@@ -409,7 +432,7 @@ function TransferScope({
           {scenario.data.figures.map((f) => (
             <div key={f.currency}>
               <p>
-                {f.currency}: {f.posting_rows} postings represented as{" "}
+                {f.currency}: {f.posting_rows} payments represented as{" "}
                 {f.movement_count} movements, including {f.paired_transfers}{" "}
                 selected transfers.
               </p>
@@ -422,6 +445,27 @@ function TransferScope({
               </p>
             </div>
           ))}
+          {load.data && (
+            <SavePaymentSelection
+              caseId={caseId}
+              ids={[...used]}
+              analysis={{
+                kind: "transfer-comparison",
+                summary: `Saves ${selected.length} selected transfer pairs, your explanation and the calculated totals.`,
+                details: {
+                  snapshot_sha256: load.data.snapshot_sha256,
+                  scenario_sha256: scenario.data.scenario_sha256,
+                  pairs: selected.map((i) => load.data!.candidates[i]),
+                  basis,
+                  figures: scenario.data.figures,
+                  start_date: start || null,
+                  end_date: end || null,
+                  tolerance_days: tolerance,
+                  population,
+                },
+              }}
+            />
+          )}
           <Button onClick={download}>
             Download scenario with source references
           </Button>

@@ -35,7 +35,7 @@ it("keeps exact selected net values above the safe integer range and links sourc
   )
   expect(screen.getByText("0.01 GBP")).toBeInTheDocument()
   fireEvent.click(
-    screen.getByRole("button", { name: "Inspect chart group Printed B" })
+    screen.getByRole("button", { name: "View Printed B payments" })
   )
   fireEvent.click(screen.getByRole("button", { name: "Open chart posting 1" }))
   expect(source).toHaveBeenCalledWith("two")
@@ -48,7 +48,7 @@ it("separates currencies and resets the old source selection", () => {
     <LedgerFlowChart groups={groups} title="Comparison" onSource={vi.fn()} />
   )
   fireEvent.click(
-    screen.getByRole("button", { name: "Inspect chart group Printed A" })
+    screen.getByRole("button", { name: "View Printed A payments" })
   )
   fireEvent.change(screen.getByLabelText("Comparison currency"), {
     target: { value: "USD" },
@@ -70,7 +70,7 @@ it("opens all selected total contributors and keeps changes scoped to the select
     <LedgerFlowChart groups={groups} title="Comparison" onSource={source} />
   )
   fireEvent.click(
-    screen.getByRole("button", { name: "Inspect selected chart totals" })
+    screen.getByRole("button", { name: "View payments in selected totals" })
   )
   expect(
     screen.getByText("Selected chart totals · 2 postings")

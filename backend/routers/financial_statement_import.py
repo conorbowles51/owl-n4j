@@ -8,11 +8,17 @@ from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_import import read_statement_import
+from services.financial.statement_file_status import statement_file_status
 
 logger = logging.getLogger(__name__)
 _require_access = case_access_dependency(lambda request, payload: ('case', 'view'))
 router = APIRouter(prefix='/api/financial/statement-import', tags=['financial'],
                    dependencies=[Depends(get_current_db_user), Depends(_require_access)])
+
+
+@router.get('/files')
+def files(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    return statement_file_status(db, case_id=case_id)
 
 
 @router.get('/{evidence_file_id}')

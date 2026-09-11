@@ -53,6 +53,19 @@ ENTRY_TABLES = [
 
 
 class WorkspaceEntryServiceTests(unittest.TestCase):
+    def test_financial_tag_filters_before_pagination_and_keeps_case_scope(self):
+        from services.workspace_entry_service import list_entries
+        with self.SessionLocal() as db:
+            for case, tags in [(self.case_id, ["financial"]), (self.case_id, ["financial"]),
+                               (self.case_id, ["financial-other"]), (self.other_case_id, ["financial"])]:
+                create_entry(db, case_id=case, current_user=self._user(db), entry_type="note",
+                             body="financial appears in all bodies", tags=tags)
+            result = list_entries(db, case_id=self.case_id, tag="financial", limit=1)
+            self.assertEqual(result["total"], 2)
+            self.assertEqual(len(result["entries"]), 1)
+            self.assertEqual(result["entries"][0]["tags"], ["financial"])
+            self.assertEqual(result["entries"][0]["case_id"], str(self.case_id))
+
     def test_dossier_search_and_linking_are_case_scoped(self):
         from datetime import datetime, timezone
         dossier_id, foreign_id, archived_id = uuid4(), uuid4(), uuid4()

@@ -1,3 +1,6 @@
+import { SaveTraceFinding } from "./SavedTraceFinding"
+import { traceMethods } from "../lib/trace-methods"
+import { RetainedFinancialTool } from "./FinancialNavigation"
 import { TraceReportDownload } from "./TraceReportDownload"
 import { IndirectReviewWorkbench } from "./IndirectReviewWorkbench"
 import { TraceAssetFields, TraceAssetResultsPanel } from "./TraceAssetFields"
@@ -49,13 +52,15 @@ export function LedgerTracingWorkbench({
           Indirect review methods
         </Button>
       </div>
-      {mode === "indirect" ? (
+      <RetainedFinancialTool active={mode === "indirect"}>
         <IndirectReviewWorkbench key={caseId} caseId={caseId} />
-      ) : mode === "single" ? (
+      </RetainedFinancialTool>
+      <RetainedFinancialTool active={mode === "single"}>
         <CaseTracing key={caseId} caseId={caseId} />
-      ) : (
+      </RetainedFinancialTool>
+      <RetainedFinancialTool active={mode === "network"}>
         <NetworkTracingWorkbench key={caseId} caseId={caseId} />
-      )}
+      </RetainedFinancialTool>
     </div>
   )
 }
@@ -66,7 +71,7 @@ function CaseTracing({ caseId }: { caseId: string }) {
   )
   return (
     <section aria-label="Conditional ledger tracing" className="space-y-4 p-4">
-      <h2 className="font-semibold">Conditional account tracing</h2>
+      <h2 className="font-semibold">Trace money through one account</h2>
       <p>
         Explore how selected calculation rules allocate withdrawals. Opening
         funds, deposit attribution and same-day order are your assumptions.
@@ -84,8 +89,8 @@ function CaseTracing({ caseId }: { caseId: string }) {
             setPopulation(e.target.value as "working" | "verified")
           }
         >
-          <option value="verified">Verified only</option>
-          <option value="working">Working readings, including P3</option>
+          <option value="verified">Verified payments only</option>
+          <option value="working">All imported payments</option>
         </select>
       </label>
       <ScopedTracing
@@ -146,8 +151,9 @@ function ScopedTracing({
   return (
     <div className="space-y-3">
       <p>
-        Choose one account and both ordering-date bounds, then load its eligible
-        readings. Missing evidence can change every result.
+        Choose one account and a start and end date, then load its payments. You
+        will identify the starting funds and choose how withdrawals are
+        allocated.
       </p>
       <Button
         disabled={
@@ -268,8 +274,8 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
   return (
     <div className="space-y-4">
       <p>
-        {inputs.included_rows} {inputs.population} scenario readings;{" "}
-        {inputs.excluded_rows} excluded readings. Currency: {inputs.currency}.
+        {inputs.included_rows} payments for this calculation;{" "}
+        {inputs.excluded_rows} payments excluded. Currency: {inputs.currency}.
         Enter amounts in currency units, using a decimal point where needed and
         no thousands separators.
       </p>
@@ -315,17 +321,16 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
           <ol className="max-h-80 overflow-auto border p-3">
             {rows.map((r, i) => (
               <li className="border-b py-2" key={r.row.key}>
-                {i + 1}. {r.row.ordering_date} — {r.row.direction}{" "}
-                {correctionMoney(r.row.amount_minor, inputs.currency)} —{" "}
+                {i + 1}. {r.row.ordering_date} · {r.row.direction}{" "}
+                {correctionMoney(r.row.amount_minor, inputs.currency)} ·{" "}
                 {r.row.description}
                 <br />
-                <small>Ledger reading: {r.row.key}</small>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => setSource(r.row.key)}
                 >
-                  Open tracing source {i + 1}
+                  View source
                 </Button>
                 {i > 0 &&
                   rows[i - 1].row.ordering_date === r.row.ordering_date && (
@@ -341,7 +346,7 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
                         })
                       }}
                     >
-                      Move earlier: reading {i + 1}
+                      Move payment {i + 1} earlier
                     </Button>
                   )}
               </li>
@@ -389,7 +394,7 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
               .filter((r) => r.row.direction === "credit")
               .map((r) => ({
                 id: r.row.key,
-                label: `${r.row.ordering_date} — ${correctionMoney(r.row.amount_minor, inputs.currency)} — ${r.row.key}`,
+                label: `${r.row.ordering_date} · ${correctionMoney(r.row.amount_minor, inputs.currency)} · ${r.row.description ?? "Payment"}`,
               }))}
             value={attributions}
             onChange={(next) => {
@@ -399,8 +404,8 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
             }}
           />
           <p>
-            Choose calculation methods explicitly. No method is recommended by
-            this screen.
+            Choose the calculations to compare. Each applies the rule described
+            below to the same payments and assumptions.
           </p>
           {methods.map((method) => (
             <label className="block" key={method}>
@@ -415,7 +420,10 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
                   )
                 }
               />{" "}
-              {method.replaceAll("_", " ")}
+              {traceMethods[method]?.label ?? method}
+              <span className="block ml-5 text-sm text-muted-foreground">
+                {traceMethods[method]?.explanation}
+              </span>
             </label>
           ))}
           <Button type="submit" disabled={!selected.length || busy}>
@@ -433,16 +441,17 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
       )}
       {result && (
         <section aria-label="Conditional tracing results" className="space-y-3">
-          <h3 className="font-semibold">
-            Conditional results — assumptions unverified
-          </h3>
-          {result.value.limitations.map((note) => (
-            <p key={note}>{note}</p>
-          ))}
+          <h3 className="font-semibold">Results using your assumptions</h3>
+          <details>
+            <summary>Limits of this calculation</summary>
+            {result.value.limitations.map((note) => (
+              <p key={note}>{note}</p>
+            ))}
+          </details>
           {Object.entries(result.value.comparison.results).map(
             ([method, output]) => (
               <div className="border p-3" key={method}>
-                <h4>{method.replaceAll("_", " ")}</h4>
+                <h4>{traceMethods[method]?.label ?? method}</h4>
                 <TraceAssetResultsPanel
                   items={result.value.asset_uses[method] ?? []}
                   onSource={setSource}
@@ -492,14 +501,18 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
               </div>
             )
           )}
+          <SaveTraceFinding
+            key={"saved:" + result.envelope.scenario_sha256}
+            trace={result}
+          />
           <Button onClick={download}>Download conditional scenario</Button>
           <TraceReportDownload
             key={result.envelope.scenario_sha256}
             trace={result}
           />
           <p>
-            Includes captured ledger readings and history, explicit assumptions
-            and calculation details. SHA-256: {result.envelope.scenario_sha256}
+            Downloads include the payments, assumptions and calculation details
+            used for these results.
           </p>
         </section>
       )}

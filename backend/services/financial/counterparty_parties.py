@@ -155,5 +155,6 @@ def counterparty_party_analysis(export, *, population='working'):
         group['source_document_ids']=sorted(group['source_document_ids']);group['raw_labels']=sorted(group['raw_labels'],key=lambda s:(s is not None,s or ''))
     return dict(case_id=ledger['case_id'],account_id=ledger['account_id'],start_date=ledger['start_date'],end_date=ledger['end_date'],population=population,
         available=True,reason=None,applied=False,label_basis='investigator_payment_identity',included_rows=totals['included_rows'],excluded_rows=totals['excluded_rows'],currencies=totals['currencies'],counterparties=[groups[k] for k in sorted(groups)],
+        has_credit_card_readings=totals.get('has_credit_card_readings', False),
         snapshot_sha256=export.snapshot.sha256,snapshot_json=export.snapshot.content,
         limitation=totals['limitation'],counterparty_limitation='Only explicitly linked readings use reviewed party identities. Unlinked source labels remain verbatim and unresolved. Original labels and identity decisions are captured. Grouping does not confirm payment direction roles, merge ledger rows, net internal transfers or promote proof classes.')

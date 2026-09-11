@@ -27,7 +27,9 @@ export interface CaseworkLinkInput {
   metadata?: Record<string, unknown>
 }
 
-export interface CaseworkLink extends Required<Omit<CaseworkLinkInput, "target_label">> {
+export interface CaseworkLink extends Required<
+  Omit<CaseworkLinkInput, "target_label">
+> {
   id: string
   entry_id: string
   case_id: string
@@ -102,6 +104,7 @@ export interface CaseworkEntry {
 }
 
 export interface CaseworkListParams {
+  tag?: string
   entry_type?: CaseworkEntryType
   lifecycle_state?: string
   significance?: FindingSignificance
@@ -111,7 +114,12 @@ export interface CaseworkListParams {
   q?: string
   updated_since?: string
   include_deleted?: boolean
-  sort_by?: "updated_at" | "created_at" | "title" | "confidence" | "significance"
+  sort_by?:
+    | "updated_at"
+    | "created_at"
+    | "title"
+    | "confidence"
+    | "significance"
   sort_direction?: "asc" | "desc"
   limit?: number
   offset?: number
@@ -177,12 +185,12 @@ const base = (caseId: string) => `/api/workspace/${encodeURIComponent(caseId)}`
 export const caseworkAPI = {
   list: (caseId: string, params: CaseworkListParams = {}) =>
     fetchAPI<CaseworkListResponse>(
-      `${base(caseId)}/entries${queryString(params)}`,
+      `${base(caseId)}/entries${queryString(params)}`
     ),
 
   get: (caseId: string, entryId: string, includeDeleted = false) =>
     fetchAPI<CaseworkEntry>(
-      `${base(caseId)}/entries/${encodeURIComponent(entryId)}${queryString({ include_deleted: includeDeleted })}`,
+      `${base(caseId)}/entries/${encodeURIComponent(entryId)}${queryString({ include_deleted: includeDeleted })}`
     ),
 
   create: (caseId: string, input: CaseworkCreateInput) =>
@@ -194,7 +202,7 @@ export const caseworkAPI = {
   update: (caseId: string, entryId: string, input: CaseworkUpdateInput) =>
     fetchAPI<CaseworkEntry>(
       `${base(caseId)}/entries/${encodeURIComponent(entryId)}`,
-      { method: "PATCH", body: input },
+      { method: "PATCH", body: input }
     ),
 
   changeLifecycle: (
@@ -202,7 +210,7 @@ export const caseworkAPI = {
     entryId: string,
     expectedVersion: number,
     lifecycleState: string,
-    rationale?: string,
+    rationale?: string
   ) =>
     fetchAPI<CaseworkEntry>(
       `${base(caseId)}/entries/${encodeURIComponent(entryId)}/lifecycle`,
@@ -213,7 +221,7 @@ export const caseworkAPI = {
           lifecycle_state: lifecycleState,
           rationale,
         },
-      },
+      }
     ),
 
   changeConfidence: (
@@ -221,28 +229,28 @@ export const caseworkAPI = {
     entryId: string,
     expectedVersion: number,
     confidence: number | null,
-    rationale?: string,
+    rationale?: string
   ) =>
     fetchAPI<CaseworkEntry>(
       `${base(caseId)}/entries/${encodeURIComponent(entryId)}/confidence`,
       {
         method: "POST",
         body: { expected_version: expectedVersion, confidence, rationale },
-      },
+      }
     ),
 
   changeSignificance: (
     caseId: string,
     entryId: string,
     expectedVersion: number,
-    significance: FindingSignificance,
+    significance: FindingSignificance
   ) =>
     fetchAPI<CaseworkEntry>(
       `${base(caseId)}/entries/${encodeURIComponent(entryId)}/significance`,
       {
         method: "POST",
         body: { expected_version: expectedVersion, significance },
-      },
+      }
     ),
 
   convertToFinding: (
@@ -250,26 +258,26 @@ export const caseworkAPI = {
     entryId: string,
     expectedVersion: number,
     significance: FindingSignificance,
-    draft?: { title: string; body: string },
+    draft?: { title: string; body: string }
   ) =>
     fetchAPI<{ theory: CaseworkEntry; finding: CaseworkEntry }>(
       `${base(caseId)}/entries/${encodeURIComponent(entryId)}/convert-to-finding`,
       {
         method: "POST",
         body: { expected_version: expectedVersion, significance, ...draft },
-      },
+      }
     ),
 
   delete: (caseId: string, entryId: string, expectedVersion: number) =>
     fetchAPI<void>(
       `${base(caseId)}/entries/${encodeURIComponent(entryId)}${queryString({ expected_version: expectedVersion })}`,
-      { method: "DELETE" },
+      { method: "DELETE" }
     ),
 
   restore: (caseId: string, entryId: string, expectedVersion: number) =>
     fetchAPI<CaseworkEntry>(
       `${base(caseId)}/entries/${encodeURIComponent(entryId)}/restore`,
-      { method: "POST", body: { expected_version: expectedVersion } },
+      { method: "POST", body: { expected_version: expectedVersion } }
     ),
 
   attachmentOptions: (
@@ -277,10 +285,10 @@ export const caseworkAPI = {
     targetType: CaseworkLinkTargetType,
     q = "",
     limit = 20,
-    targetIds?: string[],
+    targetIds?: string[]
   ) =>
     fetchAPI<{ items: AttachmentOption[] }>(
-      `${base(caseId)}/attachment-options${queryString({ target_type: targetType, q, limit, target_ids: targetIds })}`,
+      `${base(caseId)}/attachment-options${queryString({ target_type: targetType, q, limit, target_ids: targetIds })}`
     ),
 
   authors: (caseId: string) =>

@@ -160,6 +160,12 @@ export function CorrectionForm({
     },
     onSettled: (_data, _error, variables) => {
       void client.invalidateQueries({
+        queryKey: ["ledger-source", variables.reviewed.case_id],
+      })
+      void client.invalidateQueries({
+        queryKey: ["financial-linked-payments", variables.reviewed.case_id],
+      })
+      void client.invalidateQueries({
         queryKey: ["financial-ledger", variables.reviewed.case_id],
       })
       void client.invalidateQueries({

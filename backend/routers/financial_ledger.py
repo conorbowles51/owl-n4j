@@ -651,7 +651,7 @@ async def get_ledger_transactions(
         )
         raise HTTPException(status_code=500, detail=str(e))
 
-    transactions = [to_view(row).to_json() for row in rows]
+    transactions = [to_view(row, account=row.account).to_json() for row in rows]
     return {
         "case_id": str(case_id),
         "transactions": transactions,

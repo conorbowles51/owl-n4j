@@ -1,3 +1,5 @@
+import { RetainedFinancialTool } from "./FinancialNavigation"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { PaymentClaimComparison } from "./PaymentClaimComparison"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
@@ -21,20 +23,31 @@ import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 function PatternScreen({ caseId }: { caseId: string | undefined }) {
   const [params, setParams] = useInvestigationScope(caseId)
   const [population, setPopulation] = useAnalysisPopulation(caseId)
-  const [crossAccount, setCrossAccount] = useState(false),
-    [days, setDays] = useState("3"),
-    [threshold, setThreshold] = useState(""),
-    [currency, setCurrency] = useState("GBP")
+  const [crossAccount, setCrossAccount] = useFinancialDraft(
+      caseId ?? "none",
+      "pattern-cross-account",
+      false
+    ),
+    [days, setDays] = useFinancialDraft(caseId ?? "none", "pattern-days", "3"),
+    [threshold, setThreshold] = useFinancialDraft(
+      caseId ?? "none",
+      "pattern-threshold",
+      ""
+    ),
+    [currency, setCurrency] = useFinancialDraft(
+      caseId ?? "none",
+      "pattern-currency",
+      "GBP"
+    )
   if (!caseId) return <p>Choose a case for pattern review.</p>
   return (
     <section aria-label="Financial pattern review" className="space-y-4 p-4">
       <h2 className="font-semibold">Patterns to investigate</h2>
       <p>
-        Screen for repeated equal amounts and nearby equal incoming/outgoing
-        postings, with an optional split-payment amount threshold. These are
-        review candidates, not alerts or findings. Inspect the attached rows,
-        consider ordinary explanations, and save a theory only with your own
-        reasoning.
+        Look for repeated names (even when amounts change), repeated amounts,
+        money coming in and going out soon afterwards, or smaller payments that
+        add up to an amount you choose. Run the checks below, open the matching
+        payments, then record what you think they show.
       </p>
       <InvestigationFilters
         key={JSON.stringify(params)}
@@ -44,19 +57,19 @@ function PatternScreen({ caseId }: { caseId: string | undefined }) {
       />
       <div className="flex gap-3">
         <label>
-          Pattern population{" "}
+          Payments to check{" "}
           <select
-            aria-label="Pattern population"
+            aria-label="Payments to check"
             value={population}
             onChange={(e) => setPopulation(e.target.value)}
             className="border bg-background p-2"
           >
-            <option value="working">Working readings, including P3</option>
-            <option value="verified">Verified only</option>
+            <option value="working">All imported payments</option>
+            <option value="verified">Verified payments only</option>
           </select>
         </label>
         <label>
-          Screening window (days){" "}
+          Days between related payments{" "}
           <input
             aria-label="Screening window days"
             type="number"
@@ -107,8 +120,8 @@ function PatternScreen({ caseId }: { caseId: string | undefined }) {
           checked={crossAccount}
           onChange={(e) => setCrossAccount(e.target.checked)}
         />{" "}
-        Screen possible chains and returns between accounts (all accounts
-        required)
+        Check for money passing through several accounts or returning to its
+        starting account (all accounts required)
       </label>
       <PatternScope
         key={JSON.stringify([
@@ -202,12 +215,17 @@ function PatternScope({
           load.mutate()
         }}
       >
-        {load.isPending ? "Screening…" : "Screen captured ledger"}
+        {load.isPending ? "Checking payments…" : "Find patterns"}
       </Button>
       {load.isError && <p role="alert">{load.error.message}</p>}
       {load.data && (
         <>
-          <p>{load.data.limitation}</p>
+          <details className="text-sm">
+            <summary className="cursor-pointer">
+              What these checks cover
+            </summary>
+            <p>{load.data.limitation}</p>
+          </details>
           <p>
             {load.data.reviewed_rows} current readings reviewed;{" "}
             {load.data.date_unavailable_ids.length} readings lack transaction
@@ -265,8 +283,16 @@ function PatternCard({
   hypothesis: PatternReview["hypotheses"][number]
   onSource: (id: string) => void
 }) {
-  const [title, setTitle] = useState(""),
-    [reason, setReason] = useState(""),
+  const [title, setTitle] = useFinancialDraft(
+      scope.case_id,
+      "pattern-title:" + h.id,
+      ""
+    ),
+    [reason, setReason] = useFinancialDraft(
+      scope.case_id,
+      "pattern-note:" + h.id,
+      ""
+    ),
     [validation, setValidation] = useState("")
   const save = useCreateCaseworkEntry(scope.case_id)
   const submit = () => {
@@ -285,18 +311,26 @@ function PatternCard({
   return (
     <article className="space-y-3 rounded border p-4">
       <h3 className="font-semibold">
-        {h.kind === "repeated_equal_amount"
-          ? "Repeated equal amount"
-          : h.kind === "equal_amount_in_and_out"
-            ? "Equal amount in and out"
-            : h.kind === "possible_transfer_chain"
-              ? "Possible chain between accounts"
-              : h.kind === "possible_return_flow"
-                ? "Possible return to the starting account"
-                : "Smaller payments reach selected threshold"}{" "}
+        {h.kind === "repeated_counterparty"
+          ? `Repeated payments: ${h.counterparty_label}`
+          : h.kind === "repeated_equal_amount"
+            ? "Repeated equal amount"
+            : h.kind === "equal_amount_in_and_out"
+              ? "Equal amount in and out"
+              : h.kind === "possible_transfer_chain"
+                ? "Possible chain between accounts"
+                : h.kind === "possible_return_flow"
+                  ? "Possible return to the starting account"
+                  : "Smaller payments reach selected threshold"}{" "}
         · {h.account_label} · {correctionMoney(h.amount_minor, h.currency)}
       </h3>
       <p>{h.explanation}</p>
+      {h.kind === "repeated_counterparty" && (
+        <p className="text-sm">
+          The amount above is the total of the {h.sources.length} payments shown
+          below.
+        </p>
+      )}
       {h.transfer_pairs && (
         <p>
           {h.transfer_pairs.length} candidate transfers, supported by{" "}
@@ -316,20 +350,19 @@ function PatternCard({
       {h.sources.map((s, i) => (
         <div key={s.row.key}>
           <p>
-            {s.row.account_label} · {s.row.chronology_date} (
-            {s.row.chronology_basis.replaceAll("_", " ")}) · {s.row.direction} ·{" "}
-            {s.row.proof_class.toUpperCase()} ·{" "}
+            {s.row.account_label} · {s.row.chronology_date} ·{" "}
+            {s.row.direction === "credit" ? "Credit" : "Debit"} ·{" "}
             {correctionMoney(s.row.amount_minor, s.row.currency)} ·{" "}
             {s.row.description}
           </p>
           <Button variant="outline" onClick={() => onSource(s.row.key)}>
-            Inspect supporting reading {i + 1} for {h.id.slice(0, 8)}
+            Open payment {i + 1}
           </Button>
         </div>
       ))}
       {save.data ? (
         <p role="status">
-          Saved as proposed Workspace theory: {save.data.title}.{" "}
+          Saved in Findings as a proposed explanation: {save.data.title}.{" "}
           <a
             className="underline"
             href={`/cases/${encodeURIComponent(scope.case_id)}/workspace`}
@@ -342,9 +375,9 @@ function PatternCard({
           disabled={save.isPending || save.isError}
           className="space-y-2"
         >
-          <legend>Keep an investigator hypothesis</legend>
+          <legend>Record your explanation</legend>
           <label className="block">
-            Theory title
+            Title
             <input
               aria-label={`Theory title ${h.id}`}
               className="block w-full border bg-background p-2"
@@ -371,7 +404,9 @@ function PatternCard({
             }
             onClick={submit}
           >
-            {save.isPending ? "Saving…" : "Save proposed theory with sources"}
+            {save.isPending
+              ? "Saving…"
+              : "Save explanation and supporting payments"}
           </Button>
         </fieldset>
       )}
@@ -408,11 +443,14 @@ export function FinancialPatternReview({
           Compare payment claim
         </Button>
       </div>
-      {mode === "claims" && caseId ? (
-        <PaymentClaimComparison key={caseId} caseId={caseId} />
-      ) : (
-        <PatternScreen key={caseId} caseId={caseId} />
+      {caseId && (
+        <RetainedFinancialTool active={mode === "claims"}>
+          <PaymentClaimComparison key={caseId} caseId={caseId} />
+        </RetainedFinancialTool>
       )}
+      <RetainedFinancialTool active={mode === "patterns"}>
+        <PatternScreen key={caseId} caseId={caseId} />
+      </RetainedFinancialTool>
     </div>
   )
 }

@@ -17,7 +17,11 @@ export type FinancialRecordKind =
   | "allegation"
   | "summary_metric"
   | "other"
-export type EvidenceStrength = "documentary" | "derived" | "narrative" | "unknown"
+export type EvidenceStrength =
+  | "documentary"
+  | "derived"
+  | "narrative"
+  | "unknown"
 export type EvidenceSourceType =
   | "bank_statement"
   | "invoice"
@@ -186,6 +190,8 @@ export type QuarantineReason = (typeof QUARANTINE_REASONS)[number]
  * one of these fields reaches a component through that module.
  */
 export interface LedgerTransaction {
+  account_type?: string
+  account_label?: string
   key: string
   case_id: string
   account_id: string
@@ -1157,15 +1163,20 @@ export const financialAPI = {
     if (params.types?.length) qs.set("types", params.types.join(","))
     if (params.startDate) qs.set("start_date", params.startDate)
     if (params.endDate) qs.set("end_date", params.endDate)
-    if (params.categories?.length) qs.set("categories", params.categories.join(","))
+    if (params.categories?.length)
+      qs.set("categories", params.categories.join(","))
     return fetchAPI<TransactionsResponse>(`/api/financial?${qs}`)
   },
 
   getSummary: (caseId: string, mode: FinancialDatasetMode = "transactions") =>
-    fetchAPI<FinancialSummary>(`/api/financial/summary?case_id=${caseId}&mode=${mode}`),
+    fetchAPI<FinancialSummary>(
+      `/api/financial/summary?case_id=${caseId}&mode=${mode}`
+    ),
 
   getVolume: (caseId: string, mode: FinancialDatasetMode = "transactions") =>
-    fetchAPI<VolumeResponse>(`/api/financial/volume?case_id=${caseId}&mode=${mode}`),
+    fetchAPI<VolumeResponse>(
+      `/api/financial/volume?case_id=${caseId}&mode=${mode}`
+    ),
 
   categorize: (nodeKey: string, category: string, caseId: string) =>
     fetchAPI<void>(`/api/financial/categorize/${encodeURIComponent(nodeKey)}`, {
@@ -1241,9 +1252,13 @@ export const financialAPI = {
       },
     }),
 
-  getCategories: (caseId: string, mode: FinancialDatasetMode = "transactions") =>
-    fetchAPI<{ categories: FinancialCategory[] }>(`/api/financial/categories?case_id=${caseId}&mode=${mode}`)
-      .then((res) => res.categories),
+  getCategories: (
+    caseId: string,
+    mode: FinancialDatasetMode = "transactions"
+  ) =>
+    fetchAPI<{ categories: FinancialCategory[] }>(
+      `/api/financial/categories?case_id=${caseId}&mode=${mode}`
+    ).then((res) => res.categories),
 
   createCategory: (name: string, color: string, caseId: string) =>
     fetchAPI<FinancialCategory>("/api/financial/categories", {
@@ -1289,8 +1304,9 @@ export const financialAPI = {
     ),
 
   getEntities: (caseId: string) =>
-    fetchAPI<{ entities: TransactionEntity[] }>(`/api/financial/entities?case_id=${caseId}`)
-      .then((res) => res.entities),
+    fetchAPI<{ entities: TransactionEntity[] }>(
+      `/api/financial/entities?case_id=${caseId}`
+    ).then((res) => res.entities),
 
   getSubTransactions: (parentKey: string, caseId: string) =>
     fetchAPI<{ children: Transaction[]; count: number }>(
@@ -1363,9 +1379,12 @@ export const financialAPI = {
    * this file would find them.
    */
   precheckFile: (params: IngestWindowParams) =>
-    fetchAPI<FilePrecheck>(`/api/financial/precheck?${ingestWindowQuery(params)}`, {
-      method: "POST",
-    }),
+    fetchAPI<FilePrecheck>(
+      `/api/financial/precheck?${ingestWindowQuery(params)}`,
+      {
+        method: "POST",
+      }
+    ),
 
   /**
    * Read the file again and keep it, under a recorded ingestion run.
@@ -1383,8 +1402,11 @@ export const financialAPI = {
   ) => {
     const qs = ingestWindowQuery(params)
     if (params.documentType) qs.set("document_type", params.documentType)
-    if (params.institutionName) qs.set("institution_name", params.institutionName)
-    return fetchAPI<FileIngestion>(`/api/financial/ingest?${qs}`, { method: "POST" })
+    if (params.institutionName)
+      qs.set("institution_name", params.institutionName)
+    return fetchAPI<FileIngestion>(`/api/financial/ingest?${qs}`, {
+      method: "POST",
+    })
   },
 
   /**

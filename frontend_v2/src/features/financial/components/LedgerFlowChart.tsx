@@ -1,7 +1,10 @@
+import { LinkedPayments } from "./LinkedPayments"
 import { flowBarPercent } from "../lib/flow-bar-percent"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { correctionMoney } from "../lib/correction-contract"
+import { formatLedgerAmount } from "../lib/ledger-format"
+const correctionMoney = (value: string, currency: string) =>
+  `${formatLedgerAmount(value, currency).text} ${currency}`
 export type FlowGroup = {
   id: string
   label: string
@@ -15,11 +18,15 @@ export function LedgerFlowChart({
   title,
   onSource,
   explanation,
+  caseId,
+  hasCreditCards = false,
 }: {
   groups: FlowGroup[]
   title: string
   onSource: (id: string) => void
   explanation?: string
+  caseId?: string
+  hasCreditCards?: boolean
 }) {
   if (!groups.length) return null
   return (
@@ -29,6 +36,8 @@ export function LedgerFlowChart({
       title={title}
       onSource={onSource}
       explanation={explanation}
+      caseId={caseId}
+      hasCreditCards={hasCreditCards}
     />
   )
 }
@@ -37,11 +46,15 @@ function Chart({
   title,
   onSource,
   explanation,
+  caseId,
+  hasCreditCards = false,
 }: {
   groups: FlowGroup[]
   title: string
   onSource: (id: string) => void
   explanation?: string
+  caseId?: string
+  hasCreditCards?: boolean
 }) {
   const currencies = [...new Set(groups.map((g) => g.currency))]
   const [currency, setCurrency] = useState(currencies[0]),
@@ -101,28 +114,41 @@ function Chart({
         </label>
       </div>
       <p className="text-sm text-muted-foreground">
-        {explanation ??
-          "Outgoing postings extend left; incoming postings extend right. Select groups to compare their totals. Internal transfers remain two postings here; explicit pairing is available in Transfers."}
+        {hasCreditCards
+          ? "Debits are shown on the left and credits on the right. Select items, then open their payments."
+          : (explanation ??
+            "Money out is shown on the left and money in on the right. Select items to compare their totals, then open the payments behind them.")}
       </p>
+      {hasCreditCards && (
+        <p className="text-sm">
+          Includes credit-card entries. Card debits increase the amount owed;
+          credits reduce it. These totals do not measure cash moving between
+          bank accounts.
+        </p>
+      )}
       <p className="text-xs text-muted-foreground">
         Chart selection changes this comparison. Ledger downloads use the
         applied account and date filters.
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded border p-3">
-          <p className="text-xs text-muted-foreground">Selected incoming</p>
+          <p className="text-xs text-muted-foreground">
+            {hasCreditCards ? "Selected credits" : "Selected money in"}
+          </p>
           <p className="font-semibold text-emerald-500">
             {correctionMoney(credits.toString(), currency)}
           </p>
         </div>
         <div className="rounded border p-3">
-          <p className="text-xs text-muted-foreground">Selected outgoing</p>
+          <p className="text-xs text-muted-foreground">
+            {hasCreditCards ? "Selected debits" : "Selected money out"}
+          </p>
           <p className="font-semibold text-rose-400">
             {correctionMoney(debits.toString(), currency)}
           </p>
         </div>
         <div className="rounded border p-3">
-          <p className="text-xs text-muted-foreground">Selected net postings</p>
+          <p className="text-xs text-muted-foreground">Selected difference</p>
           <p className="font-semibold">
             {correctionMoney((credits - debits).toString(), currency)}
           </p>
@@ -130,8 +156,7 @@ function Chart({
       </div>
       <p className="text-sm">
         {selected.length} of {scoped.length} groups selected ·{" "}
-        {selected.reduce((n, g) => n + g.transaction_ids.length, 0)}{" "}
-        contributing postings.
+        {selected.reduce((n, g) => n + g.transaction_ids.length, 0)} payments.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -143,13 +168,13 @@ function Chart({
             setSourcePage(0)
           }}
         >
-          Inspect selected chart totals
+          View payments in selected totals
         </Button>
         <Button variant="outline" onClick={() => setChosen(null)}>
-          Select all chart groups
+          Select all
         </Button>
         <Button variant="outline" onClick={() => setChosen([])}>
-          Clear chart selection
+          Clear selection
         </Button>
       </div>
       <div className="space-y-4">
@@ -186,7 +211,7 @@ function Chart({
                   setSourcePage(0)
                 }}
               >
-                Inspect chart group {g.label}
+                View {g.label} payments
               </Button>
             </div>
             <div className="grid grid-cols-2" aria-hidden="true">
@@ -208,8 +233,14 @@ function Chart({
               </div>
             </div>
             <div className="mt-1 flex justify-between gap-3 text-xs">
-              <span>Out {correctionMoney(g.debits_minor, currency)}</span>
-              <span>In {correctionMoney(g.credits_minor, currency)}</span>
+              <span>
+                {hasCreditCards ? "Debit" : "Out"}{" "}
+                {correctionMoney(g.debits_minor, currency)}
+              </span>
+              <span>
+                {hasCreditCards ? "Credit" : "In"}{" "}
+                {correctionMoney(g.credits_minor, currency)}
+              </span>
             </div>
           </div>
         ))}
@@ -248,34 +279,44 @@ function Chart({
             {inspectTotals
               ? "These sources cover the selected incoming and outgoing groups together; their difference produces the selected net. "
               : ""}
-            Each button opens the source for a contributing ledger reading.
+            Open a payment to check its original statement or add a note.
           </p>
-          <div className="flex flex-wrap gap-2">
-            {inspected.transaction_ids
-              .slice(sourceIndex * 25, sourceIndex * 25 + 25)
-              .map((id, i) => (
-                <Button key={id} variant="outline" onClick={() => onSource(id)}>
-                  Open chart posting {sourceIndex * 25 + i + 1}
-                </Button>
-              ))}
-          </div>
-          {inspected.transaction_ids.length > 25 && (
-            <div className="flex gap-2">
-              <Button
-                disabled={!sourceIndex}
-                onClick={() => setSourcePage(sourceIndex - 1)}
-              >
-                Previous chart sources
-              </Button>
-              <Button
-                disabled={
-                  (sourceIndex + 1) * 25 >= inspected.transaction_ids.length
-                }
-                onClick={() => setSourcePage(sourceIndex + 1)}
-              >
-                Next chart sources
-              </Button>
-            </div>
+          {caseId ? (
+            <LinkedPayments caseId={caseId} ids={inspected.transaction_ids} />
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {inspected.transaction_ids
+                  .slice(sourceIndex * 25, sourceIndex * 25 + 25)
+                  .map((id, i) => (
+                    <Button
+                      key={id}
+                      variant="outline"
+                      onClick={() => onSource(id)}
+                    >
+                      Open chart posting {sourceIndex * 25 + i + 1}
+                    </Button>
+                  ))}
+              </div>
+              {inspected.transaction_ids.length > 25 && (
+                <div className="flex gap-2">
+                  <Button
+                    disabled={!sourceIndex}
+                    onClick={() => setSourcePage(sourceIndex - 1)}
+                  >
+                    Previous chart sources
+                  </Button>
+                  <Button
+                    disabled={
+                      (sourceIndex + 1) * 25 >= inspected.transaction_ids.length
+                    }
+                    onClick={() => setSourcePage(sourceIndex + 1)}
+                  >
+                    Next chart sources
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </section>
       )}

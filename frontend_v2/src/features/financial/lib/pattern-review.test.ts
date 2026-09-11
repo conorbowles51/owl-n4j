@@ -67,7 +67,10 @@ it("creates a proposed theory with grouped original evidence and no proof promot
   expect(JSON.stringify(value.links?.[0].metadata)).toContain(
     '"proof_class":"p3"'
   )
-  expect(value.body).toContain(review.snapshot_sha256)
+  expect(value.links?.[0].metadata?.snapshot_sha256).toBe(
+    review.snapshot_sha256
+  )
+  expect(value.body).toContain("Equal incoming amounts")
 })
 it("refuses missing reasoning, missing source links and mismatched support", () => {
   expect(() =>
@@ -106,7 +109,8 @@ it("preserves every split-payment source and the exact selected threshold", () =
     "three",
   ])
   expect(saved.links?.[0].metadata?.threshold_minor).toBe("9007199254740994")
-  expect(saved.body).toContain("investigator-selected criterion")
+  expect(saved.links?.[0].metadata?.threshold_currency).toBe("GBP")
+  expect(saved.body).toContain("Could be separate legitimate purchases.")
 })
 it("refuses substituted or duplicate pattern support before saving a theory", () => {
   const scope = structuredClone(review)

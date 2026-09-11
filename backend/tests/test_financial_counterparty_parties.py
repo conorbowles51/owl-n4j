@@ -44,12 +44,15 @@ class CounterpartyPartyTests(LedgerSummaryTests):
         from services.financial.counterparty_parties import counterparty_party_analysis
         a,_=self.add(100);b,_=self.add(200);c,_=self.add(300)
         for row in (a,b,c):row.counterparty_raw='Same raw name'
+        from postgres.models.financial import FinancialAccount
+        self.db.get(FinancialAccount, a.account_id).account_type='credit_card'
         self.db.commit();self.assign([a,b])
         base=capture_ledger_snapshot(self.db,case_id=self.case.id)
         document=_capture_history(self.db,json.loads(base.content),case_id=self.case.id)
         content=json.dumps(document,sort_keys=True,separators=(',',':'))
         export=LedgerExport(LedgerSnapshot(content,hashlib.sha256(content.encode()).hexdigest(),len(content.encode())),'{}')
         result=counterparty_party_analysis(export)
+        self.assertTrue(result['has_credit_card_readings'])
         self.assertEqual(len(result['counterparties']),2)
         linked=next(g for g in result['counterparties'] if g['party'])
         self.assertEqual(set(linked['transaction_ids']),{str(a.id),str(b.id)})

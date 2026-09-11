@@ -1,3 +1,4 @@
+import { SavePaymentSelection } from "./SavePaymentSelection"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -35,9 +36,10 @@ export function FinancialCaseTimeline({
     <section aria-label="Financial case timeline" className="space-y-4 p-4">
       <h2 className="font-semibold">Payments in case context</h2>
       <p>
-        Read current ledger postings beside case events. Date proximity is a
-        review aid; it does not establish that an event explains or corroborates
-        a payment.
+        Compare payments with events recorded in this case. Choose an account or
+        dates, load the timeline, and open a payment or event to inspect its
+        evidence. Dates close together are a starting point for investigation,
+        not proof of a connection.
       </p>
       <InvestigationFilters
         key={JSON.stringify(params)}
@@ -47,15 +49,15 @@ export function FinancialCaseTimeline({
       />
       <RequestedCoveragePanel caseId={caseId} params={params} />
       <label>
-        Timeline population{" "}
+        Payments to include{" "}
         <select
-          aria-label="Timeline population"
+          aria-label="Payments to include"
           className="border bg-background p-2"
           value={population}
           onChange={(e) => setPopulation(e.target.value)}
         >
-          <option value="working">Working readings, including P3</option>
-          <option value="verified">Verified only</option>
+          <option value="working">All imported payments</option>
+          <option value="verified">Verified payments only</option>
         </select>
       </label>
       <TimelineScope
@@ -79,7 +81,8 @@ function TimelineScope({
   const [source, setSource] = useState<string | null>(null),
     [search, setSearch] = useState(""),
     [page, setPage] = useState(0),
-    [kind, setKind] = useState("both")
+    [kind, setKind] = useState("both"),
+    [selected, setSelected] = useState<string[]>([])
   const selectNodes = useGraphStore((s) => s.selectNodes),
     expand = useUIStore((s) => s.expandGraphPanelTo)
   const load = useMutation({
@@ -198,17 +201,21 @@ function TimelineScope({
       {load.isError && <p role="alert">{load.error.message}</p>}
       {data && (
         <>
-          <p>{data.ledger.limitation}</p>
+          <details>
+            <summary className="cursor-pointer">
+              How the timeline was assembled
+            </summary>
+            <p>{data.ledger.limitation}</p>
+          </details>
           <p>
-            {data.ledger.rows.length} current ledger postings;{" "}
-            {data.ledger.excluded_rows} excluded readings. Case events are shown
-            for the case and selected dates, independently of the selected
-            ledger account.
+            {data.ledger.rows.length} payments; {data.ledger.excluded_rows}{" "}
+            excluded. The account filter applies to payments. Case events use
+            the selected dates.
           </p>
           {data.eventsError ? (
             <p role="alert">
-              Case events could not be loaded. The ledger remains available;
-              this is not an empty case-event result.
+              Case events could not be loaded. Payments are shown below. Select
+              Load payments and case events to try again.
             </p>
           ) : (
             <p>
@@ -251,15 +258,15 @@ function TimelineScope({
                   setPage(0)
                 }}
               >
-                <option value="both">Postings and case events</option>
-                <option value="posting">Ledger postings</option>
+                <option value="both">Payments and case events</option>
+                <option value="posting">Payments</option>
                 <option value="event">Case events</option>
               </select>
             </label>
           </div>
           <p>
             {visible.length} items match this display. Case-event amounts are
-            context and are never added to ledger totals.
+            shown separately and are not added to payment totals.
           </p>
           {!visible.length && (
             <p>
@@ -270,11 +277,24 @@ function TimelineScope({
           <ol className="space-y-3">
             {visible.slice(page * 50, page * 50 + 50).map((item) => (
               <li key={item.key} className="border-l-2 border-primary pl-4">
+                <label className="flex items-center gap-2 mb-2 text-sm">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${item.kind === "posting" ? item.row.description || "payment" : item.event.name} on ${item.date}`}
+                    checked={selected.includes(item.key)}
+                    onChange={(e) =>
+                      setSelected((previous) =>
+                        e.target.checked
+                          ? [...new Set([...previous, item.key])].slice(0, 100)
+                          : previous.filter((key) => key !== item.key)
+                      )
+                    }
+                  />
+                  Include in my observation
+                </label>
                 <p className="font-semibold">
                   {item.date} ·{" "}
-                  {item.kind === "posting"
-                    ? "Ledger posting"
-                    : "Case event — context"}
+                  {item.kind === "posting" ? "Payment" : "Case event"}
                 </p>
                 {item.kind === "posting" ? (
                   <>
@@ -283,8 +303,7 @@ function TimelineScope({
                       {correctionMoney(
                         item.row.amount_minor,
                         item.row.currency
-                      )}{" "}
-                      · {item.row.proof_class.toUpperCase()}
+                      )}
                     </p>
                     <p>{chronologyLabels[item.row.chronology_basis]}</p>
                     <p>{item.row.description}</p>
@@ -292,7 +311,7 @@ function TimelineScope({
                       variant="outline"
                       onClick={() => setSource(item.row.key)}
                     >
-                      Open posting source {item.row.key.slice(0, 8)}
+                      Open payment
                     </Button>
                   </>
                 ) : (
@@ -333,6 +352,47 @@ function TimelineScope({
               </Button>
             </div>
           )}
+          <p className="text-sm">
+            Select payments and events above to save an observation with their
+            sources. At least one payment is needed for a financial observation.
+          </p>
+          <SavePaymentSelection
+            caseId={caseId}
+            ids={all
+              .filter(
+                (item) => item.kind === "posting" && selected.includes(item.key)
+              )
+              .map((item) => (item.kind === "posting" ? item.row.key : ""))}
+            analysis={{
+              kind: "payment-event-observation",
+              summary:
+                "Saves the selected payments and case events together with your explanation. Nearby dates alone do not establish a connection.",
+              details: {
+                snapshot_sha256: data.ledger.snapshot_sha256,
+                captured_at: data.capturedAt,
+                population,
+                scope: params,
+              },
+            }}
+            extraLinks={all.flatMap((item) =>
+              item.kind === "event" && selected.includes(item.key)
+                ? [
+                    {
+                      target_type: "graph_entity" as const,
+                      target_id: item.event.key,
+                      target_label: item.event.name,
+                      relationship: "context" as const,
+                      source_anchor: { event_key: item.event.key },
+                      metadata: {
+                        schema: "loupe.financial.event_context/1",
+                        date: item.event.date,
+                        summary: item.event.summary,
+                      },
+                    },
+                  ]
+                : []
+            )}
+          />
           <Button onClick={download}>
             Download captured timeline and display filters
           </Button>

@@ -14,7 +14,7 @@ Step-by-step instructions for reviewing financial records, investigating payment
 6. [Confirm the statement import](#confirm-the-statement-import)
 7. [Read a statement again](#read-a-statement-again)
 8. [Record how a source was received](#record-how-a-source-was-received)
-9. [Read and filter the ledger](#read-and-filter-the-ledger)
+9. [Read and filter transactions](#read-and-filter-transactions)
 10. [Correct a reading or change its inclusion](#correct-a-reading-or-change-its-inclusion)
 11. [Check statements and missing periods](#check-statements-and-missing-periods)
 12. [Review duplicates](#review-duplicates)
@@ -59,53 +59,54 @@ The normal order of work is:
 4. Search and filter the transactions, examine their sources and investigate counterparties and transfers.
 5. Save notes and download reports with the supporting statement references.
 
-### Understand the totals and older review records
+### Understand which payments are included
 
-| What you see | What it means for your work |
-|---|---|
-| A possible reading or candidate | A proposed reading saved for review. It is outside the ledger totals. |
-| A resolved reading | You have recorded a decision about it. It still needs finalization before it becomes a ledger row. |
-| Working readings, including P3 | Current eligible documentary readings used for working analysis. Manually reviewed PDF rows can appear here. |
-| Verified only | A narrower population that meets the application's verification and source rules. Resolving or finalizing a PDF does not automatically put it here. |
+**All imported payments** includes the current payments you confirmed from statements. **Verified payments only** is a narrower view based on the application's verification checks. A PDF you checked and imported can appear in the first view while remaining outside the second. Use **All imported payments** for the normal investigation of imported statements.
 
-A working total of 1,000.00 and a verified total of 0.00 can therefore both be correct. Check the population label before quoting any number. An empty result means no rows were returned under the selected rules. It does not establish that no payments occurred.
+Totals are kept separate by currency. In Transactions, bank payments and credit-card entries are also totalled separately. Bank money in increases funds held; a card credit reduces money owed. The difference between credits and debits is not the account's closing balance.
+
+Older manual reviews may use terms such as candidate, resolved reading or finalization. Those are explained in **Advanced manual review**. The normal statement import handles those internal steps for you.
 
 ## Find your way around
 
 1. Open the Loupe address supplied by your administrator.
 2. Enter your username and password, then select **Sign in**.
-3. Open the case you are authorised to work on. Check the case name before uploading or recording anything.
+3. Open the case you will work on. Check its name before uploading or recording anything.
 4. Select **Financial** in the case navigation.
-5. Use the tabs across the financial page. Scroll the page or tab strip when controls are outside the visible area.
+5. Use the main tabs for everyday investigation. Open **More financial tools** for further analysis and history.
 
-![Financial page in a synthetic development case](images/12-imported-transactions.png)
+![Transactions with filters, payment totals and investigation actions](images/14-investigation-transactions.png)
 
-*The financial page contains separate tabs for the ledger, review history and analysis. The case name identifies where your work is being recorded.*
+*Each payment has an Open transaction button and an Add note action. The table contains imported payments; statement preparation has its own workspace.*
 
-| Tab | Use it to |
+| Main tab | What you can do |
 |---|---|
-| Import history | Inspect older page-by-page PDF reviews, evidence classes and duplicate comparisons. |
-| Statements | Check recorded balances, printed controls and statement date coverage. |
-| Held out | Inspect rows excluded from normal ledger use and record permitted inclusion decisions. |
-| Attempts | Find recorded financial loading attempts and whether they completed. |
-| Decisions | Read who changed a reading or its treatment, why, and what changed. |
-| Transactions | Browse current documentary ledger postings and their source references. |
-| Counterparties | Compare recorded payment names and review links to people or organisations. |
-| Posting graph | Inspect accounts and recorded counterparty labels connected by individual postings. |
-| Transfers | Compare possible incoming and outgoing sides of transfers between accounts. |
-| Patterns | Review repeated payments, short payment paths and payment claims. |
-| Case context | Read payments alongside wider case events. |
-| Conditional tracing | Calculate explicitly stated tracing assumptions or prepare an indirect workpaper. |
-| Trends | Compare ledger amounts over time. |
+| Transactions | Search payments, inspect original statements, correct values and save selected payments with a note. |
+| Statements | Upload one or several PDFs, check their readings, confirm imports and check account balances or missing periods. |
+| Findings | Reopen saved notes, payment selections and calculations. Download a note and its supporting records. |
+| People and businesses | Compare how much each name paid or received, open its payments and record name links. |
+| Transfers | Compare the outgoing and incoming sides of possible transfers and save your explanation. |
+| Patterns | Find repeated names or amounts, quick movements and smaller payments that add up to a chosen amount. |
+| Trends | Compare payments by day or month and open the payments behind a total. |
 
-**Financial Intelligence**, where offered, is a separate set of extracted information. Use documentary ledger views for the reviewed financial workflow in this guide. An amount mentioned in a letter or interview is not a bank transaction merely because it appears in intelligence results. Section 15 explains how to compare a claim with the ledger.
+| Under More financial tools | What you can do |
+|---|---|
+| Payment graph | See connections between accounts and recorded payment names. Open connected payments. |
+| Trace funds | Compare rules for allocating withdrawals to funds you have identified, or prepare an indirect financial calculation. |
+| Payments and case events | Compare payment dates with wider case events and save an observation linked to both. |
+| Import review | Inspect older manual PDF reviews, duplicate documents and technical verification records. |
+| Excluded transactions | Inspect payments left out of the current totals and reconsider their inclusion. |
+| Processing history | Find statement-reading attempts and see why one stopped or failed. |
+| Change history | Read who changed a transaction, what changed and why. |
+
+**Imported statement payments** and **Other financial records** are separate sets of information. Use the first for the statement workflow in this guide. The second contains information extracted from other evidence. An amount mentioned in a letter or interview is not automatically a bank transaction. Use the payment-claim comparison in Patterns to compare such a statement with recorded payments.
 
 ## Add a PDF
 
 ### Upload a bank or credit-card statement
 
 1. Open the correct case and select **Financial**. The **Transactions** tab opens first.
-2. Select **Import a statement**, then **Upload a statement**.
+2. Select **Add statements** to open Statements. Select **Import a statement** if the review is closed, then **Upload a statement**.
 3. Select **Choose PDF** and choose your statement from your computer. Use **Change PDF** if you picked the wrong file.
 4. Check its filename, then select **Upload and read statement** once.
 5. Wait for Loupe to read the pages. Scanned statements take longer because their letters and numbers must be read from images.
@@ -128,6 +129,10 @@ You do not need to assign columns, select every payment, save a batch or finaliz
 5. Select another filename to switch files. Use **Search filenames** to narrow the list. The added time and short identifier distinguish files with the same name.
 6. Return to a file to continue its review. Changes are saved when you switch; its selected statement period and page are remembered during this session.
 7. Check and confirm each statement separately. Bulk upload does not automatically confirm transactions.
+
+If a file has not been read, select **Read statement** beside its name. If reading failed, select **Retry reading**. These actions read the PDF already in the case; you do not need to upload it again. Wait for **Ready to review**, then select the filename. Files being processed cannot be started again from this panel.
+
+A file with saved imports shows its current imported payment count, account and recorded periods. This count is read from the case and remains available after reopening your browser. A PDF can contain other periods that have not been imported yet. Open the file to check those periods; the count does not mean the whole PDF is complete. Replaced or excluded payments are not included in this count.
 
 If a request fails, select **Refresh files** and inspect what arrived before uploading another copy. A connection failure can occur after the server received a file. Closing the browser tab can stop uploads that have not yet been sent. Refreshing the page clears the in-memory upload queue and page selections; uploaded files remain in the case, and saved review drafts can be restored by reopening the same statement and period in the same browser tab.
 
@@ -164,10 +169,12 @@ An opening balance, closing balance, column heading or disclosure paragraph is n
 ### Compare a field with the PDF
 
 1. In **Extracted statement**, select the printed value you want to inspect.
-2. Read the original PDF alongside it. The table retains the stored printed text, column order and empty cells; it does not replace Credit and Debit with an invented Direction column.
+2. Read the original PDF alongside it. The table uses the printed column headings, order and blank cells where they can be identified. It does not replace Credit and Debit with a Direction column.
 3. Compare the date, description, credit or debit amount and balance. The PDF remains the original evidence if its extraction differs.
 4. Use zoom and **Fit source width** to read small print. **Show highlighted value** returns you to the selected location.
 5. If the page has no exact highlight, inspect the whole cited page. A page link is less precise than a field highlight.
+
+On a complex page, transaction tables are shown as separate sections. Advertisements and other page text are available under **Other extracted page text**. Rows needing a layout check stay visible. Compare them with the PDF before deciding whether anything is missing.
 
 Select **Edit import values** above the viewer, then select **Show problems and edits only** to concentrate on rows that need attention. Turn it off again to inspect all proposed transactions. This filter only changes what you see; it does not remove rows from the import.
 
@@ -224,7 +231,7 @@ Do not guess an unreadable year, amount or direction to make the button availabl
 3. Select **Confirm import of [number] transactions** once.
 4. Wait for the confirmation. Loupe records the statement, included transactions, original extraction and your corrections together.
 5. You return to **Transactions**, where the imported payments appear in the table and working totals.
-6. Use the account and date filters, open a transaction's source, or move to **Counterparties**, **Trends**, **Transfers** or **Patterns** to investigate.
+6. Use the account and date filters, open a transaction's source, or move to **People and businesses**, **Trends**, **Transfers** or **Patterns** to investigate.
 
 ![Imported transactions ready for investigation](images/12-imported-transactions.png)
 
@@ -251,7 +258,7 @@ If you refresh the page while processing, reopen the same uploaded statement in 
 
 Do not repeatedly reprocess without checking the result. OCR can repeat the same error; correcting a readable value against the source may be the appropriate next step.
 
-The older page-by-page review tools remain available under **Import history** for existing batches and exceptional layouts. They are described in the [advanced manual review appendix](#advanced-manual-review). They are not required for a normal statement import.
+The older page-by-page review tools remain available under **Import review** for existing batches and exceptional layouts. They are described in the [advanced manual review appendix](#advanced-manual-review). They are not required for a normal statement import.
 
 ## Record how a source was received
 
@@ -271,12 +278,12 @@ Custody records describe how a source came into the case and any reported transf
 
 To correct a report, select **Correct this custody report**, enter the corrected account and reason, then save. The correction adds a record; it does not erase the earlier one. “No custody reports recorded” means earlier custody is unknown, not that custody was verified or uninterrupted.
 
-## Read and filter the ledger
+## Read and filter transactions
 
 ### Choose the records to examine
 
 1. Open **Transactions**.
-2. Choose an account in **Account**, or leave **All accounts** selected. Expand **Find another account or inspect the date scope** if the account you need is not listed.
+2. Choose an account in **Account**, or leave **All accounts** selected. Expand **Search accounts or check which dates are used** if the account you need is not listed.
 3. Enter **From** and **To** when restricting dates. Both endpoints are included.
 4. Select **Apply**, or **Reset** to return to all accounts and dates.
 5. The applied account and dates follow you between Transactions, Counterparties, Trends, Posting graph, Patterns and Case context during this visit. Read the scope displayed above the answer. Unsaved filter edits do not change the current result.
@@ -288,65 +295,82 @@ An ordering date is the date Loupe uses to place a reading in sequence. For some
 
 *Use the table and population labels to understand which readings the view contains. Example amounts in this guide are synthetic.*
 
-### Search and sort the displayed population
+### Search and sort payments
 
-1. In **Browse ledger rows**, type a description, name or reference into **Find in loaded rows**.
-2. Choose **Table currency** before setting an amount range.
-3. Enter **Table minimum amount** and **Table maximum amount** if needed. Bounds are inclusive.
-4. Choose **Incoming** or **Outgoing** independently from the amount.
-5. Choose **Table proof class** if you need one class.
-6. Select the desired **Table order**. Sorting by amount requires one currency.
-7. Use **Previous ledger rows** and **Next ledger rows** to inspect later pages.
-8. Select **Reset table view** to remove the table-only settings.
+1. Type a description, name or reference into **Search payments**.
+2. Choose **Currency** if you want one currency.
+3. Open **More filters** to enter a minimum or maximum amount. Choose a currency first. Both amount limits are included.
+4. Use **Money in or out** to show credits or debits. For a credit card, check the row's card explanation before interpreting these as cash movements.
+5. Use **Sort payments** to change the order. Amount sorting needs one currency.
+6. Use **Previous ledger rows** and **Next ledger rows** when there are more than 50 matches.
+7. Select **Clear payment filters** to remove the search, currency, amount and sort settings. The account and date filters above remain as you applied them.
 
-A table search is narrower than the applied account/date capture. It does not search unprocessed PDFs. Changing currency clears the amount range so an old amount is not reused against a different currency.
+The total labelled **Payments matching your filters** covers all matching table pages. It changes when you search. It does not include unprocessed PDFs. Changing currency clears the previous amount range.
 
-### Open the source and the rows behind a total
+### Open a payment and its source
 
-Select **View source** on a reading. Check the original amount, page and source reference. Where a precise location is available, use the highlighting to find the printed value. If the original location is unavailable, inspect the document manually and record that limitation.
-
-Open a credit, debit or net contribution control on the summary to see the exact rows contributing to it. Page through those rows and open their sources. Compare like currencies. Net postings are money in minus money out in the selected records; they are not an account balance without a supported opening balance and complete movements.
+1. Select a payment's description or **Open transaction**.
+2. Read its date, amount, recorded payer or payee and bank reference.
+3. Use the source controls to open the original document. Where a precise location is available, the relevant value is highlighted.
+4. Use **Correct a value** if a recorded field is wrong, or **Add investigation note** to record a question or observation.
+5. Close the detail panel to return to the same payment list.
 
 ### Record an investigation note
 
-1. Select **Add note** on the transaction, or **Add investigation note** while its source is open.
-2. In **Your note**, record the question, observation or follow-up you want to keep.
+1. Select **Add note** beside a transaction, or **Add investigation note** in its details.
+2. Type your observation in **Your transaction note**.
 3. Select **Save investigation note** and wait for **Note saved**.
-4. Select **Open Workspace** to reopen the saved note. It is linked to the transaction reading and original statement.
-5. Reopen Workspace later to review or edit the note. A ledger export includes linked notes within its captured transaction scope.
+4. Open **Findings** to reopen it, or use the link to Workspace to edit it.
 
-A note does not change a transaction or its totals. If the transaction is later corrected, the note retains the original reading's reference so a colleague can see exactly what you were discussing.
+Unfinished note text stays in this browser tab when you close and reopen the details. Save it before closing the browser tab. A saved note is linked to the transaction and its statement. Later corrections do not rewrite the source reference you were discussing.
+
+### Save several payments together
+
+1. Tick the checkbox beside each payment you want to discuss together. You can select up to 100.
+2. Alternatively, use **Select matching payments (up to 100)** after searching.
+3. Read the selected-payment totals. If selected payments fall outside the account/date range now displayed, the screen tells you how many will still be included.
+4. Select **Save selection with a note**.
+5. Enter **Name for this selection**, such as “Payments to supplier in March”.
+6. Under **What did you notice?**, explain the question or observation.
+7. Select **Save payments and note**. Wait for the saved confirmation.
+8. Open **Findings** and find your title. Select a linked payment to inspect its source again.
+
+The saved selection keeps the payment values as they were when saved. Opening a linked payment shows its current record or correction history. A colleague with access to the case can read the saved note; your unfinished browser draft is not shared.
+
+![Saved notes and payment selections](images/15-financial-findings.png)
+
+*Use Findings to return to investigation work. Each entry keeps its note and supporting records together.*
 
 ## Correct a reading or change its inclusion
 
 ### Correct a transaction
 
-1. Locate the current reading in the ledger.
-2. Open its correction action and inspect the original source.
-3. Select **Correct transaction**. Its current fields are filled in. Correct the printed date, description, counterparty, reference, transaction type, amount, direction or balance as needed. Leave an unprinted date or balance empty; at least one date is required.
+1. Locate the payment in **Transactions**.
+2. Select **Open transaction** and compare it with its original statement.
+3. Select **Correct a value**. Its current fields are filled in. Correct the printed date, description, counterparty, reference, transaction type, amount, direction or balance as needed. Leave an unprinted date or balance empty; at least one date is required.
 4. Select **Preview correction**.
 5. Read **Changes to record** and compare the before and after statement controls. Read any warning that the document will be excluded from verified totals or the replacement remains held out.
 6. Enter **Reason for correction**, identifying the source and the error.
 7. Select **Record correction** in the preview.
-8. Read the saved outcome, then inspect **Decisions** and the original/replacement readings.
+8. Read the saved outcome, then inspect **Change history** and the original/replacement readings.
 9. Reload the affected ledger and analysis views before using their totals. Recalculate any saved scenario you intend to use with the new readings.
 
 For example, correcting a misread `61.26` to printed `61.62` creates a replacement. The original reading, source and reason remain available. Do not treat a saved export made before the correction as a current report.
 
 ### Hold a row out or restore it
 
-1. Select **Set aside** on a current ledger row, or the action to let a row back in from **Held out**.
+1. In a transaction's details, select **Exclude from totals**. To restore one, open **More financial tools**, then **Excluded transactions**, and use the inclusion action beside the row.
 2. Read the current status and proposed action.
 3. Inspect its source and previous decisions.
 4. Enter the reason for the permitted action and confirm it.
 5. Read whether anything was actually changed.
-6. Check both the ledger and **Held out** after refreshing.
+6. Check both the ledger and **Excluded transactions** after refreshing.
 
 Restoring a row does not automatically make it verified. A correction or another exclusion may still affect its eligibility. If the application says someone changed the record since you opened it, reload and reassess the current record instead of resubmitting a stale form.
 
 ### Read the decision history
 
-Open **Decisions**. Expand the relevant decision to inspect the reason, actor, time and affected records. For corrections, use **Original and replacement readings** and the available balance comparisons. Historical checks describe the records at that time; inspect current **Statements** for the latest checks.
+Open **Change history**. Expand the relevant decision to inspect the reason, actor, time and affected records. For corrections, use **Original and replacement readings** and the available balance comparisons. Historical checks describe the records at that time; inspect current **Statements** for the latest checks.
 
 ## Check statements and missing periods
 
@@ -386,12 +410,12 @@ An overlap may reflect repeated statements or deliberately overlapping records. 
 
 ### Compare documents in this case
 
-1. On **Import history**, find **Duplicate candidates** and select **Compare documents**.
+1. On **Import review**, find **Duplicate candidates** and select **Compare documents**.
 2. Inspect the compared account and period coverage, source hashes and stored readings.
 3. Open both original sources. Check whether the documents represent the same evidence and whether one has information the other lacks.
 4. Read matching source hashes across different or missing coverage separately. Identical bytes do not make two differently reviewed scopes interchangeable.
 5. If excluding a duplicate is justified, use the available exclusion action and give a reason identifying the copy you are retaining.
-6. Check the decision confirmation, current ledger totals and **Decisions**.
+6. Check the decision confirmation, current ledger totals and **Change history**.
 
 For a bulk exclusion, inspect every selected document before confirming. Keep at least the intended retained evidence and read the affected counts. Do not exclude candidates solely because their amounts match.
 
@@ -411,20 +435,20 @@ A cross-case match does not merge cases or give access to restricted records. If
 
 ## Investigate names, accounts and trends
 
-### Read counterparty totals
+### Compare people and businesses
 
-1. Open **Counterparties** and use the ledger counterparty analysis.
-2. Apply the account and ordering dates for the question you are investigating.
-3. Choose **Analysis population**: Working readings, including P3, or Verified totals only.
-4. Load the analysis using its read control.
-5. Inspect incoming and outgoing totals separately for each currency.
-6. Expand the contributing readings and inspect their sources.
+1. Open **People and businesses**.
+2. Apply the account and dates for your question. The totals load for that selection.
+3. Read the totals and choose a currency for the chart if necessary.
+4. Select **View payments** beneath a name, or select that name's payment button in the chart.
+5. The payment list shows dates, descriptions and amounts. Open a payment to inspect its source or add a note.
+6. Select payments and use **Save selection with a note** to keep your observation in Findings.
 
-The same printed name can refer to different people. Different spellings can refer to the same person. The default label grouping does not decide either question.
+The same printed name can refer to different people. Different spellings can refer to the same person. Open **Link different names for the same person or business** when you have evidence for a link. Additional choices, including **Verified payments only**, are under **Analysis settings, statement coverage and downloads**.
 
 ### Link accounts to a reviewed person or organisation
 
-1. In **Transfers**, load the comparison, scroll to **Account flow perspective** and select **Review account-to-party links**. This opens **People and organisations linked to accounts**.
+1. In **Transfers**, load the comparison, scroll to **Money entering and leaving an account group** and select **Review account-to-party links**. This opens **People and organisations linked to accounts**.
 2. Reload the links and inspect existing decisions.
 3. Select the accounts you intend to link.
 4. Choose an existing party or **A new person or organisation**.
@@ -443,41 +467,42 @@ To undo a link, select the accounts, choose **Remove the existing links**, provi
 5. Choose an existing reviewed party or enter a new party name.
 6. Enter **Reason and supporting source interpretation**.
 7. Select **Save payment identity links** and inspect the saved history.
-8. In counterparty analysis, select **Group by reviewed payment identity** if you want totals grouped by those decisions.
+8. In counterparty analysis, select **Combine names I have linked to the same person or business** if you want totals grouped by those decisions.
 
 Name suggestions help find possible links. Check each suggestion's explanation and competing identities before selecting it. Links apply to the selected readings, not automatically to every future payment with a similar name. Use **Remove the selected links** with a reason when undoing them.
 
-### Inspect the posting graph
+### Inspect the payment graph
 
-1. Open **Posting graph**.
-2. Choose its working or verified population and apply the needed scope.
-3. Wait for the current postings to load.
-4. Select a graph node to inspect its connected postings.
-5. Open individual source readings from the accompanying list.
-6. Use **All postings** to return from the selected node and page through the list if needed.
+1. Open **More financial tools**, then **Payment graph**.
+2. Apply the account and dates you need.
+3. Select **Show connections** if they have not loaded.
+4. Select an account or name in the graph, or use **Choose an account or name**.
+5. Open its connected payments. Select individual payments to inspect their statements or save them with a note.
 
-Each arrow represents a posting. An outgoing entry in one account and an incoming entry in another can therefore appear separately. Use a reviewed transfer scenario to count a proposed internal movement once.
+Each arrow represents a recorded payment. The outgoing and incoming sides of a transfer can therefore appear separately. Use Transfers when you want to compare them as one movement.
 
 ### Read trends
 
-1. Open **Trends** and use the ledger date analysis.
-2. Apply account and date filters, then choose the population.
-3. Load the date totals and choose the available daily or monthly grouping.
-4. Inspect incoming and outgoing amounts by currency.
-5. Open the contributing readings behind a period that needs explanation.
+1. Open **Trends** and apply the account and date filters.
+2. Choose daily or monthly under **Group payments by**.
+3. Select **Show totals** if the results have not loaded.
+4. Compare credits and debits for the selected currency. Select a period's payment button in the chart to inspect that period.
+5. Open a payment, or select several and save a note explaining the change you want to investigate.
 
-A peak can reflect missing periods, a large transfer or a genuine change in activity. Inspect sources and coverage before describing a trend as behaviour.
+Check Statements for missing periods before interpreting a peak or fall. A large transfer can also change a period's totals without representing income or spending outside the account group.
 
-### Put payments alongside case events
+### Compare payments with case events
 
-1. Open **Case context**.
-2. Choose the timeline population and apply the desired account/date scope.
-3. Read the status of the wider case events. A failed event load is different from no events.
-4. Use **Search this timeline** and **Timeline item type** to narrow the display.
-5. Open a payment's source or the associated case event record.
-6. Select **Download captured timeline and display filters** to retain the view.
+1. Open **More financial tools**, then **Payments and case events**.
+2. Apply the account and dates. The account selection limits payments; the date selection also limits case events.
+3. Select **Load payments and case events**. If events fail to load, payments remain available and a message explains the failure.
+4. Use **Search this timeline** and **Show** to narrow the display.
+5. Select **Open payment** or the event's button to inspect its evidence.
+6. Tick the payments and events you want to discuss. Select at least one payment.
+7. Select **Save this analysis with a note**, enter a title and observation, then select **Save payments and note**.
+8. Reopen the entry in **Findings**. Its payment and case-event references are both attached.
 
-A payment near an event in time does not establish that one explains the other. Unusable event dates can be absent from the chronological display while remaining in the download.
+Nearby dates do not prove a connection. Events with unusable dates may be absent from the ordered list. The timeline download retains those original records for inspection.
 
 ## Compare possible transfers
 
@@ -501,16 +526,17 @@ Matching amounts and compatible dates suggest a possible pair. They do not prove
 ### Calculate a separate pairing scenario
 
 1. Select the pairs you want to test. A posting can be used only once.
-2. Enter **Basis for these pairings**, explaining the evidence and remaining uncertainty.
-3. Select **Calculate paired movement scenario**.
+2. Under **Why do you think these payments are transfers?**, explain the supporting evidence and any uncertainty.
+3. Select **Compare totals using these transfers**.
 4. Read the conditional movement totals and exclusions.
-5. Select **Download scenario with source references** to keep the calculation and its assumptions.
+5. Select **Save this analysis with a note** to keep the selected payments, comparison and your explanation in Findings.
+6. Use **Download scenario with source references** when you also need the calculation file.
 
 The selected pair counts once in this scenario. The original incoming and outgoing ledger postings remain unchanged.
 
 ### Examine money entering and leaving an account group
 
-1. In the scenario's **Account flow perspective**, select the accounts to examine together.
+1. In the scenario's **Money entering and leaving an account group**, select the accounts to examine together.
 2. If using saved party links, check exactly which linked accounts are present in the loaded scope.
 3. Read internal movements separately from external incoming and outgoing amounts.
 4. Inspect unpaired postings that could still be internal transfers.
@@ -531,16 +557,18 @@ The working or verified selection follows you between Trends, Counterparties, Po
 3. Set **Screening window days**.
 4. For a split-payment check, enter **Threshold amount** and **Threshold currency**. Leave the amount blank to omit this check.
 5. Enable **Screen paths between accounts** if you want to inspect the supported short transfer paths.
-6. Select **Screen captured ledger**.
+6. Select **Find patterns**.
 7. Inspect every relevant candidate's source readings, timing and alternative explanations.
-8. To retain a theory, enter **Theory title** and **Reasoning and alternative explanations**, then select **Save proposed theory with sources**.
+8. To retain a theory, enter **Theory title** and **Reasoning and alternative explanations**, then select **Save explanation and supporting payments**.
 9. Select **Open Workspace** to confirm the theory and supporting attachments were saved.
 
 ![Pattern review controls](images/06-patterns.png)
 
 *The optional amount threshold is your chosen search criterion. The result is a set of readings to investigate.*
 
-Repeated equal amounts, quick incoming/outgoing movements and split payments can have ordinary explanations. A threshold you choose is not automatically a reporting threshold, and a candidate is not a finding about intent.
+Repeated-name results include payments with different amounts. They require at least three payments to or from the same recorded name, in the same account and currency, on at least three dates. The short day window applies to the other related-payment checks.
+
+Repeated names, equal amounts, quick incoming/outgoing movements and split payments can have ordinary explanations. A threshold you choose is not automatically a reporting threshold, and a candidate is not a finding about intent.
 
 ### Compare a stated payment with the records
 
@@ -564,7 +592,7 @@ Tracing asks how selected calculation rules allocate money under assumptions you
 
 ### Load the account
 
-1. Open **Conditional tracing**.
+1. Open **More financial tools**, then **Trace funds**.
 2. Select **Trace one account**.
 3. Find and select one account.
 4. Enter both ordering-date bounds and select **Apply ledger filters**.
@@ -587,16 +615,17 @@ Tracing asks how selected calculation rules allocate money under assumptions you
 7. Select the calculation methods to compare.
 8. Select **Calculate conditional scenario**.
 9. Read each method's result, warnings and unidentified withdrawals.
-10. Download the conditional scenario and readable report before changing assumptions or leaving the page.
+10. Open **Save this calculation in Findings**, enter a name and note, then select **Save calculation and note**.
+11. In **Findings**, select **Open saved calculation** to reopen the assumptions, results and source references. You can download its readable report there. Reopening does not recalculate it using later corrections.
 
 ### Understand the calculation choices
 
 | Method shown | How to read its role in your scenario |
 |---|---|
-| Lowest intermediate balance | Tests how much attributed money survives under the method's treatment of withdrawals and later deposits. Read the detailed result and any ambiguity. |
+| Lowest intermediate balance | Uses money not assigned to a claim first. Once claimed money is spent, later deposits do not restore it. |
 | First in first out | Allocates withdrawals against earlier money before later money. Same-day order can affect the result. |
 | Last in first out | Allocates withdrawals against later money before earlier money. Same-day order can affect the result. |
-| Direct | Attempts one-to-one allocation where the captured records support it. Inspect any amount left unidentified instead of treating it as an allocation. |
+| Direct amount matching | Matches the funded part of a withdrawal only when one available deposit or attributed portion has that amount. No unique match leaves it unidentified. Equal amounts alone do not prove origin. |
 | Pro rata | Allocates a withdrawal proportionally across the available components under the calculation's rules. Inspect rounding in the detailed output. |
 
 Use the methods offered by the selected screen and record why you are comparing them. Loupe does not decide which method should govern the case. If methods produce different answers, retain that difference and explain the assumptions rather than presenting only the most favourable number.
@@ -605,7 +634,7 @@ Editing an assumption clears a stale result. Calculate again and save a new scen
 
 ## Trace funds between accounts
 
-1. Open **Conditional tracing**, then **Trace between accounts**.
+1. Open **More financial tools**, then **Trace funds** and **Trace between accounts**.
 2. Enter **Trace from date**, **Trace through date**, population and transfer date tolerance.
 3. Select **Load cross-account inputs**.
 4. Choose the currency if more than one is present.
@@ -617,7 +646,8 @@ Editing an assumption clears a stale result. Calculate again and save a new scen
 10. Select the methods to compare.
 11. Select **Calculate cross-account scenario**.
 12. Read the results by method, account and transfer step, including all warnings.
-13. Select **Download cross-account scenario**, and retain the readable report or audit package when required.
+13. Use **Save this calculation in Findings** to keep the assumptions and results with your note.
+14. Select **Download cross-account scenario**, or download its readable report or audit package when required.
 
 The calculation retains each account's original movements. It does not rewrite ledger dates or confirm ownership.
 
@@ -656,7 +686,7 @@ The receipt already appears in the cash calculation. The resale interpretation d
 
 An indirect workpaper compares source-supported amounts where direct payment records do not answer the whole question. The form records your assessed inputs and work performed.
 
-1. Open **Conditional tracing**, then **Indirect review methods**.
+1. Open **Trace funds**, then **Indirect review methods**.
 2. Choose a method from **Method**.
 3. Enter the subject, currency and review dates.
 4. Select **Search indirect sources** to find supporting files in the case.
@@ -685,6 +715,20 @@ The required review covers starting assets and cash, non-income explanations, re
 To resume a downloaded workpaper, use **Restore indirect workpaper** and select the original downloaded file. Inspect its restored subject, dates, inputs and result before editing. Changing a field clears the old result until recalculated.
 
 ## Download reports and supporting records
+
+### Make a report from a saved note
+
+1. Open **Findings** and find the note you want to report.
+2. Expand **Create a report from this note**.
+3. Read what will be included. The report covers that note and its attached payment values and references.
+4. Choose **Download this note and its payments** for a readable HTML file without original PDFs. Open the file in a browser. Use the browser's Print command if you need to save it as a PDF.
+5. To include the supporting PDFs, review the listed files and select **Download report with source PDFs**.
+6. Extract the downloaded ZIP. Open `report.html`. Its source links open the originals in the `statements` folder. `references.json` records the note version and file references.
+7. Check the content before sharing. Each included PDF is the whole original file and may contain other statement periods.
+
+The PDF package supports up to 20 files and 64 MB in total. Loupe checks the downloaded file bytes against their recorded hashes and stops if a source has changed. A saved note's payment values describe the time it was saved. Open its linked payments in Loupe to inspect later corrections.
+
+For a saved tracing calculation, use **Open saved calculation**, then **Download readable tracing report**. The general note report does not replace the detailed tracing report.
 
 ### Choose the right output
 
@@ -726,7 +770,7 @@ Wider case history is intentionally broader than the selected ledger. Read the c
 
 1. Apply the main account/date filters.
 2. Set the table search, currency, amount bounds, direction, proof class and order.
-3. Open **Export this table view** and choose its PDF, originals and history options as needed.
+3. Open **Download these transactions** below the table and choose its PDF, originals and history options as needed.
 4. Download the table-view export.
 5. Inspect its captured search and order in the report.
 
@@ -804,12 +848,14 @@ External timestamping is an administrator-operated process, not a button an inve
 | A partially filled statement | Use Save unfinished statement editor. | Load unfinished statement editor. |
 | Statements already added to a preview | Save statement controls to case. | Load saved statement controls and inspect them. |
 | Custody or identity decisions | Save and confirm the recorded history. | Reload the relevant history before adding or changing anything. |
-| A tracing or pairing calculation | Download the scenario and report you need. | Retain it as a captured result; use current inputs to calculate a new current result. |
+| A tracing calculation | Save this calculation in Findings, then wait for confirmation. Download a report if needed. | Open Findings, then Open saved calculation. Use Trace funds to calculate a new result with current records. |
+| A transfer comparison | Save this analysis with a note. | Open Findings to review its selected payments and explanation. |
+| A selected set of payments | Save selection with a note and wait for confirmation. | Reopen the named entry in Findings. |
 | An indirect workpaper | Download it, and optionally save it in Workspace. | Restore the downloaded workpaper or inspect its Workspace entry. |
 | A pattern theory or claim response | Use the provided Workspace save action and confirm the entry. | Open Workspace and inspect the saved entry and attachments. |
 | A ledger report | Wait for the completed download and retain the ZIP. | Open the retained report or prepare a fresh capture for current records. |
 
-Do not assume an open form has been saved. In particular, unsaved row-review edits, selections, tracing assumptions and local analysis settings are not a substitute for a recorded decision or downloaded result. Closing or refreshing a page can lose unsubmitted work.
+Switching financial tabs keeps visited forms and analysis results during that page visit. Statement drafts and unfinished note text also have browser-tab storage where the screen says so. These are not shared case records. Save your notes and calculations before closing or refreshing the browser; uploads or calculations still running can be interrupted.
 
 If a save's outcome is uncertain, reload the saved record first. A repeated click is not a reliable way to find out whether the first request succeeded.
 
@@ -842,7 +888,7 @@ If a save's outcome is uncertain, reload the saved record first. A repeated clic
 
 ### Inspect recorded loading attempts
 
-1. Open **Attempts**.
+1. Open **Processing history**.
 2. Find the relevant attempt and read its status, start and end times.
 3. Compare **Documents seen**, **Rows admitted** and **Rows set aside**. These are recorded attempt counts, not a guarantee that every source transaction was extracted.
 4. If an attempt did not complete, inspect its available detail and any notice on the Ledger tab.
@@ -852,7 +898,7 @@ PDF preparation status also appears in the PDF intake controls. Use the status f
 
 ### Inspect evidence classes
 
-1. On **Import history**, find **Evidence classification** and select **Refresh classification**.
+1. On **Import review**, find **Evidence classification** and select **Refresh classification**.
 2. Expand **View all classes and their rules**.
 3. Read the displayed counts and rules for automatic admission, required human decisions, whether the class may produce ledger rows and eligibility for totals.
 4. Check held-out and superseded records separately before interpreting these counts as current usable readings.
@@ -916,13 +962,13 @@ Before giving another person the financial work, check these items against the q
 
 ## Advanced manual review
 
-Use these older controls for existing saved batches or an exceptional document that needs manual table interpretation. Start in **Import history**. For an ordinary new statement, use sections 3 to 7 instead.
+Use these older controls for existing saved batches or an exceptional document that needs manual table interpretation. Start in **Import review**. For an ordinary new statement, use sections 3 to 7 instead.
 
 #### Advanced: Add a PDF
 
 #### Advanced: Upload and prepare a new file
 
-1. Open **Financial**, then **Import history**.
+1. Open **Financial**, then **Import review**.
 2. Select **Open PDF readings**.
 3. In **PDF document**, choose the PDF from your computer.
 4. Check the filename and case name.
@@ -1009,7 +1055,7 @@ If an attempt is labelled **SIMULATED**, it is test data. Do not describe it as 
 
 #### Advanced: Open a saved batch
 
-1. Return to **Import history** and **Open PDF readings**.
+1. Return to **Import review** and **Open PDF readings**.
 2. Find the saved batch and select **Open readings**.
 3. Read **Saved review progress**. The counts concern selected rows in that batch, not the whole PDF.
 4. Select **Show only rows awaiting review** if you want to hide rows already decided.

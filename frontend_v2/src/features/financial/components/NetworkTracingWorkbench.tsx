@@ -1,3 +1,5 @@
+import { SaveTraceFinding } from "./SavedTraceFinding"
+import { traceMethods } from "../lib/trace-methods"
 import { TraceReportDownload } from "./TraceReportDownload"
 import { TraceAssetFields, TraceAssetResultsPanel } from "./TraceAssetFields"
 import type { TraceAssetUse } from "../lib/trace-assets"
@@ -51,9 +53,9 @@ export function NetworkTracingWorkbench({ caseId }: { caseId: string }) {
     >
       <h2 className="font-semibold">Trace between accounts</h2>
       <p>
-        Compare how each selected method carries claim amounts through explicit
-        transfer pairs. The calculation keeps each account’s movements and
-        original sources.
+        Choose the transfers you want to follow, identify the funds you are
+        investigating and compare how each calculation allocates withdrawals
+        across accounts.
       </p>
       <form
         onSubmit={(e) => {
@@ -97,8 +99,8 @@ export function NetworkTracingWorkbench({ caseId }: { caseId: string }) {
               onChange={(e) => setPopulation(e.target.value)}
               className="block border bg-background p-2"
             >
-              <option value="verified">Verified only</option>
-              <option value="working">Working readings, including P3</option>
+              <option value="verified">Verified payments only</option>
+              <option value="working">All imported payments</option>
             </select>
           </label>
           <label>
@@ -616,7 +618,10 @@ function NetworkForm({
                   )
                 }
               />
-              {m.replaceAll("_", " ")}
+              {traceMethods[m]?.label ?? m}
+              <span className="block ml-5 text-sm text-muted-foreground">
+                {traceMethods[m]?.explanation}
+              </span>
             </label>
           ))}
           <Button
@@ -665,7 +670,7 @@ function NetworkForm({
                     Object.entries(result.claims).map(([claim, c]) => (
                       <tr key={method + ":" + claim}>
                         <th className="border-b p-2" scope="row">
-                          {method.replaceAll("_", " ")}
+                          {traceMethods[method]?.label ?? method}
                         </th>
                         <td className="border-b p-2">{claim}</td>
                         {[
@@ -686,7 +691,7 @@ function NetworkForm({
           </div>
           {calculate.data.value.backward_timing_used && (
             <p className="font-semibold">
-              Backward timing used — allocations to earlier receiving entries
+              Backward timing used · allocations to earlier receiving entries
               are conditional on your stated basis.
             </p>
           )}
@@ -696,7 +701,9 @@ function NetworkForm({
           {Object.entries(calculate.data.value.results).map(
             ([method, result]) => (
               <article key={method} className="space-y-3 rounded border p-4">
-                <h4 className="font-semibold">{method.replaceAll("_", " ")}</h4>
+                <h4 className="font-semibold">
+                  {traceMethods[method]?.label ?? method}
+                </h4>
                 {Object.entries(result.claims).map(([claim, c]) => (
                   <p key={claim}>
                     {claim}: root{" "}
@@ -730,7 +737,7 @@ function NetworkForm({
                     </p>
                     {h.backward_timing && (
                       <p>
-                        Earlier receiving entry — explicit backward timing
+                        Earlier receiving entry · explicit backward timing
                         assumption.
                       </p>
                     )}
@@ -790,6 +797,10 @@ function NetworkForm({
               </article>
             )
           )}
+          <SaveTraceFinding
+            key={"saved:" + calculate.data.envelope.scenario_sha256}
+            trace={calculate.data}
+          />
           <Button onClick={download}>Download cross-account scenario</Button>
           <TraceReportDownload
             key={calculate.data.envelope.scenario_sha256}

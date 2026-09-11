@@ -40,6 +40,9 @@ export interface SortColumn {
  * a page always opens on the ledger.
  */
 export type FinancialMainView =
+  | "findings"
+  | "patterns"
+  | "case-context"
   | "ledger"
   | "statements"
   | "quarantine"

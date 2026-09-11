@@ -49,6 +49,7 @@ export function LedgerPanel({
   onSource,
   onNote,
   splitAmounts = false,
+  investigation = false,
 }: {
   caseId: string | undefined
   params?: LedgerQueryParams
@@ -64,6 +65,7 @@ export function LedgerPanel({
   onSource?: (transaction: LedgerTransaction) => void
   onNote?: (transaction: LedgerTransaction) => void
   splitAmounts?: boolean
+  investigation?: boolean
 }) {
   const { data, isPending, isError, error } = useLedgerTransactions(
     caseId,
@@ -98,7 +100,7 @@ export function LedgerPanel({
       >
         <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span>
-          The ledger could not be read, so nothing below is a count of anything.
+          Transactions could not be loaded. Refresh this page to try again.
           {error instanceof Error ? ` ${error.message}` : ""}
         </span>
       </div>
@@ -136,8 +138,9 @@ export function LedgerPanel({
           className="text-xs text-muted-foreground"
           data-testid="ledger-summary"
         >
-          {rows.length} {rows.length === 1 ? "row" : "rows"},{" "}
-          {status.label.toLowerCase()}.
+          {investigation
+            ? `${rows.length} imported transactions`
+            : `${rows.length} ${rows.length === 1 ? "row" : "rows"}, ${status.label.toLowerCase()}.`}
         </p>
       )}
 
@@ -158,17 +161,25 @@ export function LedgerPanel({
         <EmptyState
           icon={ScrollText}
           title={
-            hasScopeFilter
-              ? `No ${status.label.toLowerCase()} rows match these filters`
-              : `No ${status.label.toLowerCase()} rows in the ledger`
+            investigation
+              ? hasScopeFilter
+                ? "No payments match these filters"
+                : "No imported payments yet"
+              : hasScopeFilter
+                ? `No ${status.label.toLowerCase()} rows match these filters`
+                : `No ${status.label.toLowerCase()} rows in the ledger`
           }
           description={
-            `No rows were returned for status "${status.label.toLowerCase()}"` +
-            (hasScopeFilter
-              ? " within the account/date filters."
-              : " in this case's ledger.") +
-            " Rows with other statuses, including quarantined, superseded or rejected readings, are not counted here unless that status is selected." +
-            " This does not establish that no transactions occurred or that the records are complete. Check statement coverage and unfinished processing attempts."
+            investigation
+              ? hasScopeFilter
+                ? "Clear or change the account and date filters to see other payments. You can check statement imports in Statements."
+                : "Open Statements to upload a PDF, check its transactions and confirm the import. Confirmed payments will appear here."
+              : `No rows were returned for status "${status.label.toLowerCase()}"` +
+                (hasScopeFilter
+                  ? " within the account/date filters."
+                  : " in this case's ledger.") +
+                " Rows with other statuses, including quarantined, superseded or rejected readings, are not counted here unless that status is selected." +
+                " This does not establish that no transactions occurred or that the records are complete. Check statement coverage and unfinished processing attempts."
           }
         />
       ) : (
@@ -186,6 +197,7 @@ export function LedgerPanel({
           onSource={onSource}
           onNote={onNote}
           splitAmounts={splitAmounts}
+          investigation={investigation}
         />
       )}
     </div>

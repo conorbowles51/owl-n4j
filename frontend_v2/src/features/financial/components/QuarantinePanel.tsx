@@ -68,6 +68,7 @@ export function QuarantinePanel({
   onSource?: (transaction: LedgerTransaction) => void
   onNote?: (transaction: LedgerTransaction) => void
   splitAmounts?: boolean
+  investigation?: boolean
 }) {
   const { data, isPending, isError, error } = useLedgerTransactions(caseId, {
     ...params,

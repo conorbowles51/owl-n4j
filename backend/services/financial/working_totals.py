@@ -12,7 +12,7 @@ def working_totals_from_readings(summary):
     """Use the same captured population as an export; perform no additional reads."""
     result = {key: value for key, value in summary.items() if key not in ('readings', 'history_captured', 'points', 'grouping', 'date_basis')}
     result.update(population='working', included_classes=['p0', 'p1', 'p2', 'p3'], limitation=LIMITATION,
-                  outside_verified_rows=None)
+                  outside_verified_rows=None, has_credit_card_readings=False)
     if not summary['available']:
         return result
     if 'readings' not in summary or len(summary['readings']) != summary['considered_rows']:
@@ -24,6 +24,8 @@ def working_totals_from_readings(summary):
         if reason not in (None, 'proof_class_not_included'):
             continue
         row = reading['row']
+        if (reading.get('account') or {}).get('account_type') == 'credit_card':
+            result['has_credit_card_readings'] = True
         if row['ledger_status'] != 'admitted' or row['superseded_by_id'] is not None or reading['source']['status'] != 'admitted':
             raise LedgerSummaryError('Working total membership is inconsistent.')
         amount = row['amount_minor']

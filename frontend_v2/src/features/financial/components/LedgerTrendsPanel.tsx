@@ -1,3 +1,4 @@
+import { LinkedPayments } from "./LinkedPayments"
 import { LedgerFlowChart } from "./LedgerFlowChart"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -5,7 +6,9 @@ import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
-import { correctionMoney } from "../lib/correction-contract"
+import { formatLedgerAmount } from "../lib/ledger-format"
+const correctionMoney = (value: string, currency: string) =>
+  `${formatLedgerAmount(value, currency).text} ${currency}`
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 const count = z.number().int().nonnegative(),
@@ -18,6 +21,7 @@ const totals = z.object({
   net_minor: money,
 })
 const response = z.object({
+  has_credit_card_readings: z.boolean().default(false),
   case_id: z.string(),
   account_id: z.string().nullable(),
   start_date: z.string().nullable(),
@@ -179,20 +183,20 @@ function TrendScope({
     safePage = Math.min(page, Math.max(0, Math.ceil(points.length / 25) - 1))
   return (
     <section
-      aria-label="Ledger totals by date"
+      aria-label="Payments over time"
       className="space-y-2 rounded border p-3"
     >
       <h3 className="font-semibold">
-        {population === "working" ? "Working analysis" : "Verified analysis"} ·
-        Ledger totals by date
+        {population === "working" ? "Payments" : "Verified payments"} · Payments
+        over time
       </h3>
       <p>
-        Uses the applied account/date filters and ledger ordering dates. Missing
-        dates are not evidence of no activity. Monthly dates label the start of
-        each month.
+        Compare money in and out by day or month. Select a date in the chart to
+        open its payments. The account and date filters above apply to this
+        view.
       </p>
       <label>
-        Group ledger dates
+        Group payments by
         <select
           className="ml-2 rounded border p-2"
           value={grouping}
@@ -211,7 +215,7 @@ function TrendScope({
         disabled={query.isFetching}
         onClick={() => (opened ? void query.refetch() : setOpened(true))}
       >
-        {opened ? "Refresh ledger date totals" : "Read ledger date totals"}
+        {opened ? "Refresh totals" : "Show totals"}
       </Button>
       {opened &&
         (query.isFetching || query.isPending ? (
@@ -220,18 +224,25 @@ function TrendScope({
           <p role="alert">Date totals unavailable. {query.error.message}</p>
         ) : (
           <>
-            <p>{query.data.limitation}</p>
+            <details className="text-sm">
+              <summary className="cursor-pointer">
+                How these totals were calculated
+              </summary>
+              <p>{query.data.limitation}</p>
+            </details>
             {!query.data.available ? (
               <p>Date totals unavailable. {query.data.reason}</p>
             ) : (
               <>
                 <p>
-                  {query.data.included_rows} included postings;{" "}
-                  {query.data.excluded_rows} excluded. See Current ledger
-                  summary for exclusion reasons.
+                  {query.data.included_rows} payments included;{" "}
+                  {query.data.excluded_rows} excluded. Open “How these totals
+                  were calculated” for details.
                 </p>
                 <LedgerFlowChart
-                  title="Money by ordering date"
+                  caseId={caseId}
+                  hasCreditCards={query.data.has_credit_card_readings}
+                  title="Money by date"
                   groups={points.map((p) => ({
                     ...p,
                     id: `${p.date}:${p.currency}`,
@@ -244,8 +255,8 @@ function TrendScope({
                 />
                 {points.length === 0 && (
                   <p>
-                    No eligible postings for these dates. Evidence coverage may
-                    still be incomplete.
+                    No imported payments match these dates. Change the filters
+                    or add statements.
                   </p>
                 )}
                 {points
@@ -254,7 +265,7 @@ function TrendScope({
                     <Point
                       key={`${grouping}:${point.date}:${point.currency}`}
                       point={point}
-                      onSource={setSource}
+                      caseId={caseId}
                     />
                   ))}
                 <Button
@@ -288,54 +299,22 @@ function TrendScope({
 }
 function Point({
   point,
-  onSource,
+  caseId,
 }: {
   point: z.infer<typeof response>["points"][number]
-  onSource: (id: string) => void
+  caseId: string
 }) {
-  const [page, setPage] = useState(0),
-    safePage = Math.min(
-      page,
-      Math.max(0, Math.ceil(point.transaction_ids.length / 25) - 1)
-    )
   return (
     <div className="space-y-1 rounded border p-2">
       <p>
-        {point.date} · {point.currency} · {point.rows} postings
+        {point.date} · {point.currency} · {point.rows} payments
       </p>
       <p>
         Credits: {correctionMoney(point.credits_minor, point.currency)} ·
-        Debits: {correctionMoney(point.debits_minor, point.currency)} · Net
-        postings: {correctionMoney(point.net_minor, point.currency)}
+        Debits: {correctionMoney(point.debits_minor, point.currency)} ·
+        Difference: {correctionMoney(point.net_minor, point.currency)}
       </p>
-      <details>
-        <summary>Contributing readings ({point.rows})</summary>
-        <p>
-          {point.source_document_ids.length} source documents. Each link opens
-          the recorded source for that contributing reading.
-        </p>
-        {point.transaction_ids
-          .slice(safePage * 25, safePage * 25 + 25)
-          .map((id, index) => (
-            <Button key={id} variant="outline" onClick={() => onSource(id)}>
-              Open contributing reading {safePage * 25 + index + 1}
-            </Button>
-          ))}
-        <Button
-          variant="outline"
-          disabled={safePage === 0}
-          onClick={() => setPage(safePage - 1)}
-        >
-          Previous contributing readings
-        </Button>
-        <Button
-          variant="outline"
-          disabled={(safePage + 1) * 25 >= point.rows}
-          onClick={() => setPage(safePage + 1)}
-        >
-          Next contributing readings
-        </Button>
-      </details>
+      <LinkedPayments caseId={caseId} ids={point.transaction_ids} />
     </div>
   )
 }

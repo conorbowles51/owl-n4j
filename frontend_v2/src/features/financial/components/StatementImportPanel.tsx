@@ -90,6 +90,14 @@ const proposalSchema = z.object({
     .nullable()
     .optional(),
 })
+export type StatementImportReceipt = {
+  case_id: string
+  evidence_file_id: string
+  source_document_id?: string
+  account_id?: string
+  transaction_count: number
+  filename?: string
+}
 type Proposal = z.infer<typeof proposalSchema>
 type Edit = {
   id: string
@@ -107,6 +115,8 @@ const receipt = z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   transaction_count: z.number(),
+  source_document_id: z.string().optional(),
+  account_id: z.string().optional(),
   applied: z.literal(true),
 })
 
@@ -150,7 +160,7 @@ export function StatementImportPanel({
   onImported,
 }: {
   caseId: string | undefined
-  onImported: () => void
+  onImported: (result?: StatementImportReceipt) => void
 }) {
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
@@ -273,9 +283,9 @@ export function StatementImportPanel({
             caseId={caseId}
             fileId={fileId}
             onReprocessed={setFileId}
-            onImported={() => {
+            onImported={(result) => {
               setOpen(false)
-              onImported()
+              onImported(result)
             }}
           />
         )}
@@ -292,7 +302,7 @@ function StatementReview({
 }: {
   caseId: string
   fileId: string
-  onImported: () => void
+  onImported: (result?: StatementImportReceipt) => void
   onReprocessed: (id: string) => void
 }) {
   const owner = useAuthStore(
@@ -424,7 +434,7 @@ function StatementReview({
         onReady={onReprocessed}
       />
       {query.data.current_import && (
-        <Button variant="outline" onClick={onImported}>
+        <Button variant="outline" onClick={() => onImported()}>
           Open imported transactions
         </Button>
       )}
@@ -500,7 +510,7 @@ function EditableStatement({
   data: Proposal
   caseId: string
   fileId: string
-  onImported: () => void
+  onImported: (result?: StatementImportReceipt) => void
 }) {
   const owner = useAuthStore((state) => state.user?.id || state.user?.username)
   const draftKey = owner
@@ -642,9 +652,9 @@ function EditableStatement({
         throw Error("The import result does not match the reviewed statement.")
       return result
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       void client.invalidateQueries()
-      onImported()
+      onImported({ ...result, filename: data.filename })
     },
   })
   useEffect(() => {
@@ -769,7 +779,7 @@ function EditableStatement({
           className="ml-auto"
           onClick={
             data.current_import?.evidence_file_id === fileId
-              ? onImported
+              ? () => onImported()
               : editValues
           }
         >
@@ -802,9 +812,9 @@ function EditableStatement({
           <div className="overflow-auto max-h-[65vh]">
             <h4 className="font-semibold">Extracted statement</h4>
             <p className="text-sm text-muted-foreground mb-3">
-              Printed text, column positions and blank cells are retained here.
-              Select a value to locate it in the PDF. Use the separate
-              correction controls to change an import value.
+              Compare each table with the PDF. Select any printed value to
+              locate it on the page. Use “Show corrections and import choices”
+              below to change what will be imported.
             </p>
             <PrintedStatementTable
               rows={data.rows.filter((row) => row.page_number === currentPage)}

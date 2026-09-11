@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import String, asc, cast, desc, or_, select
+from sqlalchemy import String, asc, cast, desc, or_, select, func, exists
 from sqlalchemy.orm import Session, selectinload
 
 from postgres.models.case_deadline import CaseDeadline
@@ -801,6 +801,7 @@ def list_entries(
     confidence_max: int | None = None,
     author_user_id: UUID | None = None,
     query_text: str | None = None,
+    tag: str | None = None,
     updated_since: datetime | None = None,
     include_deleted: bool = False,
     sort_by: str = "updated_at",
@@ -815,6 +816,13 @@ def list_entries(
     )
     if not include_deleted:
         query = query.filter(WorkspaceEntry.deleted_at.is_(None))
+    if tag:
+        if db.get_bind().dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import JSONB
+            query = query.filter(cast(WorkspaceEntry.tags, JSONB).contains([tag]))
+        else:
+            values = func.json_each(WorkspaceEntry.tags).table_valued("value")
+            query = query.filter(exists(select(1).select_from(values).where(values.c.value == tag)))
     if entry_type:
         query = query.filter(WorkspaceEntry.entry_type == entry_type.lower())
     if lifecycle_state:

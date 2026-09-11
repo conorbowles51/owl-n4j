@@ -7,8 +7,33 @@ import { afterEach, expect, it, vi } from "vitest"
 import { LedgerPostingGraph } from "./LedgerPostingGraph"
 vi.mock("./InvestigationFilters", () => ({ InvestigationFilters: () => null }))
 vi.mock("./LedgerGraphCanvas", () => ({
-  default: ({ onNode }: { onNode: (id: string) => void }) => (
-    <button onClick={() => onNode("a")}>Canvas account</button>
+  default: ({
+    data,
+    onNode,
+    onSource,
+  }: {
+    data: { edges: { transaction_id: string; amount_minor: string }[] }
+    onNode: (id: string) => void
+    onSource: (id: string) => void
+  }) => (
+    <>
+      <button onClick={() => onNode("a")}>Canvas account</button>
+      {data.edges.map((edge) => (
+        <button
+          key={edge.transaction_id}
+          onClick={() => onSource(edge.transaction_id)}
+        >
+          Source amount {edge.amount_minor}
+        </button>
+      ))}
+    </>
+  ),
+}))
+vi.mock("./LinkedPayments", () => ({
+  LinkedPayments: ({ caseId, ids }: { caseId: string; ids: string[] }) => (
+    <p data-testid="linked-payments">
+      {caseId}/{ids.join(",")}
+    </p>
   ),
 }))
 vi.mock("./LedgerSourceDialog", () => ({
@@ -66,29 +91,35 @@ function mount(value: unknown = data) {
 it("loads current postings and source links with exact money", async () => {
   const fetch = mount()
   expect(fetch).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole("button", { name: "Load posting graph" }))
-  expect(await screen.findByText(/90071992547409.93 GBP/)).toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Show connections" }))
+  expect(
+    await screen.findByRole("button", {
+      name: "Source amount 9007199254740993",
+    })
+  ).toBeInTheDocument()
   fireEvent.click(
-    screen.getByRole("button", { name: "Open posting source row" })
+    screen.getByRole("button", { name: "Source amount 9007199254740993" })
   )
   expect(screen.getByText("Source row")).toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Canvas account" }))
+  expect(screen.getByTestId("linked-payments")).toHaveTextContent("case/row")
 })
 it("refuses an edge to another account's source group", async () => {
   mount({
     ...data,
     nodes: [data.nodes[0], { ...data.nodes[1], account_id: "other" }],
   })
-  fireEvent.click(screen.getByRole("button", { name: "Load posting graph" }))
+  fireEvent.click(screen.getByRole("button", { name: "Show connections" }))
   expect(await screen.findByRole("alert")).toHaveTextContent("unavailable")
 })
 it("population changes remove the previous graph and source selection", async () => {
   mount()
-  fireEvent.click(screen.getByRole("button", { name: "Load posting graph" }))
-  await screen.findByRole("button", { name: "Open posting source row" })
-  fireEvent.change(screen.getByLabelText("Graph population"), {
+  fireEvent.click(screen.getByRole("button", { name: "Show connections" }))
+  await screen.findByRole("button", { name: "Source amount 9007199254740993" })
+  fireEvent.change(screen.getByLabelText("Payments to include"), {
     target: { value: "verified" },
   })
   expect(
-    screen.queryByRole("button", { name: "Open posting source row" })
+    screen.queryByRole("button", { name: "Source amount 9007199254740993" })
   ).not.toBeInTheDocument()
 })

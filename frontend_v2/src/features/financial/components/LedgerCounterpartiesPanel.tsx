@@ -1,3 +1,4 @@
+import { LinkedPayments } from "./LinkedPayments"
 import { LedgerFlowChart } from "./LedgerFlowChart"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -5,7 +6,9 @@ import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
-import { correctionMoney } from "../lib/correction-contract"
+import { formatLedgerAmount } from "../lib/ledger-format"
+const correctionMoney = (value: string, currency: string) =>
+  `${formatLedgerAmount(value, currency).text} ${currency}`
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 const count = z.number().int().nonnegative(),
@@ -18,6 +21,7 @@ const totals = z.object({
   net_minor: money,
 })
 const response = z.object({
+  has_credit_card_readings: z.boolean().default(false),
   case_id: z.string(),
   account_id: z.string().nullable(),
   start_date: z.string().nullable(),
@@ -252,29 +256,27 @@ function CounterpartyScope({
     )
   return (
     <section
-      aria-label="Ledger counterparty labels"
+      aria-label="People and businesses"
       className="space-y-2 rounded border p-3"
     >
       <h3 className="font-semibold">
-        {population === "working" ? "Working analysis" : "Verified analysis"} ·
+        {population === "working" ? "Payments" : "Verified payments"} ·
         {identities
-          ? "Reviewed counterparty identities"
-          : "Ledger counterparty labels"}
+          ? "Names linked by an investigator"
+          : "People and businesses"}
       </h3>
       <p>
         {identities
-          ? "Groups only explicitly linked payments by reviewed identity; other labels remain unresolved. Identity decisions do not match transfers or change eligibility."
-          : "Groups source labels exactly as recorded, separately by currency. Equal labels do not establish identity or transfer matches. Missing and blank labels remain explicit."}{" "}
-        Uses the applied account and ordering-date filters.
+          ? "Payments you linked to the same person or business are shown together. Other names stay separate."
+          : "See how much each name paid or received. Matching names are grouped together; check the statements before deciding that they refer to the same person or business."}{" "}
+        Uses the account and dates selected above.
       </p>
       <Button
         variant="outline"
         disabled={query.isFetching}
         onClick={() => (opened ? void query.refetch() : setOpened(true))}
       >
-        {opened
-          ? "Refresh ledger counterparty totals"
-          : "Read ledger counterparty totals"}
+        {opened ? "Refresh totals" : "Show totals"}
       </Button>
       {opened &&
         (query.isFetching || query.isPending ? (
@@ -285,8 +287,18 @@ function CounterpartyScope({
           </p>
         ) : (
           <>
-            <p>{query.data.limitation}</p>
-            <p>{query.data.counterparty_limitation}</p>
+            <details className="text-sm">
+              <summary className="cursor-pointer">
+                How these totals were calculated
+              </summary>
+              <p>{query.data.limitation}</p>
+            </details>
+            <details className="text-sm">
+              <summary className="cursor-pointer">
+                How names were grouped
+              </summary>
+              <p>{query.data.counterparty_limitation}</p>
+            </details>
             {identities && (
               <Button
                 variant="outline"
@@ -312,24 +324,22 @@ function CounterpartyScope({
             ) : (
               <>
                 <p>
-                  {query.data.included_rows} included postings;{" "}
-                  {query.data.excluded_rows} excluded. See Current ledger
-                  summary for exclusion reasons.
+                  {query.data.included_rows} payments included;{" "}
+                  {query.data.excluded_rows} excluded. Open “How these totals
+                  were calculated” for details.
                 </p>
                 <LedgerFlowChart
-                  title={
-                    identities
-                      ? "Money by reviewed counterparty"
-                      : "Money by source label"
-                  }
+                  caseId={caseId}
+                  hasCreditCards={query.data.has_credit_card_readings}
+                  title={identities ? "Money by linked name" : "Money by name"}
                   groups={counterparties.map((p) => ({
                     ...p,
                     id: JSON.stringify([p.group_id ?? p.label, p.currency]),
                     label:
                       p.label === null
-                        ? "Counterparty not recorded"
+                        ? "Name not recorded"
                         : p.label === ""
-                          ? "Blank source label"
+                          ? "Name left blank"
                           : p.label.trim() === p.label
                             ? p.label
                             : JSON.stringify(p.label),
@@ -338,7 +348,7 @@ function CounterpartyScope({
                 />
                 {counterparties.length === 0 && (
                   <p>
-                    No eligible postings for these filters. Evidence coverage
+                    No eligible payments for these filters. Evidence coverage
                     may still be incomplete.
                   </p>
                 )}
@@ -351,7 +361,7 @@ function CounterpartyScope({
                         point.currency,
                       ])}
                       point={point}
-                      onSource={setSource}
+                      caseId={caseId}
                     />
                   ))}
                 <Button
@@ -385,34 +395,29 @@ function CounterpartyScope({
 }
 function Point({
   point,
-  onSource,
+  caseId,
 }: {
   point: z.infer<typeof response>["counterparties"][number]
-  onSource: (id: string) => void
+  caseId: string
 }) {
-  const [page, setPage] = useState(0),
-    safePage = Math.min(
-      page,
-      Math.max(0, Math.ceil(point.transaction_ids.length / 25) - 1)
-    )
   return (
     <div className="space-y-1 rounded border p-2">
       <p>
         {point.label === null
-          ? "Counterparty not recorded"
+          ? "Name not recorded"
           : point.label === ""
-            ? "Blank source label"
-            : JSON.stringify(point.label)}{" "}
-        · {point.currency} · {point.rows} postings
+            ? "Name left blank"
+            : point.label}{" "}
+        · {point.currency} · {point.rows} payments
       </p>
       <p>
         Credits: {correctionMoney(point.credits_minor, point.currency)} ·
-        Debits: {correctionMoney(point.debits_minor, point.currency)} · Net
-        postings: {correctionMoney(point.net_minor, point.currency)}
+        Debits: {correctionMoney(point.debits_minor, point.currency)} ·
+        Difference: {correctionMoney(point.net_minor, point.currency)}
       </p>
       {point.raw_labels && (
         <p className="break-words">
-          Original source labels:{" "}
+          Names printed on statements:{" "}
           {point.raw_labels
             .map((label) =>
               label === null ? "Not recorded" : JSON.stringify(label)
@@ -420,34 +425,7 @@ function Point({
             .join(" · ")}
         </p>
       )}
-      <details>
-        <summary>Contributing readings ({point.rows})</summary>
-        <p>
-          {point.source_document_ids.length} source documents. Each link opens
-          the recorded source for that contributing reading.
-        </p>
-        {point.transaction_ids
-          .slice(safePage * 25, safePage * 25 + 25)
-          .map((id, index) => (
-            <Button key={id} variant="outline" onClick={() => onSource(id)}>
-              Open contributing reading {safePage * 25 + index + 1}
-            </Button>
-          ))}
-        <Button
-          variant="outline"
-          disabled={safePage === 0}
-          onClick={() => setPage(safePage - 1)}
-        >
-          Previous contributing readings
-        </Button>
-        <Button
-          variant="outline"
-          disabled={(safePage + 1) * 25 >= point.rows}
-          onClick={() => setPage(safePage + 1)}
-        >
-          Next contributing readings
-        </Button>
-      </details>
+      <LinkedPayments caseId={caseId} ids={point.transaction_ids} />
     </div>
   )
 }

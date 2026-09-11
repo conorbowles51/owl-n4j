@@ -14,6 +14,7 @@ import { LedgerSourceDialog } from "./LedgerSourceDialog"
 export function CorrectableLedger(props: {
   caseId: string | undefined
   onAdjudicate: (row: LedgerTransaction) => void
+  investigation?: boolean
   heldOut?: boolean
 }) {
   return (
@@ -28,9 +29,11 @@ function CorrectableLedgerContent({
   caseId,
   onAdjudicate,
   heldOut = false,
+  investigation = false,
 }: {
   caseId: string | undefined
   onAdjudicate: (row: LedgerTransaction) => void
+  investigation?: boolean
   heldOut?: boolean
 }) {
   const [params, setParams] = useInvestigationScope(caseId)
@@ -51,12 +54,14 @@ function CorrectableLedgerContent({
             initialParams={params}
             onApply={setParams}
           />
-          <LedgerSummaryPanel
-            caseId={caseId}
-            params={params}
-            population="working"
-            compact
-          />
+          {!investigation && (
+            <LedgerSummaryPanel
+              caseId={caseId}
+              params={params}
+              population="working"
+              compact
+            />
+          )}
         </>
       )}
       {source && source.caseId === caseId && (
@@ -65,6 +70,7 @@ function CorrectableLedgerContent({
           caseId={source.caseId}
           transactionId={source.transactionId}
           initialNoteOpen={source.note}
+          onAdjudicate={onAdjudicate}
           onClose={() => setSource(null)}
         />
       )}
@@ -81,6 +87,7 @@ function CorrectableLedgerContent({
       )}
       <Panel
         splitAmounts
+        investigation={investigation}
         caseId={caseId}
         params={heldOut ? undefined : params}
         onAdjudicate={onAdjudicate}

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl } from "../lib/candidate-contract"
 import { postingGraph } from "../lib/ledger-graph"
-import { correctionMoney } from "../lib/correction-contract"
+import { LinkedPayments } from "./LinkedPayments"
 import { InvestigationFilters } from "./InvestigationFilters"
 import {
   useInvestigationScope,
@@ -19,11 +19,11 @@ export function LedgerPostingGraph({ caseId }: { caseId: string | undefined }) {
   if (!caseId) return <p>Choose a case to view its posting graph.</p>
   return (
     <section aria-label="Ledger posting graph" className="space-y-4 p-4">
-      <h2 className="font-semibold">Graph of current ledger postings</h2>
+      <h2 className="font-semibold">Payment connections</h2>
       <p>
-        Accounts connect to the counterparty labels recorded on their rows.
-        Label groups are not resolved people or organisations. Each arrow
-        represents one posting, with its original source available.
+        See which accounts paid or received money from each name. Select an
+        account or name to show its payments below the graph. Open a payment for
+        its statement, notes and corrections.
       </p>
       <InvestigationFilters
         key={JSON.stringify(params)}
@@ -32,17 +32,17 @@ export function LedgerPostingGraph({ caseId }: { caseId: string | undefined }) {
         onApply={setParams}
       />
       <label>
-        Graph population
+        Payments to include
         <select
-          aria-label="Graph population"
+          aria-label="Payments to include"
           className="ml-2 rounded border bg-background p-2"
           value={population}
           onChange={(e) =>
             setPopulation(e.target.value as "working" | "verified")
           }
         >
-          <option value="working">Working readings, including P3</option>
-          <option value="verified">Verified only</option>
+          <option value="working">All imported payments</option>
+          <option value="verified">Verified payments only</option>
         </select>
       </label>
       <GraphScope
@@ -65,8 +65,7 @@ function GraphScope({
 }) {
   const [opened, setOpened] = useState(false),
     [node, setNode] = useState(""),
-    [source, setSource] = useState<string | null>(null),
-    [page, setPage] = useState(0)
+    [source, setSource] = useState<string | null>(null)
   const account = params.accountId ?? null,
     start = params.startDate ?? null,
     end = params.endDate ?? null
@@ -107,13 +106,8 @@ function GraphScope({
     query.data?.edges.filter(
       (e) => !node || e.source === node || e.target === node
     ) ?? []
-  const pageIndex = Math.min(
-    page,
-    Math.max(0, Math.ceil(edges.length / 25) - 1)
-  )
   const selectNode = (id: string) => {
     setNode(id)
-    setPage(0)
   }
   return (
     <div className="space-y-3">
@@ -124,7 +118,7 @@ function GraphScope({
           else setOpened(true)
         }}
       >
-        {opened ? "Refresh posting graph" : "Load posting graph"}
+        {opened ? "Refresh connections" : "Show connections"}
       </Button>
       {opened && query.isPending && (
         <p role="status">Loading current postings…</p>
@@ -138,7 +132,12 @@ function GraphScope({
             {query.data.edges.length} current postings ·{" "}
             {query.data.excluded_rows} excluded
           </p>
-          <p className="text-muted-foreground">{query.data.limitation}</p>
+          <details>
+            <summary className="cursor-pointer">
+              How these connections were drawn
+            </summary>
+            <p>{query.data.limitation}</p>
+          </details>
           {!query.data.edges.length ? (
             <p>
               No postings in this scope. This does not prove there were no
@@ -155,14 +154,14 @@ function GraphScope({
                 />
               </Suspense>
               <label>
-                Inspect graph node
+                Choose an account or name
                 <select
-                  aria-label="Inspect graph node"
+                  aria-label="Choose an account or name"
                   className="ml-2 max-w-full rounded border bg-background p-2"
                   value={node}
                   onChange={(e) => selectNode(e.target.value)}
                 >
-                  <option value="">All postings</option>
+                  <option value="">All payments</option>
                   {query.data.nodes.map((n) => (
                     <option key={n.id} value={n.id}>
                       {n.label}
@@ -170,43 +169,11 @@ function GraphScope({
                   ))}
                 </select>
               </label>
-              <ul className="space-y-2">
-                {edges.slice(pageIndex * 25, pageIndex * 25 + 25).map((e) => (
-                  <li
-                    key={e.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded border p-2"
-                  >
-                    <span>
-                      {e.ordering_date} · {e.description ?? "No description"} ·{" "}
-                      {e.direction} ·{" "}
-                      {correctionMoney(e.amount_minor, e.currency)}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setSource(e.transaction_id)}
-                    >
-                      Open posting source {e.id.slice(0, 8)}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-              {edges.length > 25 && (
-                <div className="flex gap-2">
-                  <Button
-                    disabled={!pageIndex}
-                    onClick={() => setPage(pageIndex - 1)}
-                  >
-                    Previous graph postings
-                  </Button>
-                  <Button
-                    disabled={(pageIndex + 1) * 25 >= edges.length}
-                    onClick={() => setPage(pageIndex + 1)}
-                  >
-                    Next graph postings
-                  </Button>
-                </div>
-              )}
+              <LinkedPayments
+                caseId={caseId}
+                ids={edges.map((e) => e.transaction_id)}
+                label="View selected connections"
+              />
             </>
           )}
         </>

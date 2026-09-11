@@ -119,7 +119,7 @@ export function InvestigationFilters({
       </Button>
       <details className="basis-full text-xs">
         <summary className="cursor-pointer">
-          Find another account or inspect the date scope
+          Search accounts or check which dates are used
         </summary>
         <label>
           Search account names or numbers
@@ -131,9 +131,9 @@ export function InvestigationFilters({
           />
         </label>
         <p>
-          Both dates are included. The table identifies which recorded date
-          orders each transaction. Missing statements are shown under
-          Statements.
+          The start and end dates are included. Payments without a transaction
+          date are marked in the table. Check Statements for gaps in the
+          documents supplied.
         </p>
       </details>
       {invalid && (

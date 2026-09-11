@@ -42,7 +42,7 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
     result = dict(case_id=str(case_id), account_id=str(account_id) if account_id else None,
         start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None,
         included_classes=sorted(p.value for p in DEFAULT_TOTAL_CLASSES), max_rows=MAX_SUMMARY_ROWS,
-        available=False, reason=None, considered_rows=None, included_rows=None, excluded_rows=None,
+        available=False, reason=None, considered_rows=None, included_rows=None, excluded_rows=None, has_credit_card_readings=False,
         exclusions=None, currencies=[], applied=False,
         limitation="Current ledger account postings only, with admitted source documents and included row/source proof classes. Currency totals are separate. Internal transfers are not matched or netted; net postings are not an account balance. Missing evidence and incomplete extraction are not measured by these totals.")
     if capture_readings:
@@ -89,6 +89,8 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         if not counts_toward_totals(row_class) or not counts_toward_totals(source_class):
             exclusions['proof_class_not_included'] += 1
             continue
+        if account.account_type == 'credit_card':
+            result['has_credit_card_readings'] = True
         if type(row.amount_minor) is not int or row.amount_minor < 0 or row.direction not in ('credit', 'debit'):
             raise LedgerSummaryError("An included ledger amount or direction is invalid.")
         try:

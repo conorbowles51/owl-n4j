@@ -51,7 +51,7 @@ function mount(data: unknown = citation, status = 200) {
 it("opens the evidence file and stored page, preserving the historical reading label", async () => {
   const fetch = mount()
   expect(
-    await screen.findByText(/original reading that has been replaced/)
+    await screen.findByText(/original transaction before correction/)
   ).toBeVisible()
   expect(screen.getByTestId("highlight-input")).toHaveTextContent(
     citation.evidence_file_id
@@ -65,6 +65,33 @@ it("opens the evidence file and stored page, preserving the historical reading l
   )
   expect(screen.getByTestId("file-viewer")).toHaveTextContent('"initialPage":3')
   expect(fetch.mock.calls[0][0]).toContain("/ledger/row/source?case_id=case")
+})
+it("follows the recorded correction without losing the original source link", async () => {
+  const fetch = mount()
+  await screen.findByText(/original transaction before correction/)
+  fetch.mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        ...citation,
+        transaction_id: "replacement",
+        ref_id: "TX-NEW",
+        superseded_by_id: null,
+        ledger_status: "admitted",
+      })
+    )
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open corrected transaction" })
+  )
+  expect(await screen.findByText("TX-NEW · source.pdf")).toBeInTheDocument()
+  expect(
+    fetch.mock.calls.some(([url]) =>
+      String(url).includes("/ledger/replacement/source?case_id=case")
+    )
+  ).toBe(true)
+  expect(screen.getByTestId("highlight-input")).toHaveTextContent(
+    citation.evidence_file_id
+  )
 })
 it.each(["missing", "invalid"])(
   "explains %s locations and opens the file without a guessed page",

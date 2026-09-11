@@ -27,7 +27,7 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
       aria-label="Authoritative ledger counterparties"
       className="space-y-3 p-4"
     >
-      <h2 className="font-semibold">Ledger counterparty labels</h2>
+      <h2 className="font-semibold">People and businesses</h2>
       <p>
         Choose an account or date range to explore its payments. Select a total
         to inspect the transactions and their original statements.
@@ -54,7 +54,7 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
           checked={identities}
           onChange={(e) => setIdentities(e.target.checked)}
         />{" "}
-        Group explicitly linked payments by reviewed identity
+        Combine names I have linked to the same person or business
       </label>
       <LedgerCounterpartiesPanel
         autoLoad
@@ -68,17 +68,17 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
           Analysis settings, statement coverage and downloads
         </summary>
         <label className="flex items-center gap-2">
-          Analysis population
+          Payments to include
           <select
-            aria-label="Analysis population"
+            aria-label="Payments to include"
             className="rounded border bg-background p-2"
             value={population}
             onChange={(e) =>
               setPopulation(e.target.value as "working" | "verified")
             }
           >
-            <option value="working">Working readings, including P3</option>
-            <option value="verified">Verified totals only</option>
+            <option value="working">All imported payments</option>
+            <option value="verified">Verified payments only</option>
           </select>
         </label>
         <RequestedCoveragePanel caseId={caseId} params={params} />
@@ -86,7 +86,7 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
       </details>
       <details className="rounded border p-3">
         <summary className="cursor-pointer font-medium">
-          Manage payment identities
+          Link different names for the same person or business
         </summary>
         <CounterpartyPartyDirectory key={caseId} caseId={caseId} />
       </details>

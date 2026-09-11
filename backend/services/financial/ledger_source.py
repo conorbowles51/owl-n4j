@@ -5,11 +5,13 @@ comparison checks recorded provenance; it does not reread evidence bytes.
 """
 import re
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
 from services.financial.locators import Locator, LocatorError
 from services.financial.transactions import LOCATOR_PROVENANCE_KEY
+from services.financial.transaction_query import to_view
 
 
 class LedgerSourceError(ValueError):
@@ -19,7 +21,7 @@ class LedgerSourceError(ValueError):
 
 
 def ledger_source(session, *, case_id, transaction_id):
-    source = session.execute(select(FinancialTransaction, FinancialSourceDocument, EvidenceFile)
+    source = session.execute(select(FinancialTransaction, FinancialSourceDocument, EvidenceFile).options(joinedload(FinancialTransaction.account))
         .join(FinancialSourceDocument, FinancialTransaction.source_document_id == FinancialSourceDocument.id)
         .join(EvidenceFile, FinancialSourceDocument.evidence_file_id == EvidenceFile.id)
         .where(FinancialTransaction.id == transaction_id, FinancialTransaction.case_id == case_id,
@@ -46,6 +48,7 @@ def ledger_source(session, *, case_id, transaction_id):
         except (LocatorError, ValueError, TypeError, KeyError):
             pass
     return {"case_id": str(case_id), "transaction_id": str(row.id), "ref_id": row.ref_id,
+            "transaction": to_view(row, account=row.account).to_json(),
             "source_document_id": str(document.id), "evidence_file_id": str(evidence.id),
             "filename": evidence.original_filename, "sha256_at_ingestion": document.sha256_at_ingestion,
             "recorded_digest_matches": True, "file_bytes_verified": False,
