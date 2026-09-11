@@ -24,6 +24,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import type { LedgerTransaction, Transaction } from "../api"
 import { useFinancialStore } from "../stores/financial.store"
 import { FinancialPage } from "./FinancialPage"
+import { useStatementWorkspace } from "../stores/statement-workspace"
 
 const graph = vi.hoisted(() => ({ useTransactions: vi.fn() }))
 const ledger = vi.hoisted(() => ({ useLedgerTransactions: vi.fn() }))
@@ -74,6 +75,7 @@ vi.mock("../hooks/use-proof-standing", () => ({
 }))
 
 beforeEach(() => {
+  useStatementWorkspace.setState({ selections: {}, reviewChoices: {} })
   standing.useProofStanding.mockReturnValue({
     data: proofStanding(),
     isPending: false,

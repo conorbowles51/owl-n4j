@@ -1,7 +1,7 @@
 import { reviewSelectionBalance } from "../lib/statement-review-balance"
 import { ReprocessStatement } from "./ReprocessStatement"
 import { newReviewId } from "../lib/statement-review-id"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
@@ -14,6 +14,8 @@ import { fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { PrintedStatementTable } from "./PrintedStatementTable"
+import { useStatementWorkspace } from "../stores/statement-workspace"
+import { useUIStore } from "@/stores/ui.store"
 
 const cell = z.object({
   column_index: z.number(),
@@ -150,9 +152,21 @@ export function StatementImportPanel({
   caseId: string | undefined
   onImported: () => void
 }) {
-  const [open, setOpen] = useState(false),
-    [fileId, setFileId] = useState<string | null>(null),
-    [upload, setUpload] = useState(false)
+  const owner = useAuthStore(
+    (state) => state.user?.id || state.user?.username || "anonymous"
+  )
+  const scope = `${owner}:${caseId}`
+  const open = useStatementWorkspace(
+    (state) => state.selections[scope]?.open ?? false
+  )
+  const fileId = useStatementWorkspace(
+    (state) => state.selections[scope]?.fileId ?? null
+  )
+  const setOpen = (value: boolean) =>
+    useStatementWorkspace.getState().setOpen(scope, value)
+  const setFileId = (value: string | null) =>
+    useStatementWorkspace.getState().select(scope, value)
+  const [upload, setUpload] = useState(false)
   const files = useQuery({
     queryKey: ["statement-import-files", caseId],
     enabled: open && !!caseId,
@@ -193,9 +207,17 @@ export function StatementImportPanel({
             Add a statement, check any problems, then import its transactions.
           </p>
         </div>
-        <Button onClick={() => setOpen((v) => !v)}>
-          {open ? "Close statement review" : "Import a statement"}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => useUIStore.getState().expandGraphPanelTo("detail")}
+          >
+            Statement files
+          </Button>
+          <Button onClick={() => setOpen(!open)}>
+            {open ? "Close statement review" : "Import a statement"}
+          </Button>
+        </div>
       </div>
       <div hidden={!open}>
         {open && (
@@ -273,8 +295,20 @@ function StatementReview({
   onImported: () => void
   onReprocessed: (id: string) => void
 }) {
-  const [currency, setCurrency] = useState("")
-  const [statementId, setStatementId] = useState("")
+  const owner = useAuthStore(
+    (state) => state.user?.id || state.user?.username || "anonymous"
+  )
+  const choiceKey = `${owner}:${caseId}:${fileId}`
+  const currency = useStatementWorkspace(
+    (state) => state.reviewChoices[choiceKey]?.currency ?? ""
+  )
+  const statementId = useStatementWorkspace(
+    (state) => state.reviewChoices[choiceKey]?.statementId ?? ""
+  )
+  const setCurrency = (currency: string) =>
+    useStatementWorkspace.getState().setReviewChoice(choiceKey, { currency })
+  const setStatementId = (statementId: string) =>
+    useStatementWorkspace.getState().setReviewChoice(choiceKey, { statementId })
   const query = useQuery({
     queryKey: ["statement-import", caseId, fileId, currency, statementId],
     retry: false,
@@ -376,8 +410,6 @@ function StatementReview({
         </select>
       </label>
     )
-  const ReviewContainer =
-    query.data.current_import?.evidence_file_id === fileId ? "details" : "div"
   return (
     <div className="space-y-3">
       {query.data.statement_choices.length > 1 && (
@@ -443,9 +475,9 @@ function StatementReview({
           )}
         </section>
       )}
-      <ReviewContainer>
+      <div>
         {query.data.current_import?.evidence_file_id === fileId && (
-          <summary>Inspect the original extraction</summary>
+          <h3 className="font-semibold">Original extraction</h3>
         )}
         <EditableStatement
           key={query.data.revision}
@@ -454,7 +486,7 @@ function StatementReview({
           fileId={fileId}
           onImported={onImported}
         />
-      </ReviewContainer>
+      </div>
     </div>
   )
 }
@@ -477,7 +509,13 @@ function EditableStatement({
   const [saved] = useState(() => readStatementDraft(draftKey, data.revision))
   const [draftSaved, setDraftSaved] = useState(!!saved)
   const [correctionsOpen, setCorrectionsOpen] = useState(false)
-  const [sourcePage, setSourcePage] = useState(data.page_numbers[0] || 1)
+  const correctionControls = useRef<HTMLDivElement>(null)
+  const pageKey = `${owner}:${caseId}:${fileId}:${data.revision}`
+  const rememberedPage = useStatementWorkspace.getState().pages[pageKey]
+  const initialPage = data.page_numbers.includes(rememberedPage)
+    ? rememberedPage
+    : data.rows[0]?.page_number || data.page_numbers[0] || 1
+  const [sourcePage, setSourcePage] = useState(initialPage)
   const client = useQueryClient()
   const [rows, setRows] = useState(() => saved?.rows ?? initialRows(data)),
     [holder, setHolder] = useState(saved?.holder ?? data.metadata.holder),
@@ -489,7 +527,7 @@ function EditableStatement({
       locator: unknown
     } | null>({
       rowId: "",
-      locator: { kind: "page_only", page: data.page_numbers[0] || 1 },
+      locator: { kind: "page_only", page: initialPage },
     }),
     [showExcluded, setShowExcluded] = useState(false),
     [onlyIssues, setOnlyIssues] = useState(false)
@@ -619,24 +657,25 @@ function EditableStatement({
         }
       return
     }
+    const draft = {
+      revision: data.revision,
+      rows,
+      holder,
+      account,
+      institution,
+      periodStart,
+      periodEnd,
+      detailsReason,
+      amountText,
+    }
     const timer = window.setTimeout(
-      () =>
-        setDraftSaved(
-          saveStatementDraft(draftKey, {
-            revision: data.revision,
-            rows,
-            holder,
-            account,
-            institution,
-            periodStart,
-            periodEnd,
-            detailsReason,
-            amountText,
-          })
-        ),
+      () => setDraftSaved(saveStatementDraft(draftKey, draft)),
       300
     )
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      saveStatementDraft(draftKey, draft)
+    }
   }, [
     draftKey,
     data.revision,
@@ -660,6 +699,25 @@ function EditableStatement({
       (showExcluded || !r.excluded || requiresReason(r)) &&
       (!onlyIssues || originals.get(r.id)?.issues.length || changed(r))
   )
+  const focusedPage = z.object({ page: z.number() }).safeParse(focus?.locator)
+  const currentPage = focusedPage.success ? focusedPage.data.page : sourcePage
+  useEffect(() => {
+    useStatementWorkspace.getState().setPage(pageKey, currentPage)
+  }, [pageKey, currentPage])
+  const pageIndex = data.page_numbers.indexOf(currentPage)
+  const showPage = (page: number) => {
+    setSourcePage(page)
+    setFocus({ rowId: "", locator: { kind: "page_only", page } })
+  }
+  const editValues = () => {
+    setCorrectionsOpen(true)
+    requestAnimationFrame(() =>
+      correctionControls.current?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      })
+    )
+  }
   return (
     <div className="space-y-4 pt-4">
       <header>
@@ -676,6 +734,50 @@ function EditableStatement({
           separate below the table.
         </p>
       </header>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="outline"
+          disabled={pageIndex <= 0}
+          onClick={() => showPage(data.page_numbers[pageIndex - 1])}
+        >
+          Previous page
+        </Button>
+        <label className="text-sm">
+          Page{" "}
+          <select
+            aria-label="Statement viewer page"
+            value={currentPage}
+            onChange={(event) => showPage(Number(event.target.value))}
+            className="rounded border bg-background p-2"
+          >
+            {data.page_numbers.map((page) => (
+              <option key={page} value={page}>
+                {page}
+              </option>
+            ))}
+          </select>{" "}
+          of {data.page_numbers.length}
+        </label>
+        <Button
+          variant="outline"
+          disabled={pageIndex < 0 || pageIndex >= data.page_numbers.length - 1}
+          onClick={() => showPage(data.page_numbers[pageIndex + 1])}
+        >
+          Next page
+        </Button>
+        <Button
+          className="ml-auto"
+          onClick={
+            data.current_import?.evidence_file_id === fileId
+              ? onImported
+              : editValues
+          }
+        >
+          {data.current_import?.evidence_file_id === fileId
+            ? "Edit imported transactions"
+            : "Edit import values"}
+        </Button>
+      </div>
       <fieldset
         disabled={confirm.isPending || confirm.isSuccess}
         className="space-y-4"
@@ -705,9 +807,15 @@ function EditableStatement({
               correction controls to change an import value.
             </p>
             <PrintedStatementTable
-              rows={data.rows}
+              rows={data.rows.filter((row) => row.page_number === currentPage)}
               onCell={(rowId, locator) => setFocus({ rowId, locator })}
             />
+            {!data.rows.some((row) => row.page_number === currentPage) && (
+              <p className="my-3 text-sm">
+                No extracted rows for this page in the selected statement. Check
+                the original PDF alongside it.
+              </p>
+            )}
             <Button
               variant="outline"
               className="my-3"
@@ -717,7 +825,7 @@ function EditableStatement({
                 ? "Hide corrections and import choices"
                 : "Show corrections and import choices"}
             </Button>
-            <div hidden={!correctionsOpen}>
+            <div ref={correctionControls} hidden={!correctionsOpen}>
               <div className="flex flex-wrap gap-4 text-sm">
                 <label>
                   <input

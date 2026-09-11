@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, expect, it, vi } from "vitest"
 import { StatementImportPanel } from "./StatementImportPanel"
 import { fetchAPI } from "@/lib/api-client"
+import { useStatementWorkspace } from "../stores/statement-workspace"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("./TransactionSourceHighlight", () => ({
   TransactionSourceHighlight: () => (
@@ -88,9 +89,12 @@ async function open() {
     target: { value: "file" },
   })
   await screen.findByText("Review statement.pdf")
-  fireEvent.click(screen.getByRole("button", { name: "Show corrections and import choices" }))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show corrections and import choices" })
+  )
 }
 beforeEach(() => {
+  useStatementWorkspace.setState({ selections: {}, reviewChoices: {} })
   sent = []
   failure = false
   vi.mocked(fetchAPI).mockReset()
@@ -144,6 +148,55 @@ it("automatically fills a statement and imports once", async () => {
       },
     ],
   })
+})
+
+it("changes the printed page with next and previous controls", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    String(url).startsWith("/api/evidence?")
+      ? ({
+          files: [
+            {
+              id: "file",
+              case_id: "case",
+              original_filename: "statement.pdf",
+              status: "processed",
+            },
+          ],
+        } as never)
+      : ({
+          ...data,
+          page_numbers: [1, 2],
+          rows: [
+            ...data.rows,
+            {
+              ...data.rows[1],
+              id: "2:0:1",
+              page_number: 2,
+              source_cells: [
+                {
+                  column_index: 0,
+                  expected_text: "Second printed page",
+                  locator: { kind: "page_only", page: 2 },
+                },
+              ],
+            },
+          ],
+        } as never)
+  )
+  mount()
+  await open()
+  expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled()
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }))
+  expect(screen.getByLabelText("Statement viewer page")).toHaveValue("2")
+  expect(
+    screen.getByRole("button", { name: "Second printed page" })
+  ).toBeVisible()
+  expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled()
+  fireEvent.click(screen.getByRole("button", { name: "Previous page" }))
+  expect(screen.getByLabelText("Statement viewer page")).toHaveValue("1")
+  expect(
+    screen.queryByRole("button", { name: "Second printed page" })
+  ).not.toBeInTheDocument()
 })
 it("shows the source alongside correction controls and saves the reason", async () => {
   mount()
@@ -245,7 +298,6 @@ it("does not offer to import the same active reading twice", async () => {
   expect(
     screen.getByText("This statement has already been imported")
   ).toBeVisible()
-  fireEvent.click(screen.getByText("Inspect the original extraction"))
   expect(
     screen.getByRole("button", { name: "Confirm import of 1 transactions" })
   ).toBeDisabled()

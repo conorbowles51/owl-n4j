@@ -1,5 +1,12 @@
 import { useState } from "react"
-import { Info, Loader2, MessageSquare, NotebookPen, PanelRightClose, Search } from "lucide-react"
+import {
+  Info,
+  Loader2,
+  MessageSquare,
+  NotebookPen,
+  PanelRightClose,
+  Search,
+} from "lucide-react"
 import { useParams, useMatch } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import {
@@ -15,6 +22,7 @@ import { NodeDetailSheet } from "@/features/graph/components/NodeDetailSheet"
 import { EditNodeDialog } from "@/features/graph/components/EditNodeDialog"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
+import { StatementFilesPanel } from "@/features/financial/components/StatementFilesPanel"
 
 /**
  * Collapsed icon rail for non-graph case views.
@@ -24,6 +32,7 @@ export function CaseSidePanelRail() {
   const tab = useUIStore((s) => s.graphPanelTab)
   const expandTo = useUIStore((s) => s.expandGraphPanelTo)
   const isEvidenceRoute = !!useMatch("/cases/:id/evidence")
+  const isFinancialRoute = !!useMatch("/cases/:id/financial")
   const evidenceSidebarTab = useEvidenceStore((s) => s.sidebarTab)
   const setSidebarTab = useEvidenceStore((s) => s.setSidebarTab)
   const textSearchTerm = useEvidenceStore((s) => s.textSearchTerm)
@@ -42,10 +51,17 @@ export function CaseSidePanelRail() {
   }
 
   // Determine which tab is active for indicator
-  const isDetailsActive = isEvidenceRoute ? evidenceSidebarTab === "details" : tab === "detail"
-  const isProcessingActive = isEvidenceRoute && evidenceSidebarTab === "processing"
-  const isChatActive = isEvidenceRoute ? evidenceSidebarTab === "chat" : tab === "chat"
-  const isNotebookActive = isEvidenceRoute ? evidenceSidebarTab === "notebook" : tab === "notebook"
+  const isDetailsActive = isEvidenceRoute
+    ? evidenceSidebarTab === "details"
+    : tab === "detail"
+  const isProcessingActive =
+    isEvidenceRoute && evidenceSidebarTab === "processing"
+  const isChatActive = isEvidenceRoute
+    ? evidenceSidebarTab === "chat"
+    : tab === "chat"
+  const isNotebookActive = isEvidenceRoute
+    ? evidenceSidebarTab === "notebook"
+    : tab === "notebook"
 
   return (
     <div className="flex h-full w-12 flex-col items-center gap-1 border-l border-border bg-panel pt-2">
@@ -56,7 +72,10 @@ export function CaseSidePanelRail() {
               variant="ghost"
               size="icon-sm"
               aria-label="Reopen text search"
-              className={cn("relative", textSearchOverlayOpen && "text-foreground")}
+              className={cn(
+                "relative",
+                textSearchOverlayOpen && "text-foreground"
+              )}
               onClick={() => {
                 setSearchMode("text")
                 useUIStore.getState().setGraphPanelCollapsed(false)
@@ -76,11 +95,10 @@ export function CaseSidePanelRail() {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Open case details"
-            className={cn(
-              "relative",
-              isDetailsActive && "text-foreground"
-            )}
+            aria-label={
+              isFinancialRoute ? "Open statement files" : "Open case details"
+            }
+            className={cn("relative", isDetailsActive && "text-foreground")}
             onClick={() => handleExpand(isEvidenceRoute ? "details" : "detail")}
           >
             <Info className="size-4" />
@@ -89,7 +107,9 @@ export function CaseSidePanelRail() {
             )}
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="left">Details</TooltipContent>
+        <TooltipContent side="left">
+          {isFinancialRoute ? "Statements" : "Details"}
+        </TooltipContent>
       </Tooltip>
       {isEvidenceRoute && (
         <Tooltip>
@@ -119,10 +139,7 @@ export function CaseSidePanelRail() {
             variant="ghost"
             size="icon-sm"
             aria-label="Open AI chat"
-            className={cn(
-              "relative",
-              isChatActive && "text-foreground"
-            )}
+            className={cn("relative", isChatActive && "text-foreground")}
             onClick={() => handleExpand("chat")}
           >
             <MessageSquare className="size-4" />
@@ -139,10 +156,7 @@ export function CaseSidePanelRail() {
             variant="ghost"
             size="icon-sm"
             aria-label="Open Notebook"
-            className={cn(
-              "relative",
-              isNotebookActive && "text-foreground"
-            )}
+            className={cn("relative", isNotebookActive && "text-foreground")}
             onClick={() => handleExpand("notebook")}
           >
             <NotebookPen className="size-4" />
@@ -163,6 +177,7 @@ export function CaseSidePanelRail() {
  */
 export function CaseSidePanelContent() {
   const { id: caseId } = useParams()
+  const isFinancialRoute = !!useMatch("/cases/:id/financial")
   const tab = useUIStore((s) => s.graphPanelTab)
   const setCollapsed = useUIStore((s) => s.setGraphPanelCollapsed)
   const setTab = useUIStore((s) => s.setGraphPanelTab)
@@ -185,7 +200,7 @@ export function CaseSidePanelContent() {
           )}
         >
           <Info className="size-3.5" />
-          Details
+          {isFinancialRoute ? "Statements" : "Details"}
         </button>
         <button
           type="button"
@@ -232,8 +247,13 @@ export function CaseSidePanelContent() {
 
       {/* Panel content */}
       <div className="flex-1 overflow-hidden">
+        {isFinancialRoute && caseId && (
+          <div className="h-full" hidden={tab !== "detail"}>
+            <StatementFilesPanel key={caseId} caseId={caseId} />
+          </div>
+        )}
         {tab === "detail" ? (
-          hasSelection ? (
+          isFinancialRoute ? null : hasSelection ? (
             <NodeDetailSheet
               caseId={caseId!}
               onEditNode={(nodeKey) => setEditNodeKey(nodeKey)}
