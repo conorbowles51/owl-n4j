@@ -308,3 +308,8 @@ expert opinion or certification of historical custody or corpus independence.
 - [x] Browser desktop/mobile check preserves unsaved input and fits the viewport; financial writes blocked during acceptance.
 - [x] Readable synthetic custody PDF inspected, with receiving parties, acquisition/native status, certification references and correction IDs outside hidden raw JSON appendices.
 - [x]143live permission checks pass; immutable PostgreSQL reports/audit tested entirely within rolled-back transactions.
+
+
+## Recovered statement workflow accepted, 11 September 2026
+
+The reopened practical checks at the top of this document have now been completed through normal browser controls. See the ready-for-push section in [the recovery record](loupe-workflow-recovery-2026-09-11.md) for the current evidence and boundaries. Upload opens an editable statement review, confirmation adds the selected payments once, and Transactions is the main investigation screen. Real multi-page imports, full-field correction history, explicit version replacement, interrupted processing recovery, manual-row recovery, notes, account navigation and report continuity have recorded acceptance. Historical checks above remain unchanged; they are no longer the sole basis for this workflow's readiness.

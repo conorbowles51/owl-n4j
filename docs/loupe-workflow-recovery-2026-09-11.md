@@ -93,34 +93,34 @@ These are implementation steps derived from the recovered requirements. They are
 not assertions that Neil approved a new visual mockup. Preserve the existing Loupe
 shell and persistent Financial guide modal.
 
-1. [ ] Complete statement review in one place.
+1. [x] Complete statement review in one place.
    - Prepare a statement and open a transaction table beside its original PDF.
    - Show account, currency, period, opening/closing controls and page coverage.
    - Offer proposed column meanings and transaction rows for review. Preserve
      uncertainty; no bank-specific assumption based only on the Nexus fixture.
    - Edit/confirm fields, exclude non-transactions and recover missed rows within
      this review. Show what was saved and the next unresolved issue.
-2. [ ] Connect review to the financial record.
+2. [x] Connect review to the financial record.
    - Show complete transaction count, exclusions, balance check and unresolved
      problems before committing the import.
    - Preserve original readings and individual changes with actor and reason.
    - Prevent duplicate additions and partial success being described as complete.
    - Do not promote verification merely to make totals appear.
-3. [ ] Make the financial record the main investigation screen.
+3. [x] Make the financial record the main investigation screen.
    - Put the table, understandable account names, dates and money totals first.
    - Provide visible account/date/search/reliability filters and source actions.
    - Move preparation, detailed verification history and document comparison into
      appropriate secondary panels while retaining their functionality.
    - Remove the confusing duplication between Ledger and Transactions.
-4. [ ] Connect the analytical views to that record and selection.
+4. [x] Connect the analytical views to that record and selection.
    - Reuse the existing charts, transfers, graph, timeline and tracing calculations.
    - Carry account/party/date scope and verification selection consistently.
    - Restore the saved incoming/outgoing/internal entity perspective behaviour.
    - Check corrections flow through every applicable calculation and export.
-5. [ ] Add safe reprocessing of an existing statement.
+5. [x] Add safe reprocessing of an existing statement.
    - Keep the previous extraction and review history, compare versions, and make
      replacement explicit. Do not overwrite finalized source mappings in place.
-6. [ ] Prove the whole journey through normal application controls.
+6. [x] Prove the whole journey through normal application controls.
    - Fresh Nexus PDF: all 12 payments, six credits, six debits, all 13 printed
      balances; header and opening balance excluded from transaction counts.
    - Deliberately correct a field and verify original/history preservation.
@@ -140,3 +140,74 @@ They are not evidence that the workflow items above are complete.
 No new completion date is inferred from test counts or number of components.
 The first acceptance boundary is the ordinary statement-to-investigation journey,
 not another isolated control or a screenshot of a pre-populated case.
+
+## Active recovery implementation, 11 September 2026
+
+Work remains local and is not ready to push. The revised workflow is being tested through actual user controls, rather than judged from separately populated analysis fixtures.
+
+Completed checks in the current implementation:
+
+- [x] Nexus PDF uploaded in an isolated UI-created case, automatically prepared, reviewed with the PDF visible, and imported with one confirmation. All 12 transactions survive reload.
+- [x] An existing active import cannot be imported twice through the review screen.
+- [x] Reprocessing creates retained source history. The existing import stays active until explicit replacement. Browser replacement test leaves exactly 12 active transactions after reload.
+- [x] Editable dates, descriptions, amounts, directions, balances and explanations are part of the import review. A missed row can be added with an original page citation.
+- [x] Transactions is the initial financial tab. Compact account/date filters and totals precede the transaction table; download options follow it.
+- [x] 1,022 financial frontend tests passed before the subsequent statement-collection changes. The later changes require a new run.
+- [x] The real 108-page PDF is recognised as 27 separate printed billing periods. Unknown pages remain separately identified.
+- [x] The first real card period yields its payment, purchase and undated interest charge. The missing interest date remains an explicit exception. No real-fixture import was performed.
+- [x] A persistence test imports two periods from one PDF separately and checks idempotent retries and six stored transactions.
+
+Remaining acceptance work includes collection review in the browser; the second real PDF layout; missing/unclassified page handling; credit-card interpretation and balance controls; durable review recovery; source corrections after import; counterparties, transfers, patterns, notes and report continuity; permission tests; guide revisions; and the final complete regression/build checks. Earlier test counts do not establish completion of these items.
+
+Local fixture references for safe continuation: `data/local-runtime/statement-import-acceptance.json` records the new synthetic case and reprocessed version. Do not rerun writers against the older real PDF fixtures. `scripts/check_local_statement_import.cjs` and `scripts/check_local_statement_reprocessing.cjs` have repeat guards for the isolated synthetic case.
+
+### Integration progress at 05:50 Dublin, 11 September
+
+The list above is retained as the earlier checkpoint. Subsequent completed work:
+
+- [x] Full transaction corrections after import retain original readings and append the replacement. The browser check changed a synthetic description, checked it, and restored it through another recorded correction; 12 current payments remained throughout.
+- [x] Investigator notes save through Workspace and reopen from their transaction link. Notes and linked source references are included in exported reports.
+- [x] The supplied 56-page scanned PDF was freshly uploaded through normal controls in an isolated case. Its 42 statement choices appeared; the first two dated payments were confirmed once and survived reload. Unassigned pages and unclear printed dates remain visible.
+- [x] Account/date selection follows Transactions, Counterparties, Trends, Posting graph, Patterns and Case context. Transfers shares dates while explicitly retaining all accounts for two-sided comparison.
+- [x] The Statements account directory displays holder, number, bank and currency. Browser acceptance confirmed that its account action opens all 12 synthetic payments.
+- [x] Statement balance checks and date coverage load on opening Statements. Both requests succeeded in the browser acceptance case.
+- [x] Reprocessing stores its request and job in the current browser tab. A real UI reread was interrupted by refreshing, resumed the same job, opened replacement review and left all 12 current transactions unchanged without confirmation.
+- [x] Reprocessing refuses a reading overlapping multiple active imports rather than choosing one replacement and potentially double-counting the remainder.
+- [x] Opening and explicit closing controls are retained separately from payment rows. A persistence check confirms that an explicit closing balance does not increase the payment count.
+- [x] The revised beginner guide opens from the persistent modal. Browser checks resolved every contents anchor and guide image.
+- [x] Current synthetic report archive passed all declared-member digest checks, including the bundled original source PDFs. Initial report pages were rendered and visually inspected.
+
+Still in progress at this checkpoint:
+
+- [x] Finish the freshly uploaded 108-page card journey, including the undated charge decision and retained source. Completed through normal controls; two dated payments retained after reload, undated interest excluded with a recorded reason.
+- [x] Verify the final report table presentation after aligning its credit, debit and printed-balance columns with the investigation screen. Final archive verified and rendered table inspected.
+- [x] Finish remaining account-group, missing-row/discrepancy and interruption edge-case review against the recovered requirements. Account group and analysis population survive tab changes; live balance feedback and a source-cited manual replacement were exercised through normal controls.
+- [x] Review all source changes together, update screenshots where needed, and run the final build and regression checks at readiness. Build, scoped lint and the recorded regression/acceptance checks passed.
+- [x] Commit the completed work with detailed explanations. Backend: a643c742; manual sequence safeguard: cf9e2798; investigation UI: df902b31. Guide and completion record are included in the accompanying documentation commit. Nothing has been pushed.
+
+Significant integration checks in this segment: 55 related frontend checks passed after updating one expectation for automatic loading; 41 backend import/catalog/report checks passed. These checks supplement the browser journeys; they are not a claim that the whole financial work is complete. Tests are being reserved for meaningful integration points in line with the user's instruction.
+
+
+### Ready-for-push verification, 11 September 2026
+
+The six correction steps are now marked complete against the recovered practical workflow. This closes the workflow gap identified in Neil's screenshots, not the unconstrained target catalogue in bundle document 13. Earlier checkpoints above remain as dated history.
+
+- [x] Synthetic statement: 12 current transactions, six credits, six debits, all printed running balances, separate opening balance, unchanged original PDF.
+- [x] Fresh 56-page scanned file: 42 statement choices; selected period's two dated payments imported and retained after reload.
+- [x] Fresh 108-page file: 27 printed statement periods; selected period's two dated payments imported, with the undated interest charge excluded and its reason retained. Reopening the statement displays that recorded decision rather than presenting its original proposal as the current import.
+- [x] Manual-row recovery: excluded one synthetic extraction and re-entered the same printed payment with a page citation and reason. Replacement retained exactly 12 current payments and the expected balance after reload.
+- [x] Changing selected payments recalculates the comparison with available opening/ending controls immediately. A difference stays visible before confirmation. This is not a completeness guarantee.
+- [x] Shared account/date selection, account-group selection and working/verified analysis selection retain their documented scope across tabs. Transactions remains the full current record with its own table filters.
+- [x] Final report table shows dates, descriptions, separate credits/debits, printed balances and source references. Notes and retained original/version history remain in the export. File-member digests checked and rendered layout inspected.
+- [x] Production frontend build passed. Financial frontend regression: 117 files, 1,038 checks passed. The final shared-analysis adjustment passed its 11 affected checks and browser navigation check.
+- [x] Backend financial regression ran 4,428 checks. Six failures were obsolete report heading/punctuation expectations; corrected expectations and 105 affected import/report checks passed. The whole backend suite was not repeated for wording changes.
+- [x] Combined changed financial frontend files passed ESLint. Remote fetch completed; no remote commits were missing locally.
+
+Persistent acceptance records are under data/local-runtime: statement-import-acceptance.json, statement-field-correction-acceptance.json, statement-investigation-acceptance.json, fresh-real-statement-upload.json, fresh-capital-one-upload.json, statement-reprocessing-recovery.json and manual-row-acceptance.json. Real originals and older acceptance cases were retained.
+
+Known product boundaries remain explicit: statements with unreadable dates or unassigned pages need review; a multi-statement PDF is reviewed one printed statement at a time; automatic review is bounded to 500 pages and 1,000 prepared rows per statement and refuses excess rather than truncating it. Browser-tab recovery does not survive closing that tab. No external AI key is required for this local PDF preparation/review/import flow. These boundaries are not silently labelled complete extraction or independently verified financial evidence.
+
+No deployment has been triggered. Local commits are prepared separately from the push that starts the user's server deployment.
+
+
+Final review safeguard: manually entered rows carry a page citation, not a confirmed printed row position. Sequential running-balance comparisons now return that explicit limitation instead of treating append order as source order. Transaction totals and the review's aggregate balance comparison remain available. All 15 correction/statement balance checks passed after this safeguard. This is documented in the user guide.

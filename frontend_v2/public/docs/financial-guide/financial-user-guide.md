@@ -2,17 +2,17 @@
 
 Step-by-step instructions for reviewing financial records, investigating payments and preparing reports.
 
-**Edition: 10 September 2026.** This guide describes the financial screens in the local application. A server may show an older version until it is deployed. Screenshots use a development case with synthetic transactions. They illustrate the controls, not findings about a real person.
+**Edition: 11 September 2026.** This guide describes the financial screens in the local application. A server may show an older version until it is deployed. Screenshots use a development case with synthetic transactions. They illustrate the controls, not findings about a real person.
 
 ## Contents
 
 1. [Start here](#start-here)
 2. [Find your way around](#find-your-way-around)
 3. [Add a PDF](#add-a-pdf)
-4. [Select possible transactions](#select-possible-transactions)
-5. [Review each reading](#review-each-reading)
-6. [Record statement dates and balances](#record-statement-dates-and-balances)
-7. [Finish the PDF review](#finish-the-pdf-review)
+4. [Check the extracted statement](#check-the-extracted-statement)
+5. [Correct problems before import](#correct-problems-before-import)
+6. [Confirm the statement import](#confirm-the-statement-import)
+7. [Read a statement again](#read-a-statement-again)
 8. [Record how a source was received](#record-how-a-source-was-received)
 9. [Read and filter the ledger](#read-and-filter-the-ledger)
 10. [Correct a reading or change its inclusion](#correct-a-reading-or-change-its-inclusion)
@@ -31,6 +31,7 @@ Step-by-step instructions for reviewing financial records, investigating payment
 23. [Solve common problems](#solve-common-problems)
 24. [Complete your case review](#complete-your-case-review)
 25. [Words used in Loupe](#words-used-in-loupe)
+26. [Advanced manual review](#advanced-manual-review)
 
 ## Start here
 
@@ -44,24 +45,21 @@ Ask your administrator for the Loupe address, your own sign-in details and acces
 
 Keep the original files supplied to you. Work from the evidence registered in the correct case. A file on your computer is not available to colleagues until it has been uploaded to their Loupe server. Local development cases are not copied to the server by a software deployment.
 
-You do not need an AI connection to prepare a PDF locally and review its stored text. The optional AI proposal button needs a working provider configured by your administrator. Start with ordinary PDF preparation and manual review.
+You do not need an AI connection for the normal statement upload and review process. Optional AI proposals in the advanced review tools require a provider configured by your administrator.
 
 ### Your first complete task
 
-For your first use, follow sections 3 to 7 with a test document before working on a live case. Practise selecting rows, saving a decision and reopening it. Finalization closes further additions from that PDF reading, so practise that step in a test case too.
+Practise with a test statement in a test case first. Follow sections 3 to 6: upload the PDF, inspect the extracted transactions, correct any flagged errors and confirm the import once. You can then investigate the payments directly in Transactions.
 
 The normal order of work is:
 
-1. Upload or select the PDF and prepare it for review.
-2. Compare the extracted table with the original page.
-3. Select actual transaction rows and save them for review.
-4. Check the amount, currency, account, direction and dates for each selected row.
-5. Record printed statement dates and balances where available.
-6. Check every intended page and batch, then finalize the PDF reading.
-7. Inspect the working ledger and statement checks.
-8. Investigate payments and save the reports you need.
+1. Upload the statement and wait for its extracted account details and transactions.
+2. Check highlighted problems against the original PDF and correct what is wrong.
+3. Confirm the import once, after checking the number of transactions being added.
+4. Search and filter the transactions, examine their sources and investigate counterparties and transfers.
+5. Save notes and download reports with the supporting statement references.
 
-### Four distinctions that affect your results
+### Understand the totals and older review records
 
 | What you see | What it means for your work |
 |---|---|
@@ -80,13 +78,13 @@ A working total of 1,000.00 and a verified total of 0.00 can therefore both be c
 4. Select **Financial** in the case navigation.
 5. Use the tabs across the financial page. Scroll the page or tab strip when controls are outside the visible area.
 
-![Financial page in a synthetic development case](images/01-financial-home.png)
+![Financial page in a synthetic development case](images/12-imported-transactions.png)
 
 *The financial page contains separate tabs for the ledger, review history and analysis. The case name identifies where your work is being recorded.*
 
 | Tab | Use it to |
 |---|---|
-| Ledger | Open PDF readings, review evidence classes, compare duplicates, inspect totals and current rows. |
+| Import history | Inspect older page-by-page PDF reviews, evidence classes and duplicate comparisons. |
 | Statements | Check recorded balances, printed controls and statement date coverage. |
 | Held out | Inspect rows excluded from normal ledger use and record permitted inclusion decisions. |
 | Attempts | Find recorded financial loading attempts and whether they completed. |
@@ -104,209 +102,136 @@ A working total of 1,000.00 and a verified total of 0.00 can therefore both be c
 
 ## Add a PDF
 
-### Upload and prepare a new file
+### Upload a bank or credit-card statement
 
-1. Open **Financial**, then **Ledger**.
-2. Select **Open PDF readings**.
-3. In **PDF document**, choose the PDF from your computer.
-4. Check the filename and case name.
-5. Select **Prepare PDF for review** once.
-6. Wait for preparation to complete. This step reads the PDF and prepares text and table information. Scanned pages may require OCR, which reads letters and numbers from page images.
-7. When **Choose prepared PDF rows** becomes available, select it.
-8. Confirm that the available source pages belong to the correct file.
+1. Open the correct case and select **Financial**. The **Transactions** tab opens first.
+2. Select **Import a statement**, then **Upload a statement**.
+3. In **PDF document**, choose your statement from your computer.
+4. Check its filename, then select **Upload and read statement** once.
+5. Wait for Loupe to read the pages. Scanned statements take longer because their letters and numbers must be read from images.
+6. The statement review opens when reading is complete. Loupe fills in the account details and transaction fields it can identify.
+7. If the PDF contains several statements, choose the account and period you want to import. The page numbers help you identify the right statement.
+8. If asked, choose the currency printed on the statement. Do not choose a currency merely because it is your usual working currency.
 
-![PDF upload and preparation controls](images/02-pdf-upload.png)
+You do not need to assign columns, select every payment, save a batch or finalize readings in the normal import process. Those tasks happen within the system. Nothing enters the transaction totals until you confirm the import in section 6.
 
-*Choose a document, then prepare it. Preparation does not approve transactions or put amounts in the ledger.*
+![The normal statement review, using a synthetic statement](images/11-statement-review.png)
 
-### Use a file already uploaded
+*Loupe fills the transaction rows before you confirm. Use View source to compare a value with the original PDF.*
 
-1. Open **Open PDF readings**.
-2. Select **Find uploaded PDFs**.
-3. Choose the matching file from the results. Check its processing status as well as its name.
-4. If the file is unprocessed, use **Prepare PDF for review**.
-5. If preparation has completed, use **Choose prepared PDF rows**.
+### Open a statement already uploaded
 
-Do not upload repeated copies just because preparation is taking time. Check the saved status first. If the page reports a failed or interrupted attempt, note the filename and error before asking the administrator to investigate.
+1. Select **Import a statement**.
+2. Under **Or open an uploaded statement**, choose the file.
+3. If several versions share a filename, compare their added times and the short identifier beside each name.
+4. Choose a statement period and currency if requested.
+5. If the statement was already imported, select **Open imported transactions** to return to the investigation view. Do not upload another copy to make it appear again.
 
-### Check whether preparation was useful
+If a file has not finished processing, wait for its status to complete. If reading failed, use **Retry statement review** or the reprocessing controls described in section 7. Repeated uploads create separate source records and make duplicate review harder.
 
-Open a page that contains transactions. Compare its stored text with the original PDF. Check a date, an amount and a description. Watch for missing decimal points, mixed columns, repeated headers and unreadable characters. A successfully prepared file can still contain extraction errors that need manual review.
+## Check the extracted statement
 
-## Select possible transactions
+### Check the account and transaction count
 
-### Select rows manually
+1. Compare **Account holder**, **Account number** and **Bank** with the statement header. A beneficiary account mentioned in a transfer is not necessarily the account that issued the statement.
+2. Check the statement currency and any recorded **Period start** and **Period end**.
+3. Read **Check statement details** if it appears. It explains missing or unclear account details, dates or page coverage.
+4. Read the number beside **transactions to import**. Compare it with the payment rows on the original statement.
+5. Check the credit and debit totals. For a bank account, credits usually represent money in and debits money out. For a credit card, debits increase the amount owed and credits reduce it.
 
-1. In **Choose rows from a PDF**, select the file and page from the available source pages.
-2. If the page has more than one stored table, use **Previous table** or **Next table** to find the transaction area.
-3. Read the original page beside the extracted table.
-4. Click a table value to locate it on the original. Use **Show table location** when you need to inspect the table area.
-5. Assign the proposed meaning of each relevant column. Identify dates and amounts from the printed headings and values. Leave meanings unknown when the source does not support a choice.
-6. Tick **Use row** only for rows you intend to review as transactions.
-7. Check that you have not selected an opening balance, a closing balance, a heading, a subtotal or a disclosure paragraph as a payment.
-8. Select **Save selected rows for review**.
-9. Wait for **Rows saved**. Open the saved readings to check that the intended rows are present.
+Where a printed opening balance and an ending balance are available, the review recalculates the balance using your selected payments. Excluding a payment or changing its amount can show **Selected movements leave a balance difference**. Inspect the compared balance and check missing rows or corrections before confirming. Agreement is an arithmetic check, not proof that every payment was supplied.
 
-Use the source viewer's **+** and **−** controls to change zoom, **Fit source width** to fit the page area, and **Show highlighted value** to return to the selected source location when those controls are available. Zooming does not change the saved reading.
+A manually added transaction has a page citation but does not establish its position among the printed rows. Loupe therefore explains when it cannot perform the sequential running-balance check. Check that payment against the PDF and compare the statement totals.
 
-Clicking a value to inspect its location does not select its row. Selecting a row does not confirm the amount or direction. Saving rows creates a review batch, which is a group of selected readings you can return to later.
+An opening balance, closing balance, column heading or disclosure paragraph is not a payment. Loupe excludes recognised examples from the proposed transaction count. To inspect what it excluded, select **Show excluded rows**.
 
-### Use printed headings and account references
+### Compare a field with the PDF
 
-The source selector can show proposals based on exact printed headings and labelled account references. Inspect the cited cell before accepting a column proposal. A generic **Date** heading does not tell you whether the date is a transaction, booking or value date.
+1. Select **View source** on the row you want to inspect, or select a source value where available.
+2. Read the original beside the editable transaction fields.
+3. Use the page image to check the date, description, direction, amount and printed balance.
+4. Use zoom and **Fit source width** to read small print. **Show highlighted value** returns you to the selected location.
+5. If the page has no exact highlight, inspect the whole cited page. A page link is less precise than a field highlight.
 
-A masked account number may identify a useful section of a statement without identifying the full account. Do not combine different card endings or account sections merely because they appear in one PDF. Keep separate provisional accounts where the evidence does not establish a shared identity.
+Select **Show problems and edits only** to concentrate on rows that need attention. Turn it off again to inspect all proposed transactions. This filter only changes what you see; it does not remove rows from the import.
 
-### Scan a page range
+### Check a PDF containing several statements
 
-1. Open the page scan controls in the source selection area.
-2. Enter the first and last pages you want to inspect. Scan at most 50 pages in one request; repeat for the next range in a longer PDF.
-3. Choose the scan currency.
-4. Use automatic column proposals where supported, or identify the possible date and amount columns from the source.
-5. Select **Scan selected page range**.
-6. Read the result for each page. Some pages may have suggestions; others may be unchecked or ambiguous.
-7. Open the supporting cells for proposed readings and compare them with the original.
-8. In the queue controls, select the pages whose proposals you want to save for review. Include undated fee and interest proposals only when you intend to review those separately.
-9. Save the selected proposals using the queue's save control.
-10. Check the saved batch list. Different layouts can create separate groups, even on the same page.
+Each choice identifies a printed account and statement period or date. Select **Choose another statement period** to return to the list. Confirm each statement separately so its account and dates stay attached to the correct payments.
 
-Do not count unchecked pages as reviewed. If saving stops partway through, inspect the list of confirmed saved groups before trying again. Earlier confirmed saves remain; restarting without checking may repeat work.
+Open **Inspect another page of the original PDF** when pages are listed as needing a coverage check. Choose **Original PDF page**, then **Show selected page**. Read unassigned pages for missed transactions and continuation tables. Loupe does not treat an unassigned page as proof that it contains no payments. If you find a payment for the selected account and period, add it as described below.
 
-### Use optional AI proposals
+A masked card ending is only a partial account reference. Do not use a matching four-digit ending alone to conclude that two statements belong to the same account or person.
 
-1. Inspect the local scan and original table first.
-2. Open **Model-assisted PDF nominations** for the selected source table.
-3. Read the notice about sending that table's text to the configured model.
-4. If that use is appropriate for your case, select **Request AI proposals for this page**.
-5. Wait for the recorded result, then inspect every proposed row and its source cells.
-6. Select only the proposals you want to review.
-7. Select **Save selected model proposals for review**.
-8. Review those saved readings using the same process as manual selections.
+## Correct problems before import
 
-One request covers one table, up to 200 rows and 24 KB of source text. Proposals do not change source values or admit transactions. An empty proposal list does not prove that a page has no transactions.
+### Fix a misread value
 
-If the response is interrupted, select **Check saved model attempt** first. Checking saved status does not call the model again. If no outcome is found, follow the offered same-request retry rather than creating repeated requests. **Close interrupted model attempt** prevents its result being used, but cannot undo a request already sent to the provider. A separate request may incur additional usage.
+1. Open the row's original source.
+2. Change only the fields that disagree with the printed statement. Dates need a full day, month and year. Amounts use a decimal point without thousands separators.
+3. Select the correct direction. Enter the amount as a positive value; use the direction to say whether it is a credit or debit.
+4. Enter a printed balance only if one is shown. Leave it empty when the statement does not supply one. A missing value is not zero.
+5. Enter the row's correction reason, explaining what you changed and where you checked it.
+6. If you corrected the holder, account, bank or period, complete **Reason for detail corrections** too.
+7. Resolve any remaining required-field message before confirming.
 
-If an attempt is labelled **SIMULATED**, it is test data. Do not describe it as a successful call to an external AI model.
+For example, if the PDF prints `61.62` and Loupe reads `61.26`, enter `61.62` and explain that you checked the printed amount on the cited page. The original extraction and your correction are both retained with the import.
 
-## Review each reading
+### Remove a heading or other non-payment
 
-### Open a saved batch
+1. Find the row and inspect its source.
+2. Clear **Use** for that row.
+3. Enter the reason if requested, for example, “Opening balance, not a payment”.
+4. Check that the transaction count and totals now exclude it.
 
-1. Return to **Ledger** and **Open PDF readings**.
-2. Find the saved batch and select **Open readings**.
-3. Read **Saved review progress**. The counts concern selected rows in that batch, not the whole PDF.
-4. Select **Show only rows awaiting review** if you want to hide rows already decided.
-5. Select **Review next pending row**, or open a specific reading.
+The row remains in the saved review history. Clearing Use does not alter the PDF.
 
-![Saved PDF reading progress in a synthetic case](images/09-saved-readings.png)
+### Add a missed transaction
 
-*The saved batch shows pending, resolved and rejected counts. These example readings have already been decided.*
+1. Open the source page containing the missed payment.
+2. Select **Add a missed transaction**.
+3. Check the new row's source page. Select the correct original page if needed.
+4. Fill in its full date, description, amount and direction. Add the printed balance and counterparty only when the source supplies them.
+5. Explain why you added it and where it appears on the original page.
+6. Check the revised transaction count and totals.
 
-### Complete the review form
+Do not guess an unreadable year, amount or direction to make the button available. Inspect the source or read it again. If you exclude an unresolved row, record why and remember that your imported transactions will not include that payment.
 
-1. Inspect the original cells and PDF page beside **Reading and decision**. Check that the highlighted amount belongs to the selected row.
-2. Choose the three-letter **Currency**, such as GBP, EUR or USD.
-3. Enter the **Reviewed amount** as a magnitude, using a decimal point. For example, enter `61.62`, not `£61.62` or `6,162`. Keep a printed zero as zero when it is a genuine selected reading.
-4. Search for and select the **Account** whose statement records this movement.
-5. Choose **Money out** or **Money in** from that account's perspective. Do not infer the direction from a person's name alone.
-6. Enter supported dates in the appropriate fields. The transaction date, booking date and value date can differ.
-7. Check or enter the **Description**.
-8. Enter **Counterparty as printed** only if the source supplies a name. This field preserves the source wording; it does not establish the person's identity.
-9. Write a **Reason for decision** that identifies what you checked and explains any interpretation or correction.
-10. Select **Record resolved reading**.
-11. Wait for confirmation, then reload the review and inspect its status and history.
-12. Continue with the next pending row.
+## Confirm the statement import
 
-A useful reason is specific: “Page 4, purchase row: printed amount is 61.62. Selected the card-ending 3539 account. Used the transaction date column, not the posting date column.” Avoid reasons such as “checked” when a decision involves uncertainty.
+1. Review the final account details, included transaction count and any remaining warnings.
+2. Check the original pages when coverage is uncertain. A matching total alone does not show that every payment was recovered.
+3. Select **Confirm import of [number] transactions** once.
+4. Wait for the confirmation. Loupe records the statement, included transactions, original extraction and your corrections together.
+5. You return to **Transactions**, where the imported payments appear in the table and working totals.
+6. Use the account and date filters, open a transaction's source, or move to **Counterparties**, **Trends**, **Transfers** or **Patterns** to investigate.
 
-![Original source and review fields for a finalized synthetic reading](images/10-reading-review.png)
+![Imported transactions ready for investigation](images/12-imported-transactions.png)
 
-*The original source appears beside the review fields. This example has already been finalized, so its fields are read-only. An unfinished reading uses this area to record a decision.*
+*After one confirmation, the synthetic statement's payments appear in the investigation table. Open View source to return to the statement or Add note to record a question about a payment.*
 
-### Assess an unclear amount or date
+If confirmation reports that the source or review changed, reload the review and check the current version. If the outcome is uncertain, inspect **Transactions** and reopen the statement before trying again. An already imported statement shows its current transaction count and **Open imported transactions**. Expand **Recorded import decisions** to see reasons for exclusions and corrections made at import. **Inspect the original extraction** shows the initial reading, which can differ from the corrected transactions now in use.
 
-Use **Assess original amounts** and **Assess original dates** to inspect the application's interpretations of the original text. These are aids to review. Compare alternatives with the source before entering your decision. A short year, ambiguous day/month order or OCR error needs a supported interpretation. Leave unresolved information pending when you cannot justify it.
+Working totals include the reviewed PDF transactions. The separate verified-only view can show fewer transactions because it applies additional source and verification rules. Confirming an import records your review; it does not certify that the bank statement is genuine or complete.
 
-For an undated fee or interest row, leave the transaction, booking and value date fields empty. The **Statement end date (ordering only)** option places an eligible undated row in order using its statement end. It does not claim the payment occurred that day. Finalization requires the matching printed statement-end control.
+## Read a statement again
 
-### Create a provisional account
+Use this when extraction missed or misread substantial parts of a PDF. For a single error in an imported transaction, use **Correct transaction**, described in section 10.
 
-1. Search existing accounts first.
-2. If none is supported by the source, use the provisional-account controls in the review form.
-3. Enter a **Provisional account label** that distinguishes the source, such as “Card ending 3539”.
-4. Enter the **Reason for provisional account**, explaining what is known and what remains unknown.
-5. Select **Create provisional account**.
-6. Check that the new account is selected, then complete the reading decision.
+1. Select **Import a statement** and open the affected uploaded file.
+2. Expand **Read the statement again**.
+3. Read the explanation, then select **Reprocess statement**.
+4. Wait for processing to complete. Loupe creates a separate reading of the same source bytes and keeps the earlier version.
+5. Review the new statement, including its account details, transactions and any corrections needed.
+6. If this replaces an imported statement, check the displayed replacement count, select **Replace the previous import when I confirm** and enter the reason.
+7. Confirm the replacement import once.
+8. Check **Transactions**. The earlier version remains in history, but the replacement supplies the current transaction totals. The two versions should not be counted together.
 
-Creating an account does not resolve the reading. It also does not establish the holder's identity.
+If you refresh the page while processing, reopen the same uploaded statement in the same browser tab. Loupe checks the saved processing job. Select **Open new reading** when it is ready. If the request was interrupted before a response arrived, select **Reprocess statement** to resume the same request. Closing the browser tab can discard this saved progress.
 
-### Reject or reopen a reading
+Do not repeatedly reprocess without checking the result. OCR can repeat the same error; correcting a readable value against the source may be the appropriate next step.
 
-If a selected row is a summary, duplicate selection or otherwise unsuitable, explain why in **Reason for decision** and select **Reject reading**. Reload to confirm the recorded result.
-
-Before finalization, use **Reopen for review** when an existing decision needs reconsideration. Record the new reason and decision. After finalization, use the ledger correction or inclusion processes in section 10; the original candidate review is sealed.
-
-## Record statement dates and balances
-
-Use printed statement controls to compare reviewed transactions with what the statement actually reports. A control is a printed date, balance or period total used as a check.
-
-### Add one printed statement period
-
-1. Finish reviewing the rows you intend to assign to the period.
-2. Open **Finalize reviewed rows**, then **Add printed statement controls**.
-3. Under **Statement account**, choose the correct account and currency.
-4. Select the reviewed rows belonging to that printed statement period.
-5. Enter **Printed statement start** and **Printed statement end** from the statement.
-6. Locate and select the supporting original cells for both dates using the source controls.
-7. Enter the **Printed opening balance** and **Printed closing balance** where present, and select their original source cells.
-8. If present, enter **Printed total money in** and **Printed total money out**, with their sources.
-9. Choose **What do the printed balances represent?** Select **Money held in the account** for held funds or **Money owed to the issuer** for a debt balance, according to the statement.
-10. Enter a **Reason for statement control readings**.
-11. Select **Add statement to preview**.
-12. Repeat for each separate account and printed period. Check the complete preview before finalizing.
-
-Leave an unprinted balance blank. Blank means unknown. Enter `0.00` only when you have evidence for zero. Enter decimal amounts without symbols or thousands separators, retaining a minus sign if printed. When you choose money owed to the issuer, Loupe converts amounts owed to negative ledger balances and retains the original printed amount and your choice.
-
-Do not use a purchases subtotal as total money out if fees or interest are listed separately. The direction total must cover all money in or out in that period.
-
-### Save an unfinished statement editor
-
-1. While entering a statement, expand **Save unfinished statement editor**.
-2. Save the unfinished fields and selected source cells.
-3. Check for **Unfinished editor saved** before leaving.
-4. When you return, use **Load unfinished statement editor**.
-5. Finish the fields and add the statement to the preview when ready.
-
-An unfinished editor is not yet a reviewed statement in the preview.
-
-### Save statements already added to the preview
-
-1. Open **Save statement controls**.
-2. If saved controls already exist, load them before replacing the draft.
-3. Select **Save statement controls to case**.
-4. Check for the saved confirmation.
-5. On return, select **Load saved statement controls** and inspect the preview.
-
-These two saves are separate: one preserves the editor you are still filling in; the other preserves statements you have already added to the preview. Source checks run again before finalization. If another reviewer has changed the draft, refresh and compare their version before saving again.
-
-## Finish the PDF review
-
-**Finalization seals this PDF reading in the case. Do not finalize the first batch while you still need to select rows from other pages.** You can leave recorded reviews saved while completing the rest of the document.
-
-1. Open **Show document progress** under the saved readings. Inspect each page and use **Previous overview pages** and **Next overview pages** for longer documents. A page with no saved rows still needs inspection. Open every saved batch from the PDF and check its progress.
-2. Confirm that every intended row has been selected. Revisit unchecked pages and separate account sections.
-3. Resolve or reject every selected reading. Do not leave pending rows in the intended finalization.
-4. Load and inspect saved statement controls, if used.
-5. Open **Finalize reviewed rows** and read the preview, source checks and any errors.
-6. If you are deliberately finalizing an incomplete document selection, read the incomplete-coverage acknowledgement and tick it only if it describes your decision.
-7. Enter **Reason for finalization**, explaining the reviewed coverage and anything excluded or unresolved outside it.
-8. Select **Finalize selected rows** once.
-9. Wait for the receipt. If the connection is interrupted, reload and inspect the saved receipt before repeating the action.
-10. Return to the ledger. Inspect the current working readings, totals and source links.
-11. Open **Statements** and inspect the resulting checks.
-
-Finalized manual PDF rows remain P3. Finalization does not certify complete extraction, identify every account holder or promote readings into verified totals. To change a written amount later, use a ledger correction. Do not attempt to reopen the original source selection as if it were an unsaved form.
+The older page-by-page review tools remain available under **Import history** for existing batches and exceptional layouts. They are described in the [advanced manual review appendix](#advanced-manual-review). They are not required for a normal statement import.
 
 ## Record how a source was received
 
@@ -330,16 +255,16 @@ To correct a report, select **Correct this custody report**, enter the corrected
 
 ### Choose the records to examine
 
-1. Open **Ledger** or documentary **Transactions**.
-2. In **Ledger filters**, use **Find a ledger account** and **Find accounts** to locate an account. Select it, or select **Use all accounts**.
-3. Enter **Ordering date from** and **Ordering date through** when restricting dates. Both endpoints are included.
-4. Select **Apply ledger filters**.
-5. Read the applied scope displayed above the answer. Unsaved filter edits do not change the current result.
+1. Open **Transactions**.
+2. Choose an account in **Account**, or leave **All accounts** selected. Expand **Find another account or inspect the date scope** if the account you need is not listed.
+3. Enter **From** and **To** when restricting dates. Both endpoints are included.
+4. Select **Apply**, or **Reset** to return to all accounts and dates.
+5. The applied account and dates follow you between Transactions, Counterparties, Trends, Posting graph, Patterns and Case context during this visit. Read the scope displayed above the answer. Unsaved filter edits do not change the current result.
 6. Check working and verified totals separately, by currency.
 
 An ordering date is the date Loupe uses to place a reading in sequence. For some undated items it can be the statement end, not a known transaction date. Read the row's date basis before relying on exact timing.
 
-![Transactions in a synthetic case](images/03-transactions.png)
+![Transactions in a synthetic case](images/12-imported-transactions.png)
 
 *Use the table and population labels to understand which readings the view contains. Example amounts in this guide are synthetic.*
 
@@ -362,15 +287,25 @@ Select **View source** on a reading. Check the original amount, page and source 
 
 Open a credit, debit or net contribution control on the summary to see the exact rows contributing to it. Page through those rows and open their sources. Compare like currencies. Net postings are money in minus money out in the selected records; they are not an account balance without a supported opening balance and complete movements.
 
+### Record an investigation note
+
+1. Select **Add note** on the transaction, or **Add investigation note** while its source is open.
+2. In **Your note**, record the question, observation or follow-up you want to keep.
+3. Select **Save investigation note** and wait for **Note saved**.
+4. Select **Open Workspace** to reopen the saved note. It is linked to the transaction reading and original statement.
+5. Reopen Workspace later to review or edit the note. A ledger export includes linked notes within its captured transaction scope.
+
+A note does not change a transaction or its totals. If the transaction is later corrected, the note retains the original reading's reference so a colleague can see exactly what you were discussing.
+
 ## Correct a reading or change its inclusion
 
-### Correct an amount
+### Correct a transaction
 
 1. Locate the current reading in the ledger.
 2. Open its correction action and inspect the original source.
-3. In **Correct ledger amount**, enter the correct unsigned amount and direction.
+3. Select **Correct transaction**. Its current fields are filled in. Correct the printed date, description, counterparty, reference, transaction type, amount, direction or balance as needed. Leave an unprinted date or balance empty; at least one date is required.
 4. Select **Preview correction**.
-5. Compare the before and after statement controls. Read any warning that the document will be excluded from verified totals or the replacement remains held out.
+5. Read **Changes to record** and compare the before and after statement controls. Read any warning that the document will be excluded from verified totals or the replacement remains held out.
 6. Enter **Reason for correction**, identifying the source and the error.
 7. Select **Record correction** in the preview.
 8. Read the saved outcome, then inspect **Decisions** and the original/replacement readings.
@@ -395,9 +330,11 @@ Open **Decisions**. Expand the relevant decision to inspect the reason, actor, t
 
 ## Check statements and missing periods
 
-1. Open **Statements**.
+The top of **Statements** lists the accounts recorded in this case, with their holder, account number, bank and currency. Use **Find an account** to search those details. Select **View all transactions** on an account to open its payments across all recorded dates. Missing account details are shown as not recorded.
+
+1. Open **Statements**. Balance checks and date coverage load automatically.
 2. Read each period's account, currency and recorded bounds.
-3. Select **Check statement balances**. In **Statement balance checks**, compare opening balance plus money in minus money out with the recorded closing balance.
+3. In **Statement balance checks**, compare opening balance plus money in minus money out with the recorded closing balance.
 4. Expand **Recorded check and source details** for the period.
 5. Open the printed balance and date sources. Compare running balances and direction totals where available.
 6. If a difference appears, inspect candidate causes and their source rows. Treat suggestions as places to look, not automatic corrections.
@@ -407,7 +344,7 @@ Open **Decisions**. Expand the relevant decision to inspect the reason, actor, t
 
 ![Statements controls in the development case](images/07-statements.png)
 
-*The Statements tab separates balance checks from date coverage. Select the check buttons to load results. An unopened check has not yet returned an answer.*
+*The Statements tab separates balance checks from date coverage. Results load when you open the tab; use **Refresh balance checks** and **Refresh statement coverage** to refresh them after changes.*
 
 A balanced period only establishes agreement for the recorded controls and rows. Missing equal-value incoming and outgoing transactions could leave a balance unchanged. Continue checking source coverage.
 
@@ -417,7 +354,7 @@ If native bank-file records have been loaded through a supported ingestion proce
 
 ### Inspect gaps, overlaps and requested coverage
 
-1. Select **Check statement coverage**, then inspect the account entries and use the coverage pagination to reach the account you need.
+1. Inspect the loaded coverage results, or select **Refresh statement coverage** to refresh them. Read the account entries and use the coverage pagination to reach the account you need.
 2. Inspect the recorded periods, gaps and overlaps.
 3. Open the period's source dates to verify that the bounds were recorded correctly.
 4. For a specific question, apply the relevant account and date range in the ledger and read its requested-coverage result.
@@ -429,7 +366,7 @@ An overlap may reflect repeated statements or deliberately overlapping records. 
 
 ### Compare documents in this case
 
-1. On **Ledger**, find **Duplicate candidates** and select **Compare documents**.
+1. On **Import history**, find **Duplicate candidates** and select **Compare documents**.
 2. Inspect the compared account and period coverage, source hashes and stored readings.
 3. Open both original sources. Check whether the documents represent the same evidence and whether one has information the other lacks.
 4. Read matching source hashes across different or missing coverage separately. Identical bytes do not make two differently reviewed scopes interchangeable.
@@ -559,7 +496,11 @@ The selected pair counts once in this scenario. The original incoming and outgoi
 4. Inspect unpaired postings that could still be internal transfers.
 5. Select **Download account perspective and assumptions**.
 
+Your account group stays selected when you move between financial tabs. Accounts with no transactions in the current date range are listed as outside that range and do not contribute to its totals. Use **Clear account group** to start another selection. Refreshing the browser clears this temporary selection; saved account-to-party links remain recorded.
+
 Only selected pairs inside the chosen account group are treated as internal. An unidentified internal movement can remain in the external comparison until reviewed.
+
+The working or verified selection follows you between Trends, Counterparties, Posting graph, Transfers, Patterns and Case context. The Transactions tab remains the full current transaction record, with its own visible table filters; switching an analysis to verified-only does not remove imported records.
 
 ## Review patterns and payment claims
 
@@ -834,7 +775,10 @@ External timestamping is an administrator-operated process, not a button an inve
 
 | Work | What to do before leaving | What to do on return |
 |---|---|---|
-| Selected PDF rows | Select Save selected rows for review and wait for confirmation. | Open PDF readings, find the saved batch and open its readings. |
+| Unconfirmed normal statement review | Look for the message that the review is saved in this browser tab. | In the same tab, reopen the same file, statement period and currency. The draft restores if its source revision has not changed. Closing the tab may discard it. |
+| Imported statement | Wait for import confirmation. | Open Transactions or reopen the uploaded statement. |
+| Transaction note | Select Save investigation note and wait for Note saved. | Open Workspace, then Casework and Notes. |
+| Selected PDF rows in advanced review | Select Save selected rows for review and wait for confirmation. | Open PDF readings, find the saved batch and open its readings. |
 | A review decision | Record resolved reading or Reject reading and check the confirmation. | Reload the batch and use the saved progress and pending filter. |
 | A partially filled statement | Use Save unfinished statement editor. | Load unfinished statement editor. |
 | Statements already added to a preview | Save statement controls to case. | Load saved statement controls and inspect them. |
@@ -887,7 +831,7 @@ PDF preparation status also appears in the PDF intake controls. Use the status f
 
 ### Inspect evidence classes
 
-1. On **Ledger**, find **Evidence classification** and select **Refresh classification**.
+1. On **Import history**, find **Evidence classification** and select **Refresh classification**.
 2. Expand **View all classes and their rules**.
 3. Read the displayed counts and rules for automatic admission, required human decisions, whether the class may produce ledger rows and eligibility for totals.
 4. Check held-out and superseded records separately before interpreting these counts as current usable readings.
@@ -948,3 +892,213 @@ Before giving another person the financial work, check these items against the q
 | Superseded | Replaced by a later reading while the original remains in history. |
 | Verified totals | Totals restricted to the application's eligible verified population, not every reviewed row. |
 | Workspace | The case area where saved theories, notes and workpapers can be retained with attachments. |
+
+## Advanced manual review
+
+Use these older controls for existing saved batches or an exceptional document that needs manual table interpretation. Start in **Import history**. For an ordinary new statement, use sections 3 to 7 instead.
+
+#### Advanced: Add a PDF
+
+#### Advanced: Upload and prepare a new file
+
+1. Open **Financial**, then **Import history**.
+2. Select **Open PDF readings**.
+3. In **PDF document**, choose the PDF from your computer.
+4. Check the filename and case name.
+5. Select **Prepare PDF for review** once.
+6. Wait for preparation to complete. This step reads the PDF and prepares text and table information. Scanned pages may require OCR, which reads letters and numbers from page images.
+7. When **Choose prepared PDF rows** becomes available, select it.
+8. Confirm that the available source pages belong to the correct file.
+
+![PDF upload and preparation controls](images/02-pdf-upload.png)
+
+*Choose a document, then prepare it. Preparation does not approve transactions or put amounts in the ledger.*
+
+#### Advanced: Use a file already uploaded
+
+1. Open **Open PDF readings**.
+2. Select **Find uploaded PDFs**.
+3. Choose the matching file from the results. Check its processing status as well as its name.
+4. If the file is unprocessed, use **Prepare PDF for review**.
+5. If preparation has completed, use **Choose prepared PDF rows**.
+
+Do not upload repeated copies just because preparation is taking time. Check the saved status first. If the page reports a failed or interrupted attempt, note the filename and error before asking the administrator to investigate.
+
+#### Advanced: Check whether preparation was useful
+
+Open a page that contains transactions. Compare its stored text with the original PDF. Check a date, an amount and a description. Watch for missing decimal points, mixed columns, repeated headers and unreadable characters. A successfully prepared file can still contain extraction errors that need manual review.
+
+### Advanced: Select possible transactions
+
+#### Advanced: Select rows manually
+
+1. In **Choose rows from a PDF**, select the file and page from the available source pages.
+2. If the page has more than one stored table, use **Previous table** or **Next table** to find the transaction area.
+3. Read the original page beside the extracted table.
+4. Click a table value to locate it on the original. Use **Show table location** when you need to inspect the table area.
+5. Assign the proposed meaning of each relevant column. Identify dates and amounts from the printed headings and values. Leave meanings unknown when the source does not support a choice.
+6. Tick **Use row** only for rows you intend to review as transactions.
+7. Check that you have not selected an opening balance, a closing balance, a heading, a subtotal or a disclosure paragraph as a payment.
+8. Select **Save selected rows for review**.
+9. Wait for **Rows saved**. Open the saved readings to check that the intended rows are present.
+
+Use the source viewer's **+** and **−** controls to change zoom, **Fit source width** to fit the page area, and **Show highlighted value** to return to the selected source location when those controls are available. Zooming does not change the saved reading.
+
+Clicking a value to inspect its location does not select its row. Selecting a row does not confirm the amount or direction. Saving rows creates a review batch, which is a group of selected readings you can return to later.
+
+#### Advanced: Use printed headings and account references
+
+The source selector can show proposals based on exact printed headings and labelled account references. Inspect the cited cell before accepting a column proposal. A generic **Date** heading does not tell you whether the date is a transaction, booking or value date.
+
+A masked account number may identify a useful section of a statement without identifying the full account. Do not combine different card endings or account sections merely because they appear in one PDF. Keep separate provisional accounts where the evidence does not establish a shared identity.
+
+#### Advanced: Scan a page range
+
+1. Open the page scan controls in the source selection area.
+2. Enter the first and last pages you want to inspect. Scan at most 50 pages in one request; repeat for the next range in a longer PDF.
+3. Choose the scan currency.
+4. Use automatic column proposals where supported, or identify the possible date and amount columns from the source.
+5. Select **Scan selected page range**.
+6. Read the result for each page. Some pages may have suggestions; others may be unchecked or ambiguous.
+7. Open the supporting cells for proposed readings and compare them with the original.
+8. In the queue controls, select the pages whose proposals you want to save for review. Include undated fee and interest proposals only when you intend to review those separately.
+9. Save the selected proposals using the queue's save control.
+10. Check the saved batch list. Different layouts can create separate groups, even on the same page.
+
+Do not count unchecked pages as reviewed. If saving stops partway through, inspect the list of confirmed saved groups before trying again. Earlier confirmed saves remain; restarting without checking may repeat work.
+
+#### Advanced: Use optional AI proposals
+
+1. Inspect the local scan and original table first.
+2. Open **Model-assisted PDF nominations** for the selected source table.
+3. Read the notice about sending that table's text to the configured model.
+4. If that use is appropriate for your case, select **Request AI proposals for this page**.
+5. Wait for the recorded result, then inspect every proposed row and its source cells.
+6. Select only the proposals you want to review.
+7. Select **Save selected model proposals for review**.
+8. Review those saved readings using the same process as manual selections.
+
+One request covers one table, up to 200 rows and 24 KB of source text. Proposals do not change source values or admit transactions. An empty proposal list does not prove that a page has no transactions.
+
+If the response is interrupted, select **Check saved model attempt** first. Checking saved status does not call the model again. If no outcome is found, follow the offered same-request retry rather than creating repeated requests. **Close interrupted model attempt** prevents its result being used, but cannot undo a request already sent to the provider. A separate request may incur additional usage.
+
+If an attempt is labelled **SIMULATED**, it is test data. Do not describe it as a successful call to an external AI model.
+
+### Advanced: Review each reading
+
+#### Advanced: Open a saved batch
+
+1. Return to **Import history** and **Open PDF readings**.
+2. Find the saved batch and select **Open readings**.
+3. Read **Saved review progress**. The counts concern selected rows in that batch, not the whole PDF.
+4. Select **Show only rows awaiting review** if you want to hide rows already decided.
+5. Select **Review next pending row**, or open a specific reading.
+
+![Saved PDF reading progress in a synthetic case](images/09-saved-readings.png)
+
+*The saved batch shows pending, resolved and rejected counts. These example readings have already been decided.*
+
+#### Advanced: Complete the review form
+
+1. Inspect the original cells and PDF page beside **Reading and decision**. Check that the highlighted amount belongs to the selected row.
+2. Choose the three-letter **Currency**, such as GBP, EUR or USD.
+3. Enter the **Reviewed amount** as a magnitude, using a decimal point. For example, enter `61.62`, not `£61.62` or `6,162`. Keep a printed zero as zero when it is a genuine selected reading.
+4. Search for and select the **Account** whose statement records this movement.
+5. Choose **Money out** or **Money in** from that account's perspective. Do not infer the direction from a person's name alone.
+6. Enter supported dates in the appropriate fields. The transaction date, booking date and value date can differ.
+7. Check or enter the **Description**.
+8. Enter **Counterparty as printed** only if the source supplies a name. This field preserves the source wording; it does not establish the person's identity.
+9. Write a **Reason for decision** that identifies what you checked and explains any interpretation or correction.
+10. Select **Record resolved reading**.
+11. Wait for confirmation, then reload the review and inspect its status and history.
+12. Continue with the next pending row.
+
+A useful reason is specific: “Page 4, purchase row: printed amount is 61.62. Selected the card-ending 3539 account. Used the transaction date column, not the posting date column.” Avoid reasons such as “checked” when a decision involves uncertainty.
+
+![Original source and review fields for a finalized synthetic reading](images/10-reading-review.png)
+
+*The original source appears beside the review fields. This example has already been finalized, so its fields are read-only. An unfinished reading uses this area to record a decision.*
+
+#### Advanced: Assess an unclear amount or date
+
+Use **Assess original amounts** and **Assess original dates** to inspect the application's interpretations of the original text. These are aids to review. Compare alternatives with the source before entering your decision. A short year, ambiguous day/month order or OCR error needs a supported interpretation. Leave unresolved information pending when you cannot justify it.
+
+For an undated fee or interest row, leave the transaction, booking and value date fields empty. The **Statement end date (ordering only)** option places an eligible undated row in order using its statement end. It does not claim the payment occurred that day. Finalization requires the matching printed statement-end control.
+
+#### Advanced: Create a provisional account
+
+1. Search existing accounts first.
+2. If none is supported by the source, use the provisional-account controls in the review form.
+3. Enter a **Provisional account label** that distinguishes the source, such as “Card ending 3539”.
+4. Enter the **Reason for provisional account**, explaining what is known and what remains unknown.
+5. Select **Create provisional account**.
+6. Check that the new account is selected, then complete the reading decision.
+
+Creating an account does not resolve the reading. It also does not establish the holder's identity.
+
+#### Advanced: Reject or reopen a reading
+
+If a selected row is a summary, duplicate selection or otherwise unsuitable, explain why in **Reason for decision** and select **Reject reading**. Reload to confirm the recorded result.
+
+Before finalization, use **Reopen for review** when an existing decision needs reconsideration. Record the new reason and decision. After finalization, use the ledger correction or inclusion processes in section 10; the original candidate review is sealed.
+
+### Advanced: Record statement dates and balances
+
+Use printed statement controls to compare reviewed transactions with what the statement actually reports. A control is a printed date, balance or period total used as a check.
+
+#### Advanced: Add one printed statement period
+
+1. Finish reviewing the rows you intend to assign to the period.
+2. Open **Finalize reviewed rows**, then **Add printed statement controls**.
+3. Under **Statement account**, choose the correct account and currency.
+4. Select the reviewed rows belonging to that printed statement period.
+5. Enter **Printed statement start** and **Printed statement end** from the statement.
+6. Locate and select the supporting original cells for both dates using the source controls.
+7. Enter the **Printed opening balance** and **Printed closing balance** where present, and select their original source cells.
+8. If present, enter **Printed total money in** and **Printed total money out**, with their sources.
+9. Choose **What do the printed balances represent?** Select **Money held in the account** for held funds or **Money owed to the issuer** for a debt balance, according to the statement.
+10. Enter a **Reason for statement control readings**.
+11. Select **Add statement to preview**.
+12. Repeat for each separate account and printed period. Check the complete preview before finalizing.
+
+Leave an unprinted balance blank. Blank means unknown. Enter `0.00` only when you have evidence for zero. Enter decimal amounts without symbols or thousands separators, retaining a minus sign if printed. When you choose money owed to the issuer, Loupe converts amounts owed to negative ledger balances and retains the original printed amount and your choice.
+
+Do not use a purchases subtotal as total money out if fees or interest are listed separately. The direction total must cover all money in or out in that period.
+
+#### Advanced: Save an unfinished statement editor
+
+1. While entering a statement, expand **Save unfinished statement editor**.
+2. Save the unfinished fields and selected source cells.
+3. Check for **Unfinished editor saved** before leaving.
+4. When you return, use **Load unfinished statement editor**.
+5. Finish the fields and add the statement to the preview when ready.
+
+An unfinished editor is not yet a reviewed statement in the preview.
+
+#### Advanced: Save statements already added to the preview
+
+1. Open **Save statement controls**.
+2. If saved controls already exist, load them before replacing the draft.
+3. Select **Save statement controls to case**.
+4. Check for the saved confirmation.
+5. On return, select **Load saved statement controls** and inspect the preview.
+
+These two saves are separate: one preserves the editor you are still filling in; the other preserves statements you have already added to the preview. Source checks run again before finalization. If another reviewer has changed the draft, refresh and compare their version before saving again.
+
+### Advanced: Finish the PDF review
+
+**Finalization seals this PDF reading in the case. Do not finalize the first batch while you still need to select rows from other pages.** You can leave recorded reviews saved while completing the rest of the document.
+
+1. Open **Show document progress** under the saved readings. Inspect each page and use **Previous overview pages** and **Next overview pages** for longer documents. A page with no saved rows still needs inspection. Open every saved batch from the PDF and check its progress.
+2. Confirm that every intended row has been selected. Revisit unchecked pages and separate account sections.
+3. Resolve or reject every selected reading. Do not leave pending rows in the intended finalization.
+4. Load and inspect saved statement controls, if used.
+5. Open **Finalize reviewed rows** and read the preview, source checks and any errors.
+6. If you are deliberately finalizing an incomplete document selection, read the incomplete-coverage acknowledgement and tick it only if it describes your decision.
+7. Enter **Reason for finalization**, explaining the reviewed coverage and anything excluded or unresolved outside it.
+8. Select **Finalize selected rows** once.
+9. Wait for the receipt. If the connection is interrupted, reload and inspect the saved receipt before repeating the action.
+10. Return to the ledger. Inspect the current working readings, totals and source links.
+11. Open **Statements** and inspect the resulting checks.
+
+Finalized manual PDF rows remain P3. Finalization does not certify complete extraction, identify every account holder or promote readings into verified totals. To change a written amount later, use a ledger correction. Do not attempt to reopen the original source selection as if it were an unsaved form.
