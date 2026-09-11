@@ -1,3 +1,4 @@
+import { sha256Hex } from "@/lib/browser-crypto"
 import { z } from "zod"
 const money = z.string().regex(/^(0|[1-9][0-9]*)$/)
 const count = z.number().int().nonnegative()
@@ -167,10 +168,7 @@ export async function verifyTransferScenario(
     })
     .parse(raw)
   const bytes = new TextEncoder().encode(result.scenario_json)
-  const hash = Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-    (b) => b.toString(16).padStart(2, "0")
-  ).join("")
+  const hash = await sha256Hex(bytes)
   if (
     hash !== result.scenario_sha256 ||
     bytes.length !== result.scenario_byte_count

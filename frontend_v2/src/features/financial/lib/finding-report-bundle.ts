@@ -1,3 +1,4 @@
+import { sha256Hex } from "@/lib/browser-crypto"
 import { zipSync, strToU8 } from "fflate"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
@@ -135,11 +136,7 @@ export async function findingReportBundle(
       bytes.set(chunk, offset)
       offset += chunk.length
     }
-    const hash = [
-      ...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-    ]
-      .map((n) => n.toString(16).padStart(2, "0"))
-      .join("")
+    const hash = await sha256Hex(bytes)
     if (hash !== file.sha256)
       throw Error(
         "A supporting PDF differs from its recorded original. No package was created."

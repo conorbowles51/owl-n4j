@@ -1,3 +1,5 @@
+import { SavedIndirectFinding } from "./SavedIndirectFinding"
+import { indirectWorkpaperSchema } from "../lib/saved-indirect"
 import { savedAnalysisSummary } from "../lib/saved-analysis-summary"
 import { SavedTraceFinding } from "./SavedTraceFinding"
 import { FindingReportBundle } from "./FindingReportBundle"
@@ -78,7 +80,18 @@ export function FinancialFindings({ caseId }: { caseId: string | undefined }) {
               ? ` · ${new Date(entry.updated_at).toLocaleString()}`
               : ""}
           </p>
-          <p className="whitespace-pre-wrap">{entry.body}</p>
+          {entry.links.some(
+            (link) => link.metadata.schema === indirectWorkpaperSchema
+          ) ? (
+            <details>
+              <summary className="cursor-pointer">
+                Written explanation and recorded amounts
+              </summary>
+              <p className="whitespace-pre-wrap mt-2">{entry.body}</p>
+            </details>
+          ) : (
+            <p className="whitespace-pre-wrap">{entry.body}</p>
+          )}
           {entry.links.map((link) => {
             const ids = Array.isArray(
               link.source_anchor?.financial_transaction_ids
@@ -118,6 +131,22 @@ export function FinancialFindings({ caseId }: { caseId: string | undefined }) {
                     </Button>
                   </>
                 )}
+                {link.metadata?.schema === indirectWorkpaperSchema && (
+                  <SavedIndirectFinding
+                    key={entry.id + ":" + entry.version}
+                    entry={entry}
+                    link={link}
+                    caseId={caseId}
+                  />
+                )}
+                {link.target_type === "entry" && (
+                  <a
+                    className="underline text-sm"
+                    href={`/cases/${caseId}/workspace?view=casework&entry=${encodeURIComponent(link.target_id)}`}
+                  >
+                    Open linked note
+                  </a>
+                )}
                 {savedAnalysisSummary(link.metadata?.analysis).map(
                   (line, index) => (
                     <p key={index} className="text-sm">
@@ -139,28 +168,30 @@ export function FinancialFindings({ caseId }: { caseId: string | undefined }) {
                       {String(link.metadata.analysis.summary)}
                     </p>
                   )}
-                <details open={ids.length <= 20}>
-                  <summary className="cursor-pointer text-sm">
-                    {ids.length} linked payments
-                  </summary>
-                  <div className="flex flex-wrap gap-2">
-                    {ids.map((id, index) => {
-                      const row = snapshots.find((row) => row.key === id)
-                      return (
-                        <Button
-                          key={id}
-                          className="h-auto whitespace-normal text-left justify-start"
-                          variant="outline"
-                          onClick={() => setSource(id)}
-                        >
-                          {row
-                            ? `${row.ordering_date} · ${row.description || "Payment"} · ${formatLedgerAmount(row.amount_minor, row.currency).text} ${row.currency}`
-                            : `Open transaction ${Array.isArray(link.source_anchor.financial_ref_ids) ? link.source_anchor.financial_ref_ids[index] || index + 1 : index + 1}`}
-                        </Button>
-                      )
-                    })}
-                  </div>
-                </details>
+                {ids.length > 0 && (
+                  <details open={ids.length <= 20}>
+                    <summary className="cursor-pointer text-sm">
+                      {ids.length} linked payments
+                    </summary>
+                    <div className="flex flex-wrap gap-2">
+                      {ids.map((id, index) => {
+                        const row = snapshots.find((row) => row.key === id)
+                        return (
+                          <Button
+                            key={id}
+                            className="h-auto whitespace-normal text-left justify-start"
+                            variant="outline"
+                            onClick={() => setSource(id)}
+                          >
+                            {row
+                              ? `${row.ordering_date} · ${row.description || "Payment"} · ${formatLedgerAmount(row.amount_minor, row.currency).text} ${row.currency}`
+                              : `Open transaction ${Array.isArray(link.source_anchor.financial_ref_ids) ? link.source_anchor.financial_ref_ids[index] || index + 1 : index + 1}`}
+                          </Button>
+                        )
+                      })}
+                    </div>
+                  </details>
+                )}
               </div>
             )
           })}

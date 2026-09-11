@@ -1,3 +1,4 @@
+import { sha256Hex } from "@/lib/browser-crypto"
 import { LinkedPayments } from "./LinkedPayments"
 import { LedgerFlowChart } from "./LedgerFlowChart"
 import { useState } from "react"
@@ -149,15 +150,9 @@ function CounterpartyScope({
           data.counterparties.some((p) => !p.group_id)
         )
           throw Error("Identity analysis is missing its captured source.")
-        const digest = Array.from(
-          new Uint8Array(
-            await crypto.subtle.digest(
-              "SHA-256",
-              new TextEncoder().encode(data.snapshot_json)
-            )
-          ),
-          (b) => b.toString(16).padStart(2, "0")
-        ).join("")
+        const digest = await sha256Hex(
+          new TextEncoder().encode(data.snapshot_json)
+        )
         if (digest !== data.snapshot_sha256)
           throw Error("Identity source capture hash differs.")
         const ledger = JSON.parse(data.snapshot_json).ledger

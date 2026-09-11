@@ -1,3 +1,4 @@
+import { sha256Hex } from "@/lib/browser-crypto"
 import type { TraceAssetResults } from "./trace-assets"
 import { z } from "zod"
 import { traceScenarioSchema, type verifyTraceResponse } from "./ledger-trace"
@@ -111,10 +112,7 @@ export async function renderTraceReport(
   if (!markingLabel) throw Error("Unsupported report marking.")
   const { envelope } = trace
   const bytes = new TextEncoder().encode(envelope.scenario_json)
-  const digest = Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-    (b) => b.toString(16).padStart(2, "0")
-  ).join("")
+  const digest = await sha256Hex(bytes)
   if (
     digest !== envelope.scenario_sha256 ||
     bytes.length !== envelope.scenario_byte_count

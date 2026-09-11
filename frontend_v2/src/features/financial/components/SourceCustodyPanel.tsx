@@ -1,3 +1,4 @@
+import { randomRequestId } from "@/lib/browser-crypto"
 import { evidenceAPI } from "@/features/evidence/api"
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -219,7 +220,7 @@ function CustodyEditor({ caseId, fileId }: { caseId: string; fileId: string }) {
               }
               const signature = JSON.stringify(body)
               if (pending.current?.signature !== signature)
-                pending.current = { signature, id: crypto.randomUUID() }
+                pending.current = { signature, id: randomRequestId() }
               save.mutate({ ...body, event_id: pending.current.id })
             }}
           >

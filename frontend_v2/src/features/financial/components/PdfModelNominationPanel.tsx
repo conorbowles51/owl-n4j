@@ -1,3 +1,4 @@
+import { randomRequestId } from "@/lib/browser-crypto"
 import { useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -140,7 +141,7 @@ export function PdfModelNominationPanel({
     lock.current = true
     setBusy(true)
     setMessage("")
-    const id = reuseId ?? crypto.randomUUID()
+    const id = reuseId ?? randomRequestId()
     setUnrecorded(false)
     setAttemptId(id)
     try {

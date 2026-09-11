@@ -1,3 +1,4 @@
+import { sha256Hex } from "@/lib/browser-crypto"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { candidateUrl } from "../lib/candidate-contract"
@@ -88,10 +89,7 @@ export function TraceReportDownload({ trace }: { trace: VerifiedTrace }) {
       const bytes = await response.arrayBuffer()
       if (bytes.byteLength > 64 * 1024 * 1024)
         throw new Error("Tracing audit exceeds the download limit.")
-      const digest = Array.from(
-        new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-        (b) => b.toString(16).padStart(2, "0")
-      ).join("")
+      const digest = await sha256Hex(bytes)
       if (digest !== response.headers.get("X-Loupe-Archive-Sha256"))
         throw new Error("Tracing audit integrity check failed.")
       if (!active.current || controller.signal.aborted) return

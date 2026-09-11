@@ -132,3 +132,32 @@ One broad financial regression run returned 1,059 frontend passes with nine obso
 The remote branch was fetched and matched the starting commit `424e859c`, so no incoming merge was required. The release includes the assessment, this completed checklist, application changes and updated guide. Private PDFs, local test records, unrelated documents, archives and temporary screenshots are excluded. No financial database migration is required. The existing server deployment follows a push to `integration/evidence-main-reunion`.
 
 The implementation is committed as `fee37455`. Automatic approval review initially rejected publication and required destination-specific approval. The user then explicitly approved committing and pushing to this public repository in response to the destination-specific question. The push succeeded, moving the remote branch from `424e859c` to `9b5a6b5c`. The local and remote branches matched after the push. The existing auto-deploy can now pick up the release; server deployment completion has not been independently verified.
+
+## Follow-up: reopen and revise saved indirect workpapers
+
+- [x] Open existing workpapers from Findings with their saved amounts, checks, results and source files.
+- [x] Create and calculate a revised copy without replacing the original saved work or another open draft.
+- [x] Save new workpapers with their method definitions so the historical calculation can still be checked.
+- [x] Verify existing-note compatibility, source/case checks and the save/reopen journey using focused checks.
+- [x] Update the user guide and record the completed change.
+
+Acceptance: reopened the existing synthetic net-worth workpaper saved before this viewer existed. Its result remained 40.00 GBP, and the original PDF and exact JSON download opened. A separate revised copy changed closing assets from 100.00 to 110.00 GBP, retained that edit across financial tab navigation, calculated 50.00 GBP, saved with the method definition and a link to the original note, and reopened after a reload. The original note body, links and version were unchanged. One synthetic Workspace entry was created; no ledger writes occurred.
+
+The saved-workpaper HTML report was downloaded and rendered with its amounts, checks, result and source references. Fifteen focused checks cover arithmetic, historical compatibility, case/source isolation, altered bytes, changed method fields, retained copy behavior and report text escaping. Scoped lint passed. The guide includes the new viewer screenshot and instructions for saved and downloaded workpapers. Local acceptance record: `data/local-runtime/saved-workpaper-acceptance.json`.
+
+Unsaved revised copies remain local to the open page. Financial tab changes and hiding/showing the copy retain edits; refreshing or leaving the case can discard unsaved changes. Saving creates a shared case note and retains its original workpaper link. Older saved workpapers without a method definition are checked against the current method; incompatible records remain saved and show an error rather than dropping fields.
+
+## Follow-up: browser compatibility on the HTTP deployment
+
+The user's deployment URL uses HTTP. A browser capability check on an intercepted HTTP origin confirmed that SubtleCrypto and randomUUID are unavailable there, although secure random bytes remain available. Financial calculations and downloads had assumed these APIs existed.
+
+- [x] Keep all byte and digest checks working on HTTP using a shared SHA-256 helper, with native browser hashing where available and the pinned `@noble/hashes` implementation otherwise.
+- [x] Use secure random bytes for request identifiers when randomUUID is unavailable.
+- [x] Check hash vectors, changed data, exact byte ranges, and large-file chunking; exercise saved workpaper and supporting-file downloads in an HTTP browser context.
+- [x] Run the affected financial checks, type/lint checks and one production build for this shared compatibility change.
+
+Library import and supported input are documented in the [maintainer's README](https://github.com/paulmillr/noble-hashes). The compatibility fix does not provide transport encryption.
+
+Acceptance: an HTTP-origin browser, with all traffic intercepted to the isolated local app, reported no SubtleCrypto or randomUUID. It still opened the saved workpaper, downloaded its report package, matched the included PDF's digest against the recorded reference, returned the standard SHA-256 result for `abc`, and generated a valid random version-4 request identifier. No financial or Workspace mutations occurred. Local record: `data/local-runtime/http-financial-acceptance.json`.
+
+The 79 affected checks passed, including tracing, transfers, claims, source package verification, file downloads, custody request identifiers and native/fallback hashing. Type checking and scoped lint passed. The production build passed in 6.34 seconds with the existing large-chunk advisory. The guide's fifteen images decoded and its new workpaper sections rendered. The branch was fetched and had no incoming commits before publication.

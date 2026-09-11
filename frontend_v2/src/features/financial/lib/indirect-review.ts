@@ -1,3 +1,4 @@
+import { sha256Hex } from "@/lib/browser-crypto"
 import { correctionMinor } from "./correction-contract"
 import { z } from "zod"
 const minor = z.string().regex(/^(0|-?[1-9][0-9]*)$/)
@@ -100,10 +101,7 @@ export async function verifyIndirectReview(
 ) {
   const envelope = indirectEnvelope.parse(raw),
     bytes = new TextEncoder().encode(envelope.scenario_json)
-  const digest = Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-    (b) => b.toString(16).padStart(2, "0")
-  ).join("")
+  const digest = await sha256Hex(bytes)
   if (
     envelope.case_id !== catalog.case_id ||
     bytes.length !== envelope.scenario_byte_count ||
@@ -121,6 +119,17 @@ export async function verifyIndirectReview(
     value.reference_section !== method.reference_section
   )
     throw Error("Workpaper differs from the requested scope.")
+  if (
+    Object.keys(request.entries).some(
+      (id) => !method.terms.some((term) => term.id === id)
+    ) ||
+    Object.keys(request.requirements).some(
+      (id) => !catalog.requirements.some((check) => check.id === id)
+    )
+  )
+    throw Error(
+      "The saved fields no longer match this method. Keep the original workpaper and start a new calculation."
+    )
   const sourceIds = [
     ...new Set(
       [

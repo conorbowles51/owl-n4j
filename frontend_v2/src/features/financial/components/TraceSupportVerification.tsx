@@ -1,3 +1,4 @@
+import { sha256Hex } from "@/lib/browser-crypto"
 import { useEffect, useRef, useState } from "react"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
@@ -67,10 +68,7 @@ export function TraceSupportVerification({ caseId }: { caseId: string }) {
     const timeout = setTimeout(() => controller.abort(), 120000)
     try {
       const bytes = await file.arrayBuffer()
-      const selectedDigest = Array.from(
-        new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-        (b) => b.toString(16).padStart(2, "0")
-      ).join("")
+      const selectedDigest = await sha256Hex(bytes)
       if (controller.signal.aborted) return
       if (pin && pin !== selectedDigest)
         throw Error("This file differs from the previously saved digest.")

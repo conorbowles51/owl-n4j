@@ -1,14 +1,9 @@
+import { sha256Hex as sha } from "@/lib/browser-crypto"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { candidateUrl } from "../lib/candidate-contract"
 
 type Marking = "unmarked" | "confidential" | "privileged_confidential"
-async function sha(bytes: ArrayBuffer) {
-  return Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-    (b) => b.toString(16).padStart(2, "0")
-  ).join("")
-}
 export function TraceSupportAssembly({ caseId }: { caseId: string }) {
   const [scenarios, setScenarios] = useState<File[]>([])
   const [ledger, setLedger] = useState<File | null>(null)

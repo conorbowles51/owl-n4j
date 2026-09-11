@@ -1,3 +1,4 @@
+import { sha256Hex } from "@/lib/browser-crypto"
 import {
   traceAssetDraw,
   traceAssetResults,
@@ -110,10 +111,7 @@ export async function verifyTraceResponse(
     })
     .parse(raw)
   const bytes = new TextEncoder().encode(envelope.scenario_json)
-  const digest = Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-    (b) => b.toString(16).padStart(2, "0")
-  ).join("")
+  const digest = await sha256Hex(bytes)
   if (
     bytes.length !== envelope.scenario_byte_count ||
     digest !== envelope.scenario_sha256

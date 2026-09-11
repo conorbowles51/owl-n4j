@@ -1,3 +1,4 @@
+import { sha256Hex } from "@/lib/browser-crypto"
 import { z } from "zod"
 const money = z.object({
   minor_units: z.string().regex(/^-?\d+$/),
@@ -68,10 +69,7 @@ export async function verifyClaimComparison(
     })
     .parse(raw)
   const bytes = new TextEncoder().encode(envelope.scenario_json),
-    hash = Array.from(
-      new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-      (b) => b.toString(16).padStart(2, "0")
-    ).join("")
+    hash = await sha256Hex(bytes)
   if (
     hash !== envelope.scenario_sha256 ||
     bytes.length !== envelope.scenario_byte_count

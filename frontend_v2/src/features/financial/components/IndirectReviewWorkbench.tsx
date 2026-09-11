@@ -30,16 +30,59 @@ const empty = (): Field => ({
   source_location: "",
   status: "unresolved",
 })
-export function IndirectReviewWorkbench({ caseId }: { caseId: string }) {
-  const [method, setMethod] = useState<IndirectRequest["method"]>("net_worth"),
-    [currency, setCurrency] = useState(""),
-    [subject, setSubject] = useState(""),
-    [start, setStart] = useState(""),
-    [end, setEnd] = useState(""),
-    [entries, setEntries] = useState<Record<string, Field>>({}),
-    [checks, setChecks] = useState<Record<string, Field>>({}),
+function restoredFields(
+  request: IndirectRequest,
+  review = false
+): Record<string, Field> {
+  return Object.fromEntries(
+    Object.entries(review ? request.requirements : request.entries).map(
+      ([key, value]) => [
+        key,
+        {
+          ...empty(),
+          ...value,
+          source_file_id: value.source_file_id ?? "",
+          amount_input:
+            "amount_minor" in value && value.amount_minor !== null
+              ? correctionMoney(value.amount_minor, request.currency).replace(
+                  ` ${request.currency}`,
+                  ""
+                )
+              : "",
+        },
+      ]
+    )
+  )
+}
+
+export function IndirectReviewWorkbench({
+  caseId,
+  initialReview,
+  copiedFrom,
+}: {
+  caseId: string
+  initialReview?: VerifiedIndirectReview
+  copiedFrom?: string
+}) {
+  const initial =
+    initialReview?.value.case_id === caseId ? initialReview.value : undefined
+  const [method, setMethod] = useState<IndirectRequest["method"]>(
+      initial?.inputs.method ?? "net_worth"
+    ),
+    [currency, setCurrency] = useState(initial?.inputs.currency ?? ""),
+    [subject, setSubject] = useState(initial?.inputs.subject ?? ""),
+    [start, setStart] = useState(initial?.inputs.start_date ?? ""),
+    [end, setEnd] = useState(initial?.inputs.end_date ?? ""),
+    [entries, setEntries] = useState<Record<string, Field>>(() =>
+      initial ? restoredFields(initial.inputs) : {}
+    ),
+    [checks, setChecks] = useState<Record<string, Field>>(() =>
+      initial ? restoredFields(initial.inputs, true) : {}
+    ),
     [search, setSearch] = useState(""),
-    [sources, setSources] = useState<{ id: string; label: string }[]>([]),
+    [sources, setSources] = useState<{ id: string; label: string }[]>(
+      () => initial?.sources.map((s) => ({ id: s.id, label: s.filename })) ?? []
+    ),
     [source, setSource] = useState<{ id: string; label: string } | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -186,7 +229,8 @@ export function IndirectReviewWorkbench({ caseId }: { caseId: string }) {
     changed()
     const ticket = revision.current
     try {
-      if (file.size > 1024 * 1024) throw Error("Workpaper file exceeds1MiB.")
+      if (file.size > 1024 * 1024)
+        throw Error("The workpaper file must be smaller than 1 MB.")
       const envelope = JSON.parse(await file.text())
       const request = indirectRequest.parse(
         JSON.parse(envelope.scenario_json).inputs
@@ -202,37 +246,9 @@ export function IndirectReviewWorkbench({ caseId }: { caseId: string }) {
       setSubject(request.subject)
       setStart(request.start_date)
       setEnd(request.end_date)
-      setEntries(
-        Object.fromEntries(
-          Object.entries(request.entries).map(([key, value]) => [
-            key,
-            {
-              ...empty(),
-              ...value,
-              source_file_id: value.source_file_id ?? "",
-              amount_input:
-                value.amount_minor === null
-                  ? ""
-                  : correctionMoney(
-                      value.amount_minor,
-                      request.currency
-                    ).replace(` ${request.currency}`, ""),
-            },
-          ])
-        )
-      )
-      setChecks(
-        Object.fromEntries(
-          Object.entries(request.requirements).map(([key, value]) => [
-            key,
-            {
-              ...empty(),
-              ...value,
-              source_file_id: value.source_file_id ?? "",
-            },
-          ])
-        )
-      )
+      setEntries(restoredFields(request))
+      setChecks(restoredFields(request, true))
+      setDrafts({})
       setSources(
         captured.value.sources.map((s) => ({ id: s.id, label: s.filename }))
       )
@@ -244,14 +260,15 @@ export function IndirectReviewWorkbench({ caseId }: { caseId: string }) {
     }
   }
   const saveNote = () => {
-    if (!report) return
+    if (!report || !catalog.data) return
     const value = report.value
     save.mutate({
       entry_type: "note",
-      title: `${value.method_label} workpaper — ${value.inputs.subject}`.slice(
-        0,
-        255
-      ),
+      title:
+        `${copiedFrom ? "Revised " : ""}${value.method_label} workpaper: ${value.inputs.subject}`.slice(
+          0,
+          255
+        ),
       body: [
         `Conditional ${value.method_label} review: ${value.inputs.subject}.`,
         `${value.inputs.start_date} to ${value.inputs.end_date}; ${value.inputs.currency}.`,
@@ -263,23 +280,35 @@ export function IndirectReviewWorkbench({ caseId }: { caseId: string }) {
             `${line.label}: ${line.amount_minor === null ? "Unknown" : correctionMoney(line.amount_minor, value.inputs.currency)}. Basis: ${line.basis}. Source location: ${line.source_location}.`
         ),
         value.limitation,
-        `Capture: ${report.envelope.scenario_sha256}.`,
       ].join("\n\n"),
       tags: ["financial", "indirect-review", value.inputs.method],
-      links: value.sources.map((s, i) => ({
-        target_type: "evidence",
-        target_id: s.id,
-        target_label: s.filename,
-        relationship: "context",
-        source_anchor: { workpaper_sha256: report.envelope.scenario_sha256 },
-        metadata:
-          i === 0
-            ? {
-                schema: "loupe.financial.indirect_workpaper/1",
-                envelope: report.envelope,
-              }
-            : { workpaper_sha256: report.envelope.scenario_sha256 },
-      })),
+      links: [
+        ...value.sources.map((s, i) => ({
+          target_type: "evidence" as const,
+          target_id: s.id,
+          target_label: s.filename,
+          relationship: "context" as const,
+          source_anchor: { workpaper_sha256: report.envelope.scenario_sha256 },
+          metadata:
+            i === 0
+              ? {
+                  schema: "loupe.financial.indirect_workpaper/1",
+                  envelope: report.envelope,
+                  catalog: catalog.data,
+                }
+              : { workpaper_sha256: report.envelope.scenario_sha256 },
+        })),
+        ...(copiedFrom
+          ? [
+              {
+                target_type: "entry" as const,
+                target_id: copiedFrom,
+                target_label: "Original workpaper",
+                relationship: "context" as const,
+              },
+            ]
+          : []),
+      ],
     })
   }
   const sourceFields = (key: string, field: Field, review: boolean) => (
@@ -329,7 +358,7 @@ export function IndirectReviewWorkbench({ caseId }: { caseId: string }) {
         />
       </label>
       <label className="block">
-        Basis and work performed
+        How did you establish this value or complete this check?
         <textarea
           aria-label={`${review ? "Review" : "Amount"} basis ${key}`}
           maxLength={4096}
@@ -344,10 +373,18 @@ export function IndirectReviewWorkbench({ caseId }: { caseId: string }) {
     <section className="space-y-4 p-4" aria-label="Indirect financial review">
       <h2 className="font-semibold">Indirect financial review</h2>
       <p>
-        Build a source-referenced workpaper when direct records leave gaps.
-        Enter assessed amounts and explain the work behind them. Unknown values
-        stay unknown; a completed form is not an independently verified finding.
+        Compare amounts from your evidence, such as assets, deposits or
+        spending, when payment records alone do not answer your question. Enter
+        each amount, explain how you arrived at it and attach the supporting
+        file. The result depends on these inputs and your recorded checks.
       </p>
+      {initial && (
+        <p role="status" className="rounded border p-3">
+          You are working on a new copy. Change the inputs, calculate again,
+          then save the revised workpaper in Findings. The original saved
+          workpaper is retained.
+        </p>
+      )}
       {catalog.isPending && <p>Loading review methods…</p>}
       {catalog.error && <p role="alert">{catalog.error.message}</p>}
       {catalog.data && selected && (
@@ -462,7 +499,7 @@ export function IndirectReviewWorkbench({ caseId }: { caseId: string }) {
             </Button>
             <p>
               {sources.length} files available in the source selectors. Search
-              returns up to20 matches; refine it for other files.
+              returns up to 20 matches; refine it for other files.
             </p>
           </div>
           <fieldset
@@ -585,7 +622,17 @@ export function IndirectReviewWorkbench({ caseId }: { caseId: string }) {
               <li key={`${m.kind}-${m.id}`}>{m.label}</li>
             ))}
           </ul>
-          <p>{report.value.limitation}</p>
+          <p>
+            The result compares your entered amounts. Check the supporting
+            evidence and any alternative explanations before recording a
+            finding.
+          </p>
+          <details>
+            <summary className="cursor-pointer text-sm">
+              Calculation notes
+            </summary>
+            <p className="text-sm mt-2">{report.value.limitation}</p>
+          </details>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={download}>
               Download indirect workpaper
@@ -599,20 +646,23 @@ export function IndirectReviewWorkbench({ caseId }: { caseId: string }) {
               }
               onClick={saveNote}
             >
-              Save workpaper in Workspace
+              Save workpaper in Findings
             </Button>
           </div>
           {save.data && (
             <p role="status">
-              Workpaper saved with source references.{" "}
-              <a className="underline" href={`/cases/${caseId}/workspace`}>
-                Open Workspace
+              Workpaper saved in Findings with its source files.{" "}
+              <a
+                className="underline"
+                href={`/cases/${caseId}/workspace?view=casework&entry=${save.data.id}`}
+              >
+                Open saved note
               </a>
             </p>
           )}
           {save.error && (
             <p role="alert">
-              {save.error.message} Check Workspace before retrying.
+              {save.error.message} Check Findings before trying again.
             </p>
           )}
         </section>

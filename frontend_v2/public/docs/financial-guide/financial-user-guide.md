@@ -684,9 +684,9 @@ The receipt already appears in the cash calculation. The resale interpretation d
 
 ## Prepare an indirect financial workpaper
 
-An indirect workpaper compares source-supported amounts where direct payment records do not answer the whole question. The form records your assessed inputs and work performed.
+An indirect workpaper compares amounts from your evidence, such as assets, deposits or spending, when payment records alone do not answer your question. You enter the amounts, explain how you arrived at them and record the checks you performed.
 
-1. Open **Trace funds**, then **Indirect review methods**.
+1. Open **More financial tools**, choose **Trace funds**, then select **Indirect review methods**.
 2. Choose a method from **Method**.
 3. Enter the subject, currency and review dates.
 4. Select **Search indirect sources** to find supporting files in the case.
@@ -697,7 +697,7 @@ An indirect workpaper compares source-supported amounts where direct payment rec
 9. Select **Calculate indirect workpaper**.
 10. Read the missing-item list or resulting conditional difference.
 11. Select **Download indirect workpaper** to retain it.
-12. Select **Save workpaper in Workspace** if you want it attached to the case, then open Workspace to confirm the saved entry.
+12. Select **Save workpaper in Findings** to keep the calculation with the case. Open **Findings** to see the saved workpaper. It is also available in Workspace.
 
 ![Indirect review form](images/08-indirect-review.png)
 
@@ -712,7 +712,36 @@ An indirect workpaper compares source-supported amounts where direct payment rec
 
 The required review covers starting assets and cash, non-income explanations, reasonable alternative leads, and the accounting and other applicable basis. Loupe does not supply deductions or investigate these explanations for you. A completed form is not independent verification of the entered amounts.
 
-To resume a downloaded workpaper, use **Restore indirect workpaper** and select the original downloaded file. Inspect its restored subject, dates, inputs and result before editing. Changing a field clears the old result until recalculated.
+### Reopen a saved workpaper
+
+1. Open **Findings**.
+2. Use **Search saved work** to find the subject or name of the workpaper.
+3. Select **Open saved workpaper** on its note.
+4. Check the subject, dates, currency and calculated difference at the top. If the work was incomplete when saved, read **Still to complete**.
+5. Read **Amounts used in the calculation**. Each item shows its amount, your explanation and the recorded source location.
+6. Use **Open source:** followed by the filename to open the supporting file. Close the file viewer to return to the workpaper.
+7. Read **Recorded checks** to see what was marked reviewed and the explanation saved with each check.
+8. Select **Download workpaper report** for a readable HTML file containing the saved amounts, checks, result, note and source references. Open it in a browser to read it or use Print to save it as a PDF. The original files are not included.
+9. Use **Download workpaper data** if you also want the JSON calculation file for restoring in Loupe.
+
+The viewer shows the calculation as it was saved. It does not recalculate using later transaction corrections. Workpapers saved before this viewer was added can also be opened, provided their method still matches the available definition. If a calculation or its attached sources cannot be checked, Loupe shows an error and retains the original note.
+
+![Saved workpaper with its result, input amounts and source buttons](images/15-saved-workpaper.png)
+
+*Open a source to check an amount, download the workpaper report, or create a revised copy.*
+
+### Change a saved workpaper
+
+1. Open the saved workpaper and select **Create revised copy**.
+2. A separate editing form opens under the original note in Findings. The original workpaper remains saved.
+3. Change the subject, dates, amounts, explanations or supporting files as needed.
+4. Select **Calculate indirect workpaper**. Read the new result or complete any missing items. Changing a field clears the previous result.
+5. Select **Save workpaper in Findings**. A new note is created with the revised calculation and a link to the original workpaper.
+6. Open that new note to check the saved result.
+
+Use **Hide revised copy** to fold away the editing form and **Continue revised copy** to return to it. Changing financial tabs retains the form. Save before refreshing the page, leaving the case or closing the browser; an unsaved copy is not a shared case record.
+
+To resume a downloaded calculation file instead, open **Indirect review methods**, find **Restore a downloaded workpaper** and select the original JSON file. Check the restored subject, dates, inputs and result before editing. Changing a field clears the old result until you calculate again.
 
 ## Download reports and supporting records
 
@@ -741,7 +770,7 @@ For a saved tracing calculation, use **Open saved calculation**, then **Download
 | Tracing inputs and calculated alternatives | Conditional scenario JSON and readable tracing report. |
 | A checked collection of tracing support | Tracing audit ZIP or assembled review package. |
 | Selected statement checks | Download this page of statement checks. |
-| An indirect review calculation | Download indirect workpaper, and optionally save it in Workspace. |
+| An indirect review calculation | Save workpaper in Findings to reopen the calculation and its sources. Download indirect workpaper keeps its JSON file. |
 
 ZIP is a container of files. HTML is a report you open in a browser. JSON retains structured records for checking or reusing in Loupe's supported tools; you do not need to edit it to read the HTML report.
 
@@ -851,7 +880,7 @@ External timestamping is an administrator-operated process, not a button an inve
 | A tracing calculation | Save this calculation in Findings, then wait for confirmation. Download a report if needed. | Open Findings, then Open saved calculation. Use Trace funds to calculate a new result with current records. |
 | A transfer comparison | Save this analysis with a note. | Open Findings to review its selected payments and explanation. |
 | A selected set of payments | Save selection with a note and wait for confirmation. | Reopen the named entry in Findings. |
-| An indirect workpaper | Download it, and optionally save it in Workspace. | Restore the downloaded workpaper or inspect its Workspace entry. |
+| An indirect workpaper | Save workpaper in Findings. Download it if you also need the calculation file. | Open saved workpaper in Findings, or restore the downloaded file. |
 | A pattern theory or claim response | Use the provided Workspace save action and confirm the entry. | Open Workspace and inspect the saved entry and attachments. |
 | A ledger report | Wait for the completed download and retain the ZIP. | Open the retained report or prepare a fresh capture for current records. |
 
