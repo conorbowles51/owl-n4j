@@ -81,7 +81,7 @@ class WorkingTotalsTests(LedgerSummaryTests):
         self.assertEqual(document['ledger']['included_rows'], 0)
         report = render_ledger_report(LedgerSnapshot(json.dumps(document), 'test', 0))
         self.assertIn('61.62 GBP', report)
-        self.assertLess(report.index('<h2>Working totals'), report.index('<h2>Captured readings'))
+        self.assertLess(report.index('<h2>Working transaction totals'), report.index('<h2>Captured readings'))
 
 class WorkingAnalysisTests(WorkingTotalsTests):
     def analysis(self, grouping='monthly', **scope):

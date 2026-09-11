@@ -36,3 +36,17 @@ class ProcessingProvenanceTests(unittest.TestCase):
     def test_empty_scope_has_no_invented_history(self):
         result=self.capture(readings=[])
         self.assertEqual(result['runs'],[]);self.assertEqual(result['evidence_registrations'],[])
+
+    def test_statement_review_originals_and_confirmation_are_bound_to_their_digests(self):
+        from services.financial.pdf_candidates import _digest
+        original={'rows':[{'kind':'header','excluded':True}], 'sources':[]}
+        confirmation={'rows':[], 'reason':'Reviewed source'}
+        self.doc.metadata_={**self.doc.metadata_, 'statement_import_original':original,
+            'statement_import_original_sha256':_digest(original),'statement_import_request':confirmation,
+            'statement_import_request_sha256':_digest(confirmation)}
+        self.f.db.commit()
+        history=self.capture()['statement_import_history']
+        self.assertEqual(history[0]['original'],original)
+        self.doc.metadata_={**self.doc.metadata_,'statement_import_original':{'rows':[]}}
+        self.f.db.commit()
+        with self.assertRaises(LedgerSummaryError):self.capture()

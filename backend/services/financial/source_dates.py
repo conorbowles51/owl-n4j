@@ -12,8 +12,8 @@ _MONTHS["sept"] = 9
 
 def _named_parts(text):
     # Explicit English month tokens only. No locale, fuzzy spelling or OCR repair.
-    day_first = re.fullmatch(r"([0-9]{1,2})[ \t]+([A-Za-z]+)(?:[ \t]+([0-9]{4}|[0-9]{2}))?", text)
-    month_first = re.fullmatch(r"([A-Za-z]+)[ \t]+([0-9]{1,2})(?:(?:,[ \t]*|[ \t]+)([0-9]{4}|[0-9]{2}))?", text)
+    day_first = re.fullmatch(r"([0-9]{1,2})[ \t]+([A-Za-z]+)\.?(?:[ \t]+([0-9]{4}|[0-9]{2}))?", text)
+    month_first = re.fullmatch(r"([A-Za-z]+)\.?[ \t]+([0-9]{1,2})(?:(?:,[ \t]*|[ \t]+)([0-9]{4}|[0-9]{2}))?", text)
     if day_first:
         day, month, year = day_first.groups()
         order = "day-month-year"

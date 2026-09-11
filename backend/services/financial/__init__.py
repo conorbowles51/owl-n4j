@@ -14,6 +14,7 @@ from services.financial.candidate_assessment import assess_candidate_amounts, as
 from services.financial.candidate_source_bytes import verify_candidate_source_bytes
 from services.financial.candidate_store import CandidateStoreError, store_pdf_candidates, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
+from services.financial.correction_fields import correction_fields, json_fields
 from services.financial.corrections import correct_transaction
 from services.financial.correction_verification import correction_verification
 from services.financial.correction_balances import correction_running_balances
@@ -2015,3 +2016,22 @@ __all__ += ["render_review_package_report"]
 
 from services.financial.periodic_audit_anchor import anchor_financial_case_once
 __all__ += ["anchor_financial_case_once"]
+
+from services.financial.statement_import import StatementImportRequest, read_statement_import, confirm_statement_import
+from services.financial.statement_import_proposal import propose_table, exact_amount
+from services.financial.statement_reprocessing import create_statement_version
+__all__ += ["StatementImportRequest", "read_statement_import", "confirm_statement_import", "propose_table", "exact_amount", "create_statement_version"]
+
+from services.financial.statement_import_catalog import statement_catalog
+__all__ += ["statement_catalog"]
+
+from services.financial.statement_import_card import propose_card_table
+__all__ += ["propose_card_table"]
+
+from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
+__all__ += ["merrick_statement", "propose_merrick_table"]
+
+from services.financial.transaction_notes import capture_transaction_notes
+__all__ += ["capture_transaction_notes"]
+
+__all__ += ["correction_fields", "json_fields"]

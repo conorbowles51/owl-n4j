@@ -11,6 +11,7 @@ def summary_contributions(session, *, case_id, account_id=None, start_date=None,
     result = (working_totals_from_readings(captured) if population == 'working'
               else {k: v for k, v in captured.items() if k not in ('readings', 'history_captured')})
     result['contributions'] = []
+    result['has_credit_card_readings'] = False
     if not result['available']:
         return result
     for reading in captured['readings']:
@@ -19,6 +20,8 @@ def summary_contributions(session, *, case_id, account_id=None, start_date=None,
         if not included:
             continue
         row = reading['row']
+        if reading.get('account', {}).get('account_type') == 'credit_card':
+            result['has_credit_card_readings'] = True
         result['contributions'].append(dict(
             transaction_id=row['key'], ref_id=row['ref_id'], currency=row['currency'],
             amount_minor=row['amount_minor'], direction=row['direction'],

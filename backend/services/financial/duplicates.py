@@ -575,6 +575,7 @@ def _supersede(
     rung: DuplicateMatchRung,
     actor: Actor,
     ingestion_run_id: Optional[uuid.UUID] = None,
+    reason: Optional[str] = None,
 ) -> None:
     """Append the decision, then hide the document and its rows.
 
@@ -597,6 +598,8 @@ def _supersede(
     would still be admitted, and hiding it is reconciling state rather than
     taking a decision.
     """
+    if reason is not None and (not isinstance(reason, str) or not reason.strip()):
+        raise ValueError("A supplied replacement reason must be nonempty text.")
     before = {
         "status": document.status,
         "superseded_by_id": str(document.superseded_by_id)
@@ -617,7 +620,7 @@ def _supersede(
             subject=document,
             subject_type=AdjudicationSubject.source_document,
             decision=AdjudicationDecision.supersede_duplicate,
-            reason=(
+            reason=reason if reason is not None else (
                 f"duplicate of {primary_id} at rung {int(rung)} "
                 f"({rung.name}); excluded from every total in favour of the primary"
             ),

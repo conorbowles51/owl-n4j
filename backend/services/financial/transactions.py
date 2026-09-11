@@ -104,6 +104,7 @@ from services.financial.proof_class import may_produce_ledger_rows
 from services.financial.references import (
     RowReading,
     document_content_hashes,
+    content_hash as reading_content_hash,
     ref_id as build_ref_id,
 )
 from services.financial.runs import RunScopeError
@@ -498,6 +499,8 @@ def record_transactions(
     run: "IngestionRunHandle",
     document: FinancialSourceDocument,
     drafts: Sequence[TransactionDraft],
+    *,
+    retain_prior_versions: bool = False,
 ) -> list[FinancialTransaction]:
     """Write one document's ledger rows, attributed to ``run``.
 
@@ -637,6 +640,32 @@ def record_transactions(
             )
 
     hashes = document_content_hashes([draft.reading for draft in drafts])
+    # Explicit reprocessing retains old citations. Allocate occurrences across
+    # this source's retained history, as amount corrections already do, without
+    # changing the source byte hash or the reference algorithm.
+    reference_occurrences = {}
+    if retain_prior_versions:
+        from sqlalchemy import select
+        used = set(session.scalars(select(FinancialTransaction.ref_id)
+            .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialTransaction.source_document_id)
+            .where(FinancialTransaction.case_id == run.case_id,
+                FinancialSourceDocument.sha256_at_ingestion == document.sha256_at_ingestion)))
+        hashes = []
+        next_occurrence = {}
+        for draft in drafts:
+            key = reading_content_hash(draft.reading, 0)
+            occurrence = next_occurrence.get(key, 0)
+            while True:
+                candidate = reading_content_hash(draft.reading, occurrence)
+                reference = build_ref_id(document.sha256_at_ingestion, candidate)
+                if reference not in used:
+                    break
+                occurrence += 1
+            used.add(reference)
+            hashes.append(candidate)
+            reference_occurrences[draft.row_index] = occurrence
+            next_occurrence[key] = occurrence + 1
+
 
     rows: list[FinancialTransaction] = []
     for draft, content in zip(drafts, hashes):
@@ -699,6 +728,7 @@ def record_transactions(
             # The draft guarantees the key is free, so this cannot clobber.
             provenance={
                 **draft.provenance,
+                **({"reprocessing_reference": {"occurrence": reference_occurrences[draft.row_index], "version": 1}} if retain_prior_versions else {}),
                 LOCATOR_PROVENANCE_KEY: draft.locator.to_json(),
             },
             metadata_=dict(draft.metadata),

@@ -6,6 +6,8 @@ admitted rows. Native file controls are checked separately against fresh source
 bytes when the original row population can be rebound exactly.
 """
 import uuid
+from types import SimpleNamespace
+from services.financial.correction_fields import correction_fields, json_fields, DATE_FIELDS
 from dataclasses import replace
 
 from sqlalchemy import select
@@ -32,7 +34,7 @@ class CorrectionPreviewError(ValueError):
 
 
 def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uuid.UUID,
-                              amount_minor: int, direction: str, resolve_path=None) -> dict:
+                              amount_minor: int, direction: str, resolve_path=None, fields=None) -> dict:
     """Preview one magnitude/direction change without changing rows or classes.
 
     Document-first locks match the disposition writers and are held until the
@@ -67,7 +69,14 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
     period_ids = {period.id for period in periods}
     if any(r.statement_period_id is not None and r.statement_period_id not in period_ids for r in rows):
         raise CorrectionPreviewError("A source row links to another document's statement period.", 409)
-    if amount_minor == row.amount_minor and direction == row.direction:
+    try:
+        changes = correction_fields(fields)
+        if not any(changes.get(key, getattr(row, key)) is not None for key in DATE_FIELDS):
+            raise ValueError('At least one printed date is required.')
+    except ValueError as exc:
+        raise CorrectionPreviewError(str(exc)) from exc
+    changes = {key: value for key, value in changes.items() if value != getattr(row, key)}
+    if amount_minor == row.amount_minor and direction == row.direction and not changes:
         raise CorrectionPreviewError("The proposed reading is unchanged.")
     original = to_view(row).to_json()
     # Decimal strings preserve all PostgreSQL BIGINT values in JavaScript.
@@ -78,7 +87,8 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
         "document_revision": duplicate_revision(session, document),
         "original": original,
         "proposed": {"amount_minor": str(amount_minor), "direction": direction,
-                     "currency": row.currency, "ledger_status": row.ledger_status},
+                     "currency": row.currency, "ledger_status": row.ledger_status, **json_fields(changes)},
+        "field_changes": json_fields(changes),
         "statement_identity": None,
         "running_balances": dict(available=False, reason="No linked statement period; running-balance comparison is unavailable.", interpretations=[]),
         "limitation": "No linked statement period; statement balance impact is unavailable.",
@@ -128,7 +138,25 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
             result["running_balances"] = correction_running_balances(period, period_rows,
                 transaction_id=row.id, amount_minor=amount_minor, direction=direction)
             result["limitation"] = "Statement balance checked; running-balance comparisons are conditional on source order and balance convention. Native controls are not revalidated. Existing quarantine is preserved."
-    result["native_controls"] = correction_native_controls(session, document, rows,
+    if 'running_balance_minor' in changes and result['running_balances']['available']:
+        from services.financial.correction_balances import correction_running_balances as compare_balances
+        affected_period = next(p for p in periods if p.id == row.statement_period_id)
+        projected_rows = []
+        for current in rows:
+            if current.statement_period_id != row.statement_period_id:
+                continue
+            values = {prop.key: getattr(current, prop.key) for prop in FinancialTransaction.__mapper__.column_attrs}
+            if current.id == row.id:
+                values['running_balance_minor'] = changes['running_balance_minor']
+            projected_rows.append(SimpleNamespace(**values))
+        projected_balances = compare_balances(affected_period, projected_rows,
+            transaction_id=row.id, amount_minor=amount_minor, direction=direction)
+        if projected_balances['available']:
+            for before, after in zip(result['running_balances']['interpretations'], projected_balances['interpretations']):
+                before['proposed'] = after['proposed']
+        else:
+            result['running_balances'] = projected_balances
+    result["native_controls"] = None if changes else correction_native_controls(session, document, rows,
         transaction_id=row.id, amount_minor=amount_minor, direction=direction,
         resolve_path=resolve_path)
     result["native_controls_rechecked"] = bool(result["native_controls"] and result["native_controls"]["available"])

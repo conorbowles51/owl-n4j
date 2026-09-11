@@ -45,6 +45,36 @@ class CorrectionTests(DuplicateTestCase):
         self.assertEqual(events[0].actor_user_id, self.user.id)
         self.assertEqual(events[0].before["row"]["amount_minor"], "40000")
 
+    def test_date_description_and_balance_correction_preserves_original_and_source(self):
+        from datetime import date
+        original_date = self.row.transaction_date
+        original_balance = self.row.running_balance_minor
+        original_source = self.row.provenance.get("locator")
+        result = self.correct(amount_minor=self.row.amount_minor, direction=self.row.direction,
+            fields={'transaction_date': '2023-02-07', 'description': 'Corrected source description',
+                    'running_balance_minor': '12345', 'bank_reference': 'PRINTED-REF'})
+        self.db.refresh(self.row)
+        replacement = self.db.get(FinancialTransaction, self.row.superseded_by_id)
+        self.assertEqual(self.row.transaction_date, original_date)
+        self.assertEqual(self.row.running_balance_minor, original_balance)
+        self.assertEqual(replacement.transaction_date, date(2023, 2, 7))
+        self.assertEqual(replacement.description, 'Corrected source description')
+        self.assertEqual(replacement.running_balance_minor, 12345)
+        self.assertEqual(replacement.bank_reference, 'PRINTED-REF')
+        if self.row.ordering_date_source == 'transaction':
+            self.assertEqual(replacement.ordering_date, date(2023, 2, 7))
+        self.assertEqual(replacement.provenance.get("locator"), original_source)
+        self.assertFalse(result['native_controls_rechecked'])
+
+    def test_invalid_field_corrections_leave_the_original_current(self):
+        for fields in ({'transaction_date': '2023-02-30'}, {'running_balance_minor': '9223372036854775808'},
+                       {'account_id': 'another-account'}, {'transaction_date': None, 'posted_date': None,
+                        'value_date': None, 'effective_date': None}):
+            with self.subTest(fields=fields), self.assertRaises(CorrectionPreviewError):
+                self.correct(fields=fields)
+        self.db.refresh(self.row)
+        self.assertEqual(self.row.ledger_status, 'admitted')
+
     def test_can_correct_back_without_overwriting_history(self):
         self.correct()
         new = self.db.get(FinancialTransaction, self.row.superseded_by_id)

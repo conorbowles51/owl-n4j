@@ -34,6 +34,7 @@ from routers.admin_ai_costs import router as admin_ai_costs_router
 from routers.admin_update import router as admin_update_router
 from routers.financial import router as financial_router
 from routers.financial_ledger import router as financial_ledger_router
+from routers.financial_statement_import import router as financial_statement_import_router
 from routers.financial_ingest import router as financial_ingest_router
 from routers.financial_adjudication import router as financial_adjudication_router
 from routers.financial_reconciliation import router as financial_reconciliation_router
@@ -78,6 +79,7 @@ __all__ = [
     "admin_update_router",
     "financial_router",
     "financial_ledger_router",
+    "financial_statement_import_router",
     "financial_ingest_router",
     "financial_adjudication_router",
     "financial_reconciliation_router",

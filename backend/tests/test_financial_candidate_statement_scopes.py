@@ -128,7 +128,7 @@ class StatementScopeTests(MaterializationFixture):
         report=render_ledger_report(LedgerSnapshot(json.dumps(document),'test',0))
         self.assertIn('Reviewed statement controls',report)
         self.assertIn('12.34 GBP',report)
-        self.assertIn('Unknown — not supplied',report)
+        self.assertIn('Unknown - not supplied',report)
         self.assertIn('Amounts owed (converted to negative ledger balances)',report)
         self.assertIn('&lt;script&gt;untrusted evidence&lt;/script&gt;',report)
         self.assertNotIn('<script>',report)

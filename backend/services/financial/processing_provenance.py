@@ -25,7 +25,22 @@ def capture_processing_provenance(session, *, case_id, readings):
         raise LedgerSummaryError('Captured evidence registration scope is incomplete.')
     def value(v):return v.isoformat() if hasattr(v,'isoformat') else str(v) if isinstance(v,UUID) else v
     def record(row,fields):return {name:value(getattr(row,name)) for name in fields}
+    from services.financial.pdf_candidates import _digest
+    imports = []
+    for document in sorted(documents, key=lambda item: str(item.id)):
+        metadata = document.metadata_ or {}
+        if 'statement_import_original' not in metadata:
+            continue
+        if _digest(metadata['statement_import_request']) != metadata.get('statement_import_request_sha256'):
+            raise LedgerSummaryError('Stored statement confirmation does not match its recorded digest.')
+        digest = metadata.get('statement_import_original_sha256')
+        if digest and _digest(metadata['statement_import_original']) != digest:
+            raise LedgerSummaryError('Stored statement review does not match its recorded digest.')
+        imports.append(dict(source_document_id=str(document.id), evidence_file_id=str(document.evidence_file_id),
+            original=metadata['statement_import_original'], original_sha256=digest,
+            confirmation=metadata['statement_import_request'], confirmation_sha256=metadata['statement_import_request_sha256']))
     return dict(schema_version='loupe.financial.processing_provenance/1',case_id=str(case_id),
+        statement_import_history=imports,
         source_documents=[record(d,('id','evidence_file_id','ingestion_run_id','sha256_at_ingestion','document_type','extraction_layer','parser_name','parser_version')) for d in sorted(documents,key=lambda d:str(d.id))],
         runs=[record(r,('id','code_version','ruleset_version','started_by_user_id','started_by_email','started_at','completed_at')) for r in sorted(runs,key=lambda r:str(r.id))],
         custody_reports=[source_custody(session, case_id=case_id, file_id=f.id) for f in sorted(files,key=lambda f:str(f.id))],

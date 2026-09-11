@@ -7,7 +7,7 @@ can be rebound. Human interpretation retains a durable proof reservation.
 """
 import copy
 import uuid
-from dataclasses import fields
+from dataclasses import fields as dataclass_fields
 from sqlalchemy import select
 
 from postgres.models.enums import AdjudicationDecision, AdjudicationSubject, TransactionDirection
@@ -17,16 +17,18 @@ from services.financial.decisions import Actor, record
 from services.financial.documents import reclassify_after_reconciliation, document_reconciliation
 from services.financial.reconcile import reconcile_period
 from services.financial.references import RowReading, content_hash, ref_id
+from services.financial.correction_fields import correction_fields, DATE_FIELDS
+from services.financial.transactions import choose_ordering_date, ORDERING_PRECEDENCE
 
 
 def correct_transaction(session, *, case_id, transaction_id, amount_minor, direction,
-                        expected_revision, actor, reason, resolve_path=None):
+                        expected_revision, actor, reason, resolve_path=None, fields=None):
     """Commit an exact replacement or roll back every effect, including grading."""
     try:
         if not isinstance(actor, Actor) or not isinstance(reason, str) or not reason.strip():
             raise CorrectionPreviewError("A named actor and a stated reason are required.")
         preview = preview_amount_correction(session, case_id=case_id, transaction_id=transaction_id,
-                                            amount_minor=amount_minor, direction=direction, resolve_path=resolve_path)
+                                            amount_minor=amount_minor, direction=direction, resolve_path=resolve_path, fields=fields)
         if preview["document_revision"] != expected_revision:
             raise CorrectionPreviewError("The document changed. Review the correction again.", 409)
         original = session.get(FinancialTransaction, transaction_id)
@@ -37,7 +39,9 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
             FinancialTransaction.source_document_id == document.id)))
         if any(r.proof_class != document.proof_class for r in rows):
             raise CorrectionPreviewError("Document and row proof classes disagree; correction refused.", 409)
-        reading_fields = {f.name: getattr(original, f.name) for f in fields(RowReading)}
+        reading_fields = {f.name: getattr(original, f.name) for f in dataclass_fields(RowReading)}
+        changes = correction_fields(preview.get("field_changes"))
+        reading_fields.update(changes)
         reading_fields.update(amount_minor=amount_minor, direction=TransactionDirection(direction))
         reading = RowReading(**reading_fields)
         hashes = {r.content_hash for r in rows}
@@ -57,6 +61,15 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
         replacement_id = uuid.uuid4()
         values.update(id=replacement_id, amount_minor=amount_minor, direction=direction,
                       ref_id=reference, content_hash=digest, superseded_by_id=None)
+        values.update(changes)
+        if DATE_FIELDS.intersection(changes):
+            original_date_field = next((attribute for source, attribute in ORDERING_PRECEDENCE
+                                        if source.value == original.ordering_date_source), None)
+            if original_date_field and getattr(reading, original_date_field) is not None:
+                values['ordering_date'] = getattr(reading, original_date_field)
+            else:
+                ordering_date, ordering_source = choose_ordering_date(reading)
+                values.update(ordering_date=ordering_date, ordering_date_source=ordering_source.value)
         values["provenance"] = {**values["provenance"], "correction": {
             "previous_transaction_id": str(original.id), "previous_ref_id": original.ref_id,
             "occurrence": occurrence, "version": 1}}

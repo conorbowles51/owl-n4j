@@ -101,6 +101,9 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
             with Session(bind=connection,autoflush=False) as session:
                 snapshot=capture_ledger_snapshot(session,case_id=case_id,account_id=account_id,start_date=start_date,end_date=end_date)
                 document=_capture_history(session,json.loads(snapshot.content),case_id=case_id)
+                from postgres.models.case import Case
+                case = session.get(Case, case_id)
+                document['case_title'] = case.title if case is not None else None
                 if include_case_financial_history:
                     from services.financial.case_financial_history import capture_case_financial_history
                     document['case_financial_history'] = capture_case_financial_history(session, case_id=case_id)
@@ -108,6 +111,8 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
                     document['export_context']=dict(generated_by=generated_by,generated_at=generated_at.astimezone(timezone.utc).isoformat(),privilege_marking=privilege_marking,marking_basis='Selected by the exporting user; not a legal privilege determination.')
                 from services.financial.processing_provenance import capture_processing_provenance
                 document['processing_provenance']=capture_processing_provenance(session,case_id=case_id,readings=document['ledger']['readings'])
+                from services.financial.transaction_notes import capture_transaction_notes
+                document['investigation_notes']=capture_transaction_notes(session,case_id=case_id,readings=document['ledger']['readings'])
                 if table_view is not None:
                     from services.financial.ledger_table_view import capture_table_view
                     document['table_view'] = capture_table_view(document['ledger'], table_view)
@@ -116,6 +121,10 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
                 if include_source_files:
                     from services.financial.export_sources import capture_export_sources
                     source_files = capture_export_sources(session,document,case_id=case_id,resolve_path=resolve_path)
+                    document['source_file_checks'] = [{key: value for key, value in item.items() if key != 'content'} for item in source_files]
+                    document['limitations'] = [value for value in document['limitations'] if value !=
+                        'Source digests are recorded ingestion digests; source bytes were not reverified for this snapshot.']
+                    document['limitations'].append('Bundled source files were read and matched to their recorded ingestion hashes for this export. This checks retained bytes, not source authenticity.')
                 content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
     encoded=content.encode('utf-8')
     if len(encoded)>MAX_EXPORT_BYTES:
@@ -193,7 +202,7 @@ def render_ledger_report(snapshot):
         return '<details><summary>' + text(label) + '</summary><pre>' + text(
             json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2)) + '</pre></details>'
 
-    def money_display(value, currency):
+    def money_display(value, currency, *, exact=True):
         from services.financial.money import Money, MoneyError
         import re
         if not isinstance(value, str) or not re.fullmatch(r"-?(0|[1-9][0-9]*)", value):
@@ -201,7 +210,7 @@ def render_ledger_report(snapshot):
         try:
             amount = Money(int(value), currency)
             historical = ' (historical currency)' if amount.currency_info.is_historical else ''
-            return amount.format() + historical + ' [' + value + ' minor units]'
+            return amount.format() + historical + (' [' + value + ' minor units]' if exact else '')
         except (MoneyError, ValueError, TypeError):
             return value + ' minor units (unscaled: unsupported currency)'
 
@@ -242,23 +251,60 @@ def render_ledger_report(snapshot):
         '@media print{details>*{display:block}thead{display:table-header-group}body{max-width:none}}</style></head><body>',
         '<h1>Loupe ledger report</h1><p>Captured account postings and recorded decisions.</p>',
         '<h2>Scope and interpretation</h2>',
-        table(['Case', 'Account', 'Ordering dates, inclusive'], [[ledger['case_id'],
+        table(['Case', 'Account', 'Ordering dates, inclusive'], [[(document.get('case_title') + ' (' + ledger['case_id'] + ')') if document.get('case_title') else ledger['case_id'],
             ledger['account_id'] or 'All accounts', (ledger['start_date'] or 'Unbounded') + ' to ' + (ledger['end_date'] or 'Unbounded')]]),
         '<p>' + text(ledger['limitation']) + '</p>',
-        '<p>Amounts show currency units with their exact integer minor units in brackets. '
+        '<p>The transaction table shows currency amounts. Detailed readings retain exact integer minor units in brackets. '
         'Unsupported values remain explicitly unscaled. No exchange-rate conversion or transfer matching is applied.</p>',
-        '<p>Included rows: ' + text(ledger['included_rows']) + '; excluded rows: ' + text(ledger['excluded_rows']) + '.</p>',
+        ]
+    verification_parts = [
+        '<p>Rows in verified totals: ' + text(ledger['included_rows']) + '; other captured readings: ' + text(ledger['excluded_rows']) + '.</p>',
         '<h2>Verified totals by currency</h2>',
         table(['Currency', 'Rows', 'Credits', 'Debits', 'Net postings'],
               [[c['currency'], c['rows'], money_display(c['credits_minor'], c['currency']), money_display(c['debits_minor'], c['currency']), money_display(c['net_minor'], c['currency'])] for c in ledger['currencies']]),
         '<h2>Limitations</h2><ul>' + ''.join('<li>' + text(v) + '</li>' for v in document['limitations']) + '</ul>']
     working = document.get('working_totals')
     if working is not None:
-        parts += ['<h2>Working totals — including readings outside verified totals</h2>',
+        parts += ['<h2>Working transaction totals</h2>',
             '<p>' + text(working['limitation']) + '</p>',
             '<p>' + text(working['included_rows']) + ' current rows; ' + text(working['outside_verified_rows']) + ' outside verified totals.</p>',
             table(['Currency', 'Rows', 'Credits', 'Debits', 'Net postings'],
                 [[g['currency'], g['rows'], money_display(g['credits_minor'],g['currency']), money_display(g['debits_minor'],g['currency']), money_display(g['net_minor'],g['currency'])] for g in working['currencies']])]
+    if document.get('table_view') is not None:
+        view = document['table_view']
+        indexed = {reading['row']['key']: reading['row'] for reading in ledger['readings']}
+        parts += ['<h2>Exported table view</h2>', '<p>' + text(view['limitation']) + '</p>',
+            table(['Search', 'Currency', 'Direction', 'Proof class', 'Display order', 'Matching rows'], [[
+                view['filters']['search'] or 'None', view['filters']['currency'] or 'All',
+                view['filters']['direction'] or 'Both', view['filters']['proof'] or 'All',
+                view['filters']['sort'], view['matching_rows']]]),
+            table(['Date', 'Description', 'Credit', 'Debit', 'Printed balance', 'Source reference'], [[
+                indexed[key]['ordering_date'], indexed[key]['description'],
+                money_display(indexed[key]['amount_minor'], indexed[key]['currency'], exact=False) if indexed[key]['direction'] == 'credit' else '',
+                money_display(indexed[key]['amount_minor'], indexed[key]['currency'], exact=False) if indexed[key]['direction'] == 'debit' else '',
+                money_display(indexed[key]['running_balance_minor'], indexed[key]['currency'], exact=False) if indexed[key]['running_balance_minor'] is not None else 'Not recorded',
+                indexed[key]['ref_id']] for key in view['row_ids']], widths=[13,27,14,14,14,18])]
+    else:
+        current = [reading['row'] for reading in ledger['readings']
+                   if reading['exclusion_reason'] in (None, 'proof_class_not_included')]
+        current.sort(key=lambda row: (row['ordering_date'], row['row_index'], row['key']))
+        parts += ['<h2>Current transactions</h2>',
+            table(['Date', 'Description', 'Credit', 'Debit', 'Printed balance', 'Source reference'], [[
+                row['ordering_date'], row['description'],
+                money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'credit' else '',
+                money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'debit' else '',
+                money_display(row['running_balance_minor'], row['currency'], exact=False) if row['running_balance_minor'] is not None else 'Not recorded',
+                row['ref_id']] for row in current])]
+    notes = document.get('investigation_notes', [])
+    if notes:
+        parts += ['<h2>Investigation notes</h2><p>Current Workspace notes linked to captured transaction readings. These are the authors’ observations, not additional transactions. Notes may discuss other evidence.</p>']
+        for note in notes:
+            parts += ['<article><h3>' + text(note['title']) + '</h3>',
+                '<p>' + text(note['author_name']) + ' · version ' + text(note['version']) + ' · ' + text(note['review_state']) + '</p>',
+                '<p style="white-space:pre-wrap">' + text(note['body']) + '</p>',
+                table(['Statement', 'Transaction references'], [[link['filename'], ', '.join(row['ref_id'] for row in link['transactions'])] for link in note['links']]),
+                '</article>']
+    parts += verification_parts
     assessment = document.get('exhibit_assessment')
     if assessment is not None:
         parts += ['<h2>Exhibit assessment and source disclosure checklist</h2>',
@@ -296,18 +342,6 @@ def render_ledger_report(snapshot):
             details('Source reference and recorded ingestion digest', reading['source']),
             details('Original captured row, dates and source locator', row),
             details('Preserved transaction provenance', reading['provenance']), '</article>']
-    if document.get('table_view') is not None:
-        view = document['table_view']
-        indexed = {reading['row']['key']: reading['row'] for reading in ledger['readings']}
-        parts += ['<h2>Exported table view</h2>', '<p>' + text(view['limitation']) + '</p>',
-            table(['Search', 'Currency', 'Direction', 'Proof class', 'Display order', 'Matching rows'], [[
-                view['filters']['search'] or 'None', view['filters']['currency'] or 'All',
-                view['filters']['direction'] or 'Both', view['filters']['proof'] or 'All',
-                view['filters']['sort'], view['matching_rows']]]),
-            table(['Position', 'Ordering date', 'Description', 'Direction', 'Amount', 'Proof class', 'Source reference'], [[
-                index + 1, indexed[key]['ordering_date'], indexed[key]['description'], indexed[key]['direction'],
-                money_display(indexed[key]['amount_minor'], indexed[key]['currency']), indexed[key]['proof_class'],
-                indexed[key]['ref_id']] for index, key in enumerate(view['row_ids'])])]
     parts += ['<h2>Relevant recorded decisions</h2>', '<p>' + text(document.get('decision_order', 'Decision history has not been captured.')) + '</p>']
     for decision in document.get('decisions', []):
         parts += ['<article><h3>' + text(decision['decision']) + '</h3>',
@@ -336,7 +370,7 @@ def render_ledger_report(snapshot):
                 for role in ('start', 'end', 'opening', 'closing', 'credits_total', 'debits_total'):
                     control = scope['bound_controls'].get(role)
                     if control is None:
-                        controls.append([{'credits_total': 'Total money in', 'debits_total': 'Total money out'}.get(role, role.capitalize()), 'Unknown — not supplied', '—', '—'])
+                        controls.append([{'credits_total': 'Total money in', 'debits_total': 'Total money out'}.get(role, role.capitalize()), 'Unknown - not supplied', '-', '-'])
                     else:
                         value = control['value'] if role in ('start', 'end') else money_display(control['amount_minor'], scope['currency'])
                         controls.append([{'credits_total': 'Total money in', 'debits_total': 'Total money out'}.get(role, role.capitalize()), value, control['source']['expected_text'], control['source']['page_number']])

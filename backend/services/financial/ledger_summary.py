@@ -74,7 +74,7 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
                 'proof_class_not_included' if not counts_toward_totals(row_class) or not counts_toward_totals(source_class) else None)
             result['readings'].append(dict(row=to_view(row).to_json(), included=reason is None,
                 exclusion_reason=reason, provenance=deepcopy(row.provenance),
-                account=dict(id=str(account.id), label=(account.metadata_ or {}).get('display_label') or account.identifier_as_printed or account.holder_name),
+                account=dict(id=str(account.id), account_type=account.account_type, label=(account.metadata_ or {}).get('display_label') or account.identifier_as_printed or account.holder_name),
                 source=dict(id=str(document.id), evidence_file_id=str(document.evidence_file_id) if document.evidence_file_id else None,
                     sha256_at_ingestion=document.sha256_at_ingestion, proof_class=source_class.value,
                     status=source_status.value, parser_name=document.parser_name, parser_version=document.parser_version)))

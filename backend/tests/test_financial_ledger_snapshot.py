@@ -174,3 +174,16 @@ class LedgerSnapshotTests(LedgerSummaryTests):
                 router.download_ledger_export(self.case.id,None,None,None,self.db)
         self.assertEqual(caught.exception.status_code,500)
         self.assertNotIn('private',caught.exception.detail)
+
+    def test_report_includes_authored_notes_and_escapes_their_content(self):
+        from services.financial.ledger_snapshot import LedgerSnapshot, render_ledger_report
+        self.add()
+        document=json.loads(self.capture().content)
+        document['investigation_notes']=[dict(title='Payment question',author_name='Investigator',version=2,
+            review_state='accepted',body='Ask about <script>this payment</script>',
+            links=[dict(filename='statement.pdf',transactions=[dict(ref_id='source-reference')])])]
+        report=render_ledger_report(LedgerSnapshot(json.dumps(document),'test',0))
+        self.assertIn('Investigation notes',report)
+        self.assertIn('source-reference',report)
+        self.assertIn('&lt;script&gt;this payment&lt;/script&gt;',report)
+        self.assertNotIn('<script>',report)
