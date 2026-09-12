@@ -146,6 +146,11 @@ async def upload_files(
                 raise HTTPException(status_code=400, detail="Unknown preparation mode")
             if preparation_mode == "pdf_review" and (Path(safe_name).suffix.lower() != ".pdf" or not (metadata or {}).get("source_evidence_file_id")):
                 raise HTTPException(status_code=400, detail="PDF preparation requires a registered PDF evidence file")
+            reading_mode = (metadata or {}).get("pdf_reading_mode", "automatic")
+            if reading_mode not in ("automatic", "page_images"):
+                raise HTTPException(status_code=400, detail="Unknown PDF reading method")
+            if reading_mode != "automatic" and preparation_mode != "pdf_review":
+                raise HTTPException(status_code=400, detail="Page-image reading requires PDF review preparation")
             # Create job record
             ingestion_request_id = str(
                 (metadata or {}).get("ingestion_request_id") or ""
@@ -166,11 +171,10 @@ async def upload_files(
                 source_folder_id=(metadata or {}).get("source_folder_id"),
                 requested_by_user_id=(metadata or {}).get("requested_by_user_id"),
                 source_evidence_file_id=(metadata or {}).get("source_evidence_file_id"),
-                pipeline_state=(
-                    {"ingestion_request_id": ingestion_request_id}
-                    if ingestion_request_id
-                    else {}
-                ),
+                pipeline_state={
+                    **({"ingestion_request_id": ingestion_request_id} if ingestion_request_id else {}),
+                    **({"pdf_reading_mode": reading_mode} if preparation_mode == "pdf_review" else {}),
+                },
                 file_size=file_size,
                 mime_type=mime_type,
                 sha256=sha256,

@@ -717,7 +717,7 @@ async def test_pdf_extraction_concurrency_is_bounded_to_configured_limit(
     maximum_active = 0
     lock = threading.Lock()
 
-    def fake_extract(_file_path, _report_progress=None):
+    def fake_extract(_file_path, _report_progress=None, *, reading_mode="automatic"):
         nonlocal active, maximum_active
         with lock:
             active += 1
@@ -731,6 +731,38 @@ async def test_pdf_extraction_concurrency_is_bounded_to_configured_limit(
     await asyncio.gather(*(pdf_extraction.extract_pdf(str(index)) for index in range(6)))
 
     assert maximum_active == 2
+
+
+async def test_requested_image_reading_bypasses_embedded_text_and_records_method(tmp_path, monkeypatch):
+    pdf_path = tmp_path / 'damaged-layer.pdf'
+    _write_native_pdf(pdf_path, ['Wrong embedded number 999.00', 'Wrong embedded date 01/01121'])
+    before = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+    read_pages = []
+    def fresh_read(page):
+        read_pages.append(page.number)
+        return ['New Balance $114.00', 'Statement Date: 04/25/21'][page.number], 95.0, 300, None
+    monkeypatch.setattr(pdf_extraction, '_ocr_page', fresh_read)
+    def no_native_tables(*args):
+        raise AssertionError('Image reading must not retain damaged native tables')
+    monkeypatch.setattr(pdf_extraction, '_extract_native_tables', no_native_tables)
+    progress = []
+    async def on_progress(update):
+        progress.append(update)
+    result = await extract_text(str(pdf_path), pdf_path.name, progress_callback=on_progress,
+        pdf_reading_mode='page_images')
+    assert read_pages == [0, 1]
+    assert '114.00' in result.text and '04/25/21' in result.text and 'Wrong' not in result.text
+    assert result.metadata['ocr_page_count'] == 2 and result.metadata['native_page_count'] == 0
+    assert all(p['detection_reason'] == 'requested_page_images' and p['text_origin'] == 'recognised_glyphs' for p in result.metadata['page_spans'])
+    assert result.metadata['processing_manifest']['content']['settings']['pdf_reading_mode'] == 'page_images'
+    assert progress[-1].completed == 2
+    assert hashlib.sha256(pdf_path.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize('mode,filename', [('guess','bank.pdf'), ('page_images','bank.txt')])
+async def test_invalid_image_reading_request_fails_before_opening_source(mode, filename):
+    with pytest.raises(ValueError):
+        await extract_text('/does-not-exist', filename, pdf_reading_mode=mode)
 
 
 def test_large_pdf_progress_is_limited_to_twenty_even_updates() -> None:

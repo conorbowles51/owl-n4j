@@ -53,6 +53,8 @@ const amounts = new Set([
 ])
 const heading =
   /^(?:interest charged|totals year-to-date|interest charge calculation)$/i
+const numericText = (text: string) =>
+  /^[+\-\s(]*[€£$]?\s*\d[\d,.]*\)?$/.test(text.trim())
 
 // Layout only: use printed headers and source positions. Never decide which rows to import here.
 export function printedStatementSections(rows: PrintedRow[]) {
@@ -149,12 +151,26 @@ export function printedStatementSections(rows: PrintedRow[]) {
         mark(row.id, nonempty[0])
         continue
       }
-      const within = row.source_cells.filter(
-        (c) =>
+      const lastHeader = active.headers.at(-1)
+      const lastHeaderBox = lastHeader && rect(lastHeader)
+      const within = row.source_cells.filter((c) => {
+        const box = rect(c)
+        // A left-aligned amount can be wider than the word "Amount". Its
+        // measured left edge still identifies the last printed column.
+        const extendsAmountHeader =
+          box &&
+          lastHeader &&
+          lastHeaderBox &&
+          amounts.has(label(lastHeader)) &&
+          numericText(c.expected_text) &&
+          Math.abs(box[0] - lastHeaderBox[0]) <= 3000
+        return (
           !bounds ||
-          !rect(c) ||
-          (rect(c)![0] >= bounds[0] - 3000 && rect(c)![2] <= bounds[1] + 3000)
-      )
+          !box ||
+          (box[0] >= bounds[0] - 3000 && box[2] <= bounds[1] + 3000) ||
+          extendsAmountHeader
+        )
+      })
       if (!within.some((c) => c.expected_text.trim())) continue
       if (!active.headers.length) {
         active.rows.push({ row, cells: within })
@@ -171,9 +187,7 @@ export function printedStatementSections(rows: PrintedRow[]) {
         )
         if (box && active.headers.every((h) => rect(h))) {
           // Amounts are right aligned. Preserve their printed column even when a total spans the date and description columns.
-          const numeric = /^[+\-\s(]*[€£$]?\s*\d[\d,.]*\)?$/.test(
-            cell.expected_text.trim()
-          )
+          const numeric = numericText(cell.expected_text)
           if (numeric)
             column = active.headers.reduce(
               (best, h, j) =>

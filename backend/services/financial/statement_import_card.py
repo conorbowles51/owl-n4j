@@ -6,7 +6,7 @@ inferred. Undated interest charges remain explicit review exceptions.
 """
 import re
 from services.financial.statement_import_proposal import exact_amount
-from services.financial.statement_layout_context import _dates_within
+from services.financial.statement_layout_context import _cycle, _dates_within
 from datetime import date
 from services.financial.statement_import_card_balances import summary_balances
 
@@ -24,6 +24,11 @@ def propose_card_table(source, currency, statement):
                     source_revision=source['source_revision'], source_cells=row['cells'], fields={},
                     issues=[], excluded=True, kind='statement_information')
         texts = [cell['expected_text'].strip() for cell in row['cells']]
+        # A cycle header can span several measured OCR cells. Its dates describe
+        # statement coverage, not an unrecognised dated transaction.
+        if _cycle(' '.join(texts)) is not None:
+            result.append(item)
+            continue
         if row['row_index'] in balances:
             item.update(balances[row['row_index']])
             result.append(item)

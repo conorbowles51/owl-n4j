@@ -14,6 +14,7 @@ const receiptSchema = z.object({
 const recoverySchema = z.object({
   requestId: z.string().uuid(),
   receipt: receiptSchema.nullable(),
+  readingMode: z.enum(["automatic", "page_images"]).default("automatic"),
 })
 
 export function ReprocessStatement({
@@ -46,6 +47,10 @@ export function ReprocessStatement({
     }
   })
   const [requestId] = useState(() => saved?.requestId ?? newReviewId())
+  const [readingMode, setReadingMode] = useState<"automatic" | "page_images">(
+    saved?.readingMode ?? "automatic"
+  )
+  const [requestStarted, setRequestStarted] = useState(!!saved)
   const [receipt, setReceipt] = useState(saved?.receipt ?? null)
   const [storageFailed, setStorageFailed] = useState(false)
   function remember(value: z.infer<typeof receiptSchema> | null) {
@@ -53,7 +58,7 @@ export function ReprocessStatement({
     try {
       sessionStorage.setItem(
         storageKey,
-        JSON.stringify({ requestId, receipt: value })
+        JSON.stringify({ requestId, receipt: value, readingMode })
       )
     } catch {
       setStorageFailed(true)
@@ -63,11 +68,15 @@ export function ReprocessStatement({
   const start = useMutation({
     retry: false,
     mutationFn: async () => {
+      setRequestStarted(true)
       remember(receipt)
       const result = receiptSchema.parse(
         await fetchAPI(
           `/api/financial/statement-import/${fileId}/reprocess?${new URLSearchParams({ case_id: caseId })}`,
-          { method: "POST", body: { request_id: requestId } }
+          {
+            method: "POST",
+            body: { request_id: requestId, reading_mode: readingMode },
+          }
         )
       )
       if (result.case_id !== caseId || result.evidence_file_id === fileId)
@@ -109,9 +118,14 @@ export function ReprocessStatement({
         ? false
         : 2000,
   })
+  const methodMismatch =
+    job.data?.status === "completed" &&
+    readingMode === "page_images" &&
+    job.data.quality_report?.pdf_reading_mode !== "page_images"
   const ready =
     job.data?.status === "completed" &&
-    job.data.quality_report?.preparation_mode === "pdf_review"
+    job.data.quality_report?.preparation_mode === "pdf_review" &&
+    !methodMismatch
   useEffect(() => {
     if (ready && receipt && !saved?.receipt && !delivered.current) {
       delivered.current = true
@@ -125,6 +139,26 @@ export function ReprocessStatement({
         Use this if the extraction missed information. A new reading will open
         for review. Existing transactions stay in use until you confirm their
         replacement. Finish or record any unsaved corrections before starting.
+      </p>
+      <label className="block text-sm my-2">
+        Reading method
+        <select
+          aria-label="Reading method"
+          className="block border rounded p-2 mt-1 w-full max-w-md bg-background"
+          value={readingMode}
+          disabled={requestStarted || start.isPending}
+          onChange={(event) =>
+            setReadingMode(event.target.value as "automatic" | "page_images")
+          }
+        >
+          <option value="automatic">Use the PDF text where available</option>
+          <option value="page_images">Read from page images</option>
+        </select>
+      </label>
+      <p className="text-sm text-muted-foreground mb-3">
+        {readingMode === "page_images"
+          ? "Reads every page with OCR on the Loupe server. Use this when the PDF looks clear but extracted words or numbers are wrong. It can take longer, and you still need to check the new reading against the PDF."
+          : "Uses the text stored in the PDF and reads scanned pages with OCR. If the same errors keep appearing, choose Read from page images before starting."}
       </p>
       <Button
         variant="outline"
@@ -148,6 +182,13 @@ export function ReprocessStatement({
       )}
       {(start.isError || job.isError) && (
         <p role="alert">{start.error?.message || job.error?.message}</p>
+      )}
+      {methodMismatch && (
+        <p role="alert">
+          The server did not confirm that it read from page images. Your current
+          import is unchanged. Ask your administrator to check that statement
+          processing has been updated before trying again.
+        </p>
       )}
       {saved && !receipt && !start.isPending && (
         <p role="status">

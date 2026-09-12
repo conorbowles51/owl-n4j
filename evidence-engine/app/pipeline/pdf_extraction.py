@@ -628,7 +628,11 @@ def _page_span(page_result: _PageResult, start_char: int) -> dict:
 def _extract_pdf_sync(
     file_path: str,
     report_progress: Callable[[PdfExtractionProgress], None] | None = None,
+    *,
+    reading_mode: str = "automatic",
 ) -> PdfExtractionResult:
+    if reading_mode not in ("automatic", "page_images"):
+        raise ValueError("Unknown PDF reading method")
     started = time.perf_counter()
     table_chunks: list[str] = []
     # Positionally aligned with table_chunks: the reader returns both from one
@@ -655,7 +659,8 @@ def _extract_pdf_sync(
         for page_index, page in enumerate(document):
             page_number = page_index + 1
             native_text = page.get_text()
-            detection_reason = _ocr_detection_reason(page, native_text)
+            detection_reason = ("requested_page_images" if reading_mode == "page_images"
+                else _ocr_detection_reason(page, native_text))
             if detection_reason is None:
                 page_result = _PageResult(
                     page_number=page_number, text=native_text,
@@ -775,7 +780,8 @@ def _extract_pdf_sync(
         from app.pipeline.pdf_processing_manifest import capture_pdf_processing_manifest
         metadata = {
             "file_type": "pdf",
-            "processing_manifest": capture_pdf_processing_manifest(settings=settings, ocr_used=bool(ocr_count)),
+            "processing_manifest": capture_pdf_processing_manifest(settings=settings, ocr_used=bool(ocr_count), reading_mode=reading_mode),
+            "pdf_reading_mode": reading_mode,
             "page_count": len(pages),
             "is_scanned": ocr_count > 0,
             "extraction_mode": extraction_mode,
@@ -815,11 +821,13 @@ def _extract_pdf_sync(
 async def extract_pdf(
     file_path: str,
     progress_callback: PdfProgressCallback | None = None,
+    *,
+    reading_mode: str = "automatic",
 ) -> PdfExtractionResult:
     semaphore = _get_pdf_extraction_semaphore()
     async with semaphore:
         if progress_callback is None:
-            return await asyncio.to_thread(_extract_pdf_sync, file_path)
+            return await asyncio.to_thread(_extract_pdf_sync, file_path, reading_mode=reading_mode)
 
         queue: asyncio.Queue[PdfExtractionProgress] = asyncio.Queue()
         loop = asyncio.get_running_loop()
@@ -828,7 +836,7 @@ async def extract_pdf(
             loop.call_soon_threadsafe(queue.put_nowait, progress)
 
         worker = asyncio.create_task(
-            asyncio.to_thread(_extract_pdf_sync, file_path, report_from_thread)
+            asyncio.to_thread(_extract_pdf_sync, file_path, report_from_thread, reading_mode=reading_mode)
         )
         while not worker.done():
             try:

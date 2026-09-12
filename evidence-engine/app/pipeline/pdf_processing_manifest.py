@@ -8,7 +8,7 @@ from importlib.metadata import version, PackageNotFoundError
 from pathlib import Path
 
 
-def capture_pdf_processing_manifest(*, settings, ocr_used):
+def capture_pdf_processing_manifest(*, settings, ocr_used, reading_mode='automatic'):
     packages = {}
     for name in ('PyMuPDF', 'pytesseract', 'Pillow'):
         try: packages[name] = version(name)
@@ -31,7 +31,7 @@ def capture_pdf_processing_manifest(*, settings, ocr_used):
     content = dict(schema_version='loupe.pdf_processing_manifest/1',
         recorded_at=datetime.now(timezone.utc).isoformat(), python_version=platform.python_version(),
         packages=packages, source_files_sha256=sources, tesseract=tesseract,
-        settings={name:getattr(settings,name) for name in ('pdf_ocr_dpi','pdf_ocr_max_pixels','pdf_ocr_page_timeout_seconds','pdf_ocr_max_concurrency','tesseract_lang','max_pdf_pages')},
+        settings={**{name:getattr(settings,name) for name in ('pdf_ocr_dpi','pdf_ocr_max_pixels','pdf_ocr_page_timeout_seconds','pdf_ocr_max_concurrency','tesseract_lang','max_pdf_pages')}, 'pdf_reading_mode':reading_mode},
         limitation='Observed local runtime/package versions and on-disk source fingerprints at preparation completion. Not proof of loaded-code identity or immutable executables. Tesseract language-data and dependency binary hashes are not captured. No credentials, environment dump or source file paths are included.')
     raw=json.dumps(content,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
     return dict(content=content,sha256=hashlib.sha256(raw).hexdigest())

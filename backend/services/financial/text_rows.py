@@ -37,6 +37,7 @@ handed, which is the shape a fitz ``Page`` has and which a stub can have too.
 from __future__ import annotations
 
 import statistics
+import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional, Sequence
 
@@ -397,14 +398,25 @@ def _bbox_of(rows: Iterable[_Row]) -> Optional[tuple[float, float, float, float]
 
 
 
-def _measured_word_cells(line, band):
-    """Only touching/overlapping OCR boxes share a cell; retain their full union."""
+def _measured_word_cells(line, band, gap_threshold):
+    """Join nearby OCR words, but keep separate printed numeric values apart.
+
+    Overlapping boxes retain their full union. Clear column gutters end a
+    phrase, as in native text recovery; nearby amount/fee values remain separate
+    even when their gutter is narrow. This groups text without parsing amounts.
+    """
     if not line:
         return []
     cells, run = [], [line[0]]
     right = line[0].x1
+    number = re.compile(r'[+-]?(?:[$£€])?\d+(?:,\d{3})*(?:\.\d+)?')
     for word in line[1:]:
-        if word.x0 - right > BAND_SEPARATION:
+        gap = word.x0 - right
+        separate_numbers = (
+            number.fullmatch(run[-1].text) is not None
+            and (number.fullmatch(word.text) is not None or word.text in ('$', '£', '€', '+', '-'))
+        )
+        if gap > BAND_SEPARATION and (gap > gap_threshold or separate_numbers):
             cells.append(_cell_of(run, band))
             run = [word]
             right = word.x1
@@ -436,13 +448,16 @@ def read_text_rows(page: Any, *, word_cells: bool = False) -> Optional[TextRowTa
         return None
 
     gap_threshold = max(MIN_COLUMN_GAP, COLUMN_GAP * _median_gap(lines))
+    # Sparse OCR pages may contain only column gutters in their gap sample.
+    # Cap phrase spacing by word height so those gutters cannot become spaces.
+    ocr_gap_threshold = min(gap_threshold, max(MIN_COLUMN_GAP, 1.5 * height))
     bands = line_bands(lines)
 
     rows: list[_Row] = []
     for line, band in zip(lines, bands):
-        # OCR recovery can retain every measured word independently. This
-        # avoids merging adjacent amount/fee fields or inventing column meaning.
-        cells = (_measured_word_cells(line, band)
+        # OCR words need phrase grouping for printed headers and descriptions,
+        # while adjacent numeric columns must retain their separate values.
+        cells = (_measured_word_cells(line, band, ocr_gap_threshold)
                  if word_cells else split_cells(line, gap_threshold, band))
         if not cells:
             continue

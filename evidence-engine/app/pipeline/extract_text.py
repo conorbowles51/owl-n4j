@@ -1106,11 +1106,18 @@ async def extract_text(
     file_path: str,
     file_name: str,
     progress_callback: PdfProgressCallback | AudioProgressCallback | None = None,
+    *,
+    pdf_reading_mode: str = "automatic",
 ) -> ExtractedDocument:
     ext = Path(file_name).suffix.lower()
+    if pdf_reading_mode not in ("automatic", "page_images"):
+        raise ValueError("Unknown PDF reading method")
+    if pdf_reading_mode != "automatic" and ext != ".pdf":
+        raise ValueError("Page-image reading requires a PDF")
 
     if ext == ".pdf":
-        pdf = await extract_pdf(file_path, progress_callback=progress_callback)
+        pdf = await extract_pdf(file_path, progress_callback=progress_callback,
+            reading_mode=pdf_reading_mode)
         doc = ExtractedDocument(
             text=pdf.text,
             metadata=pdf.metadata,

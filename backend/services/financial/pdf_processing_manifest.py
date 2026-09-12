@@ -16,6 +16,7 @@ class _Settings(BaseModel):
     pdf_ocr_max_concurrency:int
     tesseract_lang:Text
     max_pdf_pages:int
+    pdf_reading_mode:Literal['automatic','page_images']='automatic'
 
 class _Tesseract(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)

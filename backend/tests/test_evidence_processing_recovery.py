@@ -24,9 +24,11 @@ class FakeSubscriber:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('preparation_mode,reading_mode', [('full','automatic'), ('pdf_review','automatic'), ('pdf_review','page_images')])
 async def test_process_files_recovers_jobs_when_upload_response_fails_after_acceptance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    preparation_mode, reading_mode,
 ) -> None:
     case_id = uuid4()
     evidence_id = uuid4()
@@ -43,6 +45,7 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
         original_filename="report.pdf",
         engine_job_id=None,
         last_error=None,
+        metadata_={'statement_pdf_reading_mode':reading_mode},
     )
     subscriber = FakeSubscriber()
     captured_metadata: list[dict] = []
@@ -108,9 +111,15 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
         FakeDb(),
         case_id=case_id,
         file_ids=[evidence_id],
+        preparation_mode=preparation_mode,
     )
 
     assert result["job_ids"] == [str(engine_job_id)]
+    assert captured_metadata[0]['preparation_mode'] == preparation_mode
+    if preparation_mode == 'pdf_review':
+        assert captured_metadata[0]['pdf_reading_mode'] == reading_mode
+    else:
+        assert 'pdf_reading_mode' not in captured_metadata[0]
     assert result["file_count"] == 1
     assert evidence_file.engine_job_id == str(engine_job_id)
     assert evidence_file.status == "processing"

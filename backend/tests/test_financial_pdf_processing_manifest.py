@@ -18,6 +18,20 @@ def manifest():
 
 
 class ProcessingManifestTests(unittest.TestCase):
+    def test_reading_method_is_retained_and_changes_cannot_reuse_the_digest(self):
+        legacy = manifest()
+        self.assertEqual(validate_pdf_processing_manifest(legacy), legacy)
+        fresh = copy.deepcopy(legacy)
+        fresh['content']['settings']['pdf_reading_mode'] = 'page_images'
+        with self.assertRaises(ValueError):
+            validate_pdf_processing_manifest(fresh)
+        fresh['sha256'] = _digest(fresh['content'])
+        self.assertEqual(validate_pdf_processing_manifest(fresh), fresh)
+        fresh['content']['settings']['pdf_reading_mode'] = 'guess'
+        fresh['sha256'] = _digest(fresh['content'])
+        with self.assertRaises(ValueError):
+            validate_pdf_processing_manifest(fresh)
+
     def test_hash_schema_and_private_extra_fields(self):
         self.assertIsNone(validate_pdf_processing_manifest(None))
         raw=manifest();checked=validate_pdf_processing_manifest(raw)

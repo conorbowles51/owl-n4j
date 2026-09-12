@@ -101,3 +101,28 @@ it("keeps a transaction immediately before a repeated header", () => {
   ])
   expect(result.sections[0].rows[0].row.id).toBe("tx")
 })
+
+it("shows an amount wider than its left-aligned header without pulling in the adjacent column", () => {
+  const payment = cell(2, "- $180.00", 520320, 561840)
+  const unrelated = cell(3, "$25.00", 590000, 620000)
+  const result = printedStatementSections([
+    row("headers", 0, [
+      cell(0, "Date", 25680, 46320),
+      cell(1, "Description", 120720, 174240),
+      cell(2, "Amount", 520320, 557520),
+    ]),
+    row(
+      "payment",
+      1,
+      [
+        cell(0, "May 30", 25680, 57360),
+        cell(1, "CARD PAYMENT", 120480, 199200),
+        payment,
+        unrelated,
+      ],
+      "transaction"
+    ),
+  ])
+  expect(result.sections[0].rows[0].cells[2]).toBe(payment)
+  expect(result.remaining.flatMap((r) => r.source_cells)).toEqual([unrelated])
+})

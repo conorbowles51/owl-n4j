@@ -1,5 +1,6 @@
 """Automatic statement review; permissions remain scoped to the selected case."""
 import logging
+from typing import Literal
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -60,6 +61,7 @@ from services.evidence_processing_service import process_db_files
 class ReprocessRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     request_id: UUID
+    reading_mode: Literal['automatic', 'page_images'] = 'automatic'
 
 
 @router.post('/{evidence_file_id}/reprocess', dependencies=[Depends(case_access_dependency(lambda request, payload: ('evidence', 'upload')))])
@@ -67,7 +69,8 @@ async def reprocess(evidence_file_id: UUID, body: ReprocessRequest, case_id: UUI
                     user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
         version = create_statement_version(db, case_id=case_id, evidence_file_id=evidence_file_id,
-            request_id=body.request_id, actor=actor_from_user(user), resolve_path=_resolve_stored_path)
+            request_id=body.request_id, reading_mode=body.reading_mode,
+            actor=actor_from_user(user), resolve_path=_resolve_stored_path)
         if version.engine_job_id and version.status in ('processing', 'processed'):
             return dict(case_id=str(case_id), evidence_file_id=str(version.id), job_id=version.engine_job_id)
         result = await process_db_files(db, case_id=case_id, file_ids=[version.id],

@@ -252,6 +252,31 @@ class StatementImportTests(TransactionPersistenceTestCase):
             AdjudicationEvent.decision == 'supersede_duplicate'))
         self.assertIn('New extraction reviewed against the original', event.reason)
 
+    def test_image_reread_binds_method_to_request_and_preserves_original_bytes(self):
+        from services.financial.statement_reprocessing import create_statement_version
+        request_id = uuid4()
+        original_bytes = self.path.read_bytes()
+        with self.SessionLocal() as db:
+            args = dict(case_id=self.case.id, evidence_file_id=self.file.id, request_id=request_id,
+                actor=self.actor, resolve_path=Path)
+            version = create_statement_version(db, **args, reading_mode='page_images')
+            self.assertEqual(version.metadata_['statement_pdf_reading_mode'], 'page_images')
+            self.assertEqual(Path(version.stored_path).read_bytes(), original_bytes)
+            self.assertEqual(self.path.read_bytes(), original_bytes)
+            self.assertEqual(create_statement_version(db, **args, reading_mode='page_images').id, version.id)
+            with self.assertRaises(PdfMappingError):
+                create_statement_version(db, **args, reading_mode='automatic')
+            self.assertIsNotNone(db.get(EvidenceDocumentText, self.file.id))
+            self.assertIsNone(db.get(EvidenceDocumentText, version.id))
+
+    def test_invalid_reread_method_creates_no_version(self):
+        from services.financial.statement_reprocessing import create_statement_version
+        before = set(self.path.parent.iterdir())
+        with self.SessionLocal() as db, self.assertRaises(PdfMappingError):
+            create_statement_version(db, case_id=self.case.id, evidence_file_id=self.file.id,
+                request_id=uuid4(), actor=self.actor, resolve_path=Path, reading_mode='guess')
+        self.assertEqual(set(self.path.parent.iterdir()), before)
+
     def test_two_printed_periods_in_one_pdf_import_separately_without_duplicates(self):
         from tests.test_financial_statement_import_card import card_source
         from copy import deepcopy

@@ -119,6 +119,11 @@ async def process_db_files(
             "requested_by_user_id": str(requested_by_user_id) if requested_by_user_id else None,
             "source_evidence_file_id": str(ef.id),
         }
+        if preparation_mode == "pdf_review":
+            reading_mode = (ef.metadata_ or {}).get("statement_pdf_reading_mode", "automatic")
+            if reading_mode not in ("automatic", "page_images"):
+                raise ValueError("Unknown PDF reading method")
+            snapshot["pdf_reading_mode"] = reading_mode
 
         file_tuples.append(
             (

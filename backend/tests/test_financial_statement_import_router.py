@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 from uuid import uuid4
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from routers import financial_statement_import as module
@@ -55,3 +55,16 @@ class StatementImportAuthorizationTests(unittest.TestCase):
         with patch.object(module,'create_statement_version') as version:
             self.assertEqual(self.client.post(self.endpoint('/reprocess'),json={'request_id':str(uuid4())}).status_code,403)
         version.assert_not_called()
+
+    def test_reprocess_validates_and_passes_image_reading_method(self):
+        self.user({'case':{'view':True},'evidence':{'upload':True}})
+        saved = SimpleNamespace(id=uuid4(), engine_job_id='job', status='processing')
+        with patch.object(module, 'actor_from_user'), patch.object(module, 'create_statement_version', return_value=saved) as version, patch.object(module, 'process_db_files', AsyncMock()) as process:
+            body = {'request_id':str(uuid4()), 'reading_mode':'page_images'}
+            self.assertEqual(self.client.post(self.endpoint('/reprocess'), json=body).status_code, 200)
+            self.assertEqual(version.call_args.kwargs['reading_mode'], 'page_images')
+            version.reset_mock()
+            body['reading_mode'] = 'guess'
+            self.assertEqual(self.client.post(self.endpoint('/reprocess'), json=body).status_code, 422)
+            version.assert_not_called()
+            process.assert_not_awaited()

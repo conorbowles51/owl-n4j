@@ -8,7 +8,10 @@ from postgres.models.evidence import EvidenceFile
 from services.financial.pdf_candidates import PdfMappingError
 
 
-def create_statement_version(session, *, case_id, evidence_file_id, request_id, actor, resolve_path):
+def create_statement_version(session, *, case_id, evidence_file_id, request_id, actor, resolve_path,
+                             reading_mode='automatic'):
+    if reading_mode not in ('automatic', 'page_images'):
+        raise PdfMappingError('Choose a supported statement reading method.', 422)
     from postgres.models.case import Case
     session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
     original = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id,
@@ -22,6 +25,8 @@ def create_statement_version(session, *, case_id, evidence_file_id, request_id, 
     if existing is not None:
         if (existing.metadata_ or {}).get('statement_parent_evidence_id') != str(evidence_file_id):
             raise PdfMappingError('This reprocessing request belongs to another statement.', 409)
+        if (existing.metadata_ or {}).get('statement_pdf_reading_mode', 'automatic') != reading_mode:
+            raise PdfMappingError('This request already uses a different reading method. Resume it with the original method.', 409)
         return existing
     source = resolve_path(original.stored_path)
     if source is None or not source.is_file() or source.stat().st_size > 256 * 1024 * 1024:
@@ -46,6 +51,7 @@ def create_statement_version(session, *, case_id, evidence_file_id, request_id, 
             original_filename=original.original_filename, stored_path=str(target), size=count,
             sha256=original.sha256, status='unprocessed', source_type=original.source_type,
             metadata_=dict(statement_root_evidence_id=(original.metadata_ or {}).get('statement_root_evidence_id', str(evidence_file_id)), statement_parent_evidence_id=str(evidence_file_id), statement_version_request=str(request_id),
+                statement_pdf_reading_mode=reading_mode,
                 statement_version_actor=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email)))
         session.add(version)
         session.commit()

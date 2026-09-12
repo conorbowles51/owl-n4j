@@ -5,8 +5,9 @@ from app.pipeline.prepare_pdf_review import prepare_pdf_review
 from app.models.job import JobStatus
 
 @pytest.mark.asyncio
-async def test_pdf_preparation_persists_sources_and_completes_without_ai():
-    job=SimpleNamespace(id='job',source_evidence_file_id='file',file_name='bank.pdf',file_path='/tmp/bank.pdf')
+@pytest.mark.parametrize('reading_mode', ['automatic', 'page_images'])
+async def test_pdf_preparation_persists_sources_and_completes_without_ai(reading_mode):
+    job=SimpleNamespace(id='job',source_evidence_file_id='file',file_name='bank.pdf',file_path='/tmp/bank.pdf',pipeline_state={'pdf_reading_mode':reading_mode})
     update=AsyncMock();doc=SimpleNamespace(metadata={'source':'test'})
     with patch('app.pipeline.prepare_pdf_review.extract_text',AsyncMock(return_value=doc)) as extract, patch('app.pipeline.prepare_pdf_review.async_session') as session, patch('app.pipeline.prepare_pdf_review.upsert_evidence_document_text',AsyncMock()) as text, patch('app.pipeline.prepare_pdf_review.replace_evidence_table_geometry',AsyncMock(return_value=SimpleNamespace(entries_invalid=0))) as geometry:
         session.return_value.__aenter__.return_value.begin = MagicMock(return_value=AsyncMock())
@@ -14,6 +15,8 @@ async def test_pdf_preparation_persists_sources_and_completes_without_ai():
         assert text.call_args.kwargs['commit'] is False
         assert geometry.call_args.kwargs['commit'] is False
         extract.assert_awaited_once();text.assert_awaited_once();geometry.assert_awaited_once()
+        assert extract.call_args.kwargs['pdf_reading_mode'] == reading_mode
+        assert update.call_args.kwargs['quality_report']['pdf_reading_mode'] == reading_mode
         assert update.call_args.args[1] == JobStatus.COMPLETED
         assert update.call_args.kwargs['quality_report']['transactions_admitted']==0
 

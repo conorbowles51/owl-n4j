@@ -9,12 +9,16 @@ from app.services.evidence_table_geometry import replace_evidence_table_geometry
 async def prepare_pdf_review(job, update_status):
     if not job.source_evidence_file_id or Path(job.file_name or '').suffix.lower() != '.pdf':
         raise ValueError('A registered PDF is required')
+    reading_mode = (getattr(job, 'pipeline_state', None) or {}).get('pdf_reading_mode', 'automatic')
+    if reading_mode not in ('automatic', 'page_images'):
+        raise ValueError('Unknown PDF reading method')
     await update_status(job.id, JobStatus.EXTRACTING_TEXT, 0.0, 'Preparing PDF source for review')
     async def progress(update):
         fraction = min(0.9, 0.9 * update.completed / update.total) if update.total else 0.0
         await update_status(job.id, JobStatus.EXTRACTING_TEXT, fraction, update.message)
     # extract_text's PDF branch uses the native text layer and local Tesseract.
-    document = await extract_text(job.file_path, job.file_name, progress_callback=progress)
+    document = await extract_text(job.file_path, job.file_name, progress_callback=progress,
+        pdf_reading_mode=reading_mode)
     async with async_session() as db:
         # One source generation must become visible together. A cancellation,
         # invalid geometry or commit failure retains the previous generation.
@@ -27,5 +31,5 @@ async def prepare_pdf_review(job, update_status):
                 raise ValueError('Some PDF source locations could not be stored')
     await update_status(job.id, JobStatus.COMPLETED, 1.0,
         'PDF source ready for review; no transactions verified or added',
-        quality_report={'preparation_mode':'pdf_review','transactions_admitted':0,
+        quality_report={'preparation_mode':'pdf_review','pdf_reading_mode':reading_mode,'transactions_admitted':0,
             'limitation':'Source extraction only. Review is required; missing tables do not establish absence of transactions.'})

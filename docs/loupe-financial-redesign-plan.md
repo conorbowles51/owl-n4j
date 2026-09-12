@@ -214,3 +214,20 @@ Validation: the supplied 108-page file was checked read-only; its first billing 
 The browser exercise also exposed a recognized-card case where missing section-layout context hid dated rows. These now remain visible as review exceptions, along with undated interest. Repeated summary balances are flagged rather than selected arbitrarily. Older imports are unchanged and can only acquire these controls through an explicitly reviewed replacement import.
 
 Affected validation: 96 backend checks and 33 frontend checks passed across statement import, proposals/catalog, source citations, balances and processing provenance. TypeScript, scoped lint, guide generation and production build passed. No full suite was run. This change does not establish independent extraction accuracy across other issuers or complete the outstanding expert-packet acceptance.
+
+## Completed locally: rereading damaged PDF text, 12 September 2026
+
+Physical page 4 of the supplied Merrick PDF is legible, but the embedded text damages the statement date, summary labels and amounts. A read-only local OCR pass recovered the printed date and summary values from the page image. The existing reread control repeats automatic extraction and offers no way to replace this embedded text reading.
+
+- [x] Add a plain-language choice between normal extraction and reading every page from its image using local OCR.
+- [x] Retain the chosen method with the version request, engine job and processing record. Resuming an interrupted request must use the same method.
+- [x] Preserve original bytes, earlier readings and current imports. Require review and explicit confirmation before replacement.
+- [x] Check request recovery, source preservation, local processing and the browser controls. Update the guide and run affected checks.
+- [x] Group OCR words into printed phrases and dates using their measured spacing, keeping adjacent numbers separate. Exclude complete statement-cycle headers from transaction proposals.
+- [x] Keep a printed amount in its table when its text is slightly wider than a left-aligned Amount heading. Refresh the file list when opening a completed reading.
+
+Validation: 82 affected backend checks, 47 engine checks and 8 frontend checks passed, plus type checking, scoped lint and the final production build. No full suite was run. The first browser check exposed individual-word cells; the corrected run recognised the two-page synthetic statement, its three transactions and both printed balances. Refresh restored the requested method, the original source opened on page 2, and the printed payment remained in the correct column. The original import and PDF bytes were unchanged; the new processing record validates and identifies both pages as OCR. Local records are `data/local-runtime/image-reread-acceptance.json` and `data/local-runtime/image-reread-proposal.json`.
+
+Read-only follow-up on the supplied Merrick page recognised the printed 25 April 2021 statement date and the two purchases dated 22 and 23 April, for 14.00 and 100.00 USD. The earlier embedded date had been unreadable. No real statement import or original file was changed. This is a single-page comparison, not independent corpus validation. The guide was regenerated without opening documentation panels.
+
+This does not claim automatic correction of every damaged document or add Merrick account-summary balance controls. The user still reviews the new reading. No external OCR service or AI provider is used.

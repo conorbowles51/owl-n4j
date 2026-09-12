@@ -259,12 +259,13 @@ Use this when extraction missed or misread substantial parts of a PDF. For a sin
 
 1. Select **Import a statement** and open the affected uploaded file.
 2. Expand **Read the statement again**.
-3. Read the explanation, then select **Reprocess statement**.
-4. Wait for processing to complete. Loupe creates a separate reading of the same source bytes and keeps the earlier version.
-5. Review the new statement, including its account details, transactions and any corrections needed.
-6. If this replaces an imported statement, check the displayed replacement count, select **Replace the previous import when I confirm** and enter the reason.
-7. Confirm the replacement import once.
-8. Check **Transactions**. The earlier version remains in history, but the replacement supplies the current transaction totals. The two versions should not be counted together.
+3. Choose a **Reading method**. **Use the PDF text where available** repeats the normal extraction. Choose **Read from page images** when words or numbers look clear in the original PDF but are wrong in the extracted table. This reads every page with OCR on the Loupe server, including pages that already contain text. It can take longer for a large file.
+4. Select **Reprocess statement**. The reading method is fixed for this request, including if you need to resume it after an interruption.
+5. Wait for processing to complete. Loupe creates a separate reading of the same source bytes and keeps the earlier version.
+6. Review the new statement, including its account details, transactions and any corrections needed. Reading from images can produce different errors, so compare the result with the original before importing.
+7. If this replaces an imported statement, check the displayed replacement count, select **Replace the previous import when I confirm** and enter the reason.
+8. Confirm the replacement import once.
+9. Check **Transactions**. The earlier version remains in history, but the replacement supplies the current transaction totals. The two versions should not be counted together.
 
 If you refresh the page while processing, reopen the same uploaded statement in the same browser tab. Loupe checks the saved processing job. Select **Open new reading** when it is ready. If the request was interrupted before a response arrived, select **Reprocess statement** to resume the same request. Closing the browser tab can discard this saved progress.
 

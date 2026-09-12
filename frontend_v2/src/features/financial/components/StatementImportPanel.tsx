@@ -283,7 +283,10 @@ export function StatementImportPanel({
             key={`${caseId}:${fileId}`}
             caseId={caseId}
             fileId={fileId}
-            onReprocessed={setFileId}
+            onReprocessed={(id) => {
+              setFileId(id)
+              void files.refetch()
+            }}
             onImported={(result) => {
               setOpen(false)
               onImported(result)

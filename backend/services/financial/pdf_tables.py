@@ -466,8 +466,10 @@ def read_positioned_ocr_words(words, *, page_number, page_width, page_height):
     """Recover source cells from measured OCR words in displayed PDF points.
 
     The engine has already undone its orientation and pixel scaling. These are
-    position-based row proposals with separate measured OCR words (overlapping
-    token boxes share their full source span), never native text or verified financial values. Column meanings remain unknown.
+    position-based row proposals with words grouped by their measured spacing
+    (overlapping token boxes share their full source span), never native text or
+    verified financial values. Adjacent numbers stay separate; column meanings
+    remain unknown.
     """
     import math
     from types import SimpleNamespace
