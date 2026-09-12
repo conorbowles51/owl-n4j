@@ -1,6 +1,10 @@
 import { expect, it } from "vitest"
 import { reviewSelectionBalance } from "./statement-review-balance"
-const originals: { id: string; kind: string; fields: Record<string, string> }[] = [
+const originals: {
+  id: string
+  kind: string
+  fields: Record<string, string>
+}[] = [
   { id: "o", kind: "balance", fields: { description: "Opening Balance" } },
   { id: "a", kind: "transaction", fields: { date: "2023-01-02" } },
   { id: "b", kind: "transaction", fields: { date: "2023-01-03" } },
@@ -66,4 +70,45 @@ it("does not invent an opening control or a sequence for descending source rows"
       false
     )
   ).toBeNull()
+})
+
+it("compares printed amounts owed using charges minus payments and keeps corrections separate", () => {
+  const cardOriginals = [
+    ...originals,
+    { id: "interest", kind: "transaction", fields: {} },
+    {
+      id: "close",
+      kind: "balance",
+      fields: { description: "Closing Balance" },
+    },
+  ]
+  const cardRows = [
+    { ...rows[0], balance_minor: "100000" },
+    { ...rows[1], amount_minor: "18000", balance_minor: null },
+    { ...rows[2], amount_minor: "6162", balance_minor: null },
+    { ...rows[2], id: "interest", amount_minor: "5616", balance_minor: null },
+    { ...rows[0], id: "close", balance_minor: "93778" },
+  ]
+  expect(reviewSelectionBalance(cardRows, cardOriginals, true)).toMatchObject({
+    expected: "93778",
+    printed: "93778",
+    difference: "0",
+    independent: true,
+  })
+  expect(
+    reviewSelectionBalance(
+      cardRows.map((r) =>
+        r.id === "close" ? { ...r, balance_minor: "93878" } : r
+      ),
+      cardOriginals,
+      true
+    )?.difference
+  ).toBe("-100")
+  expect(
+    reviewSelectionBalance(
+      cardRows.map((r) => (r.id === "interest" ? { ...r, excluded: true } : r)),
+      cardOriginals,
+      true
+    )?.difference
+  ).toBe("-5616")
 })

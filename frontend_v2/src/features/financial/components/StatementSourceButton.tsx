@@ -17,7 +17,8 @@ import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { correctionMoney } from "../lib/correction-contract"
 const retainedControls = z.object({
-  finalization_id: z.string().uuid(),
+  finalization_id: z.string().uuid().nullable(),
+  import_source_document_id: z.string().uuid().optional(),
   currency: z.string().regex(/^[A-Z]{3}$/),
   balance_convention: z.enum(["asset_balance", "liability_owed"]),
   reason: z.string(),
@@ -81,7 +82,9 @@ export function StatementSourceButton({
       assertCandidateScope(data, caseId)
       if (
         data.period_id !== periodId ||
-        data.source_document_id !== sourceDocumentId
+        data.source_document_id !== sourceDocumentId ||
+        (data.reviewed_controls?.import_source_document_id &&
+          data.reviewed_controls.import_source_document_id !== sourceDocumentId)
       )
         throw new Error("The source does not match this statement.")
       return data
@@ -128,12 +131,13 @@ export function StatementSourceButton({
                   className="space-y-3"
                 >
                   <p className="text-sm text-muted-foreground">
-                    Saved when these rows were finalized.
+                    Saved with this statement import. Select an amount to see
+                    where it appears in the PDF.
                   </p>
                   <p>
                     {query.data.reviewed_controls.balance_convention ===
                     "liability_owed"
-                      ? "Printed amounts owed were converted to negative ledger balances. Original printed values are preserved below."
+                      ? "These are amounts owed on the card. Payments reduce them; charges increase them."
                       : "Printed balances represent money held in the account."}
                   </p>
                   <details className="text-sm">

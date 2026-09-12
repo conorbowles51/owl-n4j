@@ -196,3 +196,21 @@ Validation: 21 affected frontend checks passed, including exact large amounts, o
 Browser acceptance selected two existing synthetic workpapers, retained the draft across financial tabs, changed their order, previewed the original 40.00 GBP and revised 50.00 GBP results, saved once and reopened from both Findings and Reports. Both original notes and links were unchanged. Downloads with and without PDFs succeeded; the shared PDF appeared once and all listed member sizes and hashes matched. No new ledger or extraction writes occurred. Local evidence is `data/local-runtime/financial-report-acceptance.json`; the synthetic case and this local receipt are not published.
 
 Limits: this is a report of selected saved findings, not completion of the full expert packet. Historical note values remain historical even if later transactions are corrected. The original expert-packet acceptance and independently reviewed extraction corpus remain open. The unrelated older general-report API is unavailable in the local app; the financial report workflow uses the working shared casework API and remains accessible independently.
+
+Report release: `8126f24e` was pushed after the user's explicit **push and continue** approval. The public server version endpoint returned `8126f24` on 11 September. The earlier push-review block is resolved.
+
+## Completed: credit-card balances in automatic import, 12 September 2026
+
+Reproduced against the first billing period in the supplied 108-page Capital One PDF. The original Account Summary prints 6,700.18 USD previous balance and 6,637.96 USD new balance. Automatic review finds the 180.00 payment, 61.62 purchase and 56.16 interest charge, but returns no balance controls. Original pages and stored imports have not been changed.
+
+- [x] Recognise the exact summary balance labels and corresponding source cells without selecting the payment coupon or credit limit.
+- [x] Show the printed amounts in statement review, retain corrections and cite the original values.
+- [x] Store the explicit amount-owed convention and convert it for the existing signed ledger arithmetic at confirmation.
+- [x] Reopen those retained controls from the imported statement, and show consistent balance checks and exports.
+- [x] Verify the supplied statement read-only and a separate synthetic import through the browser. Update the guide and run only affected checks before release.
+
+Validation: the supplied 108-page file was checked read-only; its first billing period now proposes the printed 6,700.18 opening and 6,637.96 closing amounts owed while keeping the same three transaction rows and the undated-interest exception. A separate two-page synthetic PDF was uploaded and confirmed through the local browser. Changing the opening amount produced a difference; restoring it removed the difference. The three imported transactions reconciled from 1,000.00 to 937.78 owed. Both retained balance buttons highlighted the correct account-summary cells, and the downloaded check retained the sign convention and exact values. No browser console errors. Private local evidence is retained in `data/local-runtime/card-balance-acceptance.json`.
+
+The browser exercise also exposed a recognized-card case where missing section-layout context hid dated rows. These now remain visible as review exceptions, along with undated interest. Repeated summary balances are flagged rather than selected arbitrarily. Older imports are unchanged and can only acquire these controls through an explicitly reviewed replacement import.
+
+Affected validation: 96 backend checks and 33 frontend checks passed across statement import, proposals/catalog, source citations, balances and processing provenance. TypeScript, scoped lint, guide generation and production build passed. No full suite was run. This change does not establish independent extraction accuracy across other issuers or complete the outstanding expert-packet acceptance.

@@ -50,6 +50,98 @@ class StatementImportTests(TransactionPersistenceTestCase):
         return confirm_statement_import(session_factory=self.SessionLocal,case_id=self.case.id,
             evidence_file_id=self.file.id,request=request or self.request(),actor=self.actor,resolve_path=Path)
 
+    def card_balance_request(self):
+        from tests.test_financial_statement_import_card import card_source, summary_source
+        payload = []
+        for index, grid in enumerate((summary_source(), card_source())):
+            payload.append(dict(table_source='drawn_geometry', geometry_source='cell_rectangles',
+                table=dict(page=1, table=rectangle(0, x=0, width=600, height=800), unlocated_values=0,
+                    values=[dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'],
+                        locator=c['locator'] if index == 0 else rectangle(20+r['row_index']*20, x=20+c['column_index']*180, width=170))
+                        for r in grid['rows'] for c in r['cells']])))
+        self.db.get(EvidenceTableGeometry, (self.file.id, 1)).payload = payload
+        self.db.commit()
+        with self.SessionLocal() as db:
+            p = read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id, currency='USD')
+        request = dict(expected_revision=p['revision'], statement_id=p['statement_id'], currency='USD',
+            **{key:p['metadata'][key] for key in ('holder', 'account_number', 'institution', 'period_start', 'period_end')}, rows=[])
+        for r in p['rows']:
+            fields = r['fields']
+            request['rows'].append(dict(id=r['id'], excluded=r['excluded'], date=fields.get('date', p['metadata']['period_end'] if r['issues'] else ''),
+                description=fields.get('description', ''), amount_minor=fields.get('amount_minor', '0'), direction=fields.get('direction', 'credit'),
+                balance_minor=fields.get('balance'), reason='Synthetic interest date assigned for this test.' if r['issues'] else ''))
+        return p, request
+
+    def test_card_balances_import_as_owed_and_reopen_the_exact_summary_cells(self):
+        from tests.test_financial_statement_import_card import summary_source
+        from postgres.models.financial import FinancialStatementPeriod
+        from services.financial.periods import read_opening, read_closing
+        from services.financial.ledger_source import statement_source
+        from services.financial.printed_totals import retained_total_controls
+        p, request = self.card_balance_request()
+        self.assertEqual(p['metadata']['balance_convention'], 'liability_owed')
+        result = self.confirm(request)
+        self.assertEqual(result['transaction_count'], 3)
+        self.assertFalse(self.confirm(request)['created'])
+        self.db.expire_all()
+        period = self.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == UUID(result['source_document_id'])))
+        self.assertEqual(read_opening(period).amount.minor_units, -100000)
+        self.assertEqual(read_closing(period).amount.minor_units, -93778)
+        self.assertTrue(read_closing(period).is_independent)
+        controls = statement_source(self.db, case_id=self.case.id, period_id=period.id)['reviewed_controls']
+        self.assertEqual(controls['balance_convention'], 'liability_owed')
+        self.assertEqual([c['reviewed_value'] for c in controls['controls']], ['100000', '93778'])
+        self.assertEqual(controls['controls'][1]['original_text'], '= $937.78')
+        self.assertEqual(controls['controls'][1]['locator'], summary_source()['rows'][9]['cells'][1]['locator'])
+        document = self.db.get(FinancialSourceDocument, UUID(result['source_document_id']))
+        self.assertEqual(retained_total_controls(self.db, period, document), controls)
+
+    def test_corrected_card_balance_preserves_printed_value_and_reason(self):
+        from postgres.models.financial import FinancialStatementPeriod
+        from services.financial.periods import read_closing
+        from services.financial.ledger_source import statement_source, LedgerSourceError
+        from services.financial.pdf_candidates import _digest
+        p, request = self.card_balance_request()
+        closing = next(r for r in request['rows'] if r['description'] == 'Closing Balance')
+        closing.update(balance_minor='93878', reason='Synthetic correction checked against the original.')
+        result = self.confirm(request)
+        period = self.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == UUID(result['source_document_id'])))
+        self.assertEqual(read_closing(period).amount.minor_units, -93878)
+        controls = statement_source(self.db, case_id=self.case.id, period_id=period.id)['reviewed_controls']
+        self.assertEqual(controls['controls'][1]['original_text'], '= $937.78')
+        self.assertEqual(controls['controls'][1]['reviewed_value'], '93878')
+        self.assertIn('Synthetic correction', controls['reason'])
+        from copy import deepcopy
+        doc = self.db.get(FinancialSourceDocument, UUID(result['source_document_id']))
+        metadata = deepcopy(doc.metadata_)
+        metadata['statement_import_controls']['controls'][1]['locator']['rect'][0] = 1
+        metadata['statement_import_controls_sha256'] = _digest(metadata['statement_import_controls'])
+        doc.metadata_ = metadata
+        with self.assertRaises(LedgerSourceError):
+            statement_source(self.db, case_id=self.case.id, period_id=period.id)
+
+    def test_card_summary_cannot_be_imported_as_a_payment_or_overflow_after_conversion(self):
+        p, request = self.card_balance_request()
+        balance = next(r for r in request['rows'] if r['description'] == 'Opening Balance')
+        balance.update(excluded=False, date='2020-05-12', amount_minor='100000', reason='Not a payment')
+        with self.assertRaisesRegex(PdfMappingError, 'not a transaction'):
+            self.confirm(request)
+        balance.update(excluded=True, balance_minor='-9223372036854775808')
+        with self.assertRaisesRegex(PdfMappingError, 'supported balance range'):
+            self.confirm(request)
+
+    def test_repeated_summary_pages_flag_ambiguous_balances(self):
+        from copy import deepcopy
+        self.card_balance_request()
+        geometry = self.db.get(EvidenceTableGeometry, (self.file.id, 1))
+        geometry.payload = [*geometry.payload, deepcopy(geometry.payload[0])]
+        self.db.commit()
+        with self.SessionLocal() as db:
+            proposal = read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id, currency='USD')
+        self.assertEqual(proposal['transaction_count'], 3)
+        self.assertTrue(any('More than one opening amount owed' in issue for issue in proposal['issues']))
+        self.assertTrue(any('More than one closing amount owed' in issue for issue in proposal['issues']))
+
     def test_one_confirmation_imports_all_payments_and_retry_does_not_duplicate(self):
         request=self.request(); result=self.confirm(request)
         self.assertEqual(result['transaction_count'],12)

@@ -123,6 +123,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         metadata.update(account_type='credit_card', institution=selected['institution'], account_number=selected['account_reference'],
                         period_start=selected['period_start'], period_end=selected['period_end'],
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date', ''))
+        if selected.get('layout_id') == 'capital-one-card':
+            metadata['balance_convention'] = 'liability_owed'
         if selected.get('holder'):
             metadata['holder'] = selected['holder']
         holders = set()
@@ -167,8 +169,15 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         except ValueError as exc:
             raise PdfMappingError(str(exc), 422) from exc
         rows.extend(proposal['rows'])
+        issues.extend(proposal.get('issues', []))
         if len(rows) > 1000:
             raise PdfMappingError('This statement exceeds the 1,000-row review limit. No rows were omitted.', 422)
+    if metadata.get('balance_convention') == 'liability_owed':
+        for role in ('opening', 'closing'):
+            controls = [row for row in rows if row['kind'] == 'balance'
+                        and row['fields'].get('description', '').lower() == f'{role} balance']
+            if len(controls) > 1:
+                issues.append(f'More than one {role} amount owed was read. Check the account-summary rows and clear any repeated balance before importing.')
     from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
     from services.financial.duplicate_decisions import duplicate_revision
     from sqlalchemy import func
@@ -292,6 +301,11 @@ def check_import_request(proposal, request):
     for row in request.rows:
         original = originals[row.id]
         fields = original['fields']
+        if fields.get('balance_convention') == 'liability_owed':
+            if not row.excluded:
+                raise PdfMappingError('An account-summary balance is not a transaction. Keep it outside the transaction list.', 422)
+        if proposal['metadata'].get('balance_convention') == 'liability_owed' and row.balance_minor == '-9223372036854775808':
+            raise PdfMappingError('This amount owed exceeds the supported balance range.', 422)
         changed = row.excluded != original['excluded'] or (not row.excluded and (
             row.date != (fields.get('date') or fields.get('booking_date') or fields.get('value_date') or '')
             or row.description != fields.get('description', '')
@@ -402,16 +416,20 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                         whole_document_extraction_verified=False)))
                 from services.financial.periods import StatementPeriodDraft, PeriodBounds, BalanceObservation, record_statement_period
                 from services.financial.money import Money
+                balance_sign = -1 if proposal['metadata'].get('balance_convention') == 'liability_owed' else 1
                 bounds = PeriodBounds.printed(date.fromisoformat(request.period_start), date.fromisoformat(request.period_end)) if request.period_start else PeriodBounds()
                 openings = [row for row in request.rows if row.excluded and originals[row.id]['kind'] == 'balance'
                     and 'opening' in originals[row.id]['fields'].get('description', '').lower() and row.balance_minor is not None]
-                opening = BalanceObservation.printed(Money(int(openings[0].balance_minor), request.currency)) if len(openings) == 1 else BalanceObservation.absent()
+                opening = BalanceObservation.printed(Money(balance_sign * int(openings[0].balance_minor), request.currency)) if len(openings) == 1 else BalanceObservation.absent()
                 closings = [row for row in request.rows if row.excluded and originals[row.id]['kind'] == 'balance'
                     and originals[row.id]['fields'].get('description', '').strip().lower() == 'closing balance'
                     and row.balance_minor is not None]
-                closing = BalanceObservation.printed(Money(int(closings[0].balance_minor), request.currency)) if len(closings) == 1 else BalanceObservation.absent()
+                closing = BalanceObservation.printed(Money(balance_sign * int(closings[0].balance_minor), request.currency)) if len(closings) == 1 else BalanceObservation.absent()
                 period = record_statement_period(session, run, StatementPeriodDraft(account_id=account.id,
                     source_document_id=document.id, currency=request.currency, bounds=bounds, opening=opening, closing=closing))
+                if proposal['metadata'].get('balance_convention') == 'liability_owed':
+                    from services.financial.statement_import_controls import retain_import_controls
+                    retain_import_controls(document, period, request, originals, openings, closings)
                 drafts = []
                 for row in request.rows:
                     if row.excluded:
@@ -431,7 +449,7 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                             direction=TransactionDirection(row.direction), **_reading_dates(original['fields'], row.date),
                             description=row.description, counterparty_raw=row.counterparty or None,
                             bank_reference=original['fields'].get('bank_reference'),
-                            running_balance_minor=int(row.balance_minor) if row.balance_minor is not None else None), provenance=dict(statement_import_original=original,
+                            running_balance_minor=balance_sign * int(row.balance_minor) if row.balance_minor is not None else None), provenance=dict(statement_import_original=original,
                                 statement_import_review=row.model_dump(mode='json'),
                                 confirmed_by=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email))))
                 transactions = record_transactions(session, run, document, drafts, retain_prior_versions=shares_source_references)

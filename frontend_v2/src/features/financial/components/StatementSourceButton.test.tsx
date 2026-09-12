@@ -85,36 +85,42 @@ vi.mock("./TransactionSourceHighlight", () => ({
     </p>
   ),
 }))
-it("explains liability signs and opens the retained control's original citation", async () => {
-  mount({
-    ...answer,
-    reviewed_controls: {
-      finalization_id: "cdd17bd7-1708-49c2-bc20-3e488e52379f",
-      currency: "USD",
-      balance_convention: "liability_owed",
-      reason: "Read from printed summary",
-      scope: "Retained at finalization",
-      controls: [
-        {
-          role: "opening",
-          original_text: "$6,700.18",
-          reviewed_value: "670018",
-          locator: { kind: "page_only", page: 1 },
-        },
-      ],
-    },
-  })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Inspect statement source" })
-  )
-  expect(
-    await screen.findByText(/converted to negative ledger balances/)
-  ).toBeVisible()
-  fireEvent.click(
-    screen.getByRole("button", { name: /Inspect opening: 6700.18 USD/ })
-  )
-  expect(screen.getByText("Original text: $6,700.18")).toBeVisible()
-  expect(screen.getByText(/Control source cdd17bd7/)).toHaveTextContent(
-    '"page":1'
-  )
-})
+it.each(["legacy review", "statement import"])(
+  "opens the original balance citation for %s",
+  async (origin) => {
+    mount({
+      ...answer,
+      reviewed_controls: {
+        finalization_id:
+          origin === "statement import"
+            ? null
+            : "cdd17bd7-1708-49c2-bc20-3e488e52379f",
+        currency: "USD",
+        balance_convention: "liability_owed",
+        reason: "Read from printed summary",
+        scope: "Retained at finalization",
+        controls: [
+          {
+            role: "opening",
+            original_text: "$6,700.18",
+            reviewed_value: "670018",
+            locator: { kind: "page_only", page: 1 },
+          },
+        ],
+      },
+    })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect statement source" })
+    )
+    expect(
+      await screen.findByText(/These are amounts owed on the card/)
+    ).toBeVisible()
+    fireEvent.click(
+      screen.getByRole("button", { name: /Inspect opening: 6700.18 USD/ })
+    )
+    expect(screen.getByText("Original text: $6,700.18")).toBeVisible()
+    expect(screen.getByText(/Control source cdd17bd7/)).toHaveTextContent(
+      '"page":1'
+    )
+  }
+)

@@ -11,7 +11,7 @@ from services.financial.money import get_currency
 from services.financial.pdf_candidates import _digest
 from services.financial.source_dates import assess_date_text
 
-VERSION = 'statement-review-v1'
+VERSION = 'statement-review-v2'
 _HEADERS = {
     'date': 'date', 'transaction date': 'date', 'trans date': 'date',
     'booking date': 'booking_date', 'posting date': 'booking_date',

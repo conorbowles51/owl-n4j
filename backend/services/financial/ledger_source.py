@@ -84,6 +84,12 @@ def statement_source(session, *, case_id, period_id):
 
 def _statement_controls(session, period, document, evidence):
     """Return sealed control citations, never infer controls for legacy periods."""
+    if document.document_type == 'statement_review':
+        from services.financial.statement_import_controls import read_import_controls
+        try:
+            return read_import_controls(period, document, evidence)
+        except (ValueError, TypeError, KeyError, AttributeError, LocatorError) as exc:
+            raise LedgerSourceError('The saved statement balances or their PDF locations could not be checked.') from exc
     from postgres.models.financial_candidates import FinancialCandidateFinalization
     from services.financial.pdf_candidates import _digest
     from services.financial.candidate_statement_scopes import ReviewedStatementScope

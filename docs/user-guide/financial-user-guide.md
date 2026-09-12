@@ -162,6 +162,18 @@ If a file has not finished processing, wait for its status to complete. If readi
 
 Where a printed opening balance and an ending balance are available, the review recalculates the balance using your selected payments. Excluding a payment or changing its amount can show **Selected movements leave a balance difference**. Inspect the compared balance and check missing rows or corrections before confirming. Agreement is an arithmetic check, not proof that every payment was supplied.
 
+For a recognised Capital One card statement, **Previous Balance** in the account summary supplies the **Opening amount owed**, and **New Balance** supplies the **Closing amount owed**. The minimum payment due and credit limit are not balances for this check. Charges increase the amount owed and payments reduce it.
+
+To check or correct a balance before import:
+
+1. Select the amount beside **Opening amount owed**, **Closing amount owed**, **Opening balance** or **Closing balance**.
+2. Compare the highlighted PDF value with the **Printed balance** field that opens in the correction table.
+3. If the reading is wrong, enter the corrected amount and explain the change in **Reason for correction or decision**. Keep a card's amount owed in the form printed on the statement; do not negate it yourself.
+4. Check the recalculated difference. A balance stays outside the transaction count.
+5. Confirm the statement import when its transactions and any flagged dates are ready. The original printed balance and your correction are both retained.
+
+An unreadable or conflicting summary value needs review. Loupe leaves it unresolved rather than choosing the payment coupon or treating it as zero. A card interest charge without a printed transaction date also remains flagged; check and record the date separately.
+
 A manually added transaction has a page citation but does not establish its position among the printed rows. Loupe therefore explains when it cannot perform the sequential running-balance check. Check that payment against the PDF and compare the statement totals.
 
 An opening balance, closing balance, column heading or disclosure paragraph is not a payment. Loupe excludes recognised examples from the proposed transaction count. The extracted printed table still shows these source rows. To inspect their import treatment, open **Show corrections and import choices**, then select **Show excluded rows**.
@@ -399,6 +411,12 @@ Open **Change history**. Expand the relevant decision to inspect the reason, act
 9. To retain the displayed check results, expand **Save these check results and read calculation details**, then select **Download this page of statement checks**. The download contains this page only. Repeat for other pages you need.
 
 An excluded statement is marked above its balances. Its check does not add it back to current transaction totals. An agreeing balance also does not establish that every payment was extracted: missing equal incoming and outgoing amounts can leave a balance unchanged.
+
+New Capital One imports retain the account-summary balances and their PDF locations here. An older import that did not record those balances is not changed automatically. To add them, reopen its statement review and follow the replacement-import steps in section 7, including a reason for replacing the earlier reading.
+
+![A synthetic credit-card statement with matching opening and closing amounts owed](images/19-card-statement-balances.png)
+
+*The opening and closing amounts stay separate from the three imported transactions. Select Open statement and balances to compare either amount with the original PDF.*
 
 ### Find missing dates and overlapping statements
 

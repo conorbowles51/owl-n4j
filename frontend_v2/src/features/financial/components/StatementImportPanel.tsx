@@ -41,6 +41,7 @@ const proposalSchema = z.object({
   revision: z.string(),
   metadata: z.object({
     account_type: z.string().optional(),
+    balance_convention: z.enum(["asset_balance", "liability_owed"]).optional(),
     institution: z.string(),
     holder: z.string(),
     account_number: z.string(),
@@ -728,6 +729,25 @@ function EditableStatement({
       })
     )
   }
+  const balanceLocator = (original: z.infer<typeof row>) =>
+    original.source_cells.find(
+      (cell) => String(cell.column_index) === original.fields.balance_column
+    )?.locator ?? { kind: "page_only", page: original.page_number }
+  const editBalance = (id: string) => {
+    const original = originals.get(id)
+    if (!original) return
+    setShowExcluded(true)
+    setOnlyIssues(false)
+    setFocus({ rowId: id, locator: balanceLocator(original) })
+    setCorrectionsOpen(true)
+    requestAnimationFrame(() => {
+      const input = correctionControls.current?.querySelector<HTMLInputElement>(
+        `input[aria-label="Balance ${id}"]`
+      )
+      input?.focus({ preventScroll: true })
+      input?.scrollIntoView({ block: "center", behavior: "smooth" })
+    })
+  }
   return (
     <div className="space-y-4 pt-4">
       <header>
@@ -891,6 +911,10 @@ function EditableStatement({
                             aria-label={`Include row ${r.id}`}
                             type="checkbox"
                             checked={!r.excluded}
+                            disabled={
+                              original.fields.balance_convention ===
+                              "liability_owed"
+                            }
                             onChange={(e) =>
                               update(r.id, { excluded: !e.target.checked })
                             }
@@ -1069,10 +1093,13 @@ function EditableStatement({
                             onClick={() =>
                               setFocus({
                                 rowId: r.id,
-                                locator: original.source_cells[0]?.locator ?? {
-                                  kind: "page_only",
-                                  page: original.page_number,
-                                },
+                                locator:
+                                  original.fields.balance_column !== undefined
+                                    ? balanceLocator(original)
+                                    : (original.source_cells[0]?.locator ?? {
+                                        kind: "page_only",
+                                        page: original.page_number,
+                                      }),
                               })
                             }
                           >
@@ -1227,21 +1254,19 @@ function EditableStatement({
             const control = controls.length === 1 ? controls[0] : null
             return (
               <div key={role}>
-                <span className="capitalize">{role} balance: </span>
+                <span className="capitalize">
+                  {role}{" "}
+                  {data.metadata.balance_convention === "liability_owed"
+                    ? "amount owed"
+                    : "balance"}
+                  :{" "}
+                </span>
                 {control ? (
                   <button
                     className="underline"
                     type="button"
-                    onClick={() => {
-                      setShowExcluded(true)
-                      setFocus({
-                        rowId: control.id,
-                        locator: {
-                          kind: "page_only",
-                          page: originals.get(control.id)?.page_number,
-                        },
-                      })
-                    }}
+                    aria-label={`Edit ${role} ${data.metadata.balance_convention === "liability_owed" ? "amount owed" : "balance"}`}
+                    onClick={() => editBalance(control.id)}
                   >
                     {displayAmount(control.balance_minor!, digits)}{" "}
                     {data.currency}
@@ -1253,6 +1278,9 @@ function EditableStatement({
             )
           })}
         </div>
+        <p className="text-sm text-muted-foreground">
+          Select an opening or closing amount to check its source or correct it.
+        </p>
         <Button
           type="button"
           variant="outline"
@@ -1354,11 +1382,15 @@ function EditableStatement({
                 : "Selected movements leave a balance difference"}
             </p>
             <p>
-              Opening balance plus the selected movements gives{" "}
+              {data.metadata.balance_convention === "liability_owed"
+                ? "Opening amount owed plus charges minus payments gives "
+                : "Opening balance plus the selected movements gives "}
               {displayAmount(selectionBalance.expected, digits)} {data.currency}
               . The{" "}
               {selectionBalance.independent
-                ? "printed closing balance"
+                ? data.metadata.balance_convention === "liability_owed"
+                  ? "printed closing amount owed"
+                  : "printed closing balance"
                 : "last printed transaction balance"}{" "}
               is {displayAmount(selectionBalance.printed, digits)}. Difference:{" "}
               {displayAmount(selectionBalance.difference, digits)}.
@@ -1367,8 +1399,8 @@ function EditableStatement({
               {selectionBalance.difference !== "0"
                 ? "Check excluded payments, corrections and missing rows before confirming. "
                 : ""}
-              This arithmetic comparison does not establish that every
-              transaction was supplied.
+              A matching balance cannot tell you whether any transactions were
+              missed. Check any flagged rows against the PDF.
             </p>
             <Button
               variant="outline"
@@ -1378,7 +1410,7 @@ function EditableStatement({
                   setShowExcluded(true)
                   setFocus({
                     rowId: original.id,
-                    locator: { kind: "page_only", page: original.page_number },
+                    locator: balanceLocator(original),
                   })
                 }
               }}

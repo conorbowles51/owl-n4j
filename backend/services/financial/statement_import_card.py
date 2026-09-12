@@ -8,9 +8,11 @@ import re
 from services.financial.statement_import_proposal import exact_amount
 from services.financial.statement_layout_context import _dates_within
 from datetime import date
+from services.financial.statement_import_card_balances import summary_balances
 
 
 def propose_card_table(source, currency, statement):
+    balances, issues = summary_balances(source, currency)
     context = source.get('layout_context')
     observed = {item['row_index']: item for item in (context or {}).get('rows', [])}
     result = []
@@ -22,6 +24,10 @@ def propose_card_table(source, currency, statement):
                     source_revision=source['source_revision'], source_cells=row['cells'], fields={},
                     issues=[], excluded=True, kind='statement_information')
         texts = [cell['expected_text'].strip() for cell in row['cells']]
+        if row['row_index'] in balances:
+            item.update(balances[row['row_index']])
+            result.append(item)
+            continue
         candidate = observed.get(row['row_index'])
         if 'Fees' in texts:
             fees = True
@@ -61,7 +67,7 @@ def propose_card_table(source, currency, statement):
             except ValueError as exc:
                 item['issues'].append(str(exc))
             item['layout_context'] = candidate
-        elif context and texts and re.fullmatch(r'Interest Charge on (?:Purchases|Cash Advances|Other Balances)', texts[0]):
+        elif texts and re.fullmatch(r'Interest Charge on (?:Purchases|Cash Advances|Other Balances)', texts[0]):
             item.update(kind='transaction', excluded=False)
             item['fields'].update(description=texts[0], direction='debit', counterparty='')
             try:
@@ -73,8 +79,8 @@ def propose_card_table(source, currency, statement):
                     item['issues'].append('This interest charge has no printed transaction date. Check and record its date before importing.')
             except ValueError as exc:
                 item['issues'].append(str(exc))
-        elif context and any(re.match(r'^(?:\d{1,2}[/-]\d{1,2}|[A-Za-z]{3,9}\.?\s+\d{1,2})$', text) for text in texts):
+        elif any(re.fullmatch(r'(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|[A-Za-z]{3,9}\.?\s+\d{1,2}(?:,?\s+\d{4})?)', text) for text in texts):
             item.update(kind='unresolved', excluded=False)
             item['issues'].append('This dated row was not recognised in a transaction section. Check it against the PDF.')
         result.append(item)
-    return dict(rows=result)
+    return dict(rows=result, issues=issues)

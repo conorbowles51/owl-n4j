@@ -30,7 +30,7 @@ def compare_printed_totals(controls, *, credits, debits):
 
 
 def retained_total_controls(session, period, document):
-    if document.document_type != 'pdf_selected_rows' or document.evidence_file_id is None:
+    if document.document_type not in ('pdf_selected_rows', 'statement_review') or document.evidence_file_id is None:
         return None
     evidence = session.get(EvidenceFile, document.evidence_file_id)
     if evidence is None or evidence.case_id != period.case_id or document.case_id != period.case_id:
