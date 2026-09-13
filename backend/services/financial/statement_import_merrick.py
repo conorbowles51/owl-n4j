@@ -3,6 +3,18 @@ import re
 from datetime import date
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_proposal import exact_amount
+from services.financial.statement_import_card_balances import merrick_summary_balances
+
+
+def _printed_date(text):
+    match = re.fullmatch(r'(\d{2})/(\d{2})/(\d{2}|20\d{2})', text)
+    if match:
+        try:
+            return date(2000 + int(match[3]) if len(match[3]) == 2 else int(match[3]),
+                        int(match[1]), int(match[2]))
+        except ValueError:
+            pass
+    return None
 
 
 def merrick_statement(source):
@@ -14,16 +26,33 @@ def merrick_statement(source):
         cells = row['cells']
         for i, cell in enumerate(cells):
             text = cell['expected_text'].strip()
+            # OCR may split the printed account into four groups. Only join
+            # digits following this label on the same row, without repairing
+            # letters or using an unlabelled number elsewhere on the page.
+            if text.startswith('Account Number'):
+                labelled = ' '.join(c['expected_text'].strip() for c in cells[i:])
+                account = re.fullmatch(r'Account Number:?\s+([0-9 ]{13,24})', labelled)
+                if account and 13 <= len(account[1].replace(' ', '')) <= 19:
+                    accounts.add(account[1].strip())
             match = re.fullmatch(r'Account Number:\s*([0-9 ]{13,24})', text)
-            if match:
+            if match and 13 <= len(match[1].replace(' ', '')) <= 19:
                 accounts.add(match[1].strip())
-            elif text == 'Account Number' and i + 1 < len(cells) and re.fullmatch(r'[0-9 ]{13,24}', cells[i+1]['expected_text'].strip()):
-                accounts.add(cells[i+1]['expected_text'].strip())
     years = {int(m[1]) for text in texts if (m := re.fullmatch(r'(20\d{2}) Totals Year-to-Date', text))}
     dates = {m[1].strip() for text in texts if (m := re.fullmatch(r'Statement Date:\s*(.+)', text))}
     raw_date = next(iter(dates)) if len(dates) == 1 else ''
+    # A second printed closing date is a cross-check, not a source of guessed
+    # digit corrections when OCR disagrees with the statement-date heading.
+    closing_dates = set()
+    for row in source['rows']:
+        values = [c['expected_text'].strip() for c in row['cells']]
+        for i, text in enumerate(values):
+            if text == 'Billing Cycle Closing Date' and i + 1 < len(values):
+                closing_dates.add(values[i + 1])
+    date_conflict = bool(raw_date and closing_dates and
+                         any(_printed_date(value) is None or _printed_date(value) != _printed_date(raw_date)
+                             for value in closing_dates))
     year = next(iter(years)) if len(years) == 1 else None
-    if year is not None and not raw_date.endswith(str(year)[-2:]):
+    if year is not None and (not raw_date.endswith(str(year)[-2:]) or date_conflict):
         year = None
     closing = None
     matched = re.fullmatch(r'(\d{2})/(\d{2})/(\d{2}|\d{4})', raw_date)
@@ -46,12 +75,14 @@ def merrick_statement(source):
                     period_start='', period_end='', holder=holder,
                     date_year=year, date_month=int(month[1]) if month else None)
     identity['id'] = _digest(dict(**identity, source_page=source['page_number']))
-    return dict(**identity, sources=[dict(page_number=source['page_number'],table_index=source['table_index'],source_revision=source['source_revision'])],page_numbers=[source['page_number']])
+    return dict(**identity, date_conflict=date_conflict,
+                sources=[dict(page_number=source['page_number'],table_index=source['table_index'],source_revision=source['source_revision'])],page_numbers=[source['page_number']])
 
 
 def propose_merrick_table(source, currency, statement):
     active = False
     result = []
+    balances, issues = merrick_summary_balances(source, currency)
     for row in source['rows']:
         cells = row['cells']
         texts = [c['expected_text'].strip() for c in cells]
@@ -91,5 +122,7 @@ def propose_merrick_table(source, currency, statement):
         elif active and texts and not (texts[0] in ('Transactions, Payments and Credits','Fees','Interest Charged') or texts[0].upper().startswith('TOTAL ') or any('Description' in text for text in texts)):
             item.update(excluded=False,kind='unresolved')
             item['issues'].append('Check this row in the transaction section. Its date or layout could not be read.')
+        if row['row_index'] in balances:
+            item.update(balances[row['row_index']])
         result.append(item)
-    return dict(rows=result)
+    return dict(rows=result, issues=issues)

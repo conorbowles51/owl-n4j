@@ -96,6 +96,44 @@ class StatementImportTests(TransactionPersistenceTestCase):
         document = self.db.get(FinancialSourceDocument, UUID(result['source_document_id']))
         self.assertEqual(retained_total_controls(self.db, period, document), controls)
 
+    def test_merrick_summary_import_retains_zero_opening_and_exact_closing_source(self):
+        from tests.test_financial_statement_import_merrick import summary_statement
+        from postgres.models.financial import FinancialStatementPeriod
+        from services.financial.periods import read_opening, read_closing
+        from services.financial.ledger_source import statement_source
+        data = summary_statement()
+        self.db.get(EvidenceTableGeometry, (self.file.id, 1)).payload = [dict(
+            table_source='drawn_geometry', geometry_source='cell_rectangles',
+            table=dict(page=1, table=rectangle(0, x=0, width=600, height=800), unlocated_values=0,
+                       values=[dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'], locator=c['locator'])
+                               for r in data['rows'] for c in r['cells']]))]
+        self.db.commit()
+        with self.SessionLocal() as db:
+            p = read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id, currency='USD')
+        self.assertEqual(p['metadata']['balance_convention'], 'liability_owed')
+        self.assertEqual(p['metadata']['period_start'], '')
+        request = dict(expected_revision=p['revision'], statement_id=p['statement_id'], currency='USD',
+                       holder=p['metadata']['holder'], account_number=p['metadata']['account_number'],
+                       institution=p['metadata']['institution'], period_start='', period_end='',
+                       rows=[dict(id=r['id'], excluded=r['excluded'], date=r['fields'].get('date', ''),
+                                  description=r['fields'].get('description', ''),
+                                  amount_minor=r['fields'].get('amount_minor', '0'),
+                                  direction=r['fields'].get('direction', 'credit'),
+                                  balance_minor=r['fields'].get('balance'), reason='') for r in p['rows']])
+        result = self.confirm(request)
+        self.assertEqual(result['transaction_count'], 2)
+        self.assertFalse(self.confirm(request)['created'])
+        self.db.expire_all()
+        period = self.db.scalar(select(FinancialStatementPeriod).where(
+            FinancialStatementPeriod.source_document_id == UUID(result['source_document_id'])))
+        self.assertEqual(read_opening(period).amount.minor_units, 0)
+        self.assertEqual(read_closing(period).amount.minor_units, -11400)
+        controls = statement_source(self.db, case_id=self.case.id, period_id=period.id)['reviewed_controls']
+        self.assertEqual([c['reviewed_value'] for c in controls['controls']], ['0', '11400'])
+        self.assertEqual(controls['controls'][1]['original_text'], '$114.00')
+        self.assertEqual(controls['controls'][1]['locator'], data['rows'][5]['cells'][1]['locator'])
+
+
     def test_corrected_card_balance_preserves_printed_value_and_reason(self):
         from postgres.models.financial import FinancialStatementPeriod
         from services.financial.periods import read_closing

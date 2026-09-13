@@ -587,3 +587,13 @@ extraction, uncertainty, controls/coverage and other listed capabilities still r
 - 9September continuation (43dbbd5): named-month date proposals connected through
   existing saved-candidate assessment,24targeted tests passed. No live data writes;
   old local backend not listening, runtime/browser acceptance to resume next.
+
+## Completed locally: Merrick balances and OCR date conflicts, 13 September 2026
+
+- [x] Read Previous Balance and New Balance from Merrick's Summary of Account Activity, using the adjoining Payment Information box to exclude repeated payment-coupon values. Keep zero, unreadable and negative values distinct.
+- [x] Retain the printed amount-owed convention, original balance cells and corrections through confirmation and the imported statement source view. Missing or duplicate controls require review.
+- [x] Read an account number split into OCR cells only when those digits follow the printed Account Number label. Do not repair uncertain characters or use unlabelled numbers.
+- [x] Flag disagreement between Statement Date and Billing Cycle Closing Date. Withhold inferred transaction years until the user reviews them; do not infer a billing period from the statement date.
+- [x] Check the supplied Merrick page read-only and complete a separate synthetic browser import, including a changed balance, restoration, confirmation and the imported balance check.
+
+Validation: 35 affected backend checks passed in targeted runs. The browser imported exactly two synthetic purchases, retained 0.00 USD opening and 114.00 USD closing amounts owed, and showed Balances agree with a zero difference. No browser errors. The supplied page produced the same two balances and two purchases, while flagging the OCR date disagreement. No real PDF or real import was changed. The guide was regenerated without opening a documentation panel. Local evidence is data/local-runtime/merrick-summary-acceptance.json. No full suite or public push was run.

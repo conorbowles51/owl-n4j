@@ -1,6 +1,9 @@
 import unittest
+from copy import deepcopy
 from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
+from services.financial.statement_import_card_balances import merrick_summary_balances
 from tests.test_financial_statement_import_proposal import source
+from tests.test_financial_pdf_geometry_candidates import rectangle
 
 
 def statement():
@@ -14,7 +17,110 @@ def statement():
         ['2021 Totals Year-to-Date']])
 
 
+def summary_statement():
+    data = statement()
+    data['rows'][0]['cells'][0]['expected_text'] = 'Statement Date: 04/25/21'
+    summary = source([
+        ['New Balance', '$999.00'],  # Payment coupon, deliberately different.
+        ['MERRICK ACCOUNT SUMMARY'],
+        ['| Summary of Account Activity', '| Payment Information'],
+        ['Previous Balance', '$0.00', 'New Balance', '$888.00'],
+        ['Purchases', '+ $114.00', 'Minimum Payment Due', '$35.00'],
+        ['New Balance', '$114.00'],
+        ['Credit Limit', '$1,000.00'],
+    ])
+    positions = [
+        [(90, 50, 60), (240, 50, 35)],
+        [(90, 150, 145)],
+        [(90, 180, 130), (285, 180, 100)],
+        [(95, 200, 80), (245, 200, 30), (290, 200, 70), (480, 200, 35)],
+        [(95, 225, 70), (230, 225, 45), (290, 225, 100), (480, 225, 35)],
+        [(95, 255, 70), (240, 255, 35)],
+        [(95, 280, 70), (235, 280, 40)],
+    ]
+    for row, boxes in zip(summary['rows'], positions):
+        row['row_index'] += 100
+        for cell, (x, y, width) in zip(row['cells'], boxes):
+            cell['locator'] = rectangle(y, x=x, width=width, height=8)
+    for row in data['rows']:
+        for cell in row['cells']:
+            cell['locator'] = rectangle(350 + row['row_index'] * 15,
+                                         x=20 + cell['column_index'] * 140, width=130, height=8)
+    data['rows'] = summary['rows'] + data['rows']
+    return data
+
+
 class MerrickStatementTests(unittest.TestCase):
+    def test_summary_balances_use_activity_box_and_preserve_original_cells(self):
+        data = summary_statement()
+        before = deepcopy(data)
+        proposal = propose_merrick_table(data, 'USD', merrick_statement(data))
+        controls = [r for r in proposal['rows'] if r['kind'] == 'balance']
+        self.assertEqual([r['fields']['balance'] for r in controls], ['0', '11400'])
+        self.assertTrue(all(r['excluded'] for r in controls))
+        self.assertEqual([r['row_index'] for r in controls], [103, 105])
+        self.assertEqual(controls[0]['fields']['balance_column'], '1')
+        self.assertEqual(len([r for r in proposal['rows'] if not r['excluded']]), 2)
+        self.assertEqual(proposal['issues'], [])
+        self.assertEqual(data, before)
+
+    def test_missing_or_ambiguous_summary_geometry_never_uses_payment_box(self):
+        for change in ('missing-heading', 'duplicate-opening', 'overlapping-boxes', 'missing-value'):
+            data = summary_statement()
+            if change == 'missing-heading':
+                data['rows'][2]['cells'][0]['locator'] = {'kind': 'page_only', 'page': 1}
+            elif change == 'duplicate-opening':
+                duplicate = deepcopy(data['rows'][3]); duplicate['row_index'] = 200
+                data['rows'].append(duplicate)
+            elif change == 'overlapping-boxes':
+                data['rows'][2]['cells'][1]['locator'] = rectangle(180, x=100, width=100)
+            else:
+                del data['rows'][3]['cells'][1]
+            with self.subTest(change=change):
+                controls, issues = merrick_summary_balances(data, 'USD')
+                self.assertEqual(controls, {})
+                self.assertTrue(issues)
+
+    def test_duplicate_closing_preserves_only_opening_and_requires_review(self):
+        for missing_value in (False, True):
+            data = summary_statement()
+            duplicate = deepcopy(data['rows'][5]); duplicate['row_index'] = 200
+            if missing_value:
+                duplicate['cells'] = duplicate['cells'][:1]
+            data['rows'].append(duplicate)
+            controls, issues = merrick_summary_balances(data, 'USD')
+            self.assertEqual(set(controls), {103})
+            self.assertTrue(issues)
+
+    def test_unreadable_and_negative_owed_balances_preserve_exact_printed_values(self):
+        for text, amount in (('$11O.00', None), ('- $12.50', '-1250'), ('$0.00', '0')):
+            data = summary_statement()
+            data['rows'][5]['cells'][1]['expected_text'] = text
+            controls, _ = merrick_summary_balances(data, 'USD')
+            self.assertEqual(controls[105]['fields'].get('balance'), amount)
+            self.assertEqual(bool(controls[105]['issues']), amount is None)
+
+    def test_split_account_digits_are_read_only_after_the_account_label(self):
+        for values, expected in ((['Account Number: 1111', '2222', '3333', '4444'], '1111 2222 3333 4444'),
+                                 (['Account Number:', '1111', '2222', '3333', '4444'], '1111 2222 3333 4444'),
+                                 (['Account Number: 1111', '2222', '3333', '444O'], ''),
+                                 (['1111', '2222', '3333', '4444'], '')):
+            data = statement()
+            data['rows'][1]['cells'] = source([values])['rows'][0]['cells']
+            self.assertEqual(merrick_statement(data)['account_reference'], expected)
+
+    def test_disagreeing_closing_dates_require_transaction_date_review(self):
+        data = statement()
+        data['rows'][0]['cells'][0]['expected_text'] = 'Statement Date: 04/25/21'
+        data['rows'].extend(source([['Billing Cycle Closing Date', '04/25/24']])['rows'])
+        group = merrick_statement(data)
+        self.assertTrue(group['date_conflict'])
+        self.assertIsNone(group['date_year'])
+        rows = [r for r in propose_merrick_table(data, 'USD', group)['rows'] if not r['excluded']]
+        self.assertTrue(all('date' not in r['fields'] and r['issues'] for r in rows))
+        data['rows'][-1]['cells'][1]['expected_text'] = '04/25/2021'
+        self.assertFalse(merrick_statement(data)['date_conflict'])
+
     def test_header_damage_is_not_repaired_but_transaction_dates_use_printed_year_context(self):
         data=statement();group=merrick_statement(data)
         self.assertEqual(group['statement_date'],'')

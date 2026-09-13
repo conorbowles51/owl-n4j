@@ -123,7 +123,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         metadata.update(account_type='credit_card', institution=selected['institution'], account_number=selected['account_reference'],
                         period_start=selected['period_start'], period_end=selected['period_end'],
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date', ''))
-        if selected.get('layout_id') == 'capital-one-card':
+        if selected.get('layout_id') in ('capital-one-card', 'merrick-card'):
             metadata['balance_convention'] = 'liability_owed'
         if selected.get('holder'):
             metadata['holder'] = selected['holder']
@@ -135,7 +135,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         if len(holders) == 1:
             metadata['holder'] = next(iter(holders))
         issues = [issue for issue in issues if not ('account number' in issue and metadata['account_number']) and not ('account holder' in issue and metadata['holder'])]
-        if selected.get('layout_id') == 'merrick-card' and not selected.get('statement_date'):
+        if selected.get('date_conflict'):
+            issues.append('The statement date and billing-cycle closing date were read differently. Compare both dates with the PDF and correct the transaction dates before importing.')
+        elif selected.get('layout_id') == 'merrick-card' and not selected.get('statement_date'):
             issues.append('The printed statement date could not be read. Check it against the PDF. Transaction years are proposed only where the printed month and year-to-date heading agree.')
         issues.append('This is a credit-card statement. Debits increase the amount owed; credits reduce it. A card ending is a partial account reference.')
         if catalog['unclassified_sources']:

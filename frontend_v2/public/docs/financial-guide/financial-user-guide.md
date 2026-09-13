@@ -162,7 +162,9 @@ If a file has not finished processing, wait for its status to complete. If readi
 
 Where a printed opening balance and an ending balance are available, the review recalculates the balance using your selected payments. Excluding a payment or changing its amount can show **Selected movements leave a balance difference**. Inspect the compared balance and check missing rows or corrections before confirming. Agreement is an arithmetic check, not proof that every payment was supplied.
 
-For a recognised Capital One card statement, **Previous Balance** in the account summary supplies the **Opening amount owed**, and **New Balance** supplies the **Closing amount owed**. The minimum payment due and credit limit are not balances for this check. Charges increase the amount owed and payments reduce it.
+For a recognised Capital One or Merrick card statement, **Previous Balance** in the account summary supplies the **Opening amount owed**, and **New Balance** supplies the **Closing amount owed**. On Merrick statements, these values come from **Summary of Account Activity**. The minimum payment due and credit limit are not balances for this check. Charges increase the amount owed and payments reduce it.
+
+If a Merrick statement's **Statement Date** and **Billing Cycle Closing Date** have been read differently, Loupe flags the dates. Compare both with the original PDF, then correct the transaction dates before confirming. The system does not replace a damaged date with a guessed year. A statement date alone does not establish the dates covered by the statement; leave the period blank when those dates are unknown.
 
 To check or correct a balance before import:
 
@@ -413,7 +415,7 @@ Open **Change history**. Expand the relevant decision to inspect the reason, act
 
 An excluded statement is marked above its balances. Its check does not add it back to current transaction totals. An agreeing balance also does not establish that every payment was extracted: missing equal incoming and outgoing amounts can leave a balance unchanged.
 
-New Capital One imports retain the account-summary balances and their PDF locations here. An older import that did not record those balances is not changed automatically. To add them, reopen its statement review and follow the replacement-import steps in section 7, including a reason for replacing the earlier reading.
+New recognised Capital One and Merrick imports retain the account-summary balances and their PDF locations here. An older import that did not record those balances is not changed automatically. To add them, reopen its statement review and follow the replacement-import steps in section 7, including a reason for replacing the earlier reading.
 
 ![A synthetic credit-card statement with matching opening and closing amounts owed](images/19-card-statement-balances.png)
 
