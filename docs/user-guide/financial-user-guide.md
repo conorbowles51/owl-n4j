@@ -168,6 +168,12 @@ If a Merrick summary amount is missing its dollar sign, check it against the PDF
 
 If a Merrick statement's **Statement Date** and **Billing Cycle Closing Date** have been read differently, Loupe flags the dates. Compare both with the original PDF, then correct the transaction dates before confirming. The system does not replace a damaged date with a guessed year. A statement date alone does not establish the dates covered by the statement; leave the period blank when those dates are unknown.
 
+On Merrick statements, a minus sign after the amount marks a credit. Loupe reads the sign with the amount when their positions match. If a card payment has no readable minus sign, its Credit and Debit fields stay blank. Select **Edit import values**, check the PDF, enter the amount in the correct column and give a reason. The import button stays unavailable until you resolve the missing value.
+
+Merrick transaction amounts should show a decimal point and two digits after it. If OCR reads `2.75` as `275`, Loupe flags the amount instead of treating it as 275.00. Check the original and enter the value you can read there. Totals are marked incomplete while any included amount or credit/debit choice is unresolved.
+
+Opening a balance correction shows the balance rows and transactions. It does not open all the page headings as empty fields. Select **Show excluded rows** only when you need to inspect an omitted row or bring it into the import.
+
 To check or correct a balance before import:
 
 1. Select the amount beside **Opening amount owed**, **Closing amount owed**, **Opening balance** or **Closing balance**.

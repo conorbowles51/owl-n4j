@@ -225,7 +225,7 @@ class ImportRow(_Contract):
     description: Annotated[str, Field(max_length=4096)] = ''
     counterparty: Annotated[str, Field(max_length=4096)] = ''
     amount_minor: Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,18})$')] = '0'
-    direction: Literal['credit', 'debit'] = 'credit'
+    direction: Literal['credit', 'debit'] | None = None
     balance_minor: Annotated[str | None, Field(pattern=r'^-?(0|[1-9][0-9]{0,18})$')] = None
     reason: Annotated[str, Field(max_length=4096)] = ''
 
@@ -234,6 +234,8 @@ class ImportRow(_Contract):
         if self.balance_minor is not None and not -9223372036854775808 <= int(self.balance_minor) <= 9223372036854775807:
             raise ValueError('The running balance exceeds the supported range.')
         if not self.excluded:
+            if self.direction is None:
+                raise ValueError('Choose Credit or Debit for this transaction.')
             if date.fromisoformat(self.date).isoformat() != self.date:
                 raise ValueError('A complete transaction date is required.')
             if not self.description.strip():

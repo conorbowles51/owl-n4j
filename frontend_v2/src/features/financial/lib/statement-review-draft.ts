@@ -8,7 +8,7 @@ const draftRow = z.object({
   description: z.string(),
   counterparty: z.string(),
   amount_minor: z.string(),
-  direction: z.enum(["credit", "debit"]),
+  direction: z.enum(["credit", "debit", ""]),
   balance_minor: z.string().nullable(),
   reason: z.string(),
 })

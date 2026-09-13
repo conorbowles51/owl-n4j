@@ -72,6 +72,18 @@ it("does not invent an opening control or a sequence for descending source rows"
   ).toBeNull()
 })
 
+it("does not report a matching balance while a payment's credit or debit is unknown", () => {
+  expect(
+    reviewSelectionBalance(
+      rows.map((row) =>
+        row.id === "a" ? { ...row, direction: "" as const } : row
+      ),
+      originals,
+      false
+    )
+  ).toBeNull()
+})
+
 it("compares printed amounts owed using charges minus payments and keeps corrections separate", () => {
   const cardOriginals = [
     ...originals,

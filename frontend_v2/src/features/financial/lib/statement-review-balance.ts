@@ -2,7 +2,7 @@ type BalanceRow = {
   id: string
   excluded: boolean
   amount_minor: string
-  direction: "credit" | "debit"
+  direction: "credit" | "debit" | ""
   balance_minor: string | null
 }
 type Original = { id: string; kind: string; fields: Record<string, string> }
@@ -63,7 +63,7 @@ export function reviewSelectionBalance(
   let expected = BigInt(open.balance_minor)
   for (const row of rows) {
     if (row.excluded) continue
-    if (!/^\d+$/.test(row.amount_minor)) return null
+    if (!/^\d+$/.test(row.amount_minor) || !row.direction) return null
     const sign = row.direction === "credit" ? 1n : -1n
     expected += BigInt(row.amount_minor) * sign * (creditCard ? -1n : 1n)
   }

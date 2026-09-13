@@ -64,6 +64,17 @@ class AutomaticStatementProposalTests(unittest.TestCase):
 
 
 class ReviewedDateMeaningTests(unittest.TestCase):
+    def test_import_requires_explicit_credit_or_debit_for_included_rows(self):
+        from pydantic import ValidationError
+        from services.financial.statement_import import ImportRow
+        values = dict(id='payment', date='2023-01-02', description='Payment', amount_minor='1400')
+        with self.assertRaisesRegex(ValidationError, 'Choose Credit or Debit'):
+            ImportRow(**values)
+        with self.assertRaisesRegex(ValidationError, 'Choose Credit or Debit'):
+            ImportRow(**values, direction=None)
+        self.assertEqual(ImportRow(**values, direction='credit').direction, 'credit')
+        self.assertIsNone(ImportRow(id='header', excluded=True).direction)
+
     def test_booking_and_value_dates_are_not_relabelled_as_transaction_dates(self):
         from datetime import date
         from services.financial.statement_import import _reading_dates

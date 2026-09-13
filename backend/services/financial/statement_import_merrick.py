@@ -3,7 +3,7 @@ import re
 from datetime import date
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_proposal import exact_amount
-from services.financial.statement_import_card_balances import merrick_summary_balances
+from services.financial.statement_import_card_balances import merrick_summary_balances, _rectangle
 
 
 def _printed_date(text):
@@ -79,6 +79,37 @@ def merrick_statement(source):
                 sources=[dict(page_number=source['page_number'],table_index=source['table_index'],source_revision=source['source_revision'])],page_numbers=[source['page_number']])
 
 
+def _transaction_amount(cells, source, currency):
+    """Read this layout's printed cents and optional trailing credit marker.
+
+    A separate minus must be beside the amount on the same measured line.
+    Missing decimal punctuation is a review exception, never an integer amount
+    or a reason to insert an assumed decimal point.
+    """
+    value = cells[-1]['expected_text'].strip()
+    amount_index = len(cells) - 1
+    if value == '-' and len(cells) >= 4:
+        amount_index -= 1
+        amount_box = _rectangle(cells[amount_index], source['page_number'])
+        sign_box = _rectangle(cells[-1], source['page_number'])
+        if (amount_box is None or sign_box is None
+                or (amount_box.page_width, amount_box.page_height) != (sign_box.page_width, sign_box.page_height)
+                or not 0 <= sign_box.x0 - amount_box.x1 <= amount_box.page_width // 40
+                or min(amount_box.y1, sign_box.y1) <= max(amount_box.y0, sign_box.y0)):
+            raise ValueError('Check the amount and minus sign in the PDF. Their positions could not be matched.')
+        value = cells[amount_index]['expected_text'].strip() + ' -'
+    match = re.fullmatch(
+        r'(?P<before>[+-]?)\s*(?P<currency>\$|USD)?\s*(?P<after>[+-]?)'
+        r'(?P<amount>(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})\s*(?P<trailing>-?)', value)
+    if not match:
+        raise ValueError('Check this amount in the PDF, including the decimal point and both digits after it.')
+    signs = [match[name] for name in ('before', 'after', 'trailing') if match[name]]
+    if len(signs) > 1:
+        raise ValueError('Check this amount in the PDF. More than one sign was read.')
+    signed = (match['currency'] or '') + ('-' if signs == ['-'] else '') + match['amount']
+    return int(exact_amount(signed, currency)), amount_index
+
+
 def propose_merrick_table(source, currency, statement):
     active = False
     result = []
@@ -97,8 +128,11 @@ def propose_merrick_table(source, currency, statement):
         if active and match and len(texts) >= 3:
             item.update(excluded=False,kind='transaction')
             fields=item['fields']
-            middle=texts[1:-1]
-            if len(middle)>1 and re.fullmatch(r'[A-Z0-9]{12,24}', middle[0]):
+            # Keep a detached printed minus out of the description even when
+            # its geometry is unclear and the amount requires correction.
+            middle=texts[1:-2] if texts[-1] == '-' else texts[1:-1]
+            if (len(middle) > 1 and re.fullmatch(r'[A-Z0-9 ]{12,30}', middle[0])
+                    and re.search(r'\d', middle[0]) and 12 <= len(middle[0].replace(' ', '')) <= 24):
                 fields['bank_reference']=middle.pop(0)
             fields.update(description=' '.join(middle),counterparty='')
             year, closing_month=statement['date_year'],statement['date_month']
@@ -112,8 +146,12 @@ def propose_merrick_table(source, currency, statement):
             if 'date' not in fields:
                 item['issues'].append('Check the full date. The printed statement context could not resolve its year.')
             try:
-                value=int(exact_amount(texts[-1],currency))
-                fields.update(amount_minor=str(abs(value)),direction='credit' if value<0 else 'debit')
+                value, amount_index = _transaction_amount(cells, source, currency)
+                fields.update(amount_minor=str(abs(value)), amount_column=str(cells[amount_index]['column_index']))
+                if value > 0 and re.match(r'^(?:MOBILE )?PAYMENT-THANK YOU\b', fields['description']):
+                    item['issues'].append('This row describes a card payment, but no minus sign was read. Check the original amount and enter it under Credit or Debit.')
+                else:
+                    fields['direction'] = 'credit' if value < 0 else 'debit'
                 if value == 0:
                     item.update(excluded=True,kind='zero_charge')
                     item['issues']=[]

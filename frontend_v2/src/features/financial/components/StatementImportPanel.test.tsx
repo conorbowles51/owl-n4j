@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest"
 import { StatementImportPanel } from "./StatementImportPanel"
 import { fetchAPI } from "@/lib/api-client"
 import { useStatementWorkspace } from "../stores/statement-workspace"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("./TransactionSourceHighlight", () => ({
   TransactionSourceHighlight: () => (
@@ -33,7 +34,7 @@ const data = {
       row_index: 0,
       source_cells: [{ column_index: 0, expected_text: "Date", locator: {} }],
       fields: {},
-      issues: [],
+      issues: [] as string[],
       excluded: true,
       kind: "header",
     },
@@ -53,7 +54,7 @@ const data = {
         balance: "12500",
         counterparty: "Example payer",
       },
-      issues: [],
+      issues: [] as string[],
       excluded: false,
       kind: "transaction",
     },
@@ -94,6 +95,8 @@ async function open() {
   )
 }
 beforeEach(() => {
+  useAuthStore.setState({ user: null })
+  sessionStorage.clear()
   useStatementWorkspace.setState({ selections: {}, reviewChoices: {} })
   sent = []
   failure = false
@@ -150,6 +153,67 @@ it("automatically fills a statement and imports once", async () => {
   })
 })
 
+it("leaves an unknown credit or debit blank and requires the investigator to choose", async () => {
+  const unknown = structuredClone(data)
+  delete (unknown.rows[1].fields as Record<string, unknown>).direction
+  unknown.rows[1].issues = ["The payment's minus sign could not be read."]
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    String(url).includes("statement-import") &&
+    !String(url).includes("/confirm?")
+      ? Promise.resolve(unknown as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  expect(screen.getByLabelText("Credit 1:0:1")).toHaveValue("")
+  expect(screen.getByLabelText("Debit 1:0:1")).toHaveValue("")
+  expect(screen.getByText(/Totals are incomplete/)).toBeVisible()
+  fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
+    target: { value: "Checked the original payment marker" },
+  })
+  const confirm = screen.getByRole("button", {
+    name: "Confirm import of 1 transactions",
+  })
+  expect(confirm).toBeDisabled()
+  fireEvent.change(screen.getByLabelText("Credit 1:0:1"), {
+    target: { value: "125.00" },
+  })
+  expect(confirm).toBeEnabled()
+  expect(screen.queryByText(/Totals are incomplete/)).not.toBeInTheDocument()
+  fireEvent.click(confirm)
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({
+    rows: [{ direction: null }, { direction: "credit", amount_minor: "12500" }],
+  })
+})
+
+it("saves the latest edit on page exit before the delayed save can run", async () => {
+  useAuthStore.setState({
+    user: {
+      id: "reviewer",
+      username: "reviewer",
+      name: "Reviewer",
+      role: null,
+    },
+  })
+  mount()
+  await open()
+  fireEvent.change(screen.getByLabelText("Credit 1:0:1"), {
+    target: { value: "125.50" },
+  })
+  fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
+    target: { value: "Checked just before refreshing" },
+  })
+  fireEvent(window, new Event("pagehide"))
+  const key = `loupe-statement-review:reviewer:case:file:${data.revision}`
+  const saved = JSON.parse(sessionStorage.getItem(key)!)
+  expect(saved.rows[1]).toMatchObject({
+    amount_minor: "12550",
+    reason: "Checked just before refreshing",
+  })
+})
+
 it("opens card-balance corrections from the summary and submits the printed sign", async () => {
   const card = {
     ...data,
@@ -198,6 +262,8 @@ it("opens card-balance corrections from the summary and submits the printed sign
   )
   const balance = await screen.findByLabelText("Balance 1:0:2")
   expect(balance).toHaveValue("1000.00")
+  expect(screen.queryByLabelText("Include row 1:0:0")).not.toBeInTheDocument()
+  expect(screen.getByLabelText("Show excluded rows")).not.toBeChecked()
   expect(screen.getByLabelText("Include row 1:0:2")).toBeDisabled()
   fireEvent.change(balance, { target: { value: "1001.00" } })
   fireEvent.change(screen.getByLabelText("Reason 1:0:2"), {

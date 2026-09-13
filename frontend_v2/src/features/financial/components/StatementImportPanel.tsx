@@ -108,7 +108,7 @@ type Edit = {
   description: string
   counterparty: string
   amount_minor: string
-  direction: "credit" | "debit"
+  direction: "credit" | "debit" | ""
   balance_minor: string | null
   reason: string
 }
@@ -128,8 +128,11 @@ function initialRows(data: Proposal): Edit[] {
     date: r.fields.date || r.fields.booking_date || r.fields.value_date || "",
     description: r.fields.description || "",
     counterparty: r.fields.counterparty || "",
-    amount_minor: r.fields.amount_minor || "0",
-    direction: r.fields.direction === "debit" ? "debit" : "credit",
+    amount_minor: r.fields.amount_minor || (r.excluded ? "0" : ""),
+    direction:
+      r.fields.direction === "debit" || r.fields.direction === "credit"
+        ? r.fields.direction
+        : "",
     balance_minor: r.fields.balance ?? null,
     reason: "",
   }))
@@ -608,6 +611,7 @@ function EditableStatement({
       (!r.excluded &&
         (!/^\d{4}-\d{2}-\d{2}$/.test(r.date) ||
           !r.description.trim() ||
+          !r.direction ||
           !/^\d+$/.test(r.amount_minor) ||
           BigInt(r.amount_minor || "0") <= 0n))
   )
@@ -642,7 +646,12 @@ function EditableStatement({
               period_start: periodStart,
               period_end: periodEnd,
               details_reason: detailsReason,
-              rows,
+              rows: rows.map((r) => ({
+                ...r,
+                direction: r.direction || null,
+                amount_minor:
+                  r.excluded && !r.amount_minor ? "0" : r.amount_minor,
+              })),
             },
             timeout: 120000,
           }
@@ -686,8 +695,18 @@ function EditableStatement({
       () => setDraftSaved(saveStatementDraft(draftKey, draft)),
       300
     )
+    // React cleanup does not run when the browser unloads the page. Flush the
+    // latest committed edit before a refresh can discard the pending timer.
+    const flush = () => saveStatementDraft(draftKey, draft)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush()
+    }
+    window.addEventListener("pagehide", flush)
+    document.addEventListener("visibilitychange", onVisibilityChange)
     return () => {
       window.clearTimeout(timer)
+      window.removeEventListener("pagehide", flush)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
       saveStatementDraft(draftKey, draft)
     }
   }, [
@@ -710,7 +729,10 @@ function EditableStatement({
   )
   const visible = rows.filter(
     (r) =>
-      (showExcluded || !r.excluded || requiresReason(r)) &&
+      (showExcluded ||
+        !r.excluded ||
+        originals.get(r.id)?.kind === "balance" ||
+        requiresReason(r)) &&
       (!onlyIssues || originals.get(r.id)?.issues.length || changed(r))
   )
   const focusedPage = z.object({ page: z.number() }).safeParse(focus?.locator)
@@ -739,7 +761,6 @@ function EditableStatement({
   const editBalance = (id: string) => {
     const original = originals.get(id)
     if (!original) return
-    setShowExcluded(true)
     setOnlyIssues(false)
     setFocus({ rowId: id, locator: balanceLocator(original) })
     setCorrectionsOpen(true)
@@ -832,7 +853,7 @@ function EditableStatement({
               />
             </aside>
           )}
-          <div className="overflow-auto max-h-[65vh]">
+          <div className="min-w-0 overflow-y-auto overflow-x-hidden max-h-[65vh]">
             <h4 className="font-semibold">Extracted statement</h4>
             <p className="text-sm text-muted-foreground mb-3">
               Compare each table with the PDF. Select any printed value to
@@ -886,234 +907,246 @@ function EditableStatement({
                 statement above. Paid by / paid to is an investigation field
                 suggested from the description.
               </p>
-              <table className="w-full text-sm border-collapse">
-                <thead className="sticky top-0 bg-card z-10">
-                  <tr>
-                    {[
-                      "Use",
-                      "Date",
-                      "Description",
-                      "Credit",
-                      "Debit",
-                      "Printed balance",
-                      "Actions",
-                    ].map((s) => (
-                      <th key={s} className="text-left p-2 border-b">
-                        {s}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((r) => {
-                    const original = originals.get(r.id)!
-                    return (
-                      <tr key={r.id} className={r.excluded ? "opacity-70" : ""}>
-                        <td className="p-2 border-b align-top">
-                          <input
-                            aria-label={`Include row ${r.id}`}
-                            type="checkbox"
-                            checked={!r.excluded}
-                            disabled={
-                              original.fields.balance_convention ===
-                              "liability_owed"
-                            }
-                            onChange={(e) =>
-                              update(r.id, { excluded: !e.target.checked })
-                            }
-                          />
-                        </td>
-                        <td className="p-2 border-b align-top">
-                          <input
-                            aria-label={`Date ${r.id}`}
-                            type="date"
-                            disabled={r.excluded}
-                            className="border rounded p-1 bg-background"
-                            value={r.date}
-                            onChange={(e) =>
-                              update(r.id, { date: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td className="p-2 border-b align-top min-w-56">
-                          <input
-                            aria-label={`Description ${r.id}`}
-                            disabled={r.excluded}
-                            className="border rounded p-1 bg-background w-full"
-                            value={r.description}
-                            onChange={(e) =>
-                              update(r.id, { description: e.target.value })
-                            }
-                          />
-                          <label className="block mt-2 text-xs">
-                            Paid by / paid to
+              <div
+                className="max-w-full overflow-x-auto"
+                role="region"
+                aria-label="Statement correction columns"
+                tabIndex={0}
+              >
+                <table className="w-full text-sm border-collapse">
+                  <thead className="sticky top-0 bg-card z-10">
+                    <tr>
+                      {[
+                        "Use",
+                        "Date",
+                        "Description",
+                        "Credit",
+                        "Debit",
+                        "Printed balance",
+                        "Actions",
+                      ].map((s) => (
+                        <th key={s} className="text-left p-2 border-b">
+                          {s}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((r) => {
+                      const original = originals.get(r.id)!
+                      return (
+                        <tr
+                          key={r.id}
+                          className={r.excluded ? "opacity-70" : ""}
+                        >
+                          <td className="p-2 border-b align-top">
                             <input
-                              aria-label={`Counterparty ${r.id}`}
-                              disabled={r.excluded}
-                              className="block border rounded p-1 bg-background w-full"
-                              value={r.counterparty}
+                              aria-label={`Include row ${r.id}`}
+                              type="checkbox"
+                              checked={!r.excluded}
+                              disabled={
+                                original.fields.balance_convention ===
+                                "liability_owed"
+                              }
                               onChange={(e) =>
-                                update(r.id, { counterparty: e.target.value })
+                                update(r.id, { excluded: !e.target.checked })
                               }
                             />
-                          </label>
-                          {original.issues.map((s, i) => (
-                            <p
-                              key={i}
-                              className="text-amber-700 dark:text-amber-300 mt-1"
-                            >
-                              {s}
-                            </p>
-                          ))}
-                          {r.manual_page && (
-                            <label className="block mt-2">
-                              Source page
-                              <select
-                                aria-label={`Source page ${r.id}`}
-                                value={r.manual_page}
-                                onChange={(e) => {
-                                  update(r.id, {
-                                    manual_page: Number(e.target.value),
-                                  })
-                                  setFocus({
-                                    rowId: r.id,
-                                    locator: {
-                                      kind: "page_only",
-                                      page: Number(e.target.value),
-                                    },
-                                  })
-                                }}
-                                className="border rounded p-1 bg-background"
-                              >
-                                {data.page_numbers.map((p) => (
-                                  <option key={p} value={p}>
-                                    {p}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          )}
-                          {requiresReason(r) && (
-                            <label className="block mt-2">
-                              Reason for correction or decision
+                          </td>
+                          <td className="p-2 border-b align-top">
+                            <input
+                              aria-label={`Date ${r.id}`}
+                              type="date"
+                              disabled={r.excluded}
+                              className="border rounded p-1 bg-background"
+                              value={r.date}
+                              onChange={(e) =>
+                                update(r.id, { date: e.target.value })
+                              }
+                            />
+                          </td>
+                          <td className="p-2 border-b align-top min-w-56">
+                            <input
+                              aria-label={`Description ${r.id}`}
+                              disabled={r.excluded}
+                              className="border rounded p-1 bg-background w-full"
+                              value={r.description}
+                              onChange={(e) =>
+                                update(r.id, { description: e.target.value })
+                              }
+                            />
+                            <label className="block mt-2 text-xs">
+                              Paid by / paid to
                               <input
-                                aria-label={`Reason ${r.id}`}
-                                value={r.reason}
+                                aria-label={`Counterparty ${r.id}`}
+                                disabled={r.excluded}
+                                className="block border rounded p-1 bg-background w-full"
+                                value={r.counterparty}
                                 onChange={(e) =>
-                                  update(r.id, { reason: e.target.value })
+                                  update(r.id, { counterparty: e.target.value })
                                 }
-                                className="border rounded p-1 w-full bg-background"
                               />
                             </label>
-                          )}
-                          {focus?.rowId === r.id && (
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {original.source_cells.map((c) => (
-                                <Button
-                                  key={c.column_index}
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() =>
+                            {original.issues.map((s, i) => (
+                              <p
+                                key={i}
+                                className="text-amber-700 dark:text-amber-300 mt-1"
+                              >
+                                {s}
+                              </p>
+                            ))}
+                            {r.manual_page && (
+                              <label className="block mt-2">
+                                Source page
+                                <select
+                                  aria-label={`Source page ${r.id}`}
+                                  value={r.manual_page}
+                                  onChange={(e) => {
+                                    update(r.id, {
+                                      manual_page: Number(e.target.value),
+                                    })
                                     setFocus({
                                       rowId: r.id,
-                                      locator: c.locator,
+                                      locator: {
+                                        kind: "page_only",
+                                        page: Number(e.target.value),
+                                      },
                                     })
-                                  }
+                                  }}
+                                  className="border rounded p-1 bg-background"
                                 >
-                                  {c.expected_text}
-                                </Button>
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                        {(["credit", "debit"] as const).map((direction) => (
-                          <td
-                            key={direction}
-                            className="p-2 border-b align-top"
-                          >
+                                  {data.page_numbers.map((p) => (
+                                    <option key={p} value={p}>
+                                      {p}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            )}
+                            {requiresReason(r) && (
+                              <label className="block mt-2">
+                                Reason for correction or decision
+                                <input
+                                  aria-label={`Reason ${r.id}`}
+                                  value={r.reason}
+                                  onChange={(e) =>
+                                    update(r.id, { reason: e.target.value })
+                                  }
+                                  className="border rounded p-1 w-full bg-background"
+                                />
+                              </label>
+                            )}
+                            {focus?.rowId === r.id && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {original.source_cells.map((c) => (
+                                  <Button
+                                    key={c.column_index}
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      setFocus({
+                                        rowId: r.id,
+                                        locator: c.locator,
+                                      })
+                                    }
+                                  >
+                                    {c.expected_text}
+                                  </Button>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          {(["credit", "debit"] as const).map((direction) => (
+                            <td
+                              key={direction}
+                              className="p-2 border-b align-top"
+                            >
+                              <input
+                                aria-label={`${direction === "credit" ? "Credit" : "Debit"} ${r.id}`}
+                                disabled={r.excluded}
+                                inputMode="decimal"
+                                className="border rounded p-1 bg-background w-28"
+                                value={
+                                  r.direction === direction
+                                    ? (amountText[r.id] ??
+                                      displayAmount(r.amount_minor, digits))
+                                    : ""
+                                }
+                                onChange={(e) => {
+                                  const value = e.target.value
+                                  if (!value && r.direction !== direction)
+                                    return
+                                  setAmountText((previous) => ({
+                                    ...previous,
+                                    [r.id]: value,
+                                  }))
+                                  update(r.id, {
+                                    direction,
+                                    amount_minor: minorAmount(value, digits),
+                                  })
+                                }}
+                              />
+                            </td>
+                          ))}
+                          <td className="p-2 border-b align-top whitespace-nowrap">
                             <input
-                              aria-label={`${direction === "credit" ? "Credit" : "Debit"} ${r.id}`}
-                              disabled={r.excluded}
-                              inputMode="decimal"
+                              aria-label={`Balance ${r.id}`}
                               className="border rounded p-1 bg-background w-28"
+                              inputMode="decimal"
                               value={
-                                r.direction === direction
-                                  ? (amountText[r.id] ??
-                                    displayAmount(r.amount_minor, digits))
-                                  : ""
+                                amountText[`balance:${r.id}`] ??
+                                (r.balance_minor !== null
+                                  ? displayAmount(r.balance_minor, digits)
+                                  : "")
                               }
                               onChange={(e) => {
-                                const value = e.target.value
-                                if (!value && r.direction !== direction) return
-                                setAmountText((previous) => ({
-                                  ...previous,
-                                  [r.id]: value,
+                                const v = e.target.value
+                                setAmountText((x) => ({
+                                  ...x,
+                                  [`balance:${r.id}`]: v,
                                 }))
+                                const parsed = minorAmount(
+                                  v.replace(/^-/, ""),
+                                  digits
+                                )
                                 update(r.id, {
-                                  direction,
-                                  amount_minor: minorAmount(value, digits),
+                                  balance_minor:
+                                    v === ""
+                                      ? null
+                                      : parsed
+                                        ? (v.startsWith("-") ? "-" : "") +
+                                          parsed
+                                        : "invalid",
                                 })
                               }}
                             />
                           </td>
-                        ))}
-                        <td className="p-2 border-b align-top whitespace-nowrap">
-                          <input
-                            aria-label={`Balance ${r.id}`}
-                            className="border rounded p-1 bg-background w-28"
-                            inputMode="decimal"
-                            value={
-                              amountText[`balance:${r.id}`] ??
-                              (r.balance_minor !== null
-                                ? displayAmount(r.balance_minor, digits)
-                                : "")
-                            }
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setAmountText((x) => ({
-                                ...x,
-                                [`balance:${r.id}`]: v,
-                              }))
-                              const parsed = minorAmount(
-                                v.replace(/^-/, ""),
-                                digits
-                              )
-                              update(r.id, {
-                                balance_minor:
-                                  v === ""
-                                    ? null
-                                    : parsed
-                                      ? (v.startsWith("-") ? "-" : "") + parsed
-                                      : "invalid",
-                              })
-                            }}
-                          />
-                        </td>
-                        <td className="p-2 border-b align-top">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              setFocus({
-                                rowId: r.id,
-                                locator:
-                                  original.fields.balance_column !== undefined
-                                    ? balanceLocator(original)
-                                    : (original.source_cells[0]?.locator ?? {
-                                        kind: "page_only",
-                                        page: original.page_number,
-                                      }),
-                              })
-                            }
-                          >
-                            View source
-                          </Button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                          <td className="p-2 border-b align-top">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setFocus({
+                                  rowId: r.id,
+                                  locator:
+                                    original.fields.balance_column !== undefined
+                                      ? balanceLocator(original)
+                                      : (original.source_cells[0]?.locator ?? {
+                                          kind: "page_only",
+                                          page: original.page_number,
+                                        }),
+                                })
+                              }
+                            >
+                              View source
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
               {visible.length === 0 && (
                 <p className="p-4">No rows match these review filters.</p>
               )}
@@ -1242,6 +1275,17 @@ function EditableStatement({
             </strong>
           </span>
         </div>
+        {included.some(
+          (r) => !r.direction || !/^\d+$/.test(r.amount_minor)
+        ) && (
+          <p
+            className="text-sm text-amber-700 dark:text-amber-400"
+            role="status"
+          >
+            Totals are incomplete. Check the flagged rows and enter each amount
+            under Credit or Debit before importing.
+          </p>
+        )}
         <div className="flex flex-wrap gap-5 text-sm">
           {(["opening", "closing"] as const).map((role) => {
             const controls = rows.filter(
@@ -1303,7 +1347,7 @@ function EditableStatement({
                 date: "",
                 description: "",
                 amount_minor: "0",
-                direction: "debit",
+                direction: "",
                 counterparty: "",
                 balance_minor: null,
                 reason: "",
@@ -1410,7 +1454,6 @@ function EditableStatement({
               onClick={() => {
                 const original = originals.get(selectionBalance.sourceId)
                 if (original) {
-                  setShowExcluded(true)
                   setFocus({
                     rowId: original.id,
                     locator: balanceLocator(original),

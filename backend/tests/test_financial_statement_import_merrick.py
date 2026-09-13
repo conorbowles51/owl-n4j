@@ -51,6 +51,69 @@ def summary_statement():
 
 
 class MerrickStatementTests(unittest.TestCase):
+    def test_detached_payment_minus_uses_the_same_line_without_changing_source_cells(self):
+        data = statement()
+        cells = source([['04/22', '7412061 3P00XTMJGS',
+                         'MOBILE PAYMENT-THANK YOU EXAMPLE CITY', '114.00', '-']])['rows'][0]['cells']
+        data['rows'][6]['cells'] = cells
+        cells[-2]['locator'] = rectangle(420, x=480, width=20, height=5)
+        cells[-1]['locator'] = rectangle(423, x=506, width=2, height=1)
+        before = deepcopy(data)
+        row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+        self.assertEqual(row['fields']['amount_minor'], '11400')
+        self.assertEqual(row['fields']['direction'], 'credit')
+        self.assertEqual(row['fields']['amount_column'], '3')
+        self.assertEqual(row['fields']['bank_reference'], '7412061 3P00XTMJGS')
+        self.assertEqual(row['fields']['description'], 'MOBILE PAYMENT-THANK YOU EXAMPLE CITY')
+        self.assertEqual(row['issues'], [])
+        self.assertEqual(data, before)
+        for box in (rectangle(450, x=506, width=2, height=1),
+                    rectangle(423, x=550, width=2, height=1), {'kind': 'page_only', 'page': 1}):
+            cells[-1]['locator'] = box
+            row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+            self.assertNotIn('amount_minor', row['fields'])
+            self.assertNotIn('direction', row['fields'])
+            self.assertTrue(row['issues'])
+
+    def test_amounts_require_printed_cents_and_a_single_sign(self):
+        for text, expected in (('114.00-', ('11400', 'credit')),
+                               ('- $114.00', ('11400', 'credit')),
+                               ('$ -114.00', ('11400', 'credit')),
+                               ('+14.00', ('1400', 'debit')),
+                               ('1,234.56', ('123456', 'debit')),
+                               ('275', None), ('2.7', None), ('-14.00-', None),
+                               ('14.O0', None), ('+ -14.00', None)):
+            with self.subTest(text=text):
+                data = statement()
+                data['rows'][6]['cells'][-1]['expected_text'] = text
+                row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+                if expected:
+                    self.assertEqual((row['fields']['amount_minor'], row['fields']['direction']), expected)
+                    self.assertEqual(row['issues'], [])
+                else:
+                    self.assertNotIn('amount_minor', row['fields'])
+                    self.assertTrue(row['issues'])
+        data = statement()
+        data['rows'][6]['cells'][-1]['expected_text'] = 'USD 14.00'
+        row = propose_merrick_table(data, 'EUR', merrick_statement(data))['rows'][6]
+        self.assertNotIn('amount_minor', row['fields'])
+        self.assertTrue(row['issues'])
+
+    def test_payment_without_readable_credit_marker_never_becomes_a_charge(self):
+        data = statement()
+        data['rows'][6]['cells'][2]['expected_text'] = 'MOBILE PAYMENT-THANK YOU EXAMPLE CITY'
+        row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+        self.assertEqual(row['fields']['amount_minor'], '1400')
+        self.assertNotIn('direction', row['fields'])
+        self.assertIn('no minus sign', row['issues'][0])
+
+    def test_uppercase_description_words_are_not_removed_as_a_bank_reference(self):
+        data = statement()
+        data['rows'][6]['cells'][1]['expected_text'] = 'EXAMPLE STORE GROUP'
+        row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+        self.assertNotIn('bank_reference', row['fields'])
+        self.assertEqual(row['fields']['description'], 'EXAMPLE STORE GROUP EXAMPLE SHOP')
+
     def test_summary_balances_use_activity_box_and_preserve_original_cells(self):
         data = summary_statement()
         before = deepcopy(data)
