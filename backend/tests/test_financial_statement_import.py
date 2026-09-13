@@ -133,6 +133,13 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertEqual(controls['controls'][1]['original_text'], '$114.00')
         self.assertEqual(controls['controls'][1]['locator'], data['rows'][5]['cells'][1]['locator'])
 
+    def test_changed_reader_version_requires_a_fresh_review_even_when_source_is_unchanged(self):
+        from services.financial.pdf_candidates import PdfMappingError
+        with patch('services.financial.statement_import.VERSION', 'statement-review-v2'):
+            old_request = self.request()
+        with self.assertRaisesRegex(PdfMappingError, 'prepared statement changed'):
+            self.confirm(old_request)
+
 
     def test_corrected_card_balance_preserves_printed_value_and_reason(self):
         from postgres.models.financial import FinancialStatementPeriod

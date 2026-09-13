@@ -94,12 +94,12 @@ def merrick_summary_balances(source, currency):
 
     Both boxes repeat New Balance. The coupon above and payment illustrations
     to the right must not provide the activity summary's control amounts.
-    OCR can read a box border as |; removing that border does not repair text.
+    OCR can read a box border as | or [; ignoring it does not repair text.
     """
     measured = [(row['row_index'], cell, _rectangle(cell, source['page_number']))
                 for row in source['rows'] for cell in row['cells']]
     headings = {name: [(cell, box) for _, cell, box in measured
-                       if cell['expected_text'].strip(' |') == name]
+                       if cell['expected_text'].strip(' |[]') == name]
                 for name in ('Summary of Account Activity', 'Payment Information')}
     warning = ['Check the previous and new balances in Summary of Account Activity. Their positions or values could not be read clearly.']
     if not headings['Summary of Account Activity']:
@@ -147,4 +147,10 @@ def merrick_summary_balances(source, currency):
         if len(candidates) == 1:
             index, label, _, value, _ = candidates[0]
             controls[index] = balance_control(role, label, value, currency)
+            # This statement layout prints a dollar marker on summary values.
+            # OCR can turn $1,234.56 into the valid-looking number 31,234.56.
+            # Never strip a leading digit to "repair" it, or silently accept it.
+            if not re.match(r'^(?:[+-]\s*)?(?:\$|USD\b)', value['expected_text'].strip()):
+                controls[index]['fields'].pop('balance', None)
+                controls[index]['issues'] = [f'Check the {role} amount owed in the PDF. The dollar sign was not read and may have become an extra digit.']
     return controls, [] if len(closings) == 1 else warning

@@ -100,6 +100,19 @@ class MerrickStatementTests(unittest.TestCase):
             self.assertEqual(controls[105]['fields'].get('balance'), amount)
             self.assertEqual(bool(controls[105]['issues']), amount is None)
 
+    def test_ocr_box_border_is_ignored_but_currency_digit_is_never_repaired(self):
+        data = summary_statement()
+        data['rows'][2]['cells'][0]['expected_text'] = '[ Summary of Account Activity'
+        data['rows'][2]['cells'][1]['expected_text'] = '| | Payment Information'
+        data['rows'][3]['cells'][1]['expected_text'] = '31,861.84'
+        before = deepcopy(data)
+        controls, issues = merrick_summary_balances(data, 'USD')
+        self.assertEqual(issues, [])
+        self.assertNotIn('balance', controls[103]['fields'])
+        self.assertIn('dollar sign', controls[103]['issues'][0])
+        self.assertEqual(controls[105]['fields']['balance'], '11400')
+        self.assertEqual(data, before)
+
     def test_split_account_digits_are_read_only_after_the_account_label(self):
         for values, expected in ((['Account Number: 1111', '2222', '3333', '4444'], '1111 2222 3333 4444'),
                                  (['Account Number:', '1111', '2222', '3333', '4444'], '1111 2222 3333 4444'),
