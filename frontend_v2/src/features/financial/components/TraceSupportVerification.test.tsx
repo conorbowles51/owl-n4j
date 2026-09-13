@@ -28,12 +28,15 @@ async function setup(overrides = {}) {
     .spyOn(globalThis, "fetch")
     .mockResolvedValue(new Response(JSON.stringify(report)))
   const view = render(<TraceSupportVerification caseId="case" />)
-  fireEvent.click(screen.getByText("Check a saved tracing audit package"))
+  fireEvent.click(screen.getByText("Check a saved review package"))
   const file = new File([bytes], "support.zip")
   Object.defineProperty(file, "arrayBuffer", { value: async () => bytes })
-  fireEvent.change(screen.getByLabelText("Tracing audit ZIP"), {
-    target: { files: [file] },
-  })
+  fireEvent.change(
+    screen.getByLabelText("Review package or tracing audit ZIP"),
+    {
+      target: { files: [file] },
+    }
+  )
   return { fetch, hash, ...view }
 }
 it("authenticates a case-bound check and clears the result when inputs change", async () => {

@@ -45,6 +45,24 @@ class TraceAssemblyRouterTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(scenario.file.closed and review.file.closed)
             if predictions:self.assertTrue(predictions.file.closed)
 
+    async def test_ledger_without_scenarios_preserves_case_binding_and_records_download(self):
+        case = uuid4(); ledger = self.upload(b'ledger')
+        with patch('services.financial.trace_support_archive.build_trace_support_archive', return_value=b'archive') as build, patch('routers.financial_ledger.record_prepared_export', return_value=dict(export_id='id', entry_sha256='a'*64, sequence=1)) as receipt:
+            response = await self.call(None, case_id=case, ledger=ledger)
+        self.assertEqual(build.call_args.args[0], [])
+        self.assertEqual(build.call_args.kwargs['expected_case_id'], case)
+        self.assertEqual(build.call_args.kwargs['ledger_archive'], b'ledger')
+        self.assertEqual(build.call_args.kwargs['preparation']['selected_input_sha256']['scenarios'], [])
+        self.assertEqual(receipt.call_args.kwargs['content'], response.body)
+        self.assertTrue(ledger.file.closed)
+
+    async def test_empty_package_is_refused_before_assembly(self):
+        with patch('services.financial.trace_support_archive.build_trace_support_archive') as build:
+            with self.assertRaises(HTTPException) as caught:
+                await self.call(None)
+        self.assertEqual(caught.exception.status_code, 422)
+        build.assert_not_called()
+
     async def test_audit_failure_withholds_archive_and_closes_upload(self):
         scenario=self.upload()
         with patch('services.financial.trace_support_archive.build_trace_support_archive',return_value=b'archive'), patch('routers.financial_ledger.record_prepared_export',side_effect=RuntimeError('private database error')):

@@ -3,7 +3,10 @@ import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { candidateUrl } from "../lib/candidate-contract"
 
+import { PackageFilePicker } from "./PackageFilePicker"
+
 type Marking = "unmarked" | "confidential" | "privileged_confidential"
+
 export function TraceSupportAssembly({ caseId }: { caseId: string }) {
   const [scenarios, setScenarios] = useState<File[]>([])
   const [ledger, setLedger] = useState<File | null>(null)
@@ -28,8 +31,8 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
   const assemble = async () => {
     if (request.current) return
     changed()
-    if (!scenarios.length || scenarios.length > 8) {
-      setError("Select between one and eight saved tracing scenarios.")
+    if ((!scenarios.length && !ledger) || scenarios.length > 8) {
+      setError("Select a saved ledger export or up to eight tracing scenarios.")
       return
     }
     if (Boolean(review) !== Boolean(predictions)) {
@@ -143,41 +146,38 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
       </summary>
       <div className="mt-3 space-y-3 text-sm">
         <p>
-          Combine saved tracing scenarios with an optional ledger export and
-          reviewed validation. Each capture keeps its original evidence and
-          scope; the package does not merge ledger rows.
+          Share a saved transaction export, tracing calculations, or both in one
+          ZIP. Start with the ledger ZIP downloaded from Transactions. You can
+          add saved tracing scenarios if you used them in your investigation.
+          Original files and their recorded filters are kept in the package.
         </p>
-        <label className="block">
-          Saved tracing scenarios (JSON)
-          <input
-            className="mt-1 block w-full"
-            type="file"
-            accept=".json,application/json"
-            multiple
-            disabled={busy}
-            onChange={(e) => {
-              setScenarios(Array.from(e.target.files ?? []))
-              changed()
-            }}
-          />
-        </label>
+        <PackageFilePicker
+          label="Saved ledger export (ZIP)"
+          button="Choose ledger ZIP"
+          accept=".zip,application/zip"
+          files={ledger ? [ledger] : []}
+          disabled={busy}
+          onChange={(files) => {
+            setLedger(files[0] ?? null)
+            changed()
+          }}
+        />
+        <PackageFilePicker
+          label="Saved tracing scenarios (JSON)"
+          button="Choose scenarios"
+          accept=".json,application/json"
+          files={scenarios}
+          multiple
+          disabled={busy}
+          onChange={(files) => {
+            setScenarios(files)
+            changed()
+          }}
+        />
         <p>
-          {scenarios.length} of 8 scenarios selected. Save scenarios from the
-          conditional tracing workbench.
+          {scenarios.length} of 8 scenarios selected. Optional when you attach a
+          ledger export. Save scenarios from the conditional tracing workbench.
         </p>
-        <label className="block">
-          Saved ledger export (optional ZIP)
-          <input
-            className="mt-1 block w-full"
-            type="file"
-            accept=".zip,application/zip"
-            disabled={busy}
-            onChange={(e) => {
-              setLedger(e.target.files?.[0] ?? null)
-              changed()
-            }}
-          />
-        </label>
         <details>
           <summary className="cursor-pointer">
             Attach reviewed extraction validation (optional)
@@ -188,32 +188,28 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
               Calculations are checked again; synthetic labels remain identified
               as synthetic.
             </p>
-            <label className="block">
-              Reconciled review record (JSON)
-              <input
-                className="mt-1 block w-full"
-                type="file"
-                accept=".json,application/json"
-                disabled={busy}
-                onChange={(e) => {
-                  setReview(e.target.files?.[0] ?? null)
-                  changed()
-                }}
-              />
-            </label>
-            <label className="block">
-              Extraction predictions (JSON)
-              <input
-                className="mt-1 block w-full"
-                type="file"
-                accept=".json,application/json"
-                disabled={busy}
-                onChange={(e) => {
-                  setPredictions(e.target.files?.[0] ?? null)
-                  changed()
-                }}
-              />
-            </label>
+            <PackageFilePicker
+              label="Reconciled review record (JSON)"
+              button="Choose review record"
+              accept=".json,application/json"
+              files={review ? [review] : []}
+              disabled={busy}
+              onChange={(files) => {
+                setReview(files[0] ?? null)
+                changed()
+              }}
+            />
+            <PackageFilePicker
+              label="Extraction predictions (JSON)"
+              button="Choose extraction results"
+              accept=".json,application/json"
+              files={predictions ? [predictions] : []}
+              disabled={busy}
+              onChange={(files) => {
+                setPredictions(files[0] ?? null)
+                changed()
+              }}
+            />
           </div>
         </details>
         <label className="block">
@@ -243,7 +239,7 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
         <Button
           type="button"
           variant="outline"
-          disabled={busy || !scenarios.length}
+          disabled={busy || (!scenarios.length && !ledger)}
           onClick={assemble}
         >
           {busy ? "Preparing package…" : "Prepare and download review package"}

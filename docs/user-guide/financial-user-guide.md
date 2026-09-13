@@ -164,6 +164,8 @@ Where a printed opening balance and an ending balance are available, the review 
 
 For a recognised Capital One or Merrick card statement, **Previous Balance** in the account summary supplies the **Opening amount owed**, and **New Balance** supplies the **Closing amount owed**. On Merrick statements, these values come from **Summary of Account Activity**. The minimum payment due and credit limit are not balances for this check. Charges increase the amount owed and payments reduce it.
 
+If a Merrick summary amount is missing its dollar sign, check it against the PDF. OCR can misread `$` as `3`, adding a digit to the amount. Loupe leaves that balance unresolved for you to correct rather than removing a digit automatically. Select **Edit opening amount owed** or **Edit closing amount owed**, enter the correct value and explain the correction.
+
 If a Merrick statement's **Statement Date** and **Billing Cycle Closing Date** have been read differently, Loupe flags the dates. Compare both with the original PDF, then correct the transaction dates before confirming. The system does not replace a damaged date with a guessed year. A statement date alone does not establish the dates covered by the statement; leave the period blank when those dates are unknown.
 
 To check or correct a balance before import:
@@ -912,14 +914,14 @@ The report explains the calculated scenario. It does not establish ownership, co
 The assembly controls are available with the ledger export tools.
 
 1. Open **Assemble a review package**.
-2. Under **Saved tracing scenarios (JSON)**, choose between one and eight scenario files you want included.
-3. Optionally select a **Saved ledger export (optional ZIP)** from the same case.
+2. To include transactions, select **Choose ledger ZIP** under **Saved ledger export (ZIP)**. Choose the ZIP you downloaded from this case. This file is enough to prepare a package.
+3. If you used tracing, select **Choose scenarios** under **Saved tracing scenarios (JSON)** and choose up to eight saved scenario files. These are optional when a ledger ZIP is selected. Check the displayed filenames; **Clear selection** removes a selection without deleting the original file.
 4. If you have completed independent extraction validation, attach its reconciled review record and corresponding extraction predictions together. Do not substitute ordinary notes or a software test log.
 5. Choose the review package marking.
 6. Select **Prepare and download review package** and wait for the checked ZIP.
 7. Extract the ZIP and open `review-index.html`.
 8. Check the listed inputs, each capture's scope, method results and any validation or custody information. If you attached a ledger export containing support records, **Saved ledger methods, versions and decision references** opens an unchanged copy of that saved index. Older exports may not contain it.
-9. Read **Recorded statement processing**, where present, for the software versions recorded when those pages were extracted. A missing version remains **Not recorded**; it is not replaced with the version running today.
+9. Read **Saved ledger processing and review** for the import counts and software versions retained with the ledger. **Reported source custody** shows recorded receipts, transfers and corrections. The event time and the time the report was saved are shown separately. If tracing scenarios are included, **Recorded statement processing** describes their saved extraction versions. A missing value remains **Not recorded**; Loupe does not fill historical gaps with current values.
 10. Retain the ZIP and original input files.
 
 The index links the retained files and keeps their scopes separate. Assembly does not merge ledger rows or make different captures contemporaneous. Enclosed files retain their original markings. Synthetic validation remains labelled synthetic. Missing measurements remain missing.
@@ -937,10 +939,10 @@ The index links the retained files and keeps their scopes separate. Assembly doe
 
 A row absent from a later filtered export may still exist unchanged in the case. Different captured filters are not evidence of deletion. Comparing saved exports does not change the current ledger or add those ZIPs as case evidence.
 
-### Check a saved tracing audit package
+### Check a saved review package
 
-1. Open **Check a saved tracing audit package**.
-2. Choose the **Tracing audit ZIP**.
+1. Open **Check a saved review package**.
+2. Select **Choose package ZIP** under **Review package or tracing audit ZIP**. Choose the package produced by the assembler or a tracing audit package from this case.
 3. If you retained its SHA-256 separately when it was prepared, enter it in **Previously saved SHA-256**. Otherwise leave the field blank.
 4. Select **Check package**.
 5. Read the file checks and recalculation result separately.

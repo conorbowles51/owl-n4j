@@ -116,6 +116,7 @@
 </ol>
 <p>Where a printed opening balance and an ending balance are available, the review recalculates the balance using your selected payments. Excluding a payment or changing its amount can show <strong>Selected movements leave a balance difference</strong>. Inspect the compared balance and check missing rows or corrections before confirming. Agreement is an arithmetic check, not proof that every payment was supplied.</p>
 <p>For a recognised Capital One or Merrick card statement, <strong>Previous Balance</strong> in the account summary supplies the <strong>Opening amount owed</strong>, and <strong>New Balance</strong> supplies the <strong>Closing amount owed</strong>. On Merrick statements, these values come from <strong>Summary of Account Activity</strong>. The minimum payment due and credit limit are not balances for this check. Charges increase the amount owed and payments reduce it.</p>
+<p>If a Merrick summary amount is missing its dollar sign, check it against the PDF. OCR can misread <code>$</code> as <code>3</code>, adding a digit to the amount. Loupe leaves that balance unresolved for you to correct rather than removing a digit automatically. Select <strong>Edit opening amount owed</strong> or <strong>Edit closing amount owed</strong>, enter the correct value and explain the correction.</p>
 <p>If a Merrick statement&#x27;s <strong>Statement Date</strong> and <strong>Billing Cycle Closing Date</strong> have been read differently, Loupe flags the dates. Compare both with the original PDF, then correct the transaction dates before confirming. The system does not replace a damaged date with a guessed year. A statement date alone does not establish the dates covered by the statement; leave the period blank when those dates are unknown.</p>
 <p>To check or correct a balance before import:</p>
 <ol>
@@ -717,14 +718,14 @@
 <p>The assembly controls are available with the ledger export tools.</p>
 <ol>
 <li>Open <strong>Assemble a review package</strong>.</li>
-<li>Under <strong>Saved tracing scenarios (JSON)</strong>, choose between one and eight scenario files you want included.</li>
-<li>Optionally select a <strong>Saved ledger export (optional ZIP)</strong> from the same case.</li>
+<li>To include transactions, select <strong>Choose ledger ZIP</strong> under <strong>Saved ledger export (ZIP)</strong>. Choose the ZIP you downloaded from this case. This file is enough to prepare a package.</li>
+<li>If you used tracing, select <strong>Choose scenarios</strong> under <strong>Saved tracing scenarios (JSON)</strong> and choose up to eight saved scenario files. These are optional when a ledger ZIP is selected. Check the displayed filenames; <strong>Clear selection</strong> removes a selection without deleting the original file.</li>
 <li>If you have completed independent extraction validation, attach its reconciled review record and corresponding extraction predictions together. Do not substitute ordinary notes or a software test log.</li>
 <li>Choose the review package marking.</li>
 <li>Select <strong>Prepare and download review package</strong> and wait for the checked ZIP.</li>
 <li>Extract the ZIP and open <code>review-index.html</code>.</li>
 <li>Check the listed inputs, each capture&#x27;s scope, method results and any validation or custody information. If you attached a ledger export containing support records, <strong>Saved ledger methods, versions and decision references</strong> opens an unchanged copy of that saved index. Older exports may not contain it.</li>
-<li>Read <strong>Recorded statement processing</strong>, where present, for the software versions recorded when those pages were extracted. A missing version remains <strong>Not recorded</strong>; it is not replaced with the version running today.</li>
+<li>Read <strong>Saved ledger processing and review</strong> for the import counts and software versions retained with the ledger. <strong>Reported source custody</strong> shows recorded receipts, transfers and corrections. The event time and the time the report was saved are shown separately. If tracing scenarios are included, <strong>Recorded statement processing</strong> describes their saved extraction versions. A missing value remains <strong>Not recorded</strong>; Loupe does not fill historical gaps with current values.</li>
 <li>Retain the ZIP and original input files.</li>
 </ol>
 <p>The index links the retained files and keeps their scopes separate. Assembly does not merge ledger rows or make different captures contemporaneous. Enclosed files retain their original markings. Synthetic validation remains labelled synthetic. Missing measurements remain missing.</p>
@@ -739,10 +740,10 @@
 <li>Select <strong>Download full export comparison</strong> to keep all details, beyond the first references shown on screen.</li>
 </ol>
 <p>A row absent from a later filtered export may still exist unchanged in the case. Different captured filters are not evidence of deletion. Comparing saved exports does not change the current ledger or add those ZIPs as case evidence.</p>
-<h3>Check a saved tracing audit package</h3>
+<h3>Check a saved review package</h3>
 <ol>
-<li>Open <strong>Check a saved tracing audit package</strong>.</li>
-<li>Choose the <strong>Tracing audit ZIP</strong>.</li>
+<li>Open <strong>Check a saved review package</strong>.</li>
+<li>Select <strong>Choose package ZIP</strong> under <strong>Review package or tracing audit ZIP</strong>. Choose the package produced by the assembler or a tracing audit package from this case.</li>
 <li>If you retained its SHA-256 separately when it was prepared, enter it in <strong>Previously saved SHA-256</strong>. Otherwise leave the field blank.</li>
 <li>Select <strong>Check package</strong>.</li>
 <li>Read the file checks and recalculation result separately.</li>

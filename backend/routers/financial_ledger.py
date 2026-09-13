@@ -297,7 +297,7 @@ def download_trace_support(body: TraceSupportDownload, case_id: UUID = Query(...
 
 
 @router.post('/trace-support-assembly')
-async def assemble_saved_trace_support(case_id: UUID = Query(...), scenarios: list[UploadFile] = File(...),
+async def assemble_saved_trace_support(case_id: UUID = Query(...), scenarios: Optional[list[UploadFile]] = File(None),
         ledger: Optional[UploadFile] = File(None), review: Optional[UploadFile] = File(None),
         predictions: Optional[UploadFile] = File(None),
         privilege_marking: Literal['unmarked','confidential','privileged_confidential'] = Query('unmarked'),
@@ -308,10 +308,13 @@ async def assemble_saved_trace_support(case_id: UUID = Query(...), scenarios: li
     from starlette.concurrency import run_in_threadpool
     from services.financial.trace_support_archive import build_trace_support_archive
     from services.financial.reference_reviews import parse_review_json
+    scenarios = scenarios or []
     uploads = [*scenarios, *[value for value in (ledger, review, predictions) if value is not None]]
     try:
-        if not 1 <= len(scenarios) <= 8 or (review is None) != (predictions is None):
-            raise ValueError('Select one to eight scenarios and supply both review and predictions when attaching validation.')
+        if len(scenarios) > 8 or (not scenarios and ledger is None):
+            raise ValueError('Select a saved ledger export or one to eight tracing scenarios.')
+        if (review is None) != (predictions is None):
+            raise ValueError('Attach both the review record and predictions when including extraction measurements.')
         async def read(upload, limit):
             if upload is None:
                 return None

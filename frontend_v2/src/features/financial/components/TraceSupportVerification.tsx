@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { candidateUrl } from "../lib/candidate-contract"
+import { PackageFilePicker } from "./PackageFilePicker"
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/)
 const verification = z.object({
@@ -88,7 +89,7 @@ export function TraceSupportVerification({ caseId }: { caseId: string }) {
       )
       if (!response.ok)
         throw Error(
-          "The package could not be verified. Check that it is a tracing audit ZIP for this case."
+          "The package could not be verified. Choose a review package or tracing audit ZIP from this case."
         )
       const text = await response.text()
       if (text.length > 1024 * 1024)
@@ -134,26 +135,24 @@ export function TraceSupportVerification({ caseId }: { caseId: string }) {
   return (
     <details className="rounded border p-3">
       <summary className="cursor-pointer text-sm font-medium">
-        Check a saved tracing audit package
+        Check a saved review package
       </summary>
       <div className="mt-3 space-y-3 text-sm">
         <p>
           Check the saved files and rerun their recorded calculations. This does
           not change the case.
         </p>
-        <label className="block">
-          Tracing audit ZIP
-          <input
-            className="mt-1 block w-full"
-            type="file"
-            accept=".zip,application/zip"
-            disabled={busy}
-            onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null)
-              clear()
-            }}
-          />
-        </label>
+        <PackageFilePicker
+          label="Review package or tracing audit ZIP"
+          button="Choose package ZIP"
+          accept=".zip,application/zip"
+          files={file ? [file] : []}
+          disabled={busy}
+          onChange={(files) => {
+            setFile(files[0] ?? null)
+            clear()
+          }}
+        />
         <label className="block">
           Previously saved SHA-256 (optional)
           <input

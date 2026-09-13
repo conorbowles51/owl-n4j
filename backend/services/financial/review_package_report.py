@@ -5,7 +5,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.money import Money
 
 
-def render_review_package_report(*, case_id, scenarios, supports, preparation=None, ledger=None, measurement=None, ledger_support_attached=False):
+def render_review_package_report(*, case_id, scenarios, supports, preparation=None, ledger=None, measurement=None, ledger_support_attached=False, ledger_support=None):
     def text(value): return escape('Not recorded' if value is None else str(value), quote=True)
     def table(headers, rows):
         return '<table><thead><tr>'+''.join('<th>'+text(v)+'</th>' for v in headers)+'</tr></thead><tbody>'+''.join(
@@ -46,14 +46,91 @@ def render_review_package_report(*, case_id, scenarios, supports, preparation=No
         custody=(history or {}).get('custody_reports')
         audit=(history or {}).get('audit_chain')
         imports=(ledger.get('processing_provenance') or {}).get('statement_import_history')
+        working = ledger.get('working_totals') if ledger_support is not None else None
+        reading_counts = ([['Transactions in investigation totals', working.get('included_rows')],
+            ['Transactions outside investigation totals', working.get('excluded_rows')],
+            ['Transactions in separately verified totals', ledger['ledger'].get('included_rows')]] if working is not None else [
+            ['Included ledger readings', ledger['ledger'].get('included_rows')],
+            ['Excluded ledger readings', ledger['ledger'].get('excluded_rows')]])
         parts += ['<h2>Attached ledger and case history</h2>',table(['Captured item','Count or scope'],[
-            ['Included ledger readings',ledger['ledger'].get('included_rows')],['Excluded ledger readings',ledger['ledger'].get('excluded_rows')],
+            *reading_counts,
             ['Wider case history','Attached' if history is not None else 'Not selected'],
             ['Statement import confirmations',len(imports) if imports is not None else 'Not captured'],
             ['Case custody reports',len(custody['events']) if custody is not None else 'Not captured'],
             ['Case financial decisions',len(history['decisions']) if history is not None and 'decisions' in history else 'Not captured'],
             ['Recorded audit events',audit['verification']['event_count'] if audit else 'Not captured']]),
             '<p>These counts describe the attached capture. They are not a completeness finding or the current live case state.</p>']
+        if working is not None:
+            parts += ['<h3>Saved investigation totals</h3>',
+                '<p>These totals include imported transactions awaiting further verification. The separately verified totals use the narrower review category recorded at export. Currency totals are kept separate.</p>',
+                table(['Currency', 'Transactions', 'Credits', 'Debits', 'Credits minus debits'], [
+                    [group['currency'], group['rows'], Money(int(group['credits_minor']), group['currency']).format(),
+                     Money(int(group['debits_minor']), group['currency']).format(), Money(int(group['net_minor']), group['currency']).format()]
+                    for group in working.get('currencies', [])])]
+            if working.get('has_credit_card_readings'):
+                parts += ['<p>For credit-card transactions, debits increase the amount owed and credits reduce it. Credits minus debits is the change from these transactions, not a statement balance.</p>']
+    if ledger_support is not None:
+        versions = ledger_support.get('versions') or {}
+        decisions = ledger_support.get('human_decisions') or {}
+        sources = ledger_support.get('source_records') or {}
+        processing = sources.get('processing_records') or {}
+        filenames = {item['id']: item.get('original_filename') for item in processing.get('evidence_registrations', [])}
+        source_names = {item['id']: filenames.get(item.get('evidence_file_id'))
+                        for item in sources.get('sources', [])}
+        def source_name(identifier):
+            return source_names.get(identifier) or identifier
+        parts += ['<h2>Saved ledger processing and review</h2>',
+            '<p>These records come from the attached ledger export. They describe its saved readings, not a new extraction or the current case. '
+            'The <a href="ledger/captured-expert-support.json">complete saved support record</a> is retained unchanged.</p>',
+            table(['Saved item', 'Recorded value'], [
+                ['Export code version', versions.get('export_code_version')],
+                ['Statement import confirmations', decisions.get('statement_import_confirmations')],
+                ['Financial decisions', decisions.get('recorded_decisions')],
+                ['PDF reviews', decisions.get('pdf_reviews')]])]
+        parsers = versions.get('source_parsers')
+        if parsers:
+            parts += [table(['Statement file', 'Statement reader', 'Reader version'], [
+                [source_name(row.get('source_document_id')), row.get('parser_name'), row.get('parser_version')] for row in parsers])]
+        records = versions.get('statement_pdf_processing_records')
+        if records:
+            rows = []
+            for record in records:
+                content = (record.get('manifest') or {}).get('content') or {}
+                ocr = content.get('tesseract') or {}
+                rows.append([source_name(record.get('source_document_id')), record.get('page_number'),
+                    content.get('recorded_at'), content.get('python_version'),
+                    (content.get('packages') or {}).get('PyMuPDF'),
+                    'Not used' if ocr.get('status') == 'not_used' else ocr.get('version')])
+            parts += [table(['Statement file', 'Page', 'Processed at', 'Python', 'PDF reader', 'OCR engine'], rows)]
+        else:
+            parts += ['<p>No statement PDF processing records were saved in this support file.</p>']
+        case_custody = sources.get('case_custody_reports')
+        source_custody = sources.get('source_custody_reports')
+        if case_custody is not None:
+            events = case_custody.get('events', [])
+            scope = 'All custody reports included in the saved case-history capture.'
+        elif source_custody is not None:
+            events = [event for source in source_custody for event in source.get('events', [])]
+            scope = 'Custody reports for the sources selected in the saved ledger export.'
+        else:
+            events = None
+            scope = 'Custody reports were not captured in this saved support file.'
+        parts += ['<h3>Reported source custody</h3><p>'+text(scope)+'</p>']
+        if events:
+            for event in events:
+                report = event.get('report') or {}
+                actor = event.get('actor') or {}
+                parts += [table(['Recorded item', 'Value'], [
+                    ['Source file', filenames.get(event.get('evidence_file_id')) or event.get('evidence_file_id')], ['Report ID', event.get('id')],
+                    ['Event', report.get('event_kind')], ['Reported event time', report.get('occurred_at')],
+                    ['Recorded by', actor.get('name')], ['Recorded at', event.get('recorded_at')],
+                    ['Provided by', report.get('from_person_or_organisation')], ['Received by', report.get('received_by')],
+                    ['Acquisition method', report.get('acquisition_method')], ['Native file', report.get('native_file_status')],
+                    ['Certification file', report.get('certification_file_id')], ['Corrects report', report.get('corrects_event_id')],
+                    ['Explanation', report.get('reason')]])]
+        elif events is not None:
+            parts += ['<p>No custody reports were recorded in this captured scope.</p>']
+        parts += ['<p>Reported event times and recording times are separate. Corrections retain the earlier report. Missing history remains unknown.</p>']
     parts += ['<h2>Extraction measurements</h2>']
     if measurement is None:
         parts += ['<p>No extraction measurements were attached. Software test counts are not extraction accuracy.</p>']

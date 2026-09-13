@@ -20,7 +20,7 @@ for name,value in [('review',record),('predictions',predictions)]:
   await page.goto(`http://127.0.0.1:55174/cases/${caseId}/financial`);await page.getByRole('tab',{name:'Transactions',exact:true}).click();
   await page.getByText('Assemble a review package',{exact:true}).click();
   await page.getByLabel('Saved tracing scenarios (JSON)',{exact:true}).setInputFiles(path.join(root,'data/local-runtime/resale-asset-trace-scenario.json'));
-  await page.getByLabel('Saved ledger export (optional ZIP)',{exact:true}).setInputFiles('/tmp/loupe-assembly-synthetic-ledger.zip');
+  await page.getByLabel('Saved ledger export (ZIP)',{exact:true}).setInputFiles('/tmp/loupe-assembly-synthetic-ledger.zip');
   await page.getByText('Attach reviewed extraction validation (optional)',{exact:true}).click();
   await page.getByLabel('Reconciled review record (JSON)',{exact:true}).setInputFiles('/tmp/loupe-assembly-synthetic-review.json');
   await page.getByLabel('Extraction predictions (JSON)',{exact:true}).setInputFiles('/tmp/loupe-assembly-synthetic-predictions.json');

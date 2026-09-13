@@ -25,7 +25,7 @@ def read_bounded(path, limit=MAX_EXPORT_BYTES):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('scenario', type=Path, nargs='+')
+    parser.add_argument('scenario', type=Path, nargs='*')
     parser.add_argument('--validation-corpus', type=Path)
     parser.add_argument('--ledger-export', type=Path)
     parser.add_argument('--reference-review', type=Path)
@@ -34,6 +34,8 @@ def main():
     args = parser.parse_args()
     if len(args.scenario) > 8:
         parser.error('Select at most eight scenarios.')
+    if not args.scenario and not args.ledger_export:
+        parser.error('Select a saved ledger export or at least one tracing scenario.')
     corpus = parse_review_json(read_bounded(args.validation_corpus)) if args.validation_corpus else None
     content = build_trace_support_archive([read_bounded(path) for path in args.scenario], validation_corpus=corpus,
         ledger_archive=read_bounded(args.ledger_export, MAX_ARCHIVE_BYTES) if args.ledger_export else None,

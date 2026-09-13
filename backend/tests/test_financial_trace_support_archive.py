@@ -131,6 +131,94 @@ class TraceSupportArchiveTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_trace_support_archive([self.f.content], ledger_archive=fixture.archive(document, manifest_changes={'document_sha256':'b'*64}))
 
+    def test_ledger_only_package_retains_original_support_and_rebuilds(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        fixture = ledger_fixture.ExportComparisonTests()
+        original, support = fixture.support_archive()
+        content = build_trace_support_archive([], ledger_archive=original, expected_case_id='case')
+        self.assertEqual(verify_trace_support_archive(content, expected_case_id='case')['status'],
+                         'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['case_id'], 'case')
+            self.assertEqual(manifest['scenarios'], [])
+            self.assertEqual(archive.read('ledger/original-export.zip'), original)
+            self.assertEqual(archive.read('ledger/captured-expert-support.json'), support)
+            self.assertNotIn('scenarios/01/scenario.json', archive.namelist())
+            self.assertIn(b'Original ledger export', archive.read('review-index.html'))
+        with self.assertRaisesRegex(LedgerSummaryError, 'different case'):
+            build_trace_support_archive([], ledger_archive=original, expected_case_id='another-case')
+
+    def test_ledger_only_package_accepts_old_exports_without_inventing_support(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        original = ledger_fixture.ExportComparisonTests().archive()
+        content = build_trace_support_archive([], ledger_archive=original)
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            self.assertNotIn('ledger/captured-expert-support.json', archive.namelist())
+            self.assertIn(b'Not captured', archive.read('review-index.html'))
+
+    def test_ledger_only_package_retains_supplied_measurements_without_claiming_case_accuracy(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        record, predictions = self.review_inputs()
+        content = build_trace_support_archive([], ledger_archive=ledger_fixture.ExportComparisonTests().archive(),
+            reference_review=record, validation_predictions=predictions)
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['validation']['label_status'], 'synthetic_test')
+            self.assertEqual(json.loads(archive.read('validation/reference-review.json')), record)
+
+    def test_saved_ledger_summary_shows_recorded_versions_and_custody_without_rewriting(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        fixture = ledger_fixture.ExportComparisonTests()
+        event = dict(id='custody-1', evidence_file_id='source-file', recorded_at='2026-09-13T12:00:00+00:00',
+            actor={'name': 'Example investigator'}, report=dict(event_kind='receipt',
+            occurred_at='2026-09-12T10:00:00+00:00', received_by='Example team',
+            reason='<script>not markup</script>', acquisition_method='production'))
+        original, support = fixture.support_archive(support_changes=dict(
+            versions=dict(export_code_version='saved-revision', source_parsers=[dict(source_document_id='source', parser_name='statement-review', parser_version='saved-reader')]),
+            human_decisions=dict(statement_import_confirmations=1),
+            source_records=dict(case_custody_reports={'events': [event]}, source_custody_reports=[{'events': [event]}],
+                sources=[dict(id='source', evidence_file_id='source-file')],
+                processing_records=dict(evidence_registrations=[dict(id='source-file', original_filename='example-statement.pdf')]))))
+        content = build_trace_support_archive([], ledger_archive=original)
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            report = archive.read('review-index.html').decode()
+            self.assertIn('saved-reader', report)
+            self.assertIn('saved-revision', report)
+            self.assertIn('example-statement.pdf', report)
+            self.assertIn('2026-09-12T10:00:00+00:00', report)
+            self.assertIn('2026-09-13T12:00:00+00:00', report)
+            self.assertIn('&lt;script&gt;not markup&lt;/script&gt;', report)
+            self.assertNotIn('<script>', report)
+            self.assertEqual(report.count('custody-1'), 1)
+            self.assertEqual(archive.read('ledger/captured-expert-support.json'), support)
+
+    def test_older_package_without_readable_ledger_support_keeps_its_rebuild_contract(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        original, _ = ledger_fixture.ExportComparisonTests().support_archive()
+        content = build_trace_support_archive([], ledger_archive=original, include_ledger_support_summary=False)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            self.assertNotIn('ledger_support_summary', json.loads(archive.read('manifest.json')))
+            self.assertNotIn(b'Saved ledger processing and review', archive.read('review-index.html'))
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+
+    def test_readable_investigation_totals_do_not_hide_imports_outside_verified_totals(self):
+        from services.financial.review_package_report import render_review_package_report
+        ledger = dict(ledger=dict(included_rows=0, excluded_rows=2),
+            working_totals=dict(included_rows=2, excluded_rows=0, has_credit_card_readings=True,
+                currencies=[dict(currency='USD', rows=2, credits_minor='0',
+                                 debits_minor='9007199254740993', net_minor='-9007199254740993')]))
+        report = render_review_package_report(case_id='case', scenarios=[], supports=[],
+            ledger=ledger, ledger_support={}).decode()
+        self.assertIn('Transactions in investigation totals</td><td data-label="Count or scope">2', report)
+        self.assertIn('Transactions in separately verified totals</td><td data-label="Count or scope">0', report)
+        self.assertIn('90,071,992,547,409.93 USD', report)
+        self.assertIn('debits increase the amount owed', report)
+        self.assertNotIn('Included ledger readings', report)
+
     def test_saved_ledger_chain_recomputed_before_attachment(self):
         from tests import test_financial_export_comparison as ledger_fixture
         from services.financial.audit_chain import verify_financial_audit_chain
