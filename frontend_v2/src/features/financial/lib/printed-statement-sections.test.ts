@@ -126,3 +126,97 @@ it("shows an amount wider than its left-aligned header without pulling in the ad
   expect(result.sections[0].rows[0].cells[2]).toBe(payment)
   expect(result.remaining.flatMap((r) => r.source_cells)).toEqual([unrelated])
 })
+
+it("preserves Merrick's blank reference header, split description and separate payment minus", () => {
+  const reference = cell(1, "7412061 3P00XTMJGS", 180000, 245000)
+  const description = cell(2, "MOBILE PAYMENT-THANK YOU", 270000, 380000)
+  const place = cell(3, "EXAMPLE CITY", 390000, 445000)
+  const amount = cell(4, "114.00", 480000, 500000)
+  const minus = cell(5, "-", 506000, 508000)
+  const values = [
+    cell(0, "O4/22", 90000, 110000),
+    reference,
+    description,
+    place,
+    amount,
+    minus,
+  ]
+  const result = printedStatementSections([
+    row("head", 0, [
+      cell(0, "Trans Date", 90000, 120000),
+      cell(1, "Item Description", 270000, 340000),
+      cell(2, "Amount", 480000, 502000),
+    ]),
+    row("payment", 1, values, "unresolved"),
+  ])
+  expect(
+    result.sections[0].columns.map((c) => c.header?.expected_text ?? "")
+  ).toEqual(["Trans Date", "", "Item Description", "Amount"])
+  expect(result.sections[0].rows[0].parts).toEqual([
+    [values[0]],
+    [reference],
+    [description, place],
+    [amount, minus],
+  ])
+  expect(result.remaining).toEqual([])
+  expect(result.sections[0].rows[0].parts?.flat()).toEqual(values)
+})
+
+it("never joins two money values or cells on different lines into one displayed value", () => {
+  const first = cell(2, "$14.00", 480000, 500000)
+  const second = cell(3, "$15.00", 501000, 520000)
+  const lower = cell(4, "LOWER LINE", 350000, 420000)
+  lower.locator.rect = [350000, 20000, 420000, 28000]
+  const result = printedStatementSections([
+    row("head", 0, [
+      cell(0, "Date", 90000, 120000),
+      cell(1, "Description", 270000, 340000),
+      cell(2, "Amount", 480000, 520000),
+    ]),
+    row(
+      "payment",
+      1,
+      [
+        cell(0, "Apr 22", 90000, 115000),
+        cell(1, "SHOP", 270000, 300000),
+        first,
+        second,
+        lower,
+      ],
+      "transaction"
+    ),
+  ])
+  expect(result.sections[0].rows[0].parts?.[2]).toEqual([first])
+  expect(result.remaining[0].source_cells).toEqual([second, lower])
+})
+
+it("keeps a damaged numeric date under Date and year-to-date notices outside the transaction grid", () => {
+  const values = [
+    cell(0, "0422", 90000, 115000),
+    cell(1, "SHOP", 270000, 300000),
+    cell(2, "14.00", 480000, 500000),
+  ]
+  const annual = row("annual", 2, [
+    cell(0, "2021 Totals Year-to-Date", 90000, 220000),
+  ])
+  const footer = row("footer", 3, [
+    cell(0, "Contact the bank for assistance.", 90000, 240000),
+  ])
+  const result = printedStatementSections([
+    row("head", 0, [
+      cell(0, "Trans Date", 90000, 120000),
+      cell(1, "Item Description", 270000, 340000),
+      cell(2, "Amount", 480000, 502000),
+    ]),
+    row("payment", 1, values, "unresolved"),
+    annual,
+    footer,
+  ])
+  expect(result.sections).toHaveLength(1)
+  expect(result.sections[0].rows).toHaveLength(1)
+  expect(result.sections[0].rows[0].parts).toEqual(values.map((c) => [c]))
+  expect(result.remaining.flatMap((r) => r.source_cells)).toEqual([
+    ...annual.source_cells,
+    ...footer.source_cells,
+  ])
+})

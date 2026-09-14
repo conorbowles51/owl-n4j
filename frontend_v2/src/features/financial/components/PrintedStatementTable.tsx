@@ -1,3 +1,4 @@
+import { Fragment } from "react"
 import {
   printedStatementSections,
   type PrintedCell,
@@ -46,23 +47,33 @@ export function PrintedStatementTable({
               {section.headers.length > 0 && (
                 <thead className="bg-muted/40">
                   <tr>
-                    {section.headers.map((header) => (
+                    {section.columns.map(({ header }, index) => (
                       <th
-                        key={header.column_index}
+                        key={index}
                         className="border p-2 text-left"
+                        aria-label={
+                          header ? undefined : "Unlabelled printed column"
+                        }
                       >
-                        {cell(section.key, header)}
+                        {header && cell(section.key, header)}
                       </th>
                     ))}
                   </tr>
                 </thead>
               )}
               <tbody>
-                {section.rows.map(({ row, cells }) => (
+                {section.rows.map(({ row, cells, parts }) => (
                   <tr key={row.id}>
                     {cells.map((value, index) => (
                       <td key={index} className="border p-2 align-top">
-                        {cell(row.id, value)}
+                        {(parts?.[index] ?? (value ? [value] : [])).map(
+                          (part, partIndex) => (
+                            <Fragment key={part.column_index}>
+                              {partIndex > 0 ? " " : null}
+                              {cell(row.id, part)}
+                            </Fragment>
+                          )
+                        )}
                       </td>
                     ))}
                   </tr>

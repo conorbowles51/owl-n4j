@@ -50,7 +50,81 @@ def summary_statement():
     return data
 
 
+def measured_statement():
+    data = statement()
+    for row in data['rows']:
+        y = 20 + row['row_index'] * 20 if row['row_index'] < 5 else 210 + (row['row_index'] - 8) * 20
+        for cell in row['cells']:
+            cell['locator'] = rectangle(y, x=20 + cell['column_index'] * 140, width=130, height=8)
+    data['rows'][5]['cells'][0]['expected_text'] = 'Trans Date'
+    for cell, (x, width) in zip(data['rows'][5]['cells'], ((30, 45), (270, 80), (490, 35))):
+        cell['locator'] = rectangle(120, x=x, width=width)
+    for row in data['rows'][6:8]:
+        for cell, (x, width) in zip(row['cells'], ((30, 35), (150, 90), (270, 150), (490, 35))):
+            cell['locator'] = rectangle(150 + 30 * (row['row_index'] - 6), x=x, width=width)
+    return data
+
+
 class MerrickStatementTests(unittest.TestCase):
+    def test_damaged_date_keeps_measured_description_reference_and_amount_without_guessing(self):
+        data = measured_statement()
+        data['rows'][6]['cells'][0]['expected_text'] = 'O4/22'
+        before = deepcopy(data)
+        row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+        self.assertEqual(row['kind'], 'unresolved')
+        self.assertFalse(row['excluded'])
+        self.assertEqual(row['fields']['description'], 'EXAMPLE SHOP')
+        self.assertEqual(row['fields']['bank_reference'], '24137463GEJBPDNXO')
+        self.assertEqual(row['fields']['amount_minor'], '1400')
+        self.assertEqual(row['fields']['direction'], 'debit')
+        self.assertNotIn('date', row['fields'])
+        self.assertEqual(len(row['issues']), 1)
+        self.assertIn('other recognised fields have been kept', row['issues'][0])
+        self.assertEqual(data, before)
+
+    def test_damaged_date_and_amount_stay_separate_review_problems(self):
+        data = measured_statement()
+        data['rows'][6]['cells'][0]['expected_text'] = 'O4/22'
+        data['rows'][6]['cells'][-1]['expected_text'] = '14O0'
+        row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+        self.assertEqual(row['fields']['description'], 'EXAMPLE SHOP')
+        self.assertNotIn('amount_minor', row['fields'])
+        self.assertNotIn('direction', row['fields'])
+        self.assertNotIn('date', row['fields'])
+        self.assertEqual(len(row['issues']), 2)
+
+    def test_unclear_header_or_row_positions_never_fill_other_fields_for_a_damaged_date(self):
+        for damage in ('missing-header', 'duplicate-header', 'wrong-page', 'other-column', 'other-line', 'missing-rectangle'):
+            data = measured_statement()
+            cells = data['rows'][6]['cells']
+            cells[0]['expected_text'] = 'O4/22'
+            if damage == 'missing-header':
+                data['rows'][5]['cells'][0]['expected_text'] = 'TransDfla'
+            elif damage == 'duplicate-header':
+                data['rows'][5]['cells'].append(deepcopy(data['rows'][5]['cells'][-1]))
+            elif damage == 'wrong-page':
+                cells[0]['locator']['page'] = 2
+            elif damage == 'other-column':
+                cells[-1]['locator'] = rectangle(150, x=410, width=35)
+            elif damage == 'other-line':
+                cells[-1]['locator'] = rectangle(195, x=490, width=35)
+            else:
+                cells[-1]['locator'] = {'kind': 'page_only', 'page': 1}
+            with self.subTest(damage=damage):
+                row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+                self.assertEqual(row['fields'], {})
+                self.assertEqual(row['kind'], 'unresolved')
+                self.assertTrue(row['issues'])
+
+    def test_damaged_date_on_a_zero_value_is_not_silently_dropped(self):
+        data = measured_statement()
+        data['rows'][6]['cells'][0]['expected_text'] = 'O4/22'
+        data['rows'][6]['cells'][-1]['expected_text'] = '0.00'
+        row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+        self.assertFalse(row['excluded'])
+        self.assertEqual(row['fields']['amount_minor'], '0')
+        self.assertTrue(row['issues'])
+
     def test_detached_payment_minus_uses_the_same_line_without_changing_source_cells(self):
         data = statement()
         cells = source([['04/22', '7412061 3P00XTMJGS',

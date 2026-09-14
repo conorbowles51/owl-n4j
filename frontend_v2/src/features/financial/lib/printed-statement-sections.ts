@@ -18,7 +18,12 @@ export type PrintedSection = {
   title: PrintedCell | null
   titleRowId: string
   headers: PrintedCell[]
-  rows: { row: PrintedRow; cells: (PrintedCell | undefined)[] }[]
+  columns: { header: PrintedCell | null; box: number[] | null }[]
+  rows: {
+    row: PrintedRow
+    cells: (PrintedCell | undefined)[]
+    parts?: PrintedCell[][]
+  }[]
 }
 function rect(cell: PrintedCell) {
   const value = (cell.locator as { rect?: unknown })?.rect
@@ -52,9 +57,104 @@ const amounts = new Set([
   "running balance",
 ])
 const heading =
-  /^(?:interest charged|totals year-to-date|interest charge calculation)$/i
+  /^(?:interest charged|(?:20\d{2} )?totals year-to-date|interest charge calculation)$/i
 const numericText = (text: string) =>
-  /^[+\-\s(]*[€£$]?\s*\d[\d,.]*\)?$/.test(text.trim())
+  /^[+\-\s(]*[€£$]?\s*\d[\d,.]*\)?\s*-?$/.test(text.trim())
+const signText = (text: string) => /^[+-]$/.test(text.trim())
+const sameLine = (a: number[], b: number[]) =>
+  Math.min(a[3], b[3]) > Math.max(a[1], b[1])
+
+function printedColumns(headers: PrintedCell[], following: PrintedRow[]) {
+  const columns: PrintedSection["columns"] = headers.map((header) => ({
+    header,
+    box: rect(header),
+  }))
+  // This printed layout has an unlabelled reference column between the date
+  // and Item Description. Keep its heading blank, rather than inventing one
+  // or placing the reference under Date. Require measured reference positions.
+  if (
+    headers.map(label).join("|") !== "trans date|item description|amount" ||
+    columns.some((c) => !c.box)
+  )
+    return columns
+  const [date, description, amount] = columns.map((c) => c.box!)
+  const references: number[][] = []
+  for (const row of following) {
+    if (
+      row.source_cells.some(
+        (c) =>
+          dates.has(label(c)) ||
+          /^(?:fees|interest charged|\d{4} totals year-to-date)$/i.test(
+            c.expected_text.trim()
+          )
+      )
+    )
+      break
+    if (!["transaction", "unresolved"].includes(row.kind ?? "")) continue
+    const values = row.source_cells.map((c) => ({ cell: c, box: rect(c) }))
+    const rowDate = values.find(
+      (v) => v.box && Math.abs(v.box[0] - date[0]) <= 3000
+    )
+    const rowAmount = values.find(
+      (v) =>
+        v.box &&
+        Math.abs(v.box[2] - amount[2]) <= 15000 &&
+        numericText(v.cell.expected_text)
+    )
+    if (
+      !rowDate?.box ||
+      !rowAmount?.box ||
+      !sameLine(rowDate.box, rowAmount.box)
+    )
+      continue
+    const candidates = values.filter(
+      (v) =>
+        v.box &&
+        sameLine(v.box, rowDate.box!) &&
+        v.box[0] > date[2] &&
+        v.box[2] < description[0] &&
+        /^[A-Z0-9 ]{12,30}$/.test(v.cell.expected_text.trim()) &&
+        /\d/.test(v.cell.expected_text)
+    )
+    if (candidates.length === 1) references.push(candidates[0].box!)
+  }
+  if (
+    references.length &&
+    references.every((b) => Math.abs(b[0] - references[0][0]) <= 3000)
+  ) {
+    columns.splice(1, 0, {
+      header: null,
+      box: [
+        Math.min(...references.map((b) => b[0])),
+        date[1],
+        Math.max(...references.map((b) => b[2])),
+        date[3],
+      ],
+    })
+  }
+  return columns
+}
+
+function besideAmountSign(
+  cell: PrintedCell,
+  row: PrintedRow,
+  header: PrintedCell | undefined
+) {
+  const box = rect(cell),
+    headerBox = header && rect(header)
+  if (!box || !headerBox || !signText(cell.expected_text)) return false
+  return row.source_cells.some((other) => {
+    const otherBox = rect(other)
+    return (
+      otherBox &&
+      numericText(other.expected_text) &&
+      sameLine(box, otherBox) &&
+      Math.abs(otherBox[2] - headerBox[2]) <= 15000 &&
+      ((box[0] >= otherBox[2] && box[0] - otherBox[2] <= 15000) ||
+        (otherBox[0] >= box[2] && otherBox[0] - box[2] <= 15000))
+    )
+  })
+}
 
 // Layout only: use printed headers and source positions. Never decide which rows to import here.
 export function printedStatementSections(rows: PrintedRow[]) {
@@ -77,7 +177,12 @@ export function printedStatementSections(rows: PrintedRow[]) {
         (c) =>
           dates.has(label(c)) ||
           amounts.has(label(c)) ||
-          ["description", "details", "transaction details"].includes(label(c))
+          [
+            "description",
+            "item description",
+            "details",
+            "transaction details",
+          ].includes(label(c))
       )
       const isHeader =
         headers.some((c) => dates.has(label(c))) &&
@@ -111,6 +216,7 @@ export function printedStatementSections(rows: PrintedRow[]) {
           title,
           titleRowId: previous?.id ?? row.id,
           headers,
+          columns: printedColumns(headers, ordered.slice(i + 1)),
           rows: [],
         }
         sections.push(active)
@@ -135,7 +241,9 @@ export function printedStatementSections(rows: PrintedRow[]) {
         nonempty.length === 1 &&
         heading.test(nonempty[0].expected_text.trim())
       ) {
-        if (/calculation/i.test(nonempty[0].expected_text)) {
+        if (
+          /calculation|totals year-to-date/i.test(nonempty[0].expected_text)
+        ) {
           active = null
           continue
         }
@@ -145,6 +253,7 @@ export function printedStatementSections(rows: PrintedRow[]) {
           title: nonempty[0],
           titleRowId: row.id,
           headers: [],
+          columns: [],
           rows: [],
         }
         sections.push(active)
@@ -168,7 +277,10 @@ export function printedStatementSections(rows: PrintedRow[]) {
           !bounds ||
           !box ||
           (box[0] >= bounds[0] - 3000 && box[2] <= bounds[1] + 3000) ||
-          extendsAmountHeader
+          extendsAmountHeader ||
+          (lastHeader &&
+            amounts.has(label(lastHeader)) &&
+            besideAmountSign(c, row, lastHeader))
         )
       })
       if (!within.some((c) => c.expected_text.trim())) continue
@@ -177,41 +289,97 @@ export function printedStatementSections(rows: PrintedRow[]) {
         within.forEach((c) => mark(row.id, c))
         continue
       }
-      const mapped: (PrintedCell | undefined)[] = active.headers.map(
+      const mapped: (PrintedCell | undefined)[] = active.columns.map(
         () => undefined
       )
+      const parts: PrintedCell[][] = active.columns.map(() => [])
       for (const cell of within) {
         const box = rect(cell)
-        let column = active.headers.findIndex(
-          (h) => h.column_index === cell.column_index
+        let column = active.columns.findIndex(
+          (c) => c.header?.column_index === cell.column_index
         )
-        if (box && active.headers.every((h) => rect(h))) {
+        if (box && active.columns.every((c) => c.box)) {
+          // OCR can remove a date separator. A numeric reading in the printed
+          // date position still belongs under Date, not under Amount.
+          const dateColumn = active.columns.findIndex(
+            (c, index) =>
+              c.header &&
+              dates.has(label(c.header)) &&
+              Math.abs(box[0] - c.box![0]) <= 3000 &&
+              box[2] < (active!.columns[index + 1]?.box?.[0] ?? Infinity)
+          )
+          const referenceColumn = active.columns.findIndex(
+            (c) =>
+              !c.header &&
+              c.box &&
+              box[0] >= c.box[0] - 1500 &&
+              box[2] <= c.box[2] + 1500
+          )
           // Amounts are right aligned. Preserve their printed column even when a total spans the date and description columns.
-          const numeric = numericText(cell.expected_text)
-          if (numeric)
-            column = active.headers.reduce(
-              (best, h, j) =>
-                amounts.has(label(h)) &&
+          const numeric =
+            numericText(cell.expected_text) ||
+            besideAmountSign(cell, row, lastHeader)
+          if (dateColumn >= 0) column = dateColumn
+          else if (referenceColumn >= 0) column = referenceColumn
+          else if (numeric)
+            column = active.columns.reduce(
+              (best, c, j) =>
+                c.header &&
+                amounts.has(label(c.header)) &&
                 (best < 0 ||
-                  Math.abs(rect(h)![2] - box[2]) <
-                    Math.abs(rect(active!.headers[best])![2] - box[2]))
+                  Math.abs(c.box![2] - box[2]) <
+                    Math.abs(active!.columns[best].box![2] - box[2]))
                   ? j
                   : best,
               -1
             )
           else
-            column = active.headers.reduce(
-              (best, h, j) => (rect(h)![0] <= box[0] + 1500 ? j : best),
+            column = active.columns.reduce(
+              (best, c, j) => (c.box![0] <= box[0] + 1500 ? j : best),
               0
             )
         }
-        // A collision means that layout was not recovered confidently. Leave that cell in additional text for inspection.
+        // Keep measured pieces of a description together, and a detached sign
+        // beside its amount. Two amounts in one column remain a layout problem.
         if (column >= 0 && !mapped[column]) {
           mapped[column] = cell
+          parts[column].push(cell)
           mark(row.id, cell)
+        } else if (column >= 0 && box) {
+          const previous = parts[column].at(-1)
+          const previousBox = previous && rect(previous)
+          const printedHeader = active.columns[column].header
+          const amountColumn =
+            printedHeader && amounts.has(label(printedHeader))
+          const descriptionColumn =
+            printedHeader &&
+            [
+              "description",
+              "item description",
+              "details",
+              "transaction details",
+            ].includes(label(printedHeader))
+          const upperBound = active.columns[column + 1]?.box?.[0] ?? Infinity
+          const signPair =
+            previous &&
+            parts[column].length === 1 &&
+            ((signText(cell.expected_text) &&
+              numericText(previous.expected_text)) ||
+              (numericText(cell.expected_text) &&
+                signText(previous.expected_text)))
+          if (
+            previousBox &&
+            previousBox[2] <= box[0] &&
+            sameLine(previousBox, box) &&
+            ((descriptionColumn && box[2] < upperBound) ||
+              (amountColumn && signPair && box[0] - previousBox[2] <= 15000))
+          ) {
+            parts[column].push(cell)
+            mark(row.id, cell)
+          }
         }
       }
-      if (mapped.some(Boolean)) active.rows.push({ row, cells: mapped })
+      if (mapped.some(Boolean)) active.rows.push({ row, cells: mapped, parts })
     }
   }
   const remaining = rows

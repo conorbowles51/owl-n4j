@@ -110,8 +110,51 @@ def _transaction_amount(cells, source, currency):
     return int(exact_amount(signed, currency)), amount_index
 
 
+def _transaction_header(cells, page):
+    """Require the issuer's printed columns before reading a damaged date row."""
+    names = ('Trans Date', 'Item Description', 'Amount')
+    matches = [[cell for cell in cells if cell['expected_text'].strip() == name] for name in names]
+    if any(len(values) != 1 for values in matches):
+        return None
+    boxes = [_rectangle(values[0], page) for values in matches]
+    if (any(box is None for box in boxes)
+            or len({(box.page_width, box.page_height) for box in boxes}) != 1
+            or not boxes[0].x1 < boxes[1].x0 < boxes[1].x1 < boxes[2].x0
+            or min(box.y1 for box in boxes) <= max(box.y0 for box in boxes)):
+        return None
+    return boxes
+
+
+def _matches_transaction_columns(cells, header, page):
+    """Keep other fields only when date, description and amount positions agree.
+
+    This recognises a row's layout, not the damaged date characters. No month,
+    day or year is supplied by this check.
+    """
+    if header is None or len(cells) < 3:
+        return False
+    boxes = [_rectangle(cell, page) for cell in cells]
+    if (any(box is None for box in boxes)
+            or any((box.page_width, box.page_height) != (header[0].page_width, header[0].page_height) for box in boxes)):
+        return False
+    tolerance = header[0].page_width // 60
+    amount_index = len(cells) - (2 if cells[-1]['expected_text'].strip() == '-' else 1)
+    amount = boxes[amount_index]
+    if (amount_index < 2 or boxes[0].y0 <= max(box.y1 for box in header)
+            or abs(boxes[0].x0 - header[0].x0) > tolerance
+            or boxes[0].x1 >= header[1].x0
+            or amount.x0 < header[1].x1
+            or abs(amount.x1 - header[2].x1) > tolerance
+            or min(box.y1 for box in boxes) <= max(box.y0 for box in boxes)
+            or any(left.x1 > right.x0 for left, right in zip(boxes, boxes[1:]))):
+        return False
+    return any(abs(box.x0 - header[1].x0) <= tolerance
+               and box.x1 < amount.x0 for box in boxes[1:amount_index])
+
+
 def propose_merrick_table(source, currency, statement):
     active = False
+    header = None
     result = []
     balances, issues = merrick_summary_balances(source, currency)
     for row in source['rows']:
@@ -122,11 +165,14 @@ def propose_merrick_table(source, currency, statement):
                     source_revision=source['source_revision'],source_cells=cells,fields={},issues=[],excluded=True,kind='statement_information')
         if 'Transactions, Payments and Credits' in texts:
             active = True
-        if any(re.fullmatch(r'20\d{2} Totals Year-to-Date', text) for text in texts):
+            header = None
+        if active and 'Item Description' in texts and 'Amount' in texts:
+            header = _transaction_header(cells, source['page_number'])
+        if any(re.fullmatch(r'20\d{2} Totals Year-to-Date', text) or text == 'Interest Charge Calculation' for text in texts):
             active = False
         match = re.fullmatch(r'(\d{1,2})/(\d{1,2})', texts[0]) if texts else None
-        if active and match and len(texts) >= 3:
-            item.update(excluded=False,kind='transaction')
+        if active and len(texts) >= 3 and (match or _matches_transaction_columns(cells, header, source['page_number'])):
+            item.update(excluded=False,kind='transaction' if match else 'unresolved')
             fields=item['fields']
             # Keep a detached printed minus out of the description even when
             # its geometry is unclear and the amount requires correction.
@@ -136,15 +182,16 @@ def propose_merrick_table(source, currency, statement):
                 fields['bank_reference']=middle.pop(0)
             fields.update(description=' '.join(middle),counterparty='')
             year, closing_month=statement['date_year'],statement['date_month']
-            month, day=int(match[1]),int(match[2])
-            if year and closing_month and month in (closing_month, (closing_month-2)%12+1):
+            month, day = (int(match[1]), int(match[2])) if match else (None, None)
+            if match and year and closing_month and month in (closing_month, (closing_month-2)%12+1):
                 try:
                     fields['date']=date(year-1 if closing_month==1 and month==12 else year,month,day).isoformat()
                     fields['date_context']='Year constrained by printed statement month and full year-to-date heading.'
                 except ValueError:
                     pass
             if 'date' not in fields:
-                item['issues'].append('Check the full date. The printed statement context could not resolve its year.')
+                item['issues'].append('Check the full date in the PDF. Its characters could not be read. The other recognised fields have been kept.' if match is None
+                                      else 'Check the full date. The printed statement context could not resolve its year.')
             try:
                 value, amount_index = _transaction_amount(cells, source, currency)
                 fields.update(amount_minor=str(abs(value)), amount_column=str(cells[amount_index]['column_index']))
@@ -152,7 +199,7 @@ def propose_merrick_table(source, currency, statement):
                     item['issues'].append('This row describes a card payment, but no minus sign was read. Check the original amount and enter it under Credit or Debit.')
                 else:
                     fields['direction'] = 'credit' if value < 0 else 'debit'
-                if value == 0:
+                if value == 0 and match:
                     item.update(excluded=True,kind='zero_charge')
                     item['issues']=[]
             except ValueError as exc:

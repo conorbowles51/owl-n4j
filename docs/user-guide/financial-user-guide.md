@@ -168,6 +168,8 @@ If a Merrick summary amount is missing its dollar sign, check it against the PDF
 
 If a Merrick statement's **Statement Date** and **Billing Cycle Closing Date** have been read differently, Loupe flags the dates. Compare both with the original PDF, then correct the transaction dates before confirming. The system does not replace a damaged date with a guessed year. A statement date alone does not establish the dates covered by the statement; leave the period blank when those dates are unknown.
 
+If a transaction date cannot be read but its row matches the printed Merrick columns, Loupe keeps the description, reference and any readable amount. The **Date** field stays blank and the row remains flagged. Select **Edit import values**, compare the date with the PDF, enter the full date and explain the correction. Leave the other fields as they are if they agree with the statement. If the date is still unreadable, use the rereading steps in section 7 rather than guessing it.
+
 On Merrick statements, a minus sign after the amount marks a credit. Loupe reads the sign with the amount when their positions match. If a card payment has no readable minus sign, its Credit and Debit fields stay blank. Select **Edit import values**, check the PDF, enter the amount in the correct column and give a reason. The import button stays unavailable until you resolve the missing value.
 
 Merrick transaction amounts should show a decimal point and two digits after it. If OCR reads `2.75` as `275`, Loupe flags the amount instead of treating it as 275.00. Check the original and enter the value you can read there. Totals are marked incomplete while any included amount or credit/debit choice is unresolved.
@@ -186,7 +188,7 @@ An unreadable or conflicting summary value needs review. Loupe leaves it unresol
 
 A manually added transaction has a page citation but does not establish its position among the printed rows. Loupe therefore explains when it cannot perform the sequential running-balance check. Check that payment against the PDF and compare the statement totals.
 
-An opening balance, closing balance, column heading or disclosure paragraph is not a payment. Loupe excludes recognised examples from the proposed transaction count. The extracted printed table still shows these source rows. To inspect their import treatment, open **Show corrections and import choices**, then select **Show excluded rows**.
+An opening balance, closing balance, column heading or disclosure paragraph is not a payment. Loupe excludes recognised examples from the proposed transaction count. Their source text remains available in the printed table or under **Other extracted page text**. To inspect their import treatment, open **Show corrections and import choices**, then select **Show excluded rows**.
 
 ### Compare a field with the PDF
 
@@ -195,6 +197,8 @@ An opening balance, closing balance, column heading or disclosure paragraph is n
 3. Compare the date, description, credit or debit amount and balance. The PDF remains the original evidence if its extraction differs.
 4. Use zoom and **Fit source width** to read small print. **Show highlighted value** returns you to the selected location.
 5. If the page has no exact highlight, inspect the whole cited page. A page link is less precise than a field highlight.
+
+Some statements print a reference number between the date and description without a column heading. Loupe keeps that heading blank when the column can be identified. A description or minus sign may have been extracted as separate pieces. Each piece remains clickable, even when shown together in one table cell. Year-to-date summaries and the text following them are available under **Other extracted page text** instead of being placed in the transaction columns.
 
 On a complex page, transaction tables are shown as separate sections. Advertisements and other page text are available under **Other extracted page text**. Rows needing a layout check stay visible. Compare them with the PDF before deciding whether anything is missing.
 

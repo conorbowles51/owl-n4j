@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react"
+import { render, screen, fireEvent, within } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { PrintedStatementTable } from "./PrintedStatementTable"
 
@@ -50,4 +50,68 @@ it("retains printed headings, formatted values and empty debit or credit cells",
   expect(screen.queryByText("Direction")).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole("button", { name: "€125,000" }))
   expect(onCell).toHaveBeenCalledWith("payment", { page: 1, column_index: 2 })
+})
+
+it("keeps separately extracted signs and description pieces clickable in the printed columns", () => {
+  const onCell = vi.fn()
+  const cell = (
+    column_index: number,
+    expected_text: string,
+    x: number,
+    right: number
+  ) => ({
+    column_index,
+    expected_text,
+    locator: { kind: "page_rectangle", page: 1, rect: [x, 1000, right, 9000] },
+  })
+  const base = { page_number: 1, table_index: 0 }
+  const minus = cell(5, "-", 506000, 508000)
+  const place = cell(3, "EXAMPLE CITY", 390000, 445000)
+  render(
+    <PrintedStatementTable
+      onCell={onCell}
+      rows={[
+        {
+          ...base,
+          id: "head",
+          row_index: 0,
+          source_cells: [
+            cell(0, "Trans Date", 90000, 120000),
+            cell(1, "Item Description", 270000, 340000),
+            cell(2, "Amount", 480000, 502000),
+          ],
+        },
+        {
+          ...base,
+          id: "payment",
+          row_index: 1,
+          kind: "transaction",
+          source_cells: [
+            cell(0, "04/22", 90000, 110000),
+            cell(1, "7412061 3P00XTMJGS", 180000, 245000),
+            cell(2, "MOBILE PAYMENT-THANK YOU", 270000, 380000),
+            place,
+            cell(4, "114.00", 480000, 500000),
+            minus,
+          ],
+        },
+      ]}
+    />
+  )
+  expect(
+    screen.getByRole("columnheader", { name: "Unlabelled printed column" })
+  ).toHaveTextContent("")
+  const amountCell = screen.getByRole("cell", { name: "114.00 -" })
+  fireEvent.click(within(amountCell).getByRole("button", { name: "-" }))
+  expect(onCell).toHaveBeenLastCalledWith("payment", minus.locator)
+  const descriptionCell = screen.getByRole("cell", {
+    name: "MOBILE PAYMENT-THANK YOU EXAMPLE CITY",
+  })
+  fireEvent.click(
+    within(descriptionCell).getByRole("button", { name: "EXAMPLE CITY" })
+  )
+  expect(onCell).toHaveBeenLastCalledWith("payment", place.locator)
+  expect(
+    screen.queryByText("Rows needing a layout check")
+  ).not.toBeInTheDocument()
 })

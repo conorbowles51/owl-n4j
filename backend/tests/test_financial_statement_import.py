@@ -140,6 +140,42 @@ class StatementImportTests(TransactionPersistenceTestCase):
         with self.assertRaisesRegex(PdfMappingError, 'prepared statement changed'):
             self.confirm(old_request)
 
+    def test_correcting_only_a_damaged_merrick_date_preserves_other_readings_and_original_date(self):
+        from services.financial.statement_import import StatementImportRequest
+        from pydantic import ValidationError
+        from tests.test_financial_statement_import_merrick import measured_statement
+        data = measured_statement()
+        data['rows'][6]['cells'][0]['expected_text'] = 'O4/22'
+        values = [dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'],
+                       locator=c['locator'])
+                  for r in data['rows'] for c in r['cells']]
+        self.db.get(EvidenceTableGeometry, (self.file.id, 1)).payload = [dict(
+            table_source='drawn_geometry', geometry_source='cell_rectangles',
+            table=dict(page=1, table=rectangle(0, x=0, width=600, height=800), unlocated_values=0, values=values))]
+        self.db.commit()
+        with self.SessionLocal() as db:
+            p = read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id, currency='USD')
+        request = dict(expected_revision=p['revision'], statement_id=p['statement_id'], currency='USD',
+                       **{key: p['metadata'][key] for key in ('holder', 'account_number', 'institution', 'period_start', 'period_end')},
+                       rows=[dict(id=r['id'], excluded=r['excluded'], date=r['fields'].get('date', ''),
+                                  description=r['fields'].get('description', ''), amount_minor=r['fields'].get('amount_minor', '0'),
+                                  direction=r['fields'].get('direction'), balance_minor=r['fields'].get('balance'), reason='') for r in p['rows']])
+        with self.assertRaises(ValidationError):
+            StatementImportRequest.model_validate(request)
+        request['rows'][6].update(date='2021-04-22', reason='Read the first date against the original PDF.')
+        result = self.confirm(request)
+        self.assertEqual(result['transaction_count'], 2)
+        self.db.expire_all()
+        payment = self.db.scalar(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == UUID(result['source_document_id']), FinancialTransaction.row_index == 0))
+        self.assertEqual(payment.description, 'EXAMPLE SHOP')
+        self.assertEqual(payment.amount_minor, 1400)
+        self.assertEqual(payment.bank_reference, '24137463GEJBPDNXO')
+        document = self.db.get(FinancialSourceDocument, UUID(result['source_document_id']))
+        retained = document.metadata_['statement_import_original']['rows'][6]
+        self.assertNotIn('date', retained['fields'])
+        self.assertEqual(retained['source_cells'][0]['expected_text'], 'O4/22')
+
 
     def test_corrected_card_balance_preserves_printed_value_and_reason(self):
         from postgres.models.financial import FinancialStatementPeriod

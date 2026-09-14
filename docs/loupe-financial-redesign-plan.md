@@ -271,3 +271,18 @@ Validation: 40 affected backend checks and 18 frontend checks passed across focu
 The local browser uploaded a new synthetic statement, recorded its trailing-minus 14.00 credit and 100.00 charge, confirmed once and showed 86.00 owed with agreeing balances. A separate, explicitly simulated missing-direction API response verified empty Credit/Debit fields, blocked incomplete confirmation, immediate-refresh draft recovery and corrected balance arithmetic, without altering saved extraction data or making a second import. Its receipt is data/local-runtime/unresolved-review-browser-acceptance.json. Original statement cells, PDFs and all real imports remain unchanged. User instructions were updated without opening documentation panels.
 
 The independent reference corpus, missing exact Capital One 8160 file, working external provider acceptance and associated full expert-packet acceptance remain open. No public push was performed.
+
+
+## Completed locally: readable fields and faithful printed columns, 14 September 2026
+
+- [x] Retain a Merrick row's description, bank reference and readable amount when only its date is damaged. Require exact printed headers and matching page/row positions; keep the date blank and the row flagged until a reviewed correction.
+- [x] Preserve the original damaged date and all original cells through a date-only correction and confirmed import. Increment the reader to statement-review-v5 so stale proposals require reloading.
+- [x] Preserve the printed blank reference heading, split description text and separated amount sign. Each piece keeps its own PDF link. Keep damaged numeric dates under Date and leave conflicting amount pieces available for review.
+- [x] Keep year-to-date summaries and following page text out of the transaction grid while retaining access under Other extracted page text.
+- [x] Complete a synthetic upload, correction, import and balance check in the local browser, then read back the saved original/corrected values. Verify exact date, description and sign highlights and the final table layout. Update the user guide without opening documentation panels.
+
+Validation: 36 affected backend checks and 18 frontend checks across targeted runs, TypeScript, scoped ESLint, guide generation and production build passed. No full suite. The synthetic statement deliberately printed O4/22: only the date was corrected, exactly two payments were imported and 86.00 USD owed reconciled. The original damaged reading, reference and amount remain recorded. Local receipt: data/local-runtime/merrick-date-acceptance.json.
+
+The retained 56-page Merrick OCR comparison recognised 42 statements and kept 235 proposed rows. All 94 unresolved date rows now retain their descriptions; 88 also retain readable amounts. Previously supplied dates and fields are unchanged. All 7,466 nonblank source cells remain accessible in the printed-table check; transaction cells outside reconstructed tables fell from 443 to 9. These are layout-retention counts, not independent accuracy measurements. No further OCR or external-provider call, real-source edits or real imports occurred. Private checks: data/local-runtime/merrick-date-retained-check.json and merrick-printed-layout-check.json.
+
+Independent reference labels, the missing exact Capital One 8160 document, external-provider acceptance and the remaining original expert-packet acceptance stay open. No public push was performed.

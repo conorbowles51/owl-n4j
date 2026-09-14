@@ -1,3 +1,19 @@
+## Current continuation: retain readable fields and printed columns, 14 September 2026
+
+Statement review no longer clears every field when a Merrick transaction date is damaged. The reader requires the exact printed headers and matching page/row positions before retaining the description, reference and readable amount. The date remains blank, the row remains a review exception, and confirmation requires a date and recorded reason. The reader is statement-review-v5, so earlier open proposals need reloading. Existing imports are unchanged.
+
+The original-statement table now preserves an unlabelled reference column, separately extracted description pieces and a detached amount sign. Each original piece retains its own PDF location. Numeric damaged dates stay under Date. Two amounts or pieces on different lines are not joined. Year-to-date summaries and following text stay outside the transaction grid and remain available as other extracted text.
+
+Validation completed: 36 affected backend checks and 18 frontend checks across focused runs, TypeScript, scoped ESLint, guide generation and production build. No full suite. A new local synthetic statement with deliberately printed O4/22 retained its 14.00 credit and description, blocked incomplete import, accepted a date-only correction, imported two payments and reconciled to 86.00 USD owed. Read-only database inspection confirmed both the original and corrected dates. A second browser check verified the three exact PDF highlight positions and the final transaction-only grid. No external provider call or public push.
+
+Read-only retained Merrick OCR comparison: 42 recognised statements, 235 proposed rows, 94 unresolved date rows. All 94 now retain descriptions and 88 retain amounts. No previously supplied dates or fields changed. The printed-table check retains all 7,466 nonblank source cells; transaction cells outside reconstructed tables fell from 443 to 9. This measures layout retention, not independent extraction accuracy. No new OCR run, real PDF changes or real import changes.
+
+Local records and scripts are under data/local-runtime: merrick-date-acceptance.json, merrick-date-retained-check.json, merrick-printed-layout-check.json, synthetic-merrick-date-exception.pdf and loupe-merrick-date-*. The synthetic case is 66ab6519-31df-442d-ab60-fb810fe029fd. The isolated frontend remains on 55174 and the restarted backend on 58002. Documentation was updated without opening a guide panel.
+
+Remaining acceptance is still recorded in the checklist: broader formats and the missing exact Capital One 8160 source, independently reviewed reference labels and measured release acceptance, working external provider acceptance, and the original expert-packet requirement that depends on linked measurements and applicable history. Do not convert these local checks into an accuracy claim or mark the whole financial plan complete. Local changes are not on the server until an explicitly requested push.
+
+Older dated entries below are historical checkpoints, not current instructions.
+
 ## Statement columns and review dropdown repair, 11 September
 
 Reproduced the reported failure using the supplied 03_bank_statement_nexus.pdf.
