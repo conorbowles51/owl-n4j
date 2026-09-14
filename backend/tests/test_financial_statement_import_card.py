@@ -55,7 +55,60 @@ def card_source():
     return result
 
 
+def fee_source():
+    result = source([
+        ['Platinum Card | Platinum Mastercard ending in 1234'],
+        ['Feb 12, 2022 - Mar 14, 2022', '| 31 days in Billing Cycle'],
+        ['Visit capitalone.com to see detailed transactions.'],
+        ['SAMPLE HOLDER #1234: Transactions'],
+        ['Trans Date', 'Post Date', 'Description', 'Amount'],
+        ['Fees'],
+        ['Trans Date', 'Post Date', 'Description', 'Amount'],
+        ['Mar 8', 'Mar 9', 'PAST DUE FEE', '$25.00'],
+        ['Total Fees for This Period', '$25.00'],
+        ['Interest Charged'],
+        ['Interest Charge on Purchases', '$0.00'],
+        ['Totals Year-to-Date'],
+        ['Total Fees charged', '$25.00'],
+    ])
+    result['layout_context'] = statement_layout_context(result['rows'])
+    return result
+
+
 class CardStatementImportTests(unittest.TestCase):
+    def test_newer_fee_table_retains_both_printed_dates_and_excludes_totals(self):
+        data = fee_source()
+        before = deepcopy(data)
+        result = propose_card_table(data, 'USD', dict(period_start='2022-02-12', period_end='2022-03-14', account_reference='****1234'))
+        included = [r for r in result['rows'] if not r['excluded']]
+        self.assertEqual(len(included), 1)
+        fields = included[0]['fields']
+        self.assertEqual((fields['date'], fields['booking_date']), ('2022-03-08', '2022-03-09'))
+        self.assertEqual((fields['date_column'], fields['booking_date_column']), ('0', '1'))
+        self.assertEqual((fields['description'], fields['direction'], fields['amount_minor']), ('PAST DUE FEE', 'debit', '2500'))
+        self.assertEqual(included[0]['issues'], [])
+        self.assertEqual(data, before)
+
+    def test_fee_dates_are_checked_separately_and_duplicate_headers_do_not_choose_a_column(self):
+        for damage in ('transaction-date', 'posting-date', 'duplicate-header'):
+            data = fee_source()
+            if damage == 'transaction-date':
+                data['rows'][7]['cells'][0]['expected_text'] = 'Mar ?'
+            elif damage == 'posting-date':
+                data['rows'][7]['cells'][1]['expected_text'] = 'Apr 9'
+            else:
+                data['rows'][6]['cells'].append(dict(column_index=4, expected_text='Amount', locator={}))
+            row = propose_card_table(data, 'USD', dict(period_start='2022-02-12', period_end='2022-03-14', account_reference='****1234'))['rows'][7]
+            with self.subTest(damage=damage):
+                self.assertFalse(row['excluded'])
+                self.assertTrue(row['issues'])
+                if damage == 'duplicate-header':
+                    self.assertEqual(row['fields'], {})
+                else:
+                    self.assertEqual(row['fields']['amount_minor'], '2500')
+                    self.assertNotIn('date' if damage == 'transaction-date' else 'booking_date', row['fields'])
+                    self.assertIn('booking_date' if damage == 'transaction-date' else 'date', row['fields'])
+
     def test_summary_controls_ignore_coupon_and_minimum_due_with_exact_citations(self):
         data = summary_source()
         controls, issues = summary_balances(data, 'USD')

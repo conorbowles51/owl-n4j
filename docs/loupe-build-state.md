@@ -1,4 +1,18 @@
-## Current continuation: retain readable fields and printed columns, 14 September 2026
+## Current continuation: Capital One fees and separate date corrections, 14 September 2026
+
+Capital One fee tables with Trans Date, Post Date, Description and Amount were not handled by the older single-date fee reader. The reader now supports both exact header sets, preserves transaction/posting dates separately, and rejects ambiguous headers. A damaged or out-of-period posting date is flagged independently. Fee-only statements can retain their holder from an unambiguous printed section heading for the selected card ending.
+
+The import review now provides separate posting-date and value-date corrections, plus a missing transaction-date field when the posting date was the first readable date. The main date keeps its source meaning. Additional date edits are restricted to date roles identified in the source, require a reason when changed or cleared, and survive refresh in the saved draft. The writer retains the original readings, distinct corrected ledger dates and the review decision. Existing single-date requests remain supported. Reader version is statement-review-v6; stale proposals need reloading.
+
+Validation completed: 40 affected backend checks, 17 frontend checks, TypeScript, scoped ESLint, guide generation and production build. No full suite. The synthetic browser journey verified automatic fee/holder recognition, two different dates, an exact posting-date PDF highlight, reason enforcement, immediate-refresh draft recovery, one confirmed fee and a 25.00 USD balance owed with zero difference. Read-only database inspection verified transaction date 8 March, corrected posting date 10 March and original posting date 9 March retained separately. The synthetic correction intentionally differs from the original to test retention.
+
+The first synthetic PDF had left-aligned summary amounts that failed the existing right-edge alignment check, so its closing balance remained unavailable. That test file/import was preserved. A second properly aligned synthetic file completed the balance check; the balance-reader rules were not relaxed to make the test pass.
+
+Read-only comparison of the retained Capital One extraction: 27 recognised statement periods, 42 proposed rows. Four previously unresolved fees on PDF pages 57, 81, 87 and 91 now have both dates and amounts. No previously read money values or dates changed. Nineteen undated interest rows still require review; no interest dates were guessed. These are targeted reading checks, not independent extraction-accuracy measurements. Original PDFs and real imports were not changed; no new OCR or external provider requests.
+
+Local receipts and reusable scripts are in data/local-runtime: capital-dates-final-acceptance.json, capital-fee-comparison.json, capital-retained-check.json, synthetic-capital-fee-dates-v2.pdf and loupe-capital-*. The local app remains running on frontend 55174/backend 58002. User instructions and checked-off work were retained without opening documentation panels. No public push was performed. The broader acceptance requirements listed in the next checkpoint remain open.
+
+## Previous continuation: retain readable fields and printed columns, 14 September 2026
 
 Statement review no longer clears every field when a Merrick transaction date is damaged. The reader requires the exact printed headers and matching page/row positions before retaining the description, reference and readable amount. The date remains blank, the row remains a review exception, and confirmation requires a date and recorded reason. The reader is statement-review-v5, so earlier open proposals need reloading. Existing imports are unchanged.
 

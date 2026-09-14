@@ -188,6 +188,8 @@ An unreadable or conflicting summary value needs review. Loupe leaves it unresol
 
 A manually added transaction has a page citation but does not establish its position among the printed rows. Loupe therefore explains when it cannot perform the sequential running-balance check. Check that payment against the PDF and compare the statement totals.
 
+Capital One fee tables can have either **Date** or separate **Trans Date** and **Post Date** columns. Loupe reads the fee row and keeps those dates separate. **Total Fees for This Period** is a total, so it is not added as another payment. An interest charge without a printed date still needs your review.
+
 An opening balance, closing balance, column heading or disclosure paragraph is not a payment. Loupe excludes recognised examples from the proposed transaction count. Their source text remains available in the printed table or under **Other extracted page text**. To inspect their import treatment, open **Show corrections and import choices**, then select **Show excluded rows**.
 
 ### Compare a field with the PDF
@@ -229,6 +231,17 @@ Before confirmation, use **Edit import values**. For a statement already importe
 7. Resolve any remaining required-field message before confirming.
 
 For example, if the PDF prints `61.62` and Loupe reads `61.26`, enter `61.62` and explain that you checked the printed amount on the cited page. The original extraction and your correction are both retained with the import.
+
+### Correct separate dates on the same payment
+
+Some statements show when a transaction happened and when the bank posted it. They can be different dates. A value date is another date used by the bank; keep the statement's date labels separate.
+
+1. Select **Edit import values** and find the payment.
+2. Under the **Date** column, use the separately labelled **Transaction date**, **Posting date** and **Value date** fields that are available for that statement. A statement with only one recognised date has one date input.
+3. Compare each date with its own printed column. Selecting a separate date field highlights its original cell when a location was recorded.
+4. Correct only the date that is wrong. For example, changing a posting date from 9 March to 10 March leaves the transaction date unchanged.
+5. Enter **Reason for correction or decision**. If an additional date cannot be confirmed, you can clear that additional field and explain why. Do not copy the transaction date into it just to fill the space. The main date field must still contain a full date to import the payment.
+6. Confirm the import when the remaining checks are complete. Loupe retains the original date readings and your separate corrections. These date edits also stay in the saved browser-tab draft if you refresh before confirmation.
 
 ### Remove a heading or other non-payment
 

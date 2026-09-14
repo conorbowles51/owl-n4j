@@ -33,12 +33,25 @@ def _period(value):
     return tuple(dates) if dates[0] <= dates[1] else ('', '')
 
 
-def _reading_dates(fields, reviewed_date):
+def _date_roles(fields):
+    return [key for key in ('date', 'booking_date', 'value_date') if fields.get(key) or key + '_column' in fields] or ['date']
+
+
+def _primary_date_role(fields):
+    return next((key for key in ('date', 'booking_date', 'value_date') if fields.get(key)), _date_roles(fields)[0])
+
+
+def _reading_dates(fields, reviewed_date, date_values=None):
     # The editable date keeps the meaning of the first populated source date.
-    primary = next((key for key in ('date', 'booking_date', 'value_date') if fields.get(key)), 'date')
+    primary = _primary_date_role(fields)
     names = {'date': 'transaction_date', 'booking_date': 'posted_date', 'value_date': 'value_date'}
     result = {names[key]: date.fromisoformat(value) for key, value in fields.items() if key in names and value}
     result[names[primary]] = date.fromisoformat(reviewed_date)
+    for key, value in (date_values or {}).items():
+        if value:
+            result[names[key]] = date.fromisoformat(value)
+        else:
+            result.pop(names[key], None)
     return result
 
 
@@ -129,6 +142,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             metadata['holder'] = selected['holder']
         holders = set()
         for source in sources:
+            if selected.get('layout_id') == 'capital-one-card' and source.get('layout_context'):
+                # Empty purchase/payment sections still name the printed cardholder
+                # on statements containing only fees or interest.
+                heading = re.compile(r'(.+) #' + re.escape(selected['account_reference'][-4:]) + r': (?:Payments, Credits and Adjustments|Transactions)')
+                holders.update(match[1] for row in source['rows'] for cell in row['cells']
+                               if (match := heading.fullmatch(cell['expected_text'].strip())))
             for item in (source.get('layout_context') or {}).get('rows', []):
                 if item['card_ending'] == selected['account_reference'][-4:]:
                     holders.add(item['section_source']['expected_text'].split(' #', 1)[0])
@@ -222,6 +241,7 @@ class ImportRow(_Contract):
     excluded: bool = False
     manual_page: Annotated[int | None, Field(ge=1, le=500)] = None
     date: str = ''
+    date_values: dict[Literal['date', 'booking_date', 'value_date'], str] = Field(default_factory=dict)
     description: Annotated[str, Field(max_length=4096)] = ''
     counterparty: Annotated[str, Field(max_length=4096)] = ''
     amount_minor: Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,18})$')] = '0'
@@ -231,6 +251,9 @@ class ImportRow(_Contract):
 
     @model_validator(mode='after')
     def valid_transaction(self):
+        for value in self.date_values.values():
+            if value and date.fromisoformat(value).isoformat() != value:
+                raise ValueError('Each additional date must be a complete calendar date or left blank.')
         if self.balance_minor is not None and not -9223372036854775808 <= int(self.balance_minor) <= 9223372036854775807:
             raise ValueError('The running balance exceeds the supported range.')
         if not self.excluded:
@@ -305,6 +328,9 @@ def check_import_request(proposal, request):
     for row in request.rows:
         original = originals[row.id]
         fields = original['fields']
+        additional_roles = set(_date_roles(fields)) - {_primary_date_role(fields)}
+        if not set(row.date_values) <= additional_roles:
+            raise PdfMappingError('Only separately identified source dates can be corrected here. Reload the statement.', 422)
         if fields.get('balance_convention') == 'liability_owed':
             if not row.excluded:
                 raise PdfMappingError('An account-summary balance is not a transaction. Keep it outside the transaction list.', 422)
@@ -316,6 +342,7 @@ def check_import_request(proposal, request):
             or row.counterparty != fields.get('counterparty', '')
             or row.amount_minor != fields.get('amount_minor')
             or row.direction != fields.get('direction'))) or row.balance_minor != fields.get('balance')
+        changed = changed or any(value != fields.get(key, '') for key, value in row.date_values.items())
         if (changed or original['issues']) and not row.reason.strip():
             raise PdfMappingError(f"Explain the correction or decision for row {row.id}.", 422)
     return originals
@@ -450,7 +477,7 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                             x1=max(r.x1 for r in rectangles), y1=max(r.y1 for r in rectangles)))
                     drafts.append(TransactionDraft(row_index=len(drafts), account_id=account.id, locator=locator, statement_period_id=period.id,
                         reading=RowReading(currency=request.currency, amount_minor=int(row.amount_minor),
-                            direction=TransactionDirection(row.direction), **_reading_dates(original['fields'], row.date),
+                            direction=TransactionDirection(row.direction), **_reading_dates(original['fields'], row.date, row.date_values),
                             description=row.description, counterparty_raw=row.counterparty or None,
                             bank_reference=original['fields'].get('bank_reference'),
                             running_balance_minor=balance_sign * int(row.balance_minor) if row.balance_minor is not None else None), provenance=dict(statement_import_original=original,

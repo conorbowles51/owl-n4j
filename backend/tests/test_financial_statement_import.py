@@ -140,6 +140,80 @@ class StatementImportTests(TransactionPersistenceTestCase):
         with self.assertRaisesRegex(PdfMappingError, 'prepared statement changed'):
             self.confirm(old_request)
 
+    def multi_date_request(self):
+        from tests.test_financial_statement_import_proposal import source
+        grid = source([['Date', 'Posting date', 'Value date', 'Description', 'Credit', 'Debit'],
+                       ['2023-01-02', '2023-01-03', '2023-01-04', 'Payment', '125.00', '']])
+        self.db.get(EvidenceTableGeometry, (self.file.id, 1)).payload = [dict(
+            table_source='drawn_geometry', geometry_source='cell_rectangles',
+            table=dict(page=1, table=rectangle(0,x=0,width=600,height=600), unlocated_values=0,
+                       values=[dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'],
+                                    locator=rectangle(20+r['row_index']*20, x=10+c['column_index']*95, width=90, height=15))
+                               for r in grid['rows'] for c in r['cells']]))]
+        self.db.commit()
+        return self.request()
+
+    def test_fee_only_card_import_keeps_holder_and_two_different_dates(self):
+        from tests.test_financial_statement_import_card import fee_source
+        data = fee_source()
+        self.db.get(EvidenceTableGeometry, (self.file.id, 1)).payload = [dict(
+            table_source='drawn_geometry', geometry_source='cell_rectangles',
+            table=dict(page=1, table=rectangle(0,x=0,width=600,height=800), unlocated_values=0,
+                       values=[dict(row=r['row_index'],column=c['column_index'],text=c['expected_text'],
+                                    locator=rectangle(20+r['row_index']*20,x=10+c['column_index']*145,width=140,height=10))
+                               for r in data['rows'] for c in r['cells']]))]
+        self.db.commit()
+        with self.SessionLocal() as db:
+            proposal = read_statement_import(db,case_id=self.case.id,evidence_file_id=self.file.id,currency='USD')
+        self.assertEqual(proposal['metadata']['holder'], 'SAMPLE HOLDER')
+        request = dict(expected_revision=proposal['revision'],statement_id=proposal['statement_id'],currency='USD',
+                       **{k:proposal['metadata'][k] for k in ('holder','account_number','institution','period_start','period_end')},
+                       rows=[dict(id=r['id'],excluded=r['excluded'],date=r['fields'].get('date',''),description=r['fields'].get('description',''),
+                                  amount_minor=r['fields'].get('amount_minor','0'),direction=r['fields'].get('direction'),reason='') for r in proposal['rows']])
+        fee=request['rows'][7]
+        fee.update(date_values={'booking_date':'2022-03-10'},reason='Corrected the posting date after checking the source.')
+        result=self.confirm(request)
+        self.assertEqual(result['transaction_count'],1)
+        self.db.expire_all()
+        payment=self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.source_document_id==UUID(result['source_document_id'])))
+        self.assertEqual((str(payment.transaction_date),str(payment.posted_date)),('2022-03-08','2022-03-10'))
+        self.assertEqual(payment.amount_minor,2500)
+        self.assertEqual(payment.provenance['statement_import_original']['fields']['booking_date'],'2022-03-09')
+
+    def test_correcting_posting_and_value_dates_keeps_transaction_date_and_originals(self):
+        from datetime import date
+        request = self.multi_date_request()
+        request['rows'][1]['date_values'] = dict(booking_date='2023-01-05', value_date='2023-01-06')
+        with self.assertRaisesRegex(PdfMappingError, 'Explain the correction'):
+            self.confirm(request)
+        request['rows'][1]['reason'] = 'Checked the separate posting and value dates in the original.'
+        result = self.confirm(request)
+        self.db.expire_all()
+        payment = self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.source_document_id == UUID(result['source_document_id'])))
+        self.assertEqual((payment.transaction_date,payment.posted_date,payment.value_date), (date(2023,1,2),date(2023,1,5),date(2023,1,6)))
+        original = payment.provenance['statement_import_original']['fields']
+        self.assertEqual((original['booking_date'],original['value_date']), ('2023-01-03','2023-01-04'))
+        self.assertEqual(payment.provenance['statement_import_review']['date_values'], request['rows'][1]['date_values'])
+        self.assertFalse(self.confirm(request)['created'])
+
+    def test_clearing_an_unreadable_secondary_date_records_the_decision_without_losing_other_dates(self):
+        request = self.multi_date_request()
+        request['rows'][1].update(date_values={'booking_date':''}, reason='Posting date cannot be confirmed from the source.')
+        result = self.confirm(request)
+        self.db.expire_all()
+        payment = self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.source_document_id == UUID(result['source_document_id'])))
+        self.assertIsNone(payment.posted_date)
+        self.assertEqual(str(payment.transaction_date), '2023-01-02')
+        self.assertEqual(str(payment.value_date), '2023-01-04')
+
+    def test_date_corrections_cannot_invent_a_date_role_or_override_the_primary_twice(self):
+        from pydantic import ValidationError
+        for values in ({'booking_date':'2023-01-05'}, {'date':'2023-01-05'}, {'effective_date':'2023-01-05'}, {'value_date':'2023-02-30'}):
+            request = self.request()
+            request['rows'][1].update(date_values=values, reason='Attempted unsupported date correction.')
+            with self.subTest(values=values), self.assertRaises((PdfMappingError, ValidationError)):
+                self.confirm(request)
+
     def test_correcting_only_a_damaged_merrick_date_preserves_other_readings_and_original_date(self):
         from services.financial.statement_import import StatementImportRequest
         from pydantic import ValidationError

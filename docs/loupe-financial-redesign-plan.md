@@ -286,3 +286,16 @@ Validation: 36 affected backend checks and 18 frontend checks across targeted ru
 The retained 56-page Merrick OCR comparison recognised 42 statements and kept 235 proposed rows. All 94 unresolved date rows now retain their descriptions; 88 also retain readable amounts. Previously supplied dates and fields are unchanged. All 7,466 nonblank source cells remain accessible in the printed-table check; transaction cells outside reconstructed tables fell from 443 to 9. These are layout-retention counts, not independent accuracy measurements. No further OCR or external-provider call, real-source edits or real imports occurred. Private checks: data/local-runtime/merrick-date-retained-check.json and merrick-printed-layout-check.json.
 
 Independent reference labels, the missing exact Capital One 8160 document, external-provider acceptance and the remaining original expert-packet acceptance stay open. No public push was performed.
+
+
+## Completed locally: Capital One fees and separate date corrections, 14 September 2026
+
+- [x] Read Capital One fee tables with both Trans Date and Post Date, as well as the older Date layout. Keep both date sources, reject ambiguous headers, and leave undated interest flagged.
+- [x] Retain the holder named in the selected card's printed section headings even when the statement contains only fees or interest.
+- [x] Offer separate transaction, posting and value date corrections for date roles identified in the source. Preserve the main date's meaning, require reasons for changes or clearing an additional date, and retain original readings with the corrected ledger dates.
+- [x] Save separate date edits in the browser-tab draft, including a cleared additional date. Confirmed correction history retains the distinct date changes. Reader version is statement-review-v6 so stale reviews must reload.
+- [x] Verify a complete synthetic upload, posting-date edit, immediate refresh, confirmation and imported balance check. Update the guide and saved development state.
+
+Validation: 40 affected backend checks and 17 frontend checks passed, plus TypeScript, scoped ESLint, guide generation and production build. No full suite. The final browser check imported one 25.00 USD fee, preserved transaction date 8 March, saved the deliberately corrected posting date 10 March and retained the original posting date 9 March. Draft recovery, exact posting-cell highlight and a zero balance difference passed. Read-only database verification confirms both original and corrected dates. Local receipt: data/local-runtime/capital-dates-final-acceptance.json. The first synthetic fixture had misaligned summary amounts; its missing-closing-balance result was preserved, and the corrected fixture was a new file and case.
+
+The retained real-file comparison now fills four previously unresolved fee rows on pages 57, 81, 87 and 91. All earlier money/date readings are unchanged. The selected 27 statement periods still contain 42 proposed rows, including 19 undated interest rows requiring review. No date was guessed, no real import or PDF changed, and no further OCR/provider call occurred. This is not independent corpus validation. Local record: data/local-runtime/capital-fee-comparison.json. Broader acceptance requirements remain open. No public push was performed.

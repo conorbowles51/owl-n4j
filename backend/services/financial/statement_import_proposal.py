@@ -11,7 +11,7 @@ from services.financial.money import get_currency
 from services.financial.pdf_candidates import _digest
 from services.financial.source_dates import assess_date_text
 
-VERSION = 'statement-review-v5'
+VERSION = 'statement-review-v6'
 _HEADERS = {
     'date': 'date', 'transaction date': 'date', 'trans date': 'date',
     'booking date': 'booking_date', 'posting date': 'booking_date',
@@ -115,6 +115,9 @@ def propose_table(source, currency):
             except ValueError as exc:
                 item['issues'].append(f'{role}: {exc}')
         for role in ('date', 'booking_date', 'value_date'):
+            column = next((col for col, meaning in roles.items() if meaning == role), None)
+            if column is not None:
+                fields[role + '_column'] = str(column)
             if texts.get(role):
                 try:
                     fields[role] = _date(texts[role])

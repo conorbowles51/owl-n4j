@@ -153,6 +153,93 @@ it("automatically fills a statement and imports once", async () => {
   })
 })
 
+it("edits posting and value dates separately and records a reason without changing the transaction date", async () => {
+  const multiple = structuredClone(data)
+  Object.assign(multiple.rows[1].fields, {
+    booking_date: "2023-01-03",
+    value_date: "2023-01-04",
+    date_column: "0",
+    booking_date_column: "1",
+    value_date_column: "2",
+  })
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    String(url).includes("statement-import") &&
+    !String(url).includes("/confirm?")
+      ? Promise.resolve(multiple as never)
+      : base(url, options)
+  )
+  const done = mount()
+  await open()
+  expect(screen.getByLabelText("Posting date 1:0:1")).toHaveValue("2023-01-03")
+  expect(screen.getByLabelText("Value date 1:0:1")).toHaveValue("2023-01-04")
+  fireEvent.change(screen.getByLabelText("Posting date 1:0:1"), {
+    target: { value: "2023-01-05" },
+  })
+  fireEvent.change(screen.getByLabelText("Value date 1:0:1"), {
+    target: { value: "" },
+  })
+  expect(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  ).toBeDisabled()
+  expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("2023-01-02")
+  fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
+    target: { value: "Checked posting date; value date cannot be confirmed." },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  )
+  await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
+  expect(sent[0]).toMatchObject({
+    rows: [
+      { id: "1:0:0" },
+      {
+        id: "1:0:1",
+        date: "2023-01-02",
+        date_values: { booking_date: "2023-01-05", value_date: "" },
+      },
+    ],
+  })
+})
+
+it("offers the missing transaction date separately when the posting date was read", async () => {
+  const multiple = structuredClone(data)
+  delete (multiple.rows[1].fields as Record<string, unknown>).date
+  Object.assign(multiple.rows[1].fields, {
+    booking_date: "2023-01-03",
+    date_column: "0",
+    booking_date_column: "1",
+  })
+  multiple.rows[1].issues = ["Check the transaction date."]
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    String(url).includes("statement-import") &&
+    !String(url).includes("/confirm?")
+      ? Promise.resolve(multiple as never)
+      : base(url, options)
+  )
+  const done = mount()
+  await open()
+  expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("2023-01-03")
+  expect(screen.getByLabelText("Transaction date 1:0:1")).toHaveValue("")
+  fireEvent.change(screen.getByLabelText("Transaction date 1:0:1"), {
+    target: { value: "2023-01-02" },
+  })
+  fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
+    target: { value: "Read the transaction date from the PDF." },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  )
+  await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
+  expect(sent[0]).toMatchObject({
+    rows: [
+      { id: "1:0:0" },
+      { id: "1:0:1", date: "2023-01-03", date_values: { date: "2023-01-02" } },
+    ],
+  })
+})
+
 it("leaves an unknown credit or debit blank and requires the investigator to choose", async () => {
   const unknown = structuredClone(data)
   delete (unknown.rows[1].fields as Record<string, unknown>).direction

@@ -39,14 +39,22 @@ def propose_card_table(source, currency, statement):
             fee_columns = None
         elif any(text in ('Interest Charged', 'Totals Year-to-Date', 'Interest Charge Calculation') or text.startswith('Total Fees') for text in texts):
             fees = False
-        if fees and all(label in texts for label in ('Date', 'Description', 'Amount')):
-            fee_columns = {cell['expected_text'].strip(): cell['column_index'] for cell in row['cells']}
+        header_options = [('Date', 'Description', 'Amount'), ('Trans Date', 'Post Date', 'Description', 'Amount')]
+        matched_headers = [names for names in header_options if all(texts.count(name) == 1 for name in names)]
+        if fees and (any(name in texts for name in ('Date', 'Trans Date', 'Post Date')) or all(name in texts for name in ('Description', 'Amount'))):
+            fee_columns = ({name: next(c['column_index'] for c in row['cells'] if c['expected_text'].strip() == name)
+                            for name in matched_headers[0]} if len(matched_headers) == 1 else None)
         elif fees and fee_columns:
             columns = {c['column_index']: c for c in row['cells']}
-            if all(fee_columns[key] in columns for key in ('Date', 'Description', 'Amount')):
-                dates = _dates_within(columns[fee_columns['Date']]['expected_text'],
+            date_label = 'Date' if 'Date' in fee_columns else 'Trans Date'
+            if len(columns) == len(row['cells']) and all(index in columns for index in fee_columns.values()):
+                date_source = columns[fee_columns[date_label]]
+                posting_source = columns[fee_columns['Post Date']] if 'Post Date' in fee_columns else None
+                dates = _dates_within(date_source['expected_text'],
                                      date.fromisoformat(statement['period_start']), date.fromisoformat(statement['period_end']))[1]
-                candidate = dict(date_proposals=dates, posting_date_proposals=[],
+                candidate = dict(date_proposals=dates, date_source=date_source, posting_date_source=posting_source,
+                    posting_date_proposals=_dates_within(posting_source['expected_text'], date.fromisoformat(statement['period_start']),
+                                                       date.fromisoformat(statement['period_end']))[1] if posting_source else [],
                     description_source=columns[fee_columns['Description']], amount_source=columns[fee_columns['Amount']],
                     printed_section='Fees', card_ending=statement['account_reference'][-4:])
         if candidate:
@@ -54,12 +62,17 @@ def propose_card_table(source, currency, statement):
             fields = item['fields']
             fields.update(description=candidate['description_source']['expected_text'], counterparty='',
                           card_ending=candidate['card_ending'], printed_section=candidate['printed_section'])
+            fields['date_column'] = str(candidate['date_source']['column_index'])
             if len(candidate['date_proposals']) == 1:
                 fields['date'] = candidate['date_proposals'][0]
             else:
                 item['issues'].append('Check the transaction date against this billing period.')
             if len(candidate.get('posting_date_proposals', [])) == 1:
                 fields['booking_date'] = candidate['posting_date_proposals'][0]
+            if candidate.get('posting_date_source'):
+                fields['booking_date_column'] = str(candidate['posting_date_source']['column_index'])
+                if candidate['posting_date_source']['expected_text'].strip() and 'booking_date' not in fields:
+                    item['issues'].append('Check the posting date in the PDF. It could not be read within this billing period.')
             try:
                 raw = candidate['amount_source']['expected_text'].strip()
                 # The issuer prints a separated minus before the currency symbol.

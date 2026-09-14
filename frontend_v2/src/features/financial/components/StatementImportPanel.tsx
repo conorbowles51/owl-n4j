@@ -14,6 +14,13 @@ import { fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { PrintedStatementTable } from "./PrintedStatementTable"
+import {
+  additionalDateValues,
+  dateLabels,
+  primaryDateRole,
+  sourceDateRoles,
+  type DateRole,
+} from "../lib/statement-date-fields"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useUIStore } from "@/stores/ui.store"
 
@@ -105,6 +112,7 @@ type Edit = {
   excluded: boolean
   manual_page?: number | null
   date: string
+  date_values?: Partial<Record<DateRole, string>>
   description: string
   counterparty: string
   amount_minor: string
@@ -126,6 +134,7 @@ function initialRows(data: Proposal): Edit[] {
     id: r.id,
     excluded: r.excluded,
     date: r.fields.date || r.fields.booking_date || r.fields.value_date || "",
+    date_values: additionalDateValues(r.fields),
     description: r.fields.description || "",
     counterparty: r.fields.counterparty || "",
     amount_minor: r.fields.amount_minor || (r.excluded ? "0" : ""),
@@ -592,15 +601,19 @@ function EditableStatement({
   const changed = (r: Edit) => {
     if (r.manual_page) return true
     const initial = initialById.get(r.id)!
-    return [
-      "excluded",
-      "date",
-      "description",
-      "counterparty",
-      "amount_minor",
-      "direction",
-      "balance_minor",
-    ].some((k) => r[k as keyof Edit] !== initial[k as keyof Edit])
+    return (
+      JSON.stringify(r.date_values ?? {}) !==
+        JSON.stringify(initial.date_values ?? {}) ||
+      [
+        "excluded",
+        "date",
+        "description",
+        "counterparty",
+        "amount_minor",
+        "direction",
+        "balance_minor",
+      ].some((k) => r[k as keyof Edit] !== initial[k as keyof Edit])
+    )
   }
   const requiresReason = (r: Edit) =>
     changed(r) || !!originals.get(r.id)?.issues.length
@@ -610,6 +623,9 @@ function EditableStatement({
       (requiresReason(r) && !r.reason.trim()) ||
       (!r.excluded &&
         (!/^\d{4}-\d{2}-\d{2}$/.test(r.date) ||
+          Object.values(r.date_values ?? {}).some(
+            (value) => value && !/^\d{4}-\d{2}-\d{2}$/.test(value)
+          ) ||
           !r.description.trim() ||
           !r.direction ||
           !/^\d+$/.test(r.amount_minor) ||
@@ -954,6 +970,12 @@ function EditableStatement({
                             />
                           </td>
                           <td className="p-2 border-b align-top">
+                            {(sourceDateRoles(original.fields).length > 1 ||
+                              primaryDateRole(original.fields) !== "date") && (
+                              <span className="block text-xs mb-1">
+                                {dateLabels[primaryDateRole(original.fields)]}
+                              </span>
+                            )}
                             <input
                               aria-label={`Date ${r.id}`}
                               type="date"
@@ -964,6 +986,50 @@ function EditableStatement({
                                 update(r.id, { date: e.target.value })
                               }
                             />
+                            {sourceDateRoles(original.fields)
+                              .filter(
+                                (role) =>
+                                  role !== primaryDateRole(original.fields)
+                              )
+                              .map((role) => (
+                                <label
+                                  key={role}
+                                  className="block mt-2 text-xs"
+                                >
+                                  {dateLabels[role]}
+                                  <input
+                                    aria-label={`${dateLabels[role]} ${r.id}`}
+                                    type="date"
+                                    disabled={r.excluded}
+                                    className="block border rounded p-1 bg-background mt-1"
+                                    value={
+                                      r.date_values?.[role] ??
+                                      original.fields[role] ??
+                                      ""
+                                    }
+                                    onChange={(event) =>
+                                      update(r.id, {
+                                        date_values: {
+                                          ...r.date_values,
+                                          [role]: event.target.value,
+                                        },
+                                      })
+                                    }
+                                    onFocus={() => {
+                                      const source = original.source_cells.find(
+                                        (cell) =>
+                                          String(cell.column_index) ===
+                                          original.fields[role + "_column"]
+                                      )
+                                      if (source)
+                                        setFocus({
+                                          rowId: r.id,
+                                          locator: source.locator,
+                                        })
+                                    }}
+                                  />
+                                </label>
+                              ))}
                           </td>
                           <td className="p-2 border-b align-top min-w-56">
                             <input

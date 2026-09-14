@@ -40,6 +40,18 @@ it("preserves an unresolved credit or debit across a refresh", () => {
   expect(saveStatementDraft("draft", unresolved)).toBe(true)
   expect(readStatementDraft("draft", "first")?.rows[0].direction).toBe("")
 })
+it("restores separate date edits including an explicitly cleared posting date", () => {
+  const dates: StatementDraft = {
+    ...draft,
+    rows: draft.rows.map((row) => ({
+      ...row,
+      date: "2023-01-02",
+      date_values: { booking_date: "", value_date: "2023-01-05" },
+    })),
+  }
+  expect(saveStatementDraft("dates", dates)).toBe(true)
+  expect(readStatementDraft("dates", "first")).toEqual(dates)
+})
 it("does not apply edits to a changed extraction or another user's scope", () => {
   saveStatementDraft("user:case:file:first", draft)
   expect(readStatementDraft("user:case:file:first", "second")).toBeNull()
