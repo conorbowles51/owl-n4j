@@ -9,7 +9,7 @@ function stored() {
   return raw ? (JSON.parse(raw) as { state: Record<string, unknown> }) : null
 }
 
-describe("financial store, persisted tab", () => {
+describe("financial store, global display preferences", () => {
   beforeEach(() => {
     localStorage.clear()
     useFinancialStore.getState().reset()
@@ -24,7 +24,7 @@ describe("financial store, persisted tab", () => {
     expect(useFinancialStore.getState().mainView).toBe("trends")
   })
 
-  it("never writes the tab choice to the browser", () => {
+  it("never writes the tab choice to global browser preferences", () => {
     useFinancialStore.getState().setMainView("counterparties")
 
     const state = stored()?.state

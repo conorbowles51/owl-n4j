@@ -152,3 +152,7 @@ Delayed responses can no longer replace a reopened original-source preview or ex
 ### Returning to the same payment view
 
 Payment table filters, sorting and pagination now survive opening the original file, visiting its location in Evidence, returning to Financial and refreshing. Settings remain separate for each signed-in user, case and applied account/date view. Changing a filter starts at the first matching page; clearing filters leaves selected payments intact. Seven focused checks and actual nine-payment and 2,700-payment browser journeys passed, along with TypeScript, scoped lint and the production build. No payment records changed.
+
+### Returning to saved findings and recovering failed lists
+
+The active financial tab is retained in its URL, so refresh and browser Back return to Findings after opening a note in Workspace. Findings searches/pages and report-list pages remain separate for each user and case in the current browser tab. Failed loads offer retry buttons without clearing the search or report selection. Fifty-one focused navigation, list, page and store checks passed, with two final affected page checks after correcting duplicate React keys. The running browser verified the actual return and failure/retry workflows without changing saved notes or payment records. TypeScript, scoped lint and production build passed.

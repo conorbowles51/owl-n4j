@@ -1029,6 +1029,8 @@ The report retains the note versions shown in the preview. Later edits to those 
 
 A payment may be discussed in several findings. It appears in each relevant note, but is counted once within that note's payment totals. Do not add totals from different notes together to calculate money received or spent. Use the Transactions totals with the required filters for that purpose.
 
+In Findings, **Search saved work** searches saved notes and reports. Use **Previous notes** and **Next notes** when there is more than one page. If you follow **Edit or review in Workspace**, use your browser’s Back button to return to the same Findings search and page. Refresh also retains them in the same browser tab. A new search starts at the first page. If loading fails, select **Try loading saved work again**; your search and report selection stay in place.
+
 Your title, introduction and selected notes remain in the same browser tab when you close the builder or visit another financial tab. Closing the browser tab may discard an unfinished report. Saving to the case is the step that lets you and your colleagues return to it later.
 
 ### Reopen or download a saved financial report
@@ -1041,6 +1043,8 @@ Your title, introduction and selected notes remain in the same browser tab when 
 6. To include original PDFs, expand **Supporting file references** and read the file list. Tick **Include the supporting PDFs in the download package**, then select **Download report package with PDFs**.
 7. Extract the ZIP. Open `report.html`; the file links open the PDFs in its `statements` folder. A source used in several notes is included once. Each PDF is the whole original file, including any other payments or periods it contains.
 8. Check the report and files before sharing them outside the case.
+
+If the report list could not be loaded, select **Try loading reports again**. The list retains its page for this case in the same browser tab, including after refresh. Use **Previous financial reports** or **Next financial reports** to move through longer lists.
 
 ![Opening a saved financial report](images/18-saved-financial-report.png)
 

@@ -7,53 +7,25 @@ export interface SortColumn {
   asc: boolean
 }
 
-/**
- * The tab in front of you on the financial page, and nothing wider than that.
- *
- * `ledger`, `quarantine`, `runs` and `decisions` read Postgres: the ledger
- * itself, the rows held out of its totals, the record of every attempt to load
- * evidence into it, and the record of what people decided about that evidence
- * afterwards. The other three read the Neo4j graph. The two stores are written
- * independently and can disagree, so which one is on screen is a fact about
- * what you are looking at, not a presentation choice. The four Postgres tabs
- * are kept next to each other in the strip for that reason, and the order below
- * is the order they appear in.
- *
- * `quarantine` sits directly after `ledger` because the two are one read
- * against two populations: what a case's totals count, and what they leave out.
- * A person who has just read a total is one tab away from what the total
- * excludes.
- *
- * `runs` is the word the backend model, the endpoint, the hook and the query
- * key all use, so it is the word kept here. The tab is labelled "Attempts" on
- * screen, which is the word the notice and the run copy already use in front of
- * a reader.
- *
- * `decisions` sits last of the four because it is the only one that is not a
- * view of the ledger's current contents. The first three each answer "what does
- * the case hold now, and what was left out"; this one answers "who moved it,
- * and on what grounds", and it outlives its subjects -- a decision to delete a
- * duplicate is recorded before the thing it is about stops existing.
- *
- * Nothing here is persisted: `partialize` omits `mainView` and `merge` deletes
- * any stored value, so a member can be added or removed without a migration and
- * a page always opens on the ledger.
- */
-export type FinancialMainView =
-  | "findings"
-  | "patterns"
-  | "case-context"
-  | "ledger"
-  | "statements"
-  | "quarantine"
-  | "runs"
-  | "decisions"
-  | "transactions"
-  | "counterparties"
-  | "trends"
-  | "tracing"
-  | "transfers"
-  | "posting-graph"
+// The URL records the active financial tab. Global preferences exclude it so
+// a fresh case URL opens Transactions rather than a different case's last tab.
+export const financialMainViews = [
+  "findings",
+  "patterns",
+  "case-context",
+  "ledger",
+  "statements",
+  "quarantine",
+  "runs",
+  "decisions",
+  "transactions",
+  "counterparties",
+  "trends",
+  "tracing",
+  "transfers",
+  "posting-graph",
+] as const
+export type FinancialMainView = (typeof financialMainViews)[number]
 export type ChartGroupingOption = "auto" | "daily" | "weekly" | "monthly"
 
 interface FinancialStoreState {
@@ -272,11 +244,7 @@ export const useFinancialStore = create<FinancialStore>()(
     }),
     {
       name: "owl-financial-store",
-      /**
-       * `mainView` is deliberately not written. The financial page opens on
-       * the ledger every time, so which tab you were last on is not carried
-       * between visits.
-       */
+      // The URL owns the active tab; it is not a global display preference.
       partialize: (state) => ({
         sortColumns: state.sortColumns,
         pageSize: state.pageSize,

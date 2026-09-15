@@ -1,3 +1,4 @@
+import { useFinancialViewNavigation } from "../hooks/use-financial-view-navigation"
 import { useEvidenceReportDownload } from "../hooks/use-evidence-report-download"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
@@ -25,12 +26,11 @@ import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { LedgerCounterpartiesAnalysis } from "./LedgerCounterpartiesAnalysis"
 import {
   useCallback,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react"
-import { useParams, useSearchParams } from "react-router-dom"
+import { useParams } from "react-router-dom"
 import { BarChart3, DollarSign, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LedgerAnalysis } from "./LedgerAnalysis"
@@ -102,15 +102,7 @@ function FinancialPageContent() {
   const { id: caseId } = useParams()
   const { canEdit } = useFinancialAccess()
   const store = useFinancialStore()
-  const [searchParams, setSearchParams] = useSearchParams()
-  useEffect(() => {
-    if (caseId && searchParams.get("view") === "findings") {
-      useFinancialStore.getState().setMainView("findings")
-      const next = new URLSearchParams(searchParams)
-      next.delete("view")
-      setSearchParams(next, { replace: true })
-    }
-  }, [caseId, searchParams, setSearchParams])
+  useFinancialViewNavigation(caseId)
   const currentCase = useCase(caseId)
   const {
     download: downloadEvidenceReport,
@@ -559,7 +551,7 @@ function FinancialPageContent() {
         <FinancialGuide />
       </div>
       <Tabs
-        key={caseId}
+        key={`financial-tabs:${caseId}`}
         value={store.mainView}
         onValueChange={(value) => store.setMainView(value as FinancialMainView)}
         className="flex min-h-0 flex-1 flex-col"
@@ -1181,7 +1173,7 @@ function FinancialPageContent() {
       />
 
       <BulkImportDialog
-        key={caseId}
+        key={`financial-corrections:${caseId}`}
         open={bulkImportOpen}
         onOpenChange={setBulkImportOpen}
         transactions={filteredTransactions}

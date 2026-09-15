@@ -39,9 +39,13 @@ export function FinancialFindings({
   )
   const selectNodes = useGraphStore((state) => state.selectNodes)
   const expand = useUIStore((state) => state.expandGraphPanelTo)
-  const [page, setPage] = useState(0)
+  const [view, setView] = useFinancialDraft(caseId || "", "findings-list", {
+    search: "",
+    page: 0,
+  })
+  const { search, page } = view
+  const setPage = (page: number) => setView((current) => ({ ...current, page }))
   const { canEdit } = useFinancialAccess()
-  const [search, setSearch] = useState("")
   const [error, setError] = useState("")
   const [source, setSource] = useState<string | null>(null)
   const query = useCaseworkEntries(caseId, {
@@ -78,16 +82,22 @@ export function FinancialFindings({
           className="block w-full max-w-lg rounded border bg-background p-2"
           value={search}
           onChange={(e) => {
-            setSearch(e.target.value)
-            setPage(0)
+            setView({ search: e.target.value, page: 0 })
           }}
         />
       </label>
       {query.isPending && <p role="status">Loading saved work…</p>}
       {query.isError && (
-        <p role="alert">
-          Saved work could not be loaded. {query.error.message}
-        </p>
+        <div role="alert" className="space-y-2">
+          <p>Saved work could not be loaded. {query.error.message}</p>
+          <Button
+            variant="outline"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            {query.isFetching ? "Retrying…" : "Try loading saved work again"}
+          </Button>
+        </div>
       )}
       {!query.isPending && !query.isError && !entries.length && (
         <p>
@@ -327,11 +337,18 @@ export function FinancialFindings({
       ))}
       {(query.data?.total ?? 0) > 25 && (
         <div className="flex gap-2">
-          <Button disabled={page === 0} onClick={() => setPage(page - 1)}>
+          <Button
+            disabled={page === 0 || query.isPlaceholderData || query.isFetching}
+            onClick={() => setPage(page - 1)}
+          >
             Previous notes
           </Button>
           <Button
-            disabled={(page + 1) * 25 >= (query.data?.total ?? 0)}
+            disabled={
+              query.isPlaceholderData ||
+              query.isFetching ||
+              (page + 1) * 25 >= (query.data?.total ?? 0)
+            }
             onClick={() => setPage(page + 1)}
           >
             Next notes

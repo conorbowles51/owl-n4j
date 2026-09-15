@@ -1,10 +1,10 @@
-import { useState } from "react"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { useCaseworkEntries } from "@/features/workspace/hooks/use-casework"
 import { Button } from "@/components/ui/button"
 import { SavedFinancialReport } from "./SavedFinancialReport"
 
 export function FinancialReportsList({ caseId }: { caseId: string }) {
-  const [page, setPage] = useState(0)
+  const [page, setPage] = useFinancialDraft(caseId, "financial-reports-page", 0)
   const query = useCaseworkEntries(caseId, {
     tag: "financial-report",
     limit: 25,
@@ -33,9 +33,16 @@ export function FinancialReportsList({ caseId }: { caseId: string }) {
       </a>
       {query.isPending && <p role="status">Loading financial reports…</p>}
       {query.isError && (
-        <p role="alert">
-          Financial reports could not be loaded. {query.error.message}
-        </p>
+        <div role="alert" className="space-y-2">
+          <p>Financial reports could not be loaded. {query.error.message}</p>
+          <Button
+            variant="outline"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            {query.isFetching ? "Retrying…" : "Try loading reports again"}
+          </Button>
+        </div>
       )}
       {!query.isPending && !query.isError && !reports.length && (
         <p>No saved financial reports on this page.</p>
@@ -60,7 +67,7 @@ export function FinancialReportsList({ caseId }: { caseId: string }) {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            disabled={page === 0 || query.isPlaceholderData}
+            disabled={page === 0 || query.isPlaceholderData || query.isFetching}
             onClick={() => setPage((value) => value - 1)}
           >
             Previous financial reports
@@ -69,7 +76,8 @@ export function FinancialReportsList({ caseId }: { caseId: string }) {
             variant="outline"
             disabled={
               (page + 1) * 25 >= (query.data?.total ?? 0) ||
-              query.isPlaceholderData
+              query.isPlaceholderData ||
+              query.isFetching
             }
             onClick={() => setPage((value) => value + 1)}
           >
