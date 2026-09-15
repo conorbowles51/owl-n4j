@@ -1,3 +1,4 @@
+import { resetPaymentTableView } from "../lib/payment-table-draft"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useOtherRecordsView } from "../hooks/use-other-records-view"
 import { useFinancialViewNavigation } from "../hooks/use-financial-view-navigation"
@@ -684,7 +685,9 @@ function FinancialPageContent() {
                   key={caseId}
                   caseId={caseId}
                   onOpenAccount={(accountId, dates) => {
-                    applyInvestigationScope({ accountId, ...dates })
+                    const scope = { accountId, ...dates }
+                    if (caseId) resetPaymentTableView(caseId, scope)
+                    applyInvestigationScope(scope)
                     store.setMode("transactions")
                     store.setMainView("transactions")
                   }}
@@ -697,6 +700,9 @@ function FinancialPageContent() {
                 caseId={caseId}
                 onImported={(result) => {
                   if (result) setImportReceipt(result)
+                  const scope = { accountId: result?.account_id }
+                  if (caseId) resetPaymentTableView(caseId, scope, result)
+                  applyInvestigationScope(scope)
                   store.setMode("transactions")
                   if (result?.transaction_count === 0) {
                     setAccountReviewCase(caseId ?? null)

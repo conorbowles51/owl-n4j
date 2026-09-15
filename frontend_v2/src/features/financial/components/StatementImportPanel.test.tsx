@@ -587,6 +587,8 @@ it("does not offer to import the same active reading twice", async () => {
         ...data,
         current_import: {
           source_document_id: "previous",
+          account_id: "saved-account",
+          filename: "original-statement.pdf",
           evidence_file_id: "file",
           revision: "b".repeat(64),
           transaction_count: 1,
@@ -606,6 +608,14 @@ it("does not offer to import the same active reading twice", async () => {
     screen.getByRole("button", { name: "Open imported transactions" })
   )
   expect(done).toHaveBeenCalledTimes(1)
+  expect(done).toHaveBeenCalledWith(
+    expect.objectContaining({
+      case_id: "case",
+      account_id: "saved-account",
+      source_document_id: "previous",
+      filename: "original-statement.pdf",
+    })
+  )
   expect(sent).toHaveLength(0)
 })
 

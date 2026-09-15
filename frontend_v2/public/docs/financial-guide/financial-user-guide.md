@@ -255,7 +255,7 @@ Unfinished wire reviews are kept in this browser tab. Saving keeps the review wi
 2. Alternatively, select **Import a statement** and choose the file under **Or open an uploaded statement**.
 3. If several versions share a filename, compare their added times and the short identifier beside each name.
 4. Choose a statement period and currency if requested.
-5. If the statement was already imported, select **Open imported transactions** to return to the investigation view. Do not upload another copy to make it appear again.
+5. If the statement was already imported, select **Open imported transactions**. Transactions opens that statement’s account and shows payments from that file. Its filename appears above the table. Old date, search and amount filters are cleared so they cannot hide the statement’s payments. Do not upload another copy to make it appear again.
 
 For recognised Capital One collections, the period list includes supported Platinum, Secured Card and Platinum Secured Card headings. Choose the account ending and billing dates you need. Different account endings stay separate. The period count describes recognised statements; it does not mean every page or transaction has been verified.
 
@@ -503,6 +503,10 @@ An ordering date is the date Loupe uses to place a reading in sequence. For some
 7. Select **Clear payment filters** to remove the search, currency, amount and sort settings. The account and date filters above remain as you applied them.
 
 Your search, currency, amount limits, direction, sort order and table page are retained when you leave Financial or refresh in this browser tab. They are kept separately for each signed-in user, case and account/date view. Returning to a previous account/date view restores its table settings. **Clear payment filters** clears the saved settings for that view; it does not clear your selected payments.
+
+When you open imported transactions from a statement, **Statement: filename** appears above the table. Only payments imported from that source are shown. Select **Clear statement filter** to include other statements in the same account/date view. Your selected payments are retained. **Clear payment filters** also removes this statement restriction. Opening an account from Statements starts a fresh table view for that account.
+
+**Download this table view** retains the selected statement and all matching payments, including matches on other table pages. The downloaded report names the statement filter. The accompanying account/date snapshot still includes the wider account history, which is described separately in the download.
 
 The total labelled **Payments matching your filters** covers all matching table pages. It changes when you search. It does not include unprocessed PDFs. Changing currency clears the previous amount range.
 

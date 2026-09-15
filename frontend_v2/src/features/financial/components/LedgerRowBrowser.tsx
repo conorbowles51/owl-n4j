@@ -1,4 +1,8 @@
 import {
+  emptyPaymentTableView as emptyView,
+  paymentTableDraftName,
+} from "../lib/payment-table-draft"
+import {
   InvestigationTransactionTable,
   PaymentTotals,
 } from "./InvestigationTransactionTable"
@@ -11,16 +15,6 @@ import { useState, type ComponentProps } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
 import type { LedgerTransaction } from "../api"
-const emptyView = {
-  search: "",
-  currency: "",
-  minimum: "",
-  maximum: "",
-  direction: "",
-  proof: "",
-  sort: "ledger",
-  page: 0,
-}
 function exactAmount(row: LedgerTransaction) {
   const value = row.amount_minor
   if (typeof value === "number" && !Number.isSafeInteger(value)) return null
@@ -39,19 +33,23 @@ export function LedgerRowBrowser({
   const [localView, setLocalView] = useState(emptyView)
   const [savedView, setSavedView] = useFinancialDraft(
     exportContext?.caseId ?? "none",
-    `payment-table:${JSON.stringify([
-      investigation,
-      exportContext?.params.accountId ?? null,
-      exportContext?.params.startDate ?? null,
-      exportContext?.params.endDate ?? null,
-      exportContext?.params.ledgerStatus ?? "admitted",
-    ])}`,
+    paymentTableDraftName(exportContext?.params, investigation),
     emptyView
   )
   const view = exportContext ? savedView : localView
   const setView = exportContext ? setSavedView : setLocalView
-  const { search, currency, minimum, maximum, direction, proof, sort, page } =
-    view
+  const {
+    search,
+    currency,
+    minimum,
+    maximum,
+    direction,
+    proof,
+    sort,
+    page,
+    sourceDocumentId = "",
+    sourceFilename = "",
+  } = view
   const changeView = (changes: Partial<typeof emptyView>) =>
     setView((previous) => ({ ...previous, page: 0, ...changes }))
   const [selection, setSelection] = useFinancialDraft<string[]>(
@@ -76,6 +74,7 @@ export function LedgerRowBrowser({
   const rows = transactions.filter(
     (row) =>
       !invalidRange &&
+      (!sourceDocumentId || row.source_document_id === sourceDocumentId) &&
       (!minMinor ||
         (exactAmount(row) !== null && exactAmount(row)! >= BigInt(minMinor))) &&
       (!maxMinor ||
@@ -114,6 +113,25 @@ export function LedgerRowBrowser({
   const index = Math.min(page, Math.max(0, Math.ceil(rows.length / 50) - 1))
   return (
     <section aria-label="Browse ledger rows" className="space-y-3">
+      {sourceDocumentId && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card p-3"
+          role="region"
+          aria-label="Selected statement transactions"
+        >
+          <p>
+            Statement: <strong>{sourceFilename || "Selected statement"}</strong>
+          </p>
+          <Button
+            variant="outline"
+            onClick={() =>
+              changeView({ sourceDocumentId: "", sourceFilename: "" })
+            }
+          >
+            Clear statement filter
+          </Button>
+        </div>
+      )}
       <div className="flex flex-wrap items-end gap-3">
         <label>
           Search payments
@@ -354,6 +372,9 @@ export function LedgerRowBrowser({
             params={exportContext.params}
             tableView={{
               search,
+              ...(sourceDocumentId
+                ? { source_document_id: sourceDocumentId }
+                : {}),
               currency,
               direction,
               proof,

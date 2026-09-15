@@ -286,6 +286,12 @@ def render_ledger_report(snapshot):
     if document.get('table_view') is not None:
         view = document['table_view']
         indexed = {reading['row']['key']: reading['row'] for reading in ledger['readings']}
+        if view['filters'].get('source_document_id'):
+            source_id = view['filters']['source_document_id']
+            source = next((r['source'] for r in ledger['readings'] if r['source']['id'] == source_id), {})
+            filename = next((f['original_filename'] for f in (document.get('processing_provenance') or {}).get('evidence_registrations', [])
+                             if f['id'] == source.get('evidence_file_id')), 'Selected statement')
+            parts += ['<p>Statement filter: ' + text(filename) + '</p>']
         parts += ['<h2>Exported table view</h2>', '<p>' + text(view['limitation']) + '</p>',
             table(['Search', 'Currency', 'Direction', 'Proof class', 'Display order', 'Matching rows'], [[
                 view['filters']['search'] or 'None', view['filters']['currency'] or 'All',

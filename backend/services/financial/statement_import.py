@@ -10,6 +10,13 @@ MAX_STATEMENT_TRANSACTIONS = 1000
 MAX_STATEMENT_REVIEW_ROWS = 10000
 
 
+def _imported_account_id(session, source_document_id):
+    from postgres.models.financial import FinancialStatementPeriod
+    accounts = list(session.scalars(select(FinancialStatementPeriod.account_id).where(
+        FinancialStatementPeriod.source_document_id == source_document_id).distinct().limit(2)))
+    return str(accounts[0]) if len(accounts) == 1 else None
+
+
 def _check_review_size(rows):
     # Keep headings and balance controls available without making them consume
     # the payment allowance. Unknown rows still count until they are resolved.
@@ -277,7 +284,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions)
     current_import = None
     if current is not None:
+        current_file = session.get(EvidenceFile, current.evidence_file_id)
         current_import = dict(source_document_id=str(current.id), evidence_file_id=str(current.evidence_file_id),
+            account_id=_imported_account_id(session, current.id),
+            filename=current_file.original_filename if current_file else None,
             revision=duplicate_revision(session, current), transaction_count=session.scalar(select(func.count()).select_from(FinancialTransaction).where(FinancialTransaction.source_document_id == current.id, FinancialTransaction.ledger_status == 'admitted')))
         recorded_review = (current.metadata_ or {}).get('statement_import_request', {})
         current_import['review_decisions'] = [
@@ -489,7 +499,7 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 if existing is not None:
                     if (existing.metadata_ or {}).get('statement_import_request_sha256') == request_hash:
                         imported_count = sum(not row['excluded'] for row in existing.metadata_['statement_import_request']['rows'])
-                        return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), source_document_id=str(existing.id), transaction_count=imported_count, account_closed_on=((existing.metadata_.get('statement_import_original', {}).get('metadata', {}).get('account_closure')) or {}).get('date'), created=False, applied=True)
+                        return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), source_document_id=str(existing.id), account_id=_imported_account_id(session, existing.id), transaction_count=imported_count, account_closed_on=((existing.metadata_.get('statement_import_original', {}).get('metadata', {}).get('account_closure')) or {}).get('date'), created=False, applied=True)
                     from services.financial.duplicate_decisions import duplicate_revision
                     parent = (file.metadata_ or {}).get('statement_parent_evidence_id')
                     root = (file.metadata_ or {}).get('statement_root_evidence_id')

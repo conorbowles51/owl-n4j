@@ -29,11 +29,20 @@ export const useFinancialDraftStore = create<{
   )
 )
 
+export function financialDraftKey(
+  caseId: string,
+  name: string,
+  owner?: string
+) {
+  const user = useAuthStore.getState().user
+  return `${owner ?? (user?.id || user?.username || "anonymous")}:${caseId}:${name}`
+}
+
 export function useFinancialDraft<T>(caseId: string, name: string, initial: T) {
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
   )
-  const key = `${owner}:${caseId}:${name}`
+  const key = financialDraftKey(caseId, name, owner)
   const stored = useFinancialDraftStore((state) => state.drafts[key])
   const value = stored === undefined ? initial : (stored as T)
   const update = (next: T | ((previous: T) => T)) => {

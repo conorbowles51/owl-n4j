@@ -160,3 +160,9 @@ The active financial tab is retained in its URL, so refresh and browser Back ret
 ### Retaining the other-record investigation view
 
 Other financial records now remains selected after refresh. Searches, category/person/date/amount filters, ordering, table page and expanded records survive the trip from an original PDF to Evidence and back. Each case and signed-in user has separate browser-tab settings. Reset all retains the cleared view; selecting the current dataset does not collapse records. Pagination stays within the available results after a reload. Original-file viewers in this area now offer Open file location. Fifty-six focused checks, TypeScript, scoped lint and production build passed. The actual two-case browser check retained views and compared all five/six supporting records and nine bank payments unchanged.
+
+## Open imported statements in the right account
+
+Open imported transactions now applies the statement's saved account and shows only payments from that imported source. Its filename is visible above the table, with Clear statement filter to include other statements again. Old searches and date filters cannot silently hide the opened statement. Refresh retains this view and existing selected payments remain selected. Table downloads record the same source restriction and filename while preserving the wider account history separately.
+
+Twenty-seven focused frontend and nine backend checks, TypeScript, scoped lint and production build passed. The real browser opened six checking-statement payments from a previously selected savings account, kept a selected payment and retained its view through refresh. The downloaded ZIP contains those six exact IDs and the saved correction; nine case payments are unchanged. The remote was fetched with zero incoming commits. No push or broad suite was performed.

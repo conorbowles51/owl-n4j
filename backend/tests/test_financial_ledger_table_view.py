@@ -35,3 +35,23 @@ class LedgerTableViewTests(TestCase):
         self.assertEqual(view['filters']['minimum_minor'],'9007199254740993')
         for invalid in [dict(minimum_minor='0'),dict(currency='GBP',minimum_minor='2',maximum_minor='1'),dict(currency='GBP',minimum_minor='9223372036854775808'),dict(currency='GBP',maximum_minor='1.2'),dict(currency='GBP',minimum_minor=0)]:
             with self.subTest(invalid=invalid),self.assertRaises(LedgerSummaryError):capture_table_view(ledger,invalid)
+
+    def test_statement_filter_keeps_exact_source_rows_without_changing_the_full_capture(self):
+        from copy import deepcopy
+        a_id = '00000000-0000-4000-8000-000000000001'
+        b_id = '00000000-0000-4000-8000-000000000002'
+        a = self.row('a', source_document_id=a_id)
+        b = self.row('b', source_document_id=b_id)
+        archived = self.row('archived', source_document_id=a_id)
+        archived['row']['ledger_status'] = 'superseded'
+        ledger = {'readings': [a, b, archived]}
+        before = deepcopy(ledger)
+        view = capture_table_view(ledger, {'source_document_id': a_id})
+        self.assertEqual(view['row_ids'], ['a'])
+        self.assertEqual(view['filters']['source_document_id'], a_id)
+        self.assertEqual(ledger, before)
+        self.assertEqual(capture_table_view(ledger, {'source_document_id': b_id})['row_ids'], ['b'])
+        self.assertNotIn('source_document_id', capture_table_view(ledger, {})['filters'])
+        for value in ['prefix', a_id + 'extra', None, 42]:
+            with self.subTest(value=value), self.assertRaises(LedgerSummaryError):
+                capture_table_view(ledger, {'source_document_id': value})

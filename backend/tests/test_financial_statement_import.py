@@ -50,6 +50,18 @@ class StatementImportTests(TransactionPersistenceTestCase):
         return confirm_statement_import(session_factory=self.SessionLocal,case_id=self.case.id,
             evidence_file_id=self.file.id,request=request or self.request(),actor=self.actor,resolve_path=Path)
 
+    def test_existing_import_and_same_request_keep_the_saved_account_for_navigation(self):
+        request = self.request()
+        saved = self.confirm(request)
+        current = self.preview()['current_import']
+        self.assertEqual(current['account_id'], saved['account_id'])
+        self.assertEqual(current['source_document_id'], saved['source_document_id'])
+        self.assertEqual(current['filename'], self.file.original_filename)
+        repeated = self.confirm(request)
+        self.assertEqual(repeated['account_id'], saved['account_id'])
+        self.assertFalse(repeated['created'])
+        self.assertEqual(repeated['transaction_count'], saved['transaction_count'])
+
     def prepare_long_statement(self, count):
         from tests.test_financial_statement_import_proposal import source
         job = self.db.get(EvidenceDocumentText, self.file.id).engine_job_id

@@ -6,6 +6,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 class LedgerTableView(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     search: Annotated[str, Field(max_length=256)] = ''
+    source_document_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
     currency: Annotated[str, Field(pattern=r'^$|^[A-Z]{3}$')] = ''
     direction: Literal['', 'credit', 'debit'] = ''
     proof: Literal['', 'p0', 'p1', 'p2', 'p3'] = ''
@@ -38,6 +39,8 @@ def capture_table_view(ledger, request):
         # distinction from eligibility of the parent source for totals.
         if row['ledger_status'] != 'admitted':
             continue
+        if view.source_document_id and row.get('source_document_id') != view.source_document_id:
+            continue
         if view.currency and row['currency'] != view.currency or view.direction and row['direction'] != view.direction or view.proof and row['proof_class'] != view.proof:
             continue
         if view.minimum_minor and int(row['amount_minor']) < int(view.minimum_minor) or view.maximum_minor and int(row['amount_minor']) > int(view.maximum_minor):
@@ -53,6 +56,6 @@ def capture_table_view(ledger, request):
         if len({r['currency'] for r in rows}) > 1:
             raise LedgerSummaryError('Choose one currency before exporting an amount-sorted table.')
         rows.sort(key=lambda r: int(r['amount_minor']), reverse=view.sort == 'amount-desc')
-    return dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(),
+    return dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={'source_document_id'} if not view.source_document_id else set()),
         row_ids=[r['key'] for r in rows],matching_rows=len(rows),
         limitation='Admitted ledger rows matching the recorded table filters, in display order, captured at export time. Display order does not establish bank sequence. The enclosing snapshot retains the full applied account/date scope and its history; its totals apply to that full scope. Source eligibility and proof classes are unchanged. All matching rows are included, not just the visible page.')

@@ -101,6 +101,8 @@ const proposalSchema = z.object({
     .object({
       source_document_id: z.string(),
       evidence_file_id: z.string(),
+      account_id: z.string().nullable().optional(),
+      filename: z.string().nullable().optional(),
       revision: z.string(),
       transaction_count: z.number(),
       details_reason: z.string().default(""),
@@ -146,7 +148,10 @@ const receipt = z.object({
   evidence_file_id: z.string(),
   transaction_count: z.number(),
   source_document_id: z.string().optional(),
-  account_id: z.string().optional(),
+  account_id: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? undefined),
   applied: z.literal(true),
   account_closed_on: z.string().nullable().optional(),
 })
@@ -493,7 +498,18 @@ function StatementReview({
         onReady={onReprocessed}
       />
       {query.data.current_import && (
-        <Button variant="outline" onClick={() => onImported()}>
+        <Button
+          variant="outline"
+          onClick={() =>
+            onImported({
+              ...query.data.current_import!,
+              case_id: caseId,
+              account_id: query.data.current_import!.account_id || undefined,
+              filename:
+                query.data.current_import!.filename || query.data.filename,
+            })
+          }
+        >
           Open imported transactions
         </Button>
       )}
@@ -901,7 +917,13 @@ function EditableStatement({
             className="ml-auto"
             onClick={
               data.current_import?.evidence_file_id === fileId
-                ? () => onImported()
+                ? () =>
+                    onImported({
+                      ...data.current_import!,
+                      case_id: caseId,
+                      account_id: data.current_import!.account_id || undefined,
+                      filename: data.current_import!.filename || data.filename,
+                    })
                 : editValues
             }
           >

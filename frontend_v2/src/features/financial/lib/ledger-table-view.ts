@@ -1,4 +1,5 @@
 export interface LedgerTableView {
+  source_document_id?: string
   search: string
   currency: string
   direction: string

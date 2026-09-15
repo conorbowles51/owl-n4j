@@ -1,3 +1,7 @@
+import {
+  paymentTableDraftName,
+  resetPaymentTableView,
+} from "../lib/payment-table-draft"
 import { act, render, screen, fireEvent } from "@testing-library/react"
 import { beforeEach, expect, it, vi } from "vitest"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
@@ -122,6 +126,7 @@ it("filters inclusive exact ranges, rejects invalid precision and resets on curr
 })
 
 vi.mock("./LedgerExportButton", () => ({ LedgerExportButton: () => null }))
+vi.mock("./SavePaymentSelection", () => ({ SavePaymentSelection: () => null }))
 const user = (id: string) =>
   ({ id, username: id }) as NonNullable<
     ReturnType<typeof useAuthStore.getState>["user"]
@@ -209,4 +214,66 @@ it("clears the saved table filters so reopening does not restore the old search"
   render(show())
   expect(screen.getByLabelText("Search payments")).toHaveValue("")
   expect(screen.getByRole("button", { name: "one" })).toBeVisible()
+})
+
+it("opens a named statement with fresh table filters and preserves other views and selected payments", () => {
+  useAuthStore.setState({ user: null })
+  const params = { accountId: "checking" }
+  useFinancialDraftStore
+    .getState()
+    .put(`anonymous:case:${paymentTableDraftName(params, true)}`, {
+      search: "old search",
+      currency: "EUR",
+      page: 2,
+    })
+  useFinancialDraftStore
+    .getState()
+    .put("anonymous:case:selected-payments", ["earlier"])
+  useFinancialDraftStore
+    .getState()
+    .put("anonymous:other-case:some-note", "Keep another case")
+  resetPaymentTableView("case", params, {
+    source_document_id: "source-a",
+    filename: "Checking.pdf",
+  })
+  const mounted = render(
+    <LedgerRowBrowser
+      investigation
+      exportContext={{ caseId: "case", params }}
+      transactions={[
+        row("a", { source_document_id: "source-a", currency: "USD" }),
+        row("b", { source_document_id: "source-b", currency: "USD" }),
+      ]}
+    />
+  )
+  expect(screen.getByLabelText("Search payments")).toHaveValue("")
+  expect(screen.getByLabelText("Currency")).toHaveValue("")
+  expect(
+    screen.getByRole("region", { name: "Selected statement transactions" })
+  ).toHaveTextContent("Checking.pdf")
+  expect(
+    screen
+      .getByRole("table", { name: "Investigation transactions" })
+      .querySelectorAll("tbody tr")
+  ).toHaveLength(1)
+  expect(
+    useFinancialDraftStore.getState().drafts["anonymous:case:selected-payments"]
+  ).toEqual(["earlier"])
+  expect(
+    useFinancialDraftStore.getState().drafts["anonymous:other-case:some-note"]
+  ).toBe("Keep another case")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Clear statement filter" })
+  )
+  expect(
+    screen
+      .getByRole("table", { name: "Investigation transactions" })
+      .querySelectorAll("tbody tr")
+  ).toHaveLength(2)
+  mounted.unmount()
+  expect(
+    useFinancialDraftStore.getState().drafts[
+      `anonymous:case:${paymentTableDraftName(params, true)}`
+    ]
+  ).toMatchObject({ sourceDocumentId: "" })
 })
