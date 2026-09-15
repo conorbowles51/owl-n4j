@@ -21,6 +21,7 @@ from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
 
+import re
 import logging
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,7 @@ def _build_entity_flow_rows(
     side: str,
     counterpart_selections: set[str],
 ) -> list[dict]:
-    grouped: dict[str, dict] = {}
+    grouped: dict[tuple[str, str | None], dict] = {}
     counter_side = "to_entity" if side == "from_entity" else "from_entity"
 
     for transaction in transactions:
@@ -124,13 +125,16 @@ def _build_entity_flow_rows(
         if not entity_value or not entity_name:
             continue
 
-        current = grouped.get(entity_value)
+        currency = str(transaction.get('currency') or '').strip().upper() or None
+        group_key = (entity_value, currency)
+        current = grouped.get(group_key)
         if current:
             current["count"] += 1
             current["totalAmount"] += abs(float(transaction.get("amount") or 0))
             continue
 
-        grouped[entity_value] = {
+        grouped[group_key] = {
+            "currency": currency,
             "key": entity_value,
             "name": entity_name,
             "count": 1,
@@ -683,6 +687,11 @@ async def export_financial_pdf(
     from_entities: Optional[str] = Query(None, description="Comma-separated sender entity keys"),
     to_entities: Optional[str] = Query(None, description="Comma-separated beneficiary entity keys"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
+    category_names: Optional[List[str]] = Query(None),
+    sender_values: Optional[List[str]] = Query(None),
+    beneficiary_values: Optional[List[str]] = Query(None),
+    min_amount: Optional[float] = Query(None, ge=0, allow_inf_nan=False),
+    max_amount: Optional[float] = Query(None, ge=0, allow_inf_nan=False),
 ):
     """Export filtered financial transactions as a PDF report.
 
@@ -694,9 +703,9 @@ async def export_financial_pdf(
         result = neo4j_service.get_financial_transactions(case_id=case_id, mode=mode)
         transactions = result.get("transactions", []) if isinstance(result, dict) else result
         filters = []
-        category_list = _parse_csv_param(categories)
-        from_entity_values = set(_parse_csv_param(from_entities))
-        to_entity_values = set(_parse_csv_param(to_entities))
+        category_list = category_names if category_names is not None else _parse_csv_param(categories)
+        from_entity_values = set(sender_values if sender_values is not None else _parse_csv_param(from_entities))
+        to_entity_values = set(beneficiary_values if beneficiary_values is not None else _parse_csv_param(to_entities))
 
         if category_list:
             transactions = [
@@ -736,6 +745,14 @@ async def export_financial_pdf(
             transactions = [t for t in transactions if _matches_text_search(t, search)]
             filters.append(f'Search: "{search}"')
 
+        if min_amount is not None and max_amount is not None and min_amount > max_amount:
+            raise HTTPException(status_code=422, detail='Minimum amount must not exceed maximum amount.')
+        if min_amount is not None:
+            transactions = [t for t in transactions if abs(float(t.get('amount') or 0)) >= min_amount]
+            filters.append(f'Minimum amount (absolute value): {min_amount}')
+        if max_amount is not None:
+            transactions = [t for t in transactions if abs(float(t.get('amount') or 0)) <= max_amount]
+            filters.append(f'Maximum amount (absolute value): {max_amount}')
         base_filtered_transactions = transactions
 
         entity_flow = None
@@ -774,9 +791,10 @@ async def export_financial_pdf(
             filters_description,
             entity_notes=entity_notes,
             entity_flow=entity_flow,
+            dataset_mode=mode,
         )
 
-        safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
+        safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", case_name)[:50] or "Case"
         mode_label = "Transactions" if mode != "intelligence" else "Financial_Intelligence"
         filename = (
             f"Financial_Report_{mode_label}_{safe_name}_{datetime.now().strftime('%Y%m%d')}."
@@ -788,5 +806,7 @@ async def export_financial_pdf(
             media_type=rendered["media_type"],
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,3 +1,4 @@
+import { useEvidenceReportDownload } from "../hooks/use-evidence-report-download"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   FinancialAccessProvider,
@@ -111,6 +112,11 @@ function FinancialPageContent() {
     }
   }, [caseId, searchParams, setSearchParams])
   const currentCase = useCase(caseId)
+  const {
+    download: downloadEvidenceReport,
+    busy: evidenceReportBusy,
+    error: evidenceReportError,
+  } = useEvidenceReportDownload(caseId)
   const [importReceipt, setImportReceipt] =
     useState<StatementImportReceipt | null>(null)
   const [, applyInvestigationScope] = useInvestigationScope(caseId)
@@ -372,10 +378,12 @@ function FinancialPageContent() {
       case_id: caseId,
       mode: store.mode,
       include_entity_notes: "true",
+      case_name: currentCase.data?.title || "Case",
     })
 
     if (store.selectedCategories.size > 0) {
-      params.set("categories", [...store.selectedCategories].join(","))
+      for (const category of store.selectedCategories)
+        params.append("category_names", category)
     }
     if (store.startDate) params.set("start_date", store.startDate)
     if (store.endDate) params.set("end_date", store.endDate)
@@ -387,15 +395,23 @@ function FinancialPageContent() {
       params.set("search", store.searchQuery.trim())
     }
     if (selectedSenders.size > 0) {
-      params.set("from_entities", [...selectedSenders].join(","))
+      for (const sender of selectedSenders)
+        params.append("sender_values", sender)
     }
     if (selectedBeneficiaries.size > 0) {
-      params.set("to_entities", [...selectedBeneficiaries].join(","))
+      for (const beneficiary of selectedBeneficiaries)
+        params.append("beneficiary_values", beneficiary)
     }
 
-    window.open(`/api/financial/export/pdf?${params.toString()}`, "_blank")
+    if (store.minAmount.trim()) params.set("min_amount", store.minAmount.trim())
+    if (store.maxAmount.trim()) params.set("max_amount", store.maxAmount.trim())
+    void downloadEvidenceReport(params)
   }, [
     caseId,
+    currentCase.data?.title,
+    downloadEvidenceReport,
+    store.minAmount,
+    store.maxAmount,
     store.mode,
     store.selectedCategories,
     store.startDate,
@@ -437,9 +453,15 @@ function FinancialPageContent() {
         onOpenBulkImport={() => setBulkImportOpen(true)}
         onOpenCategoryManagement={() => setCategoryMgmtOpen(true)}
         onExportPdf={handleExportPdf}
+        isExporting={evidenceReportBusy}
         onModeChange={handleModeChange}
       />
 
+      {evidenceReportError && (
+        <p role="alert" className="p-3 text-sm text-destructive">
+          {evidenceReportError}
+        </p>
+      )}
       {usesLegacyFinancialModel && (
         <div className="border-b border-yellow-500/25 bg-yellow-500/10 px-4 py-2 text-xs text-yellow-800 dark:text-yellow-200">
           This case is using the legacy financial dataset. Reprocess the case to

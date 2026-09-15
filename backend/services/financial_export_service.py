@@ -13,6 +13,8 @@ because the export is an event and the document is an exhibit.
 """
 
 from html import escape
+from decimal import Decimal, InvalidOperation
+import re
 from typing import Any
 
 from services.financial.export_manifest import manifest_for
@@ -44,7 +46,7 @@ def _provenance_label(transaction: dict) -> str:
         parts.append(str(source_file))
     if page:
         parts.append(f"p.{page}")
-    return " | ".join(parts) if parts else "Legacy"
+    return " | ".join(parts) if parts else "Source not recorded"
 
 
 def _group_transactions_for_export(transactions: list[dict]) -> list[dict]:
@@ -112,6 +114,46 @@ def _group_transactions_for_export(transactions: list[dict]) -> list[dict]:
     return ordered
 
 
+def _record_amount(value):
+    try:
+        amount = Decimal(str(value))
+        return amount if amount.is_finite() else None
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _currency_label(value):
+    return str(value or '').strip().upper() or 'Currency not recorded'
+
+
+def _amount_label(value, currency):
+    amount = _record_amount(value)
+    return f'{amount:,.2f} {_currency_label(currency)}' if amount is not None else 'Amount not recorded'
+
+
+def _currency_summary(transactions):
+    groups = {}
+    for row in transactions:
+        currency = _currency_label(row.get('currency'))
+        group = groups.setdefault(currency, dict(count=0, positive=Decimal(0), negative=Decimal(0), missing=0))
+        group['count'] += 1
+        amount = _record_amount(row.get('amount'))
+        if amount is None:
+            group['missing'] += 1
+        elif amount >= 0:
+            group['positive'] += amount
+        else:
+            group['negative'] += amount
+    rows = []
+    for currency, group in sorted(groups.items()):
+        can_total = bool(re.fullmatch(r'[A-Z]{3}', currency)) and not group['missing']
+        cells = [f'{group[k]:,.2f}' if can_total else 'Not totalled' for k in ('positive', 'negative')]
+        net = f"{group['positive'] + group['negative']:,.2f}" if can_total else 'Not totalled'
+        rows.append(f'<tr><td class="cell">{_esc(currency)}</td><td class="cell">{group["count"]}</td>'
+                    + ''.join(f'<td class="cell" style="text-align:right">{v}</td>' for v in [*cells, net]) + '</tr>')
+    return '<table class="report-table"><thead><tr><th class="th">Currency</th><th class="th">Records</th><th class="th">Positive amounts</th><th class="th">Negative amounts</th><th class="th">Sum of amounts</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>'
+
+
 def _render_entity_flow_section(entity_flow: dict | None) -> str:
     if not entity_flow:
         return ""
@@ -129,7 +171,7 @@ def _render_entity_flow_section(entity_flow: dict | None) -> str:
             <tr>
                 <td class="cell">{_esc(row.get("name"))}</td>
                 <td class="cell" style="text-align: right;">{int(row.get("count") or 0)}</td>
-                <td class="cell" style="text-align: right;">${float(row.get("totalAmount") or 0):,.2f}</td>
+                <td class="cell" style="text-align: right;">{_esc(_amount_label(row.get("totalAmount"), row.get("currency"))) if row.get("currency") else "Not totalled"}</td>
             </tr>
             """
             for row in rows[:10]
@@ -143,7 +185,7 @@ def _render_entity_flow_section(entity_flow: dict | None) -> str:
                 <thead>
                     <tr>
                         <th class="th">Entity</th>
-                        <th class="th" style="text-align: right;">Txns</th>
+                        <th class="th" style="text-align: right;">Records</th>
                         <th class="th" style="text-align: right;">Amount</th>
                     </tr>
                 </thead>
@@ -156,7 +198,7 @@ def _render_entity_flow_section(entity_flow: dict | None) -> str:
                 <thead>
                     <tr>
                         <th class="th">Entity</th>
-                        <th class="th" style="text-align: right;">Txns</th>
+                        <th class="th" style="text-align: right;">Records</th>
                         <th class="th" style="text-align: right;">Amount</th>
                     </tr>
                 </thead>
@@ -173,20 +215,12 @@ def build_financial_export_html(
     filters_description: str = "",
     entity_notes: list[dict] | None = None,
     entity_flow: dict | None = None,
+    dataset_mode: str = "transactions",
 ) -> str:
     ordered_transactions = _group_transactions_for_export(transactions)
     total_count = len(ordered_transactions)
-    total_value = sum(abs(float(t.get("amount") or 0)) for t in ordered_transactions)
-    money_out = sum(
-        abs(float(t.get("amount") or 0))
-        for t in ordered_transactions
-        if float(t.get("amount") or 0) >= 0
-    )
-    money_in = sum(
-        abs(float(t.get("amount") or 0))
-        for t in ordered_transactions
-        if float(t.get("amount") or 0) < 0
-    )
+    report_title = 'Other financial records' if dataset_mode == 'intelligence' else 'Financial records report'
+    currency_summary = _currency_summary(ordered_transactions)
 
     categories: dict[str, int] = {}
     for t in ordered_transactions:
@@ -198,9 +232,8 @@ def build_financial_export_html(
 
     rows_html = ""
     for i, t in enumerate(ordered_transactions):
-        amount_val = float(t.get("amount") or 0)
-        amount_color = "#dc2626" if amount_val >= 0 else "#16a34a"
-        amount_str = f"${abs(amount_val):,.2f}"
+        amount_color = "#0f172a"
+        amount_str = _esc(_amount_label(t.get("amount"), t.get("currency")))
         corrected_marker = ""
         if t.get("amount_corrected"):
             corrected_marker = (
@@ -224,17 +257,20 @@ def build_financial_export_html(
             details_parts.append(
                 f'<span style="color: #475569; font-style: italic;">[AI] {_esc(summary)}</span>'
             )
+        if t.get('amount_corrected'):
+            details_parts.append('Original amount: ' + _esc(_amount_label(t.get('original_amount'), t.get('currency'))))
+            details_parts.append('Latest correction: ' + _esc(t.get('correction_reason') or 'Explanation not recorded'))
         details_html = "<br>".join(details_parts) if details_parts else "-"
 
         rows_html += f"""
         <tr style="background: {background};">
             <td class="cell">{_esc(t.get("date"))}</td>
             <td class="cell{' parent-row' if t.get('is_parent') else ''}" style="padding-left: {'24px' if is_child else '8px'};">
-                {'&#8627; ' if is_child else ''}{_esc(t.get("name"))}
+                {'&#8627; ' if is_child else ''}{_esc(t.get("name"))}<br><small>Record: {_esc(t.get("key"))}</small>
             </td>
             <td class="cell">{_esc(_entity_name(t.get("from_entity")))}</td>
             <td class="cell">{_esc(_entity_name(t.get("to_entity")))}</td>
-            <td class="cell" style="font-family: monospace; color: {amount_color}; text-align: right; white-space: nowrap;">
+            <td class="cell" style="font-family: monospace; color: {amount_color}; text-align: right;">
                 {amount_str}{corrected_marker}
             </td>
             <td class="cell">{_esc(t.get("category") or t.get("financial_category") or "Uncategorized")}</td>
@@ -248,7 +284,7 @@ def build_financial_export_html(
         footnote_html = """
         <div class="callout warning">
             <strong>&#9998; Manually Corrected Amounts</strong>
-            Original values are preserved on file for audit purposes.
+            Original amounts and the latest correction explanations appear beside the corrected records.
         </div>
         """
 
@@ -302,7 +338,7 @@ def build_financial_export_html(
                 size: A4 landscape;
                 margin: 1.2cm;
                 @bottom-center {{
-                    content: "Attorney-Client Privileged | Page " counter(page) " of " counter(pages);
+                    content: "Financial records | Page " counter(page) " of " counter(pages);
                     font-size: 9px;
                     color: #64748b;
                 }}
@@ -318,13 +354,14 @@ def build_financial_export_html(
             .hero {{
                 background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
                 color: white;
-                padding: 18px 22px;
+                padding: 14px 18px;
                 border-radius: 10px;
                 margin-bottom: 16px;
             }}
+            .report-note {{ font-size: 11px; line-height: 1.35; margin: 8px 0; }}
             .summary-grid {{
                 display: grid;
-                grid-template-columns: repeat(5, minmax(0, 1fr));
+                grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 12px;
                 margin-bottom: 14px;
             }}
@@ -332,7 +369,7 @@ def build_financial_export_html(
                 background: #f8fafc;
                 border: 1px solid #e2e8f0;
                 border-radius: 8px;
-                padding: 12px 14px;
+                padding: 9px 12px;
             }}
             .analysis-grid {{
                 display: grid;
@@ -413,27 +450,14 @@ def build_financial_export_html(
     </head>
     <body>
         <div class="hero">
-            <div style="font-size: 20px; font-weight: 700; margin-bottom: 4px;">Financial Analysis Report</div>
+            <div style="font-size: 20px; font-weight: 700; margin-bottom: 4px;">{report_title}</div>
             <div style="font-size: 13px; opacity: 0.86;">{_esc(case_name)}</div>
-            <div style="font-size: 10px; opacity: 0.65; margin-top: 6px;">ATTORNEY-CLIENT PRIVILEGED AND CONFIDENTIAL</div>
         </div>
 
         <div class="summary-grid">
             <div class="summary-card">
-                <div style="font-size: 10px; color: #64748b; text-transform: uppercase;">Transactions</div>
+                <div style="font-size: 10px; color: #64748b; text-transform: uppercase;">Records</div>
                 <div style="font-size: 19px; font-weight: 700;">{total_count}</div>
-            </div>
-            <div class="summary-card">
-                <div style="font-size: 10px; color: #64748b; text-transform: uppercase;">Money Out</div>
-                <div style="font-size: 18px; font-weight: 700; color: #dc2626;">${money_out:,.2f}</div>
-            </div>
-            <div class="summary-card">
-                <div style="font-size: 10px; color: #64748b; text-transform: uppercase;">Money In</div>
-                <div style="font-size: 18px; font-weight: 700; color: #16a34a;">${money_in:,.2f}</div>
-            </div>
-            <div class="summary-card">
-                <div style="font-size: 10px; color: #64748b; text-transform: uppercase;">Total Value</div>
-                <div style="font-size: 18px; font-weight: 700;">${total_value:,.2f}</div>
             </div>
             <div class="summary-card">
                 <div style="font-size: 10px; color: #64748b; text-transform: uppercase;">Categories</div>
@@ -443,6 +467,9 @@ def build_financial_export_html(
 
         {f'<div class="filters">Active filters: {_esc(filters_description)}</div>' if filters_description else ''}
 
+        <p class="report-note">These amounts are recorded in the selected evidence. Positive and negative signs are retained. A sign alone does not identify money paid in or out.</p>
+        {currency_summary}
+        <p class="report-note">Different currencies remain separate. Missing currencies or amounts are not totalled. These sums are not account balances.</p>
         {_render_entity_flow_section(entity_flow)}
 
         <table class="report-table">
@@ -454,7 +481,7 @@ def build_financial_export_html(
                     <th class="th" style="width: 12%;">Beneficiary</th>
                     <th class="th" style="width: 9%; text-align: right;">Amount</th>
                     <th class="th" style="width: 10%;">Category</th>
-                    <th class="th" style="width: 14%;">Provenance</th>
+                    <th class="th" style="width: 14%;">Original source</th>
                     <th class="th">Details / AI Summary</th>
                 </tr>
             </thead>
@@ -474,6 +501,7 @@ def generate_financial_pdf(
     filters_description: str = "",
     entity_notes: list[dict] | None = None,
     entity_flow: dict | None = None,
+    dataset_mode: str = "transactions",
 ) -> bytes:
     html = build_financial_export_html(
         transactions,
@@ -481,6 +509,7 @@ def generate_financial_pdf(
         filters_description=filters_description,
         entity_notes=entity_notes,
         entity_flow=entity_flow,
+        dataset_mode=dataset_mode,
     )
     import weasyprint
 
@@ -493,6 +522,7 @@ def render_financial_export(
     filters_description: str = "",
     entity_notes: list[dict] | None = None,
     entity_flow: dict | None = None,
+    dataset_mode: str = "transactions",
 ) -> dict:
     """Render the export, and describe the act of rendering it.
 
@@ -515,6 +545,7 @@ def render_financial_export(
         filters_description=filters_description,
         entity_notes=entity_notes,
         entity_flow=entity_flow,
+        dataset_mode=dataset_mode,
     )
     manifest = manifest_for(
         html,

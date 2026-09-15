@@ -123,6 +123,17 @@ This tool changes amounts in **Other financial records**. It does not upload ban
 
 If a record's amount changes after your preview, Loupe refuses that correction. Reload the list before preparing another preview. The original amount and latest correction explanation remain with each record.
 
+
+### Download other financial records
+
+1. Open **Transactions**, then **Other financial records**.
+2. Use the search, category, date, sender, receiver or amount filters to select the records you need. Amount limits compare the size of an amount, so a limit of 100 to 250 includes both 150 and -150.
+3. Select **Download report**. The button changes to **Preparing report...** while the report is created.
+4. Open the downloaded PDF. Check the case name, active filters and record count. The rows include the recorded amount and currency, available source details, original corrected amounts and the latest correction explanations.
+5. Read each currency total separately. Positive and negative signs are preserved; they do not by themselves establish who paid whom. A record with no currency remains visible but is not included in a currency total.
+
+A failed download displays an error and leaves your filters in place. Select **Download report** again to retry. If PDF creation is unavailable, Loupe downloads a printable HTML report instead. Open that file in your browser and print or save it as PDF. These reports do not receive an automatic privilege marking.
+
 ## Add a PDF
 
 ### Upload a bank or credit-card statement

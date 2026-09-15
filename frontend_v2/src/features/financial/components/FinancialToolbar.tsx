@@ -14,6 +14,7 @@ interface FinancialToolbarProps {
   onOpenBulkImport: () => void
   onOpenCategoryManagement: () => void
   onExportPdf: () => void
+  isExporting?: boolean
   onModeChange: (mode: FinancialDatasetMode) => void
 }
 
@@ -24,6 +25,7 @@ export function FinancialToolbar({
   onOpenBulkImport,
   onOpenCategoryManagement,
   onExportPdf,
+  isExporting,
   onModeChange,
 }: FinancialToolbarProps) {
   const {
@@ -127,9 +129,14 @@ export function FinancialToolbar({
         </Button>
       )}
 
-      <Button variant="ghost" size="sm" onClick={onExportPdf}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onExportPdf}
+        disabled={isExporting}
+      >
         <Download className="size-3.5" />
-        PDF
+        {isExporting ? "Preparing report..." : "Download report"}
       </Button>
 
       {canEdit && (
