@@ -535,11 +535,18 @@ Unfinished note text stays in this browser tab when you close and reopen the det
 1. Tick the checkbox beside each payment you want to discuss together. You can select up to 100.
 2. Alternatively, use **Select matching payments (up to 100)** after searching.
 3. Read the selected-payment totals. If selected payments fall outside the account/date range now displayed, the screen tells you how many will still be included.
-4. Select **Save selection with a note**.
-5. Enter **Name for this selection**, such as “Payments to supplier in March”.
-6. Under **What did you notice?**, explain the question or observation.
-7. Select **Save payments and note**. Wait for the saved confirmation.
-8. Open **Findings** and find your title. Select a linked payment to inspect its source again.
+4. Select **Review selected payments** to see the chosen payments across all accounts and filters. The list shows each date, amount and original filename. Use **Previous selected payments** and **Next selected payments** for more than 20. **Remove from selection** removes only that entry from your unfinished selection.
+5. Close the review and select **Save selection with a note**.
+6. Enter **Name for this selection**, such as “Payments to supplier in March”.
+7. Under **What did you notice?**, explain the question or observation.
+8. Select **Save payments and note**. Wait for the saved confirmation.
+9. Open **Findings** and find your title. Select a linked payment to inspect its source again.
+
+If a selected payment was corrected or excluded, saving identifies the changed payment. Select **Review selected payments** in the message. Open the payment to inspect its history. For a corrected payment, **Open corrected transaction** shows the new version. Remove the old entry from your selection, then choose the corrected payment in Transactions if you want to include it. Your other selections and unfinished note are retained. No transaction is deleted by removing it from a selection.
+
+![Two synthetic selected payments, including a corrected entry that can be removed separately](images/25-selected-payment-review.png)
+
+A failed payment check says that it could not be checked. Select **Retry payment check** to try again. A connection failure does not mean that a payment was excluded.
 
 The saved selection keeps the payment values as they were when saved. Opening a linked payment shows its current record or correction history. A colleague with access to the case can read the saved note; your unfinished browser draft is not shared.
 

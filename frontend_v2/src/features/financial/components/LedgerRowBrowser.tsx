@@ -1,3 +1,4 @@
+import { SelectedPaymentsReview } from "./SelectedPaymentsReview"
 import {
   emptyPaymentTableView as emptyView,
   paymentTableDraftName,
@@ -30,6 +31,7 @@ export function LedgerRowBrowser({
   investigation?: boolean
   exportContext?: { caseId: string; params: LedgerQueryParams }
 }) {
+  const [reviewSelection, setReviewSelection] = useState(false)
   const [localView, setLocalView] = useState(emptyView)
   const [savedView, setSavedView] = useFinancialDraft(
     exportContext?.caseId ?? "none",
@@ -334,7 +336,28 @@ export function LedgerRowBrowser({
                     included when you save the selection.
                   </p>
                 )}
+                <Button
+                  variant="outline"
+                  onClick={() => setReviewSelection(true)}
+                >
+                  Review selected payments
+                </Button>
+                {reviewSelection && (
+                  <SelectedPaymentsReview
+                    key={exportContext.caseId}
+                    caseId={exportContext.caseId}
+                    ids={selection}
+                    onRemove={(id) => {
+                      setSelection((previous) =>
+                        previous.filter((value) => value !== id)
+                      )
+                      if (selection.length === 1) setReviewSelection(false)
+                    }}
+                    onClose={() => setReviewSelection(false)}
+                  />
+                )}
                 <SavePaymentSelection
+                  onReviewSelection={() => setReviewSelection(true)}
                   caseId={exportContext.caseId}
                   ids={selection}
                 />

@@ -9,10 +9,9 @@ import {
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
-import { fetchAPI } from "@/lib/api-client"
 import { useCreateCaseworkEntry } from "@/features/workspace/hooks/use-casework"
 import type { CaseworkLinkInput } from "@/features/workspace/casework-api"
-import { citationSchema } from "../lib/source-citation"
+import { readSelectedPayment } from "../lib/selected-payment-source"
 import { useFinancialDraft } from "../stores/financial-drafts"
 
 function SavePaymentSelectionForm({
@@ -20,11 +19,13 @@ function SavePaymentSelectionForm({
   ids,
   analysis,
   extraLinks = [],
+  onReviewSelection,
 }: {
   caseId: string
   ids: string[]
   analysis?: { kind: string; summary: string; details: Record<string, unknown> }
   extraLinks?: CaseworkLinkInput[]
+  onReviewSelection?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft, clear] = useFinancialDraft(
@@ -44,23 +45,13 @@ function SavePaymentSelectionForm({
       for (let offset = 0; offset < ids.length; offset += 5) {
         const sources = await Promise.all(
           ids.slice(offset, offset + 5).map(async (id) => {
-            const data = citationSchema.parse(
-              await fetchAPI(
-                `/api/financial/ledger/${encodeURIComponent(id)}/source?${new URLSearchParams({ case_id: caseId })}`
-              )
-            )
+            const data = await readSelectedPayment(caseId, id)
             if (
-              data.case_id !== caseId ||
-              data.transaction_id !== id ||
-              !data.transaction ||
-              data.transaction.key !== id ||
-              data.transaction.case_id !== caseId ||
-              data.transaction.source_document_id !== data.source_document_id ||
               data.ledger_status !== "admitted" ||
               data.superseded_by_id !== null
             )
               throw Error(
-                "A selected payment changed or is no longer included. Refresh Transactions and review your selection before saving."
+                `${data.transaction.description || data.ref_id} (${data.transaction.ordering_date}) changed or is no longer included. Review your selected payments before saving.`
               )
             return data
           })
@@ -195,6 +186,17 @@ function SavePaymentSelectionForm({
                 <p role="alert">
                   {save.error.message} Your draft is retained. Check Findings
                   before retrying.
+                  {onReviewSelection && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setOpen(false)
+                        onReviewSelection()
+                      }}
+                    >
+                      Review selected payments
+                    </Button>
+                  )}
                 </p>
               )}
             </fieldset>

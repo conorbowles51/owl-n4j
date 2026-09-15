@@ -111,3 +111,53 @@ it("retains the note and prevents automatic retry after an uncertain save", asyn
     "Ask about the recipient"
   )
 })
+
+it("names a changed payment and opens selection review without losing the note", async () => {
+  const review = vi.fn()
+  mocks.fetch.mockResolvedValue({
+    ...source,
+    ledger_status: "superseded",
+    superseded_by_id: "replacement",
+    transaction: {
+      ...paymentFixture,
+      description: "Example Supplies",
+      ledger_status: "superseded",
+      superseded_by_id: "replacement",
+    },
+  })
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <SavePaymentSelection
+        caseId="case"
+        ids={["payment"]}
+        onReviewSelection={review}
+      />
+    </QueryClientProvider>
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save selection with a note" })
+  )
+  fireEvent.change(screen.getByLabelText("Name for this selection"), {
+    target: { value: "Keep selected work" },
+  })
+  fireEvent.change(screen.getByLabelText("What did you notice?"), {
+    target: { value: "Check original and correction" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save payments and note" })
+  )
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Example Supplies (2026-09-01)"
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review selected payments" })
+  )
+  expect(review).toHaveBeenCalledOnce()
+  expect(mocks.save).not.toHaveBeenCalled()
+  expect(
+    Object.values(useFinancialDraftStore.getState().drafts)
+  ).toContainEqual({
+    title: "Keep selected work",
+    body: "Check original and correction",
+  })
+})
