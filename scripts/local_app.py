@@ -39,7 +39,7 @@ def main():
         "CELLEBRITE_DATA_ROOT": str(RUNTIME / "evidence"),
         "STORAGE_PATH": str(RUNTIME / "files"),
         "TRIAGE_ALLOWED_ROOTS": str(RUNTIME / "evidence"),
-        "OPENAI_API_KEY": "local-test-no-api-key",
+        "OPENAI_API_KEY": "",
         "ANTHROPIC_API_KEY": "", "GEMINI_API_KEY": "",
         "GOOGLE_API_KEY": "", "DEEPSEEK_API_KEY": "",
         "VIRUSTOTAL_API_KEY": "",

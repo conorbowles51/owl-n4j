@@ -112,7 +112,7 @@ def check(client, case_id):
             run(endpoint,read)
     report=dict(checked_at=datetime.now(timezone.utc).isoformat(),case_id=case_id,
         scope='Local runtime and selected case reads; no fixture/review/ledger mutations.',
-        external_ai='Not tested. Local launcher uses invalid provider credentials deliberately.',
+        external_ai='Not tested. Local launcher clears all provider credentials.',
         financial_case_checked=case_id is not None,passed=all(r['passed'] for r in results),checks=results)
     path=ROOT/'data/local-runtime/local-check.latest.json';path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text(json.dumps(report,indent=2)+'\n')

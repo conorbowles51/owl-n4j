@@ -46,10 +46,11 @@ Redis 56379, Chroma 58101. Runtime files and venvs are ignored under
 `data/local-runtime`; databases persist in the `loupe-local` Docker volumes.
 
 The launcher overrides database/storage/auth settings and disables loading the
-repository `.env`. It uses a deliberately invalid OpenAI key and clears other
-provider credentials. **AI extraction, embedding, chat and transcription are not
-validated.** The engine's existing `openai` health check only tests whether a key
-is nonempty; `ready` does not prove provider access. Do not put real evidence into
+repository `.env`. It clears all provider credentials. **AI extraction, embedding,
+chat and transcription are not validated.** Engine readiness checks the services
+needed for local PDF reading, including OCR and storage. AI credentials are checked
+when an AI operation uses its selected provider; readiness does not prove provider
+access. Do not put real evidence into
 this development stack or treat its published development credentials as secure.
 
 Run the real HTTP/PostgreSQL duplicate check after startup:

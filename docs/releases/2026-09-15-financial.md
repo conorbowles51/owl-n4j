@@ -188,3 +188,7 @@ Nineteen focused checks, TypeScript project checking, scoped lint and production
 ## Retry transaction details in place
 
 A failed transaction-details request now offers Try loading this transaction again. It retries the same payment without closing the source dialog or changing the table search. Incorrect source references continue to be refused. Thirteen focused checks, scoped lint and the TypeScript/production build passed. The actual browser recovered the expected payment and source action, then returned to its two-payment search. All nine records are unchanged.
+
+## Statement worker startup
+
+Local PDF reading and OCR no longer require an OpenAI environment key to pass engine readiness. Missing database, storage, OCR or other required runtime services still prevent the worker from starting. Actual AI operations continue to use their configured provider credentials. The isolated local launcher clears every provider key. Ten focused health/credential checks, a clean local restart and real native/scanned PDF preparation passed without AI credentials; no transactions were imported.

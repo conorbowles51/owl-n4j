@@ -146,9 +146,10 @@ check which existing local process owns it before starting a second copy.
 
 The launcher deliberately clears real model keys and prevents repository `.env`
 loading. External AI extraction, chat, embeddings and transcription are not
-validated by this check. The engine's `openai` health flag reports a nonempty
-key, which is not provider connectivity; this checker deliberately excludes it
-from the local-readiness claim. Dependency ranges and Docker image tags are not a
+validated by this check. PDF reading and OCR do not require a provider key.
+Engine readiness checks the required local services; credentials for AI operations
+are resolved when those operations run. Readiness does not claim provider access.
+Dependency ranges and Docker image tags are not a
 fully frozen release lock. Deployment is the repository's existing push-triggered
 server process; these commands neither push nor deploy.
 

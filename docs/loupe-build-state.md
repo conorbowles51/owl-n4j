@@ -1,3 +1,13 @@
+## Statement worker startup without AI credentials, 15 September 2026
+
+The deployment review found that Docker waits for evidence-engine readiness before starting its worker, but readiness required a nonempty environment OpenAI key. PDF preparation returns before any AI work and can run locally. The engine now checks only its required database, graph, search, Redis, OCR and storage services. Provider credentials remain resolved for actual AI workloads, including credentials saved in platform settings. The isolated launcher now clears OpenAI along with the other providers instead of supplying a placeholder.
+
+Ten focused health/credential checks passed. Each required service failure still produces not-ready/503. All three isolated Python services restarted without provider credentials, and all six runtime/login checks passed. Native and scanned synthetic PDFs were uploaded and prepared by the real worker in a new isolated case, ffe260f2-c300-4d5e-83bc-3fcca19cc212. Both previews loaded; no financial rows were imported and the database contains no configured provider keys. Private no-ai-pdf-acceptance.json retains guarded file/job IDs and outcomes. This verifies local operation, not provider access or production deployment.
+
+The scanned preview exposed a separate reproducible reader problem: its printed header has five columns but compact OCR rows renumber nonempty values, moving balance/credit/debit positions. Six genuine payment rows are consequently unresolved. The native copy reads those six transactions but also flags its synthetic footer as unresolved. Next work is the OCR column alignment, retaining original geometry and blank cells. Do not describe this scan as correctly extracted merely because preparation completed. No broad suite or push.
+
+Runtime now: API session17895/PID80265 at58002; engine session21252/PID80250 at58003; worker session5173. Logs /tmp/loupe-no-ai-backend.log, /tmp/loupe-no-ai-engine.log and /tmp/loupe-no-ai-worker.log. Frontend and isolated databases remain running. Continue the existing five-minute heartbeat through23:59 Dublin.
+
 ## Transaction details retry verified, 15 September 2026
 
 Account scope and chooser recovery are committed as de051929. The shared transaction source dialog now offers Try loading this transaction again after a failed request, retaining its payment ID and case. Its query forwards cancellation when the dialog closes. Existing mismatched case/ID/locator/digest refusals remain in place, and no source fields display after a failed check.
