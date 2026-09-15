@@ -10,6 +10,20 @@ import {
 } from "../lib/candidate-contract"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 
+function accountLabel(parts: Array<string | null | undefined>) {
+  const seen = new Set<string>()
+  return parts
+    .flatMap((part) => part?.split(" · ") ?? [])
+    .map((part) => part.trim())
+    .filter((part) => {
+      const key = part.toLocaleLowerCase("en")
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .join(" · ")
+}
+
 /** Explicit submission keeps draft dates/account searches separate from the answer. */
 export function LedgerFilters({
   caseId,
@@ -96,15 +110,13 @@ export function LedgerFilters({
           <p>Account results for: {requestedSearch || "all accounts"}.</p>
           {accounts.data.items.map((item) => {
             const label =
-              [
+              accountLabel([
                 item.display_label,
                 item.identifier,
                 item.holder,
                 item.institution,
                 item.currency,
-              ]
-                .filter(Boolean)
-                .join(" · ") || item.id
+              ]) || item.id
             return (
               <Button
                 type="button"
@@ -140,7 +152,9 @@ export function LedgerFilters({
             })
         }}
       >
-        <p>Selected account: {account?.label ?? "All accounts"}</p>
+        <p>
+          Selected account: {accountLabel([account?.label]) || "All accounts"}
+        </p>
         <Button
           type="button"
           variant="outline"

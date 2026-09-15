@@ -93,6 +93,8 @@ Release evidence: [15 September release record](releases/2026-09-15-financial.md
 
 ## Continuing user workflow checks
 
+- [x] Remove repeated holder/account segments from tracing account choices and retained captions. Verify selection through refresh and replace the guide's transfer and tracing entry screenshots with the current synthetic controls.
+
 - [x] Require fresh transfer, pattern and tracing inputs after a case financial action refreshes payments. Hide older calculations, retain compatible drafts and saved findings, and refuse a response overtaken by another refresh. Sixteen focused checks and a four-tool browser check passed without financial writes.
 
 - [x] Reopening an excluded statement copy shows its saved disposition, retained filename and original PDF without offering another import. The server refuses reimport, including a new reading of that source. A legitimate replacement reading still works; restoring the duplicate decision re-enables the existing import. Actual browser refresh and decision navigation preserved all six current synthetic payments with no financial writes.
