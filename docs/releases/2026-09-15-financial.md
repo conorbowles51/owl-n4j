@@ -39,6 +39,12 @@ Financial controls now follow the server’s exact case editing and file upload 
 
 A temporary ordinary member passed the actual UI under three combinations: read-only, editing without upload, and upload without editing. All three opened payment sources, loaded the original statement image and reopened the saved report. The read-only member downloaded its PDFs. No financial records changed. Revoked membership was denied and the temporary member was deleted. Four backend checks and focused frontend checks passed; the earlier broad suites were not repeated.
 
+## Continued large-statement recovery
+
+Refreshing now restores the open file, statement period, currency and PDF page in the same browser tab. Draft corrections remain tied to their source reading. A section search can find an account, date, year or PDF page and retains PDF ordering. Searches are separate for each user, case and file.
+
+The supplied 222-page PDF passed correction retention across periods, file versions, tabs and refresh, with the original image loaded. Search located the requested period among 52 sections. The 99-page Andrews file passed switching among 45 sections, the unassigned continuation page and its separate receipt, including refresh. No real payments were imported and no financial records changed. Twenty-seven focused checks, type checking and scoped lint passed.
+
 ## Remaining acceptance
 
 Damaged scans can still require correction or a better source copy. The supplied-page checks and synthetic case journey do not establish independent extraction accuracy across all bank formats. The seven unique supplied PDFs have a retained prediction capture, but independent human reference reviews and an approved baseline have not been supplied. The application records those measurements as unavailable.

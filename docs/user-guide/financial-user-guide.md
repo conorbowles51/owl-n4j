@@ -263,7 +263,11 @@ Select **Edit import values** above the viewer, then select **Show problems and 
 
 Use **Previous page**, **Next page** or the **Page** selector above the viewer to move through the original PDF. The PDF and extracted table change together. A page with no extracted rows still remains available as a PDF page; inspect it for anything missed. The viewer starts at the first page of the chosen statement.
 
-Each choice identifies a printed account and statement period or date. Select **Choose another statement period** to return to the list. Confirm each statement separately so its account and dates stay attached to the correct payments.
+Each choice identifies a printed account and statement period or date. Use **Find a statement or receipt** to search by account, year, date or PDF page. You can combine terms, such as `0040 2020-09`, to find one account in a particular month. The count tells you how many sections match. Results remain in PDF order. Select **Clear search** to show the whole list again.
+
+Select **Choose another statement period** to return to the list. The search is remembered separately for each file. Confirm each statement separately so its account and dates stay attached to the correct payments.
+
+Refreshing in the same browser tab restores your selected file, statement period, currency and PDF page. Unfinished corrections restore for the same source reading. Another account period or file has its own draft. Closing statement review remains your choice; a refresh does not reopen it after you explicitly close it.
 
 ### Check Andrews account sections
 
@@ -1081,7 +1085,7 @@ External timestamping is an administrator-operated process, not a button an inve
 
 | Work | What to do before leaving | What to do on return |
 |---|---|---|
-| Unconfirmed normal statement review | Look for the message that the review is saved in this browser tab. | In the same tab, reopen the same file, statement period and currency. The draft restores if its source revision has not changed. Closing the tab may discard it. |
+| Unconfirmed normal statement review | Look for the message that the review is saved in this browser tab. | Refreshing the same browser tab restores the selected file, period, currency and page. If you closed review, reopen the file. The draft restores if its source revision has not changed. Closing the tab may discard it. |
 | Imported statement | Wait for import confirmation. | Open Transactions or reopen the uploaded statement. |
 | Transaction note | Select Save investigation note and wait for Note saved. | Open Workspace, then Casework and Notes. |
 | Selected PDF rows in advanced review | Select Save selected rows for review and wait for confirmation. | Open PDF readings, find the saved batch and open its readings. |

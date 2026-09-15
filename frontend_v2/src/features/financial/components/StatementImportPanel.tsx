@@ -1,3 +1,4 @@
+import { StatementSectionPicker } from "./StatementSectionPicker"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { reviewSelectionBalance } from "../lib/statement-review-balance"
 import { ReprocessStatement } from "./ReprocessStatement"
@@ -431,39 +432,11 @@ function StatementReview({
   }
   if (query.data.statement_choices.length > 1 && !query.data.statement_id)
     return (
-      <section className="space-y-3 py-4" aria-label="Statements in this PDF">
-        <h3 className="font-semibold">
-          {hasReceipts
-            ? "Statements and receipts in this PDF"
-            : `This PDF contains ${query.data.statement_choices.length} statements`}
-        </h3>
-        <p>
-          Choose an account and statement period to review. Savings and checking
-          sections are separate choices.{" "}
-          {hasReceipts &&
-            "Deposit receipts are reviewed separately and do not add transactions."}{" "}
-          Page numbers refer to the original PDF.
-        </p>
-        <div className="grid sm:grid-cols-2 gap-2">
-          {query.data.statement_choices.map((item) => (
-            <Button
-              variant="outline"
-              className="h-auto whitespace-normal text-left justify-start p-3"
-              key={item.id}
-              onClick={() => setStatementId(item.id)}
-            >
-              {item.document_kind ? "Deposit receipt" : item.institution} ·{" "}
-              {item.account_reference || "Account needs review"} ·{" "}
-              {item.account_label ? `${item.account_label} · ` : ""}
-              {item.period_start
-                ? `${item.period_start} to ${item.period_end}`
-                : item.statement_date ||
-                  `Check date: ${item.printed_statement_date || "unreadable"}`}{" "}
-              · pages {item.page_numbers.join(", ")}
-            </Button>
-          ))}
-        </div>
-      </section>
+      <StatementSectionPicker
+        choices={query.data.statement_choices}
+        scope={choiceKey}
+        onChoose={setStatementId}
+      />
     )
   if (!query.data.currency)
     return (

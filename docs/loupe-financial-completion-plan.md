@@ -97,7 +97,10 @@ The prior checked items stay as evidence. The user instructed continuous work af
 
 - [x] Make read-only financial controls match the server's exact case edit/upload permissions while preserving inspection, analysis and downloads.
 - [x] Check the revised permissions with a real temporary read-only member and with separate edit/upload permissions.
-- [ ] Continue through large multi-statement files in the UI, including changing period, page and file, retaining corrections and finding unresolved rows.
+- [x] Retain file, period, currency and page after refresh. The 222-page PDF check kept corrections separate between periods and original/reprocessed file versions, restored its source image and made no financial writes.
+- [x] Add account/date/page search for large section lists. The supplied 52-section file can be narrowed to the requested period without changing PDF order.
+- [x] Finish the large Andrews statement/receipt switching and unresolved-page review using the revised controls. Its 45-section chooser, missing continuation page 13, separate receipt page 42, refresh, search restoration and return to the statement passed without importing real transactions.
+- [ ] Check expired sessions and changing signed-in members while financial data is cached; clear stale case data where needed and keep recovery instructions actionable.
 - [ ] Fix concrete defects from those checks and incoming UI feedback; record focused verification and detailed local commits.
 
 Access verification: the UI uses separate case editing and evidence upload flags from the server. A temporary ordinary member passed read-only, edit-without-upload and upload-without-edit checks against the same synthetic case. Original PDF images loaded, the saved report reopened and downloaded, and no financial writes occurred. Removing membership denied the access endpoint. The temporary member was removed. Focused checks: 4 backend access tests, 11 provider tests included in 245 affected component checks, then 56 checks for the final changed controls. No broad suite repeated.
